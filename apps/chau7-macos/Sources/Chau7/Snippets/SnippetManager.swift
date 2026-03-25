@@ -321,51 +321,50 @@ final class SnippetManager: ObservableObject {
         }
 
         resolveWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
+        // Use the centralized RepositoryCache — no debounce needed since cache hits are instant
+        RepositoryCache.shared.resolve(path: normalized) { [weak self] model in
             guard let self else { return }
-            let root = resolveRepoRoot(path: normalized)
+            let root = model?.rootPath
             Log.info("Snippet context: path=\(normalized) resolved repoRoot=\(root ?? "nil")")
+
             // Migrate legacy repo snippets if needed
             if let root {
-                let legacyFile = legacyRepoURL(for: root)
-                let targetDir = repoURL(for: root)
-                migrateSourceIfNeeded(legacyFile: legacyFile, targetDir: targetDir)
+                let legacyFile = self.legacyRepoURL(for: root)
+                let targetDir = self.repoURL(for: root)
+                self.migrateSourceIfNeeded(legacyFile: legacyFile, targetDir: targetDir)
             }
-            DispatchQueue.main.async {
-                guard self.activeRepoRoot != root else { return }
-                self.activeRepoRoot = root
 
-                if let root {
-                    FeatureSettings.shared.recordRecentRepo(root)
+            guard self.activeRepoRoot != root else { return }
+            self.activeRepoRoot = root
 
-                    if self.allRepoSnippets[root] == nil {
-                        // New repo discovered: load its snippets into cache
-                        self.queue.async {
-                            let repoDir = self.repoURL(for: root)
-                            FileOperations.createDirectory(at: repoDir)
-                            let snippets = self.loadSnippetsFromDirectory(repoDir)
-                            DispatchQueue.main.async {
-                                self.allRepoSnippets[root] = snippets
-                                self.rebuildEntries()
-                                Log.info("Loaded new repo snippets: \(root) count=\(snippets.count)")
-                            }
+            if let root {
+                // recordRecentRepo is now handled by RepositoryCache on first discovery
+
+                if self.allRepoSnippets[root] == nil {
+                    // New repo discovered: load its snippets into cache
+                    self.queue.async {
+                        let repoDir = self.repoURL(for: root)
+                        FileOperations.createDirectory(at: repoDir)
+                        let snippets = self.loadSnippetsFromDirectory(repoDir)
+                        DispatchQueue.main.async {
+                            self.allRepoSnippets[root] = snippets
+                            self.rebuildEntries()
+                            Log.info("Loaded new repo snippets: \(root) count=\(snippets.count)")
                         }
-                    } else {
-                        // Already cached: instant switch
-                        self.rebuildEntries()
                     }
-
-                    self.setupActiveRepoMonitor(for: root)
                 } else {
-                    // No repo: rebuild with global + profile only
-                    self.activeRepoMonitor?.stop()
-                    self.activeRepoMonitor = nil
+                    // Already cached: instant switch
                     self.rebuildEntries()
                 }
+
+                self.setupActiveRepoMonitor(for: root)
+            } else {
+                // No repo: rebuild with global + profile only
+                self.activeRepoMonitor?.stop()
+                self.activeRepoMonitor = nil
+                self.rebuildEntries()
             }
         }
-        resolveWorkItem = work
-        queue.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
     func refreshContextForCurrentPath() {
@@ -1253,62 +1252,13 @@ final class SnippetManager: ObservableObject {
         URL(fileURLWithPath: root).appendingPathComponent(".chau7/snippets.json")
     }
 
-    /// Cache of paths we've already checked and found to not be git repos
-    private var nonGitPathCache: Set<String> = []
+    // nonGitPathCache and resolveRepoRoot(path:) removed — centralized in RepositoryCache
 
-    private func resolveRepoRoot(path: String) -> String? {
-        // Skip protected directories to avoid repeated permission prompts
-        if ProtectedPathPolicy.shouldSkipAutoAccess(path: path) {
-            Log.trace("Skipping git check for protected directory: \(path)")
-            return nil
-        }
-
-        // Check if we've already determined this path isn't in a git repo
-        if nonGitPathCache.contains(path) {
-            return nil
-        }
-
-        let process = Process()
-        process.executableURL = GitBinary.path
-        process.arguments = ["-C", path, "rev-parse", "--show-toplevel"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            nonGitPathCache.insert(path)
-            return nil
-        }
-        guard process.terminationStatus == 0 else {
-            nonGitPathCache.insert(path)
-            return nil
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        return output.isEmpty ? nil : output
-    }
-
+    /// Resolves the git root for a path. Used by settings UI for manual path selection.
+    /// Delegates to GitDiffTracker.runGit for the actual git query.
     static func resolveRepoRoot(at path: String) -> String? {
         let normalized = URL(fileURLWithPath: path).standardized.path
-        let process = Process()
-        process.executableURL = GitBinary.path
-        process.arguments = ["-C", normalized, "rev-parse", "--show-toplevel"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-        guard process.terminationStatus == 0 else {
-            return nil
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        let output = GitDiffTracker.runGit(args: ["rev-parse", "--show-toplevel"], in: normalized)
         return output.isEmpty ? nil : output
     }
 

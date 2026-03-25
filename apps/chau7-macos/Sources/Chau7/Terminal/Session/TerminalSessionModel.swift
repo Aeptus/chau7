@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Combine
 import Darwin
 import Chau7Core
 
@@ -344,6 +345,9 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     private var inputBuffer = ""
     private var gitCheckWorkItem: DispatchWorkItem?
     private let gitQueue = DispatchQueue(label: "com.chau7.git", qos: .utility)
+    /// Shared repository model for this session's current git repo (nil if not in a repo)
+    @Published var repositoryModel: RepositoryModel?
+    private var repoBranchCancellable: AnyCancellable?
     private var searchUpdateWorkItem: DispatchWorkItem?
     private let searchQueue = DispatchQueue(label: "com.chau7.search", qos: .utility)
     private var searchQuery = ""
@@ -3634,71 +3638,37 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     }
 
     private func refreshGitStatus(path: String) {
-        gitCheckWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
+        RepositoryCache.shared.resolve(path: path) { [weak self] model in
             guard let self else { return }
-            if ProtectedPathPolicy.shouldSkipAutoAccess(path: path) {
-                DispatchQueue.main.async {
-                    self.isGitRepo = false
-                    self.gitBranch = nil
-                    self.gitRootPath = nil
+            let oldModel = self.repositoryModel
+            let oldBranch = self.gitBranch
+
+            // Update the shared model reference
+            self.repositoryModel = model
+            self.isGitRepo = model != nil
+            self.gitRootPath = model?.rootPath
+            self.gitBranch = model?.branch
+
+            // Subscribe to branch changes from the shared model
+            if model !== oldModel {
+                self.repoBranchCancellable?.cancel()
+                if let model {
+                    self.repoBranchCancellable = model.$branch
+                        .receive(on: DispatchQueue.main)
+                        .sink { [weak self] newBranch in
+                            guard let self, self.gitBranch != newBranch else { return }
+                            self.gitBranch = newBranch
+                            self.shellEventDetector.gitBranchChanged(to: newBranch)
+                        }
+                } else {
+                    self.repoBranchCancellable = nil
                 }
-                return
             }
-            let result = queryGitStatus(path: path)
-            DispatchQueue.main.async {
-                self.isGitRepo = result.isRepo
-                let oldBranch = self.gitBranch
-                self.gitBranch = result.branch
-                self.gitRootPath = result.root
-                // Notify shell event detector of branch change
-                if oldBranch != result.branch {
-                    self.shellEventDetector.gitBranchChanged(to: result.branch)
-                }
+
+            // Notify shell event detector of branch change
+            if oldBranch != model?.branch {
+                self.shellEventDetector.gitBranchChanged(to: model?.branch)
             }
         }
-        gitCheckWorkItem = work
-        gitQueue.async(execute: work)
-    }
-
-    private func queryGitStatus(path: String) -> (isRepo: Bool, branch: String?, root: String?) {
-        if ProtectedPathPolicy.shouldSkipAutoAccess(path: path) {
-            return (false, nil, nil)
-        }
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
-            return (false, nil, nil)
-        }
-
-        let process = Process()
-        process.executableURL = GitBinary.path
-        process.arguments = ["-C", path, "rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return (false, nil, nil)
-        }
-
-        guard process.terminationStatus == 0 else {
-            return (false, nil, nil)
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(decoding: data, as: UTF8.self)
-        let lines = output
-            .split(whereSeparator: \.isNewline)
-            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard !lines.isEmpty else {
-            return (false, nil, nil)
-        }
-        let root = lines.first
-        let branch = lines.count > 1 ? lines.last : nil
-        return (true, branch, root)
     }
 }
