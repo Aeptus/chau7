@@ -23,9 +23,6 @@ struct ClaudeCodeBackend: AgentBackend {
             parts.append(model)
         }
 
-        // Print session ID so we can match events
-        parts.append("--print-session-id")
-
         parts.append(contentsOf: config.args)
 
         // Prepend environment variables
