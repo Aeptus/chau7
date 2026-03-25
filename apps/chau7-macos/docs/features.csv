@@ -215,6 +215,9 @@ Terminal,File Drag & Drop,"Drop files to paste paths; Option+drop images for bas
 Terminal,Markdown Runbooks,"Open .md in editor pane with executable code blocks and Run All button",Shipped,Yes
 Terminal,Show Changed Files,"Git diff snapshot per command (OSC 133) shows files modified by AI sessions (Cmd+Option+G)",Shipped,Yes
 Terminal,Idle Tabs Dropdown,"Tabs idle beyond configurable threshold (default 10 min) grouped into a dropdown chip in the tab bar with hover card support",Shipped,Yes
+Terminal,Repository Tab Grouping,"Group tabs by git repo (Off/Auto/Manual). Inline repo-name tag chip with connecting line overlay. Suppresses redundant repo path in grouped tab titles.",Shipped,No
+Terminal,Split Pane File Preview,"Read-only file viewer with syntax highlighting and image support (Cmd+Opt+P). Lighter than full editor.",Shipped,No
+Terminal,Split Pane Diff Viewer,"Unified git diff view with colored additions/deletions, dual line numbers, Working/Staged toggle (Cmd+Opt+Shift+D)",Shipped,No
 Terminal,chau7:// URL Scheme,"Open SSH sessions, run commands, change directory, or open files from external apps",Shipped,Yes
 Terminal,Keyboard Shortcut Standardization,"All Chau7-specific shortcuts use Cmd+Option; tab selection internationalized (Cmd+1-9)",Shipped,No
 API Analytics,Streaming Metadata Fix,"Anthropic/OpenAI streaming responses correctly parsed for model, tokens, and cost",Shipped,No
