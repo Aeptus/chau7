@@ -16,6 +16,9 @@ enum TabResolver {
 
     private static let resolverLock = NSLock()
     private static var cwdResolvers: [String: CWDResolver] = [:]
+    private static let ambiguityLogLock = NSLock()
+    private static var ambiguityLogState: [String: (lastLoggedAt: Date, suppressedCount: Int)] = [:]
+    private static let ambiguityLogInterval: TimeInterval = 30
 
     /// Register a CWD-based session resolver for a tool's provider key.
     /// Called by tool monitors during setup (e.g. in `start()` or a static
@@ -195,27 +198,33 @@ enum TabResolver {
         if let dir = target.directory?.trimmingCharacters(in: .whitespacesAndNewlines),
            !dir.isEmpty {
             let normalized = URL(fileURLWithPath: dir).standardized.path
-            let dirMatches = matches.filter { tab in
-                tab.splitController.terminalSessions.contains { _, session in
-                    let cwd = URL(fileURLWithPath: session.currentDirectory).standardized.path
-                    return cwd == normalized
-                        || cwd.hasPrefix(normalized + "/")
-                        || normalized.hasPrefix(cwd + "/")
+            let rankedMatches = matches.compactMap { tab -> (tab: OverlayTab, rank: Int)? in
+                let ranks = tab.splitController.terminalSessions.compactMap { _, session in
+                    directoryMatchRank(targetDirectory: normalized, sessionDirectory: session.currentDirectory)
                 }
+                guard let rank = ranks.min() else { return nil }
+                return (tab: tab, rank: rank)
             }
-            if dirMatches.count == 1 {
-                return dirMatches[0]
-            }
-            if dirMatches.count > 1 {
-                // Multiple tabs in the same directory — prefer most recently active
-                let best = dirMatches.max(by: { a, b in
-                    let aDate = a.session?.lastActivityDate ?? .distantPast
-                    let bDate = b.session?.lastActivityDate ?? .distantPast
-                    return aDate < bDate
-                })
-                if let best {
-                    Log.info("TabResolver: disambiguated via dir+activity (\(normalized.suffix(20))) → tab=\(best.id)")
-                    return best
+
+            if let bestRank = rankedMatches.map(\.rank).min() {
+                let dirMatches = rankedMatches
+                    .filter { $0.rank == bestRank }
+                    .map(\.tab)
+
+                if dirMatches.count == 1 {
+                    return dirMatches[0]
+                }
+                if dirMatches.count > 1 {
+                    let best = dirMatches.max(by: { a, b in
+                        let aDate = a.session?.lastActivityDate ?? .distantPast
+                        let bDate = b.session?.lastActivityDate ?? .distantPast
+                        return aDate < bDate
+                    })
+                    if let best {
+                        let scope = bestRank == 0 ? "dir+activity exact" : "dir+activity related"
+                        Log.info("TabResolver: disambiguated via \(scope) (\(normalized.suffix(20))) → tab=\(best.id)")
+                        return best
+                    }
                 }
             }
         }
@@ -226,7 +235,49 @@ enum TabResolver {
             let bDate = b.session?.lastActivityDate ?? .distantPast
             return aDate < bDate
         })
-        Log.info("TabResolver: \(matches.count) ambiguous matches, using most recently active tab")
+        logAmbiguousFallback(target: target, matchesCount: matches.count)
         return best
+    }
+
+    private static func directoryMatchRank(targetDirectory: String, sessionDirectory: String) -> Int? {
+        let target = URL(fileURLWithPath: targetDirectory).standardized.path
+        let session = URL(fileURLWithPath: sessionDirectory).standardized.path
+        guard !target.isEmpty, !session.isEmpty else { return nil }
+        if target == session {
+            return 0
+        }
+        if session.hasPrefix(target + "/") || target.hasPrefix(session + "/") {
+            return 1
+        }
+        return nil
+    }
+
+    private static func logAmbiguousFallback(target: TabTarget, matchesCount: Int) {
+        let tool = normalizedToolLabel(target.tool) ?? target.tool.lowercased()
+        let directory = target.directory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "-"
+        let sessionID = target.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "-"
+        let key = "\(tool)|\(directory)|\(sessionID)|\(matchesCount)"
+        let now = Date()
+
+        var logLine: String?
+        ambiguityLogLock.lock()
+        if var state = ambiguityLogState[key],
+           now.timeIntervalSince(state.lastLoggedAt) < ambiguityLogInterval {
+            state.suppressedCount += 1
+            ambiguityLogState[key] = state
+        } else {
+            let suppressedCount = ambiguityLogState[key]?.suppressedCount ?? 0
+            ambiguityLogState[key] = (lastLoggedAt: now, suppressedCount: 0)
+            if suppressedCount > 0 {
+                logLine = "TabResolver: \(matchesCount) ambiguous matches, using most recently active tab (suppressed \(suppressedCount) similar)"
+            } else {
+                logLine = "TabResolver: \(matchesCount) ambiguous matches, using most recently active tab"
+            }
+        }
+        ambiguityLogLock.unlock()
+
+        if let logLine {
+            Log.info(logLine)
+        }
     }
 }

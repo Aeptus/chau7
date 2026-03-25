@@ -142,10 +142,13 @@ final class CTORuntimeMonitor {
         }
     }
 
-    func recordManagerSetup() {
+    func recordManagerSetup(mode: TokenOptimizationMode? = nil) {
         var shouldLogSummary = false
         var setupCountSnapshot = 0
         withLock {
+            if let mode {
+                currentMode = mode
+            }
             setupCount += 1
             setupCountSnapshot = setupCount
             shouldLogSummary = setupCount.isMultiple(of: 5)

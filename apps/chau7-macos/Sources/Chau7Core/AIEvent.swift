@@ -242,7 +242,30 @@ public enum AIEventParser {
         let ts = try getString("ts", default: DateFormatters.nowISO8601())
 
         let directory = dict["directory"] as? String ?? dict["cwd"] as? String
+        let rawTabID = dict["tabID"] as? String
+            ?? dict["tabId"] as? String
+            ?? dict["tab_id"] as? String
+        let tabID = rawTabID.flatMap(UUID.init(uuidString:))
+        let rawSessionID = dict["sessionID"] as? String
+            ?? dict["sessionId"] as? String
+            ?? dict["session_id"] as? String
+        let sessionID: String?
+        if let rawSessionID {
+            let trimmedSessionID = rawSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+            sessionID = AIResumeParser.isValidSessionId(trimmedSessionID) ? trimmedSessionID : nil
+        } else {
+            sessionID = nil
+        }
 
-        return AIEvent(source: source, type: type, tool: tool, message: message, ts: ts, directory: directory)
+        return AIEvent(
+            source: source,
+            type: type,
+            tool: tool,
+            message: message,
+            ts: ts,
+            directory: directory,
+            tabID: tabID,
+            sessionID: sessionID
+        )
     }
 }

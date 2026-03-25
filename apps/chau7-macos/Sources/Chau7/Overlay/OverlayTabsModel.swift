@@ -821,13 +821,17 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             referenceDate: referenceDate,
             candidates: filteredCandidates
         ) else {
-            Log.info(
+            let logMessage =
                 """
                 saveTabState: unresolved Codex resume metadata \
                 dir=\(directory) explicitSession=\(session.effectiveAISessionId ?? "nil") \
                 observedCandidates=\(observedCandidates.count) filtered=\(filteredCandidates.count)
                 """
-            )
+            if filteredCandidates.isEmpty {
+                Log.trace(logMessage)
+            } else {
+                Log.info(logMessage)
+            }
             return nil
         }
 
@@ -1155,7 +1159,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         // Scan the 7 most recent day directories, capping total file reads
         var filesRead = 0
         var parsedLines = 0
-        var matches: [(sessionId: String, touchedAt: Date)] = []
+        var matches: [(sessionId: String, touchedAt: Date, rank: Int)] = []
         let maxFileReads = 30
         for dayDir in dayDirs.prefix(7) {
             guard let files = try? fm.contentsOfDirectory(atPath: dayDir.path) else { continue }
@@ -1169,10 +1173,10 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                 parsedLines += 1
                 // Parse session_meta to extract cwd and id
                 if let (sessionCwd, sessionId) = parseCodexSessionMeta(firstLine),
-                   Self.isSameSessionDirectory(dir, as: sessionCwd),
+                   let rank = CodexSessionResolver.directoryMatchRank(forDirectory: dir, sessionDirectory: sessionCwd),
                    !claimedSessionIds.contains(sessionId) {
                     let touchedAt = (try? FileManager.default.attributesOfItem(atPath: filePath)[.modificationDate] as? Date) ?? Date.distantPast
-                    matches.append((sessionId: sessionId, touchedAt: touchedAt))
+                    matches.append((sessionId: sessionId, touchedAt: touchedAt, rank: rank))
                 }
             }
         }
@@ -1188,8 +1192,15 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             return nil
         }
 
-        if let chosen = AIResumeParser.bestSessionMatch(candidates: matches, referenceDate: referenceDate) {
-            if matches.count > 1 {
+        let bestRank = matches.map(\.rank).min()
+        let rankedMatches = bestRank.map { rank in
+            matches
+                .filter { $0.rank == rank }
+                .map { (sessionId: $0.sessionId, touchedAt: $0.touchedAt) }
+        } ?? []
+
+        if let chosen = AIResumeParser.bestSessionMatch(candidates: rankedMatches, referenceDate: referenceDate) {
+            if rankedMatches.count > 1 {
                 Log.trace("findCodexSessionId: selected sessionId=\(chosen) from \(matches.count) candidates using activity hint for dir=\(dir)")
             }
             return chosen

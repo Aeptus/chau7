@@ -50,7 +50,7 @@ final class CTOManager {
     /// Performs first-time setup: creates directories and installs wrapper scripts.
     /// Called once during app startup when CTO mode is not `.off`.
     func setup() {
-        CTORuntimeMonitor.shared.recordManagerSetup()
+        CTORuntimeMonitor.shared.recordManagerSetup(mode: FeatureSettings.shared.tokenOptimizationMode)
         let fm = FileManager.default
 
         // Migrate legacy RTK directories → CTO
