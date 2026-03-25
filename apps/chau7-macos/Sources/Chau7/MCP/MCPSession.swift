@@ -324,6 +324,19 @@ final class MCPSession {
                 ]
             ],
 
+            [
+                "name": "tab_rename",
+                "description": "Set a custom title for a tab. Pass an empty string to clear the custom title.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Tab UUID"],
+                        "title": ["type": "string", "description": "New custom title for the tab. Empty string clears it."]
+                    ],
+                    "required": ["tab_id", "title"]
+                ]
+            ],
+
             // MARK: Runtime API Tools
 
             [
@@ -546,6 +559,13 @@ final class MCPSession {
                 return jsonError("tab_id and override are required")
             }
             return controlService.setCTO(tabID: tabID, override: override)
+
+        case "tab_rename":
+            guard let tabID = arguments["tab_id"] as? String,
+                  let title = arguments["title"] as? String else {
+                return jsonError("tab_id and title are required")
+            }
+            return controlService.renameTab(tabID: tabID, title: title)
 
         // Runtime API
         case let name where name.hasPrefix("runtime_"):
