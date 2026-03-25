@@ -567,6 +567,30 @@ final class TerminalControlService {
         return false
     }
 
+    func renameTab(tabID: String, title: String) -> String {
+        onMain {
+            guard let uuid = UUID(uuidString: tabID) else {
+                return self.jsonError("Invalid tab ID: \(tabID)")
+            }
+            guard let model = self.modelForTab(uuid) else {
+                return self.jsonError("Tab not found: \(tabID)")
+            }
+            guard let index = model.tabs.firstIndex(where: { $0.id == uuid }) else {
+                return self.jsonError("Tab not found: \(tabID)")
+            }
+
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            model.tabs[index].customTitle = trimmed.isEmpty ? nil : trimmed
+            model.tabs[index].session?.tabTitleOverride = model.tabs[index].customTitle
+            model.objectWillChange.send()
+
+            return self.encodeAny([
+                "ok": true,
+                "title": model.tabs[index].customTitle ?? ""
+            ])
+        }
+    }
+
     /// Find the OverlayTabsModel that owns a given tab UUID.
     private func modelForTab(_ uuid: UUID) -> OverlayTabsModel? {
         allModels.first(where: { $0.model.tabs.contains(where: { $0.id == uuid }) })?.model
