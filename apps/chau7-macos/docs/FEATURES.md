@@ -41,6 +41,9 @@ The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for develo
 - Markdown runbooks: open .md files in the editor pane with executable code blocks.
 - Show Changed Files (Cmd+Option+G): git diff snapshot per command shows which files were modified.
 - Idle tabs dropdown: tabs idle beyond a configurable threshold (default 10 min) are grouped into a compact chip in the tab bar.
+- Repository tab grouping: group tabs by git repo (Off/Auto/Manual). Shows inline repo-name tag chip with connecting line. Suppresses redundant repo path in tab titles.
+- Split pane file preview: read-only viewer with syntax highlighting and image support (Cmd+Opt+P).
+- Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D).
 - `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (with confirmation).
 - Default start directory and optional startup commands.
 - Copy on select, Option+click cursor positioning, paste escaping.
