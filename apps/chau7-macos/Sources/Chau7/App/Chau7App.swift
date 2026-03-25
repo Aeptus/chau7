@@ -275,6 +275,16 @@ struct Chau7App: App {
                     }
                     .keyboardShortcut("e", modifiers: [.command, .option])
 
+                    Button(L("Open File Preview", "Open File Preview")) {
+                        appDelegate.openFilePreviewPane()
+                    }
+                    .keyboardShortcut("p", modifiers: [.command, .option])
+
+                    Button(L("Open Diff Viewer", "Open Diff Viewer")) {
+                        appDelegate.openDiffViewerPane()
+                    }
+                    .keyboardShortcut("d", modifiers: [.command, .option, .shift])
+
                     Button(L("Append Selection to Editor", "Append Selection to Editor")) {
                         appDelegate.appendSelectionToEditor()
                     }

@@ -791,10 +791,23 @@ private final class OverlayBlurView: NSVisualEffectView {
         guard let model = ensureActiveOverlayModel(),
               let tab = model.tabs.first(where: { $0.id == model.selectedTabID }),
               let session = tab.session else { return }
+
+        let dir = session.currentDirectory
+
+        // Try changed files from last AI command first
         let tabID = session.ownerTabID?.uuidString ?? model.selectedTabID.uuidString
-        let files = CommandBlockManager.shared.lastChangedFiles(tabID: tabID)
-        if let firstFile = files.first {
-            model.openDiffViewerInCurrentTab(filePath: firstFile, directory: session.currentDirectory)
+        let aiFiles = CommandBlockManager.shared.lastChangedFiles(tabID: tabID)
+        if let firstFile = aiFiles.first {
+            model.openDiffViewerInCurrentTab(filePath: firstFile, directory: dir)
+            return
+        }
+
+        // Fallback: first dirty file in working tree
+        let porcelain = GitDiffTracker.runGit(args: ["status", "--porcelain"], in: dir)
+        if let firstLine = porcelain.components(separatedBy: "\n").first(where: { !$0.isEmpty }),
+           firstLine.count > 3 {
+            let file = String(firstLine.dropFirst(3))
+            model.openDiffViewerInCurrentTab(filePath: file, directory: dir)
         }
     }
 
