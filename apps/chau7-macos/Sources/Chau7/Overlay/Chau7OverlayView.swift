@@ -350,11 +350,31 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         let groupingMode = FeatureSettings.shared.repoGroupingMode
         if groupingMode != .off {
             menu.addItem(.separator())
-            if tab.repoGroupID != nil {
+            if let groupID = tab.repoGroupID {
                 let ungroupItem = NSMenuItem(title: "Remove from Repo Group", action: #selector(contextRemoveFromGroup(_:)), keyEquivalent: "")
                 ungroupItem.target = self
                 ungroupItem.representedObject = tab.id
                 menu.addItem(ungroupItem)
+
+                // "Move Group to Window" submenu
+                let groupWindowSubmenu = NSMenu()
+                let groupNewWindowItem = NSMenuItem(title: "New Window", action: #selector(contextMoveGroupToNewWindow(_:)), keyEquivalent: "")
+                groupNewWindowItem.target = self
+                groupNewWindowItem.representedObject = groupID
+                groupWindowSubmenu.addItem(groupNewWindowItem)
+                if !model.otherWindowTitles.isEmpty {
+                    groupWindowSubmenu.addItem(.separator())
+                    for window in model.otherWindowTitles {
+                        let item = NSMenuItem(title: window.title, action: #selector(contextMoveGroupToWindow(_:)), keyEquivalent: "")
+                        item.target = self
+                        item.tag = window.id
+                        item.representedObject = groupID
+                        groupWindowSubmenu.addItem(item)
+                    }
+                }
+                let groupWindowMenuItem = NSMenuItem(title: "Move Group to Window", action: nil, keyEquivalent: "")
+                groupWindowMenuItem.submenu = groupWindowSubmenu
+                menu.addItem(groupWindowMenuItem)
             }
             if groupingMode == .manual, tab.repoGroupID == nil, tab.session?.gitRootPath != nil {
                 let groupItem = NSMenuItem(title: "Add to Repo Group", action: #selector(contextAddToGroup(_:)), keyEquivalent: "")
@@ -395,47 +415,32 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
     }
 
     private func hitTestTab(at point: NSPoint, in model: OverlayTabsModel) -> OverlayTab? {
-        let visibleTabs: [OverlayTab]
-        if FeatureSettings.shared.groupIdleTabs {
-            let now = Date()
-            let idleIDs = Set(model.tabs.filter { tab in
-                guard let session = tab.displaySession ?? tab.session,
-                      tab.id != model.selectedTabID else { return false }
-                return now.timeIntervalSince(session.lastActivityDate) > FeatureSettings.shared.idleTabThresholdSeconds
-            }.map(\.id))
-            visibleTabs = model.tabs.filter { !idleIDs.contains($0.id) }
-        } else {
-            visibleTabs = model.tabs
-        }
-        guard !visibleTabs.isEmpty else { return nil }
+        // Convert NSView point to global screen coordinates for comparison with SwiftUI frames
+        let globalPoint = window?.convertPoint(toScreen: convert(point, to: nil)) ?? point
+        let globalX = globalPoint.x
 
-        // Count total items in the tab bar (tabs + repo tag chips for groups)
-        var repoGroupsSeen = Set<String>()
-        var repoTagCount = 0
-        for tab in visibleTabs {
-            if let gid = tab.repoGroupID, !repoGroupsSeen.contains(gid) {
-                repoGroupsSeen.insert(gid)
-                repoTagCount += 1
+        let frames = model.tabHitTestFrames
+        guard !frames.isEmpty else { return nil }
+
+        // Find the tab whose global x-range contains the click
+        let tabIDsByUUID = Dictionary(uniqueKeysWithValues: model.tabs.map { ($0.id, $0) })
+        for frame in frames {
+            if globalX >= frame.minX && globalX <= frame.maxX {
+                return tabIDsByUUID[frame.tabID]
             }
         }
-        let totalItems = visibleTabs.count + repoTagCount + 1 // +1 for new-tab button
-        let itemWidth = bounds.width / CGFloat(totalItems)
-        let rawIndex = Int(point.x / itemWidth)
-
-        // Map rawIndex to tab index, skipping repo tag chip slots
-        var tabIndex = 0
-        var slot = 0
-        var lastGroupID: String?
-        for tab in visibleTabs {
-            if let gid = tab.repoGroupID, gid != lastGroupID {
-                // Repo tag chip occupies this slot
-                if slot == rawIndex { return tab } // Click on tag → return first tab in group
-                slot += 1
-                lastGroupID = gid
+        // Click in a gap — find the nearest tab
+        var nearest: (tabID: UUID, distance: CGFloat)?
+        for frame in frames {
+            let center = (frame.minX + frame.maxX) / 2
+            let dist = abs(globalX - center)
+            if nearest == nil || dist < nearest!.distance {
+                nearest = (frame.tabID, dist)
             }
-            if slot == rawIndex { return tab }
-            slot += 1
-            tabIndex += 1
+        }
+        // Only match if click is within 20px of a tab center (avoid matching far-away clicks)
+        if let nearest, nearest.distance < 20 {
+            return tabIDsByUUID[nearest.tabID]
         }
         return nil
     }
@@ -465,6 +470,16 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         guard let tabID = sender.representedObject as? UUID else { return }
         // Use tag -1 to signal "create new window" to AppDelegate
         tabsModel?.onMoveTabToWindow?(tabID, -1)
+    }
+
+    @objc func contextMoveGroupToWindow(_ sender: NSMenuItem) {
+        guard let groupID = sender.representedObject as? String else { return }
+        tabsModel?.onMoveGroupToWindow?(groupID, sender.tag)
+    }
+
+    @objc func contextMoveGroupToNewWindow(_ sender: NSMenuItem) {
+        guard let groupID = sender.representedObject as? String else { return }
+        tabsModel?.onMoveGroupToWindow?(groupID, -1)
     }
 
     @objc func contextCloseTab(_ sender: NSMenuItem) {
@@ -558,6 +573,17 @@ private struct ToolbarTabBarView: View {
         }
     }
 
+    /// Rebuild the model's hit-test frames from SwiftUI preferences (global coordinates).
+    private func rebuildHitTestFrames(widths: [UUID: CGFloat], positions: [UUID: CGFloat]) {
+        var frames: [(tabID: UUID, minX: CGFloat, maxX: CGFloat)] = []
+        for (id, midX) in positions {
+            guard let w = widths[id] else { continue }
+            frames.append((tabID: id, minX: midX - w / 2, maxX: midX + w / 2))
+        }
+        frames.sort(by: { $0.minX < $1.minX })
+        overlayModel.tabHitTestFrames = frames
+    }
+
     /// Computes segments from visible tabs: contiguous runs of same repoGroupID become groups.
     private var tabBarSegments: [TabBarSegment] {
         guard FeatureSettings.shared.repoGroupingMode != .off else {
@@ -634,7 +660,9 @@ private struct ToolbarTabBarView: View {
                                         tabCount: groupTabs.count
                                     )
 
-                                    ForEach(groupTabs) { tab in
+                                    ForEach(Array(groupTabs.enumerated()), id: \.element.id) { idx, tab in
+                                        let isFirst = idx == 0
+                                        let isLast = idx == groupTabs.count - 1
                                         tabView(for: tab, hideRepoPath: true)
                                             .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
                                             .fixedSize(horizontal: false, vertical: true)
@@ -642,6 +670,9 @@ private struct ToolbarTabBarView: View {
                                                 Rectangle()
                                                     .fill(groupColor.opacity(0.5))
                                                     .frame(height: 1)
+                                                    // Extend into spacing gaps for continuous line
+                                                    .padding(.leading, isFirst ? -tabSpacing : -(tabSpacing / 2))
+                                                    .padding(.trailing, isLast ? 0 : -(tabSpacing / 2))
                                             }
                                     }
                                 }
@@ -665,9 +696,11 @@ private struct ToolbarTabBarView: View {
                         }
                         .onPreferenceChange(TabWidthPreferenceKey.self) { widths in
                             tabWidths = widths
+                            rebuildHitTestFrames(widths: widths, positions: tabMidXPositions)
                         }
                         .onPreferenceChange(TabMidXPreferenceKey.self) { positions in
                             tabMidXPositions = positions
+                            rebuildHitTestFrames(widths: tabWidths, positions: positions)
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -1462,7 +1495,9 @@ struct RepoTagChip: View {
 
 // MARK: - Repo Group Bracket
 
-/// Renders the repo name tag with an L-shaped bracket line wrapping its left + bottom edges.
+/// Renders the repo name tag with a bracket wrapping its top, left, and bottom edges.
+/// The top edge extends rightward to meet the first grouped tab's top-line overlay,
+/// creating a continuous line across the entire group.
 /// The tab pills are rendered separately (as direct ForEach children) with top-line overlays,
 /// so SwiftUI correctly diffs notification style changes on individual tabs.
 struct RepoGroupBracket: View {
@@ -1480,8 +1515,14 @@ struct RepoGroupBracket: View {
                     let w = geo.size.width
 
                     Path { p in
+                        // Start at top-right and draw counter-clockwise
+                        p.move(to: CGPoint(x: w, y: 0))
+                        // Top edge: right to left
+                        p.addLine(to: CGPoint(x: radius, y: 0))
+                        // Rounded corner top-left
+                        p.addArc(center: CGPoint(x: radius, y: radius),
+                                 radius: radius, startAngle: .degrees(270), endAngle: .degrees(180), clockwise: true)
                         // Left edge: top to bottom
-                        p.move(to: CGPoint(x: 0, y: 0))
                         p.addLine(to: CGPoint(x: 0, y: h - radius))
                         // Rounded corner bottom-left
                         p.addArc(center: CGPoint(x: radius, y: h - radius),
