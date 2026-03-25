@@ -624,26 +624,23 @@ private struct ToolbarTabBarView: View {
                                     tabView(for: tab)
                                         .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
                                         .fixedSize(horizontal: false, vertical: true)
-                                case .group(_, let name, let groupTabs):
+                                case .group(let groupID, let name, let groupTabs):
+                                    let groupColor = RepoTagChip.color(for: groupID)
                                     HStack(spacing: tabSpacing) {
-                                        // Repo tag chip — muted, non-interactive
-                                        RepoTagChip(name: name)
+                                        RepoTagChip(name: name, groupColor: groupColor)
 
-                                        // Grouped tab pills with overlay connecting line
-                                        HStack(spacing: tabSpacing) {
-                                            ForEach(groupTabs) { tab in
-                                                tabView(for: tab, hideRepoPath: true)
-                                                    .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
-                                                    .fixedSize(horizontal: false, vertical: true)
-                                            }
+                                        ForEach(groupTabs) { tab in
+                                            tabView(for: tab, hideRepoPath: true)
+                                                .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
+                                                .fixedSize(horizontal: false, vertical: true)
                                         }
-                                        .overlay(alignment: .top) {
-                                            // Thin 1px line overlaying the top border of grouped pills
-                                            Rectangle()
-                                                .fill(Color.secondary.opacity(0.4))
-                                                .frame(height: 1)
-                                                .offset(y: -1) // sit on top of the pill border
-                                        }
+                                    }
+                                    .overlay(alignment: .top) {
+                                        // 1px line spanning the entire group (tag + pills)
+                                        Rectangle()
+                                            .fill(groupColor.opacity(0.5))
+                                            .frame(height: 1)
+                                            .offset(y: -1)
                                     }
                                 }
                             }
@@ -1441,17 +1438,23 @@ private struct ReduceMotionAnimationModifier: ViewModifier {
 /// but is visually muted (dimmer, no close button, not selectable).
 struct RepoTagChip: View {
     let name: String
+    let groupColor: Color
 
     var body: some View {
         Text(name)
-            .font(.custom("Avenir Next", size: 11).weight(.medium))
-            .foregroundStyle(.secondary.opacity(0.7))
-            .padding(.horizontal, 8)
+            .font(.custom("Avenir Next", size: 11).weight(.semibold))
+            .foregroundStyle(groupColor)
+            .padding(.horizontal, 4)
             .padding(.vertical, 3)
             .frame(height: OverlayLayout.tabChipHeight, alignment: .center)
-            .background(Color.secondary.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .allowsHitTesting(false) // Not clickable
+            .allowsHitTesting(false)
+    }
+
+    /// Deterministic color for a repo path — same repo always gets the same color.
+    static func color(for repoGroupID: String) -> Color {
+        let colors = TabColor.allCases
+        let hash = abs(repoGroupID.hashValue)
+        return colors[hash % colors.count].color
     }
 }
 
