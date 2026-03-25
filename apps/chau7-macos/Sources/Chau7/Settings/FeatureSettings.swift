@@ -326,6 +326,24 @@ enum LastTabCloseBehavior: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+// MARK: - Repo Grouping Mode
+
+enum RepoGroupingMode: String, CaseIterable, Identifiable, Codable {
+    case off
+    case auto
+    case manual
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .off: return L("tabs.repoGrouping.off", "Off")
+        case .auto: return L("tabs.repoGrouping.auto", "Automatic")
+        case .manual: return L("tabs.repoGrouping.manual", "Manual")
+        }
+    }
+}
+
 // MARK: - URL Handler
 
 enum URLHandler: String, CaseIterable, Identifiable, Codable {
@@ -1256,6 +1274,14 @@ final class FeatureSettings: ObservableObject {
     /// Idle tab threshold in seconds (derived from minutes setting)
     var idleTabThresholdSeconds: TimeInterval {
         TimeInterval(max(1, idleTabThresholdMinutes) * 60)
+    }
+
+    @Published var repoGroupingMode: RepoGroupingMode = {
+        guard let raw = UserDefaults.standard.string(forKey: "tabs.repoGroupingMode"),
+              let mode = RepoGroupingMode(rawValue: raw) else { return .off }
+        return mode
+    }() {
+        didSet { UserDefaults.standard.set(repoGroupingMode.rawValue, forKey: "tabs.repoGroupingMode") }
     }
 
     // MARK: - Menu Bar Only Mode
@@ -3218,6 +3244,7 @@ final class FeatureSettings: ObservableObject {
         alwaysShowTabBar = true
         groupIdleTabs = true
         idleTabThresholdMinutes = 10
+        repoGroupingMode = .off
         customTitleOnly = false
         showTabIcons = true
         showTabPath = true

@@ -346,6 +346,29 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         windowMenuItem.submenu = windowSubmenu
         menu.addItem(windowMenuItem)
 
+        // Repo grouping (manual mode or always for remove)
+        let groupingMode = FeatureSettings.shared.repoGroupingMode
+        if groupingMode != .off {
+            menu.addItem(.separator())
+            if tab.repoGroupID != nil {
+                let ungroupItem = NSMenuItem(title: "Remove from Repo Group", action: #selector(contextRemoveFromGroup(_:)), keyEquivalent: "")
+                ungroupItem.target = self
+                ungroupItem.representedObject = tab.id
+                menu.addItem(ungroupItem)
+            }
+            if groupingMode == .manual, tab.repoGroupID == nil, tab.session?.gitRootPath != nil {
+                let groupItem = NSMenuItem(title: "Add to Repo Group", action: #selector(contextAddToGroup(_:)), keyEquivalent: "")
+                groupItem.target = self
+                groupItem.representedObject = tab.id
+                menu.addItem(groupItem)
+
+                let groupAllItem = NSMenuItem(title: "Group All Same Repo", action: #selector(contextGroupAllSameRepo(_:)), keyEquivalent: "")
+                groupAllItem.target = self
+                groupAllItem.representedObject = tab.id
+                menu.addItem(groupAllItem)
+            }
+        }
+
         menu.addItem(.separator())
 
         let closeItem = NSMenuItem(title: "Close Tab", action: #selector(contextCloseTab(_:)), keyEquivalent: "")
@@ -354,6 +377,21 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         menu.addItem(closeItem)
 
         return menu
+    }
+
+    @objc func contextAddToGroup(_ sender: NSMenuItem) {
+        guard let tabID = sender.representedObject as? UUID else { return }
+        tabsModel?.addTabToRepoGroup(tabID: tabID)
+    }
+
+    @objc func contextRemoveFromGroup(_ sender: NSMenuItem) {
+        guard let tabID = sender.representedObject as? UUID else { return }
+        tabsModel?.removeTabFromRepoGroup(tabID: tabID)
+    }
+
+    @objc func contextGroupAllSameRepo(_ sender: NSMenuItem) {
+        guard let tabID = sender.representedObject as? UUID else { return }
+        tabsModel?.groupAllSameRepo(asTab: tabID)
     }
 
     private func hitTestTab(at point: NSPoint, in model: OverlayTabsModel) -> OverlayTab? {
@@ -478,6 +516,58 @@ private struct ToolbarTabBarView: View {
         let idleIDs = Set(idle.map(\.id))
         return overlayModel.tabs.filter { !idleIDs.contains($0.id) }
     }
+    // MARK: - Repo Grouping Segments
+
+    /// A segment in the tab bar: either a single ungrouped tab or a group of tabs sharing a repo.
+    private enum TabBarSegment: Identifiable {
+        case single(OverlayTab)
+        case group(id: String, displayName: String, tabs: [OverlayTab])
+
+        var id: String {
+            switch self {
+            case .single(let tab): return tab.id.uuidString
+            case .group(let id, _, _): return "group-\(id)"
+            }
+        }
+    }
+
+    /// Computes segments from visible tabs: contiguous runs of same repoGroupID become groups.
+    private var tabBarSegments: [TabBarSegment] {
+        guard FeatureSettings.shared.repoGroupingMode != .off else {
+            return visibleTabs.map { .single($0) }
+        }
+        var segments: [TabBarSegment] = []
+        var currentGroupID: String?
+        var currentGroupTabs: [OverlayTab] = []
+
+        func flushGroup() {
+            guard let groupID = currentGroupID, !currentGroupTabs.isEmpty else { return }
+            if currentGroupTabs.count >= 1 {
+                let name = URL(fileURLWithPath: groupID).lastPathComponent
+                segments.append(.group(id: groupID, displayName: name, tabs: currentGroupTabs))
+            }
+            currentGroupTabs = []
+            currentGroupID = nil
+        }
+
+        for tab in visibleTabs {
+            if let gid = tab.repoGroupID {
+                if gid == currentGroupID {
+                    currentGroupTabs.append(tab)
+                } else {
+                    flushGroup()
+                    currentGroupID = gid
+                    currentGroupTabs = [tab]
+                }
+            } else {
+                flushGroup()
+                segments.append(.single(tab))
+            }
+        }
+        flushGroup()
+        return segments
+    }
+
     // Gesture-based drag state for tab reordering (Chrome/Safari style deferred reorder)
     @State private var dragOffset: CGFloat = 0
     @State private var dragHomeIndex = 0 // Original index when drag started
@@ -501,11 +591,35 @@ private struct ToolbarTabBarView: View {
                                 idleTabsDropdown(tabs: idleTabs)
                             }
 
-                            // Active tabs (always use the same ForEach to preserve SwiftUI view identity)
-                            ForEach(visibleTabs) { tab in
-                                tabView(for: tab)
-                                    .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
-                                    .fixedSize(horizontal: false, vertical: true)
+                            // Active tabs — grouped by repo when grouping is enabled
+                            ForEach(tabBarSegments) { segment in
+                                switch segment {
+                                case .single(let tab):
+                                    tabView(for: tab)
+                                        .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                case .group(_, let name, let groupTabs):
+                                    HStack(spacing: tabSpacing) {
+                                        // Repo tag chip — muted, non-interactive
+                                        RepoTagChip(name: name)
+
+                                        // Grouped tab pills with overlay connecting line
+                                        HStack(spacing: tabSpacing) {
+                                            ForEach(groupTabs) { tab in
+                                                tabView(for: tab, hideRepoPath: true)
+                                                    .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
+                                        }
+                                        .overlay(alignment: .top) {
+                                            // Thin 1px line overlaying the top border of grouped pills
+                                            Rectangle()
+                                                .fill(Color.secondary.opacity(0.4))
+                                                .frame(height: 1)
+                                                .offset(y: -1) // sit on top of the pill border
+                                        }
+                                    }
+                                }
                             }
 
                             Button {
@@ -640,7 +754,7 @@ private struct ToolbarTabBarView: View {
     }
 
     @ViewBuilder
-    private func tabView(for tab: OverlayTab) -> some View {
+    private func tabView(for tab: OverlayTab, hideRepoPath: Bool = false) -> some View {
         let isSelected = tab.id == overlayModel.selectedTabID
         let isSuspended = overlayModel.isTabSuspended(tab.id)
 
@@ -650,6 +764,7 @@ private struct ToolbarTabBarView: View {
             isSelected: isSelected,
             isSuspended: isSuspended,
             isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),
+            hideRepoPath: hideRepoPath,
             onSelect: { overlayModel.selectTab(id: tab.id) },
             onRename: { overlayModel.beginRename(tabID: tab.id) },
             onClose: { overlayModel.closeTab(id: tab.id) },
@@ -1294,11 +1409,34 @@ private struct ReduceMotionAnimationModifier: ViewModifier {
 /// A unified tab button that handles both session and non-session cases
 /// without view identity switching. This prevents SwiftUI from recreating
 /// the view when tab.session changes between nil and non-nil.
+// MARK: - Repo Tag Chip
+
+/// Non-interactive pill-shaped chip showing a repo name. Sits inline with tab pills
+/// but is visually muted (dimmer, no close button, not selectable).
+struct RepoTagChip: View {
+    let name: String
+
+    var body: some View {
+        Text(name)
+            .font(.custom("Avenir Next", size: 11).weight(.medium))
+            .foregroundStyle(.secondary.opacity(0.7))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .frame(height: OverlayLayout.tabChipHeight, alignment: .center)
+            .background(Color.secondary.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .allowsHitTesting(false) // Not clickable
+    }
+}
+
+// MARK: - Unified Tab Button
+
 struct UnifiedTabButton: View {
     let tab: OverlayTab
     let isSelected: Bool
     let isSuspended: Bool
     let isBroadcastIncluded: Bool
+    var hideRepoPath: Bool = false
     let onSelect: () -> Void
     let onRename: () -> Void
     let onClose: () -> Void
@@ -1411,6 +1549,7 @@ struct UnifiedTabButton: View {
                     session: session,
                     customTitle: tab.customTitle,
                     isMinimalDisplay: isMinimalDisplay,
+                    hideRepoPath: hideRepoPath,
                     notificationStyle: notificationStyle,
                     titleFont: titleFont,
                     titleColor: titleColor
@@ -1514,6 +1653,7 @@ struct TabSessionContent: View {
     @ObservedObject var session: TerminalSessionModel
     let customTitle: String?
     let isMinimalDisplay: Bool
+    var hideRepoPath: Bool = false
     let notificationStyle: TabNotificationStyle?
     let titleFont: Font
     let titleColor: Color?
@@ -1573,7 +1713,7 @@ struct TabSessionContent: View {
             .foregroundStyle(titleColor ?? .primary)
             .lineLimit(1)
 
-        if !isMinimalDisplay {
+        if !isMinimalDisplay, !hideRepoPath {
             if FeatureSettings.shared.showTabPath {
                 let path = session.tabPathDisplayName()
                 if !path.isEmpty {
