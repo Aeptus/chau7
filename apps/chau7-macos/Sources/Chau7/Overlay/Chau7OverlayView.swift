@@ -415,32 +415,56 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
     }
 
     private func hitTestTab(at point: NSPoint, in model: OverlayTabsModel) -> OverlayTab? {
-        // Convert NSView point to global screen coordinates for comparison with SwiftUI frames
-        let globalPoint = window?.convertPoint(toScreen: convert(point, to: nil)) ?? point
-        let globalX = globalPoint.x
-
         let frames = model.tabHitTestFrames
-        guard !frames.isEmpty else { return nil }
+        if !frames.isEmpty {
+            // Preferred path: use real geometry from SwiftUI preferences
+            let globalPoint = window?.convertPoint(toScreen: convert(point, to: nil)) ?? point
+            let globalX = globalPoint.x
+            let tabIDsByUUID = Dictionary(uniqueKeysWithValues: model.tabs.map { ($0.id, $0) })
+            for frame in frames {
+                if globalX >= frame.minX && globalX <= frame.maxX {
+                    return tabIDsByUUID[frame.tabID]
+                }
+            }
+            // Click in a gap — find the nearest tab
+            var nearest: (tabID: UUID, distance: CGFloat)?
+            for frame in frames {
+                let center = (frame.minX + frame.maxX) / 2
+                let dist = abs(globalX - center)
+                if nearest == nil || dist < nearest!.distance {
+                    nearest = (frame.tabID, dist)
+                }
+            }
+            if let nearest, nearest.distance < 20 {
+                return tabIDsByUUID[nearest.tabID]
+            }
+            return nil
+        }
 
-        // Find the tab whose global x-range contains the click
-        let tabIDsByUUID = Dictionary(uniqueKeysWithValues: model.tabs.map { ($0.id, $0) })
-        for frame in frames {
-            if globalX >= frame.minX && globalX <= frame.maxX {
-                return tabIDsByUUID[frame.tabID]
+        // Fallback: equal-width slot math (frames not yet populated)
+        let visibleTabs = model.tabs
+        guard !visibleTabs.isEmpty else { return nil }
+        var repoGroupsSeen = Set<String>()
+        var repoTagCount = 0
+        for tab in visibleTabs {
+            if let gid = tab.repoGroupID, !repoGroupsSeen.contains(gid) {
+                repoGroupsSeen.insert(gid)
+                repoTagCount += 1
             }
         }
-        // Click in a gap — find the nearest tab
-        var nearest: (tabID: UUID, distance: CGFloat)?
-        for frame in frames {
-            let center = (frame.minX + frame.maxX) / 2
-            let dist = abs(globalX - center)
-            if nearest == nil || dist < nearest!.distance {
-                nearest = (frame.tabID, dist)
+        let totalItems = visibleTabs.count + repoTagCount + 1
+        let itemWidth = bounds.width / CGFloat(totalItems)
+        let rawIndex = Int(point.x / itemWidth)
+        var slot = 0
+        var lastGroupID: String?
+        for tab in visibleTabs {
+            if let gid = tab.repoGroupID, gid != lastGroupID {
+                if slot == rawIndex { return tab }
+                slot += 1
+                lastGroupID = gid
             }
-        }
-        // Only match if click is within 20px of a tab center (avoid matching far-away clicks)
-        if let nearest, nearest.distance < 20 {
-            return tabIDsByUUID[nearest.tabID]
+            if slot == rawIndex { return tab }
+            slot += 1
         }
         return nil
     }
