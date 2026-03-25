@@ -438,35 +438,33 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
             if let nearest, nearest.distance < 20 {
                 return tabIDsByUUID[nearest.tabID]
             }
-            return nil
         }
 
-        // Fallback: equal-width slot math (frames not yet populated)
-        let visibleTabs = model.tabs
-        guard !visibleTabs.isEmpty else { return nil }
-        var repoGroupsSeen = Set<String>()
-        var repoTagCount = 0
-        for tab in visibleTabs {
-            if let gid = tab.repoGroupID, !repoGroupsSeen.contains(gid) {
-                repoGroupsSeen.insert(gid)
-                repoTagCount += 1
-            }
+        let layoutTabs = model.tabs.map { TabBarLayoutTab(id: $0.id, repoGroupID: $0.repoGroupID) }
+        let idleTabIDs = fallbackIdleTabIDs(in: model)
+        guard let tabID = TabBarLayout.fallbackHitTestTabID(
+            atX: point.x,
+            totalWidth: bounds.width,
+            tabs: layoutTabs,
+            idleTabIDs: idleTabIDs
+        ) else {
+            return nil
         }
-        let totalItems = visibleTabs.count + repoTagCount + 1
-        let itemWidth = bounds.width / CGFloat(totalItems)
-        let rawIndex = Int(point.x / itemWidth)
-        var slot = 0
-        var lastGroupID: String?
-        for tab in visibleTabs {
-            if let gid = tab.repoGroupID, gid != lastGroupID {
-                if slot == rawIndex { return tab }
-                slot += 1
-                lastGroupID = gid
+        return model.tabs.first(where: { $0.id == tabID })
+    }
+
+    private func fallbackIdleTabIDs(in model: OverlayTabsModel) -> Set<UUID> {
+        guard FeatureSettings.shared.groupIdleTabs else { return [] }
+        let threshold = FeatureSettings.shared.idleTabThresholdSeconds
+        let now = Date()
+        return Set(model.tabs.compactMap { tab in
+            guard let session = tab.displaySession ?? tab.session,
+                  tab.id != model.selectedTabID,
+                  now.timeIntervalSince(session.lastActivityDate) > threshold else {
+                return nil
             }
-            if slot == rawIndex { return tab }
-            slot += 1
-        }
-        return nil
+            return tab.id
+        })
     }
 
     // NSMenu validates items by checking if target responds to the action.
@@ -691,12 +689,18 @@ private struct ToolbarTabBarView: View {
                                             .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
                                             .fixedSize(horizontal: false, vertical: true)
                                             .overlay(alignment: .top) {
-                                                Rectangle()
-                                                    .fill(groupColor.opacity(0.5))
-                                                    .frame(height: 1)
-                                                    // Extend into spacing gaps for continuous line
-                                                    .padding(.leading, isFirst ? -tabSpacing : -(tabSpacing / 2))
-                                                    .padding(.trailing, isLast ? 0 : -(tabSpacing / 2))
+                                                // Use a stroked path (not filled rect) to match
+                                                // the bracket's stroke rendering exactly.
+                                                GeometryReader { geo in
+                                                    Path { p in
+                                                        p.move(to: CGPoint(x: 0, y: 0.5))
+                                                        p.addLine(to: CGPoint(x: geo.size.width, y: 0.5))
+                                                    }
+                                                    .stroke(groupColor.opacity(0.5), lineWidth: 1)
+                                                }
+                                                .frame(height: 1)
+                                                .padding(.leading, isFirst ? -tabSpacing : -(tabSpacing / 2))
+                                                .padding(.trailing, isLast ? 0 : -(tabSpacing / 2))
                                             }
                                     }
                                 }
@@ -1512,8 +1516,10 @@ struct RepoTagChip: View {
     /// Deterministic color for a repo path — same repo always gets the same color.
     static func color(for repoGroupID: String) -> Color {
         let colors = TabColor.allCases
-        let hash = abs(repoGroupID.hashValue)
-        return colors[hash % colors.count].color
+        let hash = repoGroupID.utf8.reduce(UInt64(1469598103934665603)) { partial, byte in
+            (partial ^ UInt64(byte)) &* 1099511628211
+        }
+        return colors[Int(hash % UInt64(colors.count))].color
     }
 }
 
@@ -1538,21 +1544,18 @@ struct RepoGroupBracket: View {
                     let h = geo.size.height
                     let w = geo.size.width
 
+                    // Offset by 0.5pt so the 1pt stroke lands on pixel
+                    // boundaries — matches the tab top-line overlays exactly.
+                    let inset: CGFloat = 0.5
                     Path { p in
-                        // Start at top-right and draw counter-clockwise
-                        p.move(to: CGPoint(x: w, y: 0))
-                        // Top edge: right to left
-                        p.addLine(to: CGPoint(x: radius, y: 0))
-                        // Rounded corner top-left
+                        p.move(to: CGPoint(x: w, y: inset))
+                        p.addLine(to: CGPoint(x: radius, y: inset))
                         p.addArc(center: CGPoint(x: radius, y: radius),
-                                 radius: radius, startAngle: .degrees(270), endAngle: .degrees(180), clockwise: true)
-                        // Left edge: top to bottom
-                        p.addLine(to: CGPoint(x: 0, y: h - radius))
-                        // Rounded corner bottom-left
+                                 radius: radius - inset, startAngle: .degrees(270), endAngle: .degrees(180), clockwise: true)
+                        p.addLine(to: CGPoint(x: inset, y: h - radius))
                         p.addArc(center: CGPoint(x: radius, y: h - radius),
-                                 radius: radius, startAngle: .degrees(180), endAngle: .degrees(90), clockwise: true)
-                        // Bottom edge to the right
-                        p.addLine(to: CGPoint(x: w, y: h))
+                                 radius: radius - inset, startAngle: .degrees(180), endAngle: .degrees(90), clockwise: true)
+                        p.addLine(to: CGPoint(x: w, y: h - inset))
                     }
                     .stroke(groupColor.opacity(0.5), lineWidth: 1)
                 }
