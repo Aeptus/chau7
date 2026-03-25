@@ -9,6 +9,11 @@ struct CodexBackend: AgentBackend {
     func launchCommand(config: SessionConfig) -> String {
         var parts = ["codex"]
 
+        if let resumeID = config.resumeSessionID {
+            parts.append("resume")
+            parts.append(resumeID)
+        }
+
         if let model = config.model {
             parts.append("--model")
             parts.append(model)
@@ -32,8 +37,8 @@ struct CodexBackend: AgentBackend {
     }
 
     var resumeProviderKey: String? {
-        nil
-    } // Codex doesn't support resume
+        "codex"
+    }
 
     private func shellEscape(_ value: String) -> String {
         if value.rangeOfCharacter(from: .init(charactersIn: " \"'$\\`!#&|;(){}[]<>?*~")) != nil {
