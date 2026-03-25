@@ -40,14 +40,20 @@ final class RepositoryCache {
                 return
             }
 
-            // Positive cache: check if any known root is a prefix of this path
+            // Positive cache: check if any known root is a prefix of this path.
+            // Pick the deepest match to handle nested repos (git submodules).
+            var bestMatch: (root: String, model: RepositoryModel)?
             for (root, model) in self.models {
                 if normalized == root || normalized.hasPrefix(root + "/") {
-                    // Refresh branch in case it changed (coalesced)
-                    model.refreshBranch()
-                    DispatchQueue.main.async { completion(model) }
-                    return
+                    if bestMatch == nil || root.count > bestMatch!.root.count {
+                        bestMatch = (root, model)
+                    }
                 }
+            }
+            if let (_, model) = bestMatch {
+                model.refreshBranch()
+                DispatchQueue.main.async { completion(model) }
+                return
             }
 
             // Cache miss — query git
