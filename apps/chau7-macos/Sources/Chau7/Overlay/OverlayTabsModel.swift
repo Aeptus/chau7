@@ -103,6 +103,18 @@ struct OverlayTab: Identifiable, Equatable {
     /// Active notification style for this tab (nil = default appearance)
     var notificationStyle: TabNotificationStyle?
 
+    // MARK: - Repo Grouping
+
+    /// Repo group membership. nil = ungrouped.
+    /// Value is the canonical git root path (e.g. "/Users/me/repos/Chau7").
+    var repoGroupID: String?
+
+    /// Display name derived from repo group path (e.g. "Chau7")
+    var repoGroupName: String? {
+        guard let path = repoGroupID else { return nil }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+
     // MARK: - Tab Switch Optimization: Cached Snapshot
 
     /// Cached screenshot of terminal content for instant visual feedback during tab switch
@@ -193,6 +205,7 @@ struct OverlayTab: Identifiable, Equatable {
             && lhs.isMCPControlled == rhs.isMCPControlled
             && lhs.tokenOptOverride == rhs.tokenOptOverride
             && lhs.notificationStyle == rhs.notificationStyle
+            && lhs.repoGroupID == rhs.repoGroupID
     }
 
     // MARK: - Split Pane Operations
@@ -313,6 +326,7 @@ struct SavedTabState: Codable {
     let focusedPaneID: String? // persisted focused pane ID
     let paneStates: [SavedTerminalPaneState]?
     let createdAt: String? // ISO8601 encoded, nil for legacy saves
+    let repoGroupID: String? // repo grouping membership, nil = ungrouped
 
     static let userDefaultsKey = "com.chau7.savedTabState"
 }
@@ -434,6 +448,8 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     }
 
     private var taskCancellables: Set<AnyCancellable> = []
+    private var repoGroupCancellables: [UUID: AnyCancellable] = [:]
+    private var repoGroupModeCancellable: AnyCancellable?
     private var renameTabID: UUID?
     private var renameOriginalTitle = ""
     private var renameOriginalColor: TabColor = .blue
@@ -519,6 +535,9 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
         // Setup task lifecycle observers (v1.1)
         setupTaskObservers()
+
+        // Repo grouping: subscribe to mode changes and initial auto-group
+        setupRepoGrouping()
 
         // Start tab bar watchdog immediately (model-owned lifecycle)
         // This ensures the watchdog runs regardless of view lifecycle events
@@ -679,7 +698,8 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                 splitLayout: tab.splitController.exportLayout(),
                 focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
                 paneStates: paneStates.isEmpty ? nil : paneStates,
-                createdAt: DateFormatters.iso8601.string(from: tab.createdAt)
+                createdAt: DateFormatters.iso8601.string(from: tab.createdAt),
+                repoGroupID: tab.repoGroupID
             ))
         }
         return states
@@ -739,7 +759,8 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             splitLayout: tab.splitController.exportLayout(),
             focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
             paneStates: paneStates.isEmpty ? nil : paneStates,
-            createdAt: DateFormatters.iso8601.string(from: tab.createdAt)
+            createdAt: DateFormatters.iso8601.string(from: tab.createdAt),
+            repoGroupID: tab.repoGroupID
         )
 
         closedTabStack.append(ClosedTabEntry(
@@ -1381,6 +1402,9 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                 // Sync to session so activeAppName.didSet uses the restored value
                 tab.session?.tokenOptOverride = override
             }
+
+            // Restore repo group membership
+            tab.repoGroupID = state.repoGroupID
 
             if state.selectedIndex != nil {
                 if fallbackSelectedIndex == nil {
@@ -2059,6 +2083,9 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             Log.trace("newTab: appended, tabs.count=\(tabs.count)")
         }
 
+        // Set up repo grouping for the new tab
+        setupRepoGroupingForTab(tab)
+
         // Reset rendered count so the watchdog doesn't see a stale count vs new expected
         lastReportedRenderedCount = -1
         lastPreferenceUpdateTime = Date()
@@ -2396,6 +2423,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         } else {
             // Multiple tabs - just remove this one
             Log.info("closeTab: removing tab at index=\(index), tabs.count before=\(tabs.count)")
+            cleanupRepoGroupingForTab(id)
             tabs.remove(at: index)
             // Reset the rendered count so the watchdog doesn't compare the stale
             // pre-close count against the new (smaller) expected count.  The next
@@ -3983,6 +4011,94 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     func getBookmarksForCurrentTab() -> [BookmarkManager.Bookmark] {
         return BookmarkManager.shared.getBookmarks(for: selectedTabID)
+    }
+
+    // MARK: - Repo Tab Grouping
+
+    private func setupRepoGrouping() {
+        // Observe mode changes
+        repoGroupModeCancellable = FeatureSettings.shared.$repoGroupingMode
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] newMode in
+                self?.handleRepoGroupingModeChange(newMode)
+            }
+
+        // Set initial state
+        if FeatureSettings.shared.repoGroupingMode == .auto {
+            applyAutoGroupingToAllTabs()
+        }
+    }
+
+    private func handleRepoGroupingModeChange(_ mode: RepoGroupingMode) {
+        switch mode {
+        case .off:
+            for i in tabs.indices { tabs[i].repoGroupID = nil }
+            repoGroupCancellables.removeAll()
+        case .auto:
+            applyAutoGroupingToAllTabs()
+        case .manual:
+            // Keep existing groups, stop auto-updates
+            repoGroupCancellables.removeAll()
+        }
+    }
+
+    private func applyAutoGroupingToAllTabs() {
+        repoGroupCancellables.removeAll()
+        for i in tabs.indices {
+            tabs[i].repoGroupID = tabs[i].session?.gitRootPath
+            if let session = tabs[i].session {
+                observeGitRootForAutoGrouping(tabID: tabs[i].id, session: session)
+            }
+        }
+    }
+
+    private func observeGitRootForAutoGrouping(tabID: UUID, session: TerminalSessionModel) {
+        let cancellable = session.$gitRootPath
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] newRoot in
+                guard let self,
+                      FeatureSettings.shared.repoGroupingMode == .auto,
+                      let idx = self.tabs.firstIndex(where: { $0.id == tabID }) else { return }
+                self.tabs[idx].repoGroupID = newRoot
+            }
+        repoGroupCancellables[tabID] = cancellable
+    }
+
+    /// Called when a new tab is added — subscribe if in auto mode.
+    func setupRepoGroupingForTab(_ tab: OverlayTab) {
+        guard FeatureSettings.shared.repoGroupingMode == .auto,
+              let session = tab.session else { return }
+        if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
+            tabs[idx].repoGroupID = session.gitRootPath
+        }
+        observeGitRootForAutoGrouping(tabID: tab.id, session: session)
+    }
+
+    /// Called when a tab is closed — clean up subscription.
+    func cleanupRepoGroupingForTab(_ tabID: UUID) {
+        repoGroupCancellables.removeValue(forKey: tabID)
+    }
+
+    // Manual mode actions
+    func addTabToRepoGroup(tabID: UUID) {
+        guard let idx = tabs.firstIndex(where: { $0.id == tabID }),
+              let root = tabs[idx].session?.gitRootPath else { return }
+        tabs[idx].repoGroupID = root
+    }
+
+    func removeTabFromRepoGroup(tabID: UUID) {
+        guard let idx = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+        tabs[idx].repoGroupID = nil
+    }
+
+    func groupAllSameRepo(asTab tabID: UUID) {
+        guard let idx = tabs.firstIndex(where: { $0.id == tabID }),
+              let root = tabs[idx].session?.gitRootPath else { return }
+        for i in tabs.indices {
+            if tabs[i].session?.gitRootPath == root {
+                tabs[i].repoGroupID = root
+            }
+        }
     }
 
     // MARK: - F02: Split Panes

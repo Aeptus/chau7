@@ -67,6 +67,13 @@ struct TabsSettingsView: View {
                 )
             }
 
+            SettingsPicker(
+                label: L("settings.tabs.repoGrouping", "Repo Grouping"),
+                help: L("settings.tabs.repoGrouping.help", "Group tabs by git repository. Auto groups by detected repo, Manual lets you choose via right-click."),
+                selection: $settings.repoGroupingMode,
+                options: RepoGroupingMode.allCases.map { (value: $0, label: $0.displayName) }
+            )
+
             Divider()
                 .padding(.vertical, 8)
 
