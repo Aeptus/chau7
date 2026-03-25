@@ -626,21 +626,16 @@ private struct ToolbarTabBarView: View {
                                         .fixedSize(horizontal: false, vertical: true)
                                 case .group(let groupID, let name, let groupTabs):
                                     let groupColor = RepoTagChip.color(for: groupID)
-                                    HStack(spacing: tabSpacing) {
-                                        RepoTagChip(name: name, groupColor: groupColor)
-
+                                    RepoGroupSegment(
+                                        name: name,
+                                        groupColor: groupColor,
+                                        tabSpacing: tabSpacing
+                                    ) {
                                         ForEach(groupTabs) { tab in
                                             tabView(for: tab, hideRepoPath: true)
                                                 .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
                                                 .fixedSize(horizontal: false, vertical: true)
                                         }
-                                    }
-                                    .overlay(alignment: .top) {
-                                        // 1px line spanning the entire group (tag + pills)
-                                        Rectangle()
-                                            .fill(groupColor.opacity(0.5))
-                                            .frame(height: 1)
-                                            .offset(y: -1)
                                     }
                                 }
                             }
@@ -1455,6 +1450,60 @@ struct RepoTagChip: View {
         let colors = TabColor.allCases
         let hash = abs(repoGroupID.hashValue)
         return colors[hash % colors.count].color
+    }
+}
+
+// MARK: - Repo Group Segment
+
+/// Renders a repo group: tag chip with an L-shaped bracket line that wraps
+/// the left + bottom of the tag and continues across the top of the pills.
+struct RepoGroupSegment<Pills: View>: View {
+    let name: String
+    let groupColor: Color
+    let tabSpacing: CGFloat
+    @ViewBuilder let pills: () -> Pills
+
+    @State private var tagWidth: CGFloat = 0
+
+    var body: some View {
+        HStack(spacing: tabSpacing) {
+            RepoTagChip(name: name, groupColor: groupColor)
+                .background(GeometryReader { geo in
+                    Color.clear.onAppear { tagWidth = geo.size.width }
+                        .onChange(of: geo.size.width) { tagWidth = $0 }
+                })
+
+            pills()
+        }
+        .overlay {
+            GeometryReader { geo in
+                let radius: CGFloat = 4
+                let h = geo.size.height
+                let w = geo.size.width
+                let tagRight = tagWidth + tabSpacing / 2
+
+                Path { p in
+                    // Start: top-left
+                    p.move(to: CGPoint(x: 0, y: 0))
+                    // Down the left side
+                    p.addLine(to: CGPoint(x: 0, y: h - radius))
+                    // Rounded corner bottom-left
+                    p.addArc(center: CGPoint(x: radius, y: h - radius),
+                             radius: radius, startAngle: .degrees(180), endAngle: .degrees(90), clockwise: true)
+                    // Along the bottom under the tag
+                    p.addLine(to: CGPoint(x: tagRight - radius, y: h))
+                    // Rounded corner turning up
+                    p.addArc(center: CGPoint(x: tagRight - radius, y: h - radius),
+                             radius: radius, startAngle: .degrees(90), endAngle: .degrees(0), clockwise: true)
+                    // Up to the top line level
+                    p.addLine(to: CGPoint(x: tagRight, y: 0))
+                    // Continue right across the top of pills
+                    p.addLine(to: CGPoint(x: w, y: 0))
+                }
+                .stroke(groupColor.opacity(0.5), lineWidth: 1)
+            }
+            .allowsHitTesting(false)
+        }
     }
 }
 
