@@ -547,12 +547,13 @@ private struct ToolbarTabBarView: View {
     /// A segment in the tab bar: either a single ungrouped tab or a group of tabs sharing a repo.
     private enum TabBarSegment: Identifiable {
         case single(OverlayTab)
-        case group(id: String, displayName: String, tabs: [OverlayTab])
+        /// segmentIndex disambiguates when the same repo appears in multiple non-contiguous runs.
+        case group(repoID: String, segmentIndex: Int, displayName: String, tabs: [OverlayTab])
 
         var id: String {
             switch self {
             case .single(let tab): return tab.id.uuidString
-            case .group(let id, _, _): return "group-\(id)"
+            case .group(let repoID, let idx, _, _): return "group-\(idx)-\(repoID)"
             }
         }
     }
@@ -565,13 +566,13 @@ private struct ToolbarTabBarView: View {
         var segments: [TabBarSegment] = []
         var currentGroupID: String?
         var currentGroupTabs: [OverlayTab] = []
+        var groupSegmentIndex = 0
 
         func flushGroup() {
             guard let groupID = currentGroupID, !currentGroupTabs.isEmpty else { return }
-            if currentGroupTabs.count >= 1 {
-                let name = URL(fileURLWithPath: groupID).lastPathComponent
-                segments.append(.group(id: groupID, displayName: name, tabs: currentGroupTabs))
-            }
+            let name = URL(fileURLWithPath: groupID).lastPathComponent
+            segments.append(.group(repoID: groupID, segmentIndex: groupSegmentIndex, displayName: name, tabs: currentGroupTabs))
+            groupSegmentIndex += 1
             currentGroupTabs = []
             currentGroupID = nil
         }
@@ -624,7 +625,7 @@ private struct ToolbarTabBarView: View {
                                     tabView(for: tab)
                                         .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
                                         .fixedSize(horizontal: false, vertical: true)
-                                case .group(let groupID, let name, let groupTabs):
+                                case .group(let groupID, _, let name, let groupTabs):
                                     let groupColor = RepoTagChip.color(for: groupID)
                                     RepoGroupSegment(
                                         name: name,
