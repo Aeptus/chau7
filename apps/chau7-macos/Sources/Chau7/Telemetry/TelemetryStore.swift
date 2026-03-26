@@ -604,16 +604,47 @@ final class TelemetryStore {
         queue.sync {
             guard let db else { return [] }
             var sql = """
-            SELECT session_id, provider, repo_path, COUNT(*) as run_count,
-                   MAX(started_at) as last_active
-            FROM runs WHERE session_id IS NOT NULL
+            WITH filtered_runs AS (
+                SELECT *
+                FROM runs
+                WHERE session_id IS NOT NULL
             """
             var vals: [String] = []
             if let rp = repoPath {
                 sql += " AND repo_path = ?"
                 vals.append(rp)
             }
-            sql += " GROUP BY session_id ORDER BY last_active DESC"
+            sql += """
+            ),
+            session_rollup AS (
+                SELECT session_id,
+                       COUNT(*) AS run_count,
+                       MAX(started_at) AS last_active
+                FROM filtered_runs
+                GROUP BY session_id
+            )
+            SELECT session_rollup.session_id,
+                   (
+                       SELECT provider
+                       FROM filtered_runs latest
+                       WHERE latest.session_id = session_rollup.session_id
+                         AND latest.provider IS NOT NULL
+                       ORDER BY latest.started_at DESC, latest.created_at DESC
+                       LIMIT 1
+                   ) AS provider,
+                   (
+                       SELECT repo_path
+                       FROM filtered_runs latest
+                       WHERE latest.session_id = session_rollup.session_id
+                         AND latest.repo_path IS NOT NULL
+                       ORDER BY latest.started_at DESC, latest.created_at DESC
+                       LIMIT 1
+                   ) AS repo_path,
+                   session_rollup.run_count,
+                   session_rollup.last_active
+            FROM session_rollup
+            ORDER BY session_rollup.last_active DESC
+            """
 
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
