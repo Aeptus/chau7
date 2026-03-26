@@ -669,17 +669,168 @@ struct DebugConsoleView: View {
         }.sorted { $0.total > $1.total }
     }
 
+    private struct DebugTabDescriptor {
+        let label: String
+        let providerBadge: String?
+    }
+
     private func ctoTabLabel(for sessionID: String) -> String {
-        if let tab = overlayModel.tabs.first(where: { $0.session?.tabIdentifier == sessionID }) {
-            if let title = tab.customTitle { return title }
-            let index = overlayModel.tabs.firstIndex(where: { $0.id == tab.id }).map { $0 + 1 } ?? 0
-            return "Tab \(index)"
+        let telemetry = aiPerTabStats.first(where: { $0.tabID == sessionID })
+        return debugTabDescriptor(
+            for: sessionID,
+            fallbackProvider: telemetry?.lastProvider,
+            fallbackLocationPath: telemetry?.lastLocationPath
+        ).label
+    }
+
+    private func debugTabDescriptor(
+        for sessionID: String,
+        fallbackProvider: String? = nil,
+        fallbackLocationPath: String? = nil
+    ) -> DebugTabDescriptor {
+        if let (tab, session) = liveTabContext(for: sessionID) {
+            let customTitle = trimmedTabTitle(tab.customTitle)
+            let providerName = providerDisplayName(from: session.effectiveAIProvider)
+            let baseTitle = trimmedTabTitle(tab.customTitle)
+                ?? session.aiDisplayAppName
+                ?? providerName
+                ?? tab.displayTitle
+            let repoName = liveRepoName(for: session)
+            let disambiguator = splitSessionDisambiguator(
+                for: session,
+                in: tab,
+                excluding: [baseTitle, repoName, customTitle]
+            )
+            let label = composedTabLabel(
+                baseTitle: baseTitle,
+                repoName: repoName,
+                disambiguator: disambiguator
+            )
+            let providerBadge = providerBadgeLabel(
+                providerName: providerName,
+                customTitle: customTitle,
+                composedLabel: label
+            )
+            return DebugTabDescriptor(label: label, providerBadge: providerBadge)
         }
-        // Closed tab — show provider from telemetry if available
-        if let provider = aiPerTabStats.first(where: { $0.tabID == sessionID })?.lastProvider {
-            return "\(provider.capitalized) \(String(sessionID.prefix(4)))"
+
+        let baseTitle = providerDisplayName(from: fallbackProvider) ?? String(sessionID.prefix(8))
+        return DebugTabDescriptor(
+            label: composedTabLabel(
+                baseTitle: baseTitle,
+                repoName: locationDisplayName(from: fallbackLocationPath)
+            ),
+            providerBadge: nil
+        )
+    }
+
+    private func liveTabContext(for sessionID: String) -> (tab: OverlayTab, session: TerminalSessionModel)? {
+        for tab in overlayModel.tabs {
+            if let session = tab.splitController.root.allSessions.first(where: { $0.tabIdentifier == sessionID }) {
+                return (tab, session)
+            }
         }
-        return String(sessionID.prefix(8))
+        return nil
+    }
+
+    private func trimmedTabTitle(_ title: String?) -> String? {
+        guard let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private func liveRepoName(for session: TerminalSessionModel) -> String? {
+        if let model = session.repositoryModel {
+            return model.repoName
+        }
+        if let gitRootPath = session.gitRootPath,
+           !gitRootPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return URL(fileURLWithPath: gitRootPath).lastPathComponent
+        }
+        return nil
+    }
+
+    private func locationDisplayName(from path: String?) -> String? {
+        guard let path = path?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else {
+            return nil
+        }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+
+    private func providerDisplayName(from provider: String?) -> String? {
+        guard let trimmed = provider?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+
+        let normalized = AIResumeParser.normalizeProviderName(trimmed) ?? trimmed.lowercased()
+        if let tool = AIToolRegistry.allTools.first(where: { tool in
+            tool.displayName.lowercased() == normalized
+                || tool.resumeProviderKey == normalized
+                || tool.commandNames.contains(normalized)
+        }) {
+            return tool.displayName
+        }
+        return trimmed.capitalized
+    }
+
+    private func splitSessionDisambiguator(
+        for session: TerminalSessionModel,
+        in tab: OverlayTab,
+        excluding values: [String?]
+    ) -> String? {
+        guard tab.splitController.root.allSessions.count > 1 else { return nil }
+        let excluded = Set(values.compactMap { value in
+            value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        })
+
+        let candidates = [
+            trimmedTabTitle(session.aiDisplayAppName),
+            providerDisplayName(from: session.effectiveAIProvider),
+            locationDisplayName(from: session.currentDirectory)
+        ]
+        for candidate in candidates {
+            guard let candidate else { continue }
+            let normalized = candidate.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !normalized.isEmpty, !excluded.contains(normalized) {
+                return candidate
+            }
+        }
+        return String(session.tabIdentifier.prefix(4)).uppercased()
+    }
+
+    private func providerBadgeLabel(
+        providerName: String?,
+        customTitle: String?,
+        composedLabel: String
+    ) -> String? {
+        guard let providerName,
+              customTitle != nil,
+              !composedLabel.localizedCaseInsensitiveContains(providerName) else {
+            return nil
+        }
+        return providerName
+    }
+
+    private func composedTabLabel(baseTitle: String, repoName: String?, disambiguator: String? = nil) -> String {
+        let title: String
+        if let disambiguator,
+           !disambiguator.isEmpty,
+           disambiguator.caseInsensitiveCompare(baseTitle) != .orderedSame {
+            title = "\(baseTitle) · \(disambiguator)"
+        } else {
+            title = baseTitle
+        }
+
+        guard let repoName = repoName,
+              !repoName.isEmpty,
+              title.caseInsensitiveCompare(repoName) != .orderedSame else {
+            return title
+        }
+        return "\(title) - \(repoName)"
     }
 
     // MARK: - CTO Recent Commands
@@ -1454,10 +1605,15 @@ struct DebugConsoleView: View {
                         Text("No per-tab data yet.").foregroundStyle(.secondary)
                     } else {
                         ForEach(aiPerTabStats.prefix(20), id: \.tabID) { stat in
+                            let descriptor = debugTabDescriptor(
+                                for: stat.tabID,
+                                fallbackProvider: stat.lastProvider,
+                                fallbackLocationPath: stat.lastLocationPath
+                            )
                             HStack {
-                                Text(ctoTabLabel(for: stat.tabID))
+                                Text(descriptor.label)
                                     .lineLimit(1)
-                                if let provider = stat.lastProvider {
+                                if let provider = descriptor.providerBadge {
                                     Text(provider)
                                         .foregroundStyle(.secondary)
                                         .font(.caption)
