@@ -21,19 +21,36 @@ final class OverlayTabsModelTests: XCTestCase {
         UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
     }
 
+    private func makeSavedTabState(title: String, directory: String) -> SavedTabState {
+        SavedTabState(
+            customTitle: title,
+            color: TabColor.blue.rawValue,
+            directory: directory,
+            selectedIndex: nil,
+            tokenOptOverride: nil,
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            splitLayout: nil,
+            focusedPaneID: nil,
+            paneStates: nil
+        )
+    }
+
     override func setUp() {
         super.setUp()
         // Clear any saved tab state so restoreSavedTabs returns nil
         // and the model starts with a single fresh tab.
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         appModel = AppModel()
-        model = OverlayTabsModel(appModel: appModel)
+        model = OverlayTabsModel(appModel: appModel, restoreState: false)
     }
 
     override func tearDown() {
         model = nil
         appModel = nil
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         super.tearDown()
     }
 
@@ -48,6 +65,30 @@ final class OverlayTabsModelTests: XCTestCase {
         )
         XCTAssertFalse(model.isSearchVisible)
         XCTAssertFalse(model.isBroadcastMode)
+    }
+
+    func testDecodeBackupWindowStatesSupportsLegacySingleWindowPayload() throws {
+        let state = makeSavedTabState(title: "Primary", directory: "/tmp/primary")
+        let data = try JSONEncoder().encode([state])
+
+        let windows = try XCTUnwrap(OverlayTabsModel.decodeBackupWindowStates(from: data))
+        XCTAssertEqual(windows.count, 1)
+        XCTAssertEqual(windows[0].first?.customTitle, "Primary")
+    }
+
+    func testDecodeBackupWindowStatesSupportsMultiWindowPayload() throws {
+        let data = try JSONEncoder().encode(
+            SavedMultiWindowState(
+                windows: [
+                    [makeSavedTabState(title: "Window 1", directory: "/tmp/one")],
+                    [makeSavedTabState(title: "Window 2", directory: "/tmp/two")]
+                ]
+            )
+        )
+
+        let windows = try XCTUnwrap(OverlayTabsModel.decodeBackupWindowStates(from: data))
+        XCTAssertEqual(windows.count, 2)
+        XCTAssertEqual(windows[1].first?.customTitle, "Window 2")
     }
 
     // MARK: - Tab Creation (addTab / newTab)
