@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Idle Tabs Dropdown**: Tabs idle 10+ minutes are collected into a dropdown chip at the start of the tab bar. Hover shows tab hover card. Click to select, "Close All Idle" to clean up. Configurable in Settings > Tabs.
 - **Keyboard Shortcut Standardization**: All Chau7-specific shortcuts now use Cmd+Option. Standard macOS shortcuts unchanged. Tab selection (Cmd+1-9) internationalized for all keyboard layouts.
 - **API Analytics Fix**: Streaming response metadata (model, tokens, cost) now correctly parsed for Anthropic and OpenAI. Tab names shown instead of UUIDs.
+- **Debug Console Tab Labels**: Per-tab token and CTO sections now use repo-aware labels, and split sessions add a disambiguator when a tab title would otherwise collide.
 - **Profile Auto-Switch Wired Up**: `evaluateRules()` now fires on directory change with git branch and process context
 - **API Analytics Tab**: Debug console (Cmd+Shift+L) now shows per-provider cost, per-tab tokens, and aggregate totals
 - **Hyperlink Protocols**: Clickable links now detect file://, ssh://, ftp://, sftp:// in addition to http/https
