@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import Combine
 #if !SWIFT_PACKAGE
 @testable import Chau7
 
@@ -8,6 +9,7 @@ final class OverlayTabsModelTests: XCTestCase {
 
     private var model: OverlayTabsModel!
     private var appModel: AppModel!
+    private var cancellables: Set<AnyCancellable> = []
 
     private func drainMainQueue() {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
@@ -47,6 +49,7 @@ final class OverlayTabsModelTests: XCTestCase {
     }
 
     override func tearDown() {
+        cancellables.removeAll()
         model = nil
         appModel = nil
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
@@ -147,6 +150,72 @@ final class OverlayTabsModelTests: XCTestCase {
         // The actual directory change is deferred to the shell process.
         XCTAssertEqual(model.tabs.count, 2)
         XCTAssertEqual(model.selectedTabID, model.tabs.last?.id)
+    }
+
+    // MARK: - Notification Styling
+
+    func testApplyNotificationStyleDoesNotReportAppliedForSelectedTab() {
+        let selectedTab = model.tabs[0]
+
+        let resolved = model.applyNotificationStyle(
+            for: TabTarget(tool: "Codex", tabID: selectedTab.id),
+            stylePreset: "attention",
+            config: [:]
+        )
+
+        XCTAssertNil(resolved, "Selected tab styles should be suppressed so cooldown timers are not armed")
+        XCTAssertNil(model.tabs[0].notificationStyle)
+    }
+
+    func testSetNotificationStyleForSessionFindsSecondarySplitSession() {
+        let targetTabID = model.tabs[0].id
+        model.splitCurrentTabHorizontally()
+        let terminalSessions = model.tabs[0].splitController.terminalSessions
+        XCTAssertEqual(terminalSessions.count, 2)
+        let secondarySession = terminalSessions[1].1
+
+        model.newTab()
+        XCTAssertNotEqual(model.selectedTabID, targetTabID, "Target tab must be backgrounded for styling")
+
+        model.setNotificationStyle(.attention, forSession: secondarySession)
+
+        guard let tab = model.tabs.first(where: { $0.id == targetTabID }) else {
+            XCTFail("Target tab missing after split")
+            return
+        }
+        XCTAssertEqual(tab.notificationStyle, .attention)
+    }
+
+    func testSplitCreatedTerminalInheritsOwnerTabAndPermissionCallback() {
+        let tabID = model.tabs[0].id
+
+        model.splitCurrentTabHorizontally()
+
+        let terminalSessions = model.tabs[0].splitController.terminalSessions
+        XCTAssertEqual(terminalSessions.count, 2)
+        let secondarySession = terminalSessions[1].1
+        XCTAssertEqual(secondarySession.ownerTabID, tabID)
+        XCTAssertNotNil(secondarySession.onPermissionResolved)
+    }
+
+    func testSetNotificationStylePublishesObjectWillChange() {
+        let targetTabID = model.tabs[0].id
+        model.newTab()
+        XCTAssertNotEqual(model.selectedTabID, targetTabID, "Target tab must be backgrounded for styling")
+
+        let expectation = expectation(description: "objectWillChange published")
+        model.objectWillChange
+            .sink { _ in expectation.fulfill() }
+            .store(in: &cancellables)
+
+        _ = model.setNotificationStyle(.waiting, for: targetTabID)
+
+        wait(for: [expectation], timeout: 1.0)
+        guard let tab = model.tabs.first(where: { $0.id == targetTabID }) else {
+            XCTFail("Target tab missing after style update")
+            return
+        }
+        XCTAssertEqual(tab.notificationStyle, .waiting)
     }
 
     // MARK: - Render Suspension

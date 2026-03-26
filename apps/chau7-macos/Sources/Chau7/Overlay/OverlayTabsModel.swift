@@ -4,6 +4,10 @@ import Chau7Core
 import Combine
 import SwiftUI
 
+extension Notification.Name {
+    static let clearPersistentTabStyle = Notification.Name("com.chau7.clearPersistentTabStyle")
+}
+
 // MARK: - Tab Notification Styling
 
 /// Visual styling that can be applied to a tab via the notification system.
@@ -260,15 +264,14 @@ struct OverlayTab: Identifiable, Equatable {
     /// sessions so events carry a deterministic tabID for the TabResolver fast-path.
     /// Must be called after the tab's `id` is finalized (i.e. after init or restore).
     mutating func stampOwnerTabID() {
-        splitController.ownerTabID = id
         let tabID = id
-        for (_, session) in splitController.terminalSessions {
+        splitController.ownerTabID = tabID
+        splitController.terminalSessionConfigurator = { session in
             session.ownerTabID = tabID
-            // Wire permission-resolved callback to clear persistent tab border
             session.onPermissionResolved = {
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(
-                        name: Notification.Name("com.chau7.clearPersistentTabStyle"),
+                        name: .clearPersistentTabStyle,
                         object: tabID
                     )
                 }
@@ -532,7 +535,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
         // Observe permission-resolved to clear persistent red borders
         persistentStyleObserver = NotificationCenter.default.addObserver(
-            forName: Notification.Name("com.chau7.clearPersistentTabStyle"),
+            forName: .clearPersistentTabStyle,
             object: nil, queue: .main
         ) { [weak self] notification in
             guard let tabID = notification.object as? UUID else { return }
@@ -2929,31 +2932,41 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     /// - Parameters:
     ///   - style: The style to apply, or nil to clear
     ///   - tabID: The tab to style (defaults to selected tab)
-    func setNotificationStyle(_ style: TabNotificationStyle?, for tabID: UUID? = nil) {
+    /// - Returns: `true` when the style state actually changed and was published.
+    @discardableResult
+    func setNotificationStyle(_ style: TabNotificationStyle?, for tabID: UUID? = nil) -> Bool {
         dispatchPrecondition(condition: .onQueue(.main))
         let targetID = tabID ?? selectedTabID
-        guard let index = tabs.firstIndex(where: { $0.id == targetID }) else { return }
+        guard let index = tabs.firstIndex(where: { $0.id == targetID }) else { return false }
 
         // Don't apply notification styling to the tab the user is already looking at —
         // the style is meant to draw attention to background tabs. Clearing (nil) always applies.
         if style != nil, targetID == selectedTabID {
             Log.trace("Skipping notification style for active tab \(targetID)")
-            return
+            return false
+        }
+
+        if tabs[index].notificationStyle == style {
+            return false
         }
 
         tabs[index].notificationStyle = style
+        objectWillChange.send()
         if let style {
             let desc = style.icon ?? "border/color"
             Log.info("Tab notification style set: \(desc) for tab \(targetID)")
         } else {
             Log.info("Tab notification style cleared for tab \(targetID)")
         }
+        return true
     }
 
     /// Sets a notification style on the tab associated with a terminal session
     func setNotificationStyle(_ style: TabNotificationStyle?, forSession session: TerminalSessionModel) {
-        guard let tab = tabs.first(where: { $0.session === session }) else { return }
-        setNotificationStyle(style, for: tab.id)
+        guard let tab = tabs.first(where: { tab in
+            tab.splitController.terminalSessions.contains { _, candidate in candidate === session }
+        }) else { return }
+        _ = setNotificationStyle(style, for: tab.id)
     }
 
     /// Clears persistent notification style (e.g., permission red border) when
@@ -2962,6 +2975,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         guard let index = tabs.firstIndex(where: { $0.id == tabID }),
               tabs[index].notificationStyle?.persistent == true else { return }
         tabs[index].notificationStyle = nil
+        objectWillChange.send()
         Log.info("Persistent tab style cleared for tab \(tabID) (permission resolved)")
     }
 
@@ -2984,8 +2998,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             ? nil
             : buildNotificationStyle(preset: stylePreset, config: config)
 
-        setNotificationStyle(style, for: tab.id)
-        return tab.id
+        return setNotificationStyle(style, for: tab.id) ? tab.id : nil
     }
 
     /// Builds a TabNotificationStyle from preset and config
@@ -3101,8 +3114,9 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         var style = tab.notificationStyle ?? TabNotificationStyle()
         style.badgeText = text
         style.badgeColor = colorFromString(color)
-        setNotificationStyle(style, for: tab.id)
-        Log.info("setBadge: Set badge '\(text)' on tab for '\(target.tool)'")
+        if setNotificationStyle(style, for: tab.id) {
+            Log.info("setBadge: Set badge '\(text)' on tab for '\(target.tool)'")
+        }
     }
 
     /// Inserts a snippet by ID into the tab matching the target.
