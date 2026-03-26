@@ -9,6 +9,7 @@ final class RepositoryModel: ObservableObject, Identifiable {
     let rootPath: String
 
     @Published var branch: String?
+    @Published var metadata: RepoMetadata = .empty
 
     /// Display name derived from root path (e.g. "Chau7")
     var repoName: String {
@@ -16,7 +17,9 @@ final class RepositoryModel: ObservableObject, Identifiable {
     }
 
     private var refreshWorkItem: DispatchWorkItem?
+    private var saveWorkItem: DispatchWorkItem?
     private static let gitQueue = DispatchQueue(label: "com.chau7.repository.git", qos: .utility)
+    private static let metadataQueue = DispatchQueue(label: "com.chau7.repository.metadata", qos: .utility)
     private let gitRunner: ([String], String) -> String
     private let refreshDelay: TimeInterval
 
@@ -53,5 +56,69 @@ final class RepositoryModel: ObservableObject, Identifiable {
             self.refreshWorkItem = work
             Self.gitQueue.asyncAfter(deadline: .now() + self.refreshDelay, execute: work)
         }
+    }
+
+    // MARK: - Repo Metadata
+
+    /// Load metadata from `.chau7/metadata.json` asynchronously.
+    /// Publishes on main thread when done. Safe to call from any thread.
+    func loadMetadata() {
+        let root = rootPath
+        Self.metadataQueue.async { [weak self] in
+            let loaded = RepoMetadataStore.load(repoRoot: root)
+            DispatchQueue.main.async {
+                guard let self, self.metadata != loaded else { return }
+                self.metadata = loaded
+            }
+        }
+    }
+
+    /// Replace metadata wholesale and schedule a debounced save.
+    func updateMetadata(_ new: RepoMetadata) {
+        var updated = new
+        updated.updatedAt = Date()
+        metadata = updated
+        scheduleSave()
+    }
+
+    func setDescription(_ desc: String?) {
+        metadata.description = desc
+        metadata.updatedAt = Date()
+        scheduleSave()
+    }
+
+    func addLabel(_ label: String) {
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !metadata.labels.contains(trimmed) else { return }
+        metadata.labels.append(trimmed)
+        metadata.updatedAt = Date()
+        scheduleSave()
+    }
+
+    func removeLabel(_ label: String) {
+        metadata.labels.removeAll { $0 == label }
+        metadata.updatedAt = Date()
+        scheduleSave()
+    }
+
+    func toggleFavoriteFile(_ relativePath: String) {
+        if let idx = metadata.favoriteFiles.firstIndex(of: relativePath) {
+            metadata.favoriteFiles.remove(at: idx)
+        } else {
+            metadata.favoriteFiles.append(relativePath)
+        }
+        metadata.updatedAt = Date()
+        scheduleSave()
+    }
+
+    private func scheduleSave() {
+        let root = rootPath
+        let snapshot = metadata
+        saveWorkItem?.cancel()
+        let work = DispatchWorkItem {
+            RepoMetadataStore.save(snapshot, repoRoot: root)
+        }
+        saveWorkItem = work
+        Self.metadataQueue.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 }

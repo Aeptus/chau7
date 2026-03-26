@@ -109,7 +109,8 @@ final class RepositoryCache {
                 )
                 self.models[canonicalRoot] = model
                 self.resolvedRootsByPath[canonicalRoot] = canonicalRoot
-                // Record as recent repo (first discovery only)
+                // Load persisted metadata and record as recent repo (first discovery)
+                model.loadMetadata()
                 DispatchQueue.main.async {
                     self.recentRepoRecorder(canonicalRoot)
                 }
