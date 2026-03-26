@@ -464,17 +464,28 @@ public struct TabTokenConsumption: Identifiable, Sendable {
     public let totalCostUSD: Double
     /// Most recent provider for this tab (e.g. "claude"), for label display when the tab is closed.
     public let lastProvider: String?
+    /// Most recent repo path for this tab, falling back to the last working directory.
+    public let lastLocationPath: String?
     public var id: String {
         tabID
     }
 
-    public init(tabID: String, runCount: Int, totalInputTokens: Int, totalOutputTokens: Int, totalCostUSD: Double, lastProvider: String? = nil) {
+    public init(
+        tabID: String,
+        runCount: Int,
+        totalInputTokens: Int,
+        totalOutputTokens: Int,
+        totalCostUSD: Double,
+        lastProvider: String? = nil,
+        lastLocationPath: String? = nil
+    ) {
         self.tabID = tabID
         self.runCount = runCount
         self.totalInputTokens = totalInputTokens
         self.totalOutputTokens = totalOutputTokens
         self.totalCostUSD = totalCostUSD
         self.lastProvider = lastProvider
+        self.lastLocationPath = lastLocationPath
     }
 }
 
