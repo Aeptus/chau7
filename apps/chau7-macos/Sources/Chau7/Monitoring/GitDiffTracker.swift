@@ -6,6 +6,22 @@ import Foundation
 /// `changedFiles(directory:)` when it finishes. The diff between the
 /// two snapshots is the list of files the command modified.
 final class GitDiffTracker {
+    static func changedPath(fromStatusPorcelainLine line: String) -> String? {
+        guard line.count > 3 else { return nil }
+        let path = String(line.dropFirst(3))
+        if let arrowRange = path.range(of: " -> ") {
+            return String(path[arrowRange.upperBound...])
+        }
+        return path.isEmpty ? nil : path
+    }
+
+    static func firstChangedPath(inStatusPorcelain output: String) -> String? {
+        output
+            .split(whereSeparator: \.isNewline)
+            .compactMap { changedPath(fromStatusPorcelainLine: String($0)) }
+            .first
+    }
+
     /// Serializes access to baselineFiles (snapshot and changedFiles may race on concurrent queues).
     private let lock = NSLock()
     /// The set of dirty/untracked files at the time of the snapshot.
@@ -60,15 +76,8 @@ final class GitDiffTracker {
 
         var files = Set<String>()
         for line in output.components(separatedBy: "\n") {
-            // git status --porcelain format: "XY filename" (2-char status + space + path)
-            guard line.count > 3 else { continue }
-            let path = String(line.dropFirst(3))
-            // Handle renames: "R  old -> new"
-            if let arrowRange = path.range(of: " -> ") {
-                files.insert(String(path[arrowRange.upperBound...]))
-            } else {
-                files.insert(path)
-            }
+            guard let path = Self.changedPath(fromStatusPorcelainLine: line) else { continue }
+            files.insert(path)
         }
         return files
     }
