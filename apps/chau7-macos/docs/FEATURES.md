@@ -274,7 +274,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Command idle detection with configurable threshold. Fires once per session, resets only on real user activity.
 - Auto tab styling on events with auto-clear timeout. Deduplicates redundant re-applies.
 - Visual bell mode (screen flash), combinable with audible bell.
-- Bell rate limiting with configurable minimum interval.
+- Bell rate limiting with configurable minimum interval, scoped per trigger and tab/session/directory identity.
 - Rate limiting and per-trigger enable/disable.
 - Process exit confirmation on Cmd+Q with running process name listing.
 - Isolated test mode disables notification-center integration to keep side effects out of the test app.

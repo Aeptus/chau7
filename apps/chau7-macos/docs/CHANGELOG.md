@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Runtime Turn Send for Adopted Sessions**: MCP clients can now send prompts through `runtime_turn_send` even when the runtime session was adopted from an existing tab
 
 ### Fixed
+- **Notification Identity Scoping**: Notification coalescing and rate limiting are now scoped by tab, session, or directory identity instead of only trigger/tool matching. One noisy tab no longer suppresses the same notification on another tab.
 - **AI Tool Detection**: Fixed false positive detecting "Cline" on Claude Code sessions — bare `cline` pattern matched substrings. Command-based detection now gates output pattern scanning to prevent race conditions.
 - **Dangerous Command Guard Hardening**: Unicode homoglyph detection, multiline paste protection, per-directory allowlists
 - **MCP Audit-Only Mode**: New `auditOnly` permission mode allows execution but logs for review. Per-agent profile scoping via agentAllowlist.
