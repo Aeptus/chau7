@@ -598,6 +598,67 @@ final class TerminalControlService {
         }
     }
 
+    // MARK: - Repo Metadata
+
+    func getRepoMetadata(repoPath: String) -> String {
+        let model = RepositoryCache.shared.cachedModel(forRoot: repoPath)
+        let metadata = model?.metadata ?? RepoMetadataStore.load(repoRoot: repoPath)
+        let frequentCmds = PersistentHistoryStore.shared
+            .frequentCommandsForRepo(repoRoot: repoPath, limit: 10)
+
+        var result: [String: Any] = [
+            "repo_path": repoPath,
+            "repo_name": URL(fileURLWithPath: repoPath).lastPathComponent
+        ]
+        if let desc = metadata.description { result["description"] = desc }
+        if !metadata.labels.isEmpty { result["labels"] = metadata.labels }
+        if !metadata.favoriteFiles.isEmpty { result["favorite_files"] = metadata.favoriteFiles }
+        if let updated = metadata.updatedAt {
+            result["updated_at"] = ISO8601DateFormatter().string(from: updated)
+        }
+        if !frequentCmds.isEmpty {
+            result["frequent_commands"] = frequentCmds.map { cmd in
+                ["command": cmd.command, "count": cmd.count,
+                 "last_used": ISO8601DateFormatter().string(from: cmd.lastUsed),
+                 "frecency_score": cmd.frecencyScore] as [String: Any]
+            }
+        }
+        return encodeAny(result)
+    }
+
+    func setRepoMetadata(repoPath: String, description: String?,
+                         labels: [String]?, favoriteFiles: [String]?) -> String {
+        if let model = RepositoryCache.shared.cachedModel(forRoot: repoPath) {
+            return onMain {
+                var updated = model.metadata
+                if let desc = description { updated.description = desc.isEmpty ? nil : desc }
+                if let labels { updated.labels = labels }
+                if let files = favoriteFiles { updated.favoriteFiles = files }
+                model.updateMetadata(updated)
+                return self.encodeAny(["ok": true])
+            }
+        } else {
+            var metadata = RepoMetadataStore.load(repoRoot: repoPath)
+            if let desc = description { metadata.description = desc.isEmpty ? nil : desc }
+            if let labels { metadata.labels = labels }
+            if let files = favoriteFiles { metadata.favoriteFiles = files }
+            metadata.updatedAt = Date()
+            RepoMetadataStore.save(metadata, repoRoot: repoPath)
+            return encodeAny(["ok": true])
+        }
+    }
+
+    func repoFrequentCommands(repoPath: String, limit: Int) -> String {
+        let cmds = PersistentHistoryStore.shared
+            .frequentCommandsForRepo(repoRoot: repoPath, limit: limit)
+        let result = cmds.map { cmd in
+            ["command": cmd.command, "count": cmd.count,
+             "last_used": ISO8601DateFormatter().string(from: cmd.lastUsed),
+             "frecency_score": cmd.frecencyScore] as [String: Any]
+        }
+        return encodeAny(result)
+    }
+
     /// Find the OverlayTabsModel that owns a given tab UUID.
     private func modelForTab(_ uuid: UUID) -> OverlayTabsModel? {
         allModels.first(where: { $0.model.tabs.contains(where: { $0.id == uuid }) })?.model
@@ -640,6 +701,15 @@ final class TerminalControlService {
         }
         if let branch = session?.gitBranch {
             result["git_branch"] = branch
+        }
+        if let repoModel = session?.repositoryModel {
+            result["repo_root"] = repoModel.rootPath
+            if let desc = repoModel.metadata.description {
+                result["repo_description"] = desc
+            }
+            if !repoModel.metadata.labels.isEmpty {
+                result["repo_labels"] = repoModel.metadata.labels
+            }
         }
         return result
     }
