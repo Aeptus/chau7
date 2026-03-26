@@ -278,6 +278,14 @@ public struct CTORuntimeSnapshot: Codable, Equatable, Sendable {
 }
 
 public extension CTORuntimeSnapshot {
+    var isStableState: Bool {
+        isStableCTORuntimeState(
+            recalcCount: recalcCount,
+            unchangedCount: unchangedCount,
+            activeSessionCount: activeSessionCount
+        )
+    }
+
     var decisionsChangeRatePercent: Double {
         guard recalcCount > 0 else { return 0 }
         let changedCount = max(0, recalcCount - unchangedCount)
@@ -325,14 +333,6 @@ public extension CTORuntimeSnapshot {
 
     var decisionIntervalMaxSeconds: Double? {
         decisionIntervalsSeconds.max()
-    }
-
-    /// Whether the system has converged to a stable state (all sessions settled,
-    /// no recent changes). Steady-state systems should not be penalized for
-    /// inactivity — low change rates and stale decisions are expected.
-    private var isStableState: Bool {
-        // Settled: enough recalcs happened AND most were unchanged
-        recalcCount >= 10 && unchangedCount > recalcCount / 2
     }
 
     var assessment: CTORuntimeAssessment {
@@ -398,6 +398,18 @@ public extension CTORuntimeSnapshot {
             summary: summary
         )
     }
+}
+
+/// A runtime state is stable only after enough recalculations have converged
+/// and no sessions remain actively tracked as on.
+public func isStableCTORuntimeState(
+    recalcCount: Int,
+    unchangedCount: Int,
+    activeSessionCount: Int
+) -> Bool {
+    recalcCount >= 10 &&
+        unchangedCount > recalcCount / 2 &&
+        activeSessionCount == 0
 }
 
 // MARK: - Gain Statistics
