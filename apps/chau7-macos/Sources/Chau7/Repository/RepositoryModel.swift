@@ -17,11 +17,20 @@ final class RepositoryModel: ObservableObject, Identifiable {
 
     private var refreshWorkItem: DispatchWorkItem?
     private static let gitQueue = DispatchQueue(label: "com.chau7.repository.git", qos: .utility)
+    private let gitRunner: ([String], String) -> String
+    private let refreshDelay: TimeInterval
 
-    init(rootPath: String, branch: String? = nil) {
+    init(
+        rootPath: String,
+        branch: String? = nil,
+        gitRunner: @escaping ([String], String) -> String = GitDiffTracker.runGit,
+        refreshDelay: TimeInterval = 0.1
+    ) {
         self.id = rootPath
         self.rootPath = rootPath
         self.branch = branch
+        self.gitRunner = gitRunner
+        self.refreshDelay = refreshDelay
     }
 
     /// Refresh the branch name from git. Coalesces rapid calls via work item cancellation.
@@ -32,7 +41,7 @@ final class RepositoryModel: ObservableObject, Identifiable {
             guard let self else { return }
             self.refreshWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self] in
-                let output = GitDiffTracker.runGit(args: ["rev-parse", "--abbrev-ref", "HEAD"], in: root)
+                let output = self?.gitRunner(["rev-parse", "--abbrev-ref", "HEAD"], root) ?? ""
                 let newBranch = output.isEmpty ? nil : output
                 DispatchQueue.main.async {
                     guard let self else { return }
@@ -42,7 +51,7 @@ final class RepositoryModel: ObservableObject, Identifiable {
                 }
             }
             self.refreshWorkItem = work
-            work.perform()
+            Self.gitQueue.asyncAfter(deadline: .now() + self.refreshDelay, execute: work)
         }
     }
 }

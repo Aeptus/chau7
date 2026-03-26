@@ -7,14 +7,27 @@ final class RepositoryCache {
     static let shared = RepositoryCache()
 
     private let queue = DispatchQueue(label: "com.chau7.repository-cache", qos: .utility)
+    private let gitRunner: ([String], String) -> String
+    private let recentRepoRecorder: (String) -> Void
+    private let refreshDelay: TimeInterval
 
     /// Canonical root path → shared model
     private var models: [String: RepositoryModel] = [:]
+    /// Exact queried path → canonical root path
+    private var resolvedRootsByPath: [String: String] = [:]
 
     /// Directories confirmed to NOT be inside a git repo (negative cache)
     private var nonGitPaths: Set<String> = []
 
-    private init() {}
+    init(
+        gitRunner: @escaping ([String], String) -> String = GitDiffTracker.runGit,
+        recentRepoRecorder: @escaping (String) -> Void = { FeatureSettings.shared.recordRecentRepo($0) },
+        refreshDelay: TimeInterval = 0.1
+    ) {
+        self.gitRunner = gitRunner
+        self.recentRepoRecorder = recentRepoRecorder
+        self.refreshDelay = refreshDelay
+    }
 
     /// Resolve a directory path to its RepositoryModel.
     /// Returns nil (via completion) if the path is not inside a git repo.
@@ -40,8 +53,13 @@ final class RepositoryCache {
                 return
             }
 
-            // Positive cache: check if any known root is a prefix of this path.
-            // Pick the deepest match to handle nested repos (git submodules).
+            if let root = self.resolvedRootsByPath[normalized],
+               let model = self.models[root] {
+                model.refreshBranch()
+                DispatchQueue.main.async { completion(model) }
+                return
+            }
+
             var bestMatch: (root: String, model: RepositoryModel)?
             for (root, model) in self.models {
                 if normalized == root || normalized.hasPrefix(root + "/") {
@@ -50,17 +68,8 @@ final class RepositoryCache {
                     }
                 }
             }
-            if let (_, model) = bestMatch {
-                model.refreshBranch()
-                DispatchQueue.main.async { completion(model) }
-                return
-            }
 
-            // Cache miss — query git
-            let output = GitDiffTracker.runGit(
-                args: ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"],
-                in: normalized
-            )
+            let output = self.gitRunner(["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"], normalized)
 
             let lines = output
                 .split(whereSeparator: \.isNewline)
@@ -68,6 +77,12 @@ final class RepositoryCache {
                 .filter { !$0.isEmpty }
 
             guard !lines.isEmpty else {
+                if let bestMatch {
+                    self.resolvedRootsByPath[normalized] = bestMatch.root
+                    bestMatch.model.refreshBranch()
+                    DispatchQueue.main.async { completion(bestMatch.model) }
+                    return
+                }
                 // Not a git repo — cache the negative result
                 self.nonGitPaths.insert(normalized)
                 DispatchQueue.main.async { completion(nil) }
@@ -86,13 +101,20 @@ final class RepositoryCache {
                     DispatchQueue.main.async { model.branch = branch }
                 }
             } else {
-                model = RepositoryModel(rootPath: canonicalRoot, branch: branch)
+                model = RepositoryModel(
+                    rootPath: canonicalRoot,
+                    branch: branch,
+                    gitRunner: self.gitRunner,
+                    refreshDelay: self.refreshDelay
+                )
                 self.models[canonicalRoot] = model
+                self.resolvedRootsByPath[canonicalRoot] = canonicalRoot
                 // Record as recent repo (first discovery only)
                 DispatchQueue.main.async {
-                    FeatureSettings.shared.recordRecentRepo(canonicalRoot)
+                    self.recentRepoRecorder(canonicalRoot)
                 }
             }
+            self.resolvedRootsByPath[normalized] = canonicalRoot
 
             DispatchQueue.main.async { completion(model) }
         }
