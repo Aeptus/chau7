@@ -276,6 +276,35 @@ final class PersistentHistoryStore {
         return results
     }
 
+    /// Frequently used commands within a repo (root + subdirectories), sorted by frecency.
+    func frequentCommandsForRepo(repoRoot: String, limit: Int = 20) -> [FrequentCommand] {
+        var results: [FrequentCommand] = []
+        guard let db = db else { return results }
+
+        let sql = """
+            SELECT command, COUNT(*) as cnt, MAX(timestamp) as last_ts
+            FROM history WHERE directory LIKE ? OR directory = ?
+            GROUP BY command ORDER BY cnt DESC LIMIT ?
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
+        defer { sqlite3_finalize(stmt) }
+
+        let pattern = repoRoot + "/%"
+        sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
+        sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
+        sqlite3_bind_int(stmt, 3, Int32(limit))
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let command = String(cString: sqlite3_column_text(stmt, 0))
+            let count = Int(sqlite3_column_int(stmt, 1))
+            let ts = sqlite3_column_double(stmt, 2)
+            results.append(FrequentCommand(command: command, count: count, lastUsed: Date(timeIntervalSince1970: ts)))
+        }
+
+        return results.sorted { $0.frecencyScore > $1.frecencyScore }
+    }
+
     func totalCount() -> Int {
         guard let db = db else { return 0 }
         let sql = "SELECT COUNT(*) FROM history"
