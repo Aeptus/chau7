@@ -695,38 +695,40 @@ final class TelemetryStore {
             }
             sql += """
             ),
-            latest_per_tab AS (
+            tab_rollup AS (
                 SELECT tab_id,
-                       (
-                           SELECT provider
-                           FROM filtered_runs latest
-                           WHERE latest.tab_id = filtered_runs.tab_id
-                             AND latest.provider IS NOT NULL
-                           ORDER BY latest.started_at DESC, latest.created_at DESC
-                           LIMIT 1
-                       ) AS last_provider,
-                       (
-                           SELECT COALESCE(repo_path, cwd)
-                           FROM filtered_runs latest
-                           WHERE latest.tab_id = filtered_runs.tab_id
-                             AND COALESCE(latest.repo_path, latest.cwd) IS NOT NULL
-                           ORDER BY latest.started_at DESC, latest.created_at DESC
-                           LIMIT 1
-                       ) AS last_location_path
+                       COUNT(*) AS run_count,
+                       COALESCE(SUM(total_input_tokens),0) AS total_input_tokens,
+                       COALESCE(SUM(total_output_tokens),0) AS total_output_tokens,
+                       COALESCE(SUM(cost_usd),0) AS total_cost_usd
                 FROM filtered_runs
                 GROUP BY tab_id
+            ),
+            latest_run_key AS (
+                SELECT tab_id,
+                       MAX(started_at || '|' || created_at || '|' || run_id) AS latest_key
+                FROM filtered_runs
+                GROUP BY tab_id
+            ),
+            latest_per_tab AS (
+                SELECT filtered_runs.tab_id,
+                       filtered_runs.provider AS last_provider,
+                       COALESCE(filtered_runs.repo_path, filtered_runs.cwd) AS last_location_path
+                FROM filtered_runs
+                INNER JOIN latest_run_key
+                    ON latest_run_key.tab_id = filtered_runs.tab_id
+                    AND (filtered_runs.started_at || '|' || filtered_runs.created_at || '|' || filtered_runs.run_id) = latest_run_key.latest_key
             )
-            SELECT filtered_runs.tab_id,
-                   COUNT(*),
-                   COALESCE(SUM(filtered_runs.total_input_tokens),0),
-                   COALESCE(SUM(filtered_runs.total_output_tokens),0),
-                   COALESCE(SUM(filtered_runs.cost_usd),0),
+            SELECT tab_rollup.tab_id,
+                   tab_rollup.run_count,
+                   tab_rollup.total_input_tokens,
+                   tab_rollup.total_output_tokens,
+                   tab_rollup.total_cost_usd,
                    latest_per_tab.last_provider,
                    latest_per_tab.last_location_path
-            FROM filtered_runs
-            LEFT JOIN latest_per_tab ON latest_per_tab.tab_id = filtered_runs.tab_id
-            GROUP BY filtered_runs.tab_id
-            ORDER BY COALESCE(SUM(filtered_runs.total_input_tokens),0) + COALESCE(SUM(filtered_runs.total_output_tokens),0) DESC
+            FROM tab_rollup
+            LEFT JOIN latest_per_tab ON latest_per_tab.tab_id = tab_rollup.tab_id
+            ORDER BY tab_rollup.total_input_tokens + tab_rollup.total_output_tokens DESC
             """
 
             var stmt: OpaquePointer?
