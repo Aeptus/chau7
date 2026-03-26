@@ -10,9 +10,10 @@ final class RuntimeControlServiceTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         FeatureSettings.shared.mcpPermissionMode = .allowAll
         appModel = AppModel()
-        overlayModel = OverlayTabsModel(appModel: appModel)
+        overlayModel = OverlayTabsModel(appModel: appModel, restoreState: false)
         TerminalControlService.shared.register(overlayModel)
     }
 
@@ -25,6 +26,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             TerminalControlService.shared.unregister(overlayModel)
         }
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         overlayModel = nil
         appModel = nil
         super.tearDown()

@@ -1074,7 +1074,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             self?.recordEvent(
                 source: .claudeCode, type: "idle", tool: "Claude",
                 message: "Waiting for input in \(session.projectName)",
-                notify: true
+                notify: true,
+                directory: session.cwd.isEmpty ? nil : session.cwd,
+                sessionID: session.id
             )
         }
 
@@ -1223,7 +1225,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             if previousState == .active, sessionEnded {
                 // Check if the matching tab is at prompt — if so, this is just a heartbeat cycle.
                 // A tool sitting at its prompt with periodic history writes is not "finishing".
-                let isAtPrompt = TerminalControlService.shared.isToolAtPrompt(toolName: toolName)
+                let isAtPrompt = TerminalControlService.shared.isToolAtPrompt(
+                    toolName: toolName,
+                    sessionID: sessionId
+                )
 
                 if !isAtPrompt {
                     let now = Date()
