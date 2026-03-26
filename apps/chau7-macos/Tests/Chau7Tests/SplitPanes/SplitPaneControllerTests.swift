@@ -978,6 +978,37 @@ final class SplitEnumTests: XCTestCase {
         XCTAssertNotNil(root.findFirstDiffViewer())
     }
 
+    func testDiffViewerIgnoresStaleResultsFromEarlierLoad() {
+        let diff = DiffViewerModel()
+        let staleToken = diff.startLoading(file: "stale.swift", in: "/tmp/project")
+        let freshToken = diff.startLoading(file: "fresh.swift", in: "/tmp/project")
+
+        diff.finishLoading(
+            token: staleToken,
+            file: "stale.swift",
+            output: "@@ -1 +1 @@\n-old\n+stale\n",
+            parsed: DiffViewerModel.parseUnifiedDiff("@@ -1 +1 @@\n-old\n+stale\n"),
+            effectiveMode: .workingTree
+        )
+
+        XCTAssertEqual(diff.filePath, "fresh.swift")
+        XCTAssertTrue(diff.hunks.isEmpty)
+        XCTAssertTrue(diff.isLoading)
+
+        diff.finishLoading(
+            token: freshToken,
+            file: "fresh.swift",
+            output: "@@ -1 +1 @@\n-old\n+fresh\n",
+            parsed: DiffViewerModel.parseUnifiedDiff("@@ -1 +1 @@\n-old\n+fresh\n"),
+            effectiveMode: .workingTree
+        )
+
+        XCTAssertFalse(diff.isLoading)
+        XCTAssertEqual(diff.filePath, "fresh.swift")
+        XCTAssertEqual(diff.hunks.count, 1)
+        XCTAssertTrue(diff.rawDiff.contains("+fresh"))
+    }
+
     // MARK: - FilePreviewModel
 
     func testFilePreviewModelFileName() {
