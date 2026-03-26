@@ -10,6 +10,7 @@ final class DataExplorerWindow {
 
     func show() {
         if let existing = window {
+            existing.contentView = NSHostingView(rootView: DataExplorerView())
             existing.makeKeyAndOrderFront(nil)
             return
         }
