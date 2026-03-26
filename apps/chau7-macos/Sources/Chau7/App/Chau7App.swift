@@ -278,7 +278,7 @@ struct Chau7App: App {
                     Button(L("Open File Preview", "Open File Preview")) {
                         appDelegate.openFilePreviewPane()
                     }
-                    .keyboardShortcut("p", modifiers: [.command, .option])
+                    .keyboardShortcut("o", modifiers: [.command, .option])
 
                     Button(L("Open Diff Viewer", "Open Diff Viewer")) {
                         appDelegate.openDiffViewerPane()
