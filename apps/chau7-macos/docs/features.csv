@@ -188,6 +188,7 @@ Accessibility,Runtime Language Switching,Change language without restarting the 
 Scripting,JSON-RPC API,"Unix socket API for external automation — control tabs, run commands, query history, manage snippets",Shipped,Yes
 Scripting,Settings API,Query and modify settings programmatically from any language,Shipped,No
 Debugging,Data Explorer Refresh,Reopening the singleton Data Explorer window rebuilds its SwiftUI content so history and telemetry reload,Shipped,No
+Debugging,Session Explorer Metadata,Sessions Explorer rows derive provider and repo labels from the latest run for each session,Shipped,No
 Debugging,Debug Console,"Cmd+Shift+D — live log viewer with State, Contexts, Events, Logs, and Report tabs",Shipped,No
 Debugging,State Inspector,View live app state: tabs and sessions and models,Shipped,No
 Debugging,Feature Profiler,Per-feature timing metrics with os.signpost integration,Shipped,No

@@ -353,6 +353,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 
 - Debug console (`Cmd+Shift+D`) — State, Contexts, Events, Logs, Report tabs.
 - Data Explorer (`Cmd+Shift+D`) reloads its history and telemetry content whenever the singleton window is reopened.
+- Sessions Explorer rows use the latest run metadata for provider and repo labels.
 - Live state inspector for tabs, sessions, and models.
 - Feature profiler with os.signpost integration.
 - Structured logging with category-based filtering and correlation IDs.

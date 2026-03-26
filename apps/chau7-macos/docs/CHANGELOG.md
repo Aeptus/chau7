@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Approval Attention Lifecycle**: Persistent approval styling now clears when the approval is actually resolved, and split-created terminal sessions inherit the same owner/callback wiring as the original pane so permission indicators do not get stuck.
 - **File Conflict Notifications**: Cross-tab file conflicts now emit real `app.file_conflict` events for each affected tab, so the configured notification trigger and orange tab styling actually fire on first detection.
 - **Data Explorer Refresh**: Reopening the singleton Data Explorer window now rebuilds its SwiftUI content instead of showing stale history and telemetry from the first time the window was opened.
+- **Session Explorer Metadata**: Session rows now derive provider and repo from the latest run for that session instead of SQLite's arbitrary non-grouped values, fixing incorrect badges in the Sessions explorer.
 - **AI Tool Detection**: Fixed false positive detecting "Cline" on Claude Code sessions — bare `cline` pattern matched substrings. Command-based detection now gates output pattern scanning to prevent race conditions.
 - **Dangerous Command Guard Hardening**: Unicode homoglyph detection, multiline paste protection, per-directory allowlists
 - **MCP Audit-Only Mode**: New `auditOnly` permission mode allows execution but logs for review. Per-agent profile scoping via agentAllowlist.
