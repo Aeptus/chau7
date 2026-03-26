@@ -207,6 +207,13 @@ struct Chau7App: App {
             // MARK: - View Menu
 
             CommandGroup(after: .toolbar) {
+                Button(L("Data Explorer", "Data Explorer")) {
+                    DataExplorerWindow.shared.show()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                Divider()
+
                 Button(L("Enter Full Screen", "Enter Full Screen")) {
                     appDelegate.toggleFullScreen()
                 }

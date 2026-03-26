@@ -388,7 +388,7 @@ final class RemoteControlManager: ObservableObject {
         purgeExpiredProtectedInputs()
 
         guard let response: ApprovalResponsePayload = decodePayload(frame, as: ApprovalResponsePayload.self, context: "approval response") else { return }
-        approvalContexts.removeValue(forKey: response.requestID)
+        let approvalContext = approvalContexts.removeValue(forKey: response.requestID)
         if let protectedInput = pendingProtectedInputs.removeValue(forKey: response.requestID) {
             if response.approved,
                let session = session(for: protectedInput.tabID) {
@@ -399,6 +399,9 @@ final class RemoteControlManager: ObservableObject {
             }
             sendRemoteActivity()
             return
+        }
+        if let approvalContext, let uuid = tabRegistry.uuid(for: approvalContext.tabID) {
+            NotificationCenter.default.post(name: .clearPersistentTabStyle, object: uuid)
         }
         TerminalControlService.shared.resolveApproval(requestID: response.requestID, approved: response.approved)
         sendRemoteActivity()
@@ -540,17 +543,17 @@ final class RemoteControlManager: ObservableObject {
         guard let overlayModel else { return nil }
 
         let approvalsByTabID = Dictionary(grouping: approvalContexts.values, by: \.tabID)
-        let candidates = overlayModel.tabs.compactMap { tab -> RemoteActivityCandidate? in
+        let candidates = overlayModel.tabs.flatMap { tab -> [RemoteActivityCandidate] in
             guard let tabID = tabRegistry.tabID(for: tab.id) else {
-                return nil
+                return []
             }
 
             let approval = approvalsByTabID[tabID]?.max { $0.requestedAt < $1.requestedAt }
-            let activityID = "tab-\(tabID)"
+            var candidates: [RemoteActivityCandidate] = []
 
             if let approval {
-                return RemoteActivityCandidate(
-                    activityID: activityID,
+                candidates.append(RemoteActivityCandidate(
+                    activityID: "tab-\(tabID)-approval",
                     tabID: tabID,
                     tabTitle: approval.tabTitle,
                     toolName: approval.toolName,
@@ -562,60 +565,62 @@ final class RemoteControlManager: ObservableObject {
                     updatedAt: approval.requestedAt,
                     startedAt: approval.requestedAt,
                     approval: approval.approval
-                )
+                ))
             }
 
-            guard let session = tab.session else { return nil }
+            for (paneID, session) in tab.splitController.terminalSessions {
+                let toolName = activityToolName(for: session, tab: tab)
+                let projectName = activityProjectName(for: session)
+                let startedAt = tab.lastCommand?.startTime
+                let updatedAt = activityUpdatedAt(for: session, tab: tab, approval: nil)
 
-            let toolName = activityToolName(for: session, tab: tab)
-            let projectName = activityProjectName(for: session)
-            let startedAt = tab.lastCommand?.startTime
-            let updatedAt = activityUpdatedAt(for: session, tab: tab, approval: nil)
-
-            guard session.aiDisplayAppName != nil ||
-                session.effectiveAIProvider != nil ||
-                session.effectiveAISessionId != nil else {
-                return nil
-            }
-
-            let resolvedStatus: RemoteActivityStatus?
-            let detail: String?
-
-            switch session.effectiveStatus {
-            case .waitingForInput:
-                resolvedStatus = .waitingInput
-                detail = session.effectiveIsAtPrompt ? "Waiting at prompt" : nil
-            case .running:
-                resolvedStatus = .running
-                detail = nil
-            case .stuck:
-                resolvedStatus = .running
-                detail = "No output for a while"
-            case .idle, .exited:
-                if let outcome = recentCompletionStatus(for: tab, now: now) {
-                    resolvedStatus = outcome.status
-                    detail = outcome.detail
-                } else {
-                    resolvedStatus = nil
-                    detail = nil
+                guard session.aiDisplayAppName != nil ||
+                    session.effectiveAIProvider != nil ||
+                    session.effectiveAISessionId != nil else {
+                    continue
                 }
+
+                let resolvedStatus: RemoteActivityStatus?
+                let detail: String?
+
+                switch session.effectiveStatus {
+                case .waitingForInput:
+                    resolvedStatus = .waitingInput
+                    detail = session.effectiveIsAtPrompt ? "Waiting at prompt" : nil
+                case .running:
+                    resolvedStatus = .running
+                    detail = nil
+                case .stuck:
+                    resolvedStatus = .running
+                    detail = "No output for a while"
+                case .idle, .exited:
+                    if let outcome = recentCompletionStatus(for: tab, now: now) {
+                        resolvedStatus = outcome.status
+                        detail = outcome.detail
+                    } else {
+                        resolvedStatus = nil
+                        detail = nil
+                    }
+                }
+
+                guard let resolvedStatus else { continue }
+
+                candidates.append(RemoteActivityCandidate(
+                    activityID: "tab-\(tabID)-pane-\(paneID.uuidString.lowercased())",
+                    tabID: tabID,
+                    tabTitle: activityTabTitle(for: tab),
+                    toolName: toolName,
+                    projectName: projectName,
+                    sessionID: session.effectiveAISessionId,
+                    status: resolvedStatus,
+                    detail: detail,
+                    isSelected: tab.id == overlayModel.selectedTabID,
+                    updatedAt: updatedAt,
+                    startedAt: startedAt
+                ))
             }
 
-            guard let resolvedStatus else { return nil }
-
-            return RemoteActivityCandidate(
-                activityID: activityID,
-                tabID: tabID,
-                tabTitle: activityTabTitle(for: tab),
-                toolName: toolName,
-                projectName: projectName,
-                sessionID: session.effectiveAISessionId,
-                status: resolvedStatus,
-                detail: detail,
-                isSelected: tab.id == overlayModel.selectedTabID,
-                updatedAt: updatedAt,
-                startedAt: startedAt
-            )
+            return candidates
         }
 
         return RemoteActivityProjection.project(from: candidates)
@@ -624,34 +629,35 @@ final class RemoteControlManager: ObservableObject {
     private func currentInteractivePrompts() -> [RemoteInteractivePrompt] {
         guard let overlayModel else { return [] }
 
-        return remoteControllableTabs(from: overlayModel).compactMap { tab in
-            guard let tabID = tabRegistry.tabID(for: tab.id),
-                  let session = tab.session else {
-                return nil
+        return remoteControllableTabs(from: overlayModel).flatMap { tab -> [RemoteInteractivePrompt] in
+            guard let tabID = tabRegistry.tabID(for: tab.id) else {
+                return []
             }
 
-            guard session.effectiveStatus == .waitingForInput else { return nil }
+            return tab.splitController.terminalSessions.compactMap { paneID, session in
+                guard session.effectiveStatus == .waitingForInput else { return nil }
 
-            let toolName = activityToolName(for: session, tab: tab)
-            guard let snapshot = session.captureRemoteSnapshot(),
-                  let text = String(data: snapshot, encoding: .utf8),
-                  let detected = InteractivePromptDetector.detect(in: text, toolName: toolName) else {
-                return nil
+                let toolName = activityToolName(for: session, tab: tab)
+                guard let snapshot = session.captureRemoteSnapshot(),
+                      let text = String(data: snapshot, encoding: .utf8),
+                      let detected = InteractivePromptDetector.detect(in: text, toolName: toolName) else {
+                    return nil
+                }
+
+                return RemoteInteractivePrompt(
+                    id: "tab-\(tabID)-pane-\(paneID.uuidString.lowercased())-\(detected.signature)",
+                    tabID: tabID,
+                    tabTitle: activityTabTitle(for: tab),
+                    toolName: toolName,
+                    projectName: activityProjectName(for: session),
+                    branchName: activityBranchName(for: session),
+                    currentDirectory: activityCurrentDirectory(for: session),
+                    prompt: detected.prompt,
+                    detail: detected.detail,
+                    options: detected.options,
+                    detectedAt: activityUpdatedAt(for: session, tab: tab, approval: nil)
+                )
             }
-
-            return RemoteInteractivePrompt(
-                id: "tab-\(tabID)-\(detected.signature)",
-                tabID: tabID,
-                tabTitle: activityTabTitle(for: tab),
-                toolName: toolName,
-                projectName: activityProjectName(for: session),
-                branchName: activityBranchName(for: session),
-                currentDirectory: activityCurrentDirectory(for: session),
-                prompt: detected.prompt,
-                detail: detected.detail,
-                options: detected.options,
-                detectedAt: activityUpdatedAt(for: session, tab: tab, approval: nil)
-            )
         }
     }
 
