@@ -305,7 +305,10 @@ final class RuntimeControlService {
         let input = approved ? "y\n" : "n\n"
         _ = controlService.sendInput(tabID: session.tabID.uuidString, input: input)
 
-        session.resolveApproval(id: approvalID, approved: approved, resolvedBy: reason)
+        let didResolve = session.resolveApproval(id: approvalID, approved: approved, resolvedBy: reason)
+        if didResolve {
+            NotificationCenter.default.post(name: .clearPersistentTabStyle, object: session.tabID)
+        }
 
         return encodeAny(["ok": true, "approved": approved])
     }

@@ -272,7 +272,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Dock badge and bounce (critical/non-critical).
 - Configurable sounds (Glass, Purr, etc.) with volume control.
 - Command idle detection with configurable threshold. Fires once per session, resets only on real user activity.
-- Auto tab styling on events with auto-clear timeout. Deduplicates redundant re-applies.
+- Auto tab styling on events with auto-clear timeout. Deduplicates redundant re-applies and clears persistent approval styling as soon as the approval is resolved.
 - Visual bell mode (screen flash), combinable with audible bell.
 - Bell rate limiting with configurable minimum interval, scoped per trigger and tab/session/directory identity.
 - Rate limiting and per-trigger enable/disable.

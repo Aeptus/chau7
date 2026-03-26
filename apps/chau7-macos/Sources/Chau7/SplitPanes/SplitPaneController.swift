@@ -854,6 +854,16 @@ final class SplitPaneController: ObservableObject {
     /// carry a deterministic tabID for the TabResolver fast-path.
     var ownerTabID: UUID?
 
+    /// Applies tab-level configuration to current and future terminal sessions.
+    /// Used to keep split-created sessions aligned with the parent tab's callbacks.
+    var terminalSessionConfigurator: ((TerminalSessionModel) -> Void)? {
+        didSet {
+            for (_, session) in terminalSessions {
+                configureTerminalSession(session)
+            }
+        }
+    }
+
     /// Send a command to the first terminal session in this split tree (for markdown runbooks).
     func sendCommandToTerminal(_ command: String) {
         func findSession(_ node: SplitNode) -> TerminalSessionModel? {
@@ -872,12 +882,20 @@ final class SplitPaneController: ObservableObject {
         self?.openFileInEditor(path: path, line: line)
     }
 
+    private func configureTerminalSession(_ session: TerminalSessionModel) {
+        if let ownerTabID {
+            session.ownerTabID = ownerTabID
+        }
+        terminalSessionConfigurator?(session)
+    }
+
     init(appModel: AppModel) {
         self.appModel = appModel
         let session = TerminalSessionModel(appModel: appModel)
         let id = UUID()
         self.root = .terminal(id: id, session: session)
         self.focusedPaneID = id
+        configureTerminalSession(session)
     }
 
     /// Initialize with an existing terminal session
@@ -886,6 +904,7 @@ final class SplitPaneController: ObservableObject {
         let id = UUID()
         self.root = .terminal(id: id, session: session)
         self.focusedPaneID = id
+        configureTerminalSession(session)
     }
 
     init(appModel: AppModel, root: SplitNode, focusedPaneID: UUID? = nil) {
@@ -932,7 +951,7 @@ final class SplitPaneController: ObservableObject {
         guard let appModel else { return }
 
         let newSession = TerminalSessionModel(appModel: appModel)
-        newSession.ownerTabID = ownerTabID
+        configureTerminalSession(newSession)
         let newID = UUID()
         let newNode = SplitNode.terminal(id: newID, session: newSession)
 
