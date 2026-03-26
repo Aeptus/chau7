@@ -536,6 +536,8 @@ struct SettingsDetailView: View {
                         DisplaySettingsView()
                     case .tabs:
                         TabsSettingsView()
+                    case .hoverCard:
+                        HoverCardSettingsView()
                     // Terminal
                     case .shell:
                         ShellSettingsView()
