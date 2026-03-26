@@ -991,6 +991,30 @@ private struct ToolbarTabBarView: View {
 
 }
 
+/// Three-headed arrow indicator: center arrow = main branch, lateral arrows = feature branches.
+/// On main: center white, laterals grey. Off main: laterals white, center grey.
+private struct BranchIndicator: View {
+    let isOnMain: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Image(systemName: "chevron.up")
+                .font(.system(size: 7, weight: .bold))
+                .rotationEffect(.degrees(-20))
+                .foregroundStyle(isOnMain ? .white.opacity(0.35) : .white.opacity(0.85))
+            Image(systemName: "chevron.up")
+                .font(.system(size: 7, weight: .bold))
+                .foregroundStyle(isOnMain ? .white.opacity(0.85) : .white.opacity(0.35))
+                .padding(.horizontal, -1)
+            Image(systemName: "chevron.up")
+                .font(.system(size: 7, weight: .bold))
+                .rotationEffect(.degrees(20))
+                .foregroundStyle(isOnMain ? .white.opacity(0.35) : .white.opacity(0.85))
+        }
+        .frame(width: 16, height: 11)
+    }
+}
+
 /// Separate view to properly observe session's git status changes
 private struct GitBranchBadge: View {
     @ObservedObject var session: TerminalSessionModel
@@ -1723,10 +1747,12 @@ struct UnifiedTabButton: View {
                         .foregroundStyle(.orange)
                 }
 
-                // Git indicator — observed via TabSessionContent, keep fallback here
+                // Git branch indicator — three-headed arrow: center = main branch, laterals = feature branches
                 if FeatureSettings.shared.showTabGitIndicator, tab.displaySession?.isGitRepo ?? false {
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 11, weight: .semibold))
+                    BranchIndicator(isOnMain: {
+                        guard let branch = tab.displaySession?.gitBranch else { return true }
+                        return branch == "main" || branch == "master"
+                    }())
                 }
             }
 
