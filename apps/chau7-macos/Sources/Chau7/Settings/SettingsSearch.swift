@@ -52,7 +52,7 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
     var sections: [SettingsSection] {
         switch self {
         case .essentials: return [.general, .profilesBackup, .about]
-        case .lookAndFeel: return [.fontColors, .display, .tabs, .minimalMode]
+        case .lookAndFeel: return [.fontColors, .display, .tabs, .hoverCard, .minimalMode]
         case .terminal: return [.shell, .scrollbackPerf, .dangerousCommands, .graphics]
         case .inputProductivity: return [.keyboardMouse, .snippetsTools, .editor]
         case .integrations: return [.aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy]
@@ -72,6 +72,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case fontColors
     case display
     case tabs
+    case hoverCard
     // Terminal
     case shell
     case scrollbackPerf
@@ -105,6 +106,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .fontColors: return L("settings.fontColors", "Font & Colors")
         case .display: return L("settings.display", "Display")
         case .tabs: return L("settings.tabs", "Tabs")
+        case .hoverCard: return L("settings.hoverCard", "Hover Card")
         case .shell: return L("settings.shell", "Shell")
         case .scrollbackPerf: return L("settings.scrollbackPerf", "Scrollback & Performance")
         case .dangerousCommands: return L("settings.dangerousCommands", "Dangerous Commands")
@@ -131,6 +133,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .fontColors: return "paintbrush"
         case .display: return "eye"
         case .tabs: return "rectangle.stack"
+        case .hoverCard: return "text.bubble"
         case .shell: return "terminal"
         case .scrollbackPerf: return "gauge.with.dots.needle.33percent"
         case .dangerousCommands: return "exclamationmark.triangle"
@@ -157,6 +160,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .fontColors: return L("settings.fontColors.description", "Font, color scheme, opacity, and ligatures")
         case .display: return L("settings.display.description", "Syntax highlighting, URLs, images, and window layout")
         case .tabs: return L("settings.tabs.description", "Tab behavior and appearance")
+        case .hoverCard: return L("settings.hoverCard.description", "Choose which sections appear in the tab hover card")
         case .shell: return L("settings.shell.description", "Shell, cursor, and bell")
         case .scrollbackPerf: return L("settings.scrollbackPerf.description", "Scrollback buffer, rendering, and backend")
         case .dangerousCommands: return L("settings.dangerousCommands.description", "Highlight and guard risky commands")
@@ -179,7 +183,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general, .profilesBackup, .about:
             return .essentials
-        case .fontColors, .display, .tabs, .minimalMode:
+        case .fontColors, .display, .tabs, .hoverCard, .minimalMode:
             return .lookAndFeel
         case .shell, .scrollbackPerf, .dangerousCommands, .graphics:
             return .terminal

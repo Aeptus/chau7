@@ -56,6 +56,8 @@ struct TabHoverCard: View {
 private struct TabHoverCardContent: View {
     let tab: OverlayTab
     @ObservedObject var session: TerminalSessionModel
+    @ObservedObject private var settings = FeatureSettings.shared
+    @ObservedObject private var conflictDetector = ConflictDetector.shared
     let isSuspended: Bool
     let isBroadcastIncluded: Bool
     let onHoverChanged: (Bool) -> Void
@@ -105,24 +107,28 @@ private struct TabHoverCardContent: View {
             // MARK: Info Rows
 
             VStack(alignment: .leading, spacing: 8) {
-                directoryRow
-                gitRow
-                shellIntegrationRow
-                devServerRow
-                processInfoSection
-                lastCommandRow
-                tokenOptRow
-                broadcastRow
+                if settings.hoverCardShowDirectory { directoryRow }
+                if settings.hoverCardShowGitBranch { gitRow }
+                if settings.hoverCardShowShellIntegration { shellIntegrationRow }
+                if settings.hoverCardShowDevServer { devServerRow }
+                if settings.hoverCardShowProcesses { processInfoSection }
+                if settings.hoverCardShowLastCommand { lastCommandRow }
+                if settings.hoverCardShowAISession { aiSessionRow }
+                if settings.hoverCardShowConflicts { conflictsRow }
+                if settings.hoverCardShowTokenOptimization { tokenOptRow }
+                if settings.hoverCardShowBroadcast { broadcastRow }
                 suspendedRow
-                notificationRow
+                if settings.hoverCardShowNotificationState { notificationRow }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
 
             // MARK: Footer
 
-            Divider().background(Color.white.opacity(0.1))
-            footerRow
+            if settings.hoverCardShowFooter {
+                Divider().background(Color.white.opacity(0.1))
+                footerRow
+            }
         }
         .background(Color(red: 0.10, green: 0.10, blue: 0.10))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -451,6 +457,7 @@ private struct TabHoverCardContent: View {
     @ViewBuilder
     private var notificationRow: some View {
         if let style = tab.notificationStyle {
+            let summary = notificationSummary(for: style)
             HStack(spacing: 8) {
                 if let icon = style.icon {
                     Image(systemName: icon)
@@ -470,26 +477,143 @@ private struct TabHoverCardContent: View {
 
                 Spacer()
 
-                if style == .waiting {
-                    Text("Waiting")
-                        .font(.system(size: 11, design: .monospaced))
+                Text(summary.label)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(summary.color)
+            }
+        }
+    }
+
+    private func notificationSummary(for style: TabNotificationStyle) -> (label: String, color: Color) {
+        if style.icon == TabNotificationStyle.error.icon ||
+            style.titleColor == .red ||
+            style.iconColor == .red ||
+            style.borderColor == .red {
+            return ("Error", .red)
+        }
+
+        if style.icon == TabNotificationStyle.success.icon ||
+            style.titleColor == .green ||
+            style.iconColor == .green {
+            return ("Success", .green)
+        }
+
+        if style.icon == TabNotificationStyle.attention.icon ||
+            style.persistent ||
+            style.badgeText != nil ||
+            style.borderWidth > 0 ||
+            style.titleColor == .yellow ||
+            style.iconColor == .yellow {
+            return ("Attention", .yellow)
+        }
+
+        if style.icon == TabNotificationStyle.waiting.icon ||
+            style.isItalic {
+            return ("Waiting", .orange)
+        }
+
+        return ("Active", style.titleColor ?? .secondary)
+    }
+
+    // MARK: - AI Session Summary
+
+    @ViewBuilder
+    private var aiSessionRow: some View {
+        let tabID = tab.id.uuidString
+        // Try active run first, fall back to most recent completed run for this tab
+        let run: TelemetryRun? = TelemetryRecorder.shared.activeRunForTab(tabID)
+            ?? TelemetryStore.shared.listRuns(filter: TelemetryRunFilter(limit: 1)).first(where: { $0.tabID == tabID })
+        if let run {
+            VStack(alignment: .leading, spacing: 4) {
+                // Provider + model
+                HStack(spacing: 6) {
+                    Image(systemName: "brain")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.purple)
+                        .frame(width: 16)
+                    Text("\(run.provider.capitalized)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    if let model = run.model {
+                        Text(model)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                // Tokens + cost + turns
+                HStack(spacing: 12) {
+                    let inTokens = run.totalInputTokens ?? 0
+                    let outTokens = run.totalOutputTokens ?? 0
+                    if inTokens + outTokens > 0 {
+                        Text(formatTokens(inTokens) + " in / " + formatTokens(outTokens) + " out")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    if let cost = run.costUSD, cost > 0 {
+                        Text(String(format: "$%.2f", cost))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.orange)
+                    }
+                    if run.turnCount > 0 {
+                        Text("\(run.turnCount) turns")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.leading, 24)
+
+                // Top tool calls
+                let tools = TelemetryStore.shared.toolCallSummary(runID: run.id)
+                if !tools.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(tools.prefix(3), id: \.tool) { entry in
+                            Text("\(entry.tool) \u{00d7}\(entry.count)")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.leading, 24)
+                }
+            }
+        }
+    }
+
+    private func formatTokens(_ count: Int) -> String {
+        if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
+        if count >= 1_000 { return String(format: "%.0fK", Double(count) / 1_000) }
+        return "\(count)"
+    }
+
+    // MARK: - Conflicts
+
+    @ViewBuilder
+    private var conflictsRow: some View {
+        let conflicts = ConflictDetector.shared.conflictsForTab(tab.id)
+        if !conflicts.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
                         .foregroundStyle(.orange)
-                } else if style == .error {
-                    Text("Error")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.red)
-                } else if style == .success {
-                    Text("Success")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.green)
-                } else if style == .attention {
-                    Text("Attention")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.yellow)
-                } else {
-                    Text("Active")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(style.titleColor ?? .secondary)
+                        .frame(width: 16)
+                    Text("File Conflicts (\(conflicts.count))")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.orange)
+                }
+                ForEach(conflicts.prefix(3)) { conflict in
+                    Text(conflict.filePath)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.leading, 24)
+                }
+                if conflicts.count > 3 {
+                    Text("+\(conflicts.count - 3) more")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 24)
                 }
             }
         }

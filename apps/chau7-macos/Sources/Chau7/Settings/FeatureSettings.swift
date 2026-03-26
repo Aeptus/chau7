@@ -295,6 +295,18 @@ private extension FeatureSettings {
             NotificationActionConfig(actionType: .showNotification, enabled: true, config: [:])
         ]
 
+        // Actions for file conflict alerts
+        let conflictActions: [NotificationActionConfig] = [
+            NotificationActionConfig(actionType: .showNotification, enabled: true, config: [:]),
+            NotificationActionConfig(actionType: .playSound, enabled: true, config: ["sound": "Basso", "volume": "60"]),
+            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
+                "style": "custom",
+                "customColor": "orange",
+                "borderWidth": "2",
+                "autoClearSeconds": "60"
+            ])
+        ]
+
         return [
             // Claude Code triggers
             "claude_code.finished": finishedActions,
@@ -303,7 +315,9 @@ private extension FeatureSettings {
             // Codex triggers
             "codex.finished": finishedActions,
             "codex.permission": permissionActions,
-            "codex.idle": idleActions
+            "codex.idle": idleActions,
+            // App triggers
+            "app.file_conflict": conflictActions
         ]
     }
 }
@@ -1418,6 +1432,45 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(showTabBroadcastIndicator, forKey: Keys.showTabBroadcastIndicator) }
     }
 
+    // MARK: - Hover Card Sections
+
+    @Published var hoverCardShowDirectory: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowDirectory, forKey: Keys.hoverCardShowDirectory) }
+    }
+    @Published var hoverCardShowGitBranch: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowGitBranch, forKey: Keys.hoverCardShowGitBranch) }
+    }
+    @Published var hoverCardShowShellIntegration: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowShellIntegration, forKey: Keys.hoverCardShowShellIntegration) }
+    }
+    @Published var hoverCardShowDevServer: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowDevServer, forKey: Keys.hoverCardShowDevServer) }
+    }
+    @Published var hoverCardShowLastCommand: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowLastCommand, forKey: Keys.hoverCardShowLastCommand) }
+    }
+    @Published var hoverCardShowAISession: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowAISession, forKey: Keys.hoverCardShowAISession) }
+    }
+    @Published var hoverCardShowProcesses: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowProcesses, forKey: Keys.hoverCardShowProcesses) }
+    }
+    @Published var hoverCardShowTokenOptimization: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowTokenOptimization, forKey: Keys.hoverCardShowTokenOptimization) }
+    }
+    @Published var hoverCardShowBroadcast: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowBroadcast, forKey: Keys.hoverCardShowBroadcast) }
+    }
+    @Published var hoverCardShowConflicts: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowConflicts, forKey: Keys.hoverCardShowConflicts) }
+    }
+    @Published var hoverCardShowNotificationState: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowNotificationState, forKey: Keys.hoverCardShowNotificationState) }
+    }
+    @Published var hoverCardShowFooter: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowFooter, forKey: Keys.hoverCardShowFooter) }
+    }
+
     /// When enabled, only the custom title is shown (hides all other tab elements
     /// except the close button). Has no effect on tabs without a custom title.
     @Published var customTitleOnly: Bool {
@@ -1991,6 +2044,20 @@ final class FeatureSettings: ObservableObject {
         // Keyboard Shortcuts (NEW)
         static let customShortcuts = "keyboard.customShortcuts"
         static let shortcutHelperHint = "keyboard.shortcutHelperHint"
+        // Hover Card Sections
+        static let hoverCardShowDirectory = "hoverCard.showDirectory"
+        static let hoverCardShowGitBranch = "hoverCard.showGitBranch"
+        static let hoverCardShowShellIntegration = "hoverCard.showShellIntegration"
+        static let hoverCardShowDevServer = "hoverCard.showDevServer"
+        static let hoverCardShowLastCommand = "hoverCard.showLastCommand"
+        static let hoverCardShowAISession = "hoverCard.showAISession"
+        static let hoverCardShowProcesses = "hoverCard.showProcesses"
+        static let hoverCardShowTokenOptimization = "hoverCard.showTokenOptimization"
+        static let hoverCardShowBroadcast = "hoverCard.showBroadcast"
+        static let hoverCardShowConflicts = "hoverCard.showConflicts"
+        static let hoverCardShowNotificationState = "hoverCard.showNotificationState"
+        static let hoverCardShowFooter = "hoverCard.showFooter"
+
         // Notification Filters (NEW)
         static let notificationTriggerState = "notifications.triggerState"
         static let notificationFilters = "notifications.filters"
@@ -2342,6 +2409,19 @@ final class FeatureSettings: ObservableObject {
         self.showTabCTOIndicator = defaults.object(forKey: Keys.showTabCTOIndicator) as? Bool ?? true
         self.allowTabCTOToggle = defaults.object(forKey: Keys.allowTabCTOToggle) as? Bool ?? true
         self.showTabBroadcastIndicator = defaults.object(forKey: Keys.showTabBroadcastIndicator) as? Bool ?? true
+        // Hover Card Sections (defaults: all visible)
+        self.hoverCardShowDirectory = defaults.object(forKey: Keys.hoverCardShowDirectory) as? Bool ?? true
+        self.hoverCardShowGitBranch = defaults.object(forKey: Keys.hoverCardShowGitBranch) as? Bool ?? true
+        self.hoverCardShowShellIntegration = defaults.object(forKey: Keys.hoverCardShowShellIntegration) as? Bool ?? false
+        self.hoverCardShowDevServer = defaults.object(forKey: Keys.hoverCardShowDevServer) as? Bool ?? true
+        self.hoverCardShowLastCommand = defaults.object(forKey: Keys.hoverCardShowLastCommand) as? Bool ?? true
+        self.hoverCardShowAISession = defaults.object(forKey: Keys.hoverCardShowAISession) as? Bool ?? true
+        self.hoverCardShowProcesses = defaults.object(forKey: Keys.hoverCardShowProcesses) as? Bool ?? true
+        self.hoverCardShowTokenOptimization = defaults.object(forKey: Keys.hoverCardShowTokenOptimization) as? Bool ?? false
+        self.hoverCardShowBroadcast = defaults.object(forKey: Keys.hoverCardShowBroadcast) as? Bool ?? false
+        self.hoverCardShowConflicts = defaults.object(forKey: Keys.hoverCardShowConflicts) as? Bool ?? true
+        self.hoverCardShowNotificationState = defaults.object(forKey: Keys.hoverCardShowNotificationState) as? Bool ?? true
+        self.hoverCardShowFooter = defaults.object(forKey: Keys.hoverCardShowFooter) as? Bool ?? true
         self.customTitleOnly = defaults.object(forKey: Keys.customTitleOnly) as? Bool ?? false
 
         // F20: Last Command Badge (default: enabled)
