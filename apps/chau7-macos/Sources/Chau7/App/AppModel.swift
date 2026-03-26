@@ -456,7 +456,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         startCleanupTimer()
         RuntimeSessionManager.shared.startCleanupTimer()
         startAppEventEmitter()
-        ConflictDetector.shared.configure(appModel: self)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            ConflictDetector.shared.configure(appModel: self)
+        }
     }
 
     // MARK: - App Event Emitter
