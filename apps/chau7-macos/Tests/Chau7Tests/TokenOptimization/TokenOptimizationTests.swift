@@ -167,6 +167,15 @@ final class TokenOptimizationCoreTests: XCTestCase {
         }
     }
 
+    func testStableRuntimeStateRequiresNoActiveSessions() {
+        XCTAssertFalse(
+            isStableCTORuntimeState(recalcCount: 12, unchangedCount: 10, activeSessionCount: 1)
+        )
+        XCTAssertTrue(
+            isStableCTORuntimeState(recalcCount: 12, unchangedCount: 10, activeSessionCount: 0)
+        )
+    }
+
     // MARK: - TabTokenOptOverride Properties
 
     func testTabTokenOptOverrideAllCases() {
