@@ -10,11 +10,12 @@ final class TerminalControlServiceTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         FeatureSettings.shared.mcpPermissionMode = .allowAll
         FeatureSettings.shared.mcpRequiresApproval = false
         FeatureSettings.shared.mcpEnabled = true
         appModel = AppModel()
-        overlayModel = OverlayTabsModel(appModel: appModel)
+        overlayModel = OverlayTabsModel(appModel: appModel, restoreState: false)
         TerminalControlService.shared.register(overlayModel)
     }
 
@@ -23,6 +24,7 @@ final class TerminalControlServiceTests: XCTestCase {
             TerminalControlService.shared.unregister(overlayModel)
         }
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         overlayModel = nil
         appModel = nil
         super.tearDown()
@@ -64,6 +66,39 @@ final class TerminalControlServiceTests: XCTestCase {
         overlayModel.newTab()
         let selectedSession = overlayModel.tabs.last?.session
         XCTAssertEqual(selectedSession?.autoFocusOnAttachEnabled, true)
+    }
+
+    func testIsToolAtPromptCanBeScopedToSessionID() throws {
+        let promptSession = try XCTUnwrap(overlayModel.tabs.first?.session)
+        promptSession.activeAppName = "Codex"
+        promptSession.isAtPrompt = true
+        promptSession.restoreAIMetadata(provider: "codex", sessionId: "session-prompt")
+
+        overlayModel.newTab(selectNewTab: false)
+        let activeSession = try XCTUnwrap(overlayModel.tabs.last?.session)
+        activeSession.activeAppName = "Codex"
+        activeSession.isAtPrompt = false
+        activeSession.restoreAIMetadata(provider: "codex", sessionId: "session-active")
+
+        XCTAssertTrue(TerminalControlService.shared.isToolAtPrompt(toolName: "Codex"))
+        XCTAssertTrue(TerminalControlService.shared.isToolAtPrompt(toolName: "Codex", sessionID: "session-prompt"))
+        XCTAssertFalse(TerminalControlService.shared.isToolAtPrompt(toolName: "Codex", sessionID: "session-active"))
+    }
+
+    func testRenameTabPropagatesToAllSplitSessions() throws {
+        overlayModel.splitCurrentTabHorizontally()
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let sessions = tab.splitController.terminalSessions.map(\.1)
+        XCTAssertEqual(sessions.count, 2)
+
+        let response = TerminalControlService.shared.renameTab(
+            tabID: tab.id.uuidString,
+            title: "Split Tab"
+        )
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["title"] as? String, "Split Tab")
+        XCTAssertTrue(sessions.allSatisfy { $0.tabTitleOverride == "Split Tab" })
     }
 
     private func parseJSONObject(_ text: String) -> [String: Any]? {

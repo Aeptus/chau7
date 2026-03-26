@@ -553,15 +553,20 @@ final class TerminalControlService {
 
     // MARK: - Helpers
 
-    /// Returns true if any tab running the named tool is currently at prompt (waiting for input).
-    func isToolAtPrompt(toolName: String) -> Bool {
+    /// Returns true if a matching tab running the named tool is currently at prompt.
+    /// When sessionID is provided, only that specific AI session suppresses completion events.
+    func isToolAtPrompt(toolName: String, sessionID: String? = nil) -> Bool {
         let lowered = toolName.lowercased()
         for (_, model) in allModels {
             for tab in model.tabs {
                 guard let session = tab.session else { continue }
                 let matches = session.aiDisplayAppName?.lowercased() == lowered
                     || session.activeAppName?.lowercased() == lowered
-                if matches, session.isAtPrompt { return true }
+                guard matches else { continue }
+                if let sessionID, session.effectiveAISessionId != sessionID {
+                    continue
+                }
+                if session.effectiveIsAtPrompt { return true }
             }
         }
         return false
@@ -581,7 +586,9 @@ final class TerminalControlService {
 
             let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
             model.tabs[index].customTitle = trimmed.isEmpty ? nil : trimmed
-            model.tabs[index].session?.tabTitleOverride = model.tabs[index].customTitle
+            for (_, session) in model.tabs[index].splitController.terminalSessions {
+                session.tabTitleOverride = model.tabs[index].customTitle
+            }
             model.objectWillChange.send()
 
             return self.encodeAny([
