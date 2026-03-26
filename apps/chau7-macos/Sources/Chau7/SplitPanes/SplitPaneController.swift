@@ -659,6 +659,18 @@ final class DiffViewerModel: ObservableObject, Identifiable {
     @Published var additions: Int = 0
     @Published var deletions: Int = 0
 
+    private let gitRunner: ([String], String) -> String
+    private let loadQueue: DispatchQueue
+    private var loadingToken: UUID?
+
+    init(
+        gitRunner: @escaping ([String], String) -> String = GitDiffTracker.runGit,
+        loadQueue: DispatchQueue = DispatchQueue.global(qos: .userInitiated)
+    ) {
+        self.gitRunner = gitRunner
+        self.loadQueue = loadQueue
+    }
+
     var fileName: String {
         if let path = filePath {
             return (path as NSString).lastPathComponent
@@ -666,25 +678,50 @@ final class DiffViewerModel: ObservableObject, Identifiable {
         return "No File"
     }
 
-    func loadDiff(file: String, in directory: String, mode: DiffMode = .workingTree) {
+    @discardableResult
+    func startLoading(file: String, in directory: String, mode: DiffMode = .workingTree) -> UUID {
         self.filePath = file
         self.directory = directory
         self.diffMode = mode
         isLoading = true
         lastError = nil
+        let token = UUID()
+        loadingToken = token
+        return token
+    }
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+    func finishLoading(
+        token: UUID,
+        file: String,
+        output: String,
+        parsed: ParseResult,
+        effectiveMode: DiffMode
+    ) {
+        guard loadingToken == token else { return }
+        rawDiff = output
+        hunks = parsed.hunks
+        additions = parsed.additions
+        deletions = parsed.deletions
+        diffMode = effectiveMode
+        isLoading = false
+        Log.info("Loaded diff: \(file) (\(parsed.hunks.count) hunks, +\(parsed.additions)/-\(parsed.deletions))")
+    }
+
+    func loadDiff(file: String, in directory: String, mode: DiffMode = .workingTree) {
+        let token = startLoading(file: file, in: directory, mode: mode)
+
+        loadQueue.async { [weak self] in
             var args = ["diff"]
             if mode == .staged { args.append("--cached") }
             args += ["--", file]
 
-            var output = GitDiffTracker.runGit(args: args, in: directory)
+            var output = self?.gitRunner(args, directory) ?? ""
             var parsed = Self.parseUnifiedDiff(output)
             var effectiveMode = mode
 
             // Fallback: try staged diff if working tree was empty (runs on background thread)
             if output.isEmpty && parsed.hunks.isEmpty && mode == .workingTree {
-                let stagedOutput = GitDiffTracker.runGit(args: ["diff", "--cached", "--", file], in: directory)
+                let stagedOutput = self?.gitRunner(["diff", "--cached", "--", file], directory) ?? ""
                 if !stagedOutput.isEmpty {
                     output = stagedOutput
                     parsed = Self.parseUnifiedDiff(stagedOutput)
@@ -693,13 +730,13 @@ final class DiffViewerModel: ObservableObject, Identifiable {
             }
 
             DispatchQueue.main.async {
-                self?.rawDiff = output
-                self?.hunks = parsed.hunks
-                self?.additions = parsed.additions
-                self?.deletions = parsed.deletions
-                self?.diffMode = effectiveMode
-                self?.isLoading = false
-                Log.info("Loaded diff: \(file) (\(parsed.hunks.count) hunks, +\(parsed.additions)/-\(parsed.deletions))")
+                self?.finishLoading(
+                    token: token,
+                    file: file,
+                    output: output,
+                    parsed: parsed,
+                    effectiveMode: effectiveMode
+                )
             }
         }
     }
