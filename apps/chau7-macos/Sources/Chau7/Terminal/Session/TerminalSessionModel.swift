@@ -657,6 +657,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
                         guard !changed.isEmpty, let tabID else { return }
                         DispatchQueue.main.async {
                             CommandBlockManager.shared.setChangedFiles(changed, forLastBlockIn: tabID)
+                            ConflictDetector.shared.checkForConflicts()
                         }
                     }
                 }
