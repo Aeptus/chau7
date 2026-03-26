@@ -337,6 +337,46 @@ final class MCPSession {
                 ]
             ],
 
+            // MARK: Repo Metadata Tools
+
+            [
+                "name": "repo_get_metadata",
+                "description": "Get metadata for a repository including description, labels, favorite files, and frequent commands.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "repo_path": ["type": "string", "description": "Absolute path to the repository root"]
+                    ],
+                    "required": ["repo_path"]
+                ]
+            ],
+            [
+                "name": "repo_set_metadata",
+                "description": "Set metadata for a repository (description, labels, favorite files). Only provided fields are updated.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "repo_path": ["type": "string", "description": "Absolute path to the repository root"],
+                        "description": ["type": "string", "description": "Repository description"],
+                        "labels": ["type": "array", "items": ["type": "string"], "description": "Tags/categories for the repo"],
+                        "favorite_files": ["type": "array", "items": ["type": "string"], "description": "Relative paths to important files"]
+                    ],
+                    "required": ["repo_path"]
+                ]
+            ],
+            [
+                "name": "repo_frequent_commands",
+                "description": "Get frequently used commands for a repository, sorted by frecency.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "repo_path": ["type": "string", "description": "Absolute path to the repository root"],
+                        "limit": ["type": "integer", "description": "Max commands to return (default 20)"]
+                    ],
+                    "required": ["repo_path"]
+                ]
+            ],
+
             // MARK: Runtime API Tools
 
             [
@@ -566,6 +606,31 @@ final class MCPSession {
                 return jsonError("tab_id and title are required")
             }
             return controlService.renameTab(tabID: tabID, title: title)
+
+        // Repo Metadata
+        case "repo_get_metadata":
+            guard let repoPath = arguments["repo_path"] as? String else {
+                return jsonError("repo_path is required")
+            }
+            return controlService.getRepoMetadata(repoPath: repoPath)
+
+        case "repo_set_metadata":
+            guard let repoPath = arguments["repo_path"] as? String else {
+                return jsonError("repo_path is required")
+            }
+            return controlService.setRepoMetadata(
+                repoPath: repoPath,
+                description: arguments["description"] as? String,
+                labels: arguments["labels"] as? [String],
+                favoriteFiles: arguments["favorite_files"] as? [String]
+            )
+
+        case "repo_frequent_commands":
+            guard let repoPath = arguments["repo_path"] as? String else {
+                return jsonError("repo_path is required")
+            }
+            let limit = arguments["limit"] as? Int ?? 20
+            return controlService.repoFrequentCommands(repoPath: repoPath, limit: limit)
 
         // Runtime API
         case let name where name.hasPrefix("runtime_"):
