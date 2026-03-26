@@ -648,6 +648,16 @@ public enum NotificationTriggerCatalog {
         ),
         NotificationTrigger(
             source: .app,
+            type: "file_conflict",
+            labelKey: "notifications.trigger.app.fileConflict.label",
+            labelFallback: "File conflict detected",
+            descriptionKey: "notifications.trigger.app.fileConflict.description",
+            descriptionFallback: "Multiple tabs modified the same file, risking merge conflicts.",
+            defaultEnabled: true,
+            displayContexts: [.settings, .activity]
+        ),
+        NotificationTrigger(
+            source: .app,
             type: "memory_threshold",
             labelKey: "notifications.trigger.app.memoryThreshold.label",
             labelFallback: "Memory threshold",
