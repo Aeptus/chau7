@@ -357,6 +357,9 @@ struct ClosedTabEntry {
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   All methods assume main thread execution.
 final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_body_length
+    private static var lastArchivedMultiWindowTabStateFingerprint: Int?
+    private static var lastArchivedMultiWindowTabStateAt: Date = .distantPast
+
     @Published var tabs: [OverlayTab]
     @Published var selectedTabID: UUID
     @Published var isSearchVisible = false
@@ -1452,14 +1455,59 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         )
     }
 
+    internal static func restoreAdditionalWindowStatesFromBackups() -> [[SavedTabState]]? {
+        for url in tabStateRestoreCandidateURLs() {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let windows = decodeBackupWindowStates(from: data), windows.count > 1 else { continue }
+            Log.info("Recovered \(windows.count) window state set(s) from backup file \(url.lastPathComponent)")
+            return windows
+        }
+        return nil
+    }
+
     private static func restoreSavedTabsFromBackups(appModel: AppModel) -> RestorableTabsPayload? {
         for url in tabStateRestoreCandidateURLs() {
             guard let data = try? Data(contentsOf: url) else { continue }
-            guard let payload = decodeRestorableTabs(from: data, appModel: appModel) else { continue }
-            Log.info("Restored \(payload.tabs.count) tab(s) from backup file \(url.lastPathComponent)")
-            return payload
+            guard let windows = decodeBackupWindowStates(from: data) else { continue }
+            for windowStates in windows where !windowStates.isEmpty {
+                guard let payload = decodeRestorableTabs(fromStates: windowStates, appModel: appModel) else { continue }
+                Log.info("Restored \(payload.tabs.count) tab(s) from backup file \(url.lastPathComponent)")
+                return payload
+            }
         }
         return nil
+    }
+
+    internal static func decodeBackupWindowStates(from data: Data) -> [[SavedTabState]]? {
+        if let multiState = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data),
+           !multiState.windows.isEmpty {
+            return multiState.windows
+        }
+        if let singleWindow = try? JSONDecoder().decode([SavedTabState].self, from: data),
+           !singleWindow.isEmpty {
+            return [singleWindow]
+        }
+        return nil
+    }
+
+    internal static func persistWindowStateBackups(windowStates: [[SavedTabState]], reason: TabStateSaveReason) {
+        guard !windowStates.isEmpty else { return }
+        let payload: Data
+        do {
+            if windowStates.count == 1 {
+                payload = try JSONEncoder().encode(windowStates[0])
+            } else {
+                payload = try JSONEncoder().encode(SavedMultiWindowState(windows: windowStates))
+            }
+            try writeLatestTabStateBackup(payload)
+            if shouldArchiveMultiWindowBackup(data: payload, reason: reason) {
+                try writeArchivedTabStateBackup(payload, reason: reason)
+                lastArchivedMultiWindowTabStateFingerprint = payload.hashValue
+                lastArchivedMultiWindowTabStateAt = Date()
+            }
+        } catch {
+            Log.warn("Failed to persist multi-window tab state backup [\(reason.rawValue)]: \(error)")
+        }
     }
 
     func persistTabStateBackups(data: Data, reason: TabStateSaveReason) {
@@ -1482,6 +1530,15 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         let fingerprint = data.hashValue
         guard lastArchivedTabStateFingerprint != fingerprint else { return false }
         return Date().timeIntervalSince(lastArchivedTabStateAt) >= 300
+    }
+
+    private static func shouldArchiveMultiWindowBackup(data: Data, reason: TabStateSaveReason) -> Bool {
+        if reason == .termination || reason == .restoreSource {
+            return true
+        }
+        let fingerprint = data.hashValue
+        guard lastArchivedMultiWindowTabStateFingerprint != fingerprint else { return false }
+        return Date().timeIntervalSince(lastArchivedMultiWindowTabStateAt) >= 300
     }
 
     private static func archiveImportedTabStateIfNeeded(_ data: Data) {
@@ -1557,7 +1614,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             .sorted { $0.lastPathComponent > $1.lastPathComponent } ?? []
 
         if FileManager.default.fileExists(atPath: latest.path) {
-            return archiveFiles + [latest]
+            return [latest] + archiveFiles
         }
         return archiveFiles
     }
@@ -4072,6 +4129,11 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                 observeGitRootForAutoGrouping(tabID: tabs[i].id, session: session)
             }
         }
+        var seen = Set<String>()
+        for tab in tabs {
+            guard let repoGroupID = tab.repoGroupID, seen.insert(repoGroupID).inserted else { continue }
+            coalesceGroup(repoGroupID: repoGroupID)
+        }
     }
 
     private func observeGitRootForAutoGrouping(tabID: UUID, session: TerminalSessionModel) {
@@ -4082,6 +4144,9 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                       FeatureSettings.shared.repoGroupingMode == .auto,
                       let idx = self.tabs.firstIndex(where: { $0.id == tabID }) else { return }
                 self.tabs[idx].repoGroupID = newRoot
+                if let newRoot {
+                    self.coalesceGroup(repoGroupID: newRoot)
+                }
             }
         repoGroupCancellables[tabID] = cancellable
     }
@@ -4092,6 +4157,9 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
               let session = tab.session else { return }
         if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
             tabs[idx].repoGroupID = session.gitRootPath
+            if let repoGroupID = session.gitRootPath {
+                coalesceGroup(repoGroupID: repoGroupID)
+            }
         }
         observeGitRootForAutoGrouping(tabID: tab.id, session: session)
     }
@@ -4106,6 +4174,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         guard let idx = tabs.firstIndex(where: { $0.id == tabID }),
               let root = tabs[idx].session?.gitRootPath else { return }
         tabs[idx].repoGroupID = root
+        coalesceGroup(repoGroupID: root)
     }
 
     func removeTabFromRepoGroup(tabID: UUID) {
@@ -4121,6 +4190,16 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                 tabs[i].repoGroupID = root
             }
         }
+        coalesceGroup(repoGroupID: root)
+    }
+
+    private func coalesceGroup(repoGroupID: String) {
+        let order = TabBarLayout.coalescedOrder(
+            groupIDs: tabs.map(\.repoGroupID),
+            targetGroupID: repoGroupID
+        )
+        guard order != Array(tabs.indices) else { return }
+        tabs = order.map { tabs[$0] }
     }
 
     // MARK: - F02: Split Panes

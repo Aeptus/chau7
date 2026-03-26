@@ -789,9 +789,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         // Fallback: first dirty file in working tree
         let porcelain = GitDiffTracker.runGit(args: ["status", "--porcelain"], in: dir)
-        if let firstLine = porcelain.components(separatedBy: "\n").first(where: { !$0.isEmpty }),
-           firstLine.count > 3 {
-            let file = String(firstLine.dropFirst(3))
+        if let file = GitDiffTracker.firstChangedPath(inStatusPorcelain: porcelain) {
             model.openDiffViewerInCurrentTab(filePath: file, directory: dir)
         }
     }
@@ -823,9 +821,8 @@ private final class OverlayBlurView: NSVisualEffectView {
         multiWindowAutoSaveTimer = timer
     }
 
-    /// Save all visible windows' tab states atomically to UserDefaults.
+    /// Save all visible windows' tab states atomically to UserDefaults and disk backups.
     /// Window 0 → legacy key, windows 1..N → multi-window key.
-    /// Also triggers per-window disk backups.
     private func saveAllWindowStates(reason: TabStateSaveReason) {
         var allWindows: [[SavedTabState]] = []
         for host in overlayHosts {
@@ -850,14 +847,13 @@ private final class OverlayBlurView: NSVisualEffectView {
         } else {
             UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         }
-        Log.trace("Saved \(allWindows.count) window(s) tab state [\(reason.rawValue)]")
-
-        // Trigger per-window disk backups
-        for host in overlayHosts {
-            let isHidden = hiddenWindowNumbers.contains(host.window.windowNumber)
-            guard !isHidden, host.window.isVisible else { continue }
-            host.model.saveTabState(reason: reason)
+        // Flush to disk immediately — UserDefaults coalesces writes and the
+        // process may exit before the next automatic sync.
+        if reason == .termination {
+            UserDefaults.standard.synchronize()
         }
+        OverlayTabsModel.persistWindowStateBackups(windowStates: allWindows, reason: reason)
+        Log.trace("Saved \(allWindows.count) window(s) tab state [\(reason.rawValue)]")
     }
 
     // MARK: - Tab Move Between Windows
@@ -963,16 +959,25 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// Windows 1..N are created here with their saved tab states.
     private func restoreAdditionalWindows() {
         guard let model else { return }
-        guard let data = UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
-              let multiState = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data),
-              multiState.windows.count > 1 else { return }
+        let restoredWindows: [[SavedTabState]]
+        let restoreSource: String
 
-        // Clear the key so we don't restore stale windows on crash recovery
-        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        if let data = UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
+           let multiState = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data),
+           multiState.windows.count > 1 {
+            restoredWindows = Array(multiState.windows.dropFirst())
+            restoreSource = "user defaults"
+            // Clear the key so we don't restore stale windows on crash recovery
+            UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        } else if let backupWindows = OverlayTabsModel.restoreAdditionalWindowStatesFromBackups() {
+            restoredWindows = Array(backupWindows.dropFirst())
+            restoreSource = "disk backup"
+        } else {
+            return
+        }
 
         // Skip window 0 (already restored by the primary overlayModel)
-        for windowIndex in 1 ..< multiState.windows.count {
-            let windowStates = multiState.windows[windowIndex]
+        for (windowIndex, windowStates) in restoredWindows.enumerated() {
             guard !windowStates.isEmpty else { continue }
 
             // Pass pre-decoded states directly — no UserDefaults round-trip
@@ -982,7 +987,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
             overlayHosts.append(OverlayHost(window: window, model: tabsModel))
 
-            Log.info("Restored additional window \(windowIndex) with \(windowStates.count) tab(s)")
+            Log.info("Restored additional window \(windowIndex + 1) with \(windowStates.count) tab(s) from \(restoreSource)")
         }
     }
 
