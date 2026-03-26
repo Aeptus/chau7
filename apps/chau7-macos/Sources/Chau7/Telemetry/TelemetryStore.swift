@@ -556,6 +556,28 @@ final class TelemetryStore {
         return calls
     }
 
+    /// Aggregate tool call counts for a run, sorted by frequency.
+    func toolCallSummary(runID: String) -> [(tool: String, count: Int)] {
+        queue.sync {
+            guard let db else { return [] }
+            let sql = """
+                SELECT tool_name, COUNT(*) as cnt FROM tool_calls
+                WHERE run_id = ? GROUP BY tool_name ORDER BY cnt DESC
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, runID)
+            var results: [(tool: String, count: Int)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let name = String(cString: sqlite3_column_text(stmt, 0))
+                let count = Int(sqlite3_column_int(stmt, 1))
+                results.append((tool: name, count: count))
+            }
+            return results
+        }
+    }
+
     func latestRunForRepo(_ repoPath: String, provider: String? = nil) -> TelemetryRun? {
         queue.sync {
             guard let db else { return nil }
@@ -631,18 +653,50 @@ final class TelemetryStore {
     func tokenUsagePerTab(after: Date? = nil) -> [TabTokenConsumption] {
         queue.sync {
             guard let db else { return [] }
-            // MAX(provider) picks the lexicographically last provider per tab —
-            // close enough to "most recent" for label display.
             var sql = """
-            SELECT tab_id, COUNT(*), COALESCE(SUM(total_input_tokens),0),
-                   COALESCE(SUM(total_output_tokens),0), COALESCE(SUM(cost_usd),0),
-                   MAX(provider)
-            FROM runs WHERE tab_id IS NOT NULL
+            WITH filtered_runs AS (
+                SELECT *
+                FROM runs
+                WHERE tab_id IS NOT NULL
             """
             if after != nil {
                 sql += " AND started_at >= ?"
             }
-            sql += " GROUP BY tab_id ORDER BY COALESCE(SUM(total_input_tokens),0) + COALESCE(SUM(total_output_tokens),0) DESC"
+            sql += """
+            ),
+            latest_per_tab AS (
+                SELECT tab_id,
+                       (
+                           SELECT provider
+                           FROM filtered_runs latest
+                           WHERE latest.tab_id = filtered_runs.tab_id
+                             AND latest.provider IS NOT NULL
+                           ORDER BY latest.started_at DESC, latest.created_at DESC
+                           LIMIT 1
+                       ) AS last_provider,
+                       (
+                           SELECT COALESCE(repo_path, cwd)
+                           FROM filtered_runs latest
+                           WHERE latest.tab_id = filtered_runs.tab_id
+                             AND COALESCE(latest.repo_path, latest.cwd) IS NOT NULL
+                           ORDER BY latest.started_at DESC, latest.created_at DESC
+                           LIMIT 1
+                       ) AS last_location_path
+                FROM filtered_runs
+                GROUP BY tab_id
+            )
+            SELECT filtered_runs.tab_id,
+                   COUNT(*),
+                   COALESCE(SUM(filtered_runs.total_input_tokens),0),
+                   COALESCE(SUM(filtered_runs.total_output_tokens),0),
+                   COALESCE(SUM(filtered_runs.cost_usd),0),
+                   latest_per_tab.last_provider,
+                   latest_per_tab.last_location_path
+            FROM filtered_runs
+            LEFT JOIN latest_per_tab ON latest_per_tab.tab_id = filtered_runs.tab_id
+            GROUP BY filtered_runs.tab_id
+            ORDER BY COALESCE(SUM(filtered_runs.total_input_tokens),0) + COALESCE(SUM(filtered_runs.total_output_tokens),0) DESC
+            """
 
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
@@ -661,7 +715,8 @@ final class TelemetryStore {
                     totalInputTokens: Int(sqlite3_column_int64(stmt, 2)),
                     totalOutputTokens: Int(sqlite3_column_int64(stmt, 3)),
                     totalCostUSD: sqlite3_column_double(stmt, 4),
-                    lastProvider: colText(stmt, 5)
+                    lastProvider: colText(stmt, 5),
+                    lastLocationPath: colText(stmt, 6)
                 ))
             }
             return results
