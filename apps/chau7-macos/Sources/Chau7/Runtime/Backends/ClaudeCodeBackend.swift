@@ -24,13 +24,14 @@ struct ClaudeCodeBackend: AgentBackend {
         }
 
         parts.append(contentsOf: config.args)
+        let command = ShellEscaping.escapeArguments(parts)
 
         // Prepend environment variables
         let envPrefix = config.environment.map { "\($0.key)=\(shellEscape($0.value))" }.joined(separator: " ")
         if !envPrefix.isEmpty {
-            return envPrefix + " " + parts.joined(separator: " ")
+            return envPrefix + " " + command
         }
-        return parts.joined(separator: " ")
+        return command
     }
 
     func formatPromptInput(_ prompt: String, context: String?) -> String {
