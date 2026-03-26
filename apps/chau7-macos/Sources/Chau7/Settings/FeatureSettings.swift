@@ -2823,6 +2823,19 @@ final class FeatureSettings: ObservableObject {
         var showTabCTOIndicator: Bool?
         var allowTabCTOToggle: Bool?
         var showTabBroadcastIndicator: Bool?
+        // Hover Card
+        var hoverCardShowDirectory: Bool?
+        var hoverCardShowGitBranch: Bool?
+        var hoverCardShowShellIntegration: Bool?
+        var hoverCardShowDevServer: Bool?
+        var hoverCardShowLastCommand: Bool?
+        var hoverCardShowAISession: Bool?
+        var hoverCardShowProcesses: Bool?
+        var hoverCardShowTokenOptimization: Bool?
+        var hoverCardShowBroadcast: Bool?
+        var hoverCardShowConflicts: Bool?
+        var hoverCardShowNotificationState: Bool?
+        var hoverCardShowFooter: Bool?
         var customTitleOnly: Bool?
         var isCopyOnSelectEnabled: Bool
         var isLineTimestampsEnabled: Bool
@@ -2920,6 +2933,18 @@ final class FeatureSettings: ObservableObject {
             showTabCTOIndicator: showTabCTOIndicator,
             allowTabCTOToggle: allowTabCTOToggle,
             showTabBroadcastIndicator: showTabBroadcastIndicator,
+            hoverCardShowDirectory: hoverCardShowDirectory,
+            hoverCardShowGitBranch: hoverCardShowGitBranch,
+            hoverCardShowShellIntegration: hoverCardShowShellIntegration,
+            hoverCardShowDevServer: hoverCardShowDevServer,
+            hoverCardShowLastCommand: hoverCardShowLastCommand,
+            hoverCardShowAISession: hoverCardShowAISession,
+            hoverCardShowProcesses: hoverCardShowProcesses,
+            hoverCardShowTokenOptimization: hoverCardShowTokenOptimization,
+            hoverCardShowBroadcast: hoverCardShowBroadcast,
+            hoverCardShowConflicts: hoverCardShowConflicts,
+            hoverCardShowNotificationState: hoverCardShowNotificationState,
+            hoverCardShowFooter: hoverCardShowFooter,
             customTitleOnly: customTitleOnly,
             isCopyOnSelectEnabled: isCopyOnSelectEnabled,
             isLineTimestampsEnabled: isLineTimestampsEnabled,
@@ -3063,6 +3088,18 @@ final class FeatureSettings: ObservableObject {
         showTabCTOIndicator = imported.showTabCTOIndicator ?? true
         allowTabCTOToggle = imported.allowTabCTOToggle ?? true
         showTabBroadcastIndicator = imported.showTabBroadcastIndicator ?? true
+        if let v = imported.hoverCardShowDirectory { hoverCardShowDirectory = v }
+        if let v = imported.hoverCardShowGitBranch { hoverCardShowGitBranch = v }
+        if let v = imported.hoverCardShowShellIntegration { hoverCardShowShellIntegration = v }
+        if let v = imported.hoverCardShowDevServer { hoverCardShowDevServer = v }
+        if let v = imported.hoverCardShowLastCommand { hoverCardShowLastCommand = v }
+        if let v = imported.hoverCardShowAISession { hoverCardShowAISession = v }
+        if let v = imported.hoverCardShowProcesses { hoverCardShowProcesses = v }
+        if let v = imported.hoverCardShowTokenOptimization { hoverCardShowTokenOptimization = v }
+        if let v = imported.hoverCardShowBroadcast { hoverCardShowBroadcast = v }
+        if let v = imported.hoverCardShowConflicts { hoverCardShowConflicts = v }
+        if let v = imported.hoverCardShowNotificationState { hoverCardShowNotificationState = v }
+        if let v = imported.hoverCardShowFooter { hoverCardShowFooter = v }
         customTitleOnly = imported.customTitleOnly ?? false
         isCopyOnSelectEnabled = imported.isCopyOnSelectEnabled
         isLineTimestampsEnabled = imported.isLineTimestampsEnabled
@@ -3197,6 +3234,18 @@ final class FeatureSettings: ObservableObject {
         showTabCTOIndicator = true
         allowTabCTOToggle = true
         showTabBroadcastIndicator = true
+        hoverCardShowDirectory = true
+        hoverCardShowGitBranch = true
+        hoverCardShowShellIntegration = false
+        hoverCardShowDevServer = true
+        hoverCardShowLastCommand = true
+        hoverCardShowAISession = true
+        hoverCardShowProcesses = true
+        hoverCardShowTokenOptimization = false
+        hoverCardShowBroadcast = false
+        hoverCardShowConflicts = true
+        hoverCardShowNotificationState = true
+        hoverCardShowFooter = true
         customTitleOnly = false
 
         // Features
@@ -3512,6 +3561,18 @@ extension FeatureSettings {
             showTabCTOIndicator: true,
             allowTabCTOToggle: true,
             showTabBroadcastIndicator: true,
+            hoverCardShowDirectory: true,
+            hoverCardShowGitBranch: true,
+            hoverCardShowShellIntegration: false,
+            hoverCardShowDevServer: true,
+            hoverCardShowLastCommand: true,
+            hoverCardShowAISession: true,
+            hoverCardShowProcesses: true,
+            hoverCardShowTokenOptimization: false,
+            hoverCardShowBroadcast: false,
+            hoverCardShowConflicts: true,
+            hoverCardShowNotificationState: true,
+            hoverCardShowFooter: true,
             customTitleOnly: false,
             isCopyOnSelectEnabled: false,
             isLineTimestampsEnabled: false,
