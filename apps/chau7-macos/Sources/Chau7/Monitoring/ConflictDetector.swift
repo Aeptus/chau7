@@ -2,6 +2,7 @@ import Foundation
 import Combine
 
 /// Detects when multiple tabs modify the same file, indicating potential merge conflicts.
+@MainActor
 final class ConflictDetector: ObservableObject {
     static let shared = ConflictDetector()
 
@@ -9,11 +10,15 @@ final class ConflictDetector: ObservableObject {
 
     /// How far back to look at command blocks for changed files (seconds).
     var lookbackWindow: TimeInterval = 300 // 5 minutes
+    private weak var appModel: AppModel?
 
     private init() {}
 
+    func configure(appModel: AppModel) {
+        self.appModel = appModel
+    }
+
     /// Check all tabs for overlapping changed files. Call after any command finishes.
-    @MainActor
     func checkForConflicts() {
         let blocksByTab = CommandBlockManager.shared.blocksByTab
         let cutoff = Date().addingTimeInterval(-lookbackWindow)
@@ -43,29 +48,53 @@ final class ConflictDetector: ObservableObject {
 
         // Find conflicts (files touched by 2+ tabs)
         var conflicts: [FileConflict] = []
+        var newConflicts: [FileConflict] = []
         for (file, tabs) in fileToTabs where tabs.count > 1 {
             // Check if this conflict already exists (keep same ID for stability)
             if let existing = activeConflicts.first(where: { $0.filePath == file && $0.tabIDs == tabs }) {
                 conflicts.append(existing)
             } else {
-                conflicts.append(FileConflict(
+                let conflict = FileConflict(
                     id: UUID(),
                     filePath: file,
                     repoRoot: "",
                     tabIDs: tabs,
                     detectedAt: Date()
-                ))
+                )
+                conflicts.append(conflict)
+                newConflicts.append(conflict)
             }
         }
 
         if conflicts != activeConflicts {
             activeConflicts = conflicts
         }
+
+        emitEvents(for: newConflicts)
     }
 
     /// Get conflicts that involve a specific tab.
     func conflictsForTab(_ tabID: UUID) -> [FileConflict] {
         activeConflicts.filter { $0.tabIDs.contains(tabID) }
+    }
+
+    private func emitEvents(for conflicts: [FileConflict]) {
+        guard let appModel, !conflicts.isEmpty else { return }
+        for conflict in conflicts {
+            let fileName = URL(fileURLWithPath: conflict.filePath).lastPathComponent
+            let label = fileName.isEmpty ? conflict.filePath : fileName
+            let message = "Potential file conflict: \(label) changed in \(conflict.tabIDs.count) tabs"
+            for tabID in conflict.tabIDs {
+                appModel.recordEvent(
+                    source: .app,
+                    type: "file_conflict",
+                    tool: "Chau7",
+                    message: message,
+                    notify: true,
+                    tabID: tabID
+                )
+            }
+        }
     }
 }
 

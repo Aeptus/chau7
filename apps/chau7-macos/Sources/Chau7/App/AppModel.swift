@@ -456,6 +456,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         startCleanupTimer()
         RuntimeSessionManager.shared.startCleanupTimer()
         startAppEventEmitter()
+        ConflictDetector.shared.configure(appModel: self)
     }
 
     // MARK: - App Event Emitter
