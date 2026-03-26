@@ -91,6 +91,7 @@ Detection methods:
 - **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.
 - **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
 - **AI event notifications** — finished, failed, needs_validation, permission, tool_complete, session_end, idle.
+- **File conflict events** — newly detected cross-tab file conflicts emit app events for each affected tab.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
 - **Codex session resolver** — maps Codex OpenAI capture sessions to working directories with LRU caching.
 
@@ -272,7 +273,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Dock badge and bounce (critical/non-critical).
 - Configurable sounds (Glass, Purr, etc.) with volume control.
 - Command idle detection with configurable threshold. Fires once per session, resets only on real user activity.
-- Auto tab styling on events with auto-clear timeout. Deduplicates redundant re-applies and clears persistent approval styling as soon as the approval is resolved.
+- Auto tab styling on events with auto-clear timeout. Deduplicates redundant re-applies, clears persistent approval styling as soon as the approval is resolved, and can highlight every affected tab for file conflicts.
 - Visual bell mode (screen flash), combinable with audible bell.
 - Bell rate limiting with configurable minimum interval, scoped per trigger and tab/session/directory identity.
 - Rate limiting and per-trigger enable/disable.

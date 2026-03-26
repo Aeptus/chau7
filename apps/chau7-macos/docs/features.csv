@@ -32,6 +32,7 @@ AI Detection,Output Banner Detection,"Detect AI tools from output banners — co
 AI Integration,LLM Error Explanation,"One-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint — plain-language root cause and fix suggestions",Shipped,Yes
 AI Integration,Claude Code Deep Integration,"Monitor Claude Code hook events: prompts, tools, permissions, responses — first-class agentic workflow support",Shipped,Yes
 AI Integration,AI Event Notifications,"Notifications for finished, failed, needs_validation, permission, tool_complete, session_end, idle events",Shipped,Yes
+AI Integration,File Conflict Events,Newly detected cross-tab file conflicts emit app events for each affected tab,Shipped,Yes
 AI Integration,AI Event Log Tailing,Real-time tailing of ~/.ai-events.log for AI tool events,Shipped,No
 AI Integration,PTY Output Logging,Capture raw terminal output for AI tool sessions (codex-pty and claude-pty logs),Shipped,No
 AI Integration,Codex Session Resolver,Maps Codex OpenAI capture sessions to working directories with LRU caching,Shipped,Yes
@@ -145,7 +146,7 @@ Notifications,Desktop Notifications,"Native macOS notifications for task complet
 Notifications,Dock Badge & Bounce,Animated dock badge and critical/non-critical bounce for key events,Shipped,No
 Notifications,Configurable Sounds,"Alert sounds (Glass, Purr, etc.) with volume control",Shipped,No
 Notifications,Command Idle Detection,"Notify when a command has been idle beyond configurable threshold. Fires once per session, resets only on real user activity.",Shipped,No
-Notifications,Auto Tab Styling,Tabs change color on events — auto-clear after configurable timeout and clear persistent approval styling immediately on approval resolution,Shipped,No
+Notifications,Auto Tab Styling,Tabs change color on events — auto-clear after configurable timeout, clear persistent approval styling immediately on approval resolution, and style all tabs affected by a file conflict,Shipped,No
 Notifications,Rate Limiting,Prevent notification spam with configurable thresholds scoped per trigger and tab/session/directory identity,Shipped,No
 Notifications,Per-Trigger Control,Enable/disable and customize actions for each event type individually,Shipped,No
 Notifications,Isolated Notification Suppression,Isolated test mode disables notification-center integration to avoid side effects and startup crashes,Shipped,Yes
