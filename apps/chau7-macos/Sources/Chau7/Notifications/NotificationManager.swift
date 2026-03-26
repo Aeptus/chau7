@@ -148,10 +148,11 @@ final class NotificationManager {
             Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
 
         case .fireDefault(let triggerId):
-            let rateLimitKey = triggerId ?? "unmatched.\(event.source.rawValue).\(event.tool.lowercased())"
+            let baseRateLimitKey = triggerId ?? "unmatched.\(event.source.rawValue).\(event.tool.lowercased())"
+            let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: event)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
                 Log.info("Rate limited: \(rateLimitKey) for tool=\(event.tool)")
-                history.record(event: event, triggerId: rateLimitKey, actionsExecuted: [], wasRateLimited: true)
+                history.record(event: event, triggerId: baseRateLimitKey, actionsExecuted: [], wasRateLimited: true)
                 return
             }
             showDefaultNotification(for: event)
@@ -162,10 +163,11 @@ final class NotificationManager {
             let didStyleTab = applyDefaultTabStyle(for: event)
             var actions = ["showNotification"]
             if didStyleTab { actions.append("styleTab") }
-            history.record(event: event, triggerId: rateLimitKey, actionsExecuted: actions, wasRateLimited: false)
+            history.record(event: event, triggerId: baseRateLimitKey, actionsExecuted: actions, wasRateLimited: false)
 
         case .fireActions(let triggerId, let actions):
-            guard rateLimiter.checkAndConsume(triggerId: triggerId) else {
+            let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: triggerId, event: event)
+            guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
                 Log.info("Rate limited: \(triggerId) for tool=\(event.tool)")
                 history.record(event: event, triggerId: triggerId, actionsExecuted: [], wasRateLimited: true)
                 return

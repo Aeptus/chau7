@@ -216,8 +216,8 @@ enum TabResolver {
                 }
                 if dirMatches.count > 1 {
                     let best = dirMatches.max(by: { a, b in
-                        let aDate = a.session?.lastActivityDate ?? .distantPast
-                        let bDate = b.session?.lastActivityDate ?? .distantPast
+                        let aDate = tabLastActivityDate(a)
+                        let bDate = tabLastActivityDate(b)
                         return aDate < bDate
                     })
                     if let best {
@@ -231,12 +231,19 @@ enum TabResolver {
 
         // 3) Deterministic fallback: most recently active tab
         let best = matches.max(by: { a, b in
-            let aDate = a.session?.lastActivityDate ?? .distantPast
-            let bDate = b.session?.lastActivityDate ?? .distantPast
+            let aDate = tabLastActivityDate(a)
+            let bDate = tabLastActivityDate(b)
             return aDate < bDate
         })
         logAmbiguousFallback(target: target, matchesCount: matches.count)
         return best
+    }
+
+    private static func tabLastActivityDate(_ tab: OverlayTab) -> Date {
+        let sessionDates = tab.splitController.terminalSessions.map { _, session in
+            session.lastActivityDate
+        }
+        return sessionDates.max() ?? tab.createdAt
     }
 
     private static func directoryMatchRank(targetDirectory: String, sessionDirectory: String) -> Int? {
