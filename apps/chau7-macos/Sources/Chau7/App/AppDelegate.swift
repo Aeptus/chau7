@@ -976,9 +976,18 @@ private final class OverlayBlurView: NSVisualEffectView {
             return
         }
 
-        // Skip window 0 (already restored by the primary overlayModel)
+        // Deduplicate: skip any additional window whose tab IDs overlap heavily
+        // with window 0 (prevents duplicated windows from cascading across restarts).
+        let window0TabIDs = Set(overlayHosts.first?.model.tabs.map(\.id) ?? [])
+
         for (windowIndex, windowStates) in restoredWindows.enumerated() {
             guard !windowStates.isEmpty else { continue }
+            let additionalTabIDs = Set(windowStates.compactMap { UUID(uuidString: $0.tabID ?? "") })
+            let overlap = window0TabIDs.intersection(additionalTabIDs)
+            if !additionalTabIDs.isEmpty && overlap.count > additionalTabIDs.count / 2 {
+                Log.warn("Skipping duplicate window \(windowIndex + 1): \(overlap.count)/\(additionalTabIDs.count) tab IDs overlap with window 0")
+                continue
+            }
 
             // Pass pre-decoded states directly — no UserDefaults round-trip
             let tabsModel = OverlayTabsModel(appModel: model, restoringStates: windowStates)
