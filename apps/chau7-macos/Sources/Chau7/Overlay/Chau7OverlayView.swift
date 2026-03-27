@@ -991,20 +991,16 @@ private struct ToolbarTabBarView: View {
 
 }
 
-/// Y-fork branch indicator using SF Symbol arrow.triangle.branch.
-/// On main: only the right curve (main line) is bright.
-/// Off main: both curves bright (feature branches active).
+/// Y-fork branch indicator using the SF Symbol arrow.triangle.branch.
+/// On main: whole symbol dimmed (you're on the trunk, not branching).
+/// Off main: whole symbol bright (you're on a feature branch).
 private struct BranchIndicator: View {
     let isOnMain: Bool
 
     var body: some View {
         Image(systemName: "arrow.triangle.branch")
             .font(.system(size: 11, weight: .semibold))
-            .symbolRenderingMode(.palette)
-            .foregroundStyle(
-                isOnMain ? .white.opacity(0.25) : .white.opacity(0.9),  // left branch
-                isOnMain ? .white.opacity(0.9) : .white.opacity(0.9)    // right branch + stem
-            )
+            .foregroundStyle(.white.opacity(isOnMain ? 0.25 : 0.9))
     }
 }
 
