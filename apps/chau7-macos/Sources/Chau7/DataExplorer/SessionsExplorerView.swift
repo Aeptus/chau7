@@ -1,23 +1,23 @@
 import SwiftUI
 import Chau7Core
 
+/// Groups runs by repo for a high-level view of AI activity per project.
 struct SessionsExplorerView: View {
-    @State private var sessions: [[String: Any]] = []
+    @State private var repoGroups: [RepoRunGroup] = []
 
     var body: some View {
         Group {
-            if sessions.isEmpty {
+            if repoGroups.isEmpty {
                 VStack {
                     Spacer()
-                    Text("No sessions recorded yet")
+                    Text("No AI sessions recorded yet")
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                List(sessions.indices, id: \.self) { index in
-                    let session = sessions[index]
-                    SessionRow(session: session)
+                List(repoGroups) { group in
+                    RepoGroupRow(group: group)
                 }
                 .listStyle(.plain)
             }
@@ -26,57 +26,114 @@ struct SessionsExplorerView: View {
     }
 
     private func reload() {
-        sessions = TelemetryStore.shared.listSessions()
+        let allRuns = TelemetryStore.shared.listRuns(filter: TelemetryRunFilter(limit: 500))
+        var byRepo: [String: [TelemetryRun]] = [:]
+        for run in allRuns {
+            let key = run.repoPath ?? run.cwd ?? "Unknown"
+            byRepo[key, default: []].append(run)
+        }
+        repoGroups = byRepo.map { path, runs in
+            let providers = Set(runs.map(\.provider))
+            let totalTokens = runs.reduce(0) { $0 + ($1.totalInputTokens ?? 0) + ($1.totalOutputTokens ?? 0) }
+            let totalTurns = runs.reduce(0) { $0 + $1.turnCount }
+            let lastActive = runs.map(\.startedAt).max() ?? Date.distantPast
+            return RepoRunGroup(
+                repoPath: path,
+                repoName: URL(fileURLWithPath: path).lastPathComponent,
+                runCount: runs.count,
+                providers: providers.sorted(),
+                totalTokens: totalTokens,
+                totalTurns: totalTurns,
+                lastActive: lastActive
+            )
+        }
+        .sorted { $0.lastActive > $1.lastActive }
     }
 }
 
-private struct SessionRow: View {
-    let session: [String: Any]
+private struct RepoRunGroup: Identifiable {
+    let repoPath: String
+    var id: String { repoPath }
+    let repoName: String
+    let runCount: Int
+    let providers: [String]
+    let totalTokens: Int
+    let totalTurns: Int
+    let lastActive: Date
+}
+
+private struct RepoGroupRow: View {
+    let group: RepoRunGroup
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(sessionID)
-                    .font(.system(size: 12, design: .monospaced))
-                    .lineLimit(1)
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.blue)
+                Text(group.repoName)
+                    .font(.system(size: 13, weight: .semibold))
 
                 Spacer()
 
-                if let provider = session["provider"] as? String {
-                    Text(provider.capitalized)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.purple)
-                }
+                Text(relativeTime)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
             }
 
-            HStack {
-                if let repo = session["repo_path"] as? String {
-                    Text(URL(fileURLWithPath: repo).lastPathComponent)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                // Provider badges
+                ForEach(group.providers, id: \.self) { provider in
+                    Text(provider.capitalized)
+                        .font(.system(size: 10, weight: .medium))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(providerColor(provider).opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .foregroundStyle(providerColor(provider))
                 }
 
                 Spacer()
 
-                if let count = session["run_count"] as? Int {
-                    Text("\(count) runs")
-                        .font(.system(size: 11))
+                Text("\(group.runCount) runs")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+                if group.totalTurns > 0 {
+                    Text("\(group.totalTurns) turns")
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
 
-                if let lastActive = session["last_active"] as? String {
-                    Text(lastActive)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                if group.totalTokens > 0 {
+                    Text(formatTokens(group.totalTokens))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.blue)
                 }
             }
         }
         .padding(.vertical, 4)
     }
 
-    private var sessionID: String {
-        guard let id = session["session_id"] as? String else { return "—" }
-        if id.count > 12 { return String(id.prefix(8)) + "..." }
-        return id
+    private var relativeTime: String {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f.localizedString(for: group.lastActive, relativeTo: Date())
+    }
+
+    private func providerColor(_ provider: String) -> Color {
+        switch provider.lowercased() {
+        case "claude": return .purple
+        case "codex": return .green
+        case "cline": return .orange
+        case "chatgpt": return .teal
+        default: return .secondary
+        }
+    }
+
+    private func formatTokens(_ count: Int) -> String {
+        if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
+        if count >= 1_000 { return String(format: "%.0fK", Double(count) / 1_000) }
+        return "\(count)"
     }
 }

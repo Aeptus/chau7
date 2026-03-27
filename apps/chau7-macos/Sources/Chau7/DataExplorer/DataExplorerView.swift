@@ -3,12 +3,12 @@ import Chau7Core
 
 struct DataExplorerView: View {
     enum Tab: String, CaseIterable {
-        case history = "History"
-        case runs = "AI Runs"
-        case sessions = "Sessions"
+        case repos = "By Repo"
+        case runs = "All Runs"
+        case history = "Commands"
     }
 
-    @State private var selectedTab: Tab = .runs
+    @State private var selectedTab: Tab = .repos
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,12 +25,12 @@ struct DataExplorerView: View {
 
             // Content
             switch selectedTab {
-            case .history:
-                HistoryExplorerView()
+            case .repos:
+                SessionsExplorerView()
             case .runs:
                 RunsExplorerView()
-            case .sessions:
-                SessionsExplorerView()
+            case .history:
+                HistoryExplorerView()
             }
         }
         .frame(minWidth: 600, minHeight: 400)
