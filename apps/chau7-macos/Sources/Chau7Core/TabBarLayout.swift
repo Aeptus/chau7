@@ -4,10 +4,12 @@ import CoreGraphics
 public struct TabBarLayoutTab: Equatable {
     public let id: UUID
     public let repoGroupID: String?
+    public let groupIdentity: String?
 
-    public init(id: UUID, repoGroupID: String?) {
+    public init(id: UUID, repoGroupID: String?, groupIdentity: String? = nil) {
         self.id = id
         self.repoGroupID = repoGroupID
+        self.groupIdentity = groupIdentity ?? repoGroupID
     }
 }
 
@@ -39,15 +41,16 @@ public enum TabBarLayout {
             items.append(.idleTabs)
         }
 
-        var currentGroupID: String?
+        var currentGroupIdentity: String?
         for tab in visibleTabs {
             if let repoGroupID = tab.repoGroupID {
-                if repoGroupID != currentGroupID {
+                let groupIdentity = tab.groupIdentity ?? repoGroupID
+                if groupIdentity != currentGroupIdentity {
                     items.append(.repoGroupTag(repoGroupID: repoGroupID, firstTabID: tab.id))
-                    currentGroupID = repoGroupID
+                    currentGroupIdentity = groupIdentity
                 }
             } else {
-                currentGroupID = nil
+                currentGroupIdentity = nil
             }
             items.append(.tab(tab.id))
         }

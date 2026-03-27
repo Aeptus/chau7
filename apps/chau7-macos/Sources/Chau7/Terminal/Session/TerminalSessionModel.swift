@@ -1435,8 +1435,17 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
             }
         }
 
-        // State machine filters: redetecting rejects different tools, detected is unreachable
-        guard aiDetection.handleOutputMatch(appName: matchedApp),
+        let authoritativeAppName =
+            activeAppName
+            ?? lastDetectedAppName
+            ?? Self.displayName(fromProvider: lastAIProvider)
+
+        // State machine filters: redetecting rejects different tools, and
+        // output-only detection is not allowed to flip an established provider.
+        guard aiDetection.handleOutputMatch(
+            appName: matchedApp,
+            authoritativeAppName: authoritativeAppName
+        ),
               let app = aiDetection.currentApp else { return }
 
         // State changed → sync @Published property and fire side effects

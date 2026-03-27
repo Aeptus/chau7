@@ -127,11 +127,24 @@ public struct AIDetectionState: Sendable {
 
     /// Called when pattern matching completes on prepared haystack.
     /// `appName` is the matched tool name, or nil if no match.
+    /// `authoritativeAppName` is an already-established tool identity from
+    /// command detection or restored resume metadata. Output matching is
+    /// treated as confirmation only when it agrees with that provider.
     /// Returns true if the state changed.
     /// - Parameter now: Current time. Pass explicitly for testability; defaults to `Date()`.
     @discardableResult
-    public mutating func handleOutputMatch(appName: String?, now: Date = Date()) -> Bool {
+    public mutating func handleOutputMatch(
+        appName: String?,
+        authoritativeAppName: String? = nil,
+        now: Date = Date()
+    ) -> Bool {
         guard let appName else { return false }
+        guard Self.shouldAcceptOutputMatch(
+            matchedAppName: appName,
+            authoritativeAppName: authoritativeAppName
+        ) else {
+            return false
+        }
 
         switch phase {
         case .scanning:
@@ -237,6 +250,19 @@ public struct AIDetectionState: Sendable {
     }
 
     // MARK: - Private
+
+    static func shouldAcceptOutputMatch(
+        matchedAppName: String?,
+        authoritativeAppName: String?
+    ) -> Bool {
+        guard let matchedAppName else { return false }
+        guard let authoritativeAppName else { return true }
+        guard let matchedProvider = AIResumeParser.normalizeProviderName(matchedAppName),
+              let authoritativeProvider = AIResumeParser.normalizeProviderName(authoritativeAppName) else {
+            return true
+        }
+        return matchedProvider == authoritativeProvider
+    }
 
     private mutating func setDetected(_ appName: String, now: Date = Date()) -> Bool {
         currentApp = appName

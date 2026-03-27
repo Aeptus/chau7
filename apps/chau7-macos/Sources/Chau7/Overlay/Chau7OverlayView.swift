@@ -50,6 +50,37 @@ enum OverlayLayout {
     static let tabChipHeight: CGFloat = 22
 }
 
+private func tabProviderIdentity(for tab: OverlayTab) -> String {
+    guard let session = tab.displaySession ?? tab.session else { return "shell" }
+    if let provider = session.effectiveAIProvider?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !provider.isEmpty {
+        return provider.lowercased()
+    }
+    if let appName = session.aiDisplayAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !appName.isEmpty {
+        return appName.lowercased()
+    }
+    return "shell"
+}
+
+private func tabProviderDisplayName(for tab: OverlayTab) -> String {
+    guard let session = tab.displaySession ?? tab.session else { return "Shell" }
+    if let appName = session.aiDisplayAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !appName.isEmpty {
+        return appName
+    }
+    if let provider = session.effectiveAIProvider?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !provider.isEmpty {
+        return provider.capitalized
+    }
+    return "Shell"
+}
+
+private func repoProviderGroupIdentity(for tab: OverlayTab) -> String? {
+    guard let repoGroupID = tab.repoGroupID else { return nil }
+    return "\(repoGroupID)::\(tabProviderIdentity(for: tab))"
+}
+
 // MARK: - Safari-style Unified Toolbar Delegate
 
 /// Toolbar delegate that provides a tab bar as the main toolbar item.
@@ -440,7 +471,13 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
             }
         }
 
-        let layoutTabs = model.tabs.map { TabBarLayoutTab(id: $0.id, repoGroupID: $0.repoGroupID) }
+        let layoutTabs = model.tabs.map {
+            TabBarLayoutTab(
+                id: $0.id,
+                repoGroupID: $0.repoGroupID,
+                groupIdentity: repoProviderGroupIdentity(for: $0)
+            )
+        }
         let idleTabIDs = fallbackIdleTabIDs(in: model)
         guard let tabID = TabBarLayout.fallbackHitTestTabID(
             atX: point.x,
@@ -585,12 +622,12 @@ private struct ToolbarTabBarView: View {
     private enum TabBarSegment: Identifiable {
         case single(OverlayTab)
         /// segmentIndex disambiguates when the same repo appears in multiple non-contiguous runs.
-        case group(repoID: String, segmentIndex: Int, displayName: String, tabs: [OverlayTab])
+        case group(repoID: String, groupIdentity: String, segmentIndex: Int, displayName: String, tabs: [OverlayTab])
 
         var id: String {
             switch self {
             case .single(let tab): return tab.id.uuidString
-            case .group(let repoID, let idx, _, _): return "group-\(idx)-\(repoID)"
+            case .group(_, let groupIdentity, let idx, _, _): return "group-\(idx)-\(groupIdentity)"
             }
         }
     }
@@ -619,7 +656,15 @@ private struct ToolbarTabBarView: View {
         func flushGroup() {
             guard let groupID = currentGroupID, !currentGroupTabs.isEmpty else { return }
             let name = URL(fileURLWithPath: groupID).lastPathComponent
-            segments.append(.group(repoID: groupID, segmentIndex: groupSegmentIndex, displayName: name, tabs: currentGroupTabs))
+            segments.append(
+                .group(
+                    repoID: groupID,
+                    groupIdentity: groupID,
+                    segmentIndex: groupSegmentIndex,
+                    displayName: name,
+                    tabs: currentGroupTabs
+                )
+            )
             groupSegmentIndex += 1
             currentGroupTabs = []
             currentGroupID = nil
@@ -673,7 +718,7 @@ private struct ToolbarTabBarView: View {
                                     tabView(for: tab)
                                         .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
                                         .fixedSize(horizontal: false, vertical: true)
-                                case .group(let groupID, _, let name, let groupTabs):
+                                case .group(let groupID, _, _, let name, let groupTabs):
                                     let groupColor = RepoTagChip.color(for: groupID)
                                     RepoGroupBracket(
                                         name: name,

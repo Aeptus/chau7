@@ -66,8 +66,7 @@ public enum AIToolRegistry {
             commandNames: ["claude", "claude-code", "claude-cli", "claude-pty", "claude-wrapper"],
             outputPatterns: [
                 "╭─ claude", "╰─ claude", "powered by anthropic",
-                "claude.ai/", "claude.ai", "claude code", "anthropic's claude",
-                "claude --" // matches command echo: claude --dangerously-skip-permissions, claude --model, etc.
+                "claude.ai/", "claude.ai", "claude code", "anthropic's claude"
             ],
             resumeProviderKey: "claude",
             resumeFormat: .dashFlag(command: "claude", flag: "--resume"),

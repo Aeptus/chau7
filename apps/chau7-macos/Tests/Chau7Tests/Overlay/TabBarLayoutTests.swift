@@ -27,6 +27,34 @@ final class TabBarLayoutTests: XCTestCase {
         )
     }
 
+    func testDisplayItemsSplitSameRepoAcrossDifferentProviders() {
+        let codexTab = UUID()
+        let claudeTab = UUID()
+        let tabs = [
+            TabBarLayoutTab(
+                id: codexTab,
+                repoGroupID: "/tmp/repo-a",
+                groupIdentity: "/tmp/repo-a::codex"
+            ),
+            TabBarLayoutTab(
+                id: claudeTab,
+                repoGroupID: "/tmp/repo-a",
+                groupIdentity: "/tmp/repo-a::claude"
+            )
+        ]
+
+        XCTAssertEqual(
+            TabBarLayout.displayItems(for: tabs, idleTabIDs: []),
+            [
+                .repoGroupTag(repoGroupID: "/tmp/repo-a", firstTabID: codexTab),
+                .tab(codexTab),
+                .repoGroupTag(repoGroupID: "/tmp/repo-a", firstTabID: claudeTab),
+                .tab(claudeTab),
+                .newTabButton
+            ]
+        )
+    }
+
     func testFallbackHitTestReturnsFirstTabForGroupTagSlot() {
         let groupedTab = UUID()
         let hiddenIdleTab = UUID()
@@ -68,6 +96,42 @@ final class TabBarLayoutTests: XCTestCase {
                 tabs: tabs,
                 idleTabIDs: [hiddenIdleTab]
             )
+        )
+    }
+
+    func testFallbackHitTestSeparatesSameRepoWhenProviderIdentityDiffers() {
+        let codexTab = UUID()
+        let claudeTab = UUID()
+        let tabs = [
+            TabBarLayoutTab(
+                id: codexTab,
+                repoGroupID: "/tmp/repo-a",
+                groupIdentity: "/tmp/repo-a::codex"
+            ),
+            TabBarLayoutTab(
+                id: claudeTab,
+                repoGroupID: "/tmp/repo-a",
+                groupIdentity: "/tmp/repo-a::claude"
+            )
+        ]
+
+        XCTAssertEqual(
+            TabBarLayout.fallbackHitTestTabID(
+                atX: 125,
+                totalWidth: 500,
+                tabs: tabs,
+                idleTabIDs: []
+            ),
+            codexTab
+        )
+        XCTAssertEqual(
+            TabBarLayout.fallbackHitTestTabID(
+                atX: 325,
+                totalWidth: 500,
+                tabs: tabs,
+                idleTabIDs: []
+            ),
+            claudeTab
         )
     }
 
