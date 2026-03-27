@@ -1087,6 +1087,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         monitor.onResponseComplete = { [weak self] event in
             Log.info("Claude Code response complete: \(event.projectName)")
             self?.syncClaudeCodeSessions()
+            self?.recordEvent(
+                source: .claudeCode,
+                type: "finished",
+                tool: "Claude",
+                message: "Claude finished in \(event.projectName)",
+                notify: true,
+                directory: event.cwd.isEmpty ? nil : event.cwd,
+                sessionID: event.sessionId
+            )
         }
 
         // Start monitoring
@@ -1219,11 +1228,6 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             }
 
             // When a session transitions from active → idle/closed, emit a "finished"
-            // notification. Guard with a minimum interval (30s) per session to prevent
-            // the history monitor's rapid read-cycle (closed→active→idle) from
-            // producing repeated notifications for the same session.
-            //
-            // When a session transitions from active → idle/closed, emit a "finished"
             // notification. The 30s cooldown per session prevents duplicate notifications
             // from the history monitor's rapid read-cycle (closed→active→idle).
             let sessionEnded = state == .idle || state == .closed
@@ -1237,7 +1241,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                         source: aiEventSource(for: toolName),
                         type: "finished",
                         tool: toolName,
-                        message: "\(toolName) session completed",
+                        message: "\(toolName) finished",
                         notify: true,
                         sessionID: sessionId
                     )
