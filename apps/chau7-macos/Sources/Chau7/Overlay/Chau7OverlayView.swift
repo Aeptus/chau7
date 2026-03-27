@@ -991,28 +991,20 @@ private struct ToolbarTabBarView: View {
 
 }
 
-/// Three-way branch indicator: SF Symbol Y-fork + a straight center line.
-/// On main: center bright, side branches dimmed. Off main: all three bright.
+/// Y-fork branch indicator using SF Symbol arrow.triangle.branch.
+/// On main: only the right curve (main line) is bright.
+/// Off main: both curves bright (feature branches active).
 private struct BranchIndicator: View {
     let isOnMain: Bool
 
     var body: some View {
-        ZStack {
-            // Side branches (the Y-fork from the SF Symbol)
-            Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(isOnMain ? 0.25 : 0.9))
-            // Center stem — straight line from bottom center to top center
-            GeometryReader { geo in
-                Path { p in
-                    let midX = geo.size.width / 2
-                    p.move(to: CGPoint(x: midX, y: geo.size.height))
-                    p.addLine(to: CGPoint(x: midX, y: 0))
-                }
-                .stroke(.white.opacity(isOnMain ? 0.9 : 0.9), style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
-            }
-        }
-        .frame(width: 12, height: 12)
+        Image(systemName: "arrow.triangle.branch")
+            .font(.system(size: 11, weight: .semibold))
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(
+                isOnMain ? .white.opacity(0.25) : .white.opacity(0.9),  // left branch
+                isOnMain ? .white.opacity(0.9) : .white.opacity(0.9)    // right branch + stem
+            )
     }
 }
 
