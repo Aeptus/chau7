@@ -991,27 +991,57 @@ private struct ToolbarTabBarView: View {
 
 }
 
-/// Three-headed arrow indicator: center arrow = main branch, lateral arrows = feature branches.
-/// On main: center white, laterals grey. Off main: laterals white, center grey.
+/// Three-way divergent branch indicator. A single stem splits into three paths.
+/// On main: only the center path is highlighted. Off main: all three paths lit.
 private struct BranchIndicator: View {
     let isOnMain: Bool
 
     var body: some View {
-        HStack(spacing: 0) {
-            Image(systemName: "chevron.up")
-                .font(.system(size: 7, weight: .bold))
-                .rotationEffect(.degrees(-20))
-                .foregroundStyle(isOnMain ? .white.opacity(0.35) : .white.opacity(0.85))
-            Image(systemName: "chevron.up")
-                .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(isOnMain ? .white.opacity(0.85) : .white.opacity(0.35))
-                .padding(.horizontal, -1)
-            Image(systemName: "chevron.up")
-                .font(.system(size: 7, weight: .bold))
-                .rotationEffect(.degrees(20))
-                .foregroundStyle(isOnMain ? .white.opacity(0.35) : .white.opacity(0.85))
+        ZStack {
+            // Side branches (drawn first, behind center)
+            DivergentPath(branch: .left)
+                .stroke(sideColor, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+            DivergentPath(branch: .right)
+                .stroke(sideColor, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+            // Center path (on top)
+            DivergentPath(branch: .center)
+                .stroke(centerColor, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
         }
-        .frame(width: 16, height: 11)
+        .frame(width: 14, height: 12)
+    }
+
+    private var centerColor: Color { .white.opacity(0.9) }
+    private var sideColor: Color { .white.opacity(isOnMain ? 0.25 : 0.9) }
+
+    private struct DivergentPath: Shape {
+        enum Branch { case left, center, right }
+        let branch: Branch
+
+        func path(in rect: CGRect) -> Path {
+            let midX = rect.midX
+            let bottom = rect.maxY
+            let forkY = bottom * 0.45
+
+            var p = Path()
+            p.move(to: CGPoint(x: midX, y: bottom))
+            p.addLine(to: CGPoint(x: midX, y: forkY))
+
+            switch branch {
+            case .left:
+                p.addQuadCurve(
+                    to: CGPoint(x: rect.minX + 1, y: 0),
+                    control: CGPoint(x: midX - 1, y: forkY * 0.4)
+                )
+            case .center:
+                p.addLine(to: CGPoint(x: midX, y: 0))
+            case .right:
+                p.addQuadCurve(
+                    to: CGPoint(x: rect.maxX - 1, y: 0),
+                    control: CGPoint(x: midX + 1, y: forkY * 0.4)
+                )
+            }
+            return p
+        }
     }
 }
 
