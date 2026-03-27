@@ -148,6 +148,9 @@ public struct AIDetectionState: Sendable {
 
         switch phase {
         case .scanning:
+            // If we previously detected a tool, only accept the same one via output
+            // (prevents "openai.com" in code output from hijacking a Claude session)
+            if let last = lastDetectedApp, appName != last { return false }
             return setDetected(appName, now: now)
         case .redetecting:
             // Only accept the same tool that was previously detected
