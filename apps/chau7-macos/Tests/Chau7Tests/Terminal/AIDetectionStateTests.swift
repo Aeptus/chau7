@@ -70,6 +70,33 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertFalse(state.isRestored)
     }
 
+    func testHandleOutputMatchRejectsDifferentProviderWhenToolAlreadyKnown() {
+        var state = AIDetectionState()
+        state.handleRestore(appName: "Codex")
+
+        let changed = state.handleOutputMatch(
+            appName: "Claude",
+            authoritativeAppName: "Codex"
+        )
+
+        XCTAssertFalse(changed)
+        XCTAssertEqual(state.currentApp, "Codex")
+        XCTAssertTrue(state.isRestored)
+    }
+
+    func testHandleOutputMatchAcceptsSameProviderWhenToolAlreadyKnown() {
+        var state = AIDetectionState()
+
+        let changed = state.handleOutputMatch(
+            appName: "Codex",
+            authoritativeAppName: "Codex"
+        )
+
+        XCTAssertTrue(changed)
+        XCTAssertEqual(state.currentApp, "Codex")
+        XCTAssertEqual(state.phase, .detected)
+    }
+
     // MARK: - Prompt Return (Cooldown with Injectable Clock)
 
     func testPromptReturnWithinCooldownIsNoOp() {
