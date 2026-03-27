@@ -1223,32 +1223,24 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             // the history monitor's rapid read-cycle (closed→active→idle) from
             // producing repeated notifications for the same session.
             //
-            // Also suppress if the tool's tab is at-prompt (waitingForInput) — a session
-            // sitting at its prompt with periodic heartbeat writes is not "finishing".
+            // When a session transitions from active → idle/closed, emit a "finished"
+            // notification. The 30s cooldown per session prevents duplicate notifications
+            // from the history monitor's rapid read-cycle (closed→active→idle).
             let sessionEnded = state == .idle || state == .closed
             if previousState == .active, sessionEnded {
-                // Check if the matching tab is at prompt — if so, this is just a heartbeat cycle.
-                // A tool sitting at its prompt with periodic history writes is not "finishing".
-                let isAtPrompt = TerminalControlService.shared.isToolAtPrompt(
-                    toolName: toolName,
-                    sessionID: sessionId
-                )
-
-                if !isAtPrompt {
-                    let now = Date()
-                    let lastFired = sessionFinishedTimestamps[statusId]
-                    let cooldown: TimeInterval = 30
-                    if lastFired == nil || now.timeIntervalSince(lastFired!) > cooldown {
-                        sessionFinishedTimestamps[statusId] = now
-                        recordEvent(
-                            source: aiEventSource(for: toolName),
-                            type: "finished",
-                            tool: toolName,
-                            message: "\(toolName) session completed",
-                            notify: true,
-                            sessionID: sessionId
-                        )
-                    }
+                let now = Date()
+                let lastFired = sessionFinishedTimestamps[statusId]
+                let cooldown: TimeInterval = 30
+                if lastFired == nil || now.timeIntervalSince(lastFired!) > cooldown {
+                    sessionFinishedTimestamps[statusId] = now
+                    recordEvent(
+                        source: aiEventSource(for: toolName),
+                        type: "finished",
+                        tool: toolName,
+                        message: "\(toolName) session completed",
+                        notify: true,
+                        sessionID: sessionId
+                    )
                 }
             }
         }
