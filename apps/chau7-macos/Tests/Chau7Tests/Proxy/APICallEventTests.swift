@@ -78,22 +78,22 @@ final class AIEventNotificationTests: XCTestCase {
 
     func testNotificationTitle_NeedsValidation() {
         let event = makeEvent(type: "needs_validation")
-        XCTAssertEqual(event.notificationTitle, "Claude: Validation needed")
+        XCTAssertEqual(event.notificationTitle, "Claude: Needs review")
     }
 
     func testNotificationTitle_Idle() {
         let event = makeEvent(type: "idle")
-        XCTAssertEqual(event.notificationTitle, "Claude: Possibly waiting for you")
+        XCTAssertEqual(event.notificationTitle, "Claude: Waiting for input")
     }
 
     func testNotificationTitle_Finished() {
         let event = makeEvent(type: "finished")
-        XCTAssertEqual(event.notificationTitle, "Claude: Task finished")
+        XCTAssertEqual(event.notificationTitle, "Claude: Finished")
     }
 
     func testNotificationTitle_Failed() {
         let event = makeEvent(type: "failed")
-        XCTAssertEqual(event.notificationTitle, "Claude: Task failed")
+        XCTAssertEqual(event.notificationTitle, "Claude: Failed")
     }
 
     func testNotificationTitle_UnknownType() {
@@ -103,27 +103,27 @@ final class AIEventNotificationTests: XCTestCase {
 
     func testNotificationTitle_CaseInsensitive() {
         let event = makeEvent(type: "FINISHED")
-        XCTAssertEqual(event.notificationTitle, "Claude: Task finished")
+        XCTAssertEqual(event.notificationTitle, "Claude: Finished")
     }
 
     func testNotificationTitle_WithToolOverride() {
         let event = makeEvent(type: "finished", tool: "Original")
-        XCTAssertEqual(event.notificationTitle(toolOverride: "Cursor"), "Cursor: Task finished")
+        XCTAssertEqual(event.notificationTitle(toolOverride: "Cursor"), "Cursor: Finished")
     }
 
     func testNotificationTitle_EmptyToolOverrideFallsBackToTool() {
         let event = makeEvent(type: "finished", tool: "Claude")
-        XCTAssertEqual(event.notificationTitle(toolOverride: ""), "Claude: Task finished")
+        XCTAssertEqual(event.notificationTitle(toolOverride: ""), "Claude: Finished")
     }
 
     func testNotificationTitle_WhitespaceToolOverrideFallsBackToTool() {
         let event = makeEvent(type: "finished", tool: "Claude")
-        XCTAssertEqual(event.notificationTitle(toolOverride: "  "), "Claude: Task finished")
+        XCTAssertEqual(event.notificationTitle(toolOverride: "  "), "Claude: Finished")
     }
 
     func testNotificationTitle_NilToolOverrideUsesTool() {
         let event = makeEvent(type: "idle", tool: "Aider")
-        XCTAssertEqual(event.notificationTitle(toolOverride: nil), "Aider: Possibly waiting for you")
+        XCTAssertEqual(event.notificationTitle(toolOverride: nil), "Aider: Waiting for input")
     }
 
     // MARK: - notificationBody

@@ -20,6 +20,7 @@ final class NotificationManager {
     private let nativeNotificationMaxCooldown: TimeInterval = 300
 
     var tabTitleProvider: ((TabTarget) -> String?)?
+    var repoNameProvider: ((TabTarget) -> String?)?
 
     /// Rate limiter — prevents notification spam from burst events
     let rateLimiter = NotificationRateLimiter()
@@ -228,7 +229,9 @@ final class NotificationManager {
     }
 
     private func showDefaultNotification(for event: AIEvent) {
-        let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
+        let tabTitle = tabTitleProvider?(event.tabTarget)
+        let repoName = repoNameProvider?(event.tabTarget)
+        let title = event.notificationTitle(toolOverride: tabTitle, repoName: repoName)
         dispatchNotification(title: title, body: event.notificationBody, for: event)
     }
 

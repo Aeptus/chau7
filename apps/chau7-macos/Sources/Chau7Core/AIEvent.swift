@@ -134,35 +134,44 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         notificationTitle(toolOverride: nil)
     }
 
-    /// Returns the notification title for this event with an optional tool override.
-    public func notificationTitle(toolOverride: String?) -> String {
+    /// Returns the notification title for this event with optional tool and repo overrides.
+    public func notificationTitle(toolOverride: String?, repoName: String? = nil) -> String {
         let toolName = (toolOverride ?? tool).trimmingCharacters(in: .whitespacesAndNewlines)
         let name = toolName.isEmpty ? tool : toolName
+        // Prefix with repo name when available (e.g. "Mockup — Claude: Task finished")
+        let prefix: String
+        if let repo = repoName, !repo.isEmpty, repo != name {
+            prefix = "\(repo) — \(name)"
+        } else {
+            prefix = name
+        }
         switch type.lowercased() {
         case "needs_validation":
-            return "\(name): Validation needed"
+            return "\(prefix): Needs review"
         case "idle":
-            return "\(name): Possibly waiting for you"
+            return "\(prefix): Waiting for input"
         case "finished":
-            return "\(name): Task finished"
+            return "\(prefix): Finished"
         case "failed":
-            return "\(name): Task failed"
+            return "\(prefix): Failed"
         case "permission":
-            return "\(name): Permission required"
+            return "\(prefix): Permission needed"
         case "error":
-            return "\(name): Error occurred"
+            return "\(prefix): Error"
         case "context_limit":
-            return "\(name): Context limit"
+            return "\(prefix): Context limit reached"
+        case "file_conflict":
+            return "\(prefix): File conflict"
         case "tool_called":
-            return "\(name): Tool called"
+            return "\(prefix): Tool called"
         case "file_edited":
-            return "\(name): File edited"
+            return "\(prefix): File edited"
         case "token_threshold":
-            return "\(name): Token threshold"
+            return "\(prefix): Token threshold"
         case "cost_threshold":
-            return "\(name): Cost threshold"
+            return "\(prefix): Cost threshold"
         default:
-            return "\(name): Update"
+            return "\(prefix): Update"
         }
     }
 
