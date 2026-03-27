@@ -24,6 +24,9 @@ struct Chau7App: App {
         NotificationManager.shared.tabTitleProvider = { [weak overlayModel] target in
             overlayModel?.notificationTabTitle(for: target)
         }
+        NotificationManager.shared.repoNameProvider = { [weak overlayModel] target in
+            overlayModel?.notificationRepoName(for: target)
+        }
 
         // Wire notification system — single delegate replaces 5 separate closures
         NotificationActionExecutor.shared.delegate = NotificationActionAdapter(

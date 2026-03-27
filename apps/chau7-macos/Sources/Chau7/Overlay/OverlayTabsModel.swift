@@ -1934,6 +1934,13 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         TabResolver.resolve(target, in: tabs)?.displayTitle
     }
 
+    func notificationRepoName(for target: TabTarget) -> String? {
+        guard let tab = TabResolver.resolve(target, in: tabs),
+              let session = tab.displaySession ?? tab.session,
+              let rootPath = session.gitRootPath else { return nil }
+        return URL(fileURLWithPath: rootPath).lastPathComponent
+    }
+
     var overlayWorkspaceIdentifier: String? {
         if let repoRoot = SnippetManager.shared.activeRepoRoot {
             return repoRoot
