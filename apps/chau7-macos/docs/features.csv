@@ -219,6 +219,7 @@ Networking,Custom API Pricing,~/.chau7/pricing.json overrides built-in model pri
 Terminal,OSC 133 Shell Integration,"FinalTerm shell integration: prompt/command/output region markers with exit codes, parsed in Rust. Suppresses heuristic fallbacks when present.",Shipped,Yes
 Terminal,File Drag & Drop,"Drop files to paste paths; Option+drop images for base64 data URIs for AI CLIs",Shipped,Yes
 Terminal,Markdown Runbooks,"Open .md in editor pane with executable code blocks and Run All button",Shipped,Yes
+Terminal,Native Text Pane Edit Shortcuts,"Split-pane text editors preserve standard macOS cut, copy, and paste shortcuts before terminal-specific fallbacks run",Shipped,Yes
 Terminal,Show Changed Files,"Git diff snapshot per command (OSC 133) shows files modified by AI sessions (Cmd+Option+G)",Shipped,Yes
 Terminal,Idle Tabs Dropdown,"Tabs idle beyond configurable threshold (default 10 min) grouped into a dropdown chip in the tab bar with hover card support",Shipped,Yes
 Terminal,Repository Tab Grouping,"Group tabs by git repo (Off/Auto/Manual). Inline repo-name tag chip with connecting line overlay. Suppresses redundant repo path in grouped tab titles.",Shipped,No
