@@ -3898,6 +3898,18 @@ final class RustTerminalView: NSView {
             }
         }
 
+        if OptionModifiedTextRouting.shouldTreatAsLiteralText(
+            characters: event.characters,
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
+            hasOption: hasOption,
+            hasControl: hasControl,
+            hasCommand: hasCommand
+        ) {
+            // Let NSTextInputContext deliver the rendered character for
+            // international layouts that use Option to produce punctuation.
+            return nil
+        }
+
         // Handle Option/Alt+letter (sends ESC prefix for meta key)
         if hasOption, !hasControl {
             if let char = event.charactersIgnoringModifiers?.first {

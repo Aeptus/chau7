@@ -29,6 +29,7 @@ The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for develo
 
 - **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
 - Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
+- International Option-key punctuation input preserved for programming characters like brackets and braces.
 - Kitty keyboard protocol (full progressive enhancement).
 - Inline images: iTerm2 (ESC ] 1337), Sixel, and Kitty image protocols.
 - Configurable cursor styles (block, underline, bar) with optional blinking.

@@ -1,6 +1,7 @@
 Category,Feature,Description,Status,Differentiator
 Terminal Core,Rust Terminal Backend,"Custom terminal emulator written in Rust with FFI bridge — fast, memory-safe, and correct",Shipped,Yes
 Terminal Core,Full ANSI/VT100 Support,"16-color, 256-color, and 24-bit true color with full SGR attributes (bold, italic, underline, strikethrough)",Shipped,No
+Terminal Core,International Option-Key Punctuation,"Option-generated programming characters like brackets and braces are routed as literal text on international keyboard layouts",Shipped,Yes
 Terminal Core,Kitty Keyboard Protocol,Full Kitty progressive enhancement keyboard protocol for modern key handling,Shipped,No
 Terminal Core,Inline Image Protocols,"iTerm2 (ESC ] 1337), Sixel, and Kitty image protocol — display images directly in your terminal",Shipped,No
 Terminal Core,Configurable Cursor Styles,"Block, underline, bar — with optional blinking",Shipped,No
