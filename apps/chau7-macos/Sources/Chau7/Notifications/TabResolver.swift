@@ -41,6 +41,13 @@ enum TabResolver {
         }
 
         let candidates = toolMatchCandidates(for: target.tool)
+
+        // Session IDs are the strongest cross-tool identity signal we have for
+        // history-monitor events. Resolve them before broader tool-label scans.
+        if let exactSessionMatch = exactSessionMatch(for: target, candidates: candidates, in: tabs) {
+            return exactSessionMatch
+        }
+
         guard !candidates.isEmpty else { return nil }
 
         func matchesCandidate(_ rawName: String?) -> Bool {
@@ -169,6 +176,77 @@ enum TabResolver {
         return cwdResolvers[providerKey]
     }
 
+    private static func exactSessionMatch(
+        for target: TabTarget,
+        candidates: [String],
+        in tabs: [OverlayTab]
+    ) -> OverlayTab? {
+        guard let sessionID = target.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sessionID.isEmpty else {
+            return nil
+        }
+
+        let rankedMatches = tabs.compactMap { tab -> (tab: OverlayTab, providerRank: Int)? in
+            let matchingSessions = tab.splitController.terminalSessions.compactMap { _, session -> TerminalSessionModel? in
+                session.effectiveAISessionId == sessionID ? session : nil
+            }
+            guard !matchingSessions.isEmpty else { return nil }
+
+            let providerMatches = matchingSessions.contains { session in
+                sessionMatchesCandidates(session, candidates: candidates)
+            }
+            return (tab: tab, providerRank: providerMatches ? 0 : 1)
+        }
+        guard !rankedMatches.isEmpty else { return nil }
+
+        let bestRank = rankedMatches.map(\.providerRank).min() ?? 0
+        let bestMatches = rankedMatches
+            .filter { $0.providerRank == bestRank }
+            .map(\.tab)
+
+        if bestMatches.count == 1 {
+            Log.info("TabResolver: resolved via exact sessionID=\(sessionID.prefix(8)) → tab=\(bestMatches[0].id)")
+            return bestMatches[0]
+        }
+
+        if let dir = target.directory?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !dir.isEmpty {
+            let normalized = URL(fileURLWithPath: dir).standardized.path
+            let rankedByDirectory = bestMatches.compactMap { tab -> (tab: OverlayTab, rank: Int)? in
+                let ranks = tab.splitController.terminalSessions.compactMap { _, session in
+                    directoryMatchRank(targetDirectory: normalized, sessionDirectory: session.currentDirectory)
+                }
+                guard let rank = ranks.min() else { return nil }
+                return (tab: tab, rank: rank)
+            }
+
+            if let bestDirectoryRank = rankedByDirectory.map(\.rank).min() {
+                let directoryMatches = rankedByDirectory
+                    .filter { $0.rank == bestDirectoryRank }
+                    .map(\.tab)
+                if directoryMatches.count == 1 {
+                    Log.info("TabResolver: resolved via sessionID+directory=\(sessionID.prefix(8)) → tab=\(directoryMatches[0].id)")
+                    return directoryMatches[0]
+                }
+                if let bestByActivity = directoryMatches.max(by: { a, b in
+                    tabLastActivityDate(a) < tabLastActivityDate(b)
+                }) {
+                    Log.info("TabResolver: resolved via sessionID+activity=\(sessionID.prefix(8)) → tab=\(bestByActivity.id)")
+                    return bestByActivity
+                }
+            }
+        }
+
+        if let bestByActivity = bestMatches.max(by: { a, b in
+            tabLastActivityDate(a) < tabLastActivityDate(b)
+        }) {
+            Log.info("TabResolver: resolved via sessionID+activity=\(sessionID.prefix(8)) → tab=\(bestByActivity.id)")
+            return bestByActivity
+        }
+
+        return nil
+    }
+
     /// When a session ID or directory hint is available, narrow a set of matching
     /// tabs to the one whose session best matches the event.
     /// Falls back to most recently created tab for deterministic ordering.
@@ -257,6 +335,19 @@ enum TabResolver {
             return 1
         }
         return nil
+    }
+
+    private static func sessionMatchesCandidates(_ session: TerminalSessionModel, candidates: [String]) -> Bool {
+        guard !candidates.isEmpty else { return true }
+
+        let labels = [
+            normalizedToolLabel(session.aiDisplayAppName),
+            normalizedToolLabel(session.activeAppName),
+            normalizedToolLabel(session.effectiveAIProvider),
+            normalizedToolLabel(session.lastAIProvider)
+        ]
+
+        return labels.compactMap { $0 }.contains { candidates.contains($0) }
     }
 
     private static func logAmbiguousFallback(target: TabTarget, matchesCount: Int) {
