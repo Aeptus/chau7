@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Runtime Turn Send for Adopted Sessions**: MCP clients can now send prompts through `runtime_turn_send` even when the runtime session was adopted from an existing tab
 
 ### Fixed
+- **History Monitor Tab Routing**: Claude and Codex history-monitor idle/finished events now resolve their working directory from session metadata before notifying, so tab styling and notifications can target the correct repo tab.
 - **Notification Identity Scoping**: Notification coalescing and rate limiting are now scoped by tab, session, or directory identity instead of only trigger/tool matching. One noisy tab no longer suppresses the same notification on another tab.
 - **Approval Attention Lifecycle**: Persistent approval styling now clears when the approval is actually resolved, and split-created terminal sessions inherit the same owner/callback wiring as the original pane so permission indicators do not get stuck.
 - **File Conflict Notifications**: Cross-tab file conflicts now emit real `app.file_conflict` events for each affected tab, so the configured notification trigger and orange tab styling actually fire on first detection.
