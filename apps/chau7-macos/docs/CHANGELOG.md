@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Runtime Turn Send for Adopted Sessions**: MCP clients can now send prompts through `runtime_turn_send` even when the runtime session was adopted from an existing tab
 
 ### Fixed
+- **Native Text Pane Edit Shortcuts**: Cut, copy, and paste now try the focused responder first, restoring standard macOS shortcuts inside split-pane text editors before falling back to terminal behavior.
 - **International Option Text Input**: Option-based programming characters such as brackets now flow through macOS text input instead of being forced into Meta/Alt escape sequences, fixing entry on international keyboard layouts.
 - **TabResolver Session Precedence**: Notification routing now resolves exact AI session IDs before broad tool-label matching and most-recent fallback, which reduces ambiguous matches and helps Codex events reach the correct tab.
 - **History Monitor Tab Routing**: Claude and Codex history-monitor idle/finished events now resolve their working directory from session metadata before notifying, so tab styling and notifications can target the correct repo tab.

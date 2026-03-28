@@ -416,50 +416,48 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     func copyOrInterrupt() {
-        Log.info("copyOrInterrupt called - first responder: \(String(describing: NSApp.keyWindow?.firstResponder))")
-
-        if let window = NSApp.keyWindow,
-           overlayHosts.contains(where: { $0.window == window }),
-           !isTextInputFocused(in: window) {
-            if let terminal = activeTerminalView(in: window) {
-                terminal.window?.makeFirstResponder(terminal)
-                if let rustView = terminal as? RustTerminalView {
-                    rustView.copy(nil)
-                }
-                return
-            }
-            ensureActiveOverlayModel()?.copyOrInterrupt()
-            return
-        }
-
         if NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) {
             Log.info("Copy action sent via responder chain.")
             return
         }
-        Log.info("Responder chain failed, using overlay model fallback.")
+
+        guard let window = NSApp.keyWindow,
+              overlayHosts.contains(where: { $0.window == window }) else {
+            return
+        }
+
+        if let terminal = activeTerminalView(in: window) {
+            terminal.window?.makeFirstResponder(terminal)
+            if let rustView = terminal as? RustTerminalView {
+                rustView.copy(nil)
+            }
+            return
+        }
+
+        Log.info("Copy responder chain fallback routed through overlay model.")
         ensureActiveOverlayModel()?.copyOrInterrupt()
     }
 
     func paste() {
-        if let window = NSApp.keyWindow,
-           overlayHosts.contains(where: { $0.window == window }),
-           !isTextInputFocused(in: window) {
-            if let terminal = activeTerminalView(in: window) {
-                terminal.window?.makeFirstResponder(terminal)
-                if let rustView = terminal as? RustTerminalView {
-                    rustView.paste(nil)
-                }
-                return
-            }
-            ensureActiveOverlayModel()?.paste()
-            return
-        }
-
         if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
             Log.trace("Paste handled by responder chain.")
             return
         }
-        Log.trace("Paste handled by overlay model fallback.")
+
+        guard let window = NSApp.keyWindow,
+              overlayHosts.contains(where: { $0.window == window }) else {
+            return
+        }
+
+        if let terminal = activeTerminalView(in: window) {
+            terminal.window?.makeFirstResponder(terminal)
+            if let rustView = terminal as? RustTerminalView {
+                rustView.paste(nil)
+            }
+            return
+        }
+
+        Log.trace("Paste responder chain fallback routed through overlay model.")
         ensureActiveOverlayModel()?.paste()
     }
 
@@ -614,6 +612,11 @@ private final class OverlayBlurView: NSVisualEffectView {
     // MARK: - Edit Menu Actions
 
     func cut() {
+        if NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) {
+            Log.trace("Cut handled by responder chain.")
+            return
+        }
+
         // In terminal, cut = copy (we can't cut from terminal output)
         copyOrInterrupt()
     }
