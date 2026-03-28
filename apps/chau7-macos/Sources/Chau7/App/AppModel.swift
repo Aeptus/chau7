@@ -1200,6 +1200,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         return .historyMonitor
     }
 
+    private func historyEventDirectory(for toolName: String, sessionID: String) -> String? {
+        HistoryEventContextResolver.directory(
+            forToolName: toolName,
+            sessionID: sessionID,
+            claudeDirectoryProvider: { ClaudeCodeMonitor.shared.activeSessions[$0]?.cwd },
+            codexDirectoryProvider: { CodexSessionResolver.metadata(forSessionID: $0)?.cwd }
+        )
+    }
+
     private func updateSessionStatus(
         sessionId: String,
         toolName: String,
@@ -1237,12 +1246,14 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 let cooldown: TimeInterval = 30
                 if lastFired == nil || now.timeIntervalSince(lastFired!) > cooldown {
                     sessionFinishedTimestamps[statusId] = now
+                    let directory = historyEventDirectory(for: toolName, sessionID: sessionId)
                     recordEvent(
                         source: aiEventSource(for: toolName),
                         type: "finished",
                         tool: toolName,
                         message: "\(toolName) finished",
                         notify: true,
+                        directory: directory,
                         sessionID: sessionId
                     )
                 }
@@ -1260,16 +1271,18 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         // Use tool-specific source for proper trigger matching
         let source = aiEventSource(for: toolName)
-        let event = AIEvent(
-            source: source,
-            type: "idle",
-            tool: toolName,
-            message: message,
-            ts: DateFormatters.nowISO8601(),
-            sessionID: entry.sessionId
-        )
 
         DispatchQueue.main.async { [weak self] in
+            let directory = self?.historyEventDirectory(for: toolName, sessionID: entry.sessionId)
+            let event = AIEvent(
+                source: source,
+                type: "idle",
+                tool: toolName,
+                message: message,
+                ts: DateFormatters.nowISO8601(),
+                directory: directory,
+                sessionID: entry.sessionId
+            )
             NotificationManager.shared.notify(for: event)
             guard let self else { return }
             recentEvents.append(event)

@@ -91,6 +91,7 @@ Detection methods:
 - **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.
 - **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
 - **AI event notifications** — finished, failed, needs_validation, permission, tool_complete, session_end, idle.
+- **History monitor tab routing** — idle and finished history events resolve provider session metadata to recover the working directory before notification routing.
 - **File conflict events** — newly detected cross-tab file conflicts emit app events for each affected tab.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
 - **Codex session resolver** — maps Codex OpenAI capture sessions to working directories with LRU caching.
