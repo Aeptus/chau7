@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"chau7-remote/internal/protocol"
 )
 
 func TestIsPairRequestAuthorizedAcceptsValidPairingCode(t *testing.T) {
@@ -120,5 +122,67 @@ func TestHandlePairRequestResetsStaleSessionBeforeRepair(t *testing.T) {
 	}
 	if len(a.macNonce) == 0 {
 		t.Fatal("expected repair handshake to send a fresh Mac hello nonce")
+	}
+}
+
+func TestRelayAPIBaseURLConvertsWebsocketSchemesForHTTPPosts(t *testing.T) {
+	tests := []struct {
+		name     string
+		relayURL string
+		want     string
+	}{
+		{
+			name:     "secure websocket",
+			relayURL: "wss://relay.example.com/connect",
+			want:     "https://relay.example.com",
+		},
+		{
+			name:     "plaintext websocket",
+			relayURL: "ws://relay.example.com/connect",
+			want:     "http://relay.example.com",
+		},
+		{
+			name:     "https passthrough",
+			relayURL: "https://relay.example.com/connect",
+			want:     "https://relay.example.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := &Agent{relayBaseURL: tt.relayURL}
+			if got := a.relayAPIBaseURL(); got != tt.want {
+				t.Fatalf("relayAPIBaseURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRequiresEncryptedRelayFrame(t *testing.T) {
+	required := []uint8{
+		protocol.TypeSessionReady,
+		protocol.TypeClientState,
+		protocol.TypeTabSwitch,
+		protocol.TypeInput,
+		protocol.TypeRemoteTelemetry,
+		protocol.TypeApprovalResponse,
+	}
+	for _, frameType := range required {
+		if !requiresEncryptedRelayFrame(frameType) {
+			t.Fatalf("frame type 0x%02x should require encryption", frameType)
+		}
+	}
+
+	allowedCleartext := []uint8{
+		protocol.TypeHello,
+		protocol.TypePairRequest,
+		protocol.TypePairAccept,
+		protocol.TypePairReject,
+		protocol.TypePing,
+	}
+	for _, frameType := range allowedCleartext {
+		if requiresEncryptedRelayFrame(frameType) {
+			t.Fatalf("frame type 0x%02x should not require encryption", frameType)
+		}
 	}
 }
