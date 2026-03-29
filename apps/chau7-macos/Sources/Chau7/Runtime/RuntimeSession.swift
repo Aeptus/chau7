@@ -41,6 +41,7 @@ final class RuntimeSession: @unchecked Sendable {
     private var _lastDeniedApproval = false
     private var _wasInterrupted = false
     private var _lastExitReason: TurnExitReason?
+    private var _lastTurnSubmittedAt: Date?
 
     // MARK: - Lock-Acquiring Accessors
 
@@ -90,6 +91,12 @@ final class RuntimeSession: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return _lastExitReason
+    }
+
+    var lastTurnSubmittedAt: Date? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastTurnSubmittedAt
     }
 
     // MARK: - Init
@@ -161,6 +168,7 @@ final class RuntimeSession: @unchecked Sendable {
         _turnCount += 1
         let turnID = "t_\(_turnCount)"
         _currentTurnID = turnID
+        _lastTurnSubmittedAt = Date()
         _currentTurnStats = TurnStats()
         _lastDeniedApproval = false
         _wasInterrupted = false

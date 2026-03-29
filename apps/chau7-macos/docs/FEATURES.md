@@ -533,6 +533,7 @@ Key patterns:
 ## Recent Runtime Safety
 
 - Shell JSON-RPC sessions now preserve argv boundaries when launching the generic shell backend, so quoted user arguments stay literal instead of being reinterpreted by the shell.
+- Claude runtime sessions now keep separate bindings for same-directory agent tabs, so tool events, approval prompts, and finished notifications stay attached to the correct tab after another session opens in the same repo.
 - On termination, Chau7 clears persisted tab/window state and backup files when every overlay window has been hidden or closed, preventing stale windows from resurrecting on next launch.
 - Notification pipeline optimizations now respect disabled single-action rules instead of promoting them to native default notifications.
 

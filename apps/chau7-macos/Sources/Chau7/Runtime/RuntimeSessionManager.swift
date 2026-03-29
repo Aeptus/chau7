@@ -12,7 +12,9 @@ final class RuntimeSessionManager {
 
     private var sessions: [String: RuntimeSession] = [:] // sessionID → session
     private var tabToSession: [UUID: String] = [:] // tabID → sessionID
-    private var cwdToSession: [String: String] = [:] // cwd → sessionID (for event matching)
+    private var cwdToSessions: [String: Set<String>] = [:] // cwd → runtime sessionIDs
+    private var claudeToRuntimeSession: [String: String] = [:] // Claude sessionID → runtime sessionID
+    private var runtimeToClaudeSession: [String: String] = [:] // runtime sessionID → Claude sessionID
     private let lock = NSLock()
 
     /// Recently stopped sessions kept for final queries.
@@ -43,7 +45,7 @@ final class RuntimeSessionManager {
         lock.lock()
         sessions[session.id] = session
         tabToSession[tabID] = session.id
-        cwdToSession[config.directory] = session.id
+        cwdToSessions[config.directory, default: []].insert(session.id)
         lock.unlock()
 
         session.journal.append(
@@ -76,7 +78,7 @@ final class RuntimeSessionManager {
         lock.lock()
         sessions[session.id] = session
         tabToSession[tabID] = session.id
-        cwdToSession[cwd] = session.id
+        cwdToSessions[cwd, default: []].insert(session.id)
         lock.unlock()
 
         session.journal.append(
@@ -131,11 +133,7 @@ final class RuntimeSessionManager {
     /// Called from `ClaudeCodeMonitor.onEvent` to drive session state transitions.
     /// If no session matches, adopts the tab as a passive session.
     func handleClaudeEvent(_ event: ClaudeCodeEvent) {
-        lock.lock()
-        // Find session by cwd (same matching as TelemetryRecorder.updateSessionID)
-        let sessionID = cwdToSession[event.cwd]
-        var session = sessionID.flatMap { sessions[$0] }
-        lock.unlock()
+        var session = resolveSession(for: event)
 
         // Adopt unknown Claude Code sessions as passive
         if session == nil, !event.cwd.isEmpty {
@@ -327,6 +325,79 @@ final class RuntimeSessionManager {
 
     // MARK: - Adoption
 
+    private func resolveSession(for event: ClaudeCodeEvent) -> RuntimeSession? {
+        let normalizedClaudeSessionID = normalizeClaudeSessionID(event.sessionId)
+
+        lock.lock()
+        if let normalizedClaudeSessionID,
+           let runtimeSessionID = claudeToRuntimeSession[normalizedClaudeSessionID],
+           let exactSession = sessions[runtimeSessionID] {
+            lock.unlock()
+            return exactSession
+        }
+
+        let candidateIDs = Array(cwdToSessions[event.cwd] ?? [])
+        let candidates = candidateIDs.compactMap { sessions[$0] }
+        let existingBindings = runtimeToClaudeSession
+        lock.unlock()
+
+        let claudeCandidates = candidates.filter { $0.backend.name == "claude" }
+        guard !claudeCandidates.isEmpty else { return nil }
+
+        let eligibleCandidates = claudeCandidates.filter { candidate in
+            guard let normalizedClaudeSessionID else {
+                return true
+            }
+            guard let boundClaudeSessionID = existingBindings[candidate.id] else {
+                return true
+            }
+            return boundClaudeSessionID == normalizedClaudeSessionID
+        }
+
+        let chosen = chooseClaudeCandidate(from: eligibleCandidates.isEmpty ? claudeCandidates : eligibleCandidates)
+        guard let chosen else { return nil }
+
+        if let normalizedClaudeSessionID {
+            associateClaudeSessionID(normalizedClaudeSessionID, withRuntimeSessionID: chosen.id)
+        }
+
+        return chosen
+    }
+
+    private func chooseClaudeCandidate(from candidates: [RuntimeSession]) -> RuntimeSession? {
+        guard !candidates.isEmpty else { return nil }
+        let activeTurnCandidates = candidates.filter { $0.currentTurnID != nil || $0.state == .busy || $0.state == .awaitingApproval }
+        let pool = activeTurnCandidates.isEmpty ? candidates : activeTurnCandidates
+        return pool.max { lhs, rhs in
+            compareClaudeCandidatePriority(lhs, rhs)
+        }
+    }
+
+    private func compareClaudeCandidatePriority(_ lhs: RuntimeSession, _ rhs: RuntimeSession) -> Bool {
+        let lhsTurnDate = lhs.lastTurnSubmittedAt ?? lhs.createdAt
+        let rhsTurnDate = rhs.lastTurnSubmittedAt ?? rhs.createdAt
+        if lhsTurnDate != rhsTurnDate {
+            return lhsTurnDate < rhsTurnDate
+        }
+        return lhs.createdAt < rhs.createdAt
+    }
+
+    private func associateClaudeSessionID(_ claudeSessionID: String, withRuntimeSessionID runtimeSessionID: String) {
+        lock.lock()
+        if let previousClaudeSessionID = runtimeToClaudeSession[runtimeSessionID],
+           previousClaudeSessionID != claudeSessionID {
+            claudeToRuntimeSession.removeValue(forKey: previousClaudeSessionID)
+        }
+        claudeToRuntimeSession[claudeSessionID] = runtimeSessionID
+        runtimeToClaudeSession[runtimeSessionID] = claudeSessionID
+        lock.unlock()
+    }
+
+    private func normalizeClaudeSessionID(_ sessionID: String) -> String? {
+        let trimmed = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     /// Try to adopt an unknown Claude Code session from a monitor event.
     /// Resolves the tab by matching cwd to existing tabs.
     private func tryAdoptFromEvent(_ event: ClaudeCodeEvent) -> RuntimeSession? {
@@ -461,10 +532,32 @@ final class RuntimeSessionManager {
         lock.lock()
         sessions.removeValue(forKey: session.id)
         tabToSession.removeValue(forKey: session.tabID)
-        cwdToSession.removeValue(forKey: session.config.directory)
+        if var sessionIDs = cwdToSessions[session.config.directory] {
+            sessionIDs.remove(session.id)
+            if sessionIDs.isEmpty {
+                cwdToSessions.removeValue(forKey: session.config.directory)
+            } else {
+                cwdToSessions[session.config.directory] = sessionIDs
+            }
+        }
+        if let claudeSessionID = runtimeToClaudeSession.removeValue(forKey: session.id) {
+            claudeToRuntimeSession.removeValue(forKey: claudeSessionID)
+        }
         recentlyStopped[session.id] = (session, Date())
         lock.unlock()
 
         Log.info("RuntimeSessionManager: session \(session.id) stopped")
+    }
+
+    func resetForTesting() {
+        lock.lock()
+        sessions.removeAll()
+        tabToSession.removeAll()
+        cwdToSessions.removeAll()
+        claudeToRuntimeSession.removeAll()
+        runtimeToClaudeSession.removeAll()
+        recentlyStopped.removeAll()
+        transcriptReaders.removeAll()
+        lock.unlock()
     }
 }
