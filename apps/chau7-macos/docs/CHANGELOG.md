@@ -288,6 +288,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.6 | 2026-03-29 | Remote relay control frames now require encryption after handshake, and remote push registration uses HTTP(S) relay endpoints instead of websocket URLs |
 | 0.5.5 | 2026-03-29 | Runtime Claude events now bind to exact session IDs and preserve multiple same-directory agent tabs without cwd collisions |
 | 0.5.4 | 2026-03-29 | History store clears now serialize with queued async writes so pending inserts cannot resurrect deleted rows |
 | 0.5.3 | 2026-03-29 | Reopen Closed Tab now preserves tab identity metadata, including tab ID, creation time, and repo grouping |

@@ -17,6 +17,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -449,7 +450,7 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 	case protocol.TypePairRequest:
 		a.handlePairRequest(frame.Payload)
 	case protocol.TypeSessionReady:
-		if !wasEncrypted {
+		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
 			return
 		}
 		a.sessionMu.Lock()
@@ -463,13 +464,16 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		})
 		a.sendSessionStatus("ready")
 	case protocol.TypeClientState:
-		if !wasEncrypted {
+		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
 			return
 		}
 		a.handleClientStateFrame(frame.Payload)
 		a.sendToIPC(frame)
 	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeRemoteTelemetry,
 		protocol.TypeApprovalResponse:
+		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
+			return
+		}
 		a.sendToIPC(frame)
 	case protocol.TypePing:
 		a.sendEncryptedToRelay(&protocol.Frame{
@@ -481,6 +485,20 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		})
 	default:
 		log.Printf("relay: unhandled frame type 0x%02x (encrypted=%v)", frame.Type, wasEncrypted)
+	}
+}
+
+func requiresEncryptedRelayFrame(frameType uint8) bool {
+	switch frameType {
+	case protocol.TypeSessionReady,
+		protocol.TypeClientState,
+		protocol.TypeTabSwitch,
+		protocol.TypeInput,
+		protocol.TypeRemoteTelemetry,
+		protocol.TypeApprovalResponse:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -971,7 +989,18 @@ func (a *Agent) approvalContextSummary(toolName, tabTitle, projectName, branchNa
 
 func (a *Agent) relayAPIBaseURL() string {
 	base := strings.TrimSuffix(a.relayBaseURL, "/")
-	return strings.TrimSuffix(base, "/connect")
+	base = strings.TrimSuffix(base, "/connect")
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return base
+	}
+	switch parsed.Scheme {
+	case "wss":
+		parsed.Scheme = "https"
+	case "ws":
+		parsed.Scheme = "http"
+	}
+	return strings.TrimSuffix(parsed.String(), "/")
 }
 
 func (a *Agent) relayHTTPPost(path string, payload any) error {
