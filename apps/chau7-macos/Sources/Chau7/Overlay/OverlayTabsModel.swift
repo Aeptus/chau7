@@ -2286,10 +2286,6 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         return count
     }
 
-    private func tabHasRunningProcess(_ tab: OverlayTab) -> Bool {
-        return countRunningProcesses(in: tab) > 0
-    }
-
     /// Show confirmation dialog before closing tab. Returns true if user confirms.
     /// - Parameters:
     ///   - runningProcessCount: Number of running processes in the tab
