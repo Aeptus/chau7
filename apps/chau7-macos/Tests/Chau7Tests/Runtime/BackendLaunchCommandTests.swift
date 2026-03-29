@@ -45,5 +45,20 @@ final class BackendLaunchCommandTests: XCTestCase {
         XCTAssertFalse(claudeCommand.contains("BAD;KEY"))
         XCTAssertFalse(claudeCommand.contains("touch /tmp/pwned"))
     }
+
+    func testShellBackendPreservesArgumentBoundaries() {
+        let command = GenericShellBackend().launchCommand(
+            config: SessionConfig(
+                directory: "/tmp",
+                provider: "shell",
+                args: ["python3", "-c", "print('hello world'); touch /tmp/pwned"]
+            )
+        )
+
+        XCTAssertEqual(
+            command,
+            "'python3' '-c' 'print('\\''hello world'\\''); touch /tmp/pwned'"
+        )
+    }
 }
 #endif
