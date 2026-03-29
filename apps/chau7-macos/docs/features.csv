@@ -33,6 +33,7 @@ AI Detection,Output Banner Detection,"Detect AI tools from output banners — co
 AI Integration,LLM Error Explanation,"One-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint — plain-language root cause and fix suggestions",Shipped,Yes
 AI Integration,Claude Code Deep Integration,"Monitor Claude Code hook events: prompts, tools, permissions, responses — first-class agentic workflow support",Shipped,Yes
 AI Integration,AI Event Notifications,"Notifications for finished, failed, needs_validation, permission, tool_complete, session_end, idle events",Shipped,Yes
+AI Integration,Runtime Session Startup,"MCP-created runtime sessions transition to ready after launch, and attach_tab_id sessions start usable immediately",Shipped,Yes
 AI Integration,History Monitor Tab Routing,"History-monitor idle and finished events resolve provider session metadata to recover the working directory before notification routing",Shipped,Yes
 AI Integration,Session-Aware Tab Resolution,"Notification routing prefers exact AI session ID matches before broader provider and title heuristics",Shipped,Yes
 AI Integration,File Conflict Events,Newly detected cross-tab file conflicts emit app events for each affected tab,Shipped,Yes

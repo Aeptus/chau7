@@ -53,6 +53,41 @@ final class RuntimeControlServiceTests: XCTestCase {
         XCTAssertEqual(adoptedSession.state, .busy)
     }
 
+    func testRuntimeSessionCreateStartsReadySession() throws {
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": "shell",
+                "directory": "/tmp/runtime-create-\(UUID().uuidString)"
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let sessionID = try XCTUnwrap(json["session_id"] as? String)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+
+        XCTAssertEqual(json["state"] as? String, "ready")
+        XCTAssertEqual(session.state, .ready)
+    }
+
+    func testRuntimeSessionCreateWithAttachTabStartsReadySession() throws {
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": "shell",
+                "directory": "/tmp/runtime-attach-\(UUID().uuidString)",
+                "attach_tab_id": overlayModel.selectedTabID.uuidString
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let sessionID = try XCTUnwrap(json["session_id"] as? String)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+
+        XCTAssertEqual(json["state"] as? String, "ready")
+        XCTAssertEqual(session.state, .ready)
+    }
+
     private func parseJSONObject(_ text: String) -> [String: Any]? {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
