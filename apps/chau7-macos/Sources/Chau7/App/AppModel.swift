@@ -1159,13 +1159,17 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     private func handleHistoryEntry(_ entry: HistoryEntry, toolName: String) {
         // Sanitize summary to remove escape sequences and leading fragments
         // (upstream tools sometimes write truncated text, e.g. "rror" instead of "Error")
-        var sanitizedSummary = EscapeSequenceSanitizer.sanitizeForLogging(entry.summary)
-        // Drop suspiciously short summaries that look like truncated fragments
-        if sanitizedSummary.count < 4, !sanitizedSummary.isEmpty, !entry.isExit {
-            Log.trace("Dropping truncated history summary: \"\(sanitizedSummary)\" from \(toolName)")
-            sanitizedSummary = ""
+        let sanitizedSummary = HistorySummarySanitizer.sanitize(entry.summary, isExit: entry.isExit)
+        if sanitizedSummary.isEmpty, !entry.summary.isEmpty {
+            Log.trace("Dropping truncated history summary from \(toolName)")
         }
         Log.info("History entry: tool=\(toolName) session=\(entry.sessionId) summary=\"\(sanitizedSummary)\"")
+        let storedEntry = HistoryEntry(
+            sessionId: entry.sessionId,
+            timestamp: entry.timestamp,
+            summary: sanitizedSummary,
+            isExit: entry.isExit
+        )
 
         let providerKey = AIToolRegistry.resumeProviderKey(for: toolName) ?? toolName.lowercased()
 
@@ -1189,7 +1193,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             var entries = toolHistoryEntries[providerKey] ?? []
-            entries.append(entry)
+            entries.append(storedEntry)
             entries.trimToLast(maxHistoryEntries)
             toolHistoryEntries[providerKey] = entries
         }
@@ -1204,6 +1208,16 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             return AIEventSource(rawValue: rawValue)
         }
         return .historyMonitor
+    }
+
+    /// Injected by Chau7App to resolve tab IDs for history-monitor events.
+    /// Uses TabResolver with the overlay model's tabs. Set during app init.
+    var tabIDResolver: ((TabTarget) -> UUID?)?
+
+    /// Eagerly resolve which tab a history-monitor event belongs to.
+    private func resolveTabForSession(toolName: String, sessionID: String, directory: String?) -> UUID? {
+        let target = TabTarget(tool: toolName, directory: directory, tabID: nil, sessionID: sessionID)
+        return tabIDResolver?(target)
     }
 
     private func historyEventDirectory(for toolName: String, sessionID: String) -> String? {
@@ -1269,6 +1283,11 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 if lastFired == nil || now.timeIntervalSince(lastFired!) > cooldown {
                     sessionFinishedTimestamps[statusId] = now
                     let directory = historyEventDirectory(for: toolName, sessionID: sessionId)
+                    // Resolve tabID eagerly so the notification routes to the
+                    // correct tab even when multiple tabs share the same repo.
+                    let tabID = resolveTabForSession(
+                        toolName: toolName, sessionID: sessionId, directory: directory
+                    )
                     recordEvent(
                         source: aiEventSource(for: toolName),
                         type: "finished",
@@ -1276,6 +1295,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                         message: "\(toolName) finished",
                         notify: true,
                         directory: directory,
+                        tabID: tabID,
                         sessionID: sessionId
                     )
                 }
