@@ -18,6 +18,10 @@ struct ClaudeCodeBackend: AgentBackend {
             parts.append(resumeID)
         }
 
+        if config.autoApprove {
+            parts.append("--dangerously-skip-permissions")
+        }
+
         if let model = config.model {
             parts.append("--model")
             parts.append(model)

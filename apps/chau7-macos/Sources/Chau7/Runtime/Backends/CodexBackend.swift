@@ -14,6 +14,10 @@ struct CodexBackend: AgentBackend {
             parts.append(resumeID)
         }
 
+        if config.autoApprove {
+            parts.append("--full-auto")
+        }
+
         if let model = config.model {
             parts.append("--model")
             parts.append(model)

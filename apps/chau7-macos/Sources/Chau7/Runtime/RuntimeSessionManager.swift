@@ -174,13 +174,22 @@ final class RuntimeSessionManager {
             )
 
         case .permissionRequest:
-            // Only create approval if session is busy (not already awaiting)
             if session.state == .busy {
-                _ = session.requestApproval(
-                    tool: event.toolName,
-                    description: event.message
-                )
-                emitNotification(session: session, type: "permission", message: event.message)
+                if session.autoApprove {
+                    // Layer 2: auto-respond to permission requests that bypass Layer 1
+                    // (Layer 1 is the CLI flag like --full-auto / --dangerously-skip-permissions)
+                    _ = TerminalControlService.shared.sendInput(
+                        tabID: session.tabID.uuidString, input: "y\n"
+                    )
+                    Log.info("Auto-approved permission for session \(session.id): \(event.toolName) — \(event.message)")
+                    emitNotification(session: session, type: "permission_auto_approved", message: event.message)
+                } else {
+                    _ = session.requestApproval(
+                        tool: event.toolName,
+                        description: event.message
+                    )
+                    emitNotification(session: session, type: "permission", message: event.message)
+                }
             }
 
         case .responseComplete:
