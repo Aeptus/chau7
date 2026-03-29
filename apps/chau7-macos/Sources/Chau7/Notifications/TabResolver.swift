@@ -325,16 +325,10 @@ enum TabResolver {
     }
 
     private static func directoryMatchRank(targetDirectory: String, sessionDirectory: String) -> Int? {
-        let target = URL(fileURLWithPath: targetDirectory).standardized.path
-        let session = URL(fileURLWithPath: sessionDirectory).standardized.path
-        guard !target.isEmpty, !session.isEmpty else { return nil }
-        if target == session {
-            return 0
-        }
-        if session.hasPrefix(target + "/") || target.hasPrefix(session + "/") {
-            return 1
-        }
-        return nil
+        DirectoryPathMatcher.bidirectionalPrefixRank(
+            targetPath: targetDirectory,
+            candidatePath: sessionDirectory
+        )
     }
 
     private static func sessionMatchesCandidates(_ session: TerminalSessionModel, candidates: [String]) -> Bool {

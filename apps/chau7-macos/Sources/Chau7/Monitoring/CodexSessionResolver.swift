@@ -132,16 +132,10 @@ enum CodexSessionResolver {
     }
 
     static func directoryMatchRank(forDirectory directory: String, sessionDirectory: String) -> Int? {
-        let target = normalizedSessionDirectory(directory)
-        let session = normalizedSessionDirectory(sessionDirectory)
-        guard !target.isEmpty, !session.isEmpty else { return nil }
-        if target == session {
-            return 0
-        }
-        if target.hasPrefix(session + "/") || session.hasPrefix(target + "/") {
-            return 1
-        }
-        return nil
+        DirectoryPathMatcher.bidirectionalPrefixRank(
+            targetPath: normalizedSessionDirectory(directory),
+            candidatePath: normalizedSessionDirectory(sessionDirectory)
+        )
     }
 
     private static func deduplicatedCandidates(_ candidates: [Candidate]) -> [Candidate] {
