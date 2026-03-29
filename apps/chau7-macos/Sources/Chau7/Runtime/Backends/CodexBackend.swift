@@ -22,7 +22,7 @@ struct CodexBackend: AgentBackend {
         parts.append(contentsOf: config.args)
         let command = ShellEscaping.escapeArguments(parts)
 
-        let envPrefix = config.environment.map { "\($0.key)=\(shellEscape($0.value))" }.joined(separator: " ")
+        let envPrefix = ShellEscaping.escapeEnvironmentAssignments(config.environment)
         if !envPrefix.isEmpty {
             return envPrefix + " " + command
         }
@@ -39,12 +39,5 @@ struct CodexBackend: AgentBackend {
 
     var resumeProviderKey: String? {
         "codex"
-    }
-
-    private func shellEscape(_ value: String) -> String {
-        if value.rangeOfCharacter(from: .init(charactersIn: " \"'$\\`!#&|;(){}[]<>?*~")) != nil {
-            return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        }
-        return value
     }
 }

@@ -27,7 +27,7 @@ struct ClaudeCodeBackend: AgentBackend {
         let command = ShellEscaping.escapeArguments(parts)
 
         // Prepend environment variables
-        let envPrefix = config.environment.map { "\($0.key)=\(shellEscape($0.value))" }.joined(separator: " ")
+        let envPrefix = ShellEscaping.escapeEnvironmentAssignments(config.environment)
         if !envPrefix.isEmpty {
             return envPrefix + " " + command
         }
@@ -62,14 +62,5 @@ struct ClaudeCodeBackend: AgentBackend {
         case .closed:
             return .tabClosed
         }
-    }
-
-    // MARK: - Private
-
-    private func shellEscape(_ value: String) -> String {
-        if value.rangeOfCharacter(from: .init(charactersIn: " \"'$\\`!#&|;(){}[]<>?*~")) != nil {
-            return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        }
-        return value
     }
 }
