@@ -214,7 +214,10 @@ enum TabResolver {
             let normalized = URL(fileURLWithPath: dir).standardized.path
             let rankedByDirectory = bestMatches.compactMap { tab -> (tab: OverlayTab, rank: Int)? in
                 let ranks = tab.splitController.terminalSessions.compactMap { _, session in
-                    directoryMatchRank(targetDirectory: normalized, sessionDirectory: session.currentDirectory)
+                    DirectoryPathMatcher.bidirectionalPrefixRank(
+                        targetPath: normalized,
+                        candidatePath: session.currentDirectory
+                    )
                 }
                 guard let rank = ranks.min() else { return nil }
                 return (tab: tab, rank: rank)
@@ -278,7 +281,10 @@ enum TabResolver {
             let normalized = URL(fileURLWithPath: dir).standardized.path
             let rankedMatches = matches.compactMap { tab -> (tab: OverlayTab, rank: Int)? in
                 let ranks = tab.splitController.terminalSessions.compactMap { _, session in
-                    directoryMatchRank(targetDirectory: normalized, sessionDirectory: session.currentDirectory)
+                    DirectoryPathMatcher.bidirectionalPrefixRank(
+                        targetPath: normalized,
+                        candidatePath: session.currentDirectory
+                    )
                 }
                 guard let rank = ranks.min() else { return nil }
                 return (tab: tab, rank: rank)
@@ -322,13 +328,6 @@ enum TabResolver {
             session.lastActivityDate
         }
         return sessionDates.max() ?? tab.createdAt
-    }
-
-    private static func directoryMatchRank(targetDirectory: String, sessionDirectory: String) -> Int? {
-        DirectoryPathMatcher.bidirectionalPrefixRank(
-            targetPath: targetDirectory,
-            candidatePath: sessionDirectory
-        )
     }
 
     private static func sessionMatchesCandidates(_ session: TerminalSessionModel, candidates: [String]) -> Bool {

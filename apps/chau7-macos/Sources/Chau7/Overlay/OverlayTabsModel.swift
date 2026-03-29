@@ -1185,7 +1185,10 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                 parsedLines += 1
                 // Parse session_meta to extract cwd and id
                 if let (sessionCwd, sessionId) = parseCodexSessionMeta(firstLine),
-                   let rank = CodexSessionResolver.directoryMatchRank(forDirectory: dir, sessionDirectory: sessionCwd),
+                   let rank = DirectoryPathMatcher.bidirectionalPrefixRank(
+                       targetPath: dir,
+                       candidatePath: sessionCwd
+                   ),
                    !claimedSessionIds.contains(sessionId) {
                     let touchedAt = (try? FileManager.default.attributesOfItem(atPath: filePath)[.modificationDate] as? Date) ?? Date.distantPast
                     matches.append((sessionId: sessionId, touchedAt: touchedAt, rank: rank))

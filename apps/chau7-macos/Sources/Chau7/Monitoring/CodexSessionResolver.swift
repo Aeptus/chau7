@@ -99,7 +99,10 @@ enum CodexSessionResolver {
                       let metadata = parseSessionMeta(firstLine) else { continue }
 
                 guard seenSessionIds.insert(metadata.sessionId).inserted else { continue }
-                guard let rank = directoryMatchRank(forDirectory: directory, sessionDirectory: metadata.cwd) else { continue }
+                guard let rank = DirectoryPathMatcher.bidirectionalPrefixRank(
+                    targetPath: normalizedSessionDirectory(directory),
+                    candidatePath: normalizedSessionDirectory(metadata.cwd)
+                ) else { continue }
 
                 let touchedAt = (
                     try? fm.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date
@@ -121,7 +124,10 @@ enum CodexSessionResolver {
         candidates: [Candidate]
     ) -> String? {
         let matches = deduplicatedCandidates(candidates).compactMap { candidate -> (String, Date, Int)? in
-            guard let rank = directoryMatchRank(forDirectory: directory, sessionDirectory: candidate.cwd) else { return nil }
+            guard let rank = DirectoryPathMatcher.bidirectionalPrefixRank(
+                targetPath: normalizedSessionDirectory(directory),
+                candidatePath: normalizedSessionDirectory(candidate.cwd)
+            ) else { return nil }
             return (candidate.sessionId, candidate.touchedAt, rank)
         }
         guard let bestRank = matches.map({ $0.2 }).min() else { return nil }
@@ -129,13 +135,6 @@ enum CodexSessionResolver {
             .filter { $0.2 == bestRank }
             .map { (sessionId: $0.0, touchedAt: $0.1) }
         return AIResumeParser.bestSessionMatch(candidates: rankedCandidates, referenceDate: referenceDate)
-    }
-
-    static func directoryMatchRank(forDirectory directory: String, sessionDirectory: String) -> Int? {
-        DirectoryPathMatcher.bidirectionalPrefixRank(
-            targetPath: normalizedSessionDirectory(directory),
-            candidatePath: normalizedSessionDirectory(sessionDirectory)
-        )
     }
 
     private static func deduplicatedCandidates(_ candidates: [Candidate]) -> [Candidate] {
