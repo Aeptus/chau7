@@ -63,19 +63,6 @@ private func tabProviderIdentity(for tab: OverlayTab) -> String {
     return "shell"
 }
 
-private func tabProviderDisplayName(for tab: OverlayTab) -> String {
-    guard let session = tab.displaySession ?? tab.session else { return "Shell" }
-    if let appName = session.aiDisplayAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
-       !appName.isEmpty {
-        return appName
-    }
-    if let provider = session.effectiveAIProvider?.trimmingCharacters(in: .whitespacesAndNewlines),
-       !provider.isEmpty {
-        return provider.capitalized
-    }
-    return "Shell"
-}
-
 private func repoProviderGroupIdentity(for tab: OverlayTab) -> String? {
     guard let repoGroupID = tab.repoGroupID else { return nil }
     return "\(repoGroupID)::\(tabProviderIdentity(for: tab))"
@@ -104,17 +91,6 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         tabsModels[toolbarIdentifier] = model
         // Invalidate cached view when model changes
         cachedHostingViews.removeValue(forKey: toolbarIdentifier)
-    }
-
-    /// Removes cached resources for a toolbar.
-    /// Note: Currently unused because overlay windows are hidden (orderOut) rather than
-    /// destroyed. The windows persist for the app's lifetime, so cached views are retained
-    /// intentionally. Call this if window destruction is added in the future.
-    func unregisterToolbar(_ toolbarIdentifier: NSToolbar.Identifier) {
-        tabsModels.removeValue(forKey: toolbarIdentifier)
-        cachedHostingViews.removeValue(forKey: toolbarIdentifier)
-        toolbarItems.removeValue(forKey: toolbarIdentifier)
-        Log.info("TabBarToolbarDelegate: unregistered toolbar \(toolbarIdentifier)")
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
@@ -1722,8 +1698,11 @@ struct UnifiedTabButton: View {
                     : .default,
                 value: isPulsing
             )
-            .task(id: tab.notificationStyle?.shouldPulse) {
+            .onAppear {
                 isPulsing = tab.notificationStyle?.shouldPulse == true
+            }
+            .onChange(of: tab.notificationStyle?.shouldPulse) { shouldPulse in
+                isPulsing = shouldPulse == true
             }
     }
 
