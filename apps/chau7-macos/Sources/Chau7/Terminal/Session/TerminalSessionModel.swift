@@ -517,7 +517,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
         devServerMonitor.onDevServerChanged = { [weak self] serverInfo in
             self?.devServer = serverInfo
             if let serverInfo {
-                Log.info("Dev server detected: \(serverInfo.name) on port \(serverInfo.port ?? 0)")
+                Log.info("Dev server detected: \(serverInfo.name)\(serverInfo.port.map { " on port \($0)" } ?? " (port pending)")")
             } else {
                 Log.info("Dev server stopped")
             }

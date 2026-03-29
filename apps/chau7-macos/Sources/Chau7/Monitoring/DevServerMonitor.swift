@@ -107,10 +107,13 @@ final class DevServerMonitor {
             if newServer != currentServer {
                 currentServer = newServer
                 lastCommandHint = nil
-                DispatchQueue.main.async { [weak self] in
-                    self?.onDevServerChanged?(newServer)
+                if port != nil {
+                    // Port already known from output — emit immediately
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onDevServerChanged?(newServer)
+                    }
                 }
-                // One-shot: try to enrich with PID info
+                // Enrich with PID (and port if not yet known) via lsof
                 scheduleOneShot(delay: 0.5)
             }
         }
