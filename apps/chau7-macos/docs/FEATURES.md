@@ -524,3 +524,7 @@ Key patterns:
   - working directory
   - recent command context from shell integration / OSC 133-backed command tracking
   - MCP permission-source notes when relevant
+
+## Recent Runtime Safety
+
+- Shell JSON-RPC sessions now preserve argv boundaries when launching the generic shell backend, so quoted user arguments stay literal instead of being reinterpreted by the shell.

@@ -286,6 +286,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.2 | 2026-03-29 | Shell runtime launch preserves argument boundaries and blocks argv injection through JSON-RPC shell sessions |
 | 0.5.1 | 2026-03-19 | Richer remote approval context on iPhone: directory, recent command, project/branch, and MCP source notes |
 | 0.5.0 | 2026-01-21 | Tab notification styling, major tab bar fixes |
 | 0.4.0 | 2026-01-20 | Smart scroll, watchdog recovery, enhanced logging |

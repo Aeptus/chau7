@@ -250,3 +250,4 @@ Networking,TLS/WSS Proxy Support,TLS and WebSocket proxy for Codex OpenAI API ca
 Networking,API Proxy Interception,Transparent HTTP/HTTPS proxy for API call capture and analysis,Shipped,Yes
 Networking,Configurable Proxy Endpoints,Set custom proxy host and port for API interception,Shipped,No
 Remote,iPhone Approval Context,Remote approvals and notifications include repo/branch directory recent command and MCP source notes,Shipped,Yes
+Runtime,Shell Backend Argv Escaping,Generic shell backend now shell-escapes each JSON-RPC argument to preserve literal argv boundaries,Shipped,Yes
