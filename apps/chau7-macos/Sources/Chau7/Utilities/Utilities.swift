@@ -1,20 +1,9 @@
 import Foundation
+import Chau7Core
 
 // MARK: - Shared Date Formatter
 
-enum DateFormatters {
-    /// Shared ISO8601 formatter with fractional seconds.
-    static let iso8601: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    /// Formats current date as ISO8601 string.
-    static func nowISO8601() -> String {
-        iso8601.string(from: Date())
-    }
-}
+typealias DateFormatters = Chau7Core.DateFormatters
 
 // MARK: - Array Extensions
 
