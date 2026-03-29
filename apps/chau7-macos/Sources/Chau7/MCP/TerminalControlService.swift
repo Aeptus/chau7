@@ -141,8 +141,9 @@ final class TerminalControlService {
                 return self.jsonError("Tab creation failed")
             }
 
-            // Mark as MCP-controlled
+            // Mark as MCP-controlled and assign repo group
             model.tabs[tabIndex].isMCPControlled = true
+            model.setupRepoGroupingForTab(model.tabs[tabIndex])
             let tab = model.tabs[tabIndex]
 
             Log.info("MCP: tab created \(tab.id) dir=\(directory ?? "(inherited)")")
