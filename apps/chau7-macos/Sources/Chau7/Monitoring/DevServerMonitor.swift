@@ -198,43 +198,12 @@ final class DevServerMonitor {
         burstChecksRemaining <= 0 || currentServer?.port != nil
     }
 
-    // MARK: - Subprocess helper
-
-    /// Runs a subprocess and returns its stdout as a String.
-    /// Explicitly calls `waitpid` after `waitUntilExit` to reap the child
-    /// and prevent zombie processes on background dispatch queues.
-    private func runSubprocess(executablePath: String, arguments: [String]) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        // Explicitly reap — Foundation.Process on background queues
-        // may not run the SIGCHLD handler, leaving a zombie.
-        var status: Int32 = 0
-        waitpid(process.processIdentifier, &status, WNOHANG)
-
-        return String(decoding: data, as: UTF8.self)
-    }
-
     // MARK: - Process tree (single `ps` call + in-memory BFS)
 
     /// Get all descendant process IDs of a given parent.
     /// Uses a single `ps -axo ppid,pid` call and walks the tree in-memory.
     private func getChildProcesses(of parentPID: pid_t) -> [pid_t] {
-        guard let output = runSubprocess(executablePath: "/bin/ps", arguments: ["-axo", "ppid,pid"]) else {
+        guard let output = SubprocessRunner.run(executablePath: "/bin/ps", arguments: ["-axo", "ppid,pid"]) else {
             return []
         }
 
@@ -287,7 +256,7 @@ final class DevServerMonitor {
     /// Uses `netstat -anv` instead of `lsof` — completes in ~7ms vs 5-10+ seconds.
     private func findListeningServer(pids: [pid_t]) -> DevServerInfo? {
         guard !pids.isEmpty else { return nil }
-        guard let output = runSubprocess(executablePath: "/usr/sbin/netstat", arguments: ["-anv", "-p", "tcp"]) else {
+        guard let output = SubprocessRunner.run(executablePath: "/usr/sbin/netstat", arguments: ["-anv", "-p", "tcp"]) else {
             return nil
         }
 
@@ -331,7 +300,7 @@ final class DevServerMonitor {
 
     /// Get the command name for a PID via `ps`.
     private func getProcessName(pid: pid_t) -> String? {
-        guard let output = runSubprocess(executablePath: "/bin/ps", arguments: ["-o", "comm=", "-p", "\(pid)"]) else {
+        guard let output = SubprocessRunner.run(executablePath: "/bin/ps", arguments: ["-o", "comm=", "-p", "\(pid)"]) else {
             return nil
         }
         let name = output.trimmingCharacters(in: .whitespacesAndNewlines)
