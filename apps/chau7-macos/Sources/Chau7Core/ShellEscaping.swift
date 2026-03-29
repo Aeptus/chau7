@@ -203,4 +203,17 @@ public enum ShellEscaping {
         // Rest must be alphanumeric or underscore
         return name.dropFirst().allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
     }
+
+    /// Builds a shell-safe environment assignment prefix, dropping invalid variable names.
+    /// - Parameter environment: Raw environment dictionary
+    /// - Returns: Space-separated `KEY='value'` assignments
+    public static func escapeEnvironmentAssignments(_ environment: [String: String]) -> String {
+        environment
+            .sorted { $0.key < $1.key }
+            .compactMap { key, value -> String? in
+                guard isValidEnvVarName(key) else { return nil }
+                return "\(key)=\(escapeArgument(value))"
+            }
+            .joined(separator: " ")
+    }
 }

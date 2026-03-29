@@ -26,5 +26,24 @@ final class BackendLaunchCommandTests: XCTestCase {
 
         XCTAssertEqual(command, "'claude' '--resume' 'abc; touch /tmp/pwned'")
     }
+
+    func testLaunchCommandDropsInvalidEnvironmentVariableNames() {
+        let environment = [
+            "SAFE_KEY": "safe value",
+            "BAD;KEY": "touch /tmp/pwned"
+        ]
+
+        let claudeCommand = ClaudeCodeBackend().launchCommand(
+            config: SessionConfig(
+                directory: "/tmp",
+                provider: "claude",
+                environment: environment
+            )
+        )
+
+        XCTAssertEqual(claudeCommand, "SAFE_KEY='safe value' 'claude'")
+        XCTAssertFalse(claudeCommand.contains("BAD;KEY"))
+        XCTAssertFalse(claudeCommand.contains("touch /tmp/pwned"))
+    }
 }
 #endif
