@@ -1223,6 +1223,18 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             let previousState: HistorySessionState?
             if let index = sessionStatuses.firstIndex(where: { $0.id == statusId }) {
                 previousState = sessionStatuses[index].state
+
+                // IMPORTANT: Block closed→active resurrection. Once a session is closed,
+                // new activity on the same session ID is a stale history entry, not a real
+                // reactivation. Without this guard, sessions oscillate closed→active→idle
+                // indefinitely, corrupting metrics and firing duplicate notifications.
+                // See log analysis 2026-03-29: sessions 019d33c3 and 019d33c5 both exhibited
+                // this pattern with 29-50 minute gaps between close and resurrection.
+                if previousState == .closed && state == .active {
+                    Log.trace("Ignoring closed→active resurrection for session \(sessionId.prefix(8))")
+                    return
+                }
+
                 sessionStatuses[index].state = state
                 sessionStatuses[index].lastSeen = lastSeen
             } else {
@@ -1236,11 +1248,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 ))
             }
 
-            // When a session transitions from active → idle/closed, emit a "finished"
-            // notification. The 30s cooldown per session prevents duplicate notifications
-            // from the history monitor's rapid read-cycle (closed→active→idle).
+            // Emit "finished" notification when a session ends. Three cases:
+            // 1. active → idle/closed (normal completion)
+            // 2. nil → idle (first observation is already idle — common for Codex
+            //    sessions where the monitor's polling misses the brief active phase)
+            // 3. nil → closed (session ended before we ever saw it active)
+            // The 30s cooldown per session prevents duplicates from rapid cycling.
             let sessionEnded = state == .idle || state == .closed
-            if previousState == .active, sessionEnded {
+            let wasActiveOrNew = previousState == .active || previousState == nil
+            if wasActiveOrNew, sessionEnded {
                 let now = Date()
                 let lastFired = sessionFinishedTimestamps[statusId]
                 let cooldown: TimeInterval = 30
