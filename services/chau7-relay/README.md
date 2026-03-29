@@ -3,6 +3,9 @@
 This service forwards encrypted frames between macOS and iOS clients. It does
 not inspect payloads.
 
+The relay fails closed unless `RELAY_SECRET` is set to a real shared secret.
+The shipped placeholder in `wrangler.toml` is intentionally rejected at runtime.
+
 ## Build/Deploy
 From this directory:
 

@@ -92,9 +92,15 @@ enum NotificationPipeline {
             actions = [NotificationActionConfig(actionType: .showNotification, enabled: true)]
         }
 
+        // 6a. If every resolved action is disabled, nothing should execute.
+        guard actions.contains(where: \.enabled) else {
+            return .drop(reason: "All actions disabled for trigger \(trigger.id)")
+        }
+
         // 6. Optimize: single default showNotification → use native path
         if actions.count == 1,
            let first = actions.first,
+           first.enabled,
            first.actionType == .showNotification,
            first.config.isEmpty {
             return .fireDefault(triggerId: trigger.id)

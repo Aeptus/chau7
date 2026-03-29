@@ -142,4 +142,70 @@ final class NotificationPipelineTests: XCTestCase {
             XCTFail("Expected .drop for DND active, got: \(decision)")
         }
     }
+
+    func testMatchedTriggerDropsWhenOnlySingleDefaultNotificationActionIsDisabled() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "finished",
+            tool: "Claude",
+            message: "done",
+            ts: "2025-01-01T00:00:00Z"
+        )
+        let input = NotificationPipeline.Input(
+            event: event,
+            triggerState: NotificationTriggerState(),
+            triggerConditions: [:],
+            actionBindings: [
+                "claude_code.finished": [
+                    NotificationActionConfig(actionType: .showNotification, enabled: false)
+                ]
+            ],
+            groupConditions: [:],
+            groupActionBindings: [:],
+            isFocusModeActive: false,
+            isAppActive: false,
+            isToolTabActive: false
+        )
+
+        let decision = NotificationPipeline.evaluate(input)
+
+        if case .drop(let reason) = decision {
+            XCTAssertTrue(reason.contains("disabled"), "Expected disabled-action drop, got: \(reason)")
+        } else {
+            XCTFail("Expected .drop for a disabled single-action notification rule, got: \(decision)")
+        }
+    }
+
+    func testMatchedTriggerFiresDefaultWhenSingleNotificationActionIsEnabled() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "finished",
+            tool: "Claude",
+            message: "done",
+            ts: "2025-01-01T00:00:00Z"
+        )
+        let input = NotificationPipeline.Input(
+            event: event,
+            triggerState: NotificationTriggerState(),
+            triggerConditions: [:],
+            actionBindings: [
+                "claude_code.finished": [
+                    NotificationActionConfig(actionType: .showNotification, enabled: true)
+                ]
+            ],
+            groupConditions: [:],
+            groupActionBindings: [:],
+            isFocusModeActive: false,
+            isAppActive: false,
+            isToolTabActive: false
+        )
+
+        let decision = NotificationPipeline.evaluate(input)
+
+        if case .fireDefault(let triggerId) = decision {
+            XCTAssertEqual(triggerId, "claude_code.finished")
+        } else {
+            XCTFail("Expected .fireDefault for enabled single-action notification rule, got: \(decision)")
+        }
+    }
 }
