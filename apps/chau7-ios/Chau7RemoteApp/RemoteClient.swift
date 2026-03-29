@@ -67,7 +67,7 @@ final class RemoteClient {
     private var macPublicKey: Curve25519.KeyAgreement.PublicKey?
     private let iosKey: Curve25519.KeyAgreement.PrivateKey
     private var notificationTask: Task<Void, Never>?
-    private var reconnectAttempt = 0
+    private var reconnectBackoff = RemoteReconnectBackoff()
     private var reconnectTask: Task<Void, Never>?
     private var handshakeRetryTask: Task<Void, Never>?
     private var handshakeTimeoutTask: Task<Void, Never>?
@@ -91,7 +91,7 @@ final class RemoteClient {
     let terminalRenderer = RemoteTerminalRendererStore()
 
     private static let maxHistory = 50
-    private static let maxReconnectAttempts = 5
+    private static let maxReconnectAttempts = RemoteReconnectBackoff.maxAttempts
     private static let maxBufferedTelemetryEvents = 100
     private static let handshakeRetryIntervalSeconds = 1.0
     private static let handshakeTimeoutSeconds = 12.0
@@ -126,12 +126,22 @@ final class RemoteClient {
         connect(pairing: pairing)
     }
 
-    func connect(pairing: PairingInfo, preserveApprovalsAndPrompts: Bool = false) {
-        disconnect(autoReconnect: false, preserveApprovalsAndPrompts: preserveApprovalsAndPrompts)
+    func connect(
+        pairing: PairingInfo,
+        preserveApprovalsAndPrompts: Bool = false,
+        preserveReconnectAttempt: Bool = false
+    ) {
+        disconnect(
+            autoReconnect: false,
+            preserveApprovalsAndPrompts: preserveApprovalsAndPrompts,
+            preserveReconnectAttempt: preserveReconnectAttempt
+        )
         pairingInfo = pairing
         lastError = nil
         shouldReconnect = true
-        reconnectAttempt = 0
+        if !preserveReconnectAttempt {
+            reconnectBackoff.reset()
+        }
         remoteSessionID = nil
         hasReceivedPairAccept = false
 
@@ -219,7 +229,11 @@ final class RemoteClient {
         )
     }
 
-    func disconnect(autoReconnect: Bool = false, preserveApprovalsAndPrompts: Bool = false) {
+    func disconnect(
+        autoReconnect: Bool = false,
+        preserveApprovalsAndPrompts: Bool = false,
+        preserveReconnectAttempt: Bool = false
+    ) {
         shouldReconnect = false
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -234,7 +248,9 @@ final class RemoteClient {
         nonceIOS = nil
         nonceMac = nil
         seqCounter = 1
-        reconnectAttempt = 0
+        if !preserveReconnectAttempt {
+            reconnectBackoff.reset()
+        }
         connectionGeneration &+= 1
         tabs = []
         outputStore.reset()
@@ -385,22 +401,21 @@ final class RemoteClient {
             emitTelemetry(type: .disconnected, status: "disconnected", message: reason)
         }
 
-        guard shouldReconnect, reconnectAttempt < Self.maxReconnectAttempts else {
-            if reconnectAttempt >= Self.maxReconnectAttempts {
+        guard shouldReconnect, reconnectBackoff.hasRemainingAttempts else {
+            if !reconnectBackoff.hasRemainingAttempts {
                 lastError = "Reconnect limit reached (\(Self.maxReconnectAttempts) attempts)"
                 status = "Connection failed"
             }
             return
         }
-        reconnectAttempt += 1
-        let delay = pow(2.0, Double(reconnectAttempt))
-        status = "Reconnecting (\(reconnectAttempt)/\(Self.maxReconnectAttempts))..."
+        guard let delay = reconnectBackoff.nextDelay() else { return }
+        status = "Reconnecting (\(reconnectBackoff.attempt)/\(Self.maxReconnectAttempts))..."
         emitTelemetry(
             type: .reconnectScheduled,
             status: "scheduled",
             message: reason,
             metadata: [
-                "attempt": String(reconnectAttempt),
+                "attempt": String(reconnectBackoff.attempt),
                 "delay_seconds": String(format: "%.0f", delay)
             ]
         )
@@ -408,7 +423,11 @@ final class RemoteClient {
         reconnectTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled, let self, let pairing = self.pairingInfo else { return }
-            self.connect(pairing: pairing)
+            self.connect(
+                pairing: pairing,
+                preserveApprovalsAndPrompts: true,
+                preserveReconnectAttempt: true
+            )
         }
     }
 
@@ -807,7 +826,7 @@ final class RemoteClient {
         }
 
         crypto = session
-        reconnectAttempt = 0
+        reconnectBackoff.reset()
         isConnected = true
         cancelHandshakeTasks()
         let sessionID = CryptoUtils.randomBytes(count: 8).base64EncodedString()
@@ -972,7 +991,11 @@ final class RemoteClient {
         guard crypto != nil, webSocket != nil else {
             status = "Reconnecting to send approval..."
             if let pairing = pairingInfo, webSocket == nil {
-                connect(pairing: pairing, preserveApprovalsAndPrompts: true)
+                connect(
+                    pairing: pairing,
+                    preserveApprovalsAndPrompts: true,
+                    preserveReconnectAttempt: true
+                )
             }
             return
         }
@@ -1004,7 +1027,11 @@ final class RemoteClient {
                     self.lastError = "Approval response was not delivered. Chau7 will retry when the connection is ready."
                     self.status = "Approval queued"
                     if let pairing = self.pairingInfo, self.webSocket == nil {
-                        self.connect(pairing: pairing, preserveApprovalsAndPrompts: true)
+                        self.connect(
+                            pairing: pairing,
+                            preserveApprovalsAndPrompts: true,
+                            preserveReconnectAttempt: true
+                        )
                     }
                 }
             }
