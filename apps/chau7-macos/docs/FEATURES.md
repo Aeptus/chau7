@@ -93,6 +93,7 @@ Detection methods:
 - **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.
 - **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
 - **AI event notifications** — finished, failed, needs_validation, permission, tool_complete, session_end, idle.
+- **Runtime session startup** — MCP-created runtime sessions become ready immediately after launch, and `attach_tab_id` sessions start usable without a manual state repair step.
 - **History monitor tab routing** — idle and finished history events resolve provider session metadata to recover the working directory before notification routing.
 - **Session-aware tab resolution** — notification routing prefers exact AI session ID matches before broader provider/title heuristics.
 - **File conflict events** — newly detected cross-tab file conflicts emit app events for each affected tab.

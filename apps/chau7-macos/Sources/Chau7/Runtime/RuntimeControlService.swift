@@ -102,17 +102,27 @@ final class RuntimeControlService {
             tabID = uuid
         }
 
-        let session = sessionManager.createSession(
-            tabID: tabID,
-            backend: backend,
-            config: config,
-            autoApprove: autoApprove
-        )
+        let session: RuntimeSession
+        if attachTabID != nil {
+            session = sessionManager.adoptSession(
+                tabID: tabID,
+                backend: backend,
+                cwd: directory
+            )
+        } else {
+            session = sessionManager.createSession(
+                tabID: tabID,
+                backend: backend,
+                config: config,
+                autoApprove: autoApprove
+            )
+        }
 
         // Launch the backend command in the tab
         let launchCmd = backend.launchCommand(config: config)
         if !launchCmd.isEmpty, attachTabID == nil {
             _ = controlService.execInTab(tabID: tabID.uuidString, command: launchCmd)
+            sessionManager.markReady(sessionID: session.id)
         }
 
         // Send initial prompt if provided (after a short delay for backend startup)
