@@ -288,6 +288,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.5 | 2026-03-29 | Runtime Claude events now bind to exact session IDs and preserve multiple same-directory agent tabs without cwd collisions |
 | 0.5.4 | 2026-03-29 | History store clears now serialize with queued async writes so pending inserts cannot resurrect deleted rows |
 | 0.5.3 | 2026-03-29 | Reopen Closed Tab now preserves tab identity metadata, including tab ID, creation time, and repo grouping |
 | 0.5.2 | 2026-03-29 | Shell runtime launch preserves argument boundaries; notification pipeline respects disabled single-action rules |
