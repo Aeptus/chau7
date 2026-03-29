@@ -143,7 +143,7 @@ final class ProcessResourceMonitor {
     }
 
     private func captureSnapshot(shellPID: pid_t) -> ProcessGroupSnapshot? {
-        guard let output = runSubprocess(
+        guard let output = SubprocessRunner.run(
             executablePath: "/bin/ps",
             arguments: ["-axo", "pid,ppid,rss,%cpu,comm"]
         ) else { return nil }
@@ -194,32 +194,5 @@ final class ProcessResourceMonitor {
             children: descendants,
             timestamp: Date()
         )
-    }
-
-    /// Runs a subprocess and returns stdout. Reaps child to prevent zombies.
-    private func runSubprocess(executablePath: String, arguments: [String]) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        // Explicitly reap — Foundation.Process on background queues
-        // may not run the SIGCHLD handler, leaving a zombie.
-        var status: Int32 = 0
-        waitpid(process.processIdentifier, &status, WNOHANG)
-
-        return String(decoding: data, as: UTF8.self)
     }
 }
