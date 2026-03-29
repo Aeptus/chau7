@@ -45,7 +45,7 @@ AI Integration,Codex Session Resolver,Maps Codex OpenAI capture sessions to work
 AI Integration,Context Token Optimization (CTO),Monitor and optimize LLM API token usage in real time — per tab or globally,Shipped,Yes
 AI Integration,CTO Runtime Monitor,"Real-time CTO metrics: decision counts, mode changes, deferred operations, health assessment",Shipped,Yes
 AI Integration,CTO Flag Manager,Manages per-tab CTO flag files that AI tools read to adjust context behavior,Shipped,Yes
-History,Persistent History Clear Ordering,History maintenance operations serialize on the DB queue so queued async inserts cannot repopulate after `clearAll()`,Shipped,No
+History,Persistent History Clear Ordering,History maintenance operations serialize on the DB queue so queued async inserts cannot repopulate after `clearAll()`; regression tests cover the race,Shipped,No
 MCP Server,Built-in MCP Server,"Embedded JSON-RPC 2.0 server on Unix socket (~/.chau7/mcp.sock) — AI agents can control your terminal",Shipped,Yes
 MCP Server,MCP Protocol v2024-11-05,Full MCP protocol compliance with tools and resources capabilities,Shipped,Yes
 MCP Server,MCP Bridge Binary,"Stdio-to-socket bridge binary installed at ~/.chau7/bin/chau7-mcp-bridge for standard MCP client compatibility",Shipped,Yes
@@ -252,6 +252,6 @@ Networking,API Proxy Interception,Transparent HTTP/HTTPS proxy for API call capt
 Networking,Configurable Proxy Endpoints,Set custom proxy host and port for API interception,Shipped,No
 Remote,iPhone Approval Context,Remote approvals and notifications include repo/branch directory recent command and MCP source notes,Shipped,Yes
 Runtime,Shell Backend Argv Escaping,Generic shell backend now shell-escapes each JSON-RPC argument to preserve literal argv boundaries,Shipped,Yes
-Persistence,Stale Window State Cleanup,Termination clears persisted tab/window state and backup files when no overlay windows remain visible,Shipped,Yes
+Persistence,Stale Window State Cleanup,Termination clears persisted tab/window state and backup files when every overlay window has been hidden or closed,Shipped,Yes
 Notifications,Disabled Single-Action Rules,Notification pipeline now checks action enabled state before using the native showNotification fast path,Shipped,Yes
 Overlay,Reopen Closed Tab Identity,Closed tabs reopen with their original tab ID, creation timestamp, and repo grouping membership intact,Shipped,Yes

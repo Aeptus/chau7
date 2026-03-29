@@ -834,7 +834,14 @@ private final class OverlayBlurView: NSVisualEffectView {
             let states = host.model.exportTabStates()
             if !states.isEmpty { allWindows.append(states) }
         }
-        guard !allWindows.isEmpty else { return }
+        guard !allWindows.isEmpty else {
+            if reason == .termination {
+                OverlayTabsModel.clearPersistedWindowState()
+                UserDefaults.standard.synchronize()
+                Log.trace("Cleared persisted window state [\(reason.rawValue)] because no visible windows remained")
+            }
+            return
+        }
 
         // Write window 0 to legacy key
         if let firstWindowStates = allWindows.first,

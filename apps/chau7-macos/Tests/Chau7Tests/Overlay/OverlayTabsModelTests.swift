@@ -23,6 +23,17 @@ final class OverlayTabsModelTests: XCTestCase {
         UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
     }
 
+    private func tabStateBackupRootURL() -> URL {
+        RuntimeIsolation.appSupportDirectory(named: "Chau7")
+            .appendingPathComponent("TabStateBackups", isDirectory: true)
+    }
+
+    private func removePersistedWindowStateArtifacts() {
+        UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        try? FileManager.default.removeItem(at: tabStateBackupRootURL())
+    }
+
     private func makeSavedTabState(title: String, directory: String) -> SavedTabState {
         SavedTabState(
             customTitle: title,
@@ -42,8 +53,7 @@ final class OverlayTabsModelTests: XCTestCase {
         super.setUp()
         // Clear any saved tab state so restoreSavedTabs returns nil
         // and the model starts with a single fresh tab.
-        UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        removePersistedWindowStateArtifacts()
         appModel = AppModel()
         model = OverlayTabsModel(appModel: appModel, restoreState: false)
     }
@@ -52,8 +62,7 @@ final class OverlayTabsModelTests: XCTestCase {
         cancellables.removeAll()
         model = nil
         appModel = nil
-        UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        removePersistedWindowStateArtifacts()
         super.tearDown()
     }
 
@@ -92,6 +101,27 @@ final class OverlayTabsModelTests: XCTestCase {
         let windows = try XCTUnwrap(OverlayTabsModel.decodeBackupWindowStates(from: data))
         XCTAssertEqual(windows.count, 2)
         XCTAssertEqual(windows[1].first?.customTitle, "Window 2")
+    }
+
+    func testClearPersistedWindowStateRemovesSavedStateAndBackups() throws {
+        let state = makeSavedTabState(title: "Primary", directory: "/tmp/primary")
+        storeSavedTabStates([state])
+        OverlayTabsModel.persistWindowStateBackups(windowStates: [[state]], reason: .termination)
+
+        let backupRoot = tabStateBackupRootURL()
+        let latest = backupRoot.appendingPathComponent("latest.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: latest.path))
+        XCTAssertNotNil(UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey))
+
+        OverlayTabsModel.clearPersistedWindowState()
+
+        XCTAssertNil(UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey))
+        XCTAssertNil(UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: latest.path))
+
+        let restoredModel = OverlayTabsModel(appModel: AppModel())
+        XCTAssertEqual(restoredModel.tabs.count, 1)
+        XCTAssertNotEqual(restoredModel.tabs.first?.customTitle, "Primary")
     }
 
     // MARK: - Tab Creation (addTab / newTab)
@@ -915,6 +945,47 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.reopenClosedTab()
         XCTAssertEqual(model.tabs.map(\.id), [originalIDs[0], middleID, originalIDs[2], originalIDs[3]])
+    }
+
+    func testReopenClosedTabPreservesIdentityMetadata() {
+        let originalRepoGroupingMode = FeatureSettings.shared.repoGroupingMode
+        let originalWarnOnCloseWithRunningProcess = FeatureSettings.shared.warnOnCloseWithRunningProcess
+        let originalAlwaysWarnOnTabClose = FeatureSettings.shared.alwaysWarnOnTabClose
+        FeatureSettings.shared.repoGroupingMode = .off
+        FeatureSettings.shared.warnOnCloseWithRunningProcess = false
+        FeatureSettings.shared.alwaysWarnOnTabClose = false
+        defer {
+            FeatureSettings.shared.repoGroupingMode = originalRepoGroupingMode
+            FeatureSettings.shared.warnOnCloseWithRunningProcess = originalWarnOnCloseWithRunningProcess
+            FeatureSettings.shared.alwaysWarnOnTabClose = originalAlwaysWarnOnTabClose
+        }
+
+        model.newTab()
+        guard model.tabs.count >= 2 else {
+            XCTFail("expected a second tab")
+            return
+        }
+
+        let originalTab = model.tabs[1]
+        let originalID = originalTab.id
+        let originalCreatedAt = originalTab.createdAt
+        let originalRepoGroupID = "/tmp/repo"
+
+        model.tabs[1].customTitle = "Closed Tab"
+        model.tabs[1].repoGroupID = originalRepoGroupID
+
+        model.closeTab(id: originalID)
+        model.reopenClosedTab()
+
+        guard let reopenedTab = model.tabs.first(where: { $0.id == originalID }) else {
+            XCTFail("expected reopened tab with original identity")
+            return
+        }
+
+        XCTAssertEqual(reopenedTab.id, originalID)
+        XCTAssertEqual(reopenedTab.createdAt, originalCreatedAt)
+        XCTAssertEqual(reopenedTab.repoGroupID, originalRepoGroupID)
+        XCTAssertEqual(reopenedTab.customTitle, "Closed Tab")
     }
 
     func testRestorePrefillsResumeCommandAfterTerminalBecomesReady() {

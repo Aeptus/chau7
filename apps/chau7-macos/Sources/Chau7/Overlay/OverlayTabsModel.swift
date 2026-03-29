@@ -1513,6 +1513,27 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
     }
 
+    internal static func clearPersistedWindowState() {
+        UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        if let root = tabStateBackupRootURL(),
+           FileManager.default.fileExists(atPath: root.path) {
+            let archive = root.appendingPathComponent("archive", isDirectory: true)
+            let latest = root.appendingPathComponent("latest.json")
+            try? FileManager.default.removeItem(at: latest)
+            if FileManager.default.fileExists(atPath: archive.path) {
+                let contents = (try? FileManager.default.contentsOfDirectory(
+                    at: archive,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles]
+                )) ?? []
+                for url in contents where url.pathExtension == "json" {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+        }
+    }
+
     func persistTabStateBackups(data: Data, reason: TabStateSaveReason) {
         do {
             try Self.writeLatestTabStateBackup(data)
@@ -2687,7 +2708,21 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             paneStates: state.paneStates
         )
 
-        var tab = OverlayTab(appModel: appModel, splitController: controller)
+        let restoredTabID = Self.validatedUUID(from: state.tabID) ?? UUID()
+        let restoredCreatedAt: Date
+        if let iso = state.createdAt,
+           let parsed = DateFormatters.iso8601.date(from: iso) {
+            restoredCreatedAt = parsed
+        } else {
+            restoredCreatedAt = entry.closedAt
+        }
+
+        var tab = OverlayTab(
+            appModel: appModel,
+            splitController: controller,
+            id: restoredTabID,
+            createdAt: restoredCreatedAt
+        )
         tab.customTitle = state.customTitle
         tab.color = TabColor(rawValue: state.color) ?? .blue
         tab.stampOwnerTabID()
