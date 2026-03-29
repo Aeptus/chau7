@@ -1157,8 +1157,14 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     }
 
     private func handleHistoryEntry(_ entry: HistoryEntry, toolName: String) {
-        // Sanitize summary to remove escape sequences from logged messages
-        let sanitizedSummary = EscapeSequenceSanitizer.sanitizeForLogging(entry.summary)
+        // Sanitize summary to remove escape sequences and leading fragments
+        // (upstream tools sometimes write truncated text, e.g. "rror" instead of "Error")
+        var sanitizedSummary = EscapeSequenceSanitizer.sanitizeForLogging(entry.summary)
+        // Drop suspiciously short summaries that look like truncated fragments
+        if sanitizedSummary.count < 4, !sanitizedSummary.isEmpty, !entry.isExit {
+            Log.trace("Dropping truncated history summary: \"\(sanitizedSummary)\" from \(toolName)")
+            sanitizedSummary = ""
+        }
         Log.info("History entry: tool=\(toolName) session=\(entry.sessionId) summary=\"\(sanitizedSummary)\"")
 
         let providerKey = AIToolRegistry.resumeProviderKey(for: toolName) ?? toolName.lowercased()
