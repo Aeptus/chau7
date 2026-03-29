@@ -138,7 +138,7 @@ enum MCPCommandFilter {
     // MARK: - Parsing
 
     /// Split a command string on shell operators to get individual sub-commands.
-    /// Handles: `|`, `&&`, `||`, `;`, `$()`, backticks.
+    /// Handles: `|`, `&&`, `||`, `;`, `&`, newlines, `$()`, backticks.
     static func extractBaseCommands(_ command: String) -> [String] {
         // Split on shell operators: ; && || | — but not inside quotes
         var commands: [String] = []
@@ -190,7 +190,7 @@ enum MCPCommandFilter {
                     i = command.index(i, offsetBy: 2)
                     continue
                 }
-                if c == "|" || c == ";" {
+                if c == "|" || c == ";" || c == "&" || c == "\n" || c == "\r" {
                     if !current.trimmingCharacters(in: .whitespaces).isEmpty {
                         commands.append(current.trimmingCharacters(in: .whitespaces))
                     }
@@ -225,7 +225,7 @@ enum MCPCommandFilter {
     /// Extract the first whitespace-delimited token from a command string.
     /// Skips leading env assignments (FOO=bar) and common prefixes (sudo, command, env, nohup).
     private static func firstToken(_ cmd: String) -> String? {
-        let tokens = cmd.split(separator: " ", maxSplits: 20, omittingEmptySubsequences: true).map(String.init)
+        let tokens = cmd.split(whereSeparator: \.isWhitespace).map(String.init)
         guard !tokens.isEmpty else { return nil }
 
         let passthrough = Set(["sudo", "command", "env", "nohup", "nice", "time", "exec"])
