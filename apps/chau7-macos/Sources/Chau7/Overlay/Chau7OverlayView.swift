@@ -645,9 +645,9 @@ private struct ToolbarTabBarView: View {
 
     /// Computes segments from visible tabs: contiguous runs of same repoGroupID become groups.
     private var tabBarSegments: [TabBarSegment] {
-        guard FeatureSettings.shared.repoGroupingMode != .off else {
-            return visibleTabs.map { .single($0) }
-        }
+        // Always respect existing repoGroupID — the mode only controls auto-assignment.
+        // This ensures manually-grouped or restored tabs remain visually grouped
+        // even when repoGroupingMode is .off.
         var segments: [TabBarSegment] = []
         var currentGroupID: String?
         var currentGroupTabs: [OverlayTab] = []
