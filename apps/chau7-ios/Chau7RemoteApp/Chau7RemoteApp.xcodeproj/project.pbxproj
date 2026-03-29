@@ -21,6 +21,7 @@
 		4A94D79131F2A00100A1B001 /* RemoteRustTerminalPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */; };
 		4A94D79331F2A00100A1B001 /* RemoteTerminalRendererStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */; };
 		4A94D79531F2A00100A1B001 /* RemoteTerminalRendererView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */; };
+		4A94D79831F2A00100A1B001 /* RemoteReconnectBackoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79931F2A00100A1B001 /* RemoteReconnectBackoff.swift */; };
 		84B3034D2F3107BB00A7D19E /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B303492F3107BB00A7D19E /* KeychainStore.swift */; };
 		84B3034E2F3107BB00A7D19E /* RemoteCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */; };
 		84B3034F2F3107BB00A7D19E /* PairingSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034A2F3107BB00A7D19E /* PairingSheetView.swift */; };
@@ -69,6 +70,7 @@
 		4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteRustTerminalPlayback.swift; sourceTree = "<group>"; };
 		4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRendererStore.swift; sourceTree = "<group>"; };
 		4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRendererView.swift; sourceTree = "<group>"; };
+		4A94D79931F2A00100A1B001 /* RemoteReconnectBackoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteReconnectBackoff.swift; sourceTree = "<group>"; };
 		84B3033A2F31076300A7D19E /* Chau7RemoteApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Chau7RemoteApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		84B303482F3107BB00A7D19E /* Chau7RemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chau7RemoteApp.swift; sourceTree = "<group>"; };
 		84B303492F3107BB00A7D19E /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
@@ -117,6 +119,7 @@
 				4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */,
 				4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */,
 				4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */,
+				4A94D79931F2A00100A1B001 /* RemoteReconnectBackoff.swift */,
 				4A94D78F31F2A00100A1B001 /* RemoteTerminalOutputStore.swift */,
 				4A94D77331F2A00100A1B001 /* TerminalView.swift */,
 				4A94D77531F2A00100A1B001 /* ApprovalsView.swift */,
@@ -290,6 +293,7 @@
 				4A94D79131F2A00100A1B001 /* RemoteRustTerminalPlayback.swift in Sources */,
 				4A94D79331F2A00100A1B001 /* RemoteTerminalRendererStore.swift in Sources */,
 				4A94D79531F2A00100A1B001 /* RemoteTerminalRendererView.swift in Sources */,
+				4A94D79831F2A00100A1B001 /* RemoteReconnectBackoff.swift in Sources */,
 				4A94D79031F2A00100A1B001 /* RemoteTerminalOutputStore.swift in Sources */,
 				4A94D77831F2A00100A1B001 /* SettingsView.swift in Sources */,
 				4A94D77431F2A00100A1B001 /* TerminalView.swift in Sources */,
