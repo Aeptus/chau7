@@ -34,6 +34,8 @@ public struct SessionConfig: Codable, Sendable {
     public let environment: [String: String]
     /// Additional CLI arguments for the backend.
     public let args: [String]
+    /// When true, the backend should skip its own permission prompts.
+    public let autoApprove: Bool
 
     public init(
         directory: String,
@@ -41,7 +43,8 @@ public struct SessionConfig: Codable, Sendable {
         model: String? = nil,
         resumeSessionID: String? = nil,
         environment: [String: String] = [:],
-        args: [String] = []
+        args: [String] = [],
+        autoApprove: Bool = false
     ) {
         self.directory = directory
         self.provider = provider
@@ -49,5 +52,6 @@ public struct SessionConfig: Codable, Sendable {
         self.resumeSessionID = resumeSessionID
         self.environment = environment
         self.args = args
+        self.autoApprove = autoApprove
     }
 }

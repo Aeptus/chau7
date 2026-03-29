@@ -83,7 +83,8 @@ final class RuntimeControlService {
             model: model,
             resumeSessionID: resumeID,
             environment: env,
-            args: backendArgs
+            args: backendArgs,
+            autoApprove: autoApprove
         )
 
         // Create or attach to tab
