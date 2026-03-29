@@ -1641,8 +1641,13 @@ struct UnifiedTabButton: View {
     /// Context menu: move tab to another window
     var onMoveToWindow: ((Int) -> Void)?
 
-    /// Pulse animation state
-    @State private var isPulsing = false
+    /// Pulse animation derived from model — NOT @State to survive view identity
+    /// changes when tabs move between .single and .group segments.
+    /// See commit history: @State isPulsing was reset when repoGroupID assignment
+    /// caused SwiftUI to recreate the view at a new tree path.
+    private var isPulsing: Bool {
+        tab.notificationStyle?.shouldPulse == true
+    }
 
     /// Notification style helpers
     private var notificationStyle: TabNotificationStyle? {
@@ -1722,15 +1727,8 @@ struct UnifiedTabButton: View {
                     : .default,
                 value: isPulsing
             )
-            .onChange(of: notificationStyle?.shouldPulse) { shouldPulse in
-                isPulsing = shouldPulse == true
-            }
-            .onChange(of: tab.notificationStyle) { newStyle in
-                if newStyle == nil { isPulsing = false }
-            }
-            .onAppear {
-                isPulsing = notificationStyle?.shouldPulse == true
-            }
+            // isPulsing is now a computed property — no @State management needed.
+            // The animation is driven by the model value changing.
     }
 
     @ViewBuilder

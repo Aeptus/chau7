@@ -55,14 +55,18 @@ struct TabNotificationStyle: Equatable {
         titleColor: .orange,
         isItalic: true,
         shouldPulse: true,
-        icon: "ellipsis.circle"
+        icon: "ellipsis.circle",
+        borderColor: .orange,
+        borderWidth: 1.5
     )
 
     static let error = TabNotificationStyle(
         titleColor: .red,
         isBold: true,
         icon: "exclamationmark.triangle.fill",
-        iconColor: .red
+        iconColor: .red,
+        borderColor: .red,
+        borderWidth: 1.5
     )
 
     static let success = TabNotificationStyle(
@@ -76,7 +80,9 @@ struct TabNotificationStyle: Equatable {
         isBold: true,
         shouldPulse: true,
         icon: "bell.fill",
-        iconColor: .yellow
+        iconColor: .yellow,
+        borderColor: .yellow,
+        borderWidth: 1.5
     )
 }
 
