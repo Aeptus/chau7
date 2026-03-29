@@ -259,8 +259,8 @@ public final class ProxyManager: ObservableObject {
         isStopping = true
         logger.info("Stopping proxy...")
         process.terminationHandler = nil
-        cleanupPipes()
-        terminateProcess(process, name: "proxy")
+        ManagedProcess.cleanup(outputPipe: &outputPipe, errorPipe: &errorPipe)
+        ManagedProcess.terminate(process, name: "proxy", logger: logger)
 
         isRunning = false
         self.process = nil
@@ -274,41 +274,6 @@ public final class ProxyManager: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.startIfEnabled()
         }
-    }
-
-    private func cleanupPipes() {
-        outputPipe?.fileHandleForReading.readabilityHandler = nil
-        errorPipe?.fileHandleForReading.readabilityHandler = nil
-        outputPipe = nil
-        errorPipe = nil
-    }
-
-    private func terminateProcess(_ process: Process, name: String) {
-        guard process.isRunning else { return }
-
-        process.terminate()
-        if waitForExit(of: process, timeout: 1.0) {
-            return
-        }
-
-        logger.warning("\(name) did not exit after SIGTERM; sending SIGINT")
-        process.interrupt()
-        if waitForExit(of: process, timeout: 0.5) {
-            return
-        }
-
-        let pid = process.processIdentifier
-        logger.error("\(name) still running after SIGINT; sending SIGKILL to pid \(pid)")
-        _ = Darwin.kill(pid, SIGKILL)
-        _ = waitForExit(of: process, timeout: 0.5)
-    }
-
-    private func waitForExit(of process: Process, timeout: TimeInterval) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning, Date() < deadline {
-            usleep(50000)
-        }
-        return !process.isRunning
     }
 
     /// Checks if the proxy is healthy by hitting the health endpoint

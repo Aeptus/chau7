@@ -241,8 +241,8 @@ final class RemoteControlManager: ObservableObject {
         cancelBackgroundSnapshotPrefetch()
         cancelPendingOutputFlush()
         // Terminate process BEFORE closing pipes to avoid SIGPIPE
-        terminateProcess(process, name: "remote agent")
-        cleanupPipes()
+        ManagedProcess.terminate(process, name: "remote agent", logger: logger)
+        ManagedProcess.cleanup(outputPipe: &outputPipe, errorPipe: &errorPipe)
         self.process = nil
         isAgentRunning = false
         pendingProtectedInputs.removeAll()
@@ -252,43 +252,6 @@ final class RemoteControlManager: ObservableObject {
         guard isAgentRunning else { return }
         stopAgent()
         startAgent()
-    }
-
-    private func cleanupPipes() {
-        outputPipe?.fileHandleForReading.readabilityHandler = nil
-        errorPipe?.fileHandleForReading.readabilityHandler = nil
-        outputPipe = nil
-        errorPipe = nil
-    }
-
-    /// Terminates a process with escalating signals. Safe to call from any
-    /// isolation context — the spin-wait runs off the main actor.
-    private nonisolated func terminateProcess(_ process: Process, name: String) {
-        guard process.isRunning else { return }
-
-        process.terminate()
-        if waitForExit(of: process, timeout: 1.0) {
-            return
-        }
-
-        logger.warning("\(name) did not exit after SIGTERM; sending SIGINT")
-        process.interrupt()
-        if waitForExit(of: process, timeout: 0.5) {
-            return
-        }
-
-        let pid = process.processIdentifier
-        logger.error("\(name) still running after SIGINT; sending SIGKILL to pid \(pid)")
-        _ = Darwin.kill(pid, SIGKILL)
-        _ = waitForExit(of: process, timeout: 0.5)
-    }
-
-    private nonisolated func waitForExit(of process: Process, timeout: TimeInterval) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning, Date() < deadline {
-            usleep(50000)
-        }
-        return !process.isRunning
     }
 
     private func handleIPCFrame(_ frame: RemoteFrame) {
