@@ -144,7 +144,7 @@ final class DevServerMonitor {
             checkForListeningPorts()
 
             // Stop once we found a server or ran out of checks
-            if currentServer != nil || burstChecksRemaining <= 0 {
+            if Self.shouldStopBurstChecks(currentServer: currentServer, burstChecksRemaining: burstChecksRemaining) {
                 burstTimer?.cancel()
                 burstTimer = nil
             }
@@ -192,6 +192,10 @@ final class DevServerMonitor {
                 }
             }
         }
+    }
+
+    static func shouldStopBurstChecks(currentServer: DevServerInfo?, burstChecksRemaining: Int) -> Bool {
+        burstChecksRemaining <= 0 || currentServer?.port != nil
     }
 
     // MARK: - Subprocess helper
