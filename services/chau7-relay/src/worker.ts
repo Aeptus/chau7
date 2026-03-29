@@ -1,10 +1,11 @@
 import { SessionDO } from "./session";
+import { isRelaySecretConfigured } from "./auth.js";
 
 export { SessionDO };
 
 interface Env {
   SESSION: DurableObjectNamespace;
-  RELAY_SECRET: string;
+  RELAY_SECRET?: string;
   APNS_TEAM_ID?: string;
   APNS_KEY_ID?: string;
   APNS_PRIVATE_KEY?: string;
@@ -55,8 +56,8 @@ async function authenticateRequest(
   deviceId: string,
   role: string
 ): Promise<Response | null> {
-  if (!env.RELAY_SECRET || env.RELAY_SECRET === "CHANGE_ME_IN_PRODUCTION") {
-    return null;
+  if (!isRelaySecretConfigured(env.RELAY_SECRET)) {
+    return new Response("Relay secret not configured", { status: 503 });
   }
   const token = extractBearerToken(request) ?? new URL(request.url).searchParams.get("token");
   if (!token) {

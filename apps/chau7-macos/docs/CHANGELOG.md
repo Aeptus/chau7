@@ -61,6 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Runtime Turn Send for Adopted Sessions**: MCP clients can now send prompts through `runtime_turn_send` even when the runtime session was adopted from an existing tab
 
 ### Fixed
+- **Persistent History Clear Ordering**: `clearAll()` now runs on the history queue so queued async inserts cannot repopulate the database after a wipe.
+- **Stale Window State Cleanup**: Quitting with no visible overlay windows now clears persisted tab/window state and backup files instead of restoring stale windows on next launch.
 - **Native Text Pane Edit Shortcuts**: Cut, copy, and paste now try the focused responder first, restoring standard macOS shortcuts inside split-pane text editors before falling back to terminal behavior.
 - **International Option Text Input**: Option-based programming characters such as brackets now flow through macOS text input instead of being forced into Meta/Alt escape sequences, fixing entry on international keyboard layouts.
 - **TabResolver Session Precedence**: Notification routing now resolves exact AI session IDs before broad tool-label matching and most-recent fallback, which reduces ambiguous matches and helps Codex events reach the correct tab.
@@ -286,7 +288,8 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| 0.5.2 | 2026-03-29 | Shell runtime launch preserves argument boundaries and blocks argv injection through JSON-RPC shell sessions |
+| 0.5.3 | 2026-03-29 | Reopen Closed Tab now preserves tab identity metadata, including tab ID, creation time, and repo grouping |
+| 0.5.2 | 2026-03-29 | Shell runtime launch preserves argument boundaries; notification pipeline respects disabled single-action rules |
 | 0.5.1 | 2026-03-19 | Richer remote approval context on iPhone: directory, recent command, project/branch, and MCP source notes |
 | 0.5.0 | 2026-01-21 | Tab notification styling, major tab bar fixes |
 | 0.4.0 | 2026-01-20 | Smart scroll, watchdog recovery, enhanced logging |

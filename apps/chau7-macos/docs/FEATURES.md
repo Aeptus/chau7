@@ -109,6 +109,10 @@ Detection methods:
 - Runtime monitor: decision counts, mode changes, deferred operations, health assessment.
 - MCP-controllable via `tab_set_cto`.
 
+### History Storage
+
+- Persistent history maintenance now serializes on the DB queue, so queued async inserts cannot repopulate history after `clearAll()`.
+
 ## MCP Server
 
 Chau7 runs an embedded MCP (Model Context Protocol) server — your AI agents can see and control your terminal.
@@ -528,3 +532,9 @@ Key patterns:
 ## Recent Runtime Safety
 
 - Shell JSON-RPC sessions now preserve argv boundaries when launching the generic shell backend, so quoted user arguments stay literal instead of being reinterpreted by the shell.
+- On termination, Chau7 clears persisted tab/window state and backup files when no overlay windows remain visible, preventing stale windows from resurrecting on next launch.
+- Notification pipeline optimizations now respect disabled single-action rules instead of promoting them to native default notifications.
+
+## Recent Tab Behavior
+
+- Reopen Closed Tab now restores the original overlay tab identity metadata, including the tab ID, creation timestamp, and repo grouping membership.

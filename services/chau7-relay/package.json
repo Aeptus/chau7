@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "build": "wrangler deploy --dry-run",
     "deploy": "wrangler deploy"
   },
