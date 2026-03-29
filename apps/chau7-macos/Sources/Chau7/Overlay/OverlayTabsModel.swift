@@ -4167,7 +4167,8 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     private func handleRepoGroupingModeChange(_ mode: RepoGroupingMode) {
         switch mode {
         case .off:
-            for i in tabs.indices { tabs[i].repoGroupID = nil }
+            // Keep existing repoGroupIDs — tabBarSegments always renders them.
+            // Only stop auto-update subscriptions.
             repoGroupCancellables.removeAll()
         case .auto:
             applyAutoGroupingToAllTabs()
@@ -4207,10 +4208,12 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         repoGroupCancellables[tabID] = cancellable
     }
 
-    /// Called when a new tab is added — subscribe if in auto mode.
+    /// Called when a new tab is added — always assign repoGroupID from gitRootPath
+    /// and subscribe to future changes. The mode only controls whether the user sees
+    /// grouping controls in settings, not whether tabs get tagged (since tabBarSegments
+    /// always renders existing groups).
     func setupRepoGroupingForTab(_ tab: OverlayTab) {
-        guard FeatureSettings.shared.repoGroupingMode == .auto,
-              let session = tab.session else { return }
+        guard let session = tab.session else { return }
         if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
             tabs[idx].repoGroupID = session.gitRootPath
             if let repoGroupID = session.gitRootPath {

@@ -377,9 +377,9 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         windowMenuItem.submenu = windowSubmenu
         menu.addItem(windowMenuItem)
 
-        // Repo grouping (manual mode or always for remove)
-        let groupingMode = FeatureSettings.shared.repoGroupingMode
-        if groupingMode != .off {
+        // Repo grouping — always shown (mode only controls auto-assignment,
+        // not whether the user can manually group/ungroup)
+        do {
             menu.addItem(.separator())
             if let groupID = tab.repoGroupID {
                 let ungroupItem = NSMenuItem(title: "Remove from Repo Group", action: #selector(contextRemoveFromGroup(_:)), keyEquivalent: "")
@@ -407,7 +407,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
                 groupWindowMenuItem.submenu = groupWindowSubmenu
                 menu.addItem(groupWindowMenuItem)
             }
-            if groupingMode == .manual, tab.repoGroupID == nil, tab.session?.gitRootPath != nil {
+            if tab.repoGroupID == nil, tab.session?.gitRootPath != nil {
                 let groupItem = NSMenuItem(title: "Add to Repo Group", action: #selector(contextAddToGroup(_:)), keyEquivalent: "")
                 groupItem.target = self
                 groupItem.representedObject = tab.id
