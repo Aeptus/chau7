@@ -378,9 +378,17 @@ final class PersistentHistoryStore {
     // MARK: - Maintenance
 
     func clearAll() {
-        execute("DELETE FROM history")
-        execute("VACUUM")
+        dbQueue.sync { [self] in
+            execute("DELETE FROM history")
+            execute("VACUUM")
+        }
         Log.info("PersistentHistoryStore: cleared all history")
+    }
+
+    /// Waits for any queued history writes to complete.
+    /// Intended for tests that need to observe the final persisted state.
+    func waitForPendingWrites() {
+        dbQueue.sync { }
     }
 
     func clearOlderThan(days: Int) {

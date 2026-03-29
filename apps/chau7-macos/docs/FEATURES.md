@@ -112,6 +112,7 @@ Detection methods:
 ### History Storage
 
 - Persistent history maintenance now serializes on the DB queue, so queued async inserts cannot repopulate history after `clearAll()`.
+- Regression coverage now locks in that queued inserts are removed by a subsequent `clearAll()`.
 
 ## MCP Server
 
@@ -532,7 +533,7 @@ Key patterns:
 ## Recent Runtime Safety
 
 - Shell JSON-RPC sessions now preserve argv boundaries when launching the generic shell backend, so quoted user arguments stay literal instead of being reinterpreted by the shell.
-- On termination, Chau7 clears persisted tab/window state and backup files when no overlay windows remain visible, preventing stale windows from resurrecting on next launch.
+- On termination, Chau7 clears persisted tab/window state and backup files when every overlay window has been hidden or closed, preventing stale windows from resurrecting on next launch.
 - Notification pipeline optimizations now respect disabled single-action rules instead of promoting them to native default notifications.
 
 ## Recent Tab Behavior
