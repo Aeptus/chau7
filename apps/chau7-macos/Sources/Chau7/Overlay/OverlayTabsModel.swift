@@ -1303,11 +1303,16 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
 
         let text = String(decoding: data, as: UTF8.self)
-        var lines = text.components(separatedBy: "\n")
+        // Strip trailing whitespace from each line — the terminal grid pads rows
+        // to the full column width with spaces. Without this, injected scrollback
+        // has 200+ trailing spaces per line that push content to wrong positions.
+        var lines = text.components(separatedBy: "\n").map {
+            $0.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
+        }
 
         // Strip trailing empty lines — the terminal buffer includes blank lines below
         // the cursor, which can otherwise pollute restore output.
-        while let last = lines.last, last.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        while let last = lines.last, last.isEmpty {
             lines.removeLast()
         }
 
@@ -1827,10 +1832,12 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                     session.existingRustTerminalView?.injectOutput(scrollback + "\n")
                 }
 
-                // Restore working directory via shell (this is the only command
-                // the user sees after restore — a clean cd to their directory).
+                // Restore working directory via shell. Leading space suppresses
+                // history recording in zsh (HIST_IGNORE_SPACE, default on) and
+                // bash (HISTCONTROL=ignorespace). The clear command hides the cd
+                // from the visible terminal so the user starts with a clean prompt.
                 if !effectivePaneState.directory.isEmpty {
-                    session.sendOrQueueInput("cd \(Self.shellSafeSingleQuote(effectivePaneState.directory))\n")
+                    session.sendOrQueueInput(" cd \(Self.shellSafeSingleQuote(effectivePaneState.directory)) && clear\n")
                 }
 
                 if let (resumePaneID, resumeCommand) = resumeTarget,
@@ -2988,10 +2995,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
 
         tabs[index].notificationStyle = style
-        // Force SwiftUI re-render in NSToolbar hosting context.
-        // objectWillChange alone doesn't reliably trigger NSHostingView
-        // layout invalidation inside NSToolbarItem.
-        tabBarRefreshToken += 1
+        objectWillChange.send()
         if let style {
             let desc = style.icon ?? "border/color"
             Log.info("Tab notification style set: \(desc) for tab \(targetID)")
