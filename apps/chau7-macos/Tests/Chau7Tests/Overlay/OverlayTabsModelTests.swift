@@ -182,6 +182,32 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.selectedTabID, model.tabs.last?.id)
     }
 
+    func testNewTabFromGroupedSelectionInheritsGroupAndStaysAdjacent() {
+        model.newTab()
+        model.newTab()
+        let groupID = "/tmp/chau7-grouped"
+        model.tabs[0].repoGroupID = groupID
+        model.tabs[1].repoGroupID = groupID
+        model.selectTab(id: model.tabs[0].id)
+
+        model.newTab()
+
+        XCTAssertEqual(model.tabs[1].id, model.selectedTabID, "Grouped Cmd+T should insert immediately after the selected grouped tab")
+        XCTAssertEqual(model.tabs[1].repoGroupID, groupID, "Grouped Cmd+T should inherit the current repo group")
+    }
+
+    func testNewTabAtDirectoryFromGroupedSelectionInheritsGroupAndStaysAdjacent() {
+        model.newTab()
+        let groupID = "/tmp/chau7-grouped-dir"
+        model.tabs[0].repoGroupID = groupID
+        model.selectTab(id: model.tabs[0].id)
+
+        model.newTab(at: "/tmp/chau7-grouped-dir/worktree")
+
+        XCTAssertEqual(model.tabs[1].id, model.selectedTabID)
+        XCTAssertEqual(model.tabs[1].repoGroupID, groupID)
+    }
+
     // MARK: - Notification Styling
 
     func testApplyNotificationStyleDoesNotReportAppliedForSelectedTab() {
