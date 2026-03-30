@@ -54,11 +54,28 @@ final class TerminalControlService {
     }
 
     /// All currently alive (windowID, model) pairs, preserving stable IDs.
-    private var allModels: [(windowID: Int, model: OverlayTabsModel)] {
+    var allModels: [(windowID: Int, model: OverlayTabsModel)] {
         registeredModels.compactMap { entry in
             guard let model = entry.model else { return nil }
             return (entry.windowID, model)
         }
+    }
+
+    /// All tabs across all registered windows. Use for cross-window resolution
+    /// (e.g., notification routing that must search every window, not just window 0).
+    var allTabs: [OverlayTab] {
+        allModels.flatMap { $0.model.tabs }
+    }
+
+    /// Apply a notification style to a tab found by target across ALL windows.
+    @discardableResult
+    func applyNotificationStyleAcrossWindows(for target: TabTarget, stylePreset: String, config: [String: String]) -> UUID? {
+        for (_, model) in allModels {
+            if let tabID = model.applyNotificationStyle(for: target, stylePreset: stylePreset, config: config) {
+                return tabID
+            }
+        }
+        return nil
     }
 
     // MARK: - Tab Operations
