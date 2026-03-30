@@ -2169,16 +2169,12 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         if let directory = inheritedStartDirectory() {
             tab.session?.updateCurrentDirectory(directory)
         }
+        let inheritedRepoGroupID = selectedTab?.repoGroupID
+        tab.repoGroupID = inheritedRepoGroupID
 
-        // Insert based on settings
-        let position = FeatureSettings.shared.newTabPosition
-        if position == "after", let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) {
-            tabs.insert(tab, at: currentIndex + 1)
-            Log.trace("newTab: inserted at index \(currentIndex + 1), tabs.count=\(tabs.count)")
-        } else {
-            tabs.append(tab)
-            Log.trace("newTab: appended, tabs.count=\(tabs.count)")
-        }
+        let insertIndex = insertionIndexForNewTab(inheritingRepoGroupID: inheritedRepoGroupID)
+        tabs.insert(tab, at: insertIndex)
+        Log.trace("newTab: inserted at index \(insertIndex), tabs.count=\(tabs.count), inheritedRepoGroupID=\(inheritedRepoGroupID ?? "nil")")
 
         // Set up repo grouping for the new tab
         setupRepoGroupingForTab(tab)
@@ -2229,14 +2225,11 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         // Set the starting directory for the new tab (triggers git status refresh)
         tab.session?.updateCurrentDirectory(directory)
         tab.session?.markCTOFlagDeferred(mode: FeatureSettings.shared.tokenOptimizationMode)
+        let inheritedRepoGroupID = selectedTab?.repoGroupID
+        tab.repoGroupID = inheritedRepoGroupID
 
-        // Insert based on settings
-        let position = FeatureSettings.shared.newTabPosition
-        if position == "after", let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) {
-            tabs.insert(tab, at: currentIndex + 1)
-        } else {
-            tabs.append(tab)
-        }
+        let insertIndex = insertionIndexForNewTab(inheritingRepoGroupID: inheritedRepoGroupID)
+        tabs.insert(tab, at: insertIndex)
 
         if selectNewTab {
             selectedTabID = tab.id
@@ -2995,7 +2988,10 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
 
         tabs[index].notificationStyle = style
-        objectWillChange.send()
+        // Force SwiftUI re-render in NSToolbar hosting context.
+        // objectWillChange alone doesn't reliably trigger NSHostingView
+        // layout invalidation inside NSToolbarItem.
+        tabBarRefreshToken += 1
         if let style {
             let desc = style.icon ?? "border/color"
             Log.info("Tab notification style set: \(desc) for tab \(targetID)")
@@ -4233,12 +4229,27 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     func setupRepoGroupingForTab(_ tab: OverlayTab) {
         guard let session = tab.session else { return }
         if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
-            tabs[idx].repoGroupID = session.gitRootPath
-            if let repoGroupID = session.gitRootPath {
+            let repoGroupID = tabs[idx].repoGroupID ?? session.gitRootPath
+            tabs[idx].repoGroupID = repoGroupID
+            if let repoGroupID {
                 coalesceGroup(repoGroupID: repoGroupID)
             }
         }
         observeGitRootForAutoGrouping(tabID: tab.id, session: session)
+    }
+
+    private func insertionIndexForNewTab(inheritingRepoGroupID inheritedRepoGroupID: String?) -> Int {
+        if inheritedRepoGroupID != nil,
+           let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) {
+            return currentIndex + 1
+        }
+
+        let position = FeatureSettings.shared.newTabPosition
+        if position == "after",
+           let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) {
+            return currentIndex + 1
+        }
+        return tabs.count
     }
 
     /// Called when a tab is closed — clean up subscription.
