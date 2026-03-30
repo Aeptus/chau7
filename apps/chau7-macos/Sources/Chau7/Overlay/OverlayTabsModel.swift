@@ -1816,27 +1816,19 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                     lastOutputAt: nil
                 )
 
-                var commands: [String] = []
+                // Inject scrollback directly into the terminal grid buffer.
+                // This bypasses the shell entirely — no cat command in history,
+                // no temp files, no visible restore artifacts. The terminal's
+                // ANSI parser processes the content so colors/formatting are preserved.
                 if let scrollback = effectivePaneState.scrollbackContent,
-                   !scrollback.isEmpty,
-                   let data = scrollback.data(using: .utf8) {
-
-                    let tempFile = NSTemporaryDirectory() + "chau7_restore_\(restoreToken)_\(paneID.uuidString).txt"
-                    do {
-                        try data.write(to: URL(fileURLWithPath: tempFile))
-                        let escapedTemp = Self.shellSafeSingleQuote(tempFile)
-                        commands.append("cat \(escapedTemp) && rm -f \(escapedTemp)")
-                    } catch {
-                        Log.warn("Failed to write scrollback restore file: \(error)")
-                    }
+                   !scrollback.isEmpty {
+                    session.existingRustTerminalView?.injectOutput(scrollback + "\n")
                 }
 
+                // Restore working directory via shell (this is the only command
+                // the user sees after restore — a clean cd to their directory).
                 if !effectivePaneState.directory.isEmpty {
-                    commands.append("cd \(Self.shellSafeSingleQuote(effectivePaneState.directory))")
-                }
-
-                if !commands.isEmpty {
-                    session.sendOrQueueInput(commands.joined(separator: " && ") + "\n")
+                    session.sendOrQueueInput("cd \(Self.shellSafeSingleQuote(effectivePaneState.directory))\n")
                 }
 
                 if let (resumePaneID, resumeCommand) = resumeTarget,
