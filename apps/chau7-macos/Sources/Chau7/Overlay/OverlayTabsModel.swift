@@ -425,6 +425,8 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     private var watchdogRefreshAttempts = 0
     /// Minimum acceptable tab bar width per tab (for visibility detection)
     private let minWidthPerTab: CGFloat = 30
+    /// Last reported tab bar frame in global coordinates for cross-window tab drops.
+    var tabBarDropFrame: CGRect = .zero
     /// Tracks whether the tab bar is expected to be visible
     private var isTabBarVisible = true
     private var lastTabBarVisibilityLogAt: Date = .distantPast
@@ -2813,10 +2815,13 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     private func ensureFreshTabIfNeeded() {
         guard needsFreshTabOnShow else { return }
         needsFreshTabOnShow = false
-        guard let index = tabs.firstIndex(where: { $0.id == selectedTabID }) else { return }
 
         let newTab = makeFreshTab(inheritedDirectory: nil)
-        tabs[index] = newTab
+        if let index = tabs.firstIndex(where: { $0.id == selectedTabID }) {
+            tabs[index] = newTab
+        } else {
+            tabs = [newTab]
+        }
         selectedTabID = newTab.id
         updateSnippetContextForSelection()
     }
@@ -3283,6 +3288,11 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
     }
 
+    func reportTabBarDropFrame(_ frame: CGRect) {
+        tabBarDropFrame = frame
+        lastPreferenceUpdateTime = Date()
+    }
+
     /// Updates visibility state for the tab bar (e.g., window hidden/shown).
     /// This prevents the watchdog from firing while the window is not visible.
     func noteTabBarVisibilityChanged(isVisible: Bool) {
@@ -3350,30 +3360,41 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         let title: String
     }
 
-    /// Remove a tab from this model and return it (for transfer to another window).
-    func detachTab(id: UUID) -> OverlayTab? {
-        guard let index = tabs.firstIndex(where: { $0.id == id }), tabs.count > 1 else { return nil }
+    /// Remove a tab from this model and return it for transfer to another window.
+    /// If this is the last tab, leave the window empty and lazily recreate a fresh
+    /// tab the next time the window is shown.
+    func extractTabForWindowTransfer(id: UUID) -> OverlayTab? {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return nil }
         let tab = tabs[index]
         tabs.remove(at: index)
         suspendedTabIDs.remove(id)
-        if selectedTabID == id {
+        if tabs.isEmpty {
+            selectedTabID = UUID()
+            needsFreshTabOnShow = true
+        } else if selectedTabID == id {
             let newIndex = min(max(0, index - 1), tabs.count - 1)
             selectedTabID = tabs[newIndex].id
         }
+        updateSnippetContextForSelection()
         return tab
     }
 
-    /// Remove all tabs in a repo group and return them (for transfer to another window).
-    /// Returns empty if the group is not found or would leave the model with no tabs.
-    func detachGroup(repoGroupID: String) -> [OverlayTab] {
+    /// Remove all tabs in a repo group and return them for transfer to another window.
+    /// If this empties the source window, a fresh tab will be created lazily when
+    /// the window is shown again.
+    func extractGroupForWindowTransfer(repoGroupID: String) -> [OverlayTab] {
         let groupTabs = tabs.filter { $0.repoGroupID == repoGroupID }
-        guard !groupTabs.isEmpty, groupTabs.count < tabs.count else { return [] }
+        guard !groupTabs.isEmpty else { return [] }
         let groupIDs = Set(groupTabs.map(\.id))
         tabs.removeAll { groupIDs.contains($0.id) }
         for id in groupIDs { suspendedTabIDs.remove(id) }
-        if groupIDs.contains(selectedTabID) {
+        if tabs.isEmpty {
+            selectedTabID = UUID()
+            needsFreshTabOnShow = true
+        } else if groupIDs.contains(selectedTabID) {
             selectedTabID = tabs.first?.id ?? UUID()
         }
+        updateSnippetContextForSelection()
         return groupTabs
     }
 
