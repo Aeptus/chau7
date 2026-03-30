@@ -21,14 +21,23 @@ struct Chau7App: App {
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
         let overlayModel = OverlayTabsModel(appModel: model)
-        NotificationManager.shared.tabTitleProvider = { [weak overlayModel] target in
-            overlayModel?.notificationTabTitle(for: target)
+        // All resolvers search ALL windows via TerminalControlService.allTabs,
+        // not just window 0's overlayModel. Without this, notifications for tabs
+        // in window 1+ never get titles, repo names, or tab IDs resolved.
+        NotificationManager.shared.tabTitleProvider = { target in
+            let tabs = TerminalControlService.shared.allTabs
+            return TabResolver.resolve(target, in: tabs)?.displayTitle
         }
-        NotificationManager.shared.repoNameProvider = { [weak overlayModel] target in
-            overlayModel?.notificationRepoName(for: target)
+        NotificationManager.shared.repoNameProvider = { target in
+            let tabs = TerminalControlService.shared.allTabs
+            guard let tab = TabResolver.resolve(target, in: tabs),
+                  let session = tab.displaySession ?? tab.session,
+                  let rootPath = session.gitRootPath else { return nil }
+            return URL(fileURLWithPath: rootPath).lastPathComponent
         }
-        model.tabIDResolver = { [weak overlayModel] target in
-            TabResolver.resolve(target, in: overlayModel?.tabs ?? [])?.id
+        model.tabIDResolver = { target in
+            let tabs = TerminalControlService.shared.allTabs
+            return TabResolver.resolve(target, in: tabs)?.id
         }
 
         // Wire notification system — single delegate replaces 5 separate closures
@@ -38,18 +47,18 @@ struct Chau7App: App {
         )
 
         // Wire activeTabChecker so onlyWhenTabInactive condition works
-        NotificationManager.shared.activeTabChecker = { [weak overlayModel] target in
-            guard let overlay = overlayModel else { return false }
-            return overlay.isToolInSelectedTab(target)
+        NotificationManager.shared.activeTabChecker = { target in
+            let tabs = TerminalControlService.shared.allTabs
+            guard let tab = TabResolver.resolve(target, in: tabs) else { return false }
+            // Check if this tab is the selected tab in ANY window
+            return TerminalControlService.shared.allModels
+                .contains { $0.model.selectedTabID == tab.id }
         }
 
-        // Wire tabResolver so external events (e.g. Claude Code hooks) get
-        // their tabID filled in before coalescing and pipeline evaluation.
-        // Uses TabResolver.resolve for full 5-tier matching (brand, title,
-        // deep scan, Claude cwd fallback) — not just directory matching.
-        NotificationManager.shared.tabResolver = { [weak overlayModel] target in
-            guard let overlay = overlayModel else { return nil }
-            return TabResolver.resolve(target, in: overlay.tabs)?.id
+        // Wire tabResolver so external events get tabID filled in
+        NotificationManager.shared.tabResolver = { target in
+            let tabs = TerminalControlService.shared.allTabs
+            return TabResolver.resolve(target, in: tabs)?.id
         }
 
         _overlayModel = StateObject(wrappedValue: overlayModel)

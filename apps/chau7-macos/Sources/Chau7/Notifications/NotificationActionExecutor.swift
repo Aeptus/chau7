@@ -1001,7 +1001,11 @@ final class NotificationActionAdapter: NotificationActionDelegate {
 
     @discardableResult
     func styleTab(for target: TabTarget, preset: String, config: [String: String]) -> UUID? {
-        overlayModel?.applyNotificationStyle(for: target, stylePreset: preset, config: config)
+        // Search ALL windows, not just window 0. Without this, tabs in
+        // window 1+ never get notification borders/highlights applied.
+        TerminalControlService.shared.applyNotificationStyleAcrossWindows(
+            for: target, stylePreset: preset, config: config
+        )
     }
 
     func badgeTab(for target: TabTarget, text: String, color: String) {
