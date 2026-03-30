@@ -547,6 +547,38 @@ final class OverlayTabsModelTests: XCTestCase {
         )
     }
 
+    func testExtractTabForWindowTransferAllowsLastTab() {
+        let onlyTab = model.tabs[0]
+
+        let extracted = model.extractTabForWindowTransfer(id: onlyTab.id)
+
+        XCTAssertEqual(extracted?.id, onlyTab.id)
+        XCTAssertTrue(model.tabs.isEmpty, "Moving the last tab out should leave the source window empty")
+    }
+
+    func testFocusSelectedRecreatesFreshTabAfterLastTabTransfer() {
+        let onlyTab = model.tabs[0]
+        _ = model.extractTabForWindowTransfer(id: onlyTab.id)
+        model.overlayWindow = NSWindow(contentRect: .init(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+
+        model.focusSelected()
+
+        XCTAssertEqual(model.tabs.count, 1, "Showing an emptied window should lazily recreate a fresh tab")
+        XCTAssertEqual(model.selectedTabID, model.tabs[0].id)
+    }
+
+    func testExtractGroupForWindowTransferAllowsMovingEntireWindowContents() {
+        model.newTab()
+        let repoGroupID = "/tmp/chau7-group"
+        model.tabs[0].repoGroupID = repoGroupID
+        model.tabs[1].repoGroupID = repoGroupID
+
+        let extracted = model.extractGroupForWindowTransfer(repoGroupID: repoGroupID)
+
+        XCTAssertEqual(extracted.count, 2)
+        XCTAssertTrue(model.tabs.isEmpty, "Moving the only repo group out should leave the source window empty")
+    }
+
     func testMoveCurrentTabRight() {
         model.newTab()
         model.newTab()

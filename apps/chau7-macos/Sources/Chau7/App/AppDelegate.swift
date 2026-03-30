@@ -900,11 +900,21 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
+    private func hideEmptiedWindowIfNeeded(at index: Int, reason: String) {
+        guard overlayHosts.indices.contains(index) else { return }
+        let host = overlayHosts[index]
+        guard host.model.tabs.isEmpty else { return }
+        hiddenWindowNumbers.insert(host.window.windowNumber)
+        host.model.noteTabBarVisibilityChanged(isVisible: false)
+        logOverlayWindowLifecycle(reason: reason, window: host.window)
+        host.window.orderOut(nil)
+    }
+
     /// Move a tab from one window to another. Pass toWindowIndex = -1 to create a new window.
     private func moveTab(_ tabID: UUID, fromWindowIndex: Int, toWindowIndex: Int) {
         guard fromWindowIndex < overlayHosts.count else { return }
         let source = overlayHosts[fromWindowIndex].model
-        guard let tab = source.detachTab(id: tabID) else { return }
+        guard let tab = source.extractTabForWindowTransfer(id: tabID) else { return }
 
         if toWindowIndex == -1 {
             // Create a new window and move the tab into it
@@ -921,6 +931,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
             overlayHosts.append(OverlayHost(window: window, model: tabsModel))
             wireTabMoveCallbacks()
+            hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveTab-hideEmptiedSource")
             showOverlayWindow(overlayHosts.last!, reason: "moveToNewWindow")
             Log.info("Moved tab \(tabID) to new window \(windowNumber)")
         } else {
@@ -929,6 +940,8 @@ private final class OverlayBlurView: NSVisualEffectView {
             target.tabs.append(tab)
             target.selectTab(id: tab.id)
             wireTabMoveCallbacks()
+            hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveTab-hideEmptiedSource")
+            showOverlayWindow(overlayHosts[toWindowIndex], reason: "moveToExistingWindow")
             Log.info("Moved tab \(tabID) from window \(fromWindowIndex) to \(toWindowIndex)")
         }
     }
@@ -937,7 +950,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     private func moveGroup(_ repoGroupID: String, fromWindowIndex: Int, toWindowIndex: Int) {
         guard fromWindowIndex < overlayHosts.count else { return }
         let source = overlayHosts[fromWindowIndex].model
-        let groupTabs = source.detachGroup(repoGroupID: repoGroupID)
+        let groupTabs = source.extractGroupForWindowTransfer(repoGroupID: repoGroupID)
         guard !groupTabs.isEmpty else { return }
 
         if toWindowIndex == -1 {
@@ -950,6 +963,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
             overlayHosts.append(OverlayHost(window: window, model: tabsModel))
             wireTabMoveCallbacks()
+            hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveGroup-hideEmptiedSource")
             showOverlayWindow(overlayHosts.last!, reason: "moveGroupToNewWindow")
             Log.info("Moved group \(repoGroupID) (\(groupTabs.count) tabs) to new window \(windowNumber)")
         } else {
@@ -958,8 +972,34 @@ private final class OverlayBlurView: NSVisualEffectView {
             target.tabs.append(contentsOf: groupTabs)
             target.selectTab(id: groupTabs[0].id)
             wireTabMoveCallbacks()
+            hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveGroup-hideEmptiedSource")
+            showOverlayWindow(overlayHosts[toWindowIndex], reason: "moveGroupToExistingWindow")
             Log.info("Moved group \(repoGroupID) (\(groupTabs.count) tabs) from window \(fromWindowIndex) to \(toWindowIndex)")
         }
+    }
+
+    func handleTabDrop(tabID: UUID, from sourceModel: OverlayTabsModel, atScreenPoint point: CGPoint) -> Bool {
+        guard let sourceIndex = overlayHosts.firstIndex(where: { $0.model === sourceModel }) else { return false }
+
+        let candidates = overlayHosts.enumerated().compactMap { index, host -> OverlayWindowDropCandidate? in
+            guard host.window.isVisible, !host.window.isMiniaturized else { return nil }
+            return OverlayWindowDropCandidate(
+                index: index,
+                primaryFrame: host.model.tabBarDropFrame,
+                fallbackFrame: host.window.frame
+            )
+        }
+
+        guard let targetIndex = OverlayWindowDropResolver.targetIndex(
+            at: point,
+            candidates: candidates,
+            excluding: sourceIndex
+        ) else {
+            return false
+        }
+
+        moveTab(tabID, fromWindowIndex: sourceIndex, toWindowIndex: targetIndex)
+        return true
     }
 
     // MARK: - Multi-Window Restoration

@@ -565,6 +565,17 @@ private struct TabBarSizeKey: PreferenceKey {
     }
 }
 
+private struct TabBarFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if !next.isEmpty {
+            value = next
+        }
+    }
+}
+
 /// SwiftUI view for the tab bar that goes in the unified toolbar
 private struct ToolbarTabBarView: View {
     @ObservedObject var overlayModel: OverlayTabsModel
@@ -668,6 +679,7 @@ private struct ToolbarTabBarView: View {
     @State private var dragOffset: CGFloat = 0
     @State private var dragHomeIndex = 0 // Original index when drag started
     @State private var dragCurrentSlot = 0 // Visual slot the dragged tab occupies
+    @State private var dragStartScreenPoint: CGPoint?
     /// Must match HStack spacing in the tab bar ForEach.
     private let tabSpacing: CGFloat = 8
     @State private var lastTinySizeLogAt: Date = .distantPast
@@ -786,7 +798,9 @@ private struct ToolbarTabBarView: View {
         // Report actual rendered size for visibility-based recovery
         .background(
             GeometryReader { geo in
-                Color.clear.preference(key: TabBarSizeKey.self, value: geo.size)
+                Color.clear
+                    .preference(key: TabBarSizeKey.self, value: geo.size)
+                    .preference(key: TabBarFrameKey.self, value: geo.frame(in: .global))
             }
         )
         .onPreferenceChange(TabBarSizeKey.self) { size in
@@ -801,6 +815,9 @@ private struct ToolbarTabBarView: View {
                         "ToolbarTabBarView: suspicious tab bar size reported width=\(Int(size.width)) height=\(Int(size.height)), tabs=\(overlayModel.tabs.count), expectedMinWidth=\(Int(expectedMinWidth)), refreshToken=\(overlayModel.tabBarRefreshToken)"
                     )
             }
+        }
+        .onPreferenceChange(TabBarFrameKey.self) { frame in
+            overlayModel.reportTabBarDropFrame(frame)
         }
         .onChange(of: overlayModel.tabs.count) { newCount in
             Log.trace("ToolbarTabBarView: tabs.count changed to \(newCount)")
@@ -906,10 +923,10 @@ private struct ToolbarTabBarView: View {
         .gesture(
             DragGesture(minimumDistance: 5)
                 .onChanged { value in
-                    handleTabDrag(tab: tab, translation: value.translation.width)
+                    handleTabDrag(tab: tab, translation: value.translation)
                 }
                 .onEnded { value in
-                    handleTabDragEnd(tab: tab, translation: value.translation.width)
+                    handleTabDragEnd(tab: tab, translation: value.translation)
                 }
         )
     }
@@ -944,7 +961,7 @@ private struct ToolbarTabBarView: View {
         return 0
     }
 
-    private func handleTabDrag(tab: OverlayTab, translation: CGFloat) {
+    private func handleTabDrag(tab: OverlayTab, translation: CGSize) {
         overlayModel.dismissHoverCard()
         let snapshot = overlayModel.tabs
 
@@ -954,6 +971,12 @@ private struct ToolbarTabBarView: View {
             draggingTabID = tab.id
             dragHomeIndex = home
             dragCurrentSlot = home
+            let fallbackX = overlayModel.overlayWindow?.frame.midX ?? 0
+            let fallbackY = overlayModel.overlayWindow.map { $0.frame.maxY - (OverlayLayout.tabBarHeight / 2) } ?? 0
+            dragStartScreenPoint = CGPoint(
+                x: tabMidXPositions[tab.id] ?? fallbackX,
+                y: overlayModel.tabBarDropFrame.isEmpty ? fallbackY : overlayModel.tabBarDropFrame.midY
+            )
             Log.info("Tab drag started (gesture): tabID=\(tab.id), homeIndex=\(home)")
         }
 
@@ -978,23 +1001,27 @@ private struct ToolbarTabBarView: View {
         }
 
         // Dragged tab follows the cursor directly (no model mutation)
-        dragOffset = translation
+        dragOffset = translation.width
 
         let widths = snapshot.map { tabWidths[$0.id] ?? 100 }
         dragCurrentSlot = TabDragLayout.destinationIndex(
-            for: translation,
+            for: translation.width,
             homeIndex: dragHomeIndex,
             tabWidths: widths,
             spacing: tabSpacing
         )
     }
 
-    private func handleTabDragEnd(tab: OverlayTab, translation: CGFloat) {
+    private func handleTabDragEnd(tab: OverlayTab, translation: CGSize) {
         // Ignore if this isn't the tab being dragged (or no drag active)
         guard draggingTabID == tab.id else { return }
 
         let from = dragHomeIndex
         let to = dragCurrentSlot
+        let movedAcrossWindows = dragStartScreenPoint
+            .map { CGPoint(x: $0.x + translation.width, y: $0.y + translation.height) }
+            .flatMap { (NSApp.delegate as? AppDelegate)?.handleTabDrop(tabID: tab.id, from: overlayModel, atScreenPoint: $0) }
+            ?? false
 
         // Clear drag visuals and commit reorder in the same animation transaction
         // so SwiftUI diffs old (offsets + old order) → new (no offsets + new order)
@@ -1002,12 +1029,13 @@ private struct ToolbarTabBarView: View {
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
             draggingTabID = nil
             dragOffset = 0
-            if from != to {
+            dragStartScreenPoint = nil
+            if !movedAcrossWindows, from != to {
                 overlayModel.moveTab(fromIndex: from, toIndex: to)
             }
         }
 
-        Log.info("Tab drag ended: tabID=\(tab.id), from=\(from), to=\(to)")
+        Log.info("Tab drag ended: tabID=\(tab.id), from=\(from), to=\(to), crossWindow=\(movedAcrossWindows)")
     }
 
 }
