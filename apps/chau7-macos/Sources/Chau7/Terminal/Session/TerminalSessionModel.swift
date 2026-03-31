@@ -2550,6 +2550,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     /// becomes available. Used during tab restore when the view hasn't been
     /// created yet. If the view already exists, sends immediately.
     func sendOrQueueInput(_ text: String) {
+        trackAIResumeMetadata(from: text)
         sendInput(text)
     }
 
@@ -2593,6 +2594,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     /// explicitly confirm execution.
     func prefillInput(_ text: String) {
         guard !text.isEmpty else { return }
+        trackAIResumeMetadata(from: text)
         pendingPrefillInput = text
         flushPendingPrefillInputIfReady()
     }
