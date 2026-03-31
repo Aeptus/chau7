@@ -9,10 +9,10 @@ import (
 // mockIPCNotifier is a no-op IPC notifier for testing
 type mockIPCNotifier struct{}
 
-func (m *mockIPCNotifier) NotifyTaskCandidate(candidate *TaskCandidate) error       { return nil }
-func (m *mockIPCNotifier) NotifyTaskStarted(task *Task) error                        { return nil }
+func (m *mockIPCNotifier) NotifyTaskCandidate(candidate *TaskCandidate) error             { return nil }
+func (m *mockIPCNotifier) NotifyTaskStarted(task *Task) error                             { return nil }
 func (m *mockIPCNotifier) NotifyTaskCandidateDismissed(c *TaskCandidate, m2 string) error { return nil }
-func (m *mockIPCNotifier) NotifyTaskAssessment(task *Task, a *TaskAssessment) error  { return nil }
+func (m *mockIPCNotifier) NotifyTaskAssessment(task *Task, a *TaskAssessment) error       { return nil }
 
 // testDB creates a temporary database for testing
 func testDB(t *testing.T) *Database {

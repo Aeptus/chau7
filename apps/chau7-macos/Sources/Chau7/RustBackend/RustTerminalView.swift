@@ -4885,6 +4885,7 @@ final class RustTerminalView: NSView {
         }
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     private func setupEventMonitors() {
         Log.trace("RustTerminalView[\(viewId)]: setupEventMonitors - Installing event monitors")
         removeEventMonitors()

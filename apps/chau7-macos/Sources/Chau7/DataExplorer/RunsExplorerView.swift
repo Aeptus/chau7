@@ -140,7 +140,7 @@ private struct RunRow: View {
 
     private var repoName: String {
         guard let path = run.repoPath, !path.isEmpty else {
-            let cwd = run.cwd ?? ""
+            let cwd = run.cwd
             return URL(fileURLWithPath: cwd).lastPathComponent
         }
         return URL(fileURLWithPath: path).lastPathComponent

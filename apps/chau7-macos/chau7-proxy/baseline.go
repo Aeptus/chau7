@@ -12,11 +12,11 @@ const BaselineVersion = "1.0.0"
 type BaselineMethod string
 
 const (
-	BaselineMethodUnavailable    BaselineMethod = "unavailable"
-	BaselineMethodCharEstimate   BaselineMethod = "character_estimate"
-	BaselineMethodHistoricalAvg  BaselineMethod = "historical_avg"
-	BaselineMethodContextPack    BaselineMethod = "context_pack"
-	BaselineMethodModelDefault   BaselineMethod = "model_default"
+	BaselineMethodUnavailable   BaselineMethod = "unavailable"
+	BaselineMethodCharEstimate  BaselineMethod = "character_estimate"
+	BaselineMethodHistoricalAvg BaselineMethod = "historical_avg"
+	BaselineMethodContextPack   BaselineMethod = "context_pack"
+	BaselineMethodModelDefault  BaselineMethod = "model_default"
 )
 
 // BaselineEstimate contains the estimated baseline token usage
@@ -32,23 +32,23 @@ type BaselineEstimate struct {
 
 // ModelOutputStats tracks historical output token statistics per model
 type ModelOutputStats struct {
-	Model          string
-	TotalCalls     int
-	TotalOutput    int64
-	AvgOutput      float64
-	LastUpdated    time.Time
+	Model       string
+	TotalCalls  int
+	TotalOutput int64
+	AvgOutput   float64
+	LastUpdated time.Time
 }
 
 // BaselineEstimator provides token baseline estimation for measuring savings
 type BaselineEstimator struct {
-	mu               sync.RWMutex
-	modelStats       map[string]*ModelOutputStats // model -> stats
-	aethymeClient    *AethymeClient
-	db               *Database
+	mu            sync.RWMutex
+	modelStats    map[string]*ModelOutputStats // model -> stats
+	aethymeClient *AethymeClient
+	db            *Database
 
 	// Configuration
-	charsPerToken    float64 // Average characters per token (heuristic)
-	minSamples       int     // Minimum samples for historical average
+	charsPerToken float64 // Average characters per token (heuristic)
+	minSamples    int     // Minimum samples for historical average
 }
 
 // NewBaselineEstimator creates a new baseline estimator
@@ -235,9 +235,9 @@ func (be *BaselineEstimator) getModelDefaultOutput(model string, actualOutput in
 		{"claude-opus", 2000},
 		{"claude-sonnet", 1500},
 		{"claude-haiku", 1000},
-		{"gpt-4o-mini", 1000},  // Must be before gpt-4o and gpt-4
-		{"gpt-4o", 1500},       // Must be before gpt-4
-		{"gpt-4-turbo", 1500},  // Must be before gpt-4
+		{"gpt-4o-mini", 1000}, // Must be before gpt-4o and gpt-4
+		{"gpt-4o", 1500},      // Must be before gpt-4
+		{"gpt-4-turbo", 1500}, // Must be before gpt-4
 		{"gpt-4", 1500},
 		{"gpt-3.5", 800},
 		{"gemini-pro", 1200},
