@@ -1,0 +1,11 @@
+pre-commit:
+  commands:
+    docs-check:
+      run: ./Scripts/check-docs-staged
+    local-ci-fast:
+      run: ./Scripts/ci-local-fast
+
+pre-push:
+  commands:
+    local-ci:
+      run: ./Scripts/ci-local

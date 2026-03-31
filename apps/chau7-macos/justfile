@@ -1,5 +1,5 @@
-# Chau7 macOS — local CI
-# Usage: just check (runs everything), just build, just test, just lint, etc.
+# Chau7 macOS — component verification
+# Usage: just check (runs macOS-only checks), just build, just test, just lint, etc.
 
 set shell := ["zsh", "-cu"]
 
@@ -16,7 +16,7 @@ build:
 
 # Swift tests
 test:
-    {{swift}} test
+    {{swift}} test -Xswiftc -warnings-as-errors
 
 # Lint: SwiftLint + Rust clippy
 lint: swift-lint rust-lint
@@ -25,7 +25,7 @@ swift-lint:
     swiftlint lint --strict --quiet
 
 rust-lint:
-    cd {{rust_dir}} && cargo clippy --all-targets -- -D warnings
+    cd {{rust_dir}} && cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # Format check (no modifications)
 fmt-check: swift-fmt-check rust-fmt-check
@@ -51,7 +51,7 @@ rust-build:
 
 # Rust tests
 rust-test:
-    cd {{rust_dir}} && cargo test
+    cd {{rust_dir}} && cargo test --workspace --all-features
 
 # Hot-swap binary into running app and re-sign to preserve TCC permissions
 deploy: build

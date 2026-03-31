@@ -28,6 +28,33 @@ docs/
 - Remote agent: `services/chau7-remote/README.md`
 - iOS app: `apps/chau7-ios/README.md`
 
+## Local CI
+
+Repo-wide local CI is now split into:
+
+- `./Scripts/ci-local-fast`: fast pre-commit gate
+- `./Scripts/ci-local`: full pre-push gate
+- `./Scripts/install-hooks`: installs Lefthook hooks for this repo
+
+The full gate covers:
+
+- Swift format, lint, build, and tests for `apps/chau7-macos`
+- Rust format, clippy, and tests for `apps/chau7-macos/rust`
+- Go format, vet, and tests for `apps/chau7-macos/chau7-proxy`
+- Go format, vet, and tests for `services/chau7-remote`
+- Relay install, test, and dry-run build for `services/chau7-relay`
+
+Recommended setup on macOS:
+
+```bash
+brew install lefthook
+./Scripts/install-hooks
+```
+
+`pre-commit` runs the fast gate. `pre-push` runs the full gate.
+
+Packaging and app launch are intentionally not part of CI.
+
 ## Build and Test (macOS app)
 
 From `apps/chau7-macos`:

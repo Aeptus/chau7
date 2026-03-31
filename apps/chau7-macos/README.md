@@ -28,6 +28,18 @@ For a complete feature inventory, see `docs/FEATURES.md`:
 - Xcode 15+ or Swift 5.9+ to build
 - Network access the first time to fetch SwiftTerm via Swift Package Manager
 
+## Local CI
+
+Repo-root verification lives outside the app-specific build helpers:
+
+```bash
+../../Scripts/ci-local-fast
+../../Scripts/ci-local
+```
+
+Use those for local verification. Keep `./Scripts/build-app.sh`, `./Scripts/build-and-run.sh`, and
+`./Scripts/order66` for packaging and launch workflows.
+
 ## Install (build + run)
 
 All commands below assume you are in `apps/chau7-macos`.
