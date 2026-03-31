@@ -931,13 +931,14 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 onEntry: { [weak self] entry in
                     self?.handleHistoryEntry(entry, toolName: "Codex")
                 },
-                onStateChange: { [weak self] sessionId, state, lastSeen, idleFor in
+                onStateChange: { [weak self] sessionId, state, lastSeen, idleFor, lastEntry in
                     self?.updateSessionStatus(
                         sessionId: sessionId,
                         toolName: "Codex",
                         state: state,
                         lastSeen: lastSeen,
-                        idleFor: idleFor
+                        idleFor: idleFor,
+                        lastEntry: lastEntry
                     )
                 },
                 onIdle: { [weak self] entry, idleFor in
@@ -957,13 +958,14 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 onEntry: { [weak self] entry in
                     self?.handleHistoryEntry(entry, toolName: "Claude")
                 },
-                onStateChange: { [weak self] sessionId, state, lastSeen, idleFor in
+                onStateChange: { [weak self] sessionId, state, lastSeen, idleFor, lastEntry in
                     self?.updateSessionStatus(
                         sessionId: sessionId,
                         toolName: "Claude",
                         state: state,
                         lastSeen: lastSeen,
-                        idleFor: idleFor
+                        idleFor: idleFor,
+                        lastEntry: lastEntry
                     )
                 },
                 onIdle: { [weak self] entry, idleFor in
@@ -1248,7 +1250,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         toolName: String,
         state: HistorySessionState,
         lastSeen: Date,
-        idleFor: TimeInterval?
+        idleFor: TimeInterval?,
+        lastEntry: HistoryEntry?
     ) {
         Log.info("Session state: tool=\(toolName) session=\(sessionId) state=\(state.rawValue)")
         DispatchQueue.main.async { [weak self] in
@@ -1271,7 +1274,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             }
             let transition = HistorySessionLifecycle.evaluate(
                 previousState: previousState,
-                nextState: state
+                nextState: state,
+                lastActivityKind: lastEntry?.activityKind ?? .unknown
             )
 
             if transition.isReactivation {

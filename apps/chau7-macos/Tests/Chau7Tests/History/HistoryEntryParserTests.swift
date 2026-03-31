@@ -15,6 +15,7 @@ final class HistoryEntryParserTests: XCTestCase {
         XCTAssertEqual(entry.timestamp, 1_700_000_000)
         XCTAssertEqual(entry.summary, "hello world")
         XCTAssertFalse(entry.isExit)
+        XCTAssertEqual(entry.activityKind, .prompt)
     }
 
     func testParseUsesTextOverDisplay() throws {
@@ -168,6 +169,23 @@ final class HistoryEntryParserTests: XCTestCase {
         """
         let entry = try HistoryEntryParser.parse(line: json)
         XCTAssertFalse(entry.isExit)
+        XCTAssertEqual(entry.activityKind, .prompt)
+    }
+
+    func testParseAssistantRoleMarksResponseActivity() throws {
+        let json = """
+        {"session_id":"s1","ts":100,"text":"Done","role":"assistant"}
+        """
+        let entry = try HistoryEntryParser.parse(line: json)
+        XCTAssertEqual(entry.activityKind, .response)
+    }
+
+    func testParseNestedAssistantRoleMarksResponseActivity() throws {
+        let json = """
+        {"session_id":"s1","ts":100,"message":{"role":"assistant"},"display":"Done"}
+        """
+        let entry = try HistoryEntryParser.parse(line: json)
+        XCTAssertEqual(entry.activityKind, .response)
     }
 
     func testParseExitMarkerPrefersDisplayOverText() throws {

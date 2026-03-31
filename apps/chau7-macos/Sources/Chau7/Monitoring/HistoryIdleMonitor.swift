@@ -6,7 +6,7 @@ final class HistoryIdleMonitor {
     private let idleSecondsProvider: () -> TimeInterval
     private let staleSecondsProvider: () -> TimeInterval
     private let onEntry: ((HistoryEntry) -> Void)?
-    private let onStateChange: ((String, HistorySessionState, Date, TimeInterval?) -> Void)?
+    private let onStateChange: ((String, HistorySessionState, Date, TimeInterval?, HistoryEntry?) -> Void)?
     private let onIdle: (HistoryEntry, TimeInterval) -> Void
 
     private var tailer: FileTailer<HistoryEntry>?
@@ -26,7 +26,7 @@ final class HistoryIdleMonitor {
         idleSecondsProvider: @escaping () -> TimeInterval,
         staleSecondsProvider: @escaping () -> TimeInterval,
         onEntry: ((HistoryEntry) -> Void)? = nil,
-        onStateChange: ((String, HistorySessionState, Date, TimeInterval?) -> Void)? = nil,
+        onStateChange: ((String, HistorySessionState, Date, TimeInterval?, HistoryEntry?) -> Void)? = nil,
         onIdle: @escaping (HistoryEntry, TimeInterval) -> Void
     ) {
         self.fileURL = fileURL
@@ -74,7 +74,7 @@ final class HistoryIdleMonitor {
                 self.lastEntry.removeValue(forKey: entry.sessionId)
                 self.lastNotified.removeValue(forKey: entry.sessionId)
                 self.idleNotified.remove(entry.sessionId)
-                self.onStateChange?(entry.sessionId, .closed, now, nil)
+                self.onStateChange?(entry.sessionId, .closed, now, nil, entry)
                 Log.trace("Idle monitor closed by exit marker. session=\(entry.sessionId)")
                 self.scheduleNextCheck(now: now)
                 return
@@ -95,7 +95,7 @@ final class HistoryIdleMonitor {
                 self.idleNotified.remove(entry.sessionId)
                 self.lastNotified.removeValue(forKey: entry.sessionId)
             }
-            self.onStateChange?(entry.sessionId, .active, now, nil)
+            self.onStateChange?(entry.sessionId, .active, now, nil, entry)
             Log.trace("Idle monitor record. session=\(entry.sessionId) userActivity=\(isUserActivity)")
             self.scheduleNextCheck(now: now)
         }
@@ -131,14 +131,14 @@ final class HistoryIdleMonitor {
             onIdle(entry, idleFor)
             idleNotified.insert(sessionId)
             lastNotified[sessionId] = now
-            onStateChange?(sessionId, .idle, lastSeenAt, idleFor)
+            onStateChange?(sessionId, .idle, lastSeenAt, idleFor, entry)
             Log.trace("Idle monitor notify. session=\(sessionId) idleFor=\(Int(idleFor))")
         }
 
         for sessionId in staleSessionIds {
             guard let lastSeenAt = lastSeen[sessionId] else { continue }
             let idleFor = now.timeIntervalSince(lastSeenAt)
-            onStateChange?(sessionId, .closed, lastSeenAt, idleFor)
+            onStateChange?(sessionId, .closed, lastSeenAt, idleFor, lastEntry[sessionId])
             Log.trace("Idle monitor marked stale. session=\(sessionId) idleFor=\(Int(idleFor))")
 
             lastSeen.removeValue(forKey: sessionId)

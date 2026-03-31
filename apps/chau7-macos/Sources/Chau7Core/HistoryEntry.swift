@@ -1,16 +1,34 @@
 import Foundation
 
+public enum HistoryEntryActivityKind: String, Equatable, Sendable {
+    case prompt
+    case response
+    case unknown
+
+    public var supportsFinishedEvent: Bool {
+        self == .response
+    }
+}
+
 public struct HistoryEntry: Equatable, Sendable {
     public let sessionId: String
     public let timestamp: TimeInterval
     public let summary: String
     public let isExit: Bool
+    public let activityKind: HistoryEntryActivityKind
 
-    public init(sessionId: String, timestamp: TimeInterval, summary: String, isExit: Bool) {
+    public init(
+        sessionId: String,
+        timestamp: TimeInterval,
+        summary: String,
+        isExit: Bool,
+        activityKind: HistoryEntryActivityKind = .prompt
+    ) {
         self.sessionId = sessionId
         self.timestamp = timestamp
         self.summary = summary
         self.isExit = isExit
+        self.activityKind = activityKind
     }
 }
 
@@ -73,8 +91,15 @@ public enum HistoryEntryParser {
         let summary = rawText.isEmpty ? rawDisplay : rawText
         let timestamp = normalizeTimestamp(rawTimestamp)
         let isExit = isExitMarker(rawText: rawText, rawDisplay: rawDisplay)
+        let activityKind = inferActivityKind(dict: dict)
 
-        return HistoryEntry(sessionId: sessionId, timestamp: timestamp, summary: summary, isExit: isExit)
+        return HistoryEntry(
+            sessionId: sessionId,
+            timestamp: timestamp,
+            summary: summary,
+            isExit: isExit,
+            activityKind: activityKind
+        )
     }
 
     private static func normalizeTimestamp(_ value: Double) -> TimeInterval {
@@ -93,5 +118,33 @@ public enum HistoryEntryParser {
         default:
             return false
         }
+    }
+
+    private static func inferActivityKind(dict: [String: Any]) -> HistoryEntryActivityKind {
+        func normalizeRole(_ role: String?) -> String? {
+            role?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+
+        let topLevelRole = normalizeRole(dict["role"] as? String)
+        let messageRole = normalizeRole((dict["message"] as? [String: Any])?["role"] as? String)
+        let role = topLevelRole ?? messageRole
+
+        switch role {
+        case "assistant":
+            return .response
+        case "user":
+            return .prompt
+        default:
+            break
+        }
+
+        // Current Codex and Claude history files only record user prompts.
+        // Untyped text/display entries should therefore default to prompt
+        // rather than synthesizing false "finished" events on idle.
+        if dict["text"] != nil || dict["display"] != nil {
+            return .prompt
+        }
+
+        return .unknown
     }
 }
