@@ -40,8 +40,8 @@ struct DiffViewerPaneView: View {
                         .font(.body)
                         .foregroundStyle(.secondary)
                     Text(diff.diffMode == .workingTree
-                         ? L("splitPane.diff.noWorkingChanges", "Working tree is clean for this file")
-                         : L("splitPane.diff.noStagedChanges", "No staged changes for this file"))
+                        ? L("splitPane.diff.noWorkingChanges", "Working tree is clean for this file")
+                        : L("splitPane.diff.noStagedChanges", "No staged changes for this file"))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }

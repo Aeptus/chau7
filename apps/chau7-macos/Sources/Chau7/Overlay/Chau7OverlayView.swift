@@ -291,17 +291,17 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
     /// rightMouseDown internally, so we intercept before it reaches the view.
     func installRightClickMonitor() {
         rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
-            guard let self, let window = self.window, event.window === window else { return event }
-            let location = self.convert(event.locationInWindow, from: nil)
-            guard self.bounds.contains(location) else { return event }
-            guard let model = self.tabsModel else { return event }
+            guard let self, let window = window, event.window === window else { return event }
+            let location = convert(event.locationInWindow, from: nil)
+            guard bounds.contains(location) else { return event }
+            guard let model = tabsModel else { return event }
 
-            guard let hitTab = self.hitTestTab(at: location, in: model) else { return event }
+            guard let hitTab = hitTestTab(at: location, in: model) else { return event }
 
             // Refresh window titles lazily — only when the menu is actually shown
-            self.refreshWindowTitles?()
+            refreshWindowTitles?()
 
-            let menu = self.buildTabContextMenu(for: hitTab, model: model)
+            let menu = buildTabContextMenu(for: hitTab, model: model)
             NSMenu.popUpContextMenu(menu, with: event, for: self)
             return nil // consume the event
         }
@@ -429,7 +429,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
             let globalX = globalPoint.x
             let tabIDsByUUID = Dictionary(uniqueKeysWithValues: model.tabs.map { ($0.id, $0) })
             for frame in frames {
-                if globalX >= frame.minX && globalX <= frame.maxX {
+                if globalX >= frame.minX, globalX <= frame.maxX {
                     return tabIDsByUUID[frame.tabID]
                 }
             }
@@ -480,8 +480,8 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         })
     }
 
-    // NSMenu validates items by checking if target responds to the action.
-    // Implement NSMenuItemValidation to always enable our context menu items.
+    /// NSMenu validates items by checking if target responds to the action.
+    /// Implement NSMenuItemValidation to always enable our context menu items.
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         true
     }
@@ -603,6 +603,7 @@ private struct ToolbarTabBarView: View {
         let idleIDs = Set(idle.map(\.id))
         return overlayModel.tabs.filter { !idleIDs.contains($0.id) }
     }
+
     // MARK: - Repo Grouping Segments
 
     /// A segment in the tab bar: either a single ungrouped tab or a group of tabs sharing a repo.
@@ -1552,11 +1553,6 @@ private struct ReduceMotionAnimationModifier: ViewModifier {
     }
 }
 
-// MARK: - Unified Tab Button (Stable Identity)
-
-/// A unified tab button that handles both session and non-session cases
-/// without view identity switching. This prevents SwiftUI from recreating
-/// the view when tab.session changes between nil and non-nil.
 // MARK: - Repo Tag Chip
 
 /// Non-interactive pill-shaped chip showing a repo name. Sits inline with tab pills
@@ -1578,8 +1574,8 @@ struct RepoTagChip: View {
     /// Deterministic color for a repo path — same repo always gets the same color.
     static func color(for repoGroupID: String) -> Color {
         let colors = TabColor.allCases
-        let hash = repoGroupID.utf8.reduce(UInt64(1469598103934665603)) { partial, byte in
-            (partial ^ UInt64(byte)) &* 1099511628211
+        let hash = repoGroupID.utf8.reduce(UInt64(1_469_598_103_934_665_603)) { partial, byte in
+            (partial ^ UInt64(byte)) &* 1_099_511_628_211
         }
         return colors[Int(hash % UInt64(colors.count))].color
     }
@@ -1612,11 +1608,21 @@ struct RepoGroupBracket: View {
                     Path { p in
                         p.move(to: CGPoint(x: w, y: inset))
                         p.addLine(to: CGPoint(x: radius, y: inset))
-                        p.addArc(center: CGPoint(x: radius, y: radius),
-                                 radius: radius - inset, startAngle: .degrees(270), endAngle: .degrees(180), clockwise: true)
+                        p.addArc(
+                            center: CGPoint(x: radius, y: radius),
+                            radius: radius - inset,
+                            startAngle: .degrees(270),
+                            endAngle: .degrees(180),
+                            clockwise: true
+                        )
                         p.addLine(to: CGPoint(x: inset, y: h - radius))
-                        p.addArc(center: CGPoint(x: radius, y: h - radius),
-                                 radius: radius - inset, startAngle: .degrees(180), endAngle: .degrees(90), clockwise: true)
+                        p.addArc(
+                            center: CGPoint(x: radius, y: h - radius),
+                            radius: radius - inset,
+                            startAngle: .degrees(180),
+                            endAngle: .degrees(90),
+                            clockwise: true
+                        )
                         p.addLine(to: CGPoint(x: w, y: h - inset))
                     }
                     .stroke(groupColor.opacity(0.5), lineWidth: 1)
@@ -1633,7 +1639,7 @@ struct UnifiedTabButton: View {
     let isSelected: Bool
     let isSuspended: Bool
     let isBroadcastIncluded: Bool
-    var hideRepoPath: Bool = false
+    var hideRepoPath = false
     let onSelect: () -> Void
     let onRename: () -> Void
     let onClose: () -> Void
@@ -1734,7 +1740,6 @@ struct UnifiedTabButton: View {
             }
     }
 
-    @ViewBuilder
     private var tabChip: some View {
         HStack(spacing: 8) {
             // Session-dependent content (icon, title, path, git) in an observing subview
@@ -1849,7 +1854,7 @@ struct TabSessionContent: View {
     @ObservedObject var session: TerminalSessionModel
     let customTitle: String?
     let isMinimalDisplay: Bool
-    var hideRepoPath: Bool = false
+    var hideRepoPath = false
     let notificationStyle: TabNotificationStyle?
     let titleFont: Font
     let titleColor: Color?

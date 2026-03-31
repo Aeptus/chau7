@@ -23,7 +23,7 @@ final class RepoMetadataTests: XCTestCase {
             description: "Backend API service",
             labels: ["backend", "rust"],
             favoriteFiles: ["src/main.rs", "Cargo.toml"],
-            updatedAt: Date(timeIntervalSince1970: 1700000000)
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000)
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

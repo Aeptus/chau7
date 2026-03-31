@@ -435,7 +435,7 @@ extension OverlayTabsModel {
         )
     }
 
-    internal static func restoreAdditionalWindowStatesFromBackups() -> [[SavedTabState]]? {
+    static func restoreAdditionalWindowStatesFromBackups() -> [[SavedTabState]]? {
         for url in tabStateRestoreCandidateURLs() {
             guard let data = try? Data(contentsOf: url) else { continue }
             guard let windows = decodeBackupWindowStates(from: data), windows.count > 1 else { continue }
@@ -458,7 +458,7 @@ extension OverlayTabsModel {
         return nil
     }
 
-    internal static func decodeBackupWindowStates(from data: Data) -> [[SavedTabState]]? {
+    static func decodeBackupWindowStates(from data: Data) -> [[SavedTabState]]? {
         if let multiState = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data),
            !multiState.windows.isEmpty {
             return multiState.windows
@@ -470,7 +470,7 @@ extension OverlayTabsModel {
         return nil
     }
 
-    internal static func persistWindowStateBackups(windowStates: [[SavedTabState]], reason: TabStateSaveReason) {
+    static func persistWindowStateBackups(windowStates: [[SavedTabState]], reason: TabStateSaveReason) {
         guard !windowStates.isEmpty else { return }
         let payload: Data
         do {
@@ -490,7 +490,7 @@ extension OverlayTabsModel {
         }
     }
 
-    internal static func clearPersistedWindowState() {
+    static func clearPersistedWindowState() {
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         if let root = tabStateBackupRootURL(),

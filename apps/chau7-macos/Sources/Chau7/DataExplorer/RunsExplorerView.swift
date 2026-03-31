@@ -61,7 +61,9 @@ struct RunsExplorerView: View {
         }
         .onAppear { reload() }
         .onChange(of: selectedRunID) { newID in
-            guard let id = newID else { toolSummary = []; return }
+            guard let id = newID else { toolSummary = []
+                return
+            }
             toolSummary = TelemetryStore.shared.toolCallSummary(runID: id)
         }
     }
@@ -168,7 +170,7 @@ private struct RunRow: View {
 
     private func formatTokens(_ count: Int) -> String {
         if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
-        if count >= 1_000 { return String(format: "%.0fK", Double(count) / 1_000) }
+        if count >= 1000 { return String(format: "%.0fK", Double(count) / 1000) }
         return "\(count)"
     }
 }

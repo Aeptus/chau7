@@ -48,20 +48,20 @@ final class RepositoryCache {
             }
 
             // Negative cache hit
-            if self.nonGitPaths.contains(normalized) {
+            if nonGitPaths.contains(normalized) {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
 
-            if let root = self.resolvedRootsByPath[normalized],
-               let model = self.models[root] {
+            if let root = resolvedRootsByPath[normalized],
+               let model = models[root] {
                 model.refreshBranch()
                 DispatchQueue.main.async { completion(model) }
                 return
             }
 
             var bestMatch: (root: String, model: RepositoryModel)?
-            for (root, model) in self.models {
+            for (root, model) in models {
                 if normalized == root || normalized.hasPrefix(root + "/") {
                     if bestMatch == nil || root.count > bestMatch!.root.count {
                         bestMatch = (root, model)
@@ -69,7 +69,7 @@ final class RepositoryCache {
                 }
             }
 
-            let output = self.gitRunner(["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"], normalized)
+            let output = gitRunner(["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"], normalized)
 
             let lines = output
                 .split(whereSeparator: \.isNewline)
@@ -78,13 +78,13 @@ final class RepositoryCache {
 
             guard !lines.isEmpty else {
                 if let bestMatch {
-                    self.resolvedRootsByPath[normalized] = bestMatch.root
+                    resolvedRootsByPath[normalized] = bestMatch.root
                     bestMatch.model.refreshBranch()
                     DispatchQueue.main.async { completion(bestMatch.model) }
                     return
                 }
                 // Not a git repo — cache the negative result
-                self.nonGitPaths.insert(normalized)
+                nonGitPaths.insert(normalized)
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
@@ -95,7 +95,7 @@ final class RepositoryCache {
 
             // Reuse existing model if already cached (race between concurrent resolves)
             let model: RepositoryModel
-            if let existing = self.models[canonicalRoot] {
+            if let existing = models[canonicalRoot] {
                 model = existing
                 if model.branch != branch {
                     DispatchQueue.main.async { model.branch = branch }
@@ -104,18 +104,18 @@ final class RepositoryCache {
                 model = RepositoryModel(
                     rootPath: canonicalRoot,
                     branch: branch,
-                    gitRunner: self.gitRunner,
-                    refreshDelay: self.refreshDelay
+                    gitRunner: gitRunner,
+                    refreshDelay: refreshDelay
                 )
-                self.models[canonicalRoot] = model
-                self.resolvedRootsByPath[canonicalRoot] = canonicalRoot
+                models[canonicalRoot] = model
+                resolvedRootsByPath[canonicalRoot] = canonicalRoot
                 // Load persisted metadata and record as recent repo (first discovery)
                 model.loadMetadata()
                 DispatchQueue.main.async {
                     self.recentRepoRecorder(canonicalRoot)
                 }
             }
-            self.resolvedRootsByPath[normalized] = canonicalRoot
+            resolvedRootsByPath[normalized] = canonicalRoot
 
             DispatchQueue.main.async { completion(model) }
         }

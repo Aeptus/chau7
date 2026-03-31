@@ -347,7 +347,9 @@ enum RepoGroupingMode: String, CaseIterable, Identifiable, Codable {
     case auto
     case manual
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var displayName: String {
         switch self {
@@ -1437,36 +1439,47 @@ final class FeatureSettings: ObservableObject {
     @Published var hoverCardShowDirectory: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowDirectory, forKey: Keys.hoverCardShowDirectory) }
     }
+
     @Published var hoverCardShowGitBranch: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowGitBranch, forKey: Keys.hoverCardShowGitBranch) }
     }
+
     @Published var hoverCardShowShellIntegration: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowShellIntegration, forKey: Keys.hoverCardShowShellIntegration) }
     }
+
     @Published var hoverCardShowDevServer: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowDevServer, forKey: Keys.hoverCardShowDevServer) }
     }
+
     @Published var hoverCardShowLastCommand: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowLastCommand, forKey: Keys.hoverCardShowLastCommand) }
     }
+
     @Published var hoverCardShowAISession: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowAISession, forKey: Keys.hoverCardShowAISession) }
     }
+
     @Published var hoverCardShowProcesses: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowProcesses, forKey: Keys.hoverCardShowProcesses) }
     }
+
     @Published var hoverCardShowTokenOptimization: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowTokenOptimization, forKey: Keys.hoverCardShowTokenOptimization) }
     }
+
     @Published var hoverCardShowBroadcast: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowBroadcast, forKey: Keys.hoverCardShowBroadcast) }
     }
+
     @Published var hoverCardShowConflicts: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowConflicts, forKey: Keys.hoverCardShowConflicts) }
     }
+
     @Published var hoverCardShowNotificationState: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowNotificationState, forKey: Keys.hoverCardShowNotificationState) }
     }
+
     @Published var hoverCardShowFooter: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowFooter, forKey: Keys.hoverCardShowFooter) }
     }

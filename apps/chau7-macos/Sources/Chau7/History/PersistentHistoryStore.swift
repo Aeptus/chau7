@@ -388,7 +388,7 @@ final class PersistentHistoryStore {
     /// Waits for any queued history writes to complete.
     /// Intended for tests that need to observe the final persisted state.
     func waitForPendingWrites() {
-        dbQueue.sync { }
+        dbQueue.sync {}
     }
 
     func clearOlderThan(days: Int) {

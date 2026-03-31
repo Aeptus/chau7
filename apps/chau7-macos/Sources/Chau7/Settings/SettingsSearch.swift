@@ -83,7 +83,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case keyboardMouse
     case snippetsTools
     case editor
-    // Look & Feel (additional)
+    /// Look & Feel (additional)
     case minimalMode
     // Integrations
     case aiDetection
@@ -875,7 +875,7 @@ extension FeatureSettings {
             title: L("settings.search.minimalMode.title", "Minimal Mode"),
             keywords: localizedKeywords("settings.search.minimalMode.keywords", "minimal,hide,tab bar,title bar,distraction free"),
             description: L("settings.search.minimalMode.description", "Hide UI elements for distraction-free mode")
-        ),
+        )
     ]
 
     static func searchSettings(query: String) -> [(section: SettingsSection, settings: [SearchableSetting])] {

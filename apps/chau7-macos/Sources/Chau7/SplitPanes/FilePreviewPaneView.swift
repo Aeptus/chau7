@@ -209,7 +209,7 @@ struct ReadOnlyEditorContent: NSViewRepresentable {
         let text = textView.string
         var lineCount = 1
         var idx = text.startIndex
-        while idx < text.endIndex && lineCount < line {
+        while idx < text.endIndex, lineCount < line {
             if text[idx] == "\n" { lineCount += 1 }
             idx = text.index(after: idx)
         }
