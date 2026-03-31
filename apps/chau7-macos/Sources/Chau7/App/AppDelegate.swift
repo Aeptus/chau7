@@ -876,13 +876,13 @@ private final class OverlayBlurView: NSVisualEffectView {
             let model = host.model
             model.onMoveTabToWindow = { [weak self, weak model] tabID, targetWindowIndex in
                 guard let self, let model,
-                      let currentIndex = self.overlayHosts.firstIndex(where: { $0.model === model }) else { return }
-                self.moveTab(tabID, fromWindowIndex: currentIndex, toWindowIndex: targetWindowIndex)
+                      let currentIndex = overlayHosts.firstIndex(where: { $0.model === model }) else { return }
+                moveTab(tabID, fromWindowIndex: currentIndex, toWindowIndex: targetWindowIndex)
             }
             model.onMoveGroupToWindow = { [weak self, weak model] groupID, targetWindowIndex in
                 guard let self, let model,
-                      let currentIndex = self.overlayHosts.firstIndex(where: { $0.model === model }) else { return }
-                self.moveGroup(groupID, fromWindowIndex: currentIndex, toWindowIndex: targetWindowIndex)
+                      let currentIndex = overlayHosts.firstIndex(where: { $0.model === model }) else { return }
+                moveGroup(groupID, fromWindowIndex: currentIndex, toWindowIndex: targetWindowIndex)
             }
             // Wire the lazy refresh callback for context menu
             model.onRefreshWindowTitles = { [weak self] in
@@ -956,7 +956,10 @@ private final class OverlayBlurView: NSVisualEffectView {
         if toWindowIndex == -1 {
             guard let model else { return }
             let tabsModel = OverlayTabsModel(appModel: model, restoreState: false)
-            tabsModel.tabs = groupTabs.map { var t = $0; t.stampOwnerTabID(); return t }
+            tabsModel.tabs = groupTabs.map { var t = $0
+                t.stampOwnerTabID()
+                return t
+            }
             tabsModel.selectedTabID = groupTabs[0].id
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
@@ -1034,7 +1037,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             guard !windowStates.isEmpty else { continue }
             let additionalTabIDs = Set(windowStates.compactMap { UUID(uuidString: $0.tabID ?? "") })
             let overlap = window0TabIDs.intersection(additionalTabIDs)
-            if !additionalTabIDs.isEmpty && overlap.count > additionalTabIDs.count / 2 {
+            if !additionalTabIDs.isEmpty, overlap.count > additionalTabIDs.count / 2 {
                 Log.warn("Skipping duplicate window \(windowIndex + 1): \(overlap.count)/\(additionalTabIDs.count) tab IDs overlap with window 0")
                 continue
             }

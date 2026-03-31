@@ -31,10 +31,10 @@ extension RepoMetadata {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        description = try container.decodeIfPresent(String.self, forKey: .description)
-        labels = try container.decodeIfPresent([String].self, forKey: .labels) ?? []
-        favoriteFiles = try container.decodeIfPresent([String].self, forKey: .favoriteFiles) ?? []
-        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        self.description = try container.decodeIfPresent(String.self, forKey: .description)
+        self.labels = try container.decodeIfPresent([String].self, forKey: .labels) ?? []
+        self.favoriteFiles = try container.decodeIfPresent([String].self, forKey: .favoriteFiles) ?? []
+        self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
     }
 }
 

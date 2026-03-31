@@ -53,7 +53,10 @@ struct SessionsExplorerView: View {
 
 private struct RepoRunGroup: Identifiable {
     let repoPath: String
-    var id: String { repoPath }
+    var id: String {
+        repoPath
+    }
+
     let repoName: String
     let runCount: Int
     let providers: [String]
@@ -133,7 +136,7 @@ private struct RepoGroupRow: View {
 
     private func formatTokens(_ count: Int) -> String {
         if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
-        if count >= 1_000 { return String(format: "%.0fK", Double(count) / 1_000) }
+        if count >= 1000 { return String(format: "%.0fK", Double(count) / 1000) }
         return "\(count)"
     }
 }

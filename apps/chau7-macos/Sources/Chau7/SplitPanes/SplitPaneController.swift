@@ -542,7 +542,7 @@ final class FilePreviewModel: ObservableObject, Identifiable {
     private var pendingScrollToLine: Int?
     private var loadingToken: UUID?
 
-    static let imageExtensions: Set<String> = [
+    static let imageExtensions: Set = [
         "png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "bmp", "tiff", "tif"
     ]
 
@@ -621,8 +621,8 @@ final class FilePreviewModel: ObservableObject, Identifiable {
 
 /// Mode for diff comparison
 enum DiffMode: String, Codable {
-    case workingTree  // git diff (unstaged changes)
-    case staged       // git diff --cached
+    case workingTree // git diff (unstaged changes)
+    case staged // git diff --cached
 }
 
 /// A single line in a diff hunk
@@ -655,9 +655,9 @@ final class DiffViewerModel: ObservableObject, Identifiable {
     @Published var lastError: String?
     @Published var hunks: [DiffHunk] = []
     @Published var diffMode: DiffMode = .workingTree
-    @Published var rawDiff: String = ""
-    @Published var additions: Int = 0
-    @Published var deletions: Int = 0
+    @Published var rawDiff = ""
+    @Published var additions = 0
+    @Published var deletions = 0
 
     private let gitRunner: ([String], String) -> String
     private let loadQueue: DispatchQueue
@@ -680,9 +680,9 @@ final class DiffViewerModel: ObservableObject, Identifiable {
 
     @discardableResult
     func startLoading(file: String, in directory: String, mode: DiffMode = .workingTree) -> UUID {
-        self.filePath = file
+        filePath = file
         self.directory = directory
-        self.diffMode = mode
+        diffMode = mode
         isLoading = true
         lastError = nil
         let token = UUID()
@@ -720,7 +720,7 @@ final class DiffViewerModel: ObservableObject, Identifiable {
             var effectiveMode = mode
 
             // Fallback: try staged diff if working tree was empty (runs on background thread)
-            if output.isEmpty && parsed.hunks.isEmpty && mode == .workingTree {
+            if output.isEmpty, parsed.hunks.isEmpty, mode == .workingTree {
                 let stagedOutput = self?.gitRunner(["diff", "--cached", "--", file], directory) ?? ""
                 if !stagedOutput.isEmpty {
                     output = stagedOutput

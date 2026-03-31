@@ -92,7 +92,10 @@ struct FontColorsSettingsView: View {
 
             SettingsToggle(
                 label: L("settings.appearance.ligatures", "Font Ligatures"),
-                help: L("settings.appearance.ligatures.help", "Render multi-character ligatures (=>, ->, === etc.) for fonts that support them (Fira Code, JetBrains Mono, Cascadia Code). Disable for monospace fonts without ligature tables."),
+                help: L(
+                    "settings.appearance.ligatures.help",
+                    "Render multi-character ligatures (=>, ->, === etc.) for fonts that support them (Fira Code, JetBrains Mono, Cascadia Code). Disable for monospace fonts without ligature tables."
+                ),
                 isOn: $settings.enableLigatures
             )
 

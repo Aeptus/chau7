@@ -1041,7 +1041,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 message: event.message,
                 ts: DateFormatters.iso8601.string(from: event.timestamp),
                 directory: event.cwd.isEmpty ? nil : event.cwd,
-                tabID: self.resolveTabID(
+                tabID: resolveTabID(
                     toolName: "Claude",
                     directory: event.cwd.isEmpty ? nil : event.cwd,
                     tabID: nil,
@@ -1264,7 +1264,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 // indefinitely, corrupting metrics and firing duplicate notifications.
                 // See log analysis 2026-03-29: sessions 019d33c3 and 019d33c5 both exhibited
                 // this pattern with 29-50 minute gaps between close and resurrection.
-                if previousState == .closed && state == .active {
+                if previousState == .closed, state == .active {
                     Log.trace("Ignoring closed→active resurrection for session \(sessionId.prefix(8))")
                     return
                 }

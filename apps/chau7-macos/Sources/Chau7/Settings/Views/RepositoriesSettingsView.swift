@@ -90,7 +90,6 @@ struct RepositoriesSettingsView: View {
         }
     }
 
-    @ViewBuilder
     private func editPanel(repo: RepoEntry) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -194,7 +193,10 @@ struct RepositoriesSettingsView: View {
 
 private struct RepoEntry: Identifiable, Hashable {
     let path: String
-    var id: String { path }
+    var id: String {
+        path
+    }
+
     let name: String
     let metadata: RepoMetadata
 

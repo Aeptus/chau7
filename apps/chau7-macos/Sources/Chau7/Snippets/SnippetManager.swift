@@ -329,20 +329,20 @@ final class SnippetManager: ObservableObject {
 
             // Migrate legacy repo snippets if needed
             if let root {
-                let legacyFile = self.legacyRepoURL(for: root)
-                let targetDir = self.repoURL(for: root)
-                self.migrateSourceIfNeeded(legacyFile: legacyFile, targetDir: targetDir)
+                let legacyFile = legacyRepoURL(for: root)
+                let targetDir = repoURL(for: root)
+                migrateSourceIfNeeded(legacyFile: legacyFile, targetDir: targetDir)
             }
 
-            guard self.activeRepoRoot != root else { return }
-            self.activeRepoRoot = root
+            guard activeRepoRoot != root else { return }
+            activeRepoRoot = root
 
             if let root {
                 // recordRecentRepo is now handled by RepositoryCache on first discovery
 
-                if self.allRepoSnippets[root] == nil {
+                if allRepoSnippets[root] == nil {
                     // New repo discovered: load its snippets into cache
-                    self.queue.async {
+                    queue.async {
                         let repoDir = self.repoURL(for: root)
                         FileOperations.createDirectory(at: repoDir)
                         let snippets = self.loadSnippetsFromDirectory(repoDir)
@@ -354,15 +354,15 @@ final class SnippetManager: ObservableObject {
                     }
                 } else {
                     // Already cached: instant switch
-                    self.rebuildEntries()
+                    rebuildEntries()
                 }
 
-                self.setupActiveRepoMonitor(for: root)
+                setupActiveRepoMonitor(for: root)
             } else {
                 // No repo: rebuild with global + profile only
-                self.activeRepoMonitor?.stop()
-                self.activeRepoMonitor = nil
-                self.rebuildEntries()
+                activeRepoMonitor?.stop()
+                activeRepoMonitor = nil
+                rebuildEntries()
             }
         }
     }

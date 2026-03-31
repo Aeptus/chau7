@@ -141,7 +141,7 @@ final class ClaudeCodeMonitor: ObservableObject {
             switch event.type {
             case .responseComplete:
                 self.onResponseComplete?(event)
-                // Notification is handled by AppModel.onEvent → unified pipeline
+            // Notification is handled by AppModel.onEvent → unified pipeline
             case .permissionRequest:
                 // Permission dedup is handled by the pipeline's rate limiter
                 break

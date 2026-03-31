@@ -45,7 +45,10 @@ struct ScrollbackPerfSettingsView: View {
 
             SettingsToggle(
                 label: L("settings.terminal.suspendBackgroundRendering", "Suspend Background Rendering"),
-                help: L("settings.terminal.suspendBackgroundRendering.help", "Pause rendering for inactive tabs to reduce CPU/GPU usage. Tabs resume instantly when selected. Disabled by default for the fastest experience."),
+                help: L(
+                    "settings.terminal.suspendBackgroundRendering.help",
+                    "Pause rendering for inactive tabs to reduce CPU/GPU usage. Tabs resume instantly when selected. Disabled by default for the fastest experience."
+                ),
                 isOn: $model.isSuspendBackgroundRendering
             )
 
@@ -67,7 +70,10 @@ struct ScrollbackPerfSettingsView: View {
 
             SettingsToggle(
                 label: L("settings.terminal.metalRenderer", "Metal Renderer"),
-                help: L("settings.terminal.metalRenderer.help", "Use GPU-accelerated Metal rendering for the terminal. Falls back to standard rendering if Metal is unavailable. Changes take effect for new tabs only."),
+                help: L(
+                    "settings.terminal.metalRenderer.help",
+                    "Use GPU-accelerated Metal rendering for the terminal. Falls back to standard rendering if Metal is unavailable. Changes take effect for new tabs only."
+                ),
                 isOn: $settings.useMetalRenderer
             )
 

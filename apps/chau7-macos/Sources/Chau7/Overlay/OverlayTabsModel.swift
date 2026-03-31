@@ -365,7 +365,7 @@ struct ClosedTabEntry {
 /// Manages terminal tabs, search, and broadcast mode for the overlay window.
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   All methods assume main thread execution.
-final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_body_length
+final class OverlayTabsModel: ObservableObject {
     static var lastArchivedMultiWindowTabStateFingerprint: Int?
     static var lastArchivedMultiWindowTabStateAt: Date = .distantPast
 
@@ -482,7 +482,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     var renderSuspensionDelay: TimeInterval = 5.0
     var needsFreshTabOnShow = false
     var isDiagnosticsLoggingEnabled = false
-    // Auto-save timer moved to AppDelegate for coordinated multi-window saves.
+    /// Auto-save timer moved to AppDelegate for coordinated multi-window saves.
     /// Last archived snapshot fingerprint to avoid writing duplicate archive files.
     var lastArchivedTabStateFingerprint: Int?
     /// Minimum time between archived snapshots unless we're terminating.
@@ -542,7 +542,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
 
         // Observe permission-resolved to clear persistent red borders
-        persistentStyleObserver = NotificationCenter.default.addObserver(
+        self.persistentStyleObserver = NotificationCenter.default.addObserver(
             forName: .clearPersistentTabStyle,
             object: nil, queue: .main
         ) { [weak self] notification in
@@ -621,7 +621,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                 // properties in updateSuspensionState already trigger it when
                 // suspendedTabIDs changes. Extra sends cause redundant rebuilds.
             }
-            suspensionDebounceItem = item
+            self.suspensionDebounceItem = item
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: item)
         }
     }
@@ -1046,7 +1046,6 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     // Session Finder Registry → OverlayTabsModel+SessionFinder.swift
 
-
     func selectTab(id: UUID) {
         guard selectedTabID != id else { return }
         dismissHoverCard()
@@ -1097,7 +1096,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         // initial visual switch which should be as fast as possible.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.updateSuspensionState()
+            updateSuspensionState()
             MainActor.assumeIsolated {
                 self.updateCurrentCandidate(from: ProxyIPCServer.shared.pendingCandidates)
                 self.updateCurrentTask(from: ProxyIPCServer.shared.activeTasks)
@@ -1706,7 +1705,9 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         guard !groupTabs.isEmpty else { return [] }
         let groupIDs = Set(groupTabs.map(\.id))
         tabs.removeAll { groupIDs.contains($0.id) }
-        for id in groupIDs { suspendedTabIDs.remove(id) }
+        for id in groupIDs {
+            suspendedTabIDs.remove(id)
+        }
         if tabs.isEmpty {
             selectedTabID = UUID()
             needsFreshTabOnShow = true
@@ -2536,10 +2537,10 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             .sink { [weak self] newRoot in
                 guard let self,
                       FeatureSettings.shared.repoGroupingMode == .auto,
-                      let idx = self.tabs.firstIndex(where: { $0.id == tabID }) else { return }
-                self.tabs[idx].repoGroupID = newRoot
+                      let idx = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+                tabs[idx].repoGroupID = newRoot
                 if let newRoot {
-                    self.coalesceGroup(repoGroupID: newRoot)
+                    coalesceGroup(repoGroupID: newRoot)
                 }
             }
         repoGroupCancellables[tabID] = cancellable
@@ -2580,7 +2581,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         repoGroupCancellables.removeValue(forKey: tabID)
     }
 
-    // Manual mode actions
+    /// Manual mode actions
     func addTabToRepoGroup(tabID: UUID) {
         guard let idx = tabs.firstIndex(where: { $0.id == tabID }),
               let root = tabs[idx].session?.gitRootPath else { return }

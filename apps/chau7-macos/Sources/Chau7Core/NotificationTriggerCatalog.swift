@@ -519,7 +519,7 @@ public enum NotificationTriggerCatalog {
             descriptionFallback: "No new history entries for the idle timeout.",
             defaultEnabled: false,
             displayContexts: [.settings, .activity]
-        ),
+        )
     ]
 
     private static let shellTriggers: [NotificationTrigger] = [

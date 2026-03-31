@@ -1437,8 +1437,8 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
 
         let authoritativeAppName =
             activeAppName
-            ?? lastDetectedAppName
-            ?? Self.displayName(fromProvider: lastAIProvider)
+                ?? lastDetectedAppName
+                ?? Self.displayName(fromProvider: lastAIProvider)
 
         // State machine filters: redetecting rejects different tools, and
         // output-only detection is not allowed to flip an established provider.
@@ -1446,7 +1446,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
             appName: matchedApp,
             authoritativeAppName: authoritativeAppName
         ),
-              let app = aiDetection.currentApp else { return }
+            let app = aiDetection.currentApp else { return }
 
         // State changed → sync @Published property and fire side effects
         activeAppName = app
@@ -3650,34 +3650,34 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     private func refreshGitStatus(path: String) {
         RepositoryCache.shared.resolve(path: path) { [weak self] model in
             guard let self else { return }
-            let oldModel = self.repositoryModel
-            let oldBranch = self.gitBranch
+            let oldModel = repositoryModel
+            let oldBranch = gitBranch
 
             // Update the shared model reference
-            self.repositoryModel = model
-            self.isGitRepo = model != nil
-            self.gitRootPath = model?.rootPath
-            self.gitBranch = model?.branch
+            repositoryModel = model
+            isGitRepo = model != nil
+            gitRootPath = model?.rootPath
+            gitBranch = model?.branch
 
             // Subscribe to branch changes from the shared model
             if model !== oldModel {
-                self.repoBranchCancellable?.cancel()
+                repoBranchCancellable?.cancel()
                 if let model {
-                    self.repoBranchCancellable = model.$branch
+                    repoBranchCancellable = model.$branch
                         .receive(on: DispatchQueue.main)
                         .sink { [weak self] newBranch in
-                            guard let self, self.gitBranch != newBranch else { return }
-                            self.gitBranch = newBranch
-                            self.shellEventDetector.gitBranchChanged(to: newBranch)
+                            guard let self, gitBranch != newBranch else { return }
+                            gitBranch = newBranch
+                            shellEventDetector.gitBranchChanged(to: newBranch)
                         }
                 } else {
-                    self.repoBranchCancellable = nil
+                    repoBranchCancellable = nil
                 }
             }
 
             // Notify shell event detector of branch change
             if oldBranch != model?.branch {
-                self.shellEventDetector.gitBranchChanged(to: model?.branch)
+                shellEventDetector.gitBranchChanged(to: model?.branch)
             }
         }
     }

@@ -103,7 +103,7 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(windows[1].first?.customTitle, "Window 2")
     }
 
-    func testClearPersistedWindowStateRemovesSavedStateAndBackups() throws {
+    func testClearPersistedWindowStateRemovesSavedStateAndBackups() {
         let state = makeSavedTabState(title: "Primary", directory: "/tmp/primary")
         storeSavedTabStates([state])
         OverlayTabsModel.persistWindowStateBackups(windowStates: [[state]], reason: .termination)

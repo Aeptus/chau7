@@ -636,16 +636,23 @@ final class TerminalControlService {
         }
         if !frequentCmds.isEmpty {
             result["frequent_commands"] = frequentCmds.map { cmd in
-                ["command": cmd.command, "count": cmd.count,
-                 "last_used": ISO8601DateFormatter().string(from: cmd.lastUsed),
-                 "frecency_score": cmd.frecencyScore] as [String: Any]
+                [
+                    "command": cmd.command,
+                    "count": cmd.count,
+                    "last_used": ISO8601DateFormatter().string(from: cmd.lastUsed),
+                    "frecency_score": cmd.frecencyScore
+                ] as [String: Any]
             }
         }
         return encodeAny(result)
     }
 
-    func setRepoMetadata(repoPath: String, description: String?,
-                         labels: [String]?, favoriteFiles: [String]?) -> String {
+    func setRepoMetadata(
+        repoPath: String,
+        description: String?,
+        labels: [String]?,
+        favoriteFiles: [String]?
+    ) -> String {
         if let model = RepositoryCache.shared.cachedModel(forRoot: repoPath) {
             return onMain {
                 var updated = model.metadata
@@ -670,9 +677,12 @@ final class TerminalControlService {
         let cmds = PersistentHistoryStore.shared
             .frequentCommandsForRepo(repoRoot: repoPath, limit: limit)
         let result = cmds.map { cmd in
-            ["command": cmd.command, "count": cmd.count,
-             "last_used": ISO8601DateFormatter().string(from: cmd.lastUsed),
-             "frecency_score": cmd.frecencyScore] as [String: Any]
+            [
+                "command": cmd.command,
+                "count": cmd.count,
+                "last_used": ISO8601DateFormatter().string(from: cmd.lastUsed),
+                "frecency_score": cmd.frecencyScore
+            ] as [String: Any]
         }
         return encodeAny(result)
     }

@@ -42,7 +42,7 @@ final class RepositoryModel: ObservableObject, Identifiable {
         let root = rootPath
         Self.gitQueue.async { [weak self] in
             guard let self else { return }
-            self.refreshWorkItem?.cancel()
+            refreshWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 let output = self?.gitRunner(["rev-parse", "--abbrev-ref", "HEAD"], root) ?? ""
                 let newBranch = output.isEmpty ? nil : output
@@ -53,8 +53,8 @@ final class RepositoryModel: ObservableObject, Identifiable {
                     }
                 }
             }
-            self.refreshWorkItem = work
-            Self.gitQueue.asyncAfter(deadline: .now() + self.refreshDelay, execute: work)
+            refreshWorkItem = work
+            Self.gitQueue.asyncAfter(deadline: .now() + refreshDelay, execute: work)
         }
     }
 

@@ -206,7 +206,6 @@ private struct TabHoverCardContent: View {
         }
     }
 
-    @ViewBuilder
     private var shellIntegrationRow: some View {
         HStack(spacing: 8) {
             Image(systemName: session.hasShellIntegration ? "checkmark.seal.fill" : "exclamationmark.triangle")
@@ -582,7 +581,7 @@ private struct TabHoverCardContent: View {
 
     private func formatTokens(_ count: Int) -> String {
         if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
-        if count >= 1_000 { return String(format: "%.0fK", Double(count) / 1_000) }
+        if count >= 1000 { return String(format: "%.0fK", Double(count) / 1000) }
         return "\(count)"
     }
 
