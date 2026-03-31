@@ -9,7 +9,7 @@ ROOT_DIR="$(ci_repo_root)"
 
 ci_note "Running full local CI for Chau7 from $ROOT_DIR"
 
-ci_require_cmd swift "Install Xcode or the Swift toolchain."
+SWIFT_BIN="$(ci_swift_bin)"
 ci_require_cmd swiftformat "Install SwiftFormat (for example: brew install swiftformat)."
 ci_require_cmd swiftlint "Install SwiftLint (for example: brew install swiftlint)."
 ci_require_cmd cargo "Install Rust via rustup."
@@ -18,8 +18,8 @@ ci_require_cmd npm "Install Node.js and npm."
 
 ci_run_in "Swift format check" "apps/chau7-macos" swiftformat Sources Tests --lint
 ci_run_in "Swift lint" "apps/chau7-macos" swiftlint lint --strict --quiet
-ci_run_in "Swift build" "apps/chau7-macos" swift build -Xswiftc -warnings-as-errors
-ci_run_in "Swift test" "apps/chau7-macos" swift test -Xswiftc -warnings-as-errors
+ci_run_in "Swift build" "apps/chau7-macos" "$SWIFT_BIN" build -Xswiftc -warnings-as-errors
+ci_run_in "Swift test" "apps/chau7-macos" "$SWIFT_BIN" test -Xswiftc -warnings-as-errors
 
 ci_run_in "Rust format check" "apps/chau7-macos/rust" cargo fmt --all --check
 ci_run_in "Rust clippy" "apps/chau7-macos/rust" cargo clippy --workspace --all-targets --all-features -- -D warnings

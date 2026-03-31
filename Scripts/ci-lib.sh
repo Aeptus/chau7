@@ -28,6 +28,14 @@ ci_require_cmd() {
   fi
 }
 
+ci_swift_bin() {
+  local swift_bin="/usr/bin/swift"
+  if [[ ! -x "$swift_bin" ]]; then
+    ci_fail "Expected Swift at $swift_bin. Install Xcode and try again."
+  fi
+  printf '%s\n' "$swift_bin"
+}
+
 ci_run_in() {
   local label="$1"
   local dir="$2"
