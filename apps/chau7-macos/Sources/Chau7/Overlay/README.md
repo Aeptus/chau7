@@ -1,26 +1,21 @@
 # Overlay
 
-Main overlay window, tab management model, fullscreen behavior, and titlebar styling.
-
-> **Design principle — backend-agnostic AI support.** Chau7 strives to treat every AI coding tool identically. Tab management and session display use `AIToolRegistry` for tool identity and `AIEvent` for the event pipeline — never hardcoding behavior for a specific AI backend.
+Tab bar model, views, and hover card — the core UI for managing terminal tabs.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `Chau7OverlayView.swift` | Primary SwiftUI overlay view with toolbar, tab strip, and terminal content |
-| `FullscreenToolbarController.swift` | Manages fullscreen presentation options and toolbar visibility |
-| `OverlayTabsModel.swift` | Core tab management model handling tab creation, switching, styling, and lifecycle |
-| `OverlayWindow.swift` | Custom NSWindow subclass with fullscreen support and key/main handling |
-| `TitlebarBackgroundInstaller.swift` | Installs a vibrancy effect behind the native titlebar |
+| `OverlayTabsModel.swift` | Central model: tab lifecycle, selection, persistence, grouping, notifications |
+| `OverlayTabsModel+SessionFinder.swift` | AI resume resolution, Codex session matching, provider-specific finders |
+| `OverlayTabsModel+TabSwitchOptimization.swift` | Pre-warm on hover, snapshot capture, render state caching |
+| `Chau7OverlayView.swift` | Tab bar SwiftUI views: segments, buttons, brackets, drag/drop, hit testing |
+| `TabHoverCard.swift` | Hover card: AI session summary, conflicts, process info, notification state |
 
-## Key Types
+## Architecture
 
-- `OverlayTabsModel` — main ObservableObject managing all terminal tabs, sessions, and notification styles
-- `OverlayWindow` — NSWindow subclass configured for fullscreen with collection behaviors
-- `FullscreenToolbarController` — handles fullscreen transitions and toolbar auto-hide behavior
+`OverlayTabsModel` is an `ObservableObject` with `@Published var tabs: [OverlayTab]`.
+Each `OverlayTab` is a struct (Equatable by id + key fields) wrapping a `SplitPaneController`.
+The tab bar is rendered via `ToolbarTabBarView` in an `NSToolbarItem` host.
 
-## Dependencies
-
-- **Uses:** Terminal, Settings, Appearance, Commands, Keyboard, Snippets, Notifications, Monitoring, AI, SplitPanes, Remote
-- **Used by:** App, Debug, StatusBar
+Extension files split the model by feature domain — same class, separate files.

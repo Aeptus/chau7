@@ -1,25 +1,27 @@
 # Notifications
 
-Notification delivery, tab routing, action execution, and trigger localization.
-
-> **Design principle — backend-agnostic AI support.** Chau7 strives to treat every AI coding tool identically. The notification and tab-routing pipeline never references specific AI tools by name. `TabResolver` derives all tool aliases from `AIToolRegistry` and dispatches CWD-based lookups through a closure registry populated by tool monitors at startup. Adding a new AI backend requires zero changes here.
+Event-driven notification pipeline: detection → evaluation → actions.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `TabResolver.swift` | Stateless, tool-agnostic tab routing: resolves which tab an `AIEvent` should target via 4 fallback tiers (brand → title → deep scan → registered CWD resolver) |
-| `NotificationActionExecutor.swift` | Executes notification actions (focus tab, set badge, run snippet, style tab) |
-| `NotificationManager.swift` | Manages UNUserNotificationCenter authorization and notification delivery |
-| `NotificationTriggerLocalization.swift` | Localization extensions for notification trigger labels and descriptions |
+| `NotificationManager.swift` | Central manager: coalescing, pipeline evaluation, native notification dispatch |
+| `NotificationPipeline.swift` | Decision engine: trigger matching, condition evaluation, action binding |
+| `NotificationActionExecutor.swift` | Action runner: show notification, play sound, dock bounce, style tab |
+| `TabResolver.swift` | 5-tier tab resolution: exact ID → session ID → brand → title → CWD fallback |
 
-## Key Types
+## Event Flow
 
-- `TabResolver` — caseless enum with stateless static methods for tab routing. Tool monitors register CWD resolvers via `registerCWDResolver(forProviderKey:resolver:)` — TabResolver itself has no knowledge of specific tools.
-- `NotificationManager` — singleton handling native notification delivery with authorization tracking
-- `NotificationActionExecutor` — singleton executing actions from notification triggers (focus, badge, style)
+```
+Source (shell/AI/hooks) → AIEvent → NotificationManager.notify()
+  → enqueue + coalesce (0.25s window)
+  → NotificationPipeline.evaluate() → Decision (.drop / .fireDefault / .fireActions)
+  → NotificationActionExecutor → native notification + tab styling + sound + dock bounce
+```
 
-## Dependencies
+## Key Patterns
 
-- **Uses:** Logging, Settings, Localization, Snippets, Chau7Core (AIToolRegistry, AIResumeParser)
-- **Used by:** App, Overlay, Monitoring, Settings/Views
+- All resolvers search ALL windows via `TerminalControlService.allTabs`
+- `onlyWhenTabInactive` (default) suppresses notifications for the selected tab
+- Tab styles have 30s auto-clear; `.persistent` styles require manual clearing
