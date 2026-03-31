@@ -212,20 +212,21 @@ private struct AINotificationOverviewSection: View {
     }
 
     private func enabledBinding(for event: AINotificationPrimaryEvent) -> Binding<Bool> {
-        let info = NotificationTriggerCatalog.groupTriggerInfos(for: aiGroup).first { $0.type == event.rawValue }
-        let defaultEnabled = info?.defaultEnabled ?? false
         return Binding(
             get: {
-                settings.notificationTriggerState.isGroupEnabled(
-                    groupId: aiGroup.id,
-                    type: event.rawValue,
-                    defaultEnabled: defaultEnabled
+                AINotificationSettingsBridge.isEffectivelyEnabled(
+                    for: event,
+                    state: settings.notificationTriggerState,
+                    group: aiGroup
                 )
             },
             set: { newValue in
-                var state = settings.notificationTriggerState
-                state.setGroupEnabled(newValue, groupId: aiGroup.id, type: event.rawValue)
-                settings.notificationTriggerState = state
+                settings.notificationTriggerState = AINotificationSettingsBridge.updatedStateForPrimaryToggle(
+                    settings.notificationTriggerState,
+                    event: event,
+                    enabled: newValue,
+                    group: aiGroup
+                )
             }
         )
     }
@@ -345,7 +346,6 @@ private struct AINotificationCard: View {
         .cornerRadius(10)
     }
 
-    @ViewBuilder
     private func overviewToggle(label: String, value: Bool, enabled: Bool, onChange: @escaping (Bool) -> Void) -> some View {
         Toggle(label, isOn: Binding(get: { value }, set: onChange))
             .toggleStyle(.checkbox)
