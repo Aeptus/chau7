@@ -166,6 +166,22 @@ final class NotificationManager {
             if didStyleTab { actions.append("styleTab") }
             history.record(event: event, triggerId: baseRateLimitKey, actionsExecuted: actions, wasRateLimited: false)
 
+        case .fireStyleOnly(let triggerId, let actions):
+            let baseRateLimitKey = triggerId ?? "unmatched.\(event.source.rawValue).\(event.tool.lowercased())"
+            let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: event)
+            guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
+                Log.info("Rate limited: \(rateLimitKey) for tool=\(event.tool)")
+                history.record(event: event, triggerId: baseRateLimitKey, actionsExecuted: [], wasRateLimited: true)
+                return
+            }
+            NotificationActionExecutor.shared.execute(actions: actions, for: event)
+            history.record(
+                event: event,
+                triggerId: baseRateLimitKey,
+                actionsExecuted: actions.filter(\.enabled).map(\.actionType.rawValue),
+                wasRateLimited: false
+            )
+
         case .fireActions(let triggerId, let actions):
             let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: triggerId, event: event)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
@@ -174,20 +190,22 @@ final class NotificationManager {
                 return
             }
             NotificationActionExecutor.shared.execute(actions: actions, for: event)
+            var executedActions = actions.filter(\.enabled).map(\.actionType.rawValue)
+            if let supplementalStyleAction = NotificationStylePlanner.supplementalStyleAction(
+                for: event,
+                from: actions
+            ) {
+                NotificationActionExecutor.shared.execute(actions: [supplementalStyleAction], for: event)
+                executedActions.append(NotificationActionType.styleTab.rawValue)
+            }
             history.record(
                 event: event,
                 triggerId: triggerId,
-                actionsExecuted: actions.filter(\.enabled).map(\.actionType.rawValue),
+                actionsExecuted: executedActions,
                 wasRateLimited: false
             )
         }
     }
-
-    // MARK: - Default Tab Styling
-
-    private static let defaultTabStyleTypes: Set = [
-        "finished", "error", "permission", "idle", "context_limit", "failed"
-    ]
 
     /// Applies a default tab style for attention-worthy events when no explicit
     /// `.styleTab` action is configured. This ensures tab visual feedback works
@@ -200,21 +218,7 @@ final class NotificationManager {
     /// Returns `true` if a style action was dispatched (for audit trail).
     @discardableResult
     private func applyDefaultTabStyle(for event: AIEvent) -> Bool {
-        guard Self.defaultTabStyleTypes.contains(event.type.lowercased()) else { return false }
-        let preset: String
-        switch event.type.lowercased() {
-        case "error", "failed", "context_limit":
-            preset = "error"
-        case "permission":
-            preset = "attention"
-        default:
-            preset = "waiting"
-        }
-        let action = NotificationActionConfig(
-            actionType: .styleTab,
-            enabled: true,
-            config: ["style": preset, "autoClearSeconds": "30"]
-        )
+        guard let action = NotificationStylePlanner.defaultStyleAction(for: event) else { return false }
         NotificationActionExecutor.shared.execute(actions: [action], for: event)
         return true
     }

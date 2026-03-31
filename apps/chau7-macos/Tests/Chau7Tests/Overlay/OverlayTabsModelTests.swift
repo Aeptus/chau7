@@ -210,7 +210,7 @@ final class OverlayTabsModelTests: XCTestCase {
 
     // MARK: - Notification Styling
 
-    func testApplyNotificationStyleDoesNotReportAppliedForSelectedTab() {
+    func testApplyNotificationStyleAppliesToSelectedTab() {
         let selectedTab = model.tabs[0]
 
         let resolved = model.applyNotificationStyle(
@@ -219,8 +219,8 @@ final class OverlayTabsModelTests: XCTestCase {
             config: [:]
         )
 
-        XCTAssertNil(resolved, "Selected tab styles should be suppressed so cooldown timers are not armed")
-        XCTAssertNil(model.tabs[0].notificationStyle)
+        XCTAssertEqual(resolved, selectedTab.id)
+        XCTAssertEqual(model.tabs[0].notificationStyle, .attention)
     }
 
     func testSetNotificationStyleForSessionFindsSecondarySplitSession() {
