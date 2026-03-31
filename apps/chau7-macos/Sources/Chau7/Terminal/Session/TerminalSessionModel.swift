@@ -20,7 +20,7 @@ enum CommandStatus: String {
 /// Model for a terminal session, managing shell state, search, and output capture.
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   Callbacks may arrive on background threads and dispatch to main via DispatchQueue.main.async.
-final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disable:this type_body_length
+final class TerminalSessionModel: NSObject, ObservableObject {
     private enum PendingTerminalAction {
         case text(String)
         case keyPress(TerminalKeyPress)
