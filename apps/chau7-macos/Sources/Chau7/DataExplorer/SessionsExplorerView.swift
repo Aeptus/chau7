@@ -29,7 +29,7 @@ struct SessionsExplorerView: View {
         let allRuns = TelemetryStore.shared.listRuns(filter: TelemetryRunFilter(limit: 500))
         var byRepo: [String: [TelemetryRun]] = [:]
         for run in allRuns {
-            let key = run.repoPath ?? run.cwd ?? "Unknown"
+            let key = run.repoPath ?? (run.cwd.isEmpty ? "Unknown" : run.cwd)
             byRepo[key, default: []].append(run)
         }
         repoGroups = byRepo.map { path, runs in

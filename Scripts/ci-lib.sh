@@ -67,7 +67,8 @@ ci_should_run_for_paths() {
 ci_gofmt_check_dir() {
   local dir="$1"
   local label="$2"
-  mapfile -t files < <(find "$CI_REPO_ROOT/$dir" -type f -name '*.go' | sort)
+  local files=()
+  while IFS= read -r f; do files+=("$f"); done < <(find "$CI_REPO_ROOT/$dir" -type f -name '*.go' | sort)
   if [[ ${#files[@]} -eq 0 ]]; then
     return 0
   fi

@@ -5,12 +5,8 @@ import XCTest
 final class ConflictDetectorTests: XCTestCase {
     func testConflictsForTabFiltersCorrectly() {
         let detector = ConflictDetector.shared
-        let tab1 = UUID()
-        let tab2 = UUID()
-        let unrelatedTab = UUID()
-
-        // No conflicts by default for an unrelated tab
-        XCTAssertTrue(detector.conflictsForTab(unrelatedTab).isEmpty)
+        // No conflicts by default for any tab
+        XCTAssertTrue(detector.conflictsForTab(UUID()).isEmpty)
     }
 
     func testFileConflictEquality() {

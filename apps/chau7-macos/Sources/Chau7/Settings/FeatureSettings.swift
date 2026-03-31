@@ -2208,6 +2208,7 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Init
 
+    // swiftlint:disable:next function_body_length
     private init() {
         let defaults = UserDefaults.standard
         let home = RuntimeIsolation.homePath()

@@ -13,8 +13,8 @@ func TestTokenEstimator_EstimateTokens(t *testing.T) {
 		expected int
 	}{
 		{"empty", "", 0},
-		{"short", "hello", 1},                           // 5 chars / 4 = 1
-		{"medium", "hello world", 2},                    // 11 chars / 4 = 2
+		{"short", "hello", 1},                          // 5 chars / 4 = 1
+		{"medium", "hello world", 2},                   // 11 chars / 4 = 2
 		{"long", "This is a longer piece of text.", 7}, // 31 chars / 4 = 7 (period counts)
 	}
 

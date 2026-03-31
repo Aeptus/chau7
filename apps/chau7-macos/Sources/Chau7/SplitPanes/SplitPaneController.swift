@@ -824,14 +824,14 @@ final class DiffViewerModel: ObservableObject, Identifiable {
     private static func parseHunkHeader(_ header: String) -> (oldStart: Int, oldCount: Int, newStart: Int, newCount: Int) {
         // Format: @@ -oldStart[,oldCount] +newStart[,newCount] @@
         let scanner = Scanner(string: header)
-        scanner.scanString("@@")
-        scanner.scanString("-")
+        _ = scanner.scanString("@@")
+        _ = scanner.scanString("-")
         let oStart = scanner.scanInt() ?? 0
         var oCount = 1
         if scanner.scanString(",") != nil {
             oCount = scanner.scanInt() ?? 1
         }
-        scanner.scanString("+")
+        _ = scanner.scanString("+")
         let nStart = scanner.scanInt() ?? 0
         var nCount = 1
         if scanner.scanString(",") != nil {

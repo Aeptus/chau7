@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - File Preview Pane View
 
@@ -19,7 +20,12 @@ struct FilePreviewPaneView: View {
                     .foregroundStyle(.secondary)
 
                 if let path = preview.filePath {
-                    Image(nsImage: NSWorkspace.shared.icon(forFileType: (path as NSString).pathExtension))
+                    Image(nsImage: {
+                        if let contentType = UTType(filenameExtension: (path as NSString).pathExtension) {
+                            return NSWorkspace.shared.icon(for: contentType)
+                        }
+                        return NSWorkspace.shared.icon(for: .data)
+                    }())
                         .resizable()
                         .frame(width: 14, height: 14)
                 }
@@ -131,7 +137,7 @@ private struct ImagePreviewContent: View {
             let dark = Color(nsColor: NSColor.controlBackgroundColor.withAlphaComponent(0.85))
             for row in 0 ..< Int(size.height / tileSize) + 1 {
                 for col in 0 ..< Int(size.width / tileSize) + 1 {
-                    let isLight = (row + col) % 2 == 0
+                    let isLight = (row + col).isMultiple(of: 2)
                     let rect = CGRect(x: CGFloat(col) * tileSize, y: CGFloat(row) * tileSize, width: tileSize, height: tileSize)
                     context.fill(Path(rect), with: .color(isLight ? light : dark))
                 }
