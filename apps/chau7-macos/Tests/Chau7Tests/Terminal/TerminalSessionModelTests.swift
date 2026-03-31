@@ -479,6 +479,26 @@ final class TerminalSessionModelTests: XCTestCase {
         wait(for: [expectationDone], timeout: 1.0)
     }
 
+    func testPrefillInputTracksResumeMetadataImmediately() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.prefillInput("codex resume 019d25d0-d0bd-7501-99ba-1f937c17b29b")
+
+        XCTAssertEqual(session.effectiveAIProvider, "codex")
+        XCTAssertEqual(session.effectiveAISessionId, "019d25d0-d0bd-7501-99ba-1f937c17b29b")
+    }
+
+    func testQueuedInputTracksResumeMetadataBeforeAttach() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.sendOrQueueInput("claude --resume abc123\n")
+
+        XCTAssertEqual(session.effectiveAIProvider, "claude")
+        XCTAssertEqual(session.effectiveAISessionId, "abc123")
+    }
+
     func testPrefillInputWaitsForReadySessionState() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
