@@ -280,6 +280,29 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         true
     }
 
+    /// Closure-based menu item target. NSMenuItem needs an NSObject target for
+    /// action dispatch. This wrapper holds a closure and acts as the target,
+    /// bypassing the responder chain entirely. Essential for submenu items
+    /// inside NSToolbarItem-hosted views where the normal responder chain breaks.
+    private class MenuAction: NSObject {
+        let handler: () -> Void
+        init(_ handler: @escaping () -> Void) { self.handler = handler }
+        @objc func invoke(_ sender: Any?) { handler() }
+    }
+
+    /// Retained menu action targets (released when the menu closes).
+    private var menuActions: [MenuAction] = []
+
+    /// Create an NSMenuItem with a closure instead of target/action.
+    private func menuItem(title: String, handler: @escaping () -> Void) -> NSMenuItem {
+        let action = MenuAction(handler)
+        menuActions.append(action)
+        let item = NSMenuItem(title: title, action: #selector(MenuAction.invoke(_:)), keyEquivalent: "")
+        item.target = action
+        item.isEnabled = true
+        return item
+    }
+
     /// Reference to the overlay model for context menu actions.
     weak var tabsModel: OverlayTabsModel?
     /// Refresh window titles lazily on right-click (avoids expensive rebuild on every focus)
@@ -319,6 +342,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
     }
 
     private func buildTabContextMenu(for tab: OverlayTab, model: OverlayTabsModel) -> NSMenu {
+        menuActions.removeAll() // release previous closure targets
         let menu = NSMenu()
 
         let renameItem = NSMenuItem(title: "Rename Tab...", action: #selector(contextRenameTab(_:)), keyEquivalent: "")
@@ -333,26 +357,21 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         idleItem.representedObject = tab.id
         menu.addItem(idleItem)
 
-        // "Move to Window" submenu — always shows "New Window", plus existing windows
-        // autoenablesItems must be false: NSMenu's auto-validation can't reach
-        // TabBarHostingView (inside NSToolbarItem) via the responder chain,
-        // silently disabling submenu items.
+        // "Move to Window" submenu — uses closure-based menu items because
+        // target/action dispatch can't reach NSHostingView inside NSToolbarItem.
         let windowSubmenu = NSMenu()
         windowSubmenu.autoenablesItems = false
-        let newWindowItem = NSMenuItem(title: "New Window", action: #selector(contextMoveToNewWindow(_:)), keyEquivalent: "")
-        newWindowItem.target = self
-        newWindowItem.representedObject = tab.id
-        newWindowItem.isEnabled = true
-        windowSubmenu.addItem(newWindowItem)
+        let tabID = tab.id
+        windowSubmenu.addItem(menuItem(title: "New Window") { [weak self] in
+            self?.tabsModel?.onMoveTabToWindow?(tabID, -1)
+        })
         if !model.otherWindowTitles.isEmpty {
             windowSubmenu.addItem(.separator())
             for window in model.otherWindowTitles {
-                let item = NSMenuItem(title: window.title, action: #selector(contextMoveToWindow(_:)), keyEquivalent: "")
-                item.target = self
-                item.tag = window.id
-                item.representedObject = tab.id
-                item.isEnabled = true
-                windowSubmenu.addItem(item)
+                let windowIndex = window.id
+                windowSubmenu.addItem(menuItem(title: window.title) { [weak self] in
+                    self?.tabsModel?.onMoveTabToWindow?(tabID, windowIndex)
+                })
             }
         }
         let windowMenuItem = NSMenuItem(title: "Move to Window", action: nil, keyEquivalent: "")
@@ -372,20 +391,16 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
                 // "Move Group to Window" submenu
                 let groupWindowSubmenu = NSMenu()
                 groupWindowSubmenu.autoenablesItems = false
-                let groupNewWindowItem = NSMenuItem(title: "New Window", action: #selector(contextMoveGroupToNewWindow(_:)), keyEquivalent: "")
-                groupNewWindowItem.target = self
-                groupNewWindowItem.representedObject = groupID
-                groupNewWindowItem.isEnabled = true
-                groupWindowSubmenu.addItem(groupNewWindowItem)
+                groupWindowSubmenu.addItem(menuItem(title: "New Window") { [weak self] in
+                    self?.tabsModel?.onMoveGroupToWindow?(groupID, -1)
+                })
                 if !model.otherWindowTitles.isEmpty {
                     groupWindowSubmenu.addItem(.separator())
                     for window in model.otherWindowTitles {
-                        let item = NSMenuItem(title: window.title, action: #selector(contextMoveGroupToWindow(_:)), keyEquivalent: "")
-                        item.target = self
-                        item.tag = window.id
-                        item.representedObject = groupID
-                        item.isEnabled = true
-                        groupWindowSubmenu.addItem(item)
+                        let windowIndex = window.id
+                        groupWindowSubmenu.addItem(menuItem(title: window.title) { [weak self] in
+                            self?.tabsModel?.onMoveGroupToWindow?(groupID, windowIndex)
+                        })
                     }
                 }
                 let groupWindowMenuItem = NSMenuItem(title: "Move Group to Window", action: nil, keyEquivalent: "")
@@ -505,42 +520,10 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         tabsModel?.forceTabIdle(id: tabID)
     }
 
-    @objc func contextMoveToWindow(_ sender: NSMenuItem) {
-        guard let tabID = sender.representedObject as? UUID else { return }
-        tabsModel?.onMoveTabToWindow?(tabID, sender.tag)
-    }
-
-    @objc func contextMoveToNewWindow(_ sender: NSMenuItem) {
-        guard let tabID = sender.representedObject as? UUID else { return }
-        // Use tag -1 to signal "create new window" to AppDelegate
-        tabsModel?.onMoveTabToWindow?(tabID, -1)
-    }
-
-    @objc func contextMoveGroupToWindow(_ sender: NSMenuItem) {
-        guard let groupID = sender.representedObject as? String else {
-            Log.warn("contextMoveGroupToWindow: representedObject is not String: \(String(describing: sender.representedObject))")
-            return
-        }
-        guard let callback = tabsModel?.onMoveGroupToWindow else {
-            Log.warn("contextMoveGroupToWindow: tabsModel or onMoveGroupToWindow is nil")
-            return
-        }
-        Log.info("contextMoveGroupToWindow: groupID=\(groupID) targetWindow=\(sender.tag)")
-        callback(groupID, sender.tag)
-    }
-
-    @objc func contextMoveGroupToNewWindow(_ sender: NSMenuItem) {
-        guard let groupID = sender.representedObject as? String else {
-            Log.warn("contextMoveGroupToNewWindow: representedObject is not String: \(String(describing: sender.representedObject))")
-            return
-        }
-        guard let callback = tabsModel?.onMoveGroupToWindow else {
-            Log.warn("contextMoveGroupToNewWindow: tabsModel or onMoveGroupToWindow is nil")
-            return
-        }
-        Log.info("contextMoveGroupToNewWindow: groupID=\(groupID)")
-        callback(groupID, -1)
-    }
+    // Move to Window and Move Group to Window actions are handled via
+    // closure-based MenuAction targets (see menuItem(title:handler:))
+    // because NSMenu action dispatch can't reach NSHostingView targets
+    // inside NSToolbarItem through the responder chain.
 
     @objc func contextCloseTab(_ sender: NSMenuItem) {
         guard let tabID = sender.representedObject as? UUID else { return }
