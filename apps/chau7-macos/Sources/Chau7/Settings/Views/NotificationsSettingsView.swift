@@ -4,12 +4,12 @@ import Chau7Core
 
 // MARK: - Notifications Settings
 
-/// Top-level notification settings view with segmented sub-navigation.
-/// Three tabs: Triggers (unified filter+action management), Thresholds, Monitoring.
+/// Top-level notification settings view with a simplified AI-first front door.
+/// Advanced trigger plumbing stays available, but no longer leads the screen.
 struct NotificationsSettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var selectedTab: NotificationTab = .triggers
+    @State private var selectedTab: NotificationTab = .overview
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -23,8 +23,10 @@ struct NotificationsSettingsView: View {
             .padding(.bottom, 4)
 
             switch selectedTab {
-            case .triggers:
-                TriggersTabView(model: model)
+            case .overview:
+                OverviewTabView(model: model, onOpenAdvanced: { selectedTab = .advanced })
+            case .advanced:
+                AdvancedTriggersTabView(model: model)
             case .thresholds:
                 EventDetectionThresholdsSection()
             case .behavior:
@@ -41,7 +43,8 @@ struct NotificationsSettingsView: View {
 // MARK: - Tab Enum
 
 private enum NotificationTab: String, CaseIterable {
-    case triggers
+    case overview
+    case advanced
     case thresholds
     case behavior
     case monitoring
@@ -49,7 +52,8 @@ private enum NotificationTab: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .triggers: return L("settings.notifications.tab.triggers", "Triggers")
+        case .overview: return L("settings.notifications.tab.overview", "AI Tools")
+        case .advanced: return L("settings.notifications.tab.advanced", "Advanced")
         case .thresholds: return L("settings.notifications.tab.thresholds", "Thresholds")
         case .behavior: return L("settings.notifications.tab.behavior", "Behavior")
         case .monitoring: return L("settings.notifications.tab.monitoring", "Monitoring")
@@ -58,21 +62,36 @@ private enum NotificationTab: String, CaseIterable {
     }
 }
 
-// MARK: - Triggers Tab (Status + Unified Triggers)
+// MARK: - Overview Tab
 
-private struct TriggersTabView: View {
+private struct OverviewTabView: View {
     @ObservedObject var model: AppModel
-    @ObservedObject private var settings = FeatureSettings.shared
+    let onOpenAdvanced: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Status & Permissions
             StatusPermissionsSection(model: model)
 
             Divider()
                 .padding(.vertical, 4)
 
-            // Unified Trigger Management
+            AINotificationOverviewSection(onOpenAdvanced: onOpenAdvanced)
+        }
+    }
+}
+
+// MARK: - Advanced Tab
+
+private struct AdvancedTriggersTabView: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            StatusPermissionsSection(model: model)
+
+            Divider()
+                .padding(.vertical, 4)
+
             UnifiedTriggerSection()
         }
     }
@@ -145,6 +164,199 @@ private struct StatusPermissionsSection: View {
                 ])
             }
         }
+    }
+}
+
+// MARK: - AI Overview
+
+private struct AINotificationOverviewSection: View {
+    @ObservedObject private var settings = FeatureSettings.shared
+    let onOpenAdvanced: () -> Void
+
+    private let aiGroup = NotificationTriggerCatalog.aiCodingGroup
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(L("settings.notifications.aiOverview", "AI Notification Essentials"), icon: "brain")
+
+            Text(L("settings.notifications.aiOverview.description", "Choose the only things AI tools should interrupt you for by default."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ForEach(AINotificationPrimaryEvent.allCases) { event in
+                AINotificationCard(
+                    event: event,
+                    isEnabled: enabledBinding(for: event),
+                    preference: preference(for: event),
+                    onUpdatePreference: { updatePreference($0, for: event) },
+                    overrideCount: perSourceOverrideCount(for: event)
+                )
+            }
+
+            SettingsHint(
+                icon: "slider.horizontal.3",
+                text: L(
+                    "settings.notifications.aiOverview.advancedHint",
+                    "Use Advanced for per-tool overrides, extra triggers, scripts, and event-source specific rules."
+                )
+            )
+
+            SettingsButtonRow(buttons: [
+                .init(
+                    title: L("settings.notifications.openAdvanced", "Open Advanced Rules"),
+                    icon: "slider.horizontal.3",
+                    action: onOpenAdvanced
+                )
+            ])
+        }
+    }
+
+    private func enabledBinding(for event: AINotificationPrimaryEvent) -> Binding<Bool> {
+        let info = NotificationTriggerCatalog.groupTriggerInfos(for: aiGroup).first { $0.type == event.rawValue }
+        let defaultEnabled = info?.defaultEnabled ?? false
+        return Binding(
+            get: {
+                settings.notificationTriggerState.isGroupEnabled(
+                    groupId: aiGroup.id,
+                    type: event.rawValue,
+                    defaultEnabled: defaultEnabled
+                )
+            },
+            set: { newValue in
+                var state = settings.notificationTriggerState
+                state.setGroupEnabled(newValue, groupId: aiGroup.id, type: event.rawValue)
+                settings.notificationTriggerState = state
+            }
+        )
+    }
+
+    private func preference(for event: AINotificationPrimaryEvent) -> AINotificationPrimaryPreference {
+        let triggerId = AINotificationSettingsBridge.groupTriggerId(for: event, group: aiGroup)
+        return AINotificationSettingsBridge.preference(
+            for: event,
+            currentActions: settings.groupActionBindings[triggerId] ?? [],
+            defaultActions: NotificationSettings.defaultGroupActionBindings[triggerId] ?? []
+        )
+    }
+
+    private func updatePreference(_ preference: AINotificationPrimaryPreference, for event: AINotificationPrimaryEvent) {
+        let triggerId = AINotificationSettingsBridge.groupTriggerId(for: event, group: aiGroup)
+        var bindings = settings.groupActionBindings
+        bindings[triggerId] = AINotificationSettingsBridge.updatedActions(
+            for: event,
+            preference: preference,
+            currentActions: bindings[triggerId] ?? [],
+            defaultActions: NotificationSettings.defaultGroupActionBindings[triggerId] ?? []
+        )
+        settings.groupActionBindings = bindings
+    }
+
+    private func perSourceOverrideCount(for event: AINotificationPrimaryEvent) -> Int {
+        NotificationTriggerCatalog.all.filter {
+            aiGroup.contains(source: $0.source)
+                && $0.type == event.rawValue
+                && settings.notificationTriggerState.hasPerTriggerOverride(for: $0)
+        }.count
+    }
+}
+
+private struct AINotificationCard: View {
+    let event: AINotificationPrimaryEvent
+    @Binding var isEnabled: Bool
+    let preference: AINotificationPrimaryPreference
+    let onUpdatePreference: (AINotificationPrimaryPreference) -> Void
+    let overrideCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Toggle("", isOn: $isEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(event.title)
+                        .font(.headline)
+                    Text(event.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if overrideCount > 0 {
+                    Text("\(overrideCount) override\(overrideCount == 1 ? "" : "s")")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.orange.opacity(0.12))
+                        .cornerRadius(5)
+                }
+            }
+
+            HStack(spacing: 18) {
+                overviewToggle(
+                    label: L("settings.notifications.primary.banner", "Banner"),
+                    value: preference.showNotification,
+                    enabled: isEnabled
+                ) { newValue in
+                    mutatePreference { $0.showNotification = newValue }
+                }
+
+                overviewToggle(
+                    label: L("settings.notifications.primary.highlight", "Highlight Tab"),
+                    value: preference.styleTab,
+                    enabled: isEnabled
+                ) { newValue in
+                    mutatePreference { $0.styleTab = newValue }
+                }
+
+                overviewToggle(
+                    label: L("settings.notifications.primary.sound", "Sound"),
+                    value: preference.playSound,
+                    enabled: isEnabled
+                ) { newValue in
+                    mutatePreference { $0.playSound = newValue }
+                }
+
+                overviewToggle(
+                    label: L("settings.notifications.primary.dockBounce", "Dock Bounce"),
+                    value: preference.dockBounce,
+                    enabled: isEnabled
+                ) { newValue in
+                    mutatePreference { $0.dockBounce = newValue }
+                }
+            }
+            .padding(.leading, 40)
+
+            if preference.hasAdditionalActions {
+                Text(L(
+                    "settings.notifications.primary.extraActions",
+                    "Advanced actions are attached to this event and will be preserved."
+                ))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 40)
+            }
+        }
+        .padding(14)
+        .background(Color.primary.opacity(0.035))
+        .cornerRadius(10)
+    }
+
+    @ViewBuilder
+    private func overviewToggle(label: String, value: Bool, enabled: Bool, onChange: @escaping (Bool) -> Void) -> some View {
+        Toggle(label, isOn: Binding(get: { value }, set: onChange))
+            .toggleStyle(.checkbox)
+            .font(.caption)
+            .disabled(!enabled)
+    }
+
+    private func mutatePreference(_ mutate: (inout AINotificationPrimaryPreference) -> Void) {
+        var updated = preference
+        mutate(&updated)
+        onUpdatePreference(updated)
     }
 }
 
