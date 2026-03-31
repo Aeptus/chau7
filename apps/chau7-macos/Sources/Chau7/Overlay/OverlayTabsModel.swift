@@ -1823,21 +1823,30 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                     lastOutputAt: nil
                 )
 
-                // Inject scrollback directly into the terminal grid buffer.
-                // This bypasses the shell entirely — no cat command in history,
-                // no temp files, no visible restore artifacts. The terminal's
-                // ANSI parser processes the content so colors/formatting are preserved.
+                // Restore scrollback via cat through the shell so the terminal re-renders
+                // content at the current column width (injectOutput doesn't reflow text).
+                // Leading space suppresses history in zsh/bash (HIST_IGNORE_SPACE).
+                var commands: [String] = []
                 if let scrollback = effectivePaneState.scrollbackContent,
-                   !scrollback.isEmpty {
-                    session.existingRustTerminalView?.injectOutput(scrollback + "\n")
+                   !scrollback.isEmpty,
+                   let data = scrollback.data(using: .utf8) {
+                    let tempFile = NSTemporaryDirectory() + "chau7_restore_\(restoreToken)_\(paneID.uuidString).txt"
+                    do {
+                        try data.write(to: URL(fileURLWithPath: tempFile))
+                        let escapedTemp = Self.shellSafeSingleQuote(tempFile)
+                        commands.append("cat \(escapedTemp) && rm -f \(escapedTemp)")
+                    } catch {
+                        Log.warn("Failed to write scrollback restore file: \(error)")
+                    }
                 }
 
-                // Restore working directory via shell. Leading space suppresses
-                // history recording in zsh (HIST_IGNORE_SPACE, default on) and
-                // bash (HISTCONTROL=ignorespace). The clear command hides the cd
-                // from the visible terminal so the user starts with a clean prompt.
                 if !effectivePaneState.directory.isEmpty {
-                    session.sendOrQueueInput(" cd \(Self.shellSafeSingleQuote(effectivePaneState.directory)) && clear\n")
+                    commands.append("cd \(Self.shellSafeSingleQuote(effectivePaneState.directory))")
+                }
+
+                if !commands.isEmpty {
+                    // Space prefix suppresses shell history; clear hides restore commands
+                    session.sendOrQueueInput(" \(commands.joined(separator: " && ")) && clear\n")
                 }
 
                 if let (resumePaneID, resumeCommand) = resumeTarget,
