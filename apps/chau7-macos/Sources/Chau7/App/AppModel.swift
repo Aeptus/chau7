@@ -827,6 +827,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     ) {
         // Sanitize message to remove escape sequences before logging/storing
         let sanitizedMessage = EscapeSequenceSanitizer.sanitizeForLogging(message)
+        let resolvedTabID = resolveTabID(toolName: tool, directory: directory, tabID: tabID, sessionID: sessionID)
         let event = AIEvent(
             source: source,
             type: type,
@@ -834,7 +835,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             message: sanitizedMessage,
             ts: DateFormatters.nowISO8601(),
             directory: directory,
-            tabID: tabID,
+            tabID: resolvedTabID,
             sessionID: sessionID
         )
         // Use trace level for high-frequency events, info for important ones
@@ -1040,6 +1041,12 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 message: event.message,
                 ts: DateFormatters.iso8601.string(from: event.timestamp),
                 directory: event.cwd.isEmpty ? nil : event.cwd,
+                tabID: self.resolveTabID(
+                    toolName: "Claude",
+                    directory: event.cwd.isEmpty ? nil : event.cwd,
+                    tabID: nil,
+                    sessionID: event.sessionId.isEmpty ? nil : event.sessionId
+                ),
                 sessionID: event.sessionId.isEmpty ? nil : event.sessionId
             )
             recentEvents.append(aiEvent)
@@ -1216,6 +1223,13 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
     /// Eagerly resolve which tab a history-monitor event belongs to.
     private func resolveTabForSession(toolName: String, sessionID: String, directory: String?) -> UUID? {
+        resolveTabID(toolName: toolName, directory: directory, tabID: nil, sessionID: sessionID)
+    }
+
+    private func resolveTabID(toolName: String, directory: String?, tabID: UUID?, sessionID: String?) -> UUID? {
+        if let tabID {
+            return tabID
+        }
         let target = TabTarget(tool: toolName, directory: directory, tabID: nil, sessionID: sessionID)
         return tabIDResolver?(target)
     }
@@ -1316,6 +1330,12 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         DispatchQueue.main.async { [weak self] in
             let directory = self?.historyEventDirectory(for: toolName, sessionID: entry.sessionId)
+            let tabID = self?.resolveTabID(
+                toolName: toolName,
+                directory: directory,
+                tabID: nil,
+                sessionID: entry.sessionId
+            )
             let event = AIEvent(
                 source: source,
                 type: "idle",
@@ -1323,6 +1343,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 message: message,
                 ts: DateFormatters.nowISO8601(),
                 directory: directory,
+                tabID: tabID,
                 sessionID: entry.sessionId
             )
             NotificationManager.shared.notify(for: event)
