@@ -1,12 +1,6 @@
 import Foundation
 import Chau7Core
 
-enum HistorySessionState: String {
-    case active
-    case idle
-    case closed
-}
-
 final class HistoryIdleMonitor {
     private let fileURL: URL
     private let idleSecondsProvider: () -> TimeInterval
