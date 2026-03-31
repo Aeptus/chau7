@@ -174,6 +174,15 @@ struct NotificationSettings: Equatable {
                 "borderStyle": "solid"
             ])
         ],
+        "ai_coding.failed": [
+            NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .playSound, enabled: true, config: ["sound": "Basso", "volume": "80"]),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
+            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
+                "style": "error",
+                "autoClearSeconds": "60"
+            ])
+        ],
         "ai_coding.permission": [
             NotificationActionConfig(actionType: .showNotification, enabled: true),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
@@ -205,7 +214,7 @@ struct NotificationSettings: Equatable {
 struct NotificationFilters: Codable, Equatable {
     var taskFinished = true
     var taskFailed = true
-    var needsValidation = true
+    var needsValidation = false
     var permissionRequest = true
     var toolComplete = false
     var sessionEnd = false
@@ -276,6 +285,17 @@ private extension FeatureSettings {
             ])
         ]
 
+        // Actions for "failed" triggers (task failed / errored)
+        let failedActions: [NotificationActionConfig] = [
+            NotificationActionConfig(actionType: .showNotification, enabled: true, config: [:]),
+            NotificationActionConfig(actionType: .playSound, enabled: true, config: ["sound": "Basso", "volume": "80"]),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
+            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
+                "style": "error",
+                "autoClearSeconds": "60"
+            ])
+        ]
+
         // Actions for "permission" triggers (needs user input)
         let permissionActions: [NotificationActionConfig] = [
             NotificationActionConfig(actionType: .showNotification, enabled: true, config: [:]),
@@ -310,10 +330,12 @@ private extension FeatureSettings {
         return [
             // Claude Code triggers
             "claude_code.finished": finishedActions,
+            "claude_code.failed": failedActions,
             "claude_code.permission": permissionActions,
             "claude_code.idle": idleActions,
             // Codex triggers
             "codex.finished": finishedActions,
+            "codex.failed": failedActions,
             "codex.permission": permissionActions,
             "codex.idle": idleActions,
             // App triggers
@@ -2301,6 +2323,12 @@ final class FeatureSettings: ObservableObject {
             loadedBindings = Self.defaultTriggerActionBindings()
         }
         var normalizedBindings = loadedBindings
+        if normalizedBindings["claude_code.failed"] == nil {
+            normalizedBindings["claude_code.failed"] = Self.defaultTriggerActionBindings()["claude_code.failed"]
+        }
+        if normalizedBindings["codex.failed"] == nil {
+            normalizedBindings["codex.failed"] = Self.defaultTriggerActionBindings()["codex.failed"]
+        }
         if normalizedBindings["claude_code.idle"] == nil {
             normalizedBindings["claude_code.idle"] = [NotificationActionConfig(actionType: .showNotification, enabled: true)]
         }
@@ -2333,6 +2361,9 @@ final class FeatureSettings: ObservableObject {
             loadedGroupActionBindings = NotificationSettings.defaultGroupActionBindings
         }
         var normalizedGroupActionBindings = loadedGroupActionBindings
+        if normalizedGroupActionBindings["ai_coding.failed"] == nil {
+            normalizedGroupActionBindings["ai_coding.failed"] = NotificationSettings.defaultGroupActionBindings["ai_coding.failed"]
+        }
         if normalizedGroupActionBindings["ai_coding.idle"] == nil {
             normalizedGroupActionBindings["ai_coding.idle"] = [NotificationActionConfig(actionType: .showNotification, enabled: true)]
         }

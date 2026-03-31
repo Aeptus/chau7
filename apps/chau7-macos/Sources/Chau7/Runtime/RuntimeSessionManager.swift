@@ -224,7 +224,7 @@ final class RuntimeSessionManager {
 
                 // Emit exit classification if not success
                 if result.exitReason != .success {
-                    let typeStr = result.exitReason == .contextLimit ? "context_limit" : "error"
+                    let typeStr = result.exitReason == .contextLimit ? "context_limit" : "failed"
                     emitNotification(session: session, type: typeStr, message: "Exit: \(result.exitReason.rawValue)")
                 }
             }

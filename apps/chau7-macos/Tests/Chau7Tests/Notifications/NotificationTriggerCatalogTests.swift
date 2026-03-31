@@ -366,10 +366,13 @@ final class NotificationTriggerCatalogTests: XCTestCase {
 
     func testDefaultUsedWhenNoOverrides() {
         let finishedTrigger = NotificationTriggerCatalog.trigger(source: .claudeCode, type: "finished")!
+        let failedTrigger = NotificationTriggerCatalog.trigger(source: .claudeCode, type: "failed")!
         let idleTrigger = NotificationTriggerCatalog.trigger(source: .claudeCode, type: "idle")!
         let state = NotificationTriggerState()
         // "finished" defaults to true
         XCTAssertTrue(state.isEnabled(for: finishedTrigger))
+        // "failed" defaults to true
+        XCTAssertTrue(state.isEnabled(for: failedTrigger))
         // "idle" defaults to false
         XCTAssertFalse(state.isEnabled(for: idleTrigger))
     }
@@ -493,5 +496,20 @@ final class NotificationTriggerCatalogTests: XCTestCase {
     func testHistoryMonitorFinishedIsEnabledByDefault() {
         let trigger = NotificationTriggerCatalog.trigger(source: .historyMonitor, type: "finished")!
         XCTAssertTrue(trigger.defaultEnabled, "historyMonitor.finished should be enabled by default for all AI tools")
+    }
+
+    func testAiFailedTriggerIsEnabledByDefault() {
+        let trigger = NotificationTriggerCatalog.trigger(source: .runtime, type: "failed")!
+        XCTAssertTrue(trigger.defaultEnabled, "AI failed triggers should be enabled by default")
+    }
+
+    func testEventsLogNoiseTriggersAreDisabledByDefault() {
+        let needsValidation = NotificationTriggerCatalog.trigger(source: .eventsLog, type: "needs_validation")!
+        let customNotification = NotificationTriggerCatalog.trigger(source: .eventsLog, type: "notification")!
+        let wildcard = NotificationTriggerCatalog.trigger(source: .eventsLog, type: "*")!
+
+        XCTAssertFalse(needsValidation.defaultEnabled)
+        XCTAssertFalse(customNotification.defaultEnabled)
+        XCTAssertFalse(wildcard.defaultEnabled)
     }
 }

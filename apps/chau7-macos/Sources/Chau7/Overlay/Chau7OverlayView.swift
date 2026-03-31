@@ -334,10 +334,15 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         menu.addItem(idleItem)
 
         // "Move to Window" submenu — always shows "New Window", plus existing windows
+        // autoenablesItems must be false: NSMenu's auto-validation can't reach
+        // TabBarHostingView (inside NSToolbarItem) via the responder chain,
+        // silently disabling submenu items.
         let windowSubmenu = NSMenu()
+        windowSubmenu.autoenablesItems = false
         let newWindowItem = NSMenuItem(title: "New Window", action: #selector(contextMoveToNewWindow(_:)), keyEquivalent: "")
         newWindowItem.target = self
         newWindowItem.representedObject = tab.id
+        newWindowItem.isEnabled = true
         windowSubmenu.addItem(newWindowItem)
         if !model.otherWindowTitles.isEmpty {
             windowSubmenu.addItem(.separator())
@@ -346,6 +351,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
                 item.target = self
                 item.tag = window.id
                 item.representedObject = tab.id
+                item.isEnabled = true
                 windowSubmenu.addItem(item)
             }
         }
@@ -365,9 +371,11 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
 
                 // "Move Group to Window" submenu
                 let groupWindowSubmenu = NSMenu()
+                groupWindowSubmenu.autoenablesItems = false
                 let groupNewWindowItem = NSMenuItem(title: "New Window", action: #selector(contextMoveGroupToNewWindow(_:)), keyEquivalent: "")
                 groupNewWindowItem.target = self
                 groupNewWindowItem.representedObject = groupID
+                groupNewWindowItem.isEnabled = true
                 groupWindowSubmenu.addItem(groupNewWindowItem)
                 if !model.otherWindowTitles.isEmpty {
                     groupWindowSubmenu.addItem(.separator())
@@ -376,6 +384,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
                         item.target = self
                         item.tag = window.id
                         item.representedObject = groupID
+                        item.isEnabled = true
                         groupWindowSubmenu.addItem(item)
                     }
                 }
@@ -508,13 +517,29 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
     }
 
     @objc func contextMoveGroupToWindow(_ sender: NSMenuItem) {
-        guard let groupID = sender.representedObject as? String else { return }
-        tabsModel?.onMoveGroupToWindow?(groupID, sender.tag)
+        guard let groupID = sender.representedObject as? String else {
+            Log.warn("contextMoveGroupToWindow: representedObject is not String: \(String(describing: sender.representedObject))")
+            return
+        }
+        guard let callback = tabsModel?.onMoveGroupToWindow else {
+            Log.warn("contextMoveGroupToWindow: tabsModel or onMoveGroupToWindow is nil")
+            return
+        }
+        Log.info("contextMoveGroupToWindow: groupID=\(groupID) targetWindow=\(sender.tag)")
+        callback(groupID, sender.tag)
     }
 
     @objc func contextMoveGroupToNewWindow(_ sender: NSMenuItem) {
-        guard let groupID = sender.representedObject as? String else { return }
-        tabsModel?.onMoveGroupToWindow?(groupID, -1)
+        guard let groupID = sender.representedObject as? String else {
+            Log.warn("contextMoveGroupToNewWindow: representedObject is not String: \(String(describing: sender.representedObject))")
+            return
+        }
+        guard let callback = tabsModel?.onMoveGroupToWindow else {
+            Log.warn("contextMoveGroupToNewWindow: tabsModel or onMoveGroupToWindow is nil")
+            return
+        }
+        Log.info("contextMoveGroupToNewWindow: groupID=\(groupID)")
+        callback(groupID, -1)
     }
 
     @objc func contextCloseTab(_ sender: NSMenuItem) {

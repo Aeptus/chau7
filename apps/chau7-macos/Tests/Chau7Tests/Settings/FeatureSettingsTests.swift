@@ -34,6 +34,18 @@ final class FeatureSettingsTests: XCTestCase {
         XCTAssertLessThanOrEqual(settings.defaultZoomPercent, 200)
     }
 
+    func testNotificationFilterDefaultsOnlyEnableFinishedFailedAndPermission() {
+        let filters = NotificationFilters.defaults
+
+        XCTAssertTrue(filters.taskFinished)
+        XCTAssertTrue(filters.taskFailed)
+        XCTAssertTrue(filters.permissionRequest)
+        XCTAssertFalse(filters.needsValidation)
+        XCTAssertFalse(filters.toolComplete)
+        XCTAssertFalse(filters.sessionEnd)
+        XCTAssertFalse(filters.commandIdle)
+    }
+
     // MARK: - Color Scheme Defaults
 
     func testDefaultColorSchemeName() {
