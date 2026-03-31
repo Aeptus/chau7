@@ -434,7 +434,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
 
     let semanticDetector = SemanticOutputDetector()
     let devServerMonitor = DevServerMonitor()
-    private let processResourceMonitor = ProcessResourceMonitor()
+    let processResourceMonitor = ProcessResourceMonitor()
     lazy var shellEventDetector = ShellEventDetector(appModel: appModel)
     private let gitDiffTracker = GitDiffTracker()
     static let osc7Prefix = Data([0x1B, 0x5D, 0x37, 0x3B])
@@ -538,26 +538,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
         forcedTerminationWorkItem?.cancel()
     }
 
-    // MARK: - Process Resource Monitoring (hover card)
-
-    func startProcessMonitoring() {
-        guard let rustView = rustTerminalView else { return }
-        let pid = rustView.shellPid
-        guard pid > 0 else {
-            processGroup = nil
-            return
-        }
-        processGroup = nil // Clear stale data from a previous hover
-        processResourceMonitor.onUpdate = { [weak self] snapshot in
-            DispatchQueue.main.async { self?.processGroup = snapshot }
-        }
-        processResourceMonitor.start(shellPID: pid)
-    }
-
-    func stopProcessMonitoring() {
-        processResourceMonitor.stop()
-        processGroup = nil
-    }
+    // Process monitoring methods moved to TerminalSessionModel+ProcessMonitor.swift
 
     /// Returns the existing Rust terminal view if one exists
     var existingRustTerminalView: RustTerminalView? {
