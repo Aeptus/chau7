@@ -392,9 +392,9 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     @Published var isTerminalReady = true
     /// Generation counter for isTerminalReady — prevents stale asyncAfter
     /// callbacks from clobbering the state after rapid tab switches.
-    private var terminalReadyGeneration: UInt64 = 0
+    var terminalReadyGeneration: UInt64 = 0
     /// Set of tab IDs currently being pre-warmed (on hover)
-    private var prewarmingTabIDs: Set<UUID> = []
+    var prewarmingTabIDs: Set<UUID> = []
 
     // MARK: - Tab Bar Recovery
 
@@ -410,26 +410,26 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     /// Last reported tab bar size (for visibility-based recovery)
     var lastReportedTabBarSize: CGSize = .zero
     /// Timestamp of last preference update from the view (for staleness detection)
-    private var lastPreferenceUpdateTime = Date()
+    var lastPreferenceUpdateTime = Date()
     /// How long without a preference update before considering the view stale
-    private let stalenessThreshold: TimeInterval = 20.0
-    private let refreshCooldown: TimeInterval = 10.0
-    private var lastForcedRefreshAt: Date = .distantPast
-    private var watchdogRecoveryCount = 0
-    private var watchdogSkipCount = 0
-    private var lastWatchdogSummaryAt = Date()
-    private var lastWatchdogReason = ""
+    let stalenessThreshold: TimeInterval = 20.0
+    let refreshCooldown: TimeInterval = 10.0
+    var lastForcedRefreshAt: Date = .distantPast
+    var watchdogRecoveryCount = 0
+    var watchdogSkipCount = 0
+    var lastWatchdogSummaryAt = Date()
+    var lastWatchdogReason = ""
     /// Timer for watchdog that checks tab bar health
-    private var tabBarWatchdogTimer: DispatchSourceTimer?
+    var tabBarWatchdogTimer: DispatchSourceTimer?
     /// Counter to limit consecutive watchdog refresh attempts
-    private var watchdogRefreshAttempts = 0
+    var watchdogRefreshAttempts = 0
     /// Minimum acceptable tab bar width per tab (for visibility detection)
-    private let minWidthPerTab: CGFloat = 30
+    let minWidthPerTab: CGFloat = 30
     /// Last reported tab bar frame in global coordinates for cross-window tab drops.
     var tabBarDropFrame: CGRect = .zero
     /// Tracks whether the tab bar is expected to be visible
-    private var isTabBarVisible = true
-    private var lastTabBarVisibilityLogAt: Date = .distantPast
+    var isTabBarVisible = true
+    var lastTabBarVisibilityLogAt: Date = .distantPast
 
     // F13: Broadcast Input
     @Published var isBroadcastMode = false
@@ -447,8 +447,8 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     // Hover Card
     @Published var hoverCardTabID: UUID?
     @Published var hoverCardAnchorX: CGFloat = 0
-    private var hoverCardTimer: DispatchWorkItem?
-    private var hoverCardDismissTimer: DispatchWorkItem?
+    var hoverCardTimer: DispatchWorkItem?
+    var hoverCardDismissTimer: DispatchWorkItem?
 
     // Task Lifecycle (v1.1)
     @Published var currentCandidate: TaskCandidate?
@@ -457,48 +457,48 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     // Reopen Closed Tab (Cmd+Shift+T)
     /// LIFO stack of recently closed tabs (max 10, in-memory only)
-    private var closedTabStack: [ClosedTabEntry] = []
-    private let maxClosedTabs = 10
+    var closedTabStack: [ClosedTabEntry] = []
+    let maxClosedTabs = 10
 
     /// Whether there are any closed tabs available to reopen
     var canReopenClosedTab: Bool {
         !closedTabStack.isEmpty
     }
 
-    private var taskCancellables: Set<AnyCancellable> = []
-    private var repoGroupCancellables: [UUID: AnyCancellable] = [:]
-    private var repoGroupModeCancellable: AnyCancellable?
-    private var renameTabID: UUID?
-    private var renameOriginalTitle = ""
-    private var renameOriginalColor: TabColor = .blue
-    private var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
-    private var liveRenderExemptTabIDs: Set<UUID> = []
+    var taskCancellables: Set<AnyCancellable> = []
+    var repoGroupCancellables: [UUID: AnyCancellable] = [:]
+    var repoGroupModeCancellable: AnyCancellable?
+    var renameTabID: UUID?
+    var renameOriginalTitle = ""
+    var renameOriginalColor: TabColor = .blue
+    var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
+    var liveRenderExemptTabIDs: Set<UUID> = []
     /// Per-pane token for restore-time resume prefills.
     /// Prevents stale delayed retries from writing outdated commands.
     var latestRestoreResumeTokenByPaneID: [UUID: String] = [:]
-    private var isRenderSuspensionEnabled = false
+    var isRenderSuspensionEnabled = false
     // Reduced from 5.0s to 2.0s — combined with CVDisplayLink pausing, this
     // means background tabs stop rendering 3 seconds sooner, saving significant CPU.
-    private var renderSuspensionDelay: TimeInterval = 5.0
-    private var needsFreshTabOnShow = false
-    private var isDiagnosticsLoggingEnabled = false
+    var renderSuspensionDelay: TimeInterval = 5.0
+    var needsFreshTabOnShow = false
+    var isDiagnosticsLoggingEnabled = false
     // Auto-save timer moved to AppDelegate for coordinated multi-window saves.
     /// Last archived snapshot fingerprint to avoid writing duplicate archive files.
     var lastArchivedTabStateFingerprint: Int?
     /// Minimum time between archived snapshots unless we're terminating.
     var lastArchivedTabStateAt: Date = .distantPast
     /// CTO notification observer tokens (stored for cleanup in deinit)
-    private var ctoModeObserver: NSObjectProtocol?
-    private var ctoFlagObserver: NSObjectProtocol?
-    private var renderSuspensionObserver: NSObjectProtocol?
-    private var persistentStyleObserver: NSObjectProtocol?
-    private var suspensionDebounceItem: DispatchWorkItem?
-    private var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
+    var ctoModeObserver: NSObjectProtocol?
+    var ctoFlagObserver: NSObjectProtocol?
+    var renderSuspensionObserver: NSObjectProtocol?
+    var persistentStyleObserver: NSObjectProtocol?
+    var suspensionDebounceItem: DispatchWorkItem?
+    var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
 
     weak var overlayWindow: NSWindow?
     var onCloseLastTab: (() -> Void)?
 
-    private let appModel: AppModel
+    let appModel: AppModel
     struct RestorableTabsPayload {
         let tabs: [OverlayTab]
         let selectedID: UUID
@@ -717,7 +717,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     /// Captures a snapshot of a tab about to be closed and pushes it onto the
     /// closed-tab stack. Must be called BEFORE `closeAllSessions()` kills the shell,
     /// because we need the live scrollback buffer and active app name.
-    private func captureClosedTabSnapshot(tab: OverlayTab, at index: Int) {
+    func captureClosedTabSnapshot(tab: OverlayTab, at index: Int) {
         let maxLines = FeatureSettings.shared.restoredScrollbackLines
         let terminalSessions = tab.splitController.terminalSessions
 
@@ -786,7 +786,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         Log.info("Captured closed tab snapshot: \"\(tab.displayTitle)\" at index \(index) (stack size: \(closedTabStack.count))")
     }
 
-    private func resolveResumeMetadata(
+    func resolveResumeMetadata(
         for session: TerminalSessionModel,
         directory: String,
         outputHint: String?,
@@ -921,11 +921,11 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         return (provider: resolvedProvider, sessionId: resolvedSessionId)
     }
 
-    private static func normalizedResumeReferenceDate(_ value: Date) -> Date? {
+    static func normalizedResumeReferenceDate(_ value: Date) -> Date? {
         return value == .distantPast ? nil : value
     }
 
-    private static func normalizedResumeReferenceDate(_ value: Date?) -> Date? {
+    static func normalizedResumeReferenceDate(_ value: Date?) -> Date? {
         guard let value else { return nil }
         return value == .distantPast ? nil : value
     }
@@ -981,7 +981,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         return nil
     }
 
-    private static func aiResumeProviderCandidates(
+    static func aiResumeProviderCandidates(
         appName: String?,
         outputHint: String?,
         explicitProvider: String?
@@ -1015,7 +1015,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         return providers
     }
 
-    private static func resolvedAIResumeMetadata(
+    static func resolvedAIResumeMetadata(
         provider: String?,
         sessionId: String?,
         directory: String,
@@ -1122,7 +1122,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     // MARK: - Tab Switch Optimization: Snapshot Capture
 
     /// Captures a screenshot of the current terminal view for instant display during tab switch
-    private func captureCurrentTabSnapshot() {
+    func captureCurrentTabSnapshot() {
         guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else {
             return
         }
@@ -1163,7 +1163,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     }
 
     /// Clears cached snapshots for tabs far from the current position to limit memory usage
-    private func cleanupDistantSnapshots(currentIndex: Int) {
+    func cleanupDistantSnapshots(currentIndex: Int) {
         for i in 0 ..< tabs.count {
             if abs(i - currentIndex) > 2 {
                 tabs[i].cachedSnapshot = nil
@@ -1171,728 +1171,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
     }
 
-    // MARK: - Tab Switch Optimization: Pre-warm on Hover
-
-    /// Pre-warms a tab by canceling its suspension early (called on hover)
-    /// This gives the terminal time to update before the user clicks
-    func prewarmTab(id: UUID) {
-        guard id != selectedTabID else { return }
-        guard !prewarmingTabIDs.contains(id) else { return }
-
-        prewarmingTabIDs.insert(id)
-        cancelSuspension(for: id)
-        suspendedTabIDs.remove(id)
-
-        Log.trace("Pre-warming tab \(id) on hover")
-
-        // Clear prewarm state after a delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            self?.prewarmingTabIDs.remove(id)
-        }
-    }
-
-    /// Called when hover exits a tab - re-schedules suspension if not selected
-    func cancelPrewarm(id: UUID) {
-        guard id != selectedTabID else { return }
-        prewarmingTabIDs.remove(id)
-
-        // Re-schedule suspension after a short delay if still not selected
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self, id != selectedTabID else { return }
-            scheduleSuspension(for: id)
-        }
-    }
-
-    func newTab(selectNewTab: Bool = true) {
-        dispatchPrecondition(condition: .onQueue(.main))
-        Log.trace("newTab: creating new tab, current tabs.count=\(tabs.count)")
-        needsFreshTabOnShow = false
-        var tab = OverlayTab(appModel: appModel)
-        let colors = TabColor.allCases
-        if !colors.isEmpty {
-            tab.color = colors[tabs.count % colors.count]
-        }
-        tab.stampOwnerTabID()
-        if let directory = inheritedStartDirectory() {
-            tab.session?.updateCurrentDirectory(directory)
-        }
-        let inheritedRepoGroupID = selectedTab?.repoGroupID
-        tab.repoGroupID = inheritedRepoGroupID
-
-        let insertIndex = insertionIndexForNewTab(inheritingRepoGroupID: inheritedRepoGroupID)
-        tabs.insert(tab, at: insertIndex)
-        Log.trace("newTab: inserted at index \(insertIndex), tabs.count=\(tabs.count), inheritedRepoGroupID=\(inheritedRepoGroupID ?? "nil")")
-
-        // Set up repo grouping for the new tab
-        setupRepoGroupingForTab(tab)
-
-        // Reset rendered count so the watchdog doesn't see a stale count vs new expected
-        lastReportedRenderedCount = -1
-        lastPreferenceUpdateTime = Date()
-
-        if selectNewTab {
-            selectedTabID = tab.id
-            Log.trace("newTab: selectedTabID=\(tab.id)")
-            focusSelected()
-            updateSnippetContextForSelection()
-        } else {
-            tab.session?.setAutoFocusOnAttach(false)
-            Log.trace("newTab: created background tab \(tab.id)")
-        }
-        updateSuspensionState()
-        if isSearchVisible {
-            refreshSearch()
-        }
-
-        // CTO: defer flag file creation until first prompt to avoid optimizer
-        // overhead during shell init scripts (NVM, compinit, etc.).
-        tab.session?.markCTOFlagDeferred(mode: FeatureSettings.shared.tokenOptimizationMode)
-
-        // Emit tab_opened event if enabled
-        if FeatureSettings.shared.appEventConfig.notifyOnTabOpen {
-            appModel.recordEvent(
-                source: .app,
-                type: "tab_opened",
-                tool: "App",
-                message: "New tab opened (total: \(tabs.count))",
-                notify: true
-            )
-        }
-    }
-
-    func newTab(at directory: String, selectNewTab: Bool = true) {
-        needsFreshTabOnShow = false
-        var tab = OverlayTab(appModel: appModel)
-        let colors = TabColor.allCases
-        if !colors.isEmpty {
-            tab.color = colors[tabs.count % colors.count]
-        }
-        tab.stampOwnerTabID()
-
-        // Set the starting directory for the new tab (triggers git status refresh)
-        tab.session?.updateCurrentDirectory(directory)
-        tab.session?.markCTOFlagDeferred(mode: FeatureSettings.shared.tokenOptimizationMode)
-        let inheritedRepoGroupID = selectedTab?.repoGroupID
-        tab.repoGroupID = inheritedRepoGroupID
-
-        let insertIndex = insertionIndexForNewTab(inheritingRepoGroupID: inheritedRepoGroupID)
-        tabs.insert(tab, at: insertIndex)
-
-        if selectNewTab {
-            selectedTabID = tab.id
-            focusSelected()
-            updateSnippetContextForSelection()
-        } else {
-            tab.session?.setAutoFocusOnAttach(false)
-            Log.trace("newTab(at:): created background tab \(tab.id) at \(directory)")
-        }
-        updateSuspensionState()
-        if isSearchVisible {
-            refreshSearch()
-        }
-
-        // Emit tab_opened event if enabled
-        if FeatureSettings.shared.appEventConfig.notifyOnTabOpen {
-            appModel.recordEvent(
-                source: .app,
-                type: "tab_opened",
-                tool: "App",
-                message: "New tab opened at \(directory) (total: \(tabs.count))",
-                notify: true
-            )
-        }
-    }
-
-    func closeCurrentTab() {
-        Log.info("closeCurrentTab called. selectedTabID=\(selectedTabID), tabs.count=\(tabs.count)")
-        closeTab(id: selectedTabID)
-    }
-
-    /// Check if a tab has any running process (not idle or exited)
-    /// Returns the count of running processes across all split panes
-    private func countRunningProcesses(in tab: OverlayTab) -> Int {
-        var count = 0
-        for session in tab.splitController.root.allSessions {
-            switch session.status {
-            case .running, .waitingForInput, .stuck:
-                count += 1
-            case .idle, .exited:
-                continue
-            }
-        }
-        return count
-    }
-
-    /// Show confirmation dialog before closing tab. Returns true if user confirms.
-    /// - Parameters:
-    ///   - runningProcessCount: Number of running processes in the tab
-    ///   - isLastTab: Whether this is the last tab (will be replaced, not closed)
-    ///   - willCloseWindow: Whether closing will close the window entirely
-    ///   - isAlwaysWarnMode: Whether we're warning due to "always warn" setting (shows suppression option)
-    /// Ask the user whether to also close the window when closing the last tab.
-    /// Returns true if the user wants to close the window.
-    private func confirmCloseLastTab() -> Bool {
-        let alert = NSAlert()
-        alert.messageText = L("alert.closeLastTab.title", "This is the last tab")
-        alert.informativeText = L("alert.closeLastTab.message", "Do you want to close the window, or keep it open with a new tab?")
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: L("alert.closeLastTab.closeWindow", "Close Window"))
-        alert.addButton(withTitle: L("alert.closeLastTab.newTab", "New Tab"))
-        return alert.runModal() == .alertFirstButtonReturn
-    }
-
-    private func confirmTabClose(
-        runningProcessCount: Int,
-        isLastTab: Bool,
-        willCloseWindow: Bool,
-        isAlwaysWarnMode: Bool
-    ) -> Bool {
-        let alert = NSAlert()
-        let hasRunningProcess = runningProcessCount > 0
-
-        if hasRunningProcess {
-            // Title based on process count
-            if runningProcessCount == 1 {
-                alert.messageText = L("alert.closeTab.runningProcess.title", "Close tab with running process?")
-            } else {
-                alert.messageText = L("alert.closeTab.runningProcesses.title", "Close tab with \(runningProcessCount) running processes?")
-            }
-
-            // Message based on what will happen
-            if isLastTab, !willCloseWindow {
-                // Last tab with keepWindow behavior - tab is replaced
-                if runningProcessCount == 1 {
-                    alert.informativeText = L(
-                        "alert.closeTab.runningProcess.replace.message",
-                        "This tab has a running process. The process will be terminated and a new tab will open."
-                    )
-                } else {
-                    alert.informativeText = L(
-                        "alert.closeTab.runningProcesses.replace.message",
-                        "This tab has \(runningProcessCount) running processes. All processes will be terminated and a new tab will open."
-                    )
-                }
-            } else if willCloseWindow {
-                // Last tab with closeWindow behavior
-                if runningProcessCount == 1 {
-                    alert.informativeText = L(
-                        "alert.closeTab.runningProcess.closeWindow.message",
-                        "This tab has a running process. The process will be terminated and the window will close."
-                    )
-                } else {
-                    alert.informativeText = L(
-                        "alert.closeTab.runningProcesses.closeWindow.message",
-                        "This tab has \(runningProcessCount) running processes. All processes will be terminated and the window will close."
-                    )
-                }
-            } else {
-                // Normal close (multiple tabs exist)
-                if runningProcessCount == 1 {
-                    alert.informativeText = L(
-                        "alert.closeTab.runningProcess.message",
-                        "This tab has a running process. Closing it will terminate the process."
-                    )
-                } else {
-                    alert.informativeText = L(
-                        "alert.closeTab.runningProcesses.message",
-                        "This tab has \(runningProcessCount) running processes. Closing it will terminate all processes."
-                    )
-                }
-            }
-        } else {
-            // No running process - only shown when "always warn" is enabled
-            alert.messageText = L("alert.closeTab.confirm.title", "Close this tab?")
-            if isLastTab, !willCloseWindow {
-                alert.informativeText = L(
-                    "alert.closeTab.confirm.replace.message",
-                    "This is the last tab. A new tab will be created."
-                )
-            } else if willCloseWindow {
-                alert.informativeText = L(
-                    "alert.closeTab.confirm.closeWindow.message",
-                    "This is the last tab. The window will be closed."
-                )
-            } else {
-                alert.informativeText = L(
-                    "alert.closeTab.confirm.message",
-                    "Are you sure you want to close this tab?"
-                )
-            }
-        }
-
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: L("button.closeTab", "Close Tab"))
-        alert.addButton(withTitle: L("button.cancel", "Cancel"))
-
-        // Show "Don't ask again" only for the "always warn" mode (not for running process warnings)
-        if isAlwaysWarnMode, !hasRunningProcess {
-            alert.showsSuppressionButton = true
-            alert.suppressionButton?.title = L("alert.closeTab.dontAskAgain", "Don't ask again")
-        }
-
-        let result = alert.runModal()
-
-        // If user checked "Don't ask again", disable the setting
-        if alert.suppressionButton?.state == .on {
-            FeatureSettings.shared.alwaysWarnOnTabClose = false
-        }
-
-        return result == .alertFirstButtonReturn
-    }
-
-    func closeTab(id: UUID, skipWarning: Bool = false) {
-        dispatchPrecondition(condition: .onQueue(.main))
-        dismissHoverCard()
-        Log.info("closeTab called with id=\(id). tabs.count=\(tabs.count)")
-        guard let initialIndex = tabs.firstIndex(where: { $0.id == id }) else {
-            Log.warn("closeTab: tab with id=\(id) not found!")
-            return
-        }
-
-        let tab = tabs[initialIndex]
-        let settings = FeatureSettings.shared
-        let runningProcessCount = countRunningProcesses(in: tab)
-        let hasRunningProcess = runningProcessCount > 0
-        let isLastTab = tabs.count == 1
-
-        // Handle last tab: prompt user or silently replace (skipWarning)
-        if isLastTab {
-            let closeWindow = skipWarning ? false : confirmCloseLastTab()
-            guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
-
-            // Clean up per-tab state before replacing
-            if let sessionID = tabs[idx].session?.tabIdentifier {
-                CommandHistoryManager.shared.removeTab(sessionID)
-                CTOFlagManager.removeFlag(sessionID: sessionID)
-                CTORuntimeMonitor.shared.untrackSession(sessionID)
-            }
-
-            let dir = inheritedStartDirectory()
-            tabs[idx].splitController.root.closeAllSessions()
-            if closeWindow {
-                Log.info("closeTab: last tab - user chose to close window")
-                tabs[idx] = makeFreshTab(inheritedDirectory: dir)
-                selectedTabID = tabs[idx].id
-                needsFreshTabOnShow = false
-                onCloseLastTab?()
-            } else {
-                Log.info("closeTab: last tab - replacing with fresh tab")
-                let newTab = makeFreshTab(inheritedDirectory: dir)
-                tabs[idx] = newTab
-                selectedTabID = newTab.id
-            }
-            return
-        }
-
-        // Non-last tabs: check if we need a warning dialog
-        let warnForProcess = settings.warnOnCloseWithRunningProcess && hasRunningProcess
-        let warnAlways = settings.alwaysWarnOnTabClose
-        let shouldWarn = !skipWarning && (warnForProcess || warnAlways)
-
-        if shouldWarn {
-            let confirmed = confirmTabClose(
-                runningProcessCount: runningProcessCount,
-                isLastTab: false,
-                willCloseWindow: false,
-                isAlwaysWarnMode: warnAlways && !warnForProcess
-            )
-            guard confirmed else {
-                Log.info("closeTab: user cancelled close for tab \(id)")
-                return
-            }
-        }
-
-        // Re-validate after modal: tabs may have changed while dialog was shown
-        guard let index = tabs.firstIndex(where: { $0.id == id }) else {
-            Log.warn("closeTab: tab \(id) no longer exists after confirmation dialog")
-            return
-        }
-        let isLastTabNow = tabs.count == 1
-
-        // inheritedDirectory not needed — last tab is handled in the early-return block above
-        Log.info("closeTab: found tab at index=\(index)")
-        if isRenameVisible {
-            clearRenameState(shouldFocus: false)
-        }
-
-        // Snapshot tab state BEFORE killing the shell (scrollback is gone after close).
-        // Use initialIndex (captured before the modal dialog) so reopening restores
-        // to the original position even if other tabs were closed while the dialog was open.
-        captureClosedTabSnapshot(tab: tabs[index], at: initialIndex)
-
-        // Clean up per-tab command history
-        if let sessionID = tabs[index].session?.tabIdentifier {
-            CommandHistoryManager.shared.removeTab(sessionID)
-            // CTO: remove flag file for closed tab
-            let hadCTOFlag = CTOFlagManager.removeFlag(sessionID: sessionID)
-            if hadCTOFlag,
-               let session = tabs[index].session {
-                let isAI = session.activeAppName != nil
-                CTORuntimeMonitor.shared.recordDecision(
-                    sessionID: sessionID,
-                    mode: FeatureSettings.shared.tokenOptimizationMode,
-                    override: tabs[index].tokenOptOverride,
-                    isAIActive: isAI,
-                    previousState: true,
-                    nextState: false,
-                    changed: true,
-                    reason: decisionReason(
-                        mode: FeatureSettings.shared.tokenOptimizationMode,
-                        override: tabs[index].tokenOptOverride,
-                        isAIActive: isAI
-                    )
-                )
-            }
-            CTORuntimeMonitor.shared.untrackSession(sessionID)
-        }
-
-        // Close all sessions in the split pane tree (not just primary)
-        tabs[index].splitController.root.closeAllSessions()
-
-        if isLastTabNow {
-            // Last tab was already handled above (early return with prompt)
-            Log.warn("closeTab: unexpected last-tab fallthrough")
-            return
-        } else {
-            // Multiple tabs - just remove this one
-            Log.info("closeTab: removing tab at index=\(index), tabs.count before=\(tabs.count)")
-            cleanupRepoGroupingForTab(id)
-            tabs.remove(at: index)
-            // Reset the rendered count so the watchdog doesn't compare the stale
-            // pre-close count against the new (smaller) expected count.  The next
-            // preference update from the re-rendered tab bar will set it correctly.
-            lastReportedRenderedCount = -1
-            lastPreferenceUpdateTime = Date()
-            Log.info("closeTab: tabs.count after=\(tabs.count)")
-
-            if selectedTabID == id {
-                // Prefer the tab that was to the left (index - 1), falling back to index 0
-                let newIndex = min(max(0, index - 1), tabs.count - 1)
-                selectedTabID = tabs[newIndex].id
-                Log.info("closeTab: selected new tab at index=\(newIndex), id=\(selectedTabID)")
-            } else if !tabs.contains(where: { $0.id == selectedTabID }) {
-                // Safety: selectedTabID references a non-existent tab (should never happen, but recover)
-                Log.warn("closeTab: selectedTabID \(selectedTabID) not found in tabs — recovering")
-                selectedTabID = tabs[max(0, min(index, tabs.count - 1))].id
-            }
-
-            // Unsuspend the newly selected tab so its terminal view is available for focus
-            cancelSuspension(for: selectedTabID)
-            if suspendedTabIDs.remove(selectedTabID) != nil {
-                Log.info("closeTab: unsuspended newly selected tab \(selectedTabID)")
-            }
-        }
-
-        // Ensure terminal is visible (recover from stuck isTerminalReady=false)
-        isTerminalReady = true
-
-        focusSelected()
-
-        // Schedule a retry of focusSelected() after a short delay, in case the terminal
-        // view from an unsuspended tab hasn't been attached yet.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.focusSelected()
-        }
-        updateSuspensionState()
-        updateSnippetContextForSelection()
-        if isSearchVisible {
-            refreshSearch()
-        }
-
-        // Emit tab_closed event if enabled
-        if FeatureSettings.shared.appEventConfig.notifyOnTabClose {
-            appModel.recordEvent(
-                source: .app,
-                type: "tab_closed",
-                tool: "App",
-                message: "Tab closed (remaining: \(tabs.count))",
-                notify: true
-            )
-        }
-
-        Log.info("closeTab completed. tabs.count=\(tabs.count)")
-    }
-
-    func closeAllSessionsForTermination() {
-        dispatchPrecondition(condition: .onQueue(.main))
-        for tab in tabs {
-            for session in tab.splitController.root.allSessions {
-                session.closeSessionForTermination()
-            }
-        }
-    }
-
-    func closeOtherTabs() {
-        guard tabs.count > 1 else { return }
-        let currentID = selectedTabID
-        let otherTabs = tabs.filter { $0.id != currentID }
-        let settings = FeatureSettings.shared
-
-        // Count tabs and total processes
-        let totalToClose = otherTabs.count
-        var totalProcessCount = 0
-        var tabsWithProcesses = 0
-        for tab in otherTabs {
-            let count = countRunningProcesses(in: tab)
-            if count > 0 {
-                tabsWithProcesses += 1
-                totalProcessCount += count
-            }
-        }
-
-        // Check if we need to show a warning
-        let warnForProcess = settings.warnOnCloseWithRunningProcess && totalProcessCount > 0
-        let warnAlways = settings.alwaysWarnOnTabClose
-        let shouldWarn = warnForProcess || warnAlways
-
-        if shouldWarn {
-            let alert = NSAlert()
-            if totalProcessCount > 0 {
-                alert.messageText = L("alert.closeOtherTabs.title", "Close \(totalToClose) tabs?")
-                // Build informative message with process details
-                let processInfo: String
-                if totalProcessCount == 1 {
-                    processInfo = L(
-                        "alert.closeOtherTabs.process.singular",
-                        "1 running process will be terminated."
-                    )
-                } else if tabsWithProcesses == 1 {
-                    processInfo = L(
-                        "alert.closeOtherTabs.processes.oneTab",
-                        "\(totalProcessCount) running processes in 1 tab will be terminated."
-                    )
-                } else {
-                    processInfo = L(
-                        "alert.closeOtherTabs.processes.multipleTabs",
-                        "\(totalProcessCount) running processes across \(tabsWithProcesses) tabs will be terminated."
-                    )
-                }
-                alert.informativeText = processInfo
-            } else {
-                alert.messageText = L("alert.closeOtherTabs.confirm.title", "Close \(totalToClose) tabs?")
-                alert.informativeText = L("alert.closeOtherTabs.confirm.message", "Are you sure you want to close all other tabs?")
-            }
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: L("button.closeTabs", "Close Tabs"))
-            alert.addButton(withTitle: L("button.cancel", "Cancel"))
-
-            // Show "Don't ask again" only for "always warn" mode without running processes
-            if warnAlways, totalProcessCount == 0 {
-                alert.showsSuppressionButton = true
-                alert.suppressionButton?.title = L("alert.closeTab.dontAskAgain", "Don't ask again")
-            }
-
-            let result = alert.runModal()
-
-            // If user checked "Don't ask again", disable the setting
-            if alert.suppressionButton?.state == .on {
-                FeatureSettings.shared.alwaysWarnOnTabClose = false
-            }
-
-            guard result == .alertFirstButtonReturn else {
-                Log.info("closeOtherTabs: user cancelled")
-                return
-            }
-        }
-
-        // Re-validate after modal: tabs may have changed while dialog was shown
-        guard tabs.contains(where: { $0.id == currentID }) else {
-            Log.warn("closeOtherTabs: selected tab \(currentID) no longer exists after confirmation dialog")
-            return
-        }
-
-        // Re-compute other tabs based on current state
-        let currentOtherTabs = tabs.filter { $0.id != currentID }
-        guard !currentOtherTabs.isEmpty else {
-            Log.info("closeOtherTabs: no other tabs to close after re-validation")
-            return
-        }
-
-        // Snapshot each tab BEFORE killing its shell (reverse order so
-        // Cmd+Shift+T restores the rightmost closed tab first)
-        for tab in currentOtherTabs.reversed() {
-            if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
-                captureClosedTabSnapshot(tab: tab, at: idx)
-            }
-        }
-
-        // Close all sessions in all tabs except current one
-        for tab in currentOtherTabs {
-            if let sessionID = tab.session?.tabIdentifier {
-                CTORuntimeMonitor.shared.untrackSession(sessionID)
-            }
-            tab.splitController.root.closeAllSessions()
-        }
-
-        tabs = tabs.filter { $0.id == currentID }
-        Log.info("Closed all other tabs, keeping \(currentID)")
-    }
-
-    /// Reopens the most recently closed tab, restoring its title, color, directory,
-    /// scrollback content, and AI resume command. Inserts at the original position
-    /// (clamped to current tab count). Matches browser Cmd+Shift+T behavior.
-    func reopenClosedTab() {
-        dispatchPrecondition(condition: .onQueue(.main))
-        guard let entry = closedTabStack.popLast() else {
-            Log.info("reopenClosedTab: stack is empty")
-            return
-        }
-
-        let state = entry.state
-        let insertIndex = min(entry.originalIndex, tabs.count)
-        let controller = Self.buildRestorableController(
-            appModel: appModel,
-            splitLayout: state.splitLayout,
-            focusedPaneID: state.focusedPaneID,
-            paneStates: state.paneStates
-        )
-
-        let restoredTabID = Self.validatedUUID(from: state.tabID) ?? UUID()
-        let restoredCreatedAt: Date
-        if let iso = state.createdAt,
-           let parsed = DateFormatters.iso8601.date(from: iso) {
-            restoredCreatedAt = parsed
-        } else {
-            restoredCreatedAt = entry.closedAt
-        }
-
-        var tab = OverlayTab(
-            appModel: appModel,
-            splitController: controller,
-            id: restoredTabID,
-            createdAt: restoredCreatedAt
-        )
-        tab.customTitle = state.customTitle
-        tab.color = TabColor(rawValue: state.color) ?? .blue
-        tab.stampOwnerTabID()
-        if let overrideRaw = state.tokenOptOverride,
-           let override = TabTokenOptOverride(rawValue: overrideRaw) {
-            tab.tokenOptOverride = override
-            tab.session?.tokenOptOverride = override
-        }
-
-        tabs.insert(tab, at: insertIndex)
-        selectedTabID = tab.id
-
-        restoreTabState(for: tab, state: state)
-
-        Log.info("reopenClosedTab: restored \"\(tab.displayTitle)\" at index \(insertIndex) (stack remaining: \(closedTabStack.count))")
-
-        tabBarRefreshToken += 1
-    }
-
-    func selectNextTab() {
-        guard tabs.count > 1, let index = tabs.firstIndex(where: { $0.id == selectedTabID }) else {
-            Log.trace("selectNextTab: skipped (tabs.count=\(tabs.count))")
-            return
-        }
-        let nextIndex = (index + 1) % tabs.count
-        Log.trace("selectNextTab: \(index) -> \(nextIndex), tabs.count=\(tabs.count)")
-        let targetID = tabs[nextIndex].id
-        selectedTabID = targetID
-
-        // Ensure terminal is visible (recover from stuck isTerminalReady=false)
-        isTerminalReady = true
-
-        // Unsuspend target tab so its terminal view is available for focus
-        cancelSuspension(for: targetID)
-        if suspendedTabIDs.remove(targetID) != nil {
-            Log.info("selectNextTab: unsuspended tab \(targetID)")
-        }
-
-        focusSelected()
-        updateSuspensionState()
-        updateSnippetContextForSelection()
-        if isSearchVisible {
-            refreshSearch()
-        }
-    }
-
-    func selectPreviousTab() {
-        guard tabs.count > 1, let index = tabs.firstIndex(where: { $0.id == selectedTabID }) else {
-            Log.trace("selectPreviousTab: skipped (tabs.count=\(tabs.count))")
-            return
-        }
-        let prevIndex = (index - 1 + tabs.count) % tabs.count
-        Log.trace("selectPreviousTab: \(index) -> \(prevIndex), tabs.count=\(tabs.count)")
-        let targetID = tabs[prevIndex].id
-        selectedTabID = targetID
-
-        // Ensure terminal is visible (recover from stuck isTerminalReady=false)
-        isTerminalReady = true
-
-        // Unsuspend target tab so its terminal view is available for focus
-        cancelSuspension(for: targetID)
-        if suspendedTabIDs.remove(targetID) != nil {
-            Log.info("selectPreviousTab: unsuspended tab \(targetID)")
-        }
-
-        focusSelected()
-        updateSuspensionState()
-        updateSnippetContextForSelection()
-        if isSearchVisible {
-            refreshSearch()
-        }
-    }
-
-    func focusSelected() {
-        ensureFreshTabIfNeeded()
-        guard let window = overlayWindow else { return }
-        guard let tab = selectedTab else { return }
-
-        // Always focus a terminal pane when switching tabs.
-        if let terminalID = tab.splitController.focusedTerminalSessionID() {
-            tab.splitController.focusedPaneID = terminalID
-            if let focusedSession = tab.splitController.root.findSession(id: terminalID) {
-                focusedSession.focusTerminal(in: window)
-                return
-            }
-        }
-
-        tab.displaySession?.focusTerminal(in: window)
-    }
-
-    private func ensureFreshTabIfNeeded() {
-        guard needsFreshTabOnShow else { return }
-        needsFreshTabOnShow = false
-
-        let newTab = makeFreshTab(inheritedDirectory: nil)
-        if let index = tabs.firstIndex(where: { $0.id == selectedTabID }) {
-            tabs[index] = newTab
-        } else {
-            tabs = [newTab]
-        }
-        selectedTabID = newTab.id
-        updateSnippetContextForSelection()
-    }
-
-    private func makeFreshTab(inheritedDirectory: String?) -> OverlayTab {
-        var newTab = OverlayTab(appModel: appModel)
-        if let firstColor = TabColor.allCases.first {
-            newTab.color = firstColor
-        }
-        newTab.stampOwnerTabID()
-        if let inheritedDirectory {
-            newTab.session?.updateCurrentDirectory(inheritedDirectory)
-        }
-        return newTab
-    }
-
-    func selectTab(number: Int) {
-        let index = max(0, number - 1)
-        guard index < tabs.count else { return }
-        let targetID = tabs[index].id
-        if selectedTabID == targetID {
-            // Already on this tab — just re-focus the terminal (handles the case
-            // where focus moved to a non-terminal UI element like the search bar)
-            isTerminalReady = true
-            focusSelected()
-            return
-        }
-        // Reuse canonical tab selection path so side effects stay consistent
-        // (notification clear, hover-card dismissal, snapshot/focus behavior).
-        selectTab(id: targetID)
-    }
+    // Tab Switch Optimization → OverlayTabsModel+TabSwitchOptimization.swift
 
     // MARK: - Token Optimization (CTO) Per-Tab Control
 
@@ -2086,7 +1365,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     }
 
     /// Builds a TabNotificationStyle from preset and config
-    private func buildNotificationStyle(preset: String, config: [String: String]) -> TabNotificationStyle {
+    func buildNotificationStyle(preset: String, config: [String: String]) -> TabNotificationStyle {
         // Start with preset
         var style: TabNotificationStyle
         switch preset {
@@ -2156,7 +1435,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     }
 
     /// Converts color string to SwiftUI Color
-    private func colorFromString(_ colorName: String) -> Color {
+    func colorFromString(_ colorName: String) -> Color {
         switch colorName.lowercased() {
         case "red": return .red
         case "orange": return .orange
@@ -2173,7 +1452,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     /// Resolve a tab from a target, preferring the pre-resolved tabID to avoid
     /// redundant TabResolver calls. Falls back to full resolution if no tabID.
-    private func resolveTab(for target: TabTarget) -> OverlayTab? {
+    func resolveTab(for target: TabTarget) -> OverlayTab? {
         if let tabID = target.tabID {
             return tabs.first(where: { $0.id == tabID })
         }
@@ -2441,7 +1720,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     /// Suspend rendering for tabs idle 10+ minutes, but only if render suspension
     /// is enabled. The idle dropdown (visual grouping) works independently — tabs
     /// appear in the dropdown based on lastActivityDate, without stopping rendering.
-    private func suspendIdleTabs() {
+    func suspendIdleTabs() {
         guard isRenderSuspensionEnabled else { return }
         let threshold = FeatureSettings.shared.idleTabThresholdSeconds
         let now = Date()
@@ -2457,7 +1736,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     }
 
     /// Count tabs currently idle beyond the configured threshold (excluding the selected tab).
-    private func idleTabCount() -> Int {
+    func idleTabCount() -> Int {
         let threshold = FeatureSettings.shared.idleTabThresholdSeconds
         let now = Date()
         return tabs.filter { tab in
@@ -2467,7 +1746,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }.count
     }
 
-    private func checkTabBarHealth() {
+    func checkTabBarHealth() {
         dispatchPrecondition(condition: .onQueue(.main))
 
         // Suspend rendering for idle tabs in the dropdown (saves GPU/CPU).
@@ -2557,7 +1836,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
     }
 
-    private func emitWatchdogSummaryIfNeeded(now: Date) {
+    func emitWatchdogSummaryIfNeeded(now: Date) {
         let elapsed = now.timeIntervalSince(lastWatchdogSummaryAt)
         guard elapsed >= 60 else { return }
         Log.info("TabBar watchdog summary: refreshes=\(watchdogRecoveryCount) skips=\(watchdogSkipCount) lastReason=\(lastWatchdogReason)")
@@ -2566,7 +1845,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         lastWatchdogSummaryAt = now
     }
 
-    private func shouldCheckTabBarHealth() -> Bool {
+    func shouldCheckTabBarHealth() -> Bool {
         guard isTabBarVisible else { return false }
         guard let window = overlayWindow else { return false }
         if !window.isVisible || window.isMiniaturized {
@@ -2761,7 +2040,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         clearRenameState(shouldFocus: true)
     }
 
-    private func clearRenameState(shouldFocus: Bool) {
+    func clearRenameState(shouldFocus: Bool) {
         isRenameVisible = false
         renameTabID = nil
         renameOriginalTitle = ""
@@ -2803,7 +2082,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         return tab.session?.existingRustTerminalView == nil
     }
 
-    private func updateSuspensionState() {
+    func updateSuspensionState() {
         let previousSuspended = suspendedTabIDs
         let validIDs = Set(tabs.map { $0.id })
 
@@ -2854,7 +2133,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
     }
 
-    private func scheduleSuspension(for id: UUID) {
+    func scheduleSuspension(for id: UUID) {
         guard !suspendedTabIDs.contains(id) else { return }
         guard suspendWorkItems[id] == nil else { return }
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
@@ -2896,13 +2175,13 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         DispatchQueue.main.asyncAfter(deadline: .now() + renderSuspensionDelay, execute: item)
     }
 
-    private func shouldKeepLiveRenderingInBackground(for tab: OverlayTab) -> Bool {
+    func shouldKeepLiveRenderingInBackground(for tab: OverlayTab) -> Bool {
         tab.splitController.terminalSessions.contains { _, session in
             session.shouldKeepLiveRenderingInBackground
         }
     }
 
-    private func tabRenderSuspensionSummary(_ tab: OverlayTab) -> String {
+    func tabRenderSuspensionSummary(_ tab: OverlayTab) -> String {
         let summaries = tab.splitController.terminalSessions.map { paneID, session in
             "pane=\(paneID) \(session.renderSuspensionDebugSummary)"
         }
@@ -2912,7 +2191,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         return summaries.joined(separator: " | ")
     }
 
-    private func cancelSuspension(for id: UUID) {
+    func cancelSuspension(for id: UUID) {
         if let item = suspendWorkItems[id] {
             item.cancel()
             suspendWorkItems.removeValue(forKey: id)
@@ -3091,7 +2370,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         hoverCardTabID = nil
     }
 
-    private func startHoverCardDismissTimer() {
+    func startHoverCardDismissTimer() {
         hoverCardDismissTimer?.cancel()
         let item = DispatchWorkItem { [weak self] in
             self?.stopProcessMonitoring(forTabID: self?.hoverCardTabID)
@@ -3101,12 +2380,12 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
     }
 
-    private func startProcessMonitoring(forTabID id: UUID?) {
+    func startProcessMonitoring(forTabID id: UUID?) {
         guard let id, let session = tabs.first(where: { $0.id == id })?.session else { return }
         session.startProcessMonitoring()
     }
 
-    private func stopProcessMonitoring(forTabID id: UUID?) {
+    func stopProcessMonitoring(forTabID id: UUID?) {
         guard let id, let session = tabs.first(where: { $0.id == id })?.session else { return }
         session.stopProcessMonitoring()
     }
@@ -3208,7 +2487,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     // MARK: - Repo Tab Grouping
 
-    private func setupRepoGrouping() {
+    func setupRepoGrouping() {
         // Observe mode changes
         repoGroupModeCancellable = FeatureSettings.shared.$repoGroupingMode
             .receive(on: DispatchQueue.main)
@@ -3222,7 +2501,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
     }
 
-    private func handleRepoGroupingModeChange(_ mode: RepoGroupingMode) {
+    func handleRepoGroupingModeChange(_ mode: RepoGroupingMode) {
         switch mode {
         case .off:
             // Keep existing repoGroupIDs — tabBarSegments always renders them.
@@ -3236,7 +2515,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
     }
 
-    private func applyAutoGroupingToAllTabs() {
+    func applyAutoGroupingToAllTabs() {
         repoGroupCancellables.removeAll()
         for i in tabs.indices {
             tabs[i].repoGroupID = tabs[i].session?.gitRootPath
@@ -3251,7 +2530,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
     }
 
-    private func observeGitRootForAutoGrouping(tabID: UUID, session: TerminalSessionModel) {
+    func observeGitRootForAutoGrouping(tabID: UUID, session: TerminalSessionModel) {
         let cancellable = session.$gitRootPath
             .receive(on: DispatchQueue.main)
             .sink { [weak self] newRoot in
@@ -3282,7 +2561,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         observeGitRootForAutoGrouping(tabID: tab.id, session: session)
     }
 
-    private func insertionIndexForNewTab(inheritingRepoGroupID inheritedRepoGroupID: String?) -> Int {
+    func insertionIndexForNewTab(inheritingRepoGroupID inheritedRepoGroupID: String?) -> Int {
         if inheritedRepoGroupID != nil,
            let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) {
             return currentIndex + 1
@@ -3325,7 +2604,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         coalesceGroup(repoGroupID: root)
     }
 
-    private func coalesceGroup(repoGroupID: String) {
+    func coalesceGroup(repoGroupID: String) {
         let order = TabBarLayout.coalescedOrder(
             groupIDs: tabs.map(\.repoGroupID),
             targetGroupID: repoGroupID
@@ -3432,7 +2711,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
     }
 
-    private func updateCurrentCandidate(from candidates: [String: TaskCandidate]) {
+    func updateCurrentCandidate(from candidates: [String: TaskCandidate]) {
         guard let session = selectedTab?.session else {
             currentCandidate = nil
             return
@@ -3440,7 +2719,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         currentCandidate = candidates[session.tabIdentifier]
     }
 
-    private func updateCurrentTask(from tasks: [String: TrackedTask]) {
+    func updateCurrentTask(from tasks: [String: TrackedTask]) {
         guard let session = selectedTab?.session else {
             currentTask = nil
             return
