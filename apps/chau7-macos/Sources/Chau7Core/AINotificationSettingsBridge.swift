@@ -78,6 +78,34 @@ public enum AINotificationSettingsBridge {
         )
     }
 
+    public static func isEffectivelyEnabled(
+        for event: AINotificationPrimaryEvent,
+        state: NotificationTriggerState,
+        group: NotificationTriggerGroup = NotificationTriggerCatalog.aiCodingGroup,
+        catalog: [NotificationTrigger] = NotificationTriggerCatalog.all
+    ) -> Bool {
+        catalog.contains {
+            group.contains(source: $0.source)
+                && $0.type == event.rawValue
+                && state.isEnabled(for: $0)
+        }
+    }
+
+    public static func updatedStateForPrimaryToggle(
+        _ state: NotificationTriggerState,
+        event: AINotificationPrimaryEvent,
+        enabled: Bool,
+        group: NotificationTriggerGroup = NotificationTriggerCatalog.aiCodingGroup,
+        catalog: [NotificationTrigger] = NotificationTriggerCatalog.all
+    ) -> NotificationTriggerState {
+        var updated = state
+        updated.setGroupEnabled(enabled, groupId: group.id, type: event.rawValue)
+        for trigger in catalog where group.contains(source: trigger.source) && trigger.type == event.rawValue {
+            updated.removeOverride(for: trigger)
+        }
+        return updated
+    }
+
     public static func updatedActions(
         for event: AINotificationPrimaryEvent,
         preference: AINotificationPrimaryPreference,
@@ -98,17 +126,16 @@ public enum AINotificationSettingsBridge {
             (.styleTab, preference.styleTab)
         ]
 
-        let managedActions = desiredOrder.compactMap { actionType, isEnabled -> NotificationActionConfig? in
-            guard isEnabled else { return nil }
+        let managedActions = desiredOrder.map { actionType, isEnabled -> NotificationActionConfig in
             if let template = managedTemplates[actionType] {
                 return NotificationActionConfig(
                     id: template.id,
                     actionType: template.actionType,
-                    enabled: true,
+                    enabled: isEnabled,
                     config: template.config
                 )
             }
-            return NotificationActionConfig(actionType: actionType, enabled: true)
+            return NotificationActionConfig(actionType: actionType, enabled: isEnabled)
         }
 
         return managedActions + unmanagedActions

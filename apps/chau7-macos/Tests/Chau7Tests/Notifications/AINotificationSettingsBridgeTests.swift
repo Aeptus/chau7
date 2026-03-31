@@ -62,9 +62,11 @@ final class AINotificationSettingsBridgeTests: XCTestCase {
             defaultActions: [NotificationActionConfig(actionType: .showNotification, enabled: true)]
         )
 
-        XCTAssertEqual(updated.map(\.actionType), [.showNotification, .playSound, .runScript])
+        XCTAssertEqual(updated.map(\.actionType), [.showNotification, .playSound, .dockBounce, .styleTab, .runScript])
         XCTAssertEqual(updated.first(where: { $0.actionType == .playSound })?.config["sound"], "Purr")
         XCTAssertEqual(updated.last?.actionType, .runScript)
+        XCTAssertFalse(updated.first(where: { $0.actionType == .dockBounce })?.enabled ?? true)
+        XCTAssertFalse(updated.first(where: { $0.actionType == .styleTab })?.enabled ?? true)
     }
 
     func testUpdatedActionsCanDisableManagedActionsWithoutRemovingExtras() {
@@ -86,6 +88,40 @@ final class AINotificationSettingsBridgeTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(updated.map(\.actionType), [.webhook])
+        XCTAssertEqual(updated.map(\.actionType), [.showNotification, .playSound, .dockBounce, .styleTab, .webhook])
+        XCTAssertFalse(updated[0].enabled)
+        XCTAssertFalse(updated[1].enabled)
+        XCTAssertFalse(updated[2].enabled)
+        XCTAssertFalse(updated[3].enabled)
+        XCTAssertEqual(updated[4].actionType, .webhook)
+    }
+
+    func testIsEffectivelyEnabledUsesPerTriggerOverrides() {
+        let trigger = NotificationTriggerCatalog.trigger(source: .codex, type: "finished")!
+        var state = NotificationTriggerState()
+        state.setGroupEnabled(false, groupId: NotificationTriggerCatalog.aiCodingGroup.id, type: "finished")
+        state.setEnabled(true, for: trigger)
+
+        XCTAssertTrue(
+            AINotificationSettingsBridge.isEffectivelyEnabled(
+                for: .finished,
+                state: state
+            )
+        )
+    }
+
+    func testUpdatedStateForPrimaryToggleClearsPerSourceOverrides() {
+        let trigger = NotificationTriggerCatalog.trigger(source: .codex, type: "finished")!
+        var state = NotificationTriggerState()
+        state.setEnabled(false, for: trigger)
+
+        let updated = AINotificationSettingsBridge.updatedStateForPrimaryToggle(
+            state,
+            event: .finished,
+            enabled: true
+        )
+
+        XCTAssertNil(updated.overrides[trigger.id])
+        XCTAssertEqual(updated.groupOverrides["ai_coding.finished"], true)
     }
 }

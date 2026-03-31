@@ -96,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Phantom Window on Launch**: Closed windows no longer reappear on relaunch — disabled macOS native state restoration (`isRestorable = false`) and hardened the save filter with explicit hidden-window tracking
 
 ### Changed
+- **AI Notification Settings Simplification**: Notifications settings now open on an AI-first overview with direct controls for Finished, Failed, and Permission Request behavior. The raw trigger/source matrix remains available under Advanced instead of leading the screen.
 - **Settings UX Overhaul**: 15 UX fixes — separate Font & Colors / Display reset, Tabs reset button, configurable idle tab threshold (1-60 min), LLM settings with proper help text, mouse settings above shortcuts table, consolidated Input reset, ligatures toggle promoted, SSH Profiles elevated, MCP Appearance before Profiles, Persistent History at top and defaulting to on, Token Optimization "How It Works" visible when off, AI Detection actionable-first layout, Render Test Image feedback
 - **Chau7 Remote Branding**: The iPhone app now uses the Chau7 dock icon and in-app branding assets so macOS and iOS share the same visual identity.
 - **Queued Terminal Input Ordering**: Terminal sessions now preserve order between queued raw text input and queued key presses when a tab is created or restored before its view attaches
