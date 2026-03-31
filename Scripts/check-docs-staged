@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${CHAU7_SKIP_DOC_CHECK:-}" ]]; then
+  exit 0
+fi
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DOCS_DIR="apps/chau7-macos/docs"
+CHANGELOG="$DOCS_DIR/CHANGELOG.md"
+FEATURES_MD="$DOCS_DIR/FEATURES.md"
+FEATURES_CSV="$DOCS_DIR/features.csv"
+
+is_behavioral_source() {
+  local file="$1"
+
+  case "$file" in
+    */docs/*) return 1 ;;
+    */README.md) return 1 ;;
+    *.md) return 1 ;;
+    *.csv) return 1 ;;
+    */Tests/*) return 1 ;;
+    */test/*) return 1 ;;
+    *_test.go) return 1 ;;
+    website/*) return 1 ;;
+    *.xcuserstate) return 1 ;;
+    *.xcscheme) return 1 ;;
+    .gitignore) return 1 ;;
+    .editorconfig) return 1 ;;
+    *.lock) return 1 ;;
+    *.png|*.jpg|*.jpeg|*.gif|*.svg|*.ico) return 1 ;;
+    tools/git-hooks/*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+staged_files="$(git -C "$REPO_ROOT" diff --cached --name-only --diff-filter=ACMR)"
+if [[ -z "$staged_files" ]]; then
+  exit 0
+fi
+
+has_source=0
+has_changelog=0
+has_features_md=0
+has_features_csv=0
+
+while IFS= read -r file; do
+  case "$file" in
+    "$CHANGELOG") has_changelog=1 ;;
+    "$FEATURES_MD") has_features_md=1 ;;
+    "$FEATURES_CSV") has_features_csv=1 ;;
+  esac
+
+  if is_behavioral_source "$file"; then
+    has_source=1
+  fi
+done <<< "$staged_files"
+
+if [[ "$has_source" != "1" ]]; then
+  exit 0
+fi
+
+missing=()
+[[ "$has_changelog" == "1" ]] || missing+=("$CHANGELOG")
+[[ "$has_features_md" == "1" ]] || missing+=("$FEATURES_MD")
+[[ "$has_features_csv" == "1" ]] || missing+=("$FEATURES_CSV")
+
+if [[ ${#missing[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+printf '\n'
+printf '╭─ Documentation required ────────────────────────────────────╮\n'
+printf '│                                                             │\n'
+printf '│  This commit changes behavioral source code.                │\n'
+printf '│  Please update the following before committing:             │\n'
+printf '│                                                             │\n'
+for file in "${missing[@]}"; do
+  printf '│    %-55s │\n' "• $file"
+done
+printf '│                                                             │\n'
+printf '│  Skip this check:                                           │\n'
+printf '│    CHAU7_SKIP_DOC_CHECK=1 git commit                        │\n'
+printf '│    git commit --no-verify                                   │\n'
+printf '│                                                             │\n'
+printf '╰─────────────────────────────────────────────────────────────╯\n'
+printf '\n'
+
+exit 1

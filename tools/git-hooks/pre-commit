@@ -1,117 +1,71 @@
-#!/bin/zsh
-# Pre-commit hook: ensures documentation is updated when source code changes.
-# Skip with: git commit --no-verify
-# Skip doc check only: CHAU7_SKIP_DOC_CHECK=1 git commit
-set -e
+#!/bin/sh
 
-# ── Escape hatches ──────────────────────────────────────────────────────────
-if [ -n "$CHAU7_SKIP_DOC_CHECK" ]; then
-    exit 0
+if [ "$LEFTHOOK_VERBOSE" = "1" -o "$LEFTHOOK_VERBOSE" = "true" ]; then
+  set -x
 fi
 
-# ── Configuration ───────────────────────────────────────────────────────────
-DOCS_DIR="apps/chau7-macos/docs"
-CHANGELOG="$DOCS_DIR/CHANGELOG.md"
-FEATURES_MD="$DOCS_DIR/FEATURES.md"
-FEATURES_CSV="$DOCS_DIR/features.csv"
+if [ "$LEFTHOOK" = "0" ]; then
+  exit 0
+fi
 
-# ── Classify staged files ──────────────────────────────────────────────────
-#
-# This function decides whether a staged file is "source code that changes
-# behavior." This is the policy boundary — everything downstream reacts
-# to its output.
-#
-# Returns 0 (true)  → file is behavioral source, docs must be updated
-# Returns 1 (false) → file is exempt (tests, docs, configs, assets)
-#
-is_behavioral_source() {
-    local file="$1"
-
-    # Blocklist approach: everything is behavioral EXCEPT known non-behavioral paths.
-    # This catches new directories automatically — safe default is "requires docs."
-    case "$file" in
-        # Documentation & assets — exempt
-        */docs/*)           return 1 ;;
-        */README.md)        return 1 ;;
-        *.md)               return 1 ;;
-        *.csv)              return 1 ;;
-
-        # Tests — exempt
-        */Tests/*)          return 1 ;;
-        */test/*)           return 1 ;;
-        *_test.go)          return 1 ;;
-
-        # Website & marketing — exempt
-        website/*)          return 1 ;;
-
-        # IDE & build artifacts — exempt
-        *.xcuserstate)      return 1 ;;
-        *.xcscheme)         return 1 ;;
-        .gitignore)         return 1 ;;
-        .editorconfig)      return 1 ;;
-        *.lock)             return 1 ;;
-
-        # Screenshots & images — exempt
-        *.png|*.jpg|*.jpeg|*.gif|*.svg|*.ico) return 1 ;;
-
-        # Git hooks themselves — exempt
-        tools/git-hooks/*)  return 1 ;;
-
-        # Everything else is behavioral
-        *)                  return 0 ;;
-    esac
+call_lefthook()
+{
+  if test -n "$LEFTHOOK_BIN"
+  then
+    "$LEFTHOOK_BIN" "$@"
+  elif lefthook -h >/dev/null 2>&1
+  then
+    lefthook "$@"
+  elif /opt/homebrew/bin/lefthook -h >/dev/null 2>&1
+  then
+    /opt/homebrew/bin/lefthook "$@"
+  else
+    dir="$(git rev-parse --show-toplevel)"
+    osArch=$(uname | tr '[:upper:]' '[:lower:]')
+    cpuArch=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')
+    if test -f "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook"
+    then
+      "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook" "$@"
+    elif test -f "$dir/node_modules/@evilmartians/lefthook/bin/lefthook-${osArch}-${cpuArch}/lefthook"
+    then
+      "$dir/node_modules/@evilmartians/lefthook/bin/lefthook-${osArch}-${cpuArch}/lefthook" "$@"
+    elif test -f "$dir/node_modules/@evilmartians/lefthook-installer/bin/lefthook"
+    then
+      "$dir/node_modules/@evilmartians/lefthook-installer/bin/lefthook" "$@"
+    elif test -f "$dir/node_modules/lefthook/bin/index.js"
+    then
+      "$dir/node_modules/lefthook/bin/index.js" "$@"
+    elif go tool lefthook -h >/dev/null 2>&1
+    then
+      go tool lefthook "$@"
+    elif bundle exec lefthook -h >/dev/null 2>&1
+    then
+      bundle exec lefthook "$@"
+    elif yarn lefthook -h >/dev/null 2>&1
+    then
+      yarn lefthook "$@"
+    elif pnpm lefthook -h >/dev/null 2>&1
+    then
+      pnpm lefthook "$@"
+    elif swift package lefthook >/dev/null 2>&1
+    then
+      swift package --build-path .build/lefthook --disable-sandbox lefthook "$@"
+    elif command -v mint >/dev/null 2>&1
+    then
+      mint run csjones/lefthook-plugin "$@"
+    elif uv run lefthook -h >/dev/null 2>&1
+    then
+      uv run lefthook "$@"
+    elif mise exec -- lefthook -h >/dev/null 2>&1
+    then
+      mise exec -- lefthook "$@"
+    elif devbox run lefthook -h >/dev/null 2>&1
+    then
+      devbox run lefthook "$@"
+    else
+      echo "Can't find lefthook in PATH"
+    fi
+  fi
 }
 
-# ── Gather staged files ────────────────────────────────────────────────────
-staged_files=$(git diff --cached --name-only --diff-filter=ACMR)
-
-if [ -z "$staged_files" ]; then
-    exit 0
-fi
-
-has_source=false
-has_changelog=false
-has_features_md=false
-has_features_csv=false
-
-while IFS= read -r file; do
-    case "$file" in
-        "$CHANGELOG")     has_changelog=true ;;
-        "$FEATURES_MD")   has_features_md=true ;;
-        "$FEATURES_CSV")  has_features_csv=true ;;
-    esac
-
-    if is_behavioral_source "$file"; then
-        has_source=true
-    fi
-done <<< "$staged_files"
-
-# ── Enforce documentation ──────────────────────────────────────────────────
-if $has_source; then
-    missing=()
-    $has_changelog    || missing+=("$CHANGELOG")
-    $has_features_md  || missing+=("$FEATURES_MD")
-    $has_features_csv || missing+=("$FEATURES_CSV")
-
-    if [ ${#missing[@]} -gt 0 ]; then
-        echo ""
-        echo "╭─ Documentation required ────────────────────────────────────╮"
-        echo "│                                                             │"
-        echo "│  This commit changes behavioral source code.                │"
-        echo "│  Please update the following before committing:             │"
-        echo "│                                                             │"
-        for f in "${missing[@]}"; do
-            printf "│    %-55s │\n" "• $f"
-        done
-        echo "│                                                             │"
-        echo "│  Skip this check:                                           │"
-        echo "│    CHAU7_SKIP_DOC_CHECK=1 git commit                        │"
-        echo "│    git commit --no-verify                                   │"
-        echo "│                                                             │"
-        echo "╰─────────────────────────────────────────────────────────────╯"
-        echo ""
-        exit 1
-    fi
-fi
-
-exit 0
+call_lefthook run "pre-commit" "$@"

@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/ci-lib.sh"
+
+CI_FAST_ALL=0
+if [[ "${1:-}" == "--all" ]]; then
+  CI_FAST_ALL=1
+fi
+export CI_FAST_ALL
+CI_STAGED_FILES="$(ci_collect_staged_files)"
+export CI_STAGED_FILES
+
+if [[ "$CI_FAST_ALL" == "1" ]]; then
+  ci_note "Running fast local CI for all components."
+elif [[ -n "$CI_STAGED_FILES" ]]; then
+  ci_note "Running fast local CI for staged changes."
+else
+  ci_note "No staged files detected; running fast local CI for all components."
+fi
+
+ran_any=0
+
+if ci_should_run_for_paths "apps/chau7-macos/"; then
+  ran_any=1
+  ci_require_cmd swift "Install Xcode or the Swift toolchain."
+  ci_require_cmd swiftformat "Install SwiftFormat (for example: brew install swiftformat)."
+  ci_require_cmd swiftlint "Install SwiftLint (for example: brew install swiftlint)."
+
+  ci_run_in "Swift format check" "apps/chau7-macos" swiftformat Sources Tests --lint
+  ci_run_in "Swift lint" "apps/chau7-macos" swiftlint lint --strict --quiet
+  ci_run_in "Swift build" "apps/chau7-macos" swift build -Xswiftc -warnings-as-errors
+fi
+
+if ci_should_run_for_paths "apps/chau7-macos/rust/"; then
+  ran_any=1
+  ci_require_cmd cargo "Install Rust via rustup."
+
+  ci_run_in "Rust format check" "apps/chau7-macos/rust" cargo fmt --all --check
+  ci_run_in "Rust clippy" "apps/chau7-macos/rust" cargo clippy --workspace --all-targets --all-features -- -D warnings
+fi
+
+if ci_should_run_for_paths "apps/chau7-macos/chau7-proxy/"; then
+  ran_any=1
+  ci_require_cmd go "Install Go 1.25+."
+
+  ci_gofmt_check_dir "apps/chau7-macos/chau7-proxy" "Go format check (chau7-proxy)"
+  ci_go_test_dir "apps/chau7-macos/chau7-proxy" "Go test (chau7-proxy)"
+fi
+
+if ci_should_run_for_paths "services/chau7-remote/"; then
+  ran_any=1
+  ci_require_cmd go "Install Go 1.25+."
+
+  ci_gofmt_check_dir "services/chau7-remote" "Go format check (chau7-remote)"
+  ci_go_test_dir "services/chau7-remote" "Go test (chau7-remote)"
+fi
+
+if ci_should_run_for_paths "services/chau7-relay/"; then
+  ran_any=1
+  ci_require_cmd npm "Install Node.js and npm."
+
+  ci_relay_ensure_deps
+  ci_run_in "Relay test" "services/chau7-relay" npm test
+fi
+
+if [[ "$ran_any" == "0" ]]; then
+  ci_note "No app code changed; nothing to run in fast local CI."
+fi
+
+ci_success "Fast local CI passed."

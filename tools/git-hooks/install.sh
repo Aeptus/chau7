@@ -1,18 +1,19 @@
 #!/bin/zsh
-# Install git hooks from tools/git-hooks/ into the repo.
+# Install repo-managed git hooks into tools/git-hooks/ via Lefthook.
 # Run once after cloning: ./tools/git-hooks/install.sh
-#
-# This sets core.hooksPath so git looks in tools/git-hooks/ directly —
-# no symlinks needed, and new hooks are picked up automatically.
 
 set -e
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 HOOKS_DIR="$REPO_ROOT/tools/git-hooks"
 
-chmod +x "$HOOKS_DIR"/pre-commit "$HOOKS_DIR"/pre-push
+if ! command -v lefthook >/dev/null 2>&1; then
+    echo "ERROR: lefthook is required. Install it first, for example: brew install lefthook" >&2
+    exit 1
+fi
 
 git config core.hooksPath tools/git-hooks
+lefthook install -f
 
 echo "✓ Git hooks installed (core.hooksPath → tools/git-hooks/)"
 echo "  Active hooks:"
