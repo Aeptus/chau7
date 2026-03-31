@@ -306,6 +306,7 @@ public enum NotificationTriggerCatalog {
     /// (type, camelKey for localization, label suffix, description suffix, defaultEnabled)
     private static let aiTriggerTypes: [(type: String, camelKey: String, labelSuffix: String, descSuffix: String, defaultEnabled: Bool)] = [
         ("finished", "finished", "Response complete", "finished responding.", true),
+        ("failed", "failed", "Task failed", "failed or exited with an error.", true),
         ("permission", "permission", "Permission request", "needs permission to continue.", true),
         ("idle", "idle", "Session idle", "session appears idle.", false),
         ("token_threshold", "tokenThreshold", "Token threshold", "Token usage exceeded threshold.", false),
@@ -381,7 +382,7 @@ public enum NotificationTriggerCatalog {
             labelFallback: "Needs validation",
             descriptionKey: "notifications.trigger.eventsLog.needsValidation.description",
             descriptionFallback: "An AI event requests review or confirmation.",
-            defaultEnabled: true,
+            defaultEnabled: false,
             displayContexts: [.settings, .activity]
         ),
         NotificationTrigger(
@@ -431,7 +432,7 @@ public enum NotificationTriggerCatalog {
             labelFallback: "Custom notification",
             descriptionKey: "notifications.trigger.eventsLog.notification.description",
             descriptionFallback: "An AI event requests a custom notification.",
-            defaultEnabled: true,
+            defaultEnabled: false,
             displayContexts: [.settings, .activity]
         ),
         NotificationTrigger(
@@ -441,7 +442,7 @@ public enum NotificationTriggerCatalog {
             labelFallback: "Other events",
             descriptionKey: "notifications.trigger.eventsLog.other.description",
             descriptionFallback: "Any other AI event types not listed above.",
-            defaultEnabled: true,
+            defaultEnabled: false,
             displayContexts: [.settings, .activity]
         )
     ]
