@@ -71,10 +71,16 @@ final class TerminalControlService {
     @discardableResult
     func applyNotificationStyleAcrossWindows(for target: TabTarget, stylePreset: String, config: [String: String]) -> UUID? {
         for (_, model) in allModels {
-            if let tabID = model.applyNotificationStyle(for: target, stylePreset: stylePreset, config: config) {
+            if let tabID = model.applyNotificationStyle(
+                for: target,
+                stylePreset: stylePreset,
+                config: config,
+                logOnMiss: false
+            ) {
                 return tabID
             }
         }
+        Log.info("applyNotificationStyle: No tab found across windows for tool '\(target.tool)'")
         return nil
     }
 

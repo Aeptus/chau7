@@ -101,6 +101,24 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertTrue(sessions.allSatisfy { $0.tabTitleOverride == "Split Tab" })
     }
 
+    func testApplyNotificationStyleAcrossWindowsFindsTabInLaterWindow() throws {
+        let secondAppModel = AppModel()
+        let secondOverlayModel = OverlayTabsModel(appModel: secondAppModel, restoreState: false)
+        TerminalControlService.shared.register(secondOverlayModel)
+        defer { TerminalControlService.shared.unregister(secondOverlayModel) }
+
+        let secondTabID = try XCTUnwrap(secondOverlayModel.tabs.first?.id)
+        let resolvedTabID = TerminalControlService.shared.applyNotificationStyleAcrossWindows(
+            for: TabTarget(tool: "Codex", tabID: secondTabID),
+            stylePreset: "attention",
+            config: [:]
+        )
+
+        XCTAssertEqual(resolvedTabID, secondTabID)
+        XCTAssertNil(overlayModel.tabs.first?.notificationStyle)
+        XCTAssertEqual(secondOverlayModel.tabs.first?.notificationStyle, .attention)
+    }
+
     private func parseJSONObject(_ text: String) -> [String: Any]? {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
