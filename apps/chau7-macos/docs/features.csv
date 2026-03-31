@@ -32,7 +32,7 @@ AI Detection,Command Line Tokenization,"Smart detection with wrapper skipping (e
 AI Detection,Output Banner Detection,"Detect AI tools from output banners — command-based detection gates output scanning to prevent false positives",Shipped,Yes
 AI Integration,LLM Error Explanation,"One-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint — plain-language root cause and fix suggestions",Shipped,Yes
 AI Integration,Claude Code Deep Integration,"Monitor Claude Code hook events: prompts, tools, permissions, responses — first-class agentic workflow support",Shipped,Yes
-AI Integration,AI Event Notifications,"Notifications for finished, failed, needs_validation, permission, tool_complete, session_end, idle events",Shipped,Yes
+AI Integration,AI Event Notifications,"Notifications for finished, failed, permission, needs_validation, tool_complete, session_end, idle, and related AI events; default AI policy enables only finished, failed, and permission requests",Shipped,Yes
 AI Integration,Runtime Session Startup,"MCP-created runtime sessions transition to ready after launch, and attach_tab_id sessions start usable immediately",Shipped,Yes
 MCP Server,MCP Command Filter Hardening,"Permission checks parse background separators, tabs, and newlines before applying allow/block/approval rules",Shipped,Yes
 MCP Server,Backend Launch Environment Validation,"Runtime backend launch strings drop invalid environment variable names before shell interpolation",Shipped,Yes

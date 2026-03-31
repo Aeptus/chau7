@@ -61,6 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Runtime Turn Send for Adopted Sessions**: MCP clients can now send prompts through `runtime_turn_send` even when the runtime session was adopted from an existing tab
 
 ### Fixed
+- **History Monitor False Finishes**: Prompt-only Codex and Claude history entries no longer synthesize `finished` events after the idle timeout. History-monitor completions now require response-side activity instead of treating every new user prompt as completed work.
+- **Default AI Notification Policy**: AI-facing notification defaults are now stricter. Finished, failed, and permission requests remain enabled by default, while noisy events-log passthrough triggers like `needs_validation`, custom `notification`, and wildcard `other` no longer ship enabled.
+- **Runtime Failure Classification**: Non-success runtime exits now emit `failed` instead of generic `error`, so they follow the same default notification and tab-style policy as other AI task failures.
 - **Persistent History Clear Ordering**: `clearAll()` now runs on the history queue so queued async inserts cannot repopulate the database after a wipe.
 - **Stale Window State Cleanup**: Quitting after all overlay windows are hidden or closed now clears persisted tab/window state and backup files instead of restoring stale windows on next launch.
 - **Native Text Pane Edit Shortcuts**: Cut, copy, and paste now try the focused responder first, restoring standard macOS shortcuts inside split-pane text editors before falling back to terminal behavior.

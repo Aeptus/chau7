@@ -21,14 +21,15 @@ public struct HistorySessionTransitionDecision: Equatable, Sendable {
 public enum HistorySessionLifecycle {
     public static func evaluate(
         previousState: HistorySessionState?,
-        nextState: HistorySessionState
+        nextState: HistorySessionState,
+        lastActivityKind: HistoryEntryActivityKind = .unknown
     ) -> HistorySessionTransitionDecision {
         let isReactivation = previousState == .closed && nextState == .active
         let sessionEnded = nextState == .idle || nextState == .closed
         let wasActiveOrNew = previousState == .active || previousState == nil
         return HistorySessionTransitionDecision(
             shouldPersistState: true,
-            emitsFinishedEvent: wasActiveOrNew && sessionEnded,
+            emitsFinishedEvent: wasActiveOrNew && sessionEnded && lastActivityKind.supportsFinishedEvent,
             isReactivation: isReactivation
         )
     }

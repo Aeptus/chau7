@@ -5,7 +5,8 @@ final class HistorySessionLifecycleTests: XCTestCase {
     func testClosedSessionCanReactivate() {
         let decision = HistorySessionLifecycle.evaluate(
             previousState: .closed,
-            nextState: .active
+            nextState: .active,
+            lastActivityKind: .prompt
         )
 
         XCTAssertTrue(decision.shouldPersistState)
@@ -13,10 +14,23 @@ final class HistorySessionLifecycleTests: XCTestCase {
         XCTAssertFalse(decision.emitsFinishedEvent)
     }
 
-    func testActiveToIdleEmitsFinishedEvent() {
+    func testActiveToIdleFromPromptDoesNotEmitFinishedEvent() {
         let decision = HistorySessionLifecycle.evaluate(
             previousState: .active,
-            nextState: .idle
+            nextState: .idle,
+            lastActivityKind: .prompt
+        )
+
+        XCTAssertTrue(decision.shouldPersistState)
+        XCTAssertFalse(decision.isReactivation)
+        XCTAssertFalse(decision.emitsFinishedEvent)
+    }
+
+    func testActiveToIdleFromResponseEmitsFinishedEvent() {
+        let decision = HistorySessionLifecycle.evaluate(
+            previousState: .active,
+            nextState: .idle,
+            lastActivityKind: .response
         )
 
         XCTAssertTrue(decision.shouldPersistState)
@@ -24,10 +38,23 @@ final class HistorySessionLifecycleTests: XCTestCase {
         XCTAssertTrue(decision.emitsFinishedEvent)
     }
 
-    func testNewlyObservedClosedSessionEmitsFinishedEvent() {
+    func testNewlyObservedClosedPromptSessionDoesNotEmitFinishedEvent() {
         let decision = HistorySessionLifecycle.evaluate(
             previousState: nil,
-            nextState: .closed
+            nextState: .closed,
+            lastActivityKind: .prompt
+        )
+
+        XCTAssertTrue(decision.shouldPersistState)
+        XCTAssertFalse(decision.isReactivation)
+        XCTAssertFalse(decision.emitsFinishedEvent)
+    }
+
+    func testNewlyObservedClosedResponseSessionEmitsFinishedEvent() {
+        let decision = HistorySessionLifecycle.evaluate(
+            previousState: nil,
+            nextState: .closed,
+            lastActivityKind: .response
         )
 
         XCTAssertTrue(decision.shouldPersistState)
