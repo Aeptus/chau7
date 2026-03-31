@@ -1301,13 +1301,6 @@ final class OverlayTabsModel: ObservableObject {
         let targetID = tabID ?? selectedTabID
         guard let index = tabs.firstIndex(where: { $0.id == targetID }) else { return false }
 
-        // Don't apply notification styling to the tab the user is already looking at —
-        // the style is meant to draw attention to background tabs. Clearing (nil) always applies.
-        if style != nil, targetID == selectedTabID {
-            Log.trace("Skipping notification style for active tab \(targetID)")
-            return false
-        }
-
         if tabs[index].notificationStyle == style {
             return false
         }
@@ -1348,11 +1341,18 @@ final class OverlayTabsModel: ObservableObject {
 
     /// Applies a notification style to a tab based on tool name (used by notification action system)
     @discardableResult
-    func applyNotificationStyle(for target: TabTarget, stylePreset: String, config: [String: String]) -> UUID? {
+    func applyNotificationStyle(
+        for target: TabTarget,
+        stylePreset: String,
+        config: [String: String],
+        logOnMiss: Bool = true
+    ) -> UUID? {
         dispatchPrecondition(condition: .onQueue(.main))
 
         guard let tab = resolveTab(for: target) else {
-            Log.info("applyNotificationStyle: No tab found matching tool '\(target.tool)'")
+            if logOnMiss {
+                Log.info("applyNotificationStyle: No tab found matching tool '\(target.tool)'")
+            }
             return nil
         }
 

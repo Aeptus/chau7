@@ -208,4 +208,69 @@ final class NotificationPipelineTests: XCTestCase {
             XCTFail("Expected .fireDefault for enabled single-action notification rule, got: \(decision)")
         }
     }
+
+    func testMatchedFinishedTriggerStylesSelectedTabWhenNotificationIsSuppressed() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "finished",
+            tool: "Claude",
+            message: "done",
+            ts: "2025-01-01T00:00:00Z"
+        )
+        let input = NotificationPipeline.Input(
+            event: event,
+            triggerState: NotificationTriggerState(),
+            triggerConditions: [:],
+            actionBindings: [:],
+            groupConditions: [:],
+            groupActionBindings: [:],
+            isFocusModeActive: false,
+            isAppActive: false,
+            isToolTabActive: true
+        )
+
+        let decision = NotificationPipeline.evaluate(input)
+
+        if case .fireStyleOnly(let triggerId, let actions) = decision {
+            XCTAssertEqual(triggerId, "claude_code.finished")
+            XCTAssertEqual(actions.map(\.actionType), [.styleTab])
+        } else {
+            XCTFail("Expected .fireStyleOnly for selected-tab finished event, got: \(decision)")
+        }
+    }
+
+    func testMatchedFinishedTriggerFallsBackToDefaultStyleWhenCustomActionsOmitStyle() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "finished",
+            tool: "Claude",
+            message: "done",
+            ts: "2025-01-01T00:00:00Z"
+        )
+        let input = NotificationPipeline.Input(
+            event: event,
+            triggerState: NotificationTriggerState(),
+            triggerConditions: [:],
+            actionBindings: [
+                "claude_code.finished": [
+                    NotificationActionConfig(actionType: .showNotification, enabled: true)
+                ]
+            ],
+            groupConditions: [:],
+            groupActionBindings: [:],
+            isFocusModeActive: false,
+            isAppActive: false,
+            isToolTabActive: true
+        )
+
+        let decision = NotificationPipeline.evaluate(input)
+
+        if case .fireStyleOnly(let triggerId, let actions) = decision {
+            XCTAssertEqual(triggerId, "claude_code.finished")
+            XCTAssertEqual(actions.count, 1)
+            XCTAssertEqual(actions.first?.actionType, .styleTab)
+        } else {
+            XCTFail("Expected .fireStyleOnly with fallback style action, got: \(decision)")
+        }
+    }
 }
