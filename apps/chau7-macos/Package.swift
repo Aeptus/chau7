@@ -45,6 +45,7 @@ let package = Package(
                 "Logging/README.md",
                 "Migration/README.md",
                 "Monitoring/README.md",
+                "MCP/README.md",
                 "Notifications/README.md",
                 "Overlay/README.md",
                 "Performance/README.md",
@@ -64,6 +65,9 @@ let package = Package(
                 "Terminal/Session/README.md",
                 "Terminal/Views/README.md",
                 "Utilities/README.md",
+                "DataExplorer/README.md",
+                "Repository/README.md",
+                "Runtime/README.md",
                 "Views/README.md",
             ],
             resources: [
