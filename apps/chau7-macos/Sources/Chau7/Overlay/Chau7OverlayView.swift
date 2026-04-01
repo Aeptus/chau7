@@ -361,7 +361,9 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         let windowSubmenu = NSMenu()
         windowSubmenu.autoenablesItems = false
         let tabID = tab.id
+        Log.info("Context menu: otherWindowTitles=\(model.otherWindowTitles.count), onMoveTab=\(model.onMoveTabToWindow != nil), tab=\(tab.displayTitle)")
         windowSubmenu.addItem(menuItem(title: "New Window") { [weak self] in
+            Log.info("Move to New Window clicked for tab \(tabID)")
             self?.tabsModel?.onMoveTabToWindow?(tabID, -1)
         })
         if !model.otherWindowTitles.isEmpty {
