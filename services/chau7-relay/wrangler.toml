@@ -4,6 +4,9 @@ compatibility_date = "2024-10-01"
 
 [vars]
 RELAY_SECRET = "CHANGE_ME_IN_PRODUCTION"
+# Issue reporting: set GITHUB_ISSUE_PAT as a Wrangler secret (not here).
+# Fine-grained PAT scoped to the private issue intake repo, Issues: Read & Write only.
+GITHUB_ISSUE_REPO = ""
 
 [[durable_objects.bindings]]
 name = "SESSION"

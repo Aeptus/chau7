@@ -383,7 +383,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Live state inspector for tabs, sessions, and models.
 - Feature profiler with os.signpost integration.
 - Structured logging with category-based filtering and correlation IDs.
-- One-click bug report generator with full app state snapshot.
+- Privacy-first bug report dialog (⌥⌘I): all sensitive data off by default, per-toggle tab pickers, live preview, submit privately via relay.
 - Verbose (`CHAU7_VERBOSE=1`) and trace (`CHAU7_TRACE=1`) modes.
 
 ### Monitoring

@@ -9,6 +9,8 @@ interface Env {
   APNS_TEAM_ID?: string;
   APNS_KEY_ID?: string;
   APNS_PRIVATE_KEY?: string;
+  GITHUB_ISSUE_PAT?: string;
+  GITHUB_ISSUE_REPO?: string; // e.g. "owner/repo"
 }
 
 async function verifyToken(
@@ -109,6 +111,147 @@ export default {
       return stub.fetch(request);
     }
 
+    // POST /issue — create a GitHub issue via server-side PAT.
+    // No auth required (public endpoint), rate-limited by IP.
+    if (action === "issue") {
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Max-Age": "86400",
+          },
+        });
+      }
+      if (request.method === "POST") {
+        return handleIssueCreate(request, env);
+      }
+    }
+
     return new Response("Not Found", { status: 404 });
   }
 };
+
+// MARK: - Issue Reporting
+
+const ISSUE_RATE_MAX = 5;
+const ISSUE_RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+async function handleIssueCreate(
+  request: Request,
+  env: Env
+): Promise<Response> {
+  // Validate secrets
+  if (!env.GITHUB_ISSUE_PAT || !env.GITHUB_ISSUE_REPO) {
+    return jsonResponse(
+      { error: "Issue reporting not configured on this relay." },
+      503
+    );
+  }
+
+  // Sanitize repo path — must be "owner/repo" format
+  const repo = env.GITHUB_ISSUE_REPO;
+  if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(repo)) {
+    console.error(`Invalid GITHUB_ISSUE_REPO format: ${repo}`);
+    return jsonResponse({ error: "Issue reporting misconfigured." }, 503);
+  }
+
+  // Rate limit by IP using Durable Object storage (survives Worker restarts)
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const rateLimitId = env.SESSION.idFromName("issue-ratelimit");
+  const rateLimitDO = env.SESSION.get(rateLimitId);
+  const rlCheck = await rateLimitDO.fetch(
+    new Request("https://internal/ratelimit/check", {
+      method: "POST",
+      body: JSON.stringify({ ip, max: ISSUE_RATE_MAX, windowMs: ISSUE_RATE_WINDOW_MS }),
+    })
+  );
+  if (rlCheck.status === 429) {
+    return jsonResponse(
+      { error: "Rate limited. Maximum 5 reports per hour." },
+      429
+    );
+  }
+
+  // Parse and validate body
+  let body: { title?: string; body?: string; labels?: string[] };
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: "Invalid JSON body." }, 400);
+  }
+
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const issueBody = typeof body.body === "string" ? body.body.trim() : "";
+
+  if (!title || !issueBody) {
+    return jsonResponse(
+      { error: "Both 'title' and 'body' are required and must be non-empty." },
+      400
+    );
+  }
+
+  if (issueBody.length > 65535) {
+    return jsonResponse(
+      { error: `Body too long (${issueBody.length} chars, max 65535).` },
+      400
+    );
+  }
+
+  // Validate labels if provided
+  const labels = Array.isArray(body.labels)
+    ? body.labels.filter((l): l is string => typeof l === "string").slice(0, 5)
+    : [];
+
+  // Create GitHub issue
+  const ghBody: Record<string, unknown> = { title, body: issueBody };
+  if (labels.length > 0) {
+    ghBody.labels = labels;
+  }
+
+  const ghResponse = await fetch(
+    `https://api.github.com/repos/${env.GITHUB_ISSUE_REPO}/issues`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_ISSUE_PAT}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "chau7-relay",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify(ghBody),
+    }
+  );
+
+  if (!ghResponse.ok) {
+    const errText = await ghResponse.text();
+    console.error(
+      `GitHub API error: ${ghResponse.status} ${errText.slice(0, 500)}`
+    );
+    return jsonResponse(
+      { error: `GitHub API error (${ghResponse.status}).` },
+      502
+    );
+  }
+
+  const ghData = (await ghResponse.json()) as { number?: number };
+
+  return jsonResponse({
+    ok: true,
+    issue_number: ghData.number ?? 0,
+  });
+}
+
+function jsonResponse(data: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
+}
