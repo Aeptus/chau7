@@ -470,6 +470,7 @@ extension TerminalSessionModel {
     }
 
     func handlePromptDetected() {
+        let previousStatus = status
         if isShellLoading { isShellLoading = false }
         isAtPrompt = true
         // Transition status to idle when the prompt returns — the command cycle
@@ -481,12 +482,49 @@ extension TerminalSessionModel {
         createDeferredCTOFlag()
         devServerMonitor.commandDidFinish()
         flushPendingPrefillInputIfReady()
+        emitWaitingInputFallbackIfNeeded(previousStatus: previousStatus)
         guard hasPendingCommand, pendingCommandLine != nil else { return }
         promptSeenForPendingCommand = true
         if !commandFinishedNotified {
             commandFinishedNotified = true
             shellEventDetector.commandFinished(exitCode: nil, command: pendingCommandLine)
         }
+    }
+
+    private func emitWaitingInputFallbackIfNeeded(previousStatus: CommandStatus) {
+        guard previousStatus == .running || previousStatus == .stuck || previousStatus == .waitingForInput else {
+            return
+        }
+        guard let ownerTabID else {
+            return
+        }
+        guard RuntimeSessionManager.shared.sessionForTab(ownerTabID) == nil else {
+            return
+        }
+        guard let provider = effectiveAIProvider,
+              provider != "claude",
+              let source = AIEventSource.forProvider(provider) else {
+            return
+        }
+
+        let toolName = aiDisplayAppName
+            ?? Self.displayName(fromProvider: provider)
+            ?? notificationTabName
+        let projectName = URL(fileURLWithPath: currentDirectory).lastPathComponent
+        let location = projectName.isEmpty ? notificationTabName : projectName
+
+        appModel?.recordEvent(
+            source: source,
+            type: "waiting_input",
+            tool: toolName,
+            message: "\(toolName) is waiting for your input in \(location)",
+            notify: true,
+            directory: currentDirectory,
+            tabID: ownerTabID,
+            sessionID: effectiveAISessionId,
+            producer: "terminal_prompt_waiting_input",
+            reliability: .fallback
+        )
     }
 
     private func markInputLatencyStart() {

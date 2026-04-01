@@ -239,6 +239,7 @@ struct TextEditorPaneView: View {
 
     @State private var showFilePicker = false
     @State private var isMarkdownMode = false
+    @State private var showCopiedToast = false
 
     private var isMarkdownFile: Bool {
         editor.filePath?.hasSuffix(".md") == true
@@ -255,6 +256,22 @@ struct TextEditorPaneView: View {
                 Text(editor.fileName)
                     .font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
+                    .onTapGesture {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(editor.fileName, forType: .string)
+                        withAnimation(.easeInOut(duration: 0.15)) { showCopiedToast = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                            withAnimation(.easeInOut(duration: 0.3)) { showCopiedToast = false }
+                        }
+                    }
+                    .help(L("Copy file name", "Copy file name"))
+
+                if showCopiedToast {
+                    Text("Copied")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                }
 
                 if editor.isDirty {
                     Circle()

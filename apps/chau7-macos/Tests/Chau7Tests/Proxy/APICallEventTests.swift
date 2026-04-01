@@ -86,6 +86,11 @@ final class AIEventNotificationTests: XCTestCase {
         XCTAssertEqual(event.notificationTitle, "Claude: Waiting for input")
     }
 
+    func testNotificationTitle_WaitingInput() {
+        let event = makeEvent(type: "waiting_input")
+        XCTAssertEqual(event.notificationTitle, "Claude: Waiting for input")
+    }
+
     func testNotificationTitle_Finished() {
         let event = makeEvent(type: "finished")
         XCTAssertEqual(event.notificationTitle, "Claude: Finished")
@@ -141,6 +146,11 @@ final class AIEventNotificationTests: XCTestCase {
     func testNotificationBody_Idle_EmptyMessage() {
         let event = makeEvent(type: "idle")
         XCTAssertEqual(event.notificationBody, "No new history entries for a while.")
+    }
+
+    func testNotificationBody_WaitingInput_EmptyMessage() {
+        let event = makeEvent(type: "waiting_input")
+        XCTAssertEqual(event.notificationBody, "Ready for your input.")
     }
 
     func testNotificationBody_Finished_EmptyMessage() {
@@ -199,5 +209,12 @@ final class AIEventSourceExtendedTests: XCTestCase {
     func testSourceHashable() {
         let sources: Set<AIEventSource> = [.app, .claudeCode, .app]
         XCTAssertEqual(sources.count, 2, "Duplicate sources should collapse in a Set")
+    }
+
+    func testSourceForProviderReturnsDedicatedAISource() {
+        XCTAssertEqual(AIEventSource.forProvider("codex"), .codex)
+        XCTAssertEqual(AIEventSource.forProvider("Aider"), .aider)
+        XCTAssertEqual(AIEventSource.forProvider("continue"), .continueAI)
+        XCTAssertNil(AIEventSource.forProvider("gemini"))
     }
 }

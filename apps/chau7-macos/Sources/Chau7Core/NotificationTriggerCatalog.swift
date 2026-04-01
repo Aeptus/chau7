@@ -308,6 +308,7 @@ public enum NotificationTriggerCatalog {
         ("finished", "finished", "Response complete", "finished responding.", true),
         ("failed", "failed", "Task failed", "failed or exited with an error.", true),
         ("permission", "permission", "Permission request", "needs permission to continue.", true),
+        ("waiting_input", "waitingInput", "Waiting for input", "is waiting for your input.", true),
         ("idle", "idle", "Session idle", "session appears idle.", false),
         ("token_threshold", "tokenThreshold", "Token threshold", "Token usage exceeded threshold.", false),
         ("cost_threshold", "costThreshold", "Cost threshold", "Session cost exceeded threshold.", false),

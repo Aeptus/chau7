@@ -230,6 +230,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Horizontal (`Cmd+Opt+H`) and vertical (`Cmd+Opt+V`) splits with draggable dividers.
 - Arbitrary nesting via binary tree layout controller.
 - Built-in text editor in split panes — syntax highlighting, line numbers, bracket matching, find/replace.
+- Click-to-copy document name in the editor pane header.
 - Multi-language syntax: HTML, CSS, JavaScript, Python, and more.
 
 ### Windows
