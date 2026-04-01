@@ -12,11 +12,13 @@ public enum NotificationSemanticKind: String, Codable, Sendable, CaseIterable, I
     case waitingForInput = "waiting_for_input"
     case attentionRequired = "attention_required"
     case authenticationSucceeded = "authentication_succeeded"
-    case idle = "idle"
-    case informational = "informational"
-    case unknown = "unknown"
+    case idle
+    case informational
+    case unknown
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 
     /// Returns `true` for kinds that should generally be surfaced as active
     /// user attention events in the shared notification layer.

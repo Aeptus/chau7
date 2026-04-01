@@ -16,7 +16,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Direct reference for code that can't use NSApp.delegate as? AppDelegate
     /// (e.g., SwiftUI gesture handlers where the cast may fail due to @NSApplicationDelegateAdaptor wrapping).
-    static weak var shared: AppDelegate?
+    weak static var shared: AppDelegate?
 
     private static let passwordAutofillSelector = NSSelectorFromString("_handleInsertFromPasswordsCommand:")
     var model: AppModel?
@@ -177,8 +177,9 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Start centralized autosave timer (replaces per-window timers)
         startMultiWindowAutoSaveTimer()
 
-        // Initialize debug console controller
+        // Initialize debug console and bug report controllers
         DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
+        BugReportWindowController.shared.configure(appModel: model, overlayModel: overlayModel)
 
         // Ensure theme is applied after windows exist
         applyAppTheme()
@@ -917,7 +918,10 @@ private final class OverlayBlurView: NSVisualEffectView {
                     : "\(other.window.title) (\(tabCount) tab\(tabCount == 1 ? "" : "s"))"
                 return OverlayTabsModel.WindowMenuItem(id: j, title: title)
             }
-            Log.info("wireTabMoveCallbacks: window \(i) has \(model.otherWindowTitles.count) other windows (was \(beforeCount)), onMoveTab=\(model.onMoveTabToWindow != nil), onMoveGroup=\(model.onMoveGroupToWindow != nil)")
+            Log
+                .info(
+                    "wireTabMoveCallbacks: window \(i) has \(model.otherWindowTitles.count) other windows (was \(beforeCount)), onMoveTab=\(model.onMoveTabToWindow != nil), onMoveGroup=\(model.onMoveGroupToWindow != nil)"
+                )
         }
     }
 
@@ -1041,7 +1045,10 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         Log.info("handleTabDrop: point=\(Int(point.x)),\(Int(point.y)) candidates=\(candidates.count) source=\(sourceIndex)")
         for c in candidates {
-            Log.info("  window \(c.index): tabBar=\(Int(c.primaryFrame.minX)),\(Int(c.primaryFrame.minY)),\(Int(c.primaryFrame.width))x\(Int(c.primaryFrame.height)) window=\(Int(c.fallbackFrame.minX)),\(Int(c.fallbackFrame.minY)),\(Int(c.fallbackFrame.width))x\(Int(c.fallbackFrame.height))")
+            Log
+                .info(
+                    "  window \(c.index): tabBar=\(Int(c.primaryFrame.minX)),\(Int(c.primaryFrame.minY)),\(Int(c.primaryFrame.width))x\(Int(c.primaryFrame.height)) window=\(Int(c.fallbackFrame.minX)),\(Int(c.fallbackFrame.minY)),\(Int(c.fallbackFrame.width))x\(Int(c.fallbackFrame.height))"
+                )
         }
 
         guard let targetIndex = OverlayWindowDropResolver.targetIndex(
@@ -1313,16 +1320,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     func reportIssue() {
-        if let issueURL = BugReporter.shared.prefilledIssueURL() {
-            NSWorkspace.shared.open(issueURL)
-        } else {
-            let alert = NSAlert()
-            alert.messageText = L("alert.reportIssue.title", "Report an Issue")
-            alert.informativeText = L("alert.reportIssue.message", "Unable to build a prefilled GitHub issue link.")
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: L("button.ok", "OK"))
-            alert.runModal()
-        }
+        BugReportWindowController.shared.show()
     }
 
     private func setupOverlayWindow() {

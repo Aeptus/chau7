@@ -49,7 +49,7 @@ struct WelcomeView: View {
             "keyboard.fill",
             "Shortcuts, shortcuts, shortcuts",
             "Cmd+T new tab  ·  Cmd+W close  ·  Cmd+Shift+] / [ switch\nCmd+Shift+D data explorer  ·  Cmd+K command palette"
-        ),
+        )
     ]
 
     var body: some View {
@@ -140,7 +140,7 @@ final class SplashWindowController {
     /// The `onDismiss` callback fires when BOTH the user clicks "Get Started"
     /// AND the app has finished loading (whichever comes last).
     func showWelcome(onDismiss: @escaping () -> Void) {
-        self.onWelcomeDismiss = onDismiss
+        onWelcomeDismiss = onDismiss
         appReady = false
         userDismissed = false
 
@@ -179,7 +179,7 @@ final class SplashWindowController {
         }
     }
 
-    private func showWindow<V: View>(content: V, width: CGFloat, height: CGFloat) {
+    private func showWindow(content: some View, width: CGFloat, height: CGFloat) {
         let hostingView = NSHostingView(rootView: content)
 
         let window = NSWindow(

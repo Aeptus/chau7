@@ -1,7 +1,7 @@
 import Foundation
 
 public enum NotificationDeliverySemantics {
-    public static let authoritativeRoutingTypes: Set<String> = [
+    public static let authoritativeRoutingTypes: Set = [
         "finished", "failed", "permission", "waiting_input", "attention_required"
     ]
     public static let authorityRetentionSeconds: TimeInterval = 180
@@ -29,7 +29,7 @@ public enum NotificationDeliverySemantics {
         retryAttempts: Int,
         maxRetryAttempts: Int
     ) -> String {
-        if event.sessionID == nil && event.directory == nil {
+        if event.sessionID == nil, event.directory == nil {
             return "Authoritative \(event.normalizedType) event missing exact routing identity"
         }
         return "Authoritative \(event.normalizedType) event unresolved after \(retryAttempts)/\(maxRetryAttempts) routing attempts"

@@ -1131,7 +1131,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.pendingClaudeWaitingInputFallbacks.removeValue(forKey: sessionID)
+            pendingClaudeWaitingInputFallbacks.removeValue(forKey: sessionID)
 
             let directory = event.cwd.isEmpty ? nil : event.cwd
             let runtimeTabID = RuntimeSessionManager.shared.sessionForClaudeSessionID(sessionID)?.tabID
@@ -1156,7 +1156,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 producer: "claude_response_complete_fallback",
                 reliability: .fallback
             )
-            self.publishUnifiedEvent(fallbackEvent, notify: true)
+            publishUnifiedEvent(fallbackEvent, notify: true)
         }
 
         pendingClaudeWaitingInputFallbacks[sessionID] = work

@@ -10,6 +10,7 @@ final class RepositoryModel: ObservableObject, Identifiable {
 
     @Published var branch: String?
     @Published var metadata: RepoMetadata = .empty
+    @Published var stats: RepoStats?
 
     /// Display name derived from root path (e.g. "Chau7")
     var repoName: String {
@@ -69,6 +70,18 @@ final class RepositoryModel: ObservableObject, Identifiable {
             DispatchQueue.main.async {
                 guard let self, self.metadata != loaded else { return }
                 self.metadata = loaded
+            }
+        }
+    }
+
+    /// Refresh computed stats from both SQLite stores. Call on demand
+    /// (hover card, debug console, MCP tool) — not on every tab switch.
+    func refreshStats() {
+        let root = rootPath
+        Self.metadataQueue.async { [weak self] in
+            let computed = RepoStatsProvider.stats(for: root)
+            DispatchQueue.main.async {
+                self?.stats = computed
             }
         }
     }
