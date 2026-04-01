@@ -1483,10 +1483,14 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             // Claude Code / Anthropic SDK (HTTP — no WebSocket needed)
             dict["ANTHROPIC_BASE_URL"] = proxyBase
 
-            // Codex CLI / OpenAI SDK — routed through the TLS port so that
-            // subscription-based Codex can do its native WSS upgrade through
-            // the proxy. The self-signed cert is trusted via the login keychain.
-            dict["OPENAI_BASE_URL"] = "\(tlsBase)/v1"
+            if settings.apiAnalyticsIncludeOpenAI {
+                // Codex CLI / OpenAI SDK — routed through the TLS port so that
+                // subscription-based Codex can do its native WSS upgrade through
+                // the proxy. The self-signed cert is trusted via the login keychain.
+                dict["OPENAI_BASE_URL"] = "\(tlsBase)/v1"
+            } else {
+                dict.removeValue(forKey: "OPENAI_BASE_URL")
+            }
 
             // Gemini CLI / Google GenAI SDK (HTTP — no WebSocket needed)
             dict["GOOGLE_GEMINI_BASE_URL"] = proxyBase

@@ -25,7 +25,7 @@ struct RunsExplorerView: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                         Spacer()
-                        let withTokens = runs.filter { ($0.totalInputTokens ?? 0) > 0 }.count
+                        let withTokens = runs.filter { $0.tokenUsage.hasAnyTokens }.count
                         if withTokens > 0 {
                             Text("\(withTokens) with token data")
                                 .font(.system(size: 11))
@@ -118,7 +118,7 @@ private struct RunRow: View {
                 }
 
                 // Tokens (only if non-zero)
-                let totalTokens = (run.totalInputTokens ?? 0) + (run.totalOutputTokens ?? 0)
+                let totalTokens = run.tokenUsage.totalBillableTokens
                 if totalTokens > 0 {
                     Text(formatTokens(totalTokens))
                         .font(.system(size: 10, design: .monospaced))
