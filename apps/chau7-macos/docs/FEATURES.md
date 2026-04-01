@@ -386,7 +386,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Live state inspector for tabs, sessions, and models.
 - Feature profiler with os.signpost integration.
 - Structured logging with category-based filtering and correlation IDs.
-- Privacy-first bug report dialog (⌥⌘I): all sensitive data off by default, per-toggle tab pickers, live preview, submit privately via relay.
+- Privacy-first bug report dialog (⌥⌘I): all sensitive data off by default, per-toggle tab pickers, live preview, HTTPS-only submission via relay, tab title redaction, no AI session fallback leak.
 - In-app issue reporting privacy page: GDPR-compliant sub-processor disclosure (Cloudflare, GitHub) with data categories, retention, legal basis, DPA links, and data subject rights.
 - Verbose (`CHAU7_VERBOSE=1`) and trace (`CHAU7_TRACE=1`) modes.
 
