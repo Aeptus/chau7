@@ -252,6 +252,15 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
     }
 }
 
+/// Closure-based NSMenuItem target. Must be a top-level @objc class (not nested/private)
+/// so the ObjC runtime can dispatch the action selector. Nested private classes have
+/// mangled names that NSMenu's responds(to:) check may not resolve.
+@objc private class ClosureMenuAction: NSObject {
+    let handler: () -> Void
+    init(_ handler: @escaping () -> Void) { self.handler = handler }
+    @objc func invoke(_ sender: Any?) { handler() }
+}
+
 private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
     var minWidthConstraint: NSLayoutConstraint?
     var maxWidthConstraint: NSLayoutConstraint?
@@ -280,24 +289,14 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         true
     }
 
-    /// Closure-based menu item target. NSMenuItem needs an NSObject target for
-    /// action dispatch. This wrapper holds a closure and acts as the target,
-    /// bypassing the responder chain entirely. Essential for submenu items
-    /// inside NSToolbarItem-hosted views where the normal responder chain breaks.
-    private class MenuAction: NSObject {
-        let handler: () -> Void
-        init(_ handler: @escaping () -> Void) { self.handler = handler }
-        @objc func invoke(_ sender: Any?) { handler() }
-    }
-
-    /// Retained menu action targets (released when the menu closes).
-    private var menuActions: [MenuAction] = []
+    /// Retained menu action targets (released when the next menu is built).
+    private var menuActions: [ClosureMenuAction] = []
 
     /// Create an NSMenuItem with a closure instead of target/action.
     private func menuItem(title: String, handler: @escaping () -> Void) -> NSMenuItem {
-        let action = MenuAction(handler)
+        let action = ClosureMenuAction(handler)
         menuActions.append(action)
-        let item = NSMenuItem(title: title, action: #selector(MenuAction.invoke(_:)), keyEquivalent: "")
+        let item = NSMenuItem(title: title, action: #selector(ClosureMenuAction.invoke(_:)), keyEquivalent: "")
         item.target = action
         item.isEnabled = true
         return item
@@ -521,7 +520,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
     }
 
     // Move to Window and Move Group to Window actions are handled via
-    // closure-based MenuAction targets (see menuItem(title:handler:))
+    // closure-based ClosureMenuAction targets (see menuItem(title:handler:))
     // because NSMenu action dispatch can't reach NSHostingView targets
     // inside NSToolbarItem through the responder chain.
 
