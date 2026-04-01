@@ -92,10 +92,6 @@ final class NotificationManager {
     }
 
     private func enqueueEvent(_ event: AIEvent) {
-        var event = event
-        if event.tabID == nil {
-            event = event.resolvingTabID(tabResolver?(event.tabTarget))
-        }
         let key = MonitoringSchedule.notificationCoalescingKey(for: event)
         let isNewKey = pendingNotifications[key] == nil
         pendingNotifications[key] = event
@@ -130,8 +126,21 @@ final class NotificationManager {
     /// All processing on main actor — delegates decision to pure pipeline, then executes.
     private func processEvent(_ event: AIEvent) {
         let ns = FeatureSettings.shared.notificationSettings
+        let preparedEvent: AIEvent
+        switch NotificationEventPreparation.prepare(
+            event,
+            triggerState: ns.triggerState,
+            tabResolver: tabResolver
+        ) {
+        case .drop(let reason):
+            Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
+            return
+        case .proceed(let resolvedEvent):
+            preparedEvent = resolvedEvent
+        }
+
         let input = NotificationPipeline.Input(
-            event: event,
+            event: preparedEvent,
             triggerState: ns.triggerState,
             triggerConditions: ns.triggerConditions,
             actionBindings: ns.triggerActionBindings,
@@ -139,7 +148,7 @@ final class NotificationManager {
             groupActionBindings: ns.groupActionBindings,
             isFocusModeActive: isFocusModeActive,
             isAppActive: NSApp.isActive,
-            isToolTabActive: activeTabChecker?(event.tabTarget) ?? false
+            isToolTabActive: activeTabChecker?(preparedEvent.tabTarget) ?? false
         )
 
         let decision = NotificationPipeline.evaluate(input)
@@ -150,56 +159,56 @@ final class NotificationManager {
 
         case .fireDefault(let triggerId):
             let baseRateLimitKey = triggerId ?? "unmatched.\(event.source.rawValue).\(event.tool.lowercased())"
-            let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: event)
+            let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: preparedEvent)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
                 Log.info("Rate limited: \(rateLimitKey) for tool=\(event.tool)")
-                history.record(event: event, triggerId: baseRateLimitKey, actionsExecuted: [], wasRateLimited: true)
+                history.record(event: preparedEvent, triggerId: baseRateLimitKey, actionsExecuted: [], wasRateLimited: true)
                 return
             }
-            showDefaultNotification(for: event)
+            showDefaultNotification(for: preparedEvent)
             // Safe to call without re-checking isToolTabActive: processEvent runs
             // entirely on @MainActor, so no tab switch can interleave between the
             // pipeline's active-tab check and this call. The pipeline already
             // dropped events for active tabs before reaching .fireDefault.
-            let didStyleTab = applyDefaultTabStyle(for: event)
+            let didStyleTab = applyDefaultTabStyle(for: preparedEvent)
             var actions = ["showNotification"]
             if didStyleTab { actions.append("styleTab") }
-            history.record(event: event, triggerId: baseRateLimitKey, actionsExecuted: actions, wasRateLimited: false)
+            history.record(event: preparedEvent, triggerId: baseRateLimitKey, actionsExecuted: actions, wasRateLimited: false)
 
         case .fireStyleOnly(let triggerId, let actions):
             let baseRateLimitKey = triggerId ?? "unmatched.\(event.source.rawValue).\(event.tool.lowercased())"
-            let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: event)
+            let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: preparedEvent)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
                 Log.info("Rate limited: \(rateLimitKey) for tool=\(event.tool)")
-                history.record(event: event, triggerId: baseRateLimitKey, actionsExecuted: [], wasRateLimited: true)
+                history.record(event: preparedEvent, triggerId: baseRateLimitKey, actionsExecuted: [], wasRateLimited: true)
                 return
             }
-            NotificationActionExecutor.shared.execute(actions: actions, for: event)
+            NotificationActionExecutor.shared.execute(actions: actions, for: preparedEvent)
             history.record(
-                event: event,
+                event: preparedEvent,
                 triggerId: baseRateLimitKey,
                 actionsExecuted: actions.filter(\.enabled).map(\.actionType.rawValue),
                 wasRateLimited: false
             )
 
         case .fireActions(let triggerId, let actions):
-            let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: triggerId, event: event)
+            let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: triggerId, event: preparedEvent)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
                 Log.info("Rate limited: \(triggerId) for tool=\(event.tool)")
-                history.record(event: event, triggerId: triggerId, actionsExecuted: [], wasRateLimited: true)
+                history.record(event: preparedEvent, triggerId: triggerId, actionsExecuted: [], wasRateLimited: true)
                 return
             }
-            NotificationActionExecutor.shared.execute(actions: actions, for: event)
+            NotificationActionExecutor.shared.execute(actions: actions, for: preparedEvent)
             var executedActions = actions.filter(\.enabled).map(\.actionType.rawValue)
             if let supplementalStyleAction = NotificationStylePlanner.supplementalStyleAction(
-                for: event,
+                for: preparedEvent,
                 from: actions
             ) {
-                NotificationActionExecutor.shared.execute(actions: [supplementalStyleAction], for: event)
+                NotificationActionExecutor.shared.execute(actions: [supplementalStyleAction], for: preparedEvent)
                 executedActions.append(NotificationActionType.styleTab.rawValue)
             }
             history.record(
-                event: event,
+                event: preparedEvent,
                 triggerId: triggerId,
                 actionsExecuted: executedActions,
                 wasRateLimited: false

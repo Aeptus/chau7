@@ -786,13 +786,14 @@ private struct ToolbarTabBarView: View {
                     }
                 }
 
-                Spacer()
-
                 if let session = selected?.session {
+                    Spacer(minLength: 8)
                     HStack(spacing: 8) {
                         DevServerBadge(session: session)
                         GitBranchBadge(session: session)
                     }
+                    .fixedSize()
+                    .layoutPriority(1)
                 }
             }
             .frame(height: OverlayLayout.tabBarHeight, alignment: .center)

@@ -51,6 +51,7 @@ public struct RuntimeEventType: RawRepresentable, Equatable, Hashable, Sendable 
 
     // Agent activity
     public static let agentResponding = RuntimeEventType(rawValue: "agent_responding")
+    public static let notification = RuntimeEventType(rawValue: "notification")
     public static let toolUse = RuntimeEventType(rawValue: "tool_use")
     public static let toolResult = RuntimeEventType(rawValue: "tool_result")
     public static let outputChunk = RuntimeEventType(rawValue: "output_chunk")
