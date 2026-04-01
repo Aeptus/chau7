@@ -34,6 +34,12 @@ struct HoverCardSettingsView: View {
             )
 
             SettingsToggle(
+                label: L("settings.hoverCard.repoStats", "Repository Stats"),
+                help: L("settings.hoverCard.repoStats.help", "Show aggregated repo metrics: total runs, tokens, cost, and commands"),
+                isOn: $settings.hoverCardShowRepoStats
+            )
+
+            SettingsToggle(
                 label: L("settings.hoverCard.conflicts", "File Conflicts"),
                 help: L("settings.hoverCard.conflicts.help", "Show warnings when multiple tabs modify the same file"),
                 isOn: $settings.hoverCardShowConflicts

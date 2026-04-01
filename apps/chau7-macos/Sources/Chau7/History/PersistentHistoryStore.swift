@@ -305,6 +305,45 @@ final class PersistentHistoryStore {
         return results.sorted { $0.frecencyScore > $1.frecencyScore }
     }
 
+    /// Aggregate command statistics for a repository (total, success, fail, avg duration).
+    func commandStatsForRepo(repoRoot: String) -> (total: Int, successful: Int, failed: Int, avgDuration: Double) {
+        guard let db = db else { return (0, 0, 0, 0) }
+        let sql = """
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN exit_code = 0 THEN 1 ELSE 0 END) as ok,
+                   SUM(CASE WHEN exit_code != 0 AND exit_code IS NOT NULL THEN 1 ELSE 0 END) as fail,
+                   AVG(CASE WHEN duration > 0 THEN duration ELSE NULL END) as avg_dur
+            FROM history WHERE directory LIKE ? OR directory = ?
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return (0, 0, 0, 0) }
+        defer { sqlite3_finalize(stmt) }
+        let pattern = repoRoot + "/%"
+        sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
+        sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return (0, 0, 0, 0) }
+        let total = Int(sqlite3_column_int(stmt, 0))
+        let ok = Int(sqlite3_column_int(stmt, 1))
+        let fail = Int(sqlite3_column_int(stmt, 2))
+        let avgDur = sqlite3_column_double(stmt, 3)
+        return (total, ok, fail, avgDur)
+    }
+
+    /// Timestamp of the most recent command in a repository.
+    func lastCommandTimestampForRepo(repoRoot: String) -> Date? {
+        guard let db = db else { return nil }
+        let sql = "SELECT MAX(timestamp) FROM history WHERE directory LIKE ? OR directory = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        let pattern = repoRoot + "/%"
+        sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
+        sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        let ts = sqlite3_column_double(stmt, 0)
+        return ts > 0 ? Date(timeIntervalSince1970: ts) : nil
+    }
+
     func totalCount() -> Int {
         guard let db = db else { return 0 }
         let sql = "SELECT COUNT(*) FROM history"

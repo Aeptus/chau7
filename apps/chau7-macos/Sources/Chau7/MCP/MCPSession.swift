@@ -387,7 +387,10 @@ final class MCPSession {
                     "properties": [
                         "backend": ["type": "string", "description": "Backend to use: 'claude' (default), 'codex', or 'shell'"],
                         "directory": ["type": "string", "description": "Working directory for the session"],
-                        "model": ["type": "string", "description": "Model override. Must match the backend: claude accepts 'opus', 'sonnet', 'haiku'; codex accepts 'o3', 'o4-mini', 'gpt-4.1'. Cross-backend models (e.g. 'sonnet' with codex) are rejected."],
+                        "model": [
+                            "type": "string",
+                            "description": "Model override. Must match the backend: claude accepts 'opus', 'sonnet', 'haiku'; codex accepts 'o3', 'o4-mini', 'gpt-4.1'. Cross-backend models (e.g. 'sonnet' with codex) are rejected."
+                        ],
                         "resume_session_id": ["type": "string", "description": "Resume an existing agent session by ID"],
                         "env": ["type": "object", "description": "Extra environment variables"],
                         "backend_args": ["type": "array", "items": ["type": "string"], "description": "Additional CLI arguments"],

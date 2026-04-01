@@ -37,6 +37,8 @@ struct SessionsExplorerView: View {
             let totalTokens = runs.reduce(0) { $0 + $1.tokenUsage.totalBillableTokens }
             let totalTurns = runs.reduce(0) { $0 + $1.turnCount }
             let lastActive = runs.map(\.startedAt).max() ?? Date.distantPast
+            let cmdStats = PersistentHistoryStore.shared.commandStatsForRepo(repoRoot: path)
+            let runStats = TelemetryStore.shared.runStatsForRepo(repoPath: path)
             return RepoRunGroup(
                 repoPath: path,
                 repoName: URL(fileURLWithPath: path).lastPathComponent,
@@ -44,6 +46,9 @@ struct SessionsExplorerView: View {
                 providers: providers.sorted(),
                 totalTokens: totalTokens,
                 totalTurns: totalTurns,
+                totalCost: runStats.totalCost,
+                totalCommands: cmdStats.total,
+                successRate: cmdStats.total > 0 ? Double(cmdStats.successful) / Double(cmdStats.total) : 0,
                 lastActive: lastActive
             )
         }
@@ -62,6 +67,9 @@ private struct RepoRunGroup: Identifiable {
     let providers: [String]
     let totalTokens: Int
     let totalTurns: Int
+    let totalCost: Double
+    let totalCommands: Int
+    let successRate: Double
     let lastActive: Date
 }
 
@@ -98,20 +106,31 @@ private struct RepoGroupRow: View {
 
                 Spacer()
 
+                if group.totalCommands > 0 {
+                    Text("\(group.totalCommands) cmds")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    // Success rate badge
+                    let rate = group.successRate
+                    Text(String(format: "%.0f%%", rate * 100))
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundStyle(rate > 0.9 ? .green : rate > 0.7 ? .yellow : .red)
+                }
+
                 Text("\(group.runCount) runs")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
-
-                if group.totalTurns > 0 {
-                    Text("\(group.totalTurns) turns")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
 
                 if group.totalTokens > 0 {
                     Text(formatTokens(group.totalTokens))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.blue)
+                }
+
+                if group.totalCost > 0 {
+                    Text(String(format: "$%.2f", group.totalCost))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.orange)
                 }
             }
         }

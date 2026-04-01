@@ -684,7 +684,7 @@ final class TerminalControlService {
                     "command": cmd.command,
                     "count": cmd.count,
                     "last_used": ISO8601DateFormatter().string(from: cmd.lastUsed),
-                    "frecency_score": cmd.frecencyScore,
+                    "frecency_score": cmd.frecencyScore
                 ] as [String: Any]
             }
         }
@@ -702,11 +702,11 @@ final class TerminalControlService {
             "total_tokens": stats.totalTokens,
             "total_cost": stats.totalCost,
             "total_turns": stats.totalTurns,
-            "providers": stats.providers,
+            "providers": stats.providers
         ]
         if !stats.topTools.isEmpty {
             statsDict["top_tools"] = stats.topTools.map { [
-                "tool": $0.tool, "count": $0.count,
+                "tool": $0.tool, "count": $0.count
             ] as [String: Any] }
         }
         if let lastCmd = stats.lastCommandAt { statsDict["last_command_at"] = iso.string(from: lastCmd) }

@@ -67,7 +67,7 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
                 || $0.displayName.lowercased() == trimmed
                 || $0.commandNames.contains(trimmed)
         }),
-              let rawValue = tool.eventSourceRawValue else {
+            let rawValue = tool.eventSourceRawValue else {
             return nil
         }
         return AIEventSource(rawValue: rawValue)

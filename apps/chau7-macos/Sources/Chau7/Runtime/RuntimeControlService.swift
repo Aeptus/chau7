@@ -66,7 +66,10 @@ final class RuntimeControlService {
         let autoApprove = args["auto_approve"] as? Bool ?? false
         let attachTabID = args["attach_tab_id"] as? String
 
-        Log.info("MCP runtime_session_create: backend=\(backendName) model=\(model ?? "(none)") dir=\(directory) autoApprove=\(autoApprove) resume=\(resumeID ?? "(none)") backendArgs=\(backendArgs) hasInitialPrompt=\(initialPrompt != nil) attachTab=\(attachTabID ?? "(none)")")
+        Log
+            .info(
+                "MCP runtime_session_create: backend=\(backendName) model=\(model ?? "(none)") dir=\(directory) autoApprove=\(autoApprove) resume=\(resumeID ?? "(none)") backendArgs=\(backendArgs) hasInitialPrompt=\(initialPrompt != nil) attachTab=\(attachTabID ?? "(none)")"
+            )
 
         // Resolve backend via registry
         Self.backendsLock.lock()

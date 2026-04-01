@@ -114,6 +114,7 @@ private struct TabHoverCardContent: View {
                 if settings.hoverCardShowProcesses { processInfoSection }
                 if settings.hoverCardShowLastCommand { lastCommandRow }
                 if settings.hoverCardShowAISession { aiSessionRow }
+                if settings.hoverCardShowRepoStats { repoStatsRow }
                 if settings.hoverCardShowConflicts { conflictsRow }
                 if settings.hoverCardShowTokenOptimization { tokenOptRow }
                 if settings.hoverCardShowBroadcast { broadcastRow }
@@ -583,6 +584,36 @@ private struct TabHoverCardContent: View {
         if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
         if count >= 1000 { return String(format: "%.0fK", Double(count) / 1000) }
         return "\(count)"
+    }
+
+    // MARK: - Repo Stats
+
+    @ViewBuilder
+    private var repoStatsRow: some View {
+        let repoRoot = session.gitRootPath ?? session.displayPath()
+        let stats = RepoStatsProvider.stats(for: repoRoot)
+        if stats.totalRuns > 0 || stats.totalCommands > 0 {
+            HStack(spacing: 6) {
+                Image(systemName: "chart.bar.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.blue)
+                    .frame(width: 16)
+                let parts = repoStatsParts(stats)
+                Text(parts.joined(separator: " \u{00b7} "))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func repoStatsParts(_ stats: RepoStats) -> [String] {
+        var parts: [String] = []
+        if stats.totalRuns > 0 { parts.append("\(stats.totalRuns) runs") }
+        if stats.totalTokens > 0 { parts.append(formatTokens(stats.totalTokens)) }
+        if stats.totalCost > 0 { parts.append(String(format: "$%.2f", stats.totalCost)) }
+        if stats.totalCommands > 0 { parts.append("\(stats.totalCommands) cmds") }
+        return parts
     }
 
     // MARK: - Conflicts

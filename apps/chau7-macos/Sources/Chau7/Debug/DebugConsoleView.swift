@@ -10,6 +10,7 @@ struct DebugConsoleView: View {
     private enum AnalyticsMode: String, CaseIterable {
         case apiCalls = "API Calls"
         case aiRuns = "AI Runs"
+        case repos = "Repos"
     }
 
     @ObservedObject var appModel: AppModel
@@ -38,6 +39,7 @@ struct DebugConsoleView: View {
     @State private var proxyProviderStats: [ProxyProviderAnalytics] = []
     @State private var proxyDailyTrend: [ProxyDailyAnalyticsPoint] = []
     @State private var recentProxyCalls: [APICallEvent] = []
+    @State private var repoAnalytics: [(path: String, name: String, stats: RepoStats)] = []
     @State private var ptyLogInfo: [(name: String, size: UInt64)] = []
     @State private var ctoPerSessionGain: [String: CTOGainStats] = [:]
     // Category & level filtering
@@ -1604,10 +1606,13 @@ struct DebugConsoleView: View {
                 }
                 .pickerStyle(.segmented)
 
-                if analyticsMode == .apiCalls {
+                switch analyticsMode {
+                case .apiCalls:
                     proxyAnalyticsView
-                } else {
+                case .aiRuns:
                     runAnalyticsView
+                case .repos:
+                    repoAnalyticsView
                 }
             }
             .padding()
@@ -1804,6 +1809,96 @@ struct DebugConsoleView: View {
             }
 
         }
+    }
+
+    private var repoAnalyticsView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if repoAnalytics.isEmpty {
+                Text("No repositories tracked yet.").foregroundStyle(.secondary)
+            } else {
+                GroupBox("Repository Overview") {
+                    ForEach(repoAnalytics, id: \.path) { entry in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Image(systemName: "folder.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.blue)
+                                Text(entry.name)
+                                    .font(.system(size: 12, weight: .semibold))
+                                Spacer()
+                                if let lastActive = [entry.stats.lastCommandAt, entry.stats.lastRunAt].compactMap({ $0 }).max() {
+                                    Text(relativeTimeString(lastActive))
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+
+                            HStack(spacing: 12) {
+                                if entry.stats.totalCommands > 0 {
+                                    Text("\(entry.stats.totalCommands) cmds")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.secondary)
+                                    let rate = entry.stats.successRate
+                                    Text(String(format: "%.0f%%", rate * 100))
+                                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(rate > 0.9 ? .green : rate > 0.7 ? .yellow : .red)
+                                }
+                                if entry.stats.totalRuns > 0 {
+                                    Text("\(entry.stats.totalRuns) runs")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.secondary)
+                                }
+                                if entry.stats.totalTokens > 0 {
+                                    Text(repoFormatTokens(entry.stats.totalTokens))
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.blue)
+                                }
+                                if entry.stats.totalCost > 0 {
+                                    Text(String(format: "$%.2f", entry.stats.totalCost))
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.orange)
+                                }
+                                Spacer()
+                                if !entry.stats.providers.isEmpty {
+                                    ForEach(entry.stats.providers, id: \.self) { provider in
+                                        Text(provider.capitalized)
+                                            .font(.system(size: 9, weight: .medium))
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(Color.secondary.opacity(0.15))
+                                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    }
+                                }
+                            }
+
+                            if !entry.stats.topTools.isEmpty {
+                                HStack(spacing: 6) {
+                                    ForEach(entry.stats.topTools.prefix(4), id: \.tool) { t in
+                                        Text("\(t.tool) \u{00d7}\(t.count)")
+                                            .font(.system(size: 9, design: .monospaced))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 2)
+                        Divider()
+                    }
+                }
+            }
+        }
+    }
+
+    private func relativeTimeString(_ date: Date) -> String {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f.localizedString(for: date, relativeTo: Date())
+    }
+
+    private func repoFormatTokens(_ count: Int) -> String {
+        if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
+        if count >= 1000 { return String(format: "%.0fK", Double(count) / 1000) }
+        return "\(count)"
     }
 
     private var healthDashboardView: some View {
@@ -2042,6 +2137,17 @@ struct DebugConsoleView: View {
         proxyProviderStats = ProxyAnalyticsStore.shared.providerStats()
         proxyDailyTrend = ProxyAnalyticsStore.shared.dailyTrend()
         recentProxyCalls = ProxyAnalyticsStore.shared.recentCalls()
+
+        repoAnalytics = settings.recentRepoRoots.map { root in
+            let stats = RepoStatsProvider.stats(for: root)
+            let name = URL(fileURLWithPath: root).lastPathComponent
+            return (path: root, name: name, stats: stats)
+        }
+        .sorted { lhs, rhs in
+            let lhsDate = [lhs.stats.lastCommandAt, lhs.stats.lastRunAt].compactMap { $0 }.max() ?? .distantPast
+            let rhsDate = [rhs.stats.lastCommandAt, rhs.stats.lastRunAt].compactMap { $0 }.max() ?? .distantPast
+            return lhsDate > rhsDate
+        }
     }
 
     private func runCostLabel(for stat: ProviderConsumptionStats) -> String {

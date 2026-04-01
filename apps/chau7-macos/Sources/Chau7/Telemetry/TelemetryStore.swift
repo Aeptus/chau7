@@ -795,6 +795,80 @@ final class TelemetryStore {
         }
     }
 
+    /// Aggregate run statistics for a repository.
+    func runStatsForRepo(repoPath: String) -> (totalRuns: Int, totalTokens: Int, totalCost: Double, totalTurns: Int, lastRunAt: Date?) {
+        queue.sync {
+            guard let db else { return (0, 0, 0, 0, nil) }
+            let sql = """
+                SELECT COUNT(*) as cnt,
+                       COALESCE(SUM(total_input_tokens + total_output_tokens), 0) as tokens,
+                       COALESCE(SUM(cost_usd), 0) as cost,
+                       COALESCE(SUM(turn_count), 0) as turns,
+                       MAX(started_at) as last_run
+                FROM runs WHERE repo_path = ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return (0, 0, 0, 0, nil) }
+            defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, repoPath)
+            guard sqlite3_step(stmt) == SQLITE_ROW else { return (0, 0, 0, 0, nil) }
+            let cnt = Int(sqlite3_column_int(stmt, 0))
+            let tokens = Int(sqlite3_column_int64(stmt, 1))
+            let cost = sqlite3_column_double(stmt, 2)
+            let turns = Int(sqlite3_column_int(stmt, 3))
+            let lastRun: Date?
+            if sqlite3_column_type(stmt, 4) != SQLITE_NULL,
+               let text = sqlite3_column_text(stmt, 4) {
+                lastRun = ISO8601DateFormatter().date(from: String(cString: text))
+            } else {
+                lastRun = nil
+            }
+            return (cnt, tokens, cost, turns, lastRun)
+        }
+    }
+
+    /// Distinct AI providers used in a repository.
+    func providersForRepo(repoPath: String) -> [String] {
+        queue.sync {
+            guard let db else { return [] }
+            let sql = "SELECT DISTINCT provider FROM runs WHERE repo_path = ? ORDER BY provider"
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, repoPath)
+            var results: [String] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                results.append(String(cString: sqlite3_column_text(stmt, 0)))
+            }
+            return results
+        }
+    }
+
+    /// Most used tools across all runs in a repository.
+    func toolCallDistributionForRepo(repoPath: String, limit: Int = 5) -> [(tool: String, count: Int)] {
+        queue.sync {
+            guard let db else { return [] }
+            let sql = """
+                SELECT tc.tool_name, COUNT(*) as cnt FROM tool_calls tc
+                JOIN runs r ON tc.run_id = r.run_id
+                WHERE r.repo_path = ?
+                GROUP BY tc.tool_name ORDER BY cnt DESC LIMIT ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, repoPath)
+            sqlite3_bind_int(stmt, 2, Int32(limit))
+            var results: [(tool: String, count: Int)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let tool = String(cString: sqlite3_column_text(stmt, 0))
+                let count = Int(sqlite3_column_int(stmt, 1))
+                results.append((tool: tool, count: count))
+            }
+            return results
+        }
+    }
+
     func latestRunForRepo(_ repoPath: String, provider: String? = nil) -> TelemetryRun? {
         queue.sync {
             guard let db else { return nil }

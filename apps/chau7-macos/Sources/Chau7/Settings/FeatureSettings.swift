@@ -1508,6 +1508,10 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(hoverCardShowAISession, forKey: Keys.hoverCardShowAISession) }
     }
 
+    @Published var hoverCardShowRepoStats: Bool {
+        didSet { UserDefaults.standard.set(hoverCardShowRepoStats, forKey: Keys.hoverCardShowRepoStats) }
+    }
+
     @Published var hoverCardShowProcesses: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowProcesses, forKey: Keys.hoverCardShowProcesses) }
     }
@@ -2086,6 +2090,20 @@ final class FeatureSettings: ObservableObject {
         ctoTabOverrides.removeValue(forKey: normalized)
     }
 
+    // MARK: - Bug Report Contact Info
+
+    @Published var bugReportContactName: String {
+        didSet { UserDefaults.standard.set(bugReportContactName, forKey: Keys.bugReportContactName) }
+    }
+
+    @Published var bugReportContactHandle: String {
+        didSet { UserDefaults.standard.set(bugReportContactHandle, forKey: Keys.bugReportContactHandle) }
+    }
+
+    @Published var bugReportIssueEndpoint: String {
+        didSet { UserDefaults.standard.set(bugReportIssueEndpoint, forKey: Keys.bugReportIssueEndpoint) }
+    }
+
     // MARK: - Keys
 
     private enum Keys {
@@ -2112,6 +2130,7 @@ final class FeatureSettings: ObservableObject {
         static let hoverCardShowDevServer = "hoverCard.showDevServer"
         static let hoverCardShowLastCommand = "hoverCard.showLastCommand"
         static let hoverCardShowAISession = "hoverCard.showAISession"
+        static let hoverCardShowRepoStats = "hoverCard.showRepoStats"
         static let hoverCardShowProcesses = "hoverCard.showProcesses"
         static let hoverCardShowTokenOptimization = "hoverCard.showTokenOptimization"
         static let hoverCardShowBroadcast = "hoverCard.showBroadcast"
@@ -2240,6 +2259,10 @@ final class FeatureSettings: ObservableObject {
         // Remote Control
         static let remoteEnabled = "remote.enabled"
         static let remoteRelayURL = "remote.relayURL"
+        // Bug Report
+        static let bugReportContactName = "bugReport.contactName"
+        static let bugReportContactHandle = "bugReport.contactHandle"
+        static let bugReportIssueEndpoint = "bugReport.issueEndpoint"
         /// Shell Event Detection
         static let shellEventConfig = "shell.eventConfig"
         /// App Event Detection
@@ -2487,6 +2510,7 @@ final class FeatureSettings: ObservableObject {
         self.hoverCardShowDevServer = defaults.object(forKey: Keys.hoverCardShowDevServer) as? Bool ?? true
         self.hoverCardShowLastCommand = defaults.object(forKey: Keys.hoverCardShowLastCommand) as? Bool ?? true
         self.hoverCardShowAISession = defaults.object(forKey: Keys.hoverCardShowAISession) as? Bool ?? true
+        self.hoverCardShowRepoStats = defaults.object(forKey: Keys.hoverCardShowRepoStats) as? Bool ?? true
         self.hoverCardShowProcesses = defaults.object(forKey: Keys.hoverCardShowProcesses) as? Bool ?? true
         self.hoverCardShowTokenOptimization = defaults.object(forKey: Keys.hoverCardShowTokenOptimization) as? Bool ?? false
         self.hoverCardShowBroadcast = defaults.object(forKey: Keys.hoverCardShowBroadcast) as? Bool ?? false
@@ -2632,6 +2656,11 @@ final class FeatureSettings: ObservableObject {
         self.isCTOEnabled = integration.isCTOEnabled
         self.ctoPrefix = integration.ctoPrefix
         self.ctoTabOverrides = integration.ctoTabOverrides
+
+        // Bug Report Contact Info
+        self.bugReportContactName = defaults.string(forKey: Keys.bugReportContactName) ?? ""
+        self.bugReportContactHandle = defaults.string(forKey: Keys.bugReportContactHandle) ?? ""
+        self.bugReportIssueEndpoint = defaults.string(forKey: Keys.bugReportIssueEndpoint) ?? ""
     }
 
     private static func mcpAndRemoteSettings(from defaults: UserDefaults) -> MCPRemoteSettings {
@@ -2901,6 +2930,7 @@ final class FeatureSettings: ObservableObject {
         var hoverCardShowDevServer: Bool?
         var hoverCardShowLastCommand: Bool?
         var hoverCardShowAISession: Bool?
+        var hoverCardShowRepoStats: Bool?
         var hoverCardShowProcesses: Bool?
         var hoverCardShowTokenOptimization: Bool?
         var hoverCardShowBroadcast: Bool?
@@ -3010,6 +3040,7 @@ final class FeatureSettings: ObservableObject {
             hoverCardShowDevServer: hoverCardShowDevServer,
             hoverCardShowLastCommand: hoverCardShowLastCommand,
             hoverCardShowAISession: hoverCardShowAISession,
+            hoverCardShowRepoStats: hoverCardShowRepoStats,
             hoverCardShowProcesses: hoverCardShowProcesses,
             hoverCardShowTokenOptimization: hoverCardShowTokenOptimization,
             hoverCardShowBroadcast: hoverCardShowBroadcast,
@@ -3165,6 +3196,7 @@ final class FeatureSettings: ObservableObject {
         if let v = imported.hoverCardShowDevServer { hoverCardShowDevServer = v }
         if let v = imported.hoverCardShowLastCommand { hoverCardShowLastCommand = v }
         if let v = imported.hoverCardShowAISession { hoverCardShowAISession = v }
+        if let v = imported.hoverCardShowRepoStats { hoverCardShowRepoStats = v }
         if let v = imported.hoverCardShowProcesses { hoverCardShowProcesses = v }
         if let v = imported.hoverCardShowTokenOptimization { hoverCardShowTokenOptimization = v }
         if let v = imported.hoverCardShowBroadcast { hoverCardShowBroadcast = v }
@@ -3311,6 +3343,7 @@ final class FeatureSettings: ObservableObject {
         hoverCardShowDevServer = true
         hoverCardShowLastCommand = true
         hoverCardShowAISession = true
+        hoverCardShowRepoStats = true
         hoverCardShowProcesses = true
         hoverCardShowTokenOptimization = false
         hoverCardShowBroadcast = false
@@ -3638,6 +3671,7 @@ extension FeatureSettings {
             hoverCardShowDevServer: true,
             hoverCardShowLastCommand: true,
             hoverCardShowAISession: true,
+            hoverCardShowRepoStats: true,
             hoverCardShowProcesses: true,
             hoverCardShowTokenOptimization: false,
             hoverCardShowBroadcast: false,

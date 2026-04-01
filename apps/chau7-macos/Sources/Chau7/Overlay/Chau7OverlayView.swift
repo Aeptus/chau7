@@ -257,8 +257,13 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
 /// mangled names that NSMenu's responds(to:) check may not resolve.
 @objc private class ClosureMenuAction: NSObject {
     let handler: () -> Void
-    init(_ handler: @escaping () -> Void) { self.handler = handler }
-    @objc func invoke(_ sender: Any?) { handler() }
+    init(_ handler: @escaping () -> Void) {
+        self.handler = handler
+    }
+
+    @objc func invoke(_ sender: Any?) {
+        handler()
+    }
 }
 
 private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
@@ -823,7 +828,7 @@ private struct ToolbarTabBarView: View {
     @State private var lastVisibilityLogAt: Date = .distantPast
     @State private var tabMidXPositions: [UUID: CGFloat] = [:]
 
-    // Group bracket drag state
+    /// Group bracket drag state
     @State private var draggingGroupID: String?
 
     var body: some View {

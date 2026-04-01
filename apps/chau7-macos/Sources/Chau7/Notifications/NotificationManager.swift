@@ -105,16 +105,17 @@ final class NotificationManager {
             let semanticDescription = canonical?.kind.rawValue ?? "passthrough"
             Log.info(
                 """
-                Notification ingress accepted: id=\(adapted.id.uuidString) source=\(adapted.source.rawValue) type=\(adapted.type) semantic=\(semanticDescription) reliability=\(adapted.reliability.rawValue) tabID=\(adapted.tabID?.uuidString ?? "nil") sessionID=\(adapted.sessionID ?? "nil")
+                Notification ingress accepted: id=\(adapted.id.uuidString) source=\(adapted.source.rawValue) type=\(adapted.type) semantic=\(semanticDescription) reliability=\(adapted.reliability
+                    .rawValue) tabID=\(adapted.tabID?.uuidString ?? "nil") sessionID=\(adapted.sessionID ?? "nil")
                 """
             )
             if let canonical {
-            history.begin(
-                event: adapted,
-                semanticKind: canonical.kind.rawValue,
-                rawType: canonical.rawType,
-                notificationType: canonical.notificationType
-            )
+                history.begin(
+                    event: adapted,
+                    semanticKind: canonical.kind.rawValue,
+                    rawType: canonical.rawType,
+                    notificationType: canonical.notificationType
+                )
             } else {
                 history.begin(event: adapted)
             }
@@ -179,7 +180,8 @@ final class NotificationManager {
 
         Log.info(
             """
-            Notification delivery prepared: id=\(preparedEvent.id.uuidString) type=\(preparedEvent.type) tool=\(preparedEvent.tool) resolution=\(resolutionMethod) tabID=\(preparedEvent.tabID?.uuidString ?? "nil") sessionID=\(preparedEvent.sessionID ?? "nil")
+            Notification delivery prepared: id=\(preparedEvent.id.uuidString) type=\(preparedEvent.type) tool=\(preparedEvent.tool) resolution=\(resolutionMethod) tabID=\(preparedEvent.tabID?
+                .uuidString ?? "nil") sessionID=\(preparedEvent.sessionID ?? "nil")
             """
         )
         history.markPrepared(event: preparedEvent, resolutionMethod: resolutionMethod)

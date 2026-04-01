@@ -333,6 +333,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     var hasPendingResumePrefillActivity: Bool {
         pendingPrefillInput != nil || pendingPrefillRetries > 0 || isShellLoading
     }
+
     /// Input queued before the terminal view exists. Preserves ordering between raw
     /// text input and synthesized key presses, then flushes on view attachment.
     private var pendingTerminalActions: [PendingTerminalAction] = []
