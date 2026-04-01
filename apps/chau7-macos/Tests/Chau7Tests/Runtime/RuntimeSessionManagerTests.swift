@@ -145,6 +145,35 @@ final class RuntimeSessionManagerTests: XCTestCase {
         XCTAssertEqual(notificationEvents.first?.data?["message"], "Heads up")
     }
 
+    func testUserPromptStartsTurnForAdoptedClaudeSession() {
+        let manager = RuntimeSessionManager.shared
+        let cwd = "/tmp/runtime-adopted-turn-\(UUID().uuidString)"
+        let tabID = UUID()
+
+        let session = manager.createSession(
+            tabID: tabID,
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: cwd, provider: "claude")
+        )
+
+        manager.handleClaudeEvent(
+            ClaudeCodeEvent(
+                type: .userPrompt,
+                hook: "UserPrompt",
+                sessionId: "claude-session-turn",
+                transcriptPath: "",
+                toolName: "",
+                message: "Please continue",
+                cwd: cwd,
+                timestamp: Date()
+            )
+        )
+
+        XCTAssertEqual(manager.sessionForClaudeSessionID("claude-session-turn")?.id, session.id)
+        XCTAssertEqual(session.state, .busy)
+        XCTAssertNotNil(session.currentTurnID)
+    }
+
     private func toolUseEvents(in session: RuntimeSession) -> [RuntimeEvent] {
         session.journal
             .events(after: 0, limit: 100)

@@ -1787,13 +1787,11 @@ struct DebugConsoleView: View {
             HStack {
                 Spacer()
                 Button("Rebuild Transcript Metrics") {
-                    DispatchQueue.global(qos: .utility).async {
-                        let report = TelemetryRepairService.shared.rebuildTranscriptDerivedRuns()
-                        DispatchQueue.main.async {
-                            refreshAnalyticsData()
-                        }
-                        Log.info("DebugConsole: rebuilt telemetry transcript metrics inspected=\(report.inspectedRuns) rebuilt=\(report.rebuiltRuns) invalidated=\(report.invalidatedRuns)")
-                    }
+                    // TelemetryStore uses SQLite without internal serialization,
+                    // so run the repair on main to avoid concurrent access.
+                    let report = TelemetryRepairService.shared.rebuildTranscriptDerivedRuns()
+                    Log.info("DebugConsole: rebuilt telemetry transcript metrics inspected=\(report.inspectedRuns) rebuilt=\(report.rebuiltRuns) invalidated=\(report.invalidatedRuns)")
+                    refreshAnalyticsData()
                 }
             }
 

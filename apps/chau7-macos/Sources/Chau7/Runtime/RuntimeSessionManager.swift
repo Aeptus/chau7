@@ -157,6 +157,9 @@ final class RuntimeSessionManager {
         // Map event types to session transitions and journal entries
         switch event.type {
         case .toolStart:
+            if session.currentTurnID == nil, session.canAcceptTurn {
+                _ = session.startTurn(prompt: event.message)
+            }
             // Record tool use for TurnStats
             let file = extractFilePath(from: event)
             session.recordToolUse(name: event.toolName, file: file)
@@ -186,7 +189,14 @@ final class RuntimeSessionManager {
             )
 
         case .permissionRequest:
-            if session.state == .busy {
+            if session.currentTurnID == nil, session.canAcceptTurn {
+                _ = session.startTurn(prompt: event.message)
+            }
+            let canHandlePermission = session.currentTurnID != nil
+                || session.state == .busy
+                || session.state == .awaitingApproval
+            if canHandlePermission {
+                let ownsUserFacingNotifications = session.backend.name.lowercased() == "claude"
                 if session.autoApprove {
                     // Layer 2: auto-respond to permission requests that bypass Layer 1
                     // (Layer 1 is the CLI flag like --full-auto / --dangerously-skip-permissions)
@@ -194,18 +204,25 @@ final class RuntimeSessionManager {
                         tabID: session.tabID.uuidString, input: "y\n"
                     )
                     Log.info("Auto-approved permission for session \(session.id): \(event.toolName) — \(event.message)")
-                    emitNotification(session: session, type: "permission_auto_approved", message: event.message)
+                    if !ownsUserFacingNotifications {
+                        emitNotification(session: session, type: "permission_auto_approved", message: event.message)
+                    }
                 } else {
                     _ = session.requestApproval(
                         tool: event.toolName,
                         description: event.message
                     )
-                    emitNotification(session: session, type: "permission", message: event.message)
+                    if !ownsUserFacingNotifications {
+                        emitNotification(session: session, type: "permission", message: event.message)
+                    }
                 }
             }
 
         case .responseComplete:
-            if session.state == .busy {
+            let canCompleteTurn = session.currentTurnID != nil
+                || session.state == .busy
+                || session.state == .awaitingApproval
+            if canCompleteTurn {
                 // Read transcript tokens before completing the turn
                 readTranscriptTokens(for: session, event: event)
 
@@ -222,12 +239,16 @@ final class RuntimeSessionManager {
                     )
                 }
 
-                // Emit waiting-input notification for interactive agent responses.
-                emitNotification(
-                    session: session,
-                    type: "waiting_input",
-                    message: event.message.isEmpty ? "\(session.backend.name) is waiting for your input." : event.message
-                )
+                // Claude owns waiting-input delivery through its upstream
+                // Notification hook. Runtime stays responsible for state and
+                // telemetry, but should not emit a second semantic notification.
+                if session.backend.name.lowercased() != "claude" {
+                    emitNotification(
+                        session: session,
+                        type: "waiting_input",
+                        message: event.message.isEmpty ? "\(session.backend.name) is waiting for your input." : event.message
+                    )
+                }
 
                 // Check token threshold (emit if > 100k total tokens)
                 if result.stats.totalTokens > 100_000 {
@@ -251,6 +272,9 @@ final class RuntimeSessionManager {
             moveToStopped(session)
 
         case .userPrompt:
+            if session.currentTurnID == nil, session.canAcceptTurn {
+                _ = session.startTurn(prompt: event.message)
+            }
             session.journal.append(
                 sessionID: session.id,
                 turnID: session.currentTurnID,

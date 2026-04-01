@@ -21,8 +21,11 @@ final class NotificationHistory {
         let id: UUID
         let source: String
         let type: String
+        let rawType: String?
+        var semanticKind: String?
         let tool: String
         let message: String
+        let notificationType: String?
         let timestamp: Date
         let reliability: String
         let producer: String?
@@ -51,8 +54,11 @@ final class NotificationHistory {
             id: event.id,
             source: event.source.rawValue,
             type: event.type,
+            rawType: event.rawType ?? event.type,
+            semanticKind: nil,
             tool: event.tool,
             message: event.message,
+            notificationType: event.notificationType,
             timestamp: Date(),
             reliability: event.reliability.rawValue,
             producer: event.producer,
@@ -68,6 +74,18 @@ final class NotificationHistory {
             notes: []
         )
         store(entry)
+    }
+
+    func markCanonicalized(eventID: UUID, semanticKind: String, rawType: String?, notificationType: String?) {
+        update(eventID) { entry in
+            entry.semanticKind = semanticKind
+            if let rawType {
+                entry.notes.append("rawType:\(rawType)")
+            }
+            if let notificationType {
+                entry.notes.append("notificationType:\(notificationType)")
+            }
+        }
     }
 
     func markCoalesced(eventID: UUID, key: String) {

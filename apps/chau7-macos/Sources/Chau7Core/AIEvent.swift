@@ -98,8 +98,15 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let source: AIEventSource
     public let type: String
+    /// Optional provider-native type before canonical notification mapping.
+    public let rawType: String?
     public let tool: String
+    /// Optional provider-supplied title for notification-like payloads.
+    public let title: String?
     public let message: String
+    /// Optional provider-supplied notification subtype (for example Claude
+    /// `permission_prompt` / `idle_prompt`).
+    public let notificationType: String?
     public let ts: String
     public let directory: String?
     public let tabID: UUID?
@@ -113,8 +120,11 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
     public init(
         source: AIEventSource = .unknown,
         type: String,
+        rawType: String? = nil,
         tool: String,
+        title: String? = nil,
         message: String,
+        notificationType: String? = nil,
         ts: String,
         directory: String? = nil,
         tabID: UUID? = nil,
@@ -125,8 +135,11 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         self.id = UUID()
         self.source = source
         self.type = type
+        self.rawType = rawType
         self.tool = tool
+        self.title = title
         self.message = message
+        self.notificationType = notificationType
         self.ts = ts
         self.directory = directory
         self.tabID = tabID
@@ -139,8 +152,11 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         id: UUID,
         source: AIEventSource = .unknown,
         type: String,
+        rawType: String? = nil,
         tool: String,
+        title: String? = nil,
         message: String,
+        notificationType: String? = nil,
         ts: String,
         directory: String? = nil,
         tabID: UUID? = nil,
@@ -151,8 +167,11 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         self.id = id
         self.source = source
         self.type = type
+        self.rawType = rawType
         self.tool = tool
+        self.title = title
         self.message = message
+        self.notificationType = notificationType
         self.ts = ts
         self.directory = directory
         self.tabID = tabID
@@ -168,8 +187,11 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
             id: id,
             source: source,
             type: type,
+            rawType: rawType,
             tool: tool,
+            title: title,
             message: message,
+            notificationType: notificationType,
             ts: ts,
             directory: directory,
             tabID: tabID,
@@ -220,6 +242,8 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
             return "\(prefix): Needs review"
         case "idle", "waiting_input":
             return "\(prefix): Waiting for input"
+        case "attention_required":
+            return "\(prefix): Needs attention"
         case "finished":
             return "\(prefix): Finished"
         case "failed":
@@ -254,6 +278,8 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
             return message.isEmpty ? "No new history entries for a while." : message
         case "waiting_input":
             return message.isEmpty ? "Ready for your input." : message
+        case "attention_required":
+            return message.isEmpty ? "Needs your attention." : message
         case "finished":
             return message.isEmpty ? "Done." : message
         case "failed":

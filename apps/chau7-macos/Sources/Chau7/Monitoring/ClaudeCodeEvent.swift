@@ -48,7 +48,9 @@ struct ClaudeCodeEvent: Identifiable, Equatable {
     let sessionId: String
     let transcriptPath: String
     let toolName: String
+    let title: String?
     let message: String
+    let notificationType: String?
     let cwd: String
     let timestamp: Date
 
@@ -62,6 +64,30 @@ struct ClaudeCodeEvent: Identifiable, Equatable {
     /// Short session ID for display
     var shortSessionId: String {
         String(sessionId.prefix(8))
+    }
+
+    init(
+        type: ClaudeEventType,
+        hook: String,
+        sessionId: String,
+        transcriptPath: String,
+        toolName: String,
+        title: String? = nil,
+        message: String,
+        notificationType: String? = nil,
+        cwd: String,
+        timestamp: Date
+    ) {
+        self.type = type
+        self.hook = hook
+        self.sessionId = sessionId
+        self.transcriptPath = transcriptPath
+        self.toolName = toolName
+        self.title = title
+        self.message = message
+        self.notificationType = notificationType
+        self.cwd = cwd
+        self.timestamp = timestamp
     }
 }
 
@@ -90,7 +116,9 @@ enum ClaudeCodeEventParser {
         let sessionId = json["sessionId"] as? String ?? ""
         let transcriptPath = json["transcriptPath"] as? String ?? ""
         let toolName = json["toolName"] as? String ?? ""
+        let title = json["title"] as? String
         let message = json["message"] as? String ?? ""
+        let notificationType = (json["notificationType"] as? String) ?? (json["notification_type"] as? String)
         let cwd = json["cwd"] as? String ?? ""
         let timestampStr = json["timestamp"] as? String ?? ""
 
@@ -103,7 +131,9 @@ enum ClaudeCodeEventParser {
             sessionId: sessionId,
             transcriptPath: transcriptPath,
             toolName: toolName,
+            title: title,
             message: message,
+            notificationType: notificationType,
             cwd: cwd,
             timestamp: timestamp
         )

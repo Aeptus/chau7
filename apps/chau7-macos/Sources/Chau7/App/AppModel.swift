@@ -1030,12 +1030,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         monitor.onEvent = { [weak self] event in
             guard let self else { return }
             claudeCodeEvents.append(event)
-            claudeCodeEvents.trimToLast(50)
 
             // Feed runtime state first so Claude hook events can pick up a
             // stable runtime-owned tab binding before they enter the generic
             // notification path.
             RuntimeSessionManager.shared.handleClaudeEvent(event)
+
+            // Trim after runtime processing so the event is always available
+            // when sessionForClaudeSessionID looks it up.
+            claudeCodeEvents.trimToLast(50)
 
             let runtimeTabID = RuntimeSessionManager.shared.sessionForClaudeSessionID(event.sessionId)?.tabID
 
@@ -1052,8 +1055,11 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             let aiEvent = AIEvent(
                 source: .claudeCode,
                 type: event.type.rawValue,
+                rawType: event.type.rawValue,
                 tool: "Claude",
+                title: event.title,
                 message: event.message,
+                notificationType: event.notificationType,
                 ts: DateFormatters.iso8601.string(from: event.timestamp),
                 directory: event.cwd.isEmpty ? nil : event.cwd,
                 tabID: runtimeTabID ?? resolveTabID(
@@ -1066,6 +1072,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 producer: "claude_code_monitor",
                 reliability: .authoritative
             )
+
             recentEvents.append(aiEvent)
             recentEvents.trimToLast(25)
 
@@ -1109,20 +1116,6 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         monitor.onResponseComplete = { [weak self] event in
             Log.info("Claude Code response complete: \(event.projectName)")
             self?.syncClaudeCodeSessions()
-            guard RuntimeSessionManager.shared.sessionForClaudeSessionID(event.sessionId) == nil else {
-                return
-            }
-            self?.recordEvent(
-                source: .claudeCode,
-                type: "waiting_input",
-                tool: "Claude",
-                message: "Claude is waiting for your input in \(event.projectName)",
-                notify: true,
-                directory: event.cwd.isEmpty ? nil : event.cwd,
-                sessionID: event.sessionId,
-                producer: "claude_code_waiting_input",
-                reliability: .authoritative
-            )
         }
 
         // Start monitoring

@@ -928,7 +928,10 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     /// Move a tab from one window to another. Pass toWindowIndex = -1 to create a new window.
     private func moveTab(_ tabID: UUID, fromWindowIndex: Int, toWindowIndex: Int) {
-        guard fromWindowIndex < overlayHosts.count else { return }
+        guard fromWindowIndex < overlayHosts.count else {
+            Log.warn("moveTab: fromWindowIndex \(fromWindowIndex) out of bounds (count=\(overlayHosts.count))")
+            return
+        }
         let source = overlayHosts[fromWindowIndex].model
         guard let tab = source.extractTabForWindowTransfer(id: tabID) else { return }
 
@@ -951,7 +954,12 @@ private final class OverlayBlurView: NSVisualEffectView {
             showOverlayWindow(overlayHosts.last!, reason: "moveToNewWindow")
             Log.info("Moved tab \(tabID) to new window \(windowNumber)")
         } else {
-            guard toWindowIndex < overlayHosts.count else { return }
+            guard toWindowIndex < overlayHosts.count else {
+                Log.warn("moveTab: target window \(toWindowIndex) closed during drag (count=\(overlayHosts.count)), re-inserting tab into source")
+                source.tabs.append(tab)
+                source.selectTab(id: tab.id)
+                return
+            }
             let target = overlayHosts[toWindowIndex].model
             target.tabs.append(tab)
             target.selectTab(id: tab.id)
@@ -964,10 +972,19 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     /// Move all tabs in a repo group from one window to another.
     private func moveGroup(_ repoGroupID: String, fromWindowIndex: Int, toWindowIndex: Int) {
-        guard fromWindowIndex < overlayHosts.count else { return }
+        let repoName = URL(fileURLWithPath: repoGroupID).lastPathComponent
+        Log.info("moveGroup: \(repoName) from=\(fromWindowIndex) to=\(toWindowIndex) hosts=\(overlayHosts.count)")
+        guard fromWindowIndex < overlayHosts.count else {
+            Log.warn("moveGroup: fromWindowIndex \(fromWindowIndex) out of bounds (count=\(overlayHosts.count))")
+            return
+        }
         let source = overlayHosts[fromWindowIndex].model
         let groupTabs = source.extractGroupForWindowTransfer(repoGroupID: repoGroupID)
-        guard !groupTabs.isEmpty else { return }
+        guard !groupTabs.isEmpty else {
+            Log.warn("moveGroup: no tabs found for group \(repoName)")
+            return
+        }
+        Log.info("moveGroup: extracted \(groupTabs.count) tabs from \(repoName)")
 
         if toWindowIndex == -1 {
             guard let model else { return }
@@ -986,7 +1003,12 @@ private final class OverlayBlurView: NSVisualEffectView {
             showOverlayWindow(overlayHosts.last!, reason: "moveGroupToNewWindow")
             Log.info("Moved group \(repoGroupID) (\(groupTabs.count) tabs) to new window \(windowNumber)")
         } else {
-            guard toWindowIndex < overlayHosts.count else { return }
+            guard toWindowIndex < overlayHosts.count else {
+                Log.warn("moveGroup: target window \(toWindowIndex) closed during drag (count=\(overlayHosts.count)), re-inserting group into source")
+                source.tabs.append(contentsOf: groupTabs)
+                source.selectTab(id: groupTabs[0].id)
+                return
+            }
             let target = overlayHosts[toWindowIndex].model
             target.tabs.append(contentsOf: groupTabs)
             target.selectTab(id: groupTabs[0].id)
@@ -1032,7 +1054,12 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     func handleGroupDrop(repoGroupID: String, from sourceModel: OverlayTabsModel, atScreenPoint point: CGPoint) -> Bool {
-        guard let sourceIndex = overlayHosts.firstIndex(where: { $0.model === sourceModel }) else { return false }
+        let repoName = URL(fileURLWithPath: repoGroupID).lastPathComponent
+        Log.info("handleGroupDrop: \(repoName) point=(\(Int(point.x)),\(Int(point.y)))")
+        guard let sourceIndex = overlayHosts.firstIndex(where: { $0.model === sourceModel }) else {
+            Log.warn("handleGroupDrop: source model not found in overlayHosts")
+            return false
+        }
 
         let candidates = overlayHosts.enumerated().compactMap { index, host -> OverlayWindowDropCandidate? in
             guard host.window.isVisible, !host.window.isMiniaturized else { return nil }
@@ -1043,14 +1070,18 @@ private final class OverlayBlurView: NSVisualEffectView {
             )
         }
 
+        Log.info("handleGroupDrop: group=\(repoGroupID) point=\(Int(point.x)),\(Int(point.y)) candidates=\(candidates.count) source=\(sourceIndex)")
+
         guard let targetIndex = OverlayWindowDropResolver.targetIndex(
             at: point,
             candidates: candidates,
             excluding: sourceIndex
         ) else {
+            Log.info("handleGroupDrop: no target window at drop point")
             return false
         }
 
+        Log.info("handleGroupDrop: moving group to window \(targetIndex)")
         moveGroup(repoGroupID, fromWindowIndex: sourceIndex, toWindowIndex: targetIndex)
         return true
     }
@@ -1228,11 +1259,13 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     func showWelcomeFromMenu() {
-        let controller = SplashWindowController()
-        controller.showWelcome { [weak controller] in
-            controller?.dismiss {}
+        // Reuse the existing property so ARC keeps the controller alive while the window is visible.
+        splashController = SplashWindowController()
+        splashController?.showWelcome { [weak self] in
+            self?.splashController?.dismiss {}
+            self?.splashController = nil
         }
-        controller.markAppReady() // app is already running, dismiss on button click
+        splashController?.markAppReady() // app is already running, dismiss on button click
     }
 
     func showKeyboardShortcuts() {

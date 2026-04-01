@@ -330,6 +330,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private var pendingPrefillInput: String?
     /// Retry counter for pending prefill flush attempts.
     private var pendingPrefillRetries = 0
+    var hasPendingResumePrefillActivity: Bool {
+        pendingPrefillInput != nil || pendingPrefillRetries > 0 || isShellLoading
+    }
     /// Input queued before the terminal view exists. Preserves ordering between raw
     /// text input and synthesized key presses, then flushes on view attachment.
     private var pendingTerminalActions: [PendingTerminalAction] = []
@@ -358,6 +361,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     var pendingOutputLatencyAt: CFAbsoluteTime?
     var pendingAITimingInputAt: Date?
     var pendingAITimingInputChars = 0
+    var pendingAIRoundTripCompleted = false
+    var pendingWaitingInputFallbackArmed = false
+    var pendingWaitingInputFallbackSawLiveOutput = false
     var outputLatencySampleCount = 0
     var outputLatencyTotalMs: Double = 0
     let inputLagLogThresholdMs: Double = 60
@@ -1162,6 +1168,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         guard !text.isEmpty else { return }
         trackAIResumeMetadata(from: text)
         pendingPrefillInput = text
+        pendingWaitingInputFallbackArmed = false
+        pendingWaitingInputFallbackSawLiveOutput = false
         flushPendingPrefillInputIfReady()
     }
 
