@@ -55,9 +55,11 @@ public enum AINotificationSettingsBridge {
 
     public static func managedTriggerTypes(for event: AINotificationPrimaryEvent) -> [String] {
         switch event {
+        case .finished:
+            return ["finished", "waiting_input", "attention_required"]
         case .permission:
-            return ["permission", "waiting_input"]
-        case .finished, .failed:
+            return ["permission"]
+        case .failed:
             return [event.rawValue]
         }
     }

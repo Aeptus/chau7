@@ -6,7 +6,7 @@ public enum NotificationStylePlanner {
         switch event.type.lowercased() {
         case "error", "failed", "context_limit":
             preset = "error"
-        case "permission":
+        case "permission", "attention_required":
             preset = "attention"
         case "finished", "idle":
             preset = "waiting"

@@ -201,6 +201,7 @@ final class ProxyAnalyticsStore {
         guard FileManager.default.fileExists(atPath: path) else { return nil }
         var db: OpaquePointer?
         guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
+            Log.warn("ProxyAnalyticsStore: failed to open database at \(path)")
             return nil
         }
         defer { sqlite3_close(db) }

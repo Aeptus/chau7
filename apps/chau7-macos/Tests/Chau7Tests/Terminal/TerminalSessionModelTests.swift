@@ -308,9 +308,11 @@ final class TerminalSessionModelTests: XCTestCase {
 
         session.ownerTabID = tabID
         session.currentDirectory = "/tmp/mockup"
-        session.status = .running
         session.lastDetectedAppName = "Codex"
         session.lastAIProvider = "codex"
+        session.handleInputLine("continue")
+        session.status = .running
+        session.handleOutput(Data("assistant output".utf8))
 
         session.handlePromptDetected()
         let expectation = expectation(description: "waiting input event recorded")
@@ -334,15 +336,84 @@ final class TerminalSessionModelTests: XCTestCase {
 
         session.ownerTabID = tabID
         session.currentDirectory = "/tmp/mockup"
-        session.status = .running
         session.lastDetectedAppName = "Codex"
         session.lastAIProvider = "codex"
+        session.handleInputLine("continue")
+        session.status = .running
+        session.handleOutput(Data("assistant output".utf8))
 
         _ = RuntimeSessionManager.shared.createSession(
             tabID: tabID,
             backend: CodexBackend(),
             config: SessionConfig(directory: "/tmp/mockup", provider: "codex")
         )
+
+        session.handlePromptDetected()
+        let expectation = expectation(description: "prompt handling settled")
+        DispatchQueue.main.async { expectation.fulfill() }
+        await fulfillment(of: [expectation], timeout: 1.0)
+
+        XCTAssertFalse(model.recentEvents.contains { $0.type == "waiting_input" })
+        RuntimeSessionManager.shared.resetForTesting()
+    }
+
+    func testHandlePromptDetectedSkipsFallbackWithoutLiveOutput() async {
+        RuntimeSessionManager.shared.resetForTesting()
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.ownerTabID = UUID()
+        session.currentDirectory = "/tmp/mockup"
+        session.lastDetectedAppName = "Codex"
+        session.lastAIProvider = "codex"
+        session.handleInputLine("continue")
+        session.status = .running
+
+        session.handlePromptDetected()
+        let expectation = expectation(description: "prompt handling settled")
+        DispatchQueue.main.async { expectation.fulfill() }
+        await fulfillment(of: [expectation], timeout: 1.0)
+
+        XCTAssertFalse(model.recentEvents.contains { $0.type == "waiting_input" })
+        RuntimeSessionManager.shared.resetForTesting()
+    }
+
+    func testHandlePromptDetectedSkipsFallbackDuringResumePrefill() async {
+        RuntimeSessionManager.shared.resetForTesting()
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.ownerTabID = UUID()
+        session.currentDirectory = "/tmp/mockup"
+        session.lastDetectedAppName = "Codex"
+        session.lastAIProvider = "codex"
+        session.pendingWaitingInputFallbackArmed = true
+        session.pendingWaitingInputFallbackSawLiveOutput = true
+        session.prefillInput("codex resume 019d33cd-6084-78c1-a0c4-8de2a6142049")
+        session.status = .running
+
+        session.handlePromptDetected()
+        let expectation = expectation(description: "prefill prompt handling settled")
+        DispatchQueue.main.async { expectation.fulfill() }
+        await fulfillment(of: [expectation], timeout: 1.0)
+
+        XCTAssertFalse(model.recentEvents.contains { $0.type == "waiting_input" })
+        RuntimeSessionManager.shared.resetForTesting()
+    }
+
+    func testHandlePromptDetectedSkipsFallbackDuringResumePrefill() async {
+        RuntimeSessionManager.shared.resetForTesting()
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.ownerTabID = UUID()
+        session.currentDirectory = "/tmp/mockup"
+        session.lastDetectedAppName = "Codex"
+        session.lastAIProvider = "codex"
+        session.handleInputLine("continue")
+        session.status = .running
+        session.handleOutput(Data("assistant output".utf8))
+        session.prefillInput("codex resume 019d0000-0000-7000-8000-000000000000")
 
         session.handlePromptDetected()
         let expectation = expectation(description: "prompt handling settled")

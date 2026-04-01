@@ -19,6 +19,12 @@ final class NotificationHistoryTests: XCTestCase {
         )
 
         history.begin(event: event)
+        history.markCanonicalized(
+            eventID: event.id,
+            semanticKind: "task_finished",
+            rawType: "response_complete",
+            notificationType: "idle_prompt"
+        )
         history.markPrepared(event: event, resolutionMethod: "explicit_tab")
         history.markActionsExecuted(
             eventID: event.id,
@@ -37,6 +43,10 @@ final class NotificationHistoryTests: XCTestCase {
         XCTAssertTrue(entry.didDispatchBanner)
         XCTAssertTrue(entry.didStyleTab)
         XCTAssertEqual(entry.reliability, AIEventReliability.authoritative.rawValue)
+        XCTAssertEqual(entry.rawType, "finished")
+        XCTAssertEqual(entry.semanticKind, "task_finished")
+        XCTAssertTrue(entry.notes.contains("rawType:response_complete"))
+        XCTAssertTrue(entry.notes.contains("notificationType:idle_prompt"))
     }
 }
 #endif

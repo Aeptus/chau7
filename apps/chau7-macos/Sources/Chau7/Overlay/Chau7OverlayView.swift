@@ -741,25 +741,29 @@ private struct ToolbarTabBarView: View {
         overlayModel.dismissHoverCard()
         if draggingGroupID == nil {
             draggingGroupID = groupID
+            Log.info("Group drag started: \(URL(fileURLWithPath: groupID).lastPathComponent)")
         }
     }
 
     private func handleGroupDragEnd(groupID: String, dropScreenPoint: CGPoint) {
-        guard draggingGroupID == groupID else { return }
+        guard draggingGroupID == groupID else {
+            Log.trace("Group drag end ignored: draggingGroupID mismatch")
+            return
+        }
+        Log.info("Group drag end: \(URL(fileURLWithPath: groupID).lastPathComponent) dropPoint=(\(Int(dropScreenPoint.x)),\(Int(dropScreenPoint.y)))")
         defer {
             withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
                 draggingGroupID = nil
             }
         }
 
-        // dropScreenPoint is in global (screen) coordinates from DragGesture(.global)
         if let appDelegate = NSApp.delegate as? AppDelegate {
             let moved = appDelegate.handleGroupDrop(
                 repoGroupID: groupID, from: overlayModel, atScreenPoint: dropScreenPoint
             )
-            if moved {
-                Log.info("Group drag completed: \(URL(fileURLWithPath: groupID).lastPathComponent) moved to other window")
-            }
+            Log.info("Group drag result: crossWindow=\(moved)")
+        } else {
+            Log.warn("Group drag end: AppDelegate not available")
         }
     }
 
@@ -1173,18 +1177,21 @@ private struct ToolbarTabBarView: View {
 
     private func handleTabDragEnd(tab: OverlayTab, dropScreenPoint: CGPoint) {
         // Ignore if this isn't the tab being dragged (or no drag active)
-        guard draggingTabID == tab.id else { return }
+        guard draggingTabID == tab.id else {
+            Log.trace("Tab drag end ignored: draggingTabID=\(String(describing: draggingTabID)) != tab.id=\(tab.id)")
+            return
+        }
 
         let from = dragHomeIndex
         let to = dragCurrentSlot
-        // dropScreenPoint is in global (screen) coordinates from DragGesture(.global)
+        Log.info("Tab drag end: tab=\(tab.displayTitle) from=\(from) to=\(to) dropPoint=(\(Int(dropScreenPoint.x)),\(Int(dropScreenPoint.y)))")
+
         let movedAcrossWindows = (NSApp.delegate as? AppDelegate)?
             .handleTabDrop(tabID: tab.id, from: overlayModel, atScreenPoint: dropScreenPoint)
             ?? false
 
-        // Clear drag visuals and commit reorder in the same animation transaction
-        // so SwiftUI diffs old (offsets + old order) → new (no offsets + new order)
-        // as one smooth move per tab identity.
+        Log.info("Tab drag result: crossWindow=\(movedAcrossWindows) reorder=\(from != to && !movedAcrossWindows)")
+
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
             draggingTabID = nil
             dragOffset = 0

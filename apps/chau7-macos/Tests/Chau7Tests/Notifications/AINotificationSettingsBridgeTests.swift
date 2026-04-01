@@ -125,26 +125,39 @@ final class AINotificationSettingsBridgeTests: XCTestCase {
         XCTAssertEqual(updated.groupOverrides["ai_coding.finished"], true)
     }
 
-    func testPermissionPrimaryEventAlsoCoversWaitingInput() {
+    func testFinishedPrimaryEventAlsoCoversWaitingInput() {
         let waitingTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "waiting_input")!
         var state = NotificationTriggerState()
         state.setEnabled(true, for: waitingTrigger)
 
         XCTAssertTrue(
             AINotificationSettingsBridge.isEffectivelyEnabled(
-                for: .permission,
+                for: .finished,
                 state: state
             )
         )
 
         let updated = AINotificationSettingsBridge.updatedStateForPrimaryToggle(
             state,
-            event: .permission,
+            event: .finished,
             enabled: false
         )
 
         XCTAssertNil(updated.overrides[waitingTrigger.id])
-        XCTAssertEqual(updated.groupOverrides["ai_coding.permission"], false)
+        XCTAssertEqual(updated.groupOverrides["ai_coding.finished"], false)
         XCTAssertEqual(updated.groupOverrides["ai_coding.waiting_input"], false)
+    }
+
+    func testPermissionPrimaryEventNoLongerCoversWaitingInput() {
+        let waitingTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "waiting_input")!
+        var state = NotificationTriggerState()
+        state.setEnabled(true, for: waitingTrigger)
+
+        XCTAssertFalse(
+            AINotificationSettingsBridge.isEffectivelyEnabled(
+                for: .permission,
+                state: state
+            )
+        )
     }
 }

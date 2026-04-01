@@ -387,12 +387,12 @@ final class MCPSession {
                     "properties": [
                         "backend": ["type": "string", "description": "Backend to use: 'claude' (default), 'codex', or 'shell'"],
                         "directory": ["type": "string", "description": "Working directory for the session"],
-                        "model": ["type": "string", "description": "Model override (e.g. 'opus', 'sonnet')"],
+                        "model": ["type": "string", "description": "Model override. Must match the backend: claude accepts 'opus', 'sonnet', 'haiku'; codex accepts 'o3', 'o4-mini', 'gpt-4.1'. Cross-backend models (e.g. 'sonnet' with codex) are rejected."],
                         "resume_session_id": ["type": "string", "description": "Resume an existing agent session by ID"],
                         "env": ["type": "object", "description": "Extra environment variables"],
                         "backend_args": ["type": "array", "items": ["type": "string"], "description": "Additional CLI arguments"],
-                        "initial_prompt": ["type": "string", "description": "Prompt to send immediately after backend starts"],
-                        "auto_approve": ["type": "boolean", "description": "Auto-approve safe tool use requests"],
+                        "initial_prompt": ["type": "string", "description": "Prompt to send immediately after backend starts. Delivered with retry (up to ~4s) to handle backend startup time."],
+                        "auto_approve": ["type": "boolean", "description": "Auto-approve safe tool use requests. For claude: --dangerously-skip-permissions. For codex: --full-auto."],
                         "attach_tab_id": ["type": "string", "description": "Attach to existing tab instead of creating new one"]
                     ]
                 ]
@@ -433,7 +433,7 @@ final class MCPSession {
             ],
             [
                 "name": "runtime_turn_send",
-                "description": "Send a prompt to an agent session. Session must be in 'ready' state.",
+                "description": "Send a prompt to an agent session. Session must be in 'ready' state. Use runtime_turn_status or runtime_events_poll to check readiness first. Returns error with current state if not ready.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [

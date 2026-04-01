@@ -67,6 +67,7 @@ extension TerminalSessionModel {
             markOutputLatencyStart()
             markDirtyOutputRange(for: data)
             noteAIFirstOutputIfNeeded(bytes: data.count, at: now)
+            markWaitingInputFallbackOutputIfNeeded()
         }
         bufferNeedsRefresh = true
         recordInputLatencyIfNeeded()
@@ -483,6 +484,7 @@ extension TerminalSessionModel {
         devServerMonitor.commandDidFinish()
         flushPendingPrefillInputIfReady()
         emitWaitingInputFallbackIfNeeded(previousStatus: previousStatus)
+        clearWaitingInputFallbackTracking()
         guard hasPendingCommand, pendingCommandLine != nil else { return }
         promptSeenForPendingCommand = true
         if !commandFinishedNotified {
@@ -492,18 +494,23 @@ extension TerminalSessionModel {
     }
 
     private func emitWaitingInputFallbackIfNeeded(previousStatus: CommandStatus) {
-        guard previousStatus == .running || previousStatus == .stuck || previousStatus == .waitingForInput else {
-            return
-        }
-        guard let ownerTabID else {
-            return
-        }
-        guard RuntimeSessionManager.shared.sessionForTab(ownerTabID) == nil else {
-            return
-        }
-        guard let provider = effectiveAIProvider,
-              provider != "claude",
-              let source = AIEventSource.forProvider(provider) else {
+        let runtimeOwnsTab = ownerTabID.flatMap { RuntimeSessionManager.shared.sessionForTab($0) } != nil
+        let resumeCommand = pendingCommandLine.flatMap(AIResumeParser.extractMetadata(from:))
+        let context = TerminalPromptNotificationContext(
+            previousStatus: previousStatus.rawValue,
+            hasOwnerTab: ownerTabID != nil,
+            runtimeOwnsTab: runtimeOwnsTab,
+            providerID: effectiveAIProvider,
+            providerIsRestored: aiDetection.isRestored,
+            hasPendingPrefillInput: hasPendingResumePrefillActivity,
+            commandLooksLikeResume: resumeCommand != nil,
+            observedAIRoundTrip: pendingWaitingInputFallbackArmed && pendingWaitingInputFallbackSawLiveOutput,
+            sessionID: effectiveAISessionId
+        )
+        guard TerminalPromptNotificationAdapter.shouldEmitWaitingInput(from: context),
+              let provider = effectiveAIProvider,
+              let source = AIEventSource.forProvider(provider),
+              let ownerTabID else {
             return
         }
 
@@ -525,6 +532,12 @@ extension TerminalSessionModel {
             producer: "terminal_prompt_waiting_input",
             reliability: .fallback
         )
+    }
+
+    private func markWaitingInputFallbackOutputIfNeeded() {
+        guard pendingWaitingInputFallbackArmed else { return }
+        guard activeAppName != nil || lastDetectedAppName != nil else { return }
+        pendingWaitingInputFallbackSawLiveOutput = true
     }
 
     private func markInputLatencyStart() {
@@ -1179,9 +1192,12 @@ extension TerminalSessionModel {
         )
         guard hasBackgroundRenderingAIContext || detectedApp != nil else {
             clearPendingAITiming()
+            clearWaitingInputFallbackTracking()
             return
         }
 
+        pendingWaitingInputFallbackArmed = AIResumeParser.extractMetadata(from: commandLine) == nil
+        pendingWaitingInputFallbackSawLiveOutput = false
         pendingAITimingInputAt = Date()
         pendingAITimingInputChars = commandLine.count
         let app = aiDisplayAppName
@@ -1214,6 +1230,11 @@ extension TerminalSessionModel {
     private func clearPendingAITiming() {
         pendingAITimingInputAt = nil
         pendingAITimingInputChars = 0
+    }
+
+    private func clearWaitingInputFallbackTracking() {
+        pendingWaitingInputFallbackArmed = false
+        pendingWaitingInputFallbackSawLiveOutput = false
     }
 
     private func recordDangerousCommandLineIfNeeded(_ commandLine: String) {

@@ -133,16 +133,34 @@ final class NotificationManager {
     private func processEvent(_ event: AIEvent) {
         pruneAuthoritativeEvents()
 
+        let normalizedEvent: AIEvent
+        switch NotificationProviderAdapterRegistry.adapt(event) {
+        case .drop(let reason):
+            Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
+            history.markDropped(eventID: event.id, reason: reason)
+            return
+        case .passThrough(let adapted):
+            normalizedEvent = adapted
+        case .emit(let adapted, let canonical):
+            normalizedEvent = adapted
+            history.markCanonicalized(
+                eventID: event.id,
+                semanticKind: canonical.kind.rawValue,
+                rawType: canonical.rawType,
+                notificationType: canonical.notificationType
+            )
+        }
+
         let ns = FeatureSettings.shared.notificationSettings
         let preparedEvent: AIEvent
         let resolutionMethod: String
         switch NotificationEventPreparation.prepare(
-            event,
+            normalizedEvent,
             triggerState: ns.triggerState,
             tabResolver: tabResolver
         ) {
         case .drop(let reason):
-            Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
+            Log.trace("Notification dropped: \(reason) (type=\(normalizedEvent.type) tool=\(normalizedEvent.tool))")
             history.markDropped(eventID: event.id, reason: reason)
             return
         case .proceed(let prepared):
@@ -186,15 +204,15 @@ final class NotificationManager {
 
         switch decision {
         case .drop(let reason):
-            Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
+            Log.trace("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
             history.markDropped(eventID: preparedEvent.id, reason: reason)
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
 
         case .fireDefault(let triggerId):
-            let baseRateLimitKey = triggerId ?? "unmatched.\(event.source.rawValue).\(event.tool.lowercased())"
+            let baseRateLimitKey = triggerId ?? "unmatched.\(preparedEvent.source.rawValue).\(preparedEvent.tool.lowercased())"
             let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: preparedEvent)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
-                Log.info("Rate limited: \(rateLimitKey) for tool=\(event.tool)")
+                Log.info("Rate limited: \(rateLimitKey) for tool=\(preparedEvent.tool)")
                 history.markRateLimited(eventID: preparedEvent.id, triggerId: baseRateLimitKey)
                 routingRetryCounts.removeValue(forKey: preparedEvent.id)
                 return
@@ -218,10 +236,10 @@ final class NotificationManager {
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
 
         case .fireStyleOnly(let triggerId, let actions):
-            let baseRateLimitKey = triggerId ?? "unmatched.\(event.source.rawValue).\(event.tool.lowercased())"
+            let baseRateLimitKey = triggerId ?? "unmatched.\(preparedEvent.source.rawValue).\(preparedEvent.tool.lowercased())"
             let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: preparedEvent)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
-                Log.info("Rate limited: \(rateLimitKey) for tool=\(event.tool)")
+                Log.info("Rate limited: \(rateLimitKey) for tool=\(preparedEvent.tool)")
                 history.markRateLimited(eventID: preparedEvent.id, triggerId: baseRateLimitKey)
                 routingRetryCounts.removeValue(forKey: preparedEvent.id)
                 return
@@ -241,7 +259,7 @@ final class NotificationManager {
         case .fireActions(let triggerId, let actions):
             let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: triggerId, event: preparedEvent)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
-                Log.info("Rate limited: \(triggerId) for tool=\(event.tool)")
+                Log.info("Rate limited: \(triggerId) for tool=\(preparedEvent.tool)")
                 history.markRateLimited(eventID: preparedEvent.id, triggerId: triggerId)
                 routingRetryCounts.removeValue(forKey: preparedEvent.id)
                 return
@@ -305,6 +323,12 @@ final class NotificationManager {
     private func pruneAuthoritativeEvents(now: Date = Date()) {
         recentAuthoritativeEvents = recentAuthoritativeEvents.filter {
             now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.authorityRetentionSeconds
+        }
+        // Cap routing retry entries: any event that exhausted its retries
+        // but was never cleaned up (e.g., dropped before reaching processEvent)
+        // will linger. Remove entries that exceeded the max retry count.
+        if routingRetryCounts.count > 100 {
+            routingRetryCounts = routingRetryCounts.filter { $0.value < authoritativeRetryDelays.count }
         }
     }
 
