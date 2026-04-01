@@ -884,6 +884,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// Wire tab-move callbacks on all overlay models and update their window lists.
     /// Called after window creation, tab moves, and window activation.
     private func wireTabMoveCallbacks() {
+        Log.info("wireTabMoveCallbacks: \(overlayHosts.count) hosts")
         for (i, host) in overlayHosts.enumerated() {
             // Use weak self + resolve index at call time to handle array mutations
             let model = host.model
@@ -902,6 +903,7 @@ private final class OverlayBlurView: NSVisualEffectView {
                 self?.wireTabMoveCallbacks()
             }
             // Build window titles: "Window N (M tabs)" for each OTHER window
+            let beforeCount = model.otherWindowTitles.count
             model.otherWindowTitles = overlayHosts.enumerated().compactMap { j, other in
                 guard j != i else { return nil }
                 let tabCount = other.model.tabs.count
@@ -910,6 +912,7 @@ private final class OverlayBlurView: NSVisualEffectView {
                     : "\(other.window.title) (\(tabCount) tab\(tabCount == 1 ? "" : "s"))"
                 return OverlayTabsModel.WindowMenuItem(id: j, title: title)
             }
+            Log.info("wireTabMoveCallbacks: window \(i) has \(model.otherWindowTitles.count) other windows (was \(beforeCount)), onMoveTab=\(model.onMoveTabToWindow != nil), onMoveGroup=\(model.onMoveGroupToWindow != nil)")
         }
     }
 
@@ -1063,6 +1066,13 @@ private final class OverlayBlurView: NSVisualEffectView {
             overlayHosts.append(OverlayHost(window: window, model: tabsModel))
 
             Log.info("Restored additional window \(windowIndex + 1) with \(windowStates.count) tab(s) from \(restoreSource)")
+        }
+
+        // Wire callbacks for ALL windows now that additional hosts are registered.
+        // Without this, restored windows have nil onMoveTabToWindow/onMoveGroupToWindow
+        // and zero otherWindowTitles — making "Move to Window" menus empty.
+        if overlayHosts.count > 1 {
+            wireTabMoveCallbacks()
         }
     }
 
