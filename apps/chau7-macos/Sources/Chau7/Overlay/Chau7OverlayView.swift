@@ -416,31 +416,33 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         do {
             menu.addItem(.separator())
             if let groupID = tab.repoGroupID {
-                Log.info("Context menu group: tab=\(tab.displayTitle) groupID=\(URL(fileURLWithPath: groupID).lastPathComponent)")
-                let ungroupItem = NSMenuItem(title: "Remove from Repo Group", action: #selector(contextRemoveFromGroup(_:)), keyEquivalent: "")
-                ungroupItem.target = self
-                ungroupItem.representedObject = tab.id
-                menu.addItem(ungroupItem)
+                let groupSize = model.tabs.filter { $0.repoGroupID == groupID }.count
+                // Only show group actions when there are 2+ tabs in the group
+                if groupSize > 1 {
+                    let ungroupItem = NSMenuItem(title: "Remove from Repo Group", action: #selector(contextRemoveFromGroup(_:)), keyEquivalent: "")
+                    ungroupItem.target = self
+                    ungroupItem.representedObject = tab.id
+                    menu.addItem(ungroupItem)
 
-                // "Move Group to Window" submenu
-                let groupWindowSubmenu = NSMenu()
-                groupWindowSubmenu.autoenablesItems = false
-                groupWindowSubmenu.addItem(menuItem(title: "New Window") { [weak self] in
-                    Log.info("Move Group to New Window: groupID=\(URL(fileURLWithPath: groupID).lastPathComponent)")
-                    self?.tabsModel?.onMoveGroupToWindow?(groupID, -1)
-                })
-                if !model.otherWindowTitles.isEmpty {
-                    groupWindowSubmenu.addItem(.separator())
-                    for window in model.otherWindowTitles {
-                        let windowIndex = window.id
-                        groupWindowSubmenu.addItem(menuItem(title: window.title) { [weak self] in
-                            self?.tabsModel?.onMoveGroupToWindow?(groupID, windowIndex)
-                        })
+                    // "Move Group to Window" submenu
+                    let groupWindowSubmenu = NSMenu()
+                    groupWindowSubmenu.autoenablesItems = false
+                    groupWindowSubmenu.addItem(menuItem(title: "New Window") { [weak self] in
+                        self?.tabsModel?.onMoveGroupToWindow?(groupID, -1)
+                    })
+                    if !model.otherWindowTitles.isEmpty {
+                        groupWindowSubmenu.addItem(.separator())
+                        for window in model.otherWindowTitles {
+                            let windowIndex = window.id
+                            groupWindowSubmenu.addItem(menuItem(title: window.title) { [weak self] in
+                                self?.tabsModel?.onMoveGroupToWindow?(groupID, windowIndex)
+                            })
+                        }
                     }
+                    let groupWindowMenuItem = NSMenuItem(title: "Move Group to Window", action: nil, keyEquivalent: "")
+                    groupWindowMenuItem.submenu = groupWindowSubmenu
+                    menu.addItem(groupWindowMenuItem)
                 }
-                let groupWindowMenuItem = NSMenuItem(title: "Move Group to Window", action: nil, keyEquivalent: "")
-                groupWindowMenuItem.submenu = groupWindowSubmenu
-                menu.addItem(groupWindowMenuItem)
             }
             if tab.repoGroupID == nil, tab.session?.gitRootPath != nil {
                 let groupItem = NSMenuItem(title: "Add to Repo Group", action: #selector(contextAddToGroup(_:)), keyEquivalent: "")
