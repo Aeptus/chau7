@@ -5,9 +5,11 @@ import SwiftUI
 ///
 /// Follows the `DebugConsoleController` pattern: `static let shared`,
 /// weak references to app model, fresh snapshot on each `show()`.
-final class BugReportWindowController {
+final class BugReportWindowController: NSObject, NSWindowDelegate {
     static let shared = BugReportWindowController()
-    private init() {}
+    override private init() {
+        super.init()
+    }
 
     private var window: NSWindow?
     private weak var appModel: AppModel?
@@ -56,6 +58,7 @@ final class BugReportWindowController {
         newWindow.center()
         newWindow.isReleasedWhenClosed = false
         newWindow.minSize = NSSize(width: 540, height: 520)
+        newWindow.delegate = self
 
         // Close previous window if any
         window?.orderOut(nil)
@@ -63,5 +66,11 @@ final class BugReportWindowController {
 
         newWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // MARK: - NSWindowDelegate
+
+    func windowWillClose(_ notification: Notification) {
+        window = nil
     }
 }
