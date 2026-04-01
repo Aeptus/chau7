@@ -112,6 +112,39 @@ final class RuntimeSessionManagerTests: XCTestCase {
         XCTAssertEqual(toolUseEvents(in: second).count, 1)
     }
 
+    func testNotificationEventsBindClaudeSessionAndJournalNotification() {
+        let manager = RuntimeSessionManager.shared
+        let cwd = "/tmp/runtime-notification-\(UUID().uuidString)"
+        let tabID = UUID()
+
+        let session = manager.createSession(
+            tabID: tabID,
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: cwd, provider: "claude")
+        )
+
+        manager.handleClaudeEvent(
+            ClaudeCodeEvent(
+                type: .notification,
+                hook: "Notification",
+                sessionId: "claude-session-notify",
+                transcriptPath: "",
+                toolName: "",
+                message: "Heads up",
+                cwd: cwd,
+                timestamp: Date()
+            )
+        )
+
+        XCTAssertEqual(manager.sessionForClaudeSessionID("claude-session-notify")?.id, session.id)
+        let notificationEvents = session.journal
+            .events(after: 0, limit: 100)
+            .events
+            .filter { $0.type == RuntimeEventType.notification.rawValue }
+        XCTAssertEqual(notificationEvents.count, 1)
+        XCTAssertEqual(notificationEvents.first?.data?["message"], "Heads up")
+    }
+
     private func toolUseEvents(in session: RuntimeSession) -> [RuntimeEvent] {
         session.journal
             .events(after: 0, limit: 100)

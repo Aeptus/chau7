@@ -111,6 +111,18 @@ final class RuntimeSessionManager {
         return session
     }
 
+    func sessionForClaudeSessionID(_ sessionID: String) -> RuntimeSession? {
+        guard let normalized = normalizeClaudeSessionID(sessionID) else { return nil }
+
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let runtimeSessionID = claudeToRuntimeSession[normalized] else {
+            return nil
+        }
+        return sessions[runtimeSessionID] ?? recentlyStopped[runtimeSessionID]?.session
+    }
+
     func allSessions(includeStopped: Bool = false) -> [RuntimeSession] {
         lock.lock()
         defer { lock.unlock() }
@@ -239,6 +251,14 @@ final class RuntimeSessionManager {
                 sessionID: session.id,
                 turnID: session.currentTurnID,
                 type: RuntimeEventType.agentResponding.rawValue,
+                data: ["message": event.message]
+            )
+
+        case .notification:
+            session.journal.append(
+                sessionID: session.id,
+                turnID: session.currentTurnID,
+                type: RuntimeEventType.notification.rawValue,
                 data: ["message": event.message]
             )
 

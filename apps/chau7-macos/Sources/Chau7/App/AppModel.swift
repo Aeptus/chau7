@@ -1026,6 +1026,13 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             claudeCodeEvents.append(event)
             claudeCodeEvents.trimToLast(50)
 
+            // Feed runtime state first so Claude hook events can pick up a
+            // stable runtime-owned tab binding before they enter the generic
+            // notification path.
+            RuntimeSessionManager.shared.handleClaudeEvent(event)
+
+            let runtimeTabID = RuntimeSessionManager.shared.sessionForClaudeSessionID(event.sessionId)?.tabID
+
             // Also feed into the tool-agnostic recentEvents stream so Claude Code
             // events appear in the command center timeline alongside events from
             // other tools (Cursor, Codex, etc.). Without this, only the notification
@@ -1043,7 +1050,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 message: event.message,
                 ts: DateFormatters.iso8601.string(from: event.timestamp),
                 directory: event.cwd.isEmpty ? nil : event.cwd,
-                tabID: resolveTabID(
+                tabID: runtimeTabID ?? resolveTabID(
                     toolName: "Claude",
                     directory: event.cwd.isEmpty ? nil : event.cwd,
                     tabID: nil,
@@ -1068,10 +1075,6 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                     provider: "claude", cwd: event.cwd, sessionID: event.sessionId
                 )
             }
-
-            // Feed events into the agent runtime session manager so runtime sessions
-            // can track Claude Code state transitions and journal events for orchestrators.
-            RuntimeSessionManager.shared.handleClaudeEvent(event)
 
             // Keep menu bar / command center session snapshots in sync for every
             // session state transition, especially `sessionEnd` which does not
