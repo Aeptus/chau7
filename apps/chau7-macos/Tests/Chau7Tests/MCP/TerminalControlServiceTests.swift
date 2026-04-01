@@ -109,7 +109,7 @@ final class TerminalControlServiceTests: XCTestCase {
 
         let secondTabID = try XCTUnwrap(secondOverlayModel.tabs.first?.id)
         let resolvedTabID = TerminalControlService.shared.applyNotificationStyleAcrossWindows(
-            for: TabTarget(tool: "Codex", tabID: secondTabID),
+            to: secondTabID,
             stylePreset: "attention",
             config: [:]
         )

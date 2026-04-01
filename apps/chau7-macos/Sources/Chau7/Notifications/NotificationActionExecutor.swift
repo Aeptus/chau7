@@ -5,10 +5,10 @@ import Chau7Core
 /// Protocol for UI actions triggered by the notification system.
 /// Replaces 5 separate closure handlers with a single conformance point.
 @MainActor protocol NotificationActionDelegate: AnyObject {
-    func focusTab(for target: TabTarget)
-    @discardableResult func styleTab(for target: TabTarget, preset: String, config: [String: String]) -> UUID?
-    func badgeTab(for target: TabTarget, text: String, color: String)
-    func insertSnippet(id: String, for target: TabTarget, autoExecute: Bool)
+    func focusTab(tabID: UUID)
+    @discardableResult func styleTab(tabID: UUID, preset: String, config: [String: String]) -> UUID?
+    func badgeTab(tabID: UUID, text: String, color: String)
+    func insertSnippet(id: String, tabID: UUID, autoExecute: Bool)
     func flashMenuBar(duration: Int, animate: Bool)
 }
 
@@ -212,8 +212,10 @@ final class NotificationActionExecutor {
         DispatchQueue.main.async { [weak self] in
             NSApp.activate(ignoringOtherApps: true)
 
-            if focusTab {
-                self?.delegate?.focusTab(for: ctx.event.tabTarget)
+            if focusTab, let tabID = ctx.event.tabID {
+                self?.delegate?.focusTab(tabID: tabID)
+            } else if focusTab {
+                Log.warn("Action focusWindow: Missing explicit tabID for event \(ctx.event.id.uuidString)")
             }
         }
     }
@@ -233,7 +235,11 @@ final class NotificationActionExecutor {
         let badgeColor = ctx.configValue("badgeColor") ?? "red"
 
         DispatchQueue.main.async { [weak self] in
-            self?.delegate?.badgeTab(for: ctx.event.tabTarget, text: badgeText, color: badgeColor)
+            guard let tabID = ctx.event.tabID else {
+                Log.warn("Action badgeTab: Missing explicit tabID for event \(ctx.event.id.uuidString)")
+                return
+            }
+            self?.delegate?.badgeTab(tabID: tabID, text: badgeText, color: badgeColor)
         }
     }
 
@@ -243,25 +249,27 @@ final class NotificationActionExecutor {
     private func executeStyleTab(_ ctx: ActionContext) {
         let stylePreset = ctx.configValue("style") ?? "waiting"
         let config = ctx.config.config // Pass all config to handler
-        let target = ctx.event.tabTarget
         let autoClearSeconds = ctx.configInt("autoClearSeconds", default: 0)
 
         // All pendingStyleClears access and delegate calls on main queue
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            guard let tabID = ctx.event.tabID else {
+                Log.warn("Action styleTab: Missing explicit tabID for event \(ctx.event.id.uuidString)")
+                return
+            }
 
             // Suppress redundant style re-applies: if the tab already has this style
             // and an auto-clear timer is running, don't re-set and restart the timer.
             // This prevents idle re-notifications from resetting the 30s clear countdown.
             if stylePreset != "clear",
-               let existingTabID = target.tabID,
-               lastAppliedPreset[existingTabID] == stylePreset,
-               pendingStyleClears[existingTabID] != nil {
-                Log.trace("Skipping redundant style '\(stylePreset)' for tab \(existingTabID)")
+               lastAppliedPreset[tabID] == stylePreset,
+               pendingStyleClears[tabID] != nil {
+                Log.trace("Skipping redundant style '\(stylePreset)' for tab \(tabID)")
                 return
             }
 
-            let resolvedTabID = delegate?.styleTab(for: target, preset: stylePreset, config: config)
+            let resolvedTabID = delegate?.styleTab(tabID: tabID, preset: stylePreset, config: config)
 
             // Key timers by resolved tab ID so different tabs running the same tool don't collide
             guard let resolvedTabID else { return }
@@ -277,12 +285,10 @@ final class NotificationActionExecutor {
             pendingStyleClears.removeValue(forKey: resolvedTabID)
 
             if autoClearSeconds > 0 {
-                // Use resolved tab ID in the clear target so the timer hits the exact tab
-                let clearTarget = TabTarget(tool: target.tool, directory: target.directory, tabID: resolvedTabID)
                 let workItem = DispatchWorkItem { [weak self] in
                     self?.pendingStyleClears.removeValue(forKey: resolvedTabID)
                     self?.lastAppliedPreset.removeValue(forKey: resolvedTabID)
-                    self?.delegate?.styleTab(for: clearTarget, preset: "clear", config: [:])
+                    self?.delegate?.styleTab(tabID: resolvedTabID, preset: "clear", config: [:])
                 }
                 pendingStyleClears[resolvedTabID] = workItem
                 DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(autoClearSeconds), execute: workItem)
@@ -394,7 +400,11 @@ final class NotificationActionExecutor {
         let autoExecute = ctx.configBool("autoExecute", default: false)
 
         DispatchQueue.main.async { [weak self] in
-            self?.delegate?.insertSnippet(id: snippetId, for: ctx.event.tabTarget, autoExecute: autoExecute)
+            guard let tabID = ctx.event.tabID else {
+                Log.warn("Action executeSnippet: Missing explicit tabID for event \(ctx.event.id.uuidString)")
+                return
+            }
+            self?.delegate?.insertSnippet(id: snippetId, tabID: tabID, autoExecute: autoExecute)
         }
     }
 
@@ -995,25 +1005,23 @@ final class NotificationActionAdapter: NotificationActionDelegate {
         self.statusBar = statusBar
     }
 
-    func focusTab(for target: TabTarget) {
-        overlayModel?.focusTab(for: target)
+    func focusTab(tabID: UUID) {
+        TerminalControlService.shared.focusTabAcrossWindows(tabID: tabID)
     }
 
     @discardableResult
-    func styleTab(for target: TabTarget, preset: String, config: [String: String]) -> UUID? {
-        // Search ALL windows, not just window 0. Without this, tabs in
-        // window 1+ never get notification borders/highlights applied.
+    func styleTab(tabID: UUID, preset: String, config: [String: String]) -> UUID? {
         TerminalControlService.shared.applyNotificationStyleAcrossWindows(
-            for: target, stylePreset: preset, config: config
+            to: tabID, stylePreset: preset, config: config
         )
     }
 
-    func badgeTab(for target: TabTarget, text: String, color: String) {
-        overlayModel?.setBadge(for: target, text: text, color: color)
+    func badgeTab(tabID: UUID, text: String, color: String) {
+        TerminalControlService.shared.badgeTabAcrossWindows(tabID: tabID, text: text, color: color)
     }
 
-    func insertSnippet(id: String, for target: TabTarget, autoExecute: Bool) {
-        overlayModel?.insertSnippet(id: id, for: target, autoExecute: autoExecute)
+    func insertSnippet(id: String, tabID: UUID, autoExecute: Bool) {
+        TerminalControlService.shared.insertSnippetAcrossWindows(id: id, tabID: tabID, autoExecute: autoExecute)
     }
 
     func flashMenuBar(duration: Int, animate: Bool) {

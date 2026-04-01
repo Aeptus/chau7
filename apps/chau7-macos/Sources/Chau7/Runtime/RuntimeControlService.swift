@@ -394,7 +394,7 @@ final class RuntimeControlService {
 
         let didResolve = session.resolveApproval(id: approvalID, approved: approved, resolvedBy: reason)
         if didResolve {
-            NotificationCenter.default.post(name: .clearPersistentTabStyle, object: session.tabID)
+            _ = TerminalControlService.shared.clearPersistentNotificationStyleAcrossWindows(tabID: session.tabID)
         }
 
         return encodeAny(["ok": true, "approved": approved])

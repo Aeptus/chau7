@@ -214,12 +214,12 @@ final class OverlayTabsModelTests: XCTestCase {
         let selectedTab = model.tabs[0]
 
         let resolved = model.applyNotificationStyle(
-            for: TabTarget(tool: "Codex", tabID: selectedTab.id),
+            to: selectedTab.id,
             stylePreset: "attention",
             config: [:]
         )
 
-        XCTAssertEqual(resolved, selectedTab.id)
+        XCTAssertTrue(resolved)
         XCTAssertEqual(model.tabs[0].notificationStyle, .attention)
     }
 

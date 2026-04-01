@@ -67,21 +67,59 @@ final class TerminalControlService {
         allModels.flatMap { $0.model.tabs }
     }
 
-    /// Apply a notification style to a tab found by target across ALL windows.
     @discardableResult
-    func applyNotificationStyleAcrossWindows(for target: TabTarget, stylePreset: String, config: [String: String]) -> UUID? {
+    func applyNotificationStyleAcrossWindows(to tabID: UUID, stylePreset: String, config: [String: String]) -> UUID? {
         for (_, model) in allModels {
-            if let tabID = model.applyNotificationStyle(
-                for: target,
-                stylePreset: stylePreset,
-                config: config,
-                logOnMiss: false
-            ) {
+            if model.applyNotificationStyle(to: tabID, stylePreset: stylePreset, config: config) {
                 return tabID
             }
         }
-        Log.info("applyNotificationStyle: No tab found across windows for tool '\(target.tool)'")
+        Log.warn("applyNotificationStyle: Explicit tabID not found across windows for tab \(tabID)")
         return nil
+    }
+
+    @discardableResult
+    func focusTabAcrossWindows(tabID: UUID) -> Bool {
+        for (_, model) in allModels {
+            if model.focusTab(id: tabID) {
+                return true
+            }
+        }
+        Log.warn("focusTab: Explicit tabID not found across windows for tab \(tabID)")
+        return false
+    }
+
+    @discardableResult
+    func badgeTabAcrossWindows(tabID: UUID, text: String, color: String) -> Bool {
+        for (_, model) in allModels {
+            if model.setBadge(on: tabID, text: text, color: color) {
+                return true
+            }
+        }
+        Log.warn("setBadge: Explicit tabID not found across windows for tab \(tabID)")
+        return false
+    }
+
+    @discardableResult
+    func insertSnippetAcrossWindows(id snippetID: String, tabID: UUID, autoExecute: Bool) -> Bool {
+        for (_, model) in allModels {
+            if model.insertSnippet(id: snippetID, on: tabID, autoExecute: autoExecute) {
+                return true
+            }
+        }
+        Log.warn("insertSnippet: Explicit tabID not found across windows for tab \(tabID)")
+        return false
+    }
+
+    @discardableResult
+    func clearPersistentNotificationStyleAcrossWindows(tabID: UUID) -> Bool {
+        for (_, model) in allModels {
+            if model.clearPersistentNotificationStyle(on: tabID) {
+                return true
+            }
+        }
+        Log.warn("clearPersistentStyle: Explicit tabID not found across windows for tab \(tabID)")
+        return false
     }
 
     // MARK: - Tab Operations
@@ -646,10 +684,35 @@ final class TerminalControlService {
                     "command": cmd.command,
                     "count": cmd.count,
                     "last_used": ISO8601DateFormatter().string(from: cmd.lastUsed),
-                    "frecency_score": cmd.frecencyScore
+                    "frecency_score": cmd.frecencyScore,
                 ] as [String: Any]
             }
         }
+
+        // Aggregated stats from history.db + runs.db
+        let stats = RepoStatsProvider.stats(for: repoPath)
+        let iso = ISO8601DateFormatter()
+        var statsDict: [String: Any] = [
+            "total_commands": stats.totalCommands,
+            "successful_commands": stats.successfulCommands,
+            "failed_commands": stats.failedCommands,
+            "success_rate": stats.successRate,
+            "avg_command_duration": stats.averageCommandDuration,
+            "total_runs": stats.totalRuns,
+            "total_tokens": stats.totalTokens,
+            "total_cost": stats.totalCost,
+            "total_turns": stats.totalTurns,
+            "providers": stats.providers,
+        ]
+        if !stats.topTools.isEmpty {
+            statsDict["top_tools"] = stats.topTools.map { [
+                "tool": $0.tool, "count": $0.count,
+            ] as [String: Any] }
+        }
+        if let lastCmd = stats.lastCommandAt { statsDict["last_command_at"] = iso.string(from: lastCmd) }
+        if let lastRun = stats.lastRunAt { statsDict["last_run_at"] = iso.string(from: lastRun) }
+        result["stats"] = statsDict
+
         return encodeAny(result)
     }
 
