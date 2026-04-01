@@ -496,6 +496,12 @@ extension TerminalSessionModel {
     private func emitWaitingInputFallbackIfNeeded(previousStatus: CommandStatus) {
         let runtimeOwnsTab = ownerTabID.flatMap { RuntimeSessionManager.shared.sessionForTab($0) } != nil
         let resumeCommand = pendingCommandLine.flatMap(AIResumeParser.extractMetadata(from:))
+        if aiDetection.isRestored && suppressWaitingInputFallbackUntilNextUserCommand {
+            Log.info(
+                "Suppressing terminal prompt waiting_input fallback for restored tab=\(tabIdentifier) provider=\(effectiveAIProvider ?? "nil") until explicit user command"
+            )
+            return
+        }
         let context = TerminalPromptNotificationContext(
             previousStatus: previousStatus.rawValue,
             hasOwnerTab: ownerTabID != nil,
@@ -1138,6 +1144,14 @@ extension TerminalSessionModel {
         activeAppName = restoredDisplayName
         lastDetectedAppName = restoredDisplayName
         lastAIProvider = normalizedProvider
+        suppressWaitingInputFallbackUntilNextUserCommand = restoredDisplayName != nil
+        pendingWaitingInputFallbackArmed = false
+        pendingWaitingInputFallbackSawLiveOutput = false
+        if restoredDisplayName != nil {
+            Log.info(
+                "Restored AI metadata for tab=\(tabIdentifier); suppressing prompt waiting_input fallback until explicit user command"
+            )
+        }
 
         if let sessionId {
             let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)

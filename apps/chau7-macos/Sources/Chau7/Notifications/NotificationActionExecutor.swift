@@ -5,10 +5,10 @@ import Chau7Core
 /// Protocol for UI actions triggered by the notification system.
 /// Replaces 5 separate closure handlers with a single conformance point.
 @MainActor protocol NotificationActionDelegate: AnyObject {
-    func focusTab(tabID: UUID)
+    func focusTab(tabID: UUID) -> Bool
     @discardableResult func styleTab(tabID: UUID, preset: String, config: [String: String]) -> UUID?
-    func badgeTab(tabID: UUID, text: String, color: String)
-    func insertSnippet(id: String, tabID: UUID, autoExecute: Bool)
+    func badgeTab(tabID: UUID, text: String, color: String) -> Bool
+    func insertSnippet(id: String, tabID: UUID, autoExecute: Bool) -> Bool
     func flashMenuBar(duration: Int, animate: Bool)
 }
 
@@ -16,6 +16,34 @@ import Chau7Core
 @MainActor
 final class NotificationActionExecutor {
     static let shared = NotificationActionExecutor()
+
+    struct ExecutionReport: Equatable {
+        var successfulActions: [String] = []
+        var notes: [String] = []
+        var didDispatchBanner = false
+        var didStyleTab = false
+
+        mutating func recordSuccess(_ actionType: NotificationActionType) {
+            successfulActions.append(actionType.rawValue)
+            if actionType == .showNotification {
+                didDispatchBanner = true
+            }
+            if actionType == .styleTab {
+                didStyleTab = true
+            }
+        }
+
+        mutating func recordFailure(_ note: String) {
+            notes.append(note)
+        }
+
+        mutating func append(_ other: ExecutionReport) {
+            successfulActions.append(contentsOf: other.successfulActions)
+            notes.append(contentsOf: other.notes)
+            didDispatchBanner = didDispatchBanner || other.didDispatchBanner
+            didStyleTab = didStyleTab || other.didStyleTab
+        }
+    }
 
     // MARK: - Dependencies (injected from app)
 
@@ -42,73 +70,75 @@ final class NotificationActionExecutor {
 
     // MARK: - Main Entry Point
 
-    func execute(actions: [NotificationActionConfig], for event: AIEvent) {
+    func execute(actions: [NotificationActionConfig], for event: AIEvent) -> ExecutionReport {
+        var report = ExecutionReport()
         for actionConfig in actions where actionConfig.enabled {
-            executeAction(actionConfig, for: event)
+            report.append(executeAction(actionConfig, for: event))
         }
+        return report
     }
 
-    private func executeAction(_ config: NotificationActionConfig, for event: AIEvent) {
+    private func executeAction(_ config: NotificationActionConfig, for event: AIEvent) -> ExecutionReport {
         let context = ActionContext(event: event, config: config)
 
         switch config.actionType {
         // Basic
         case .showNotification:
-            executeShowNotification(context)
+            return executeShowNotification(context)
         case .playSound:
-            executePlaySound(context)
+            return executePlaySound(context)
         case .focusWindow:
-            executeFocusWindow(context)
+            return executeFocusWindow(context)
         case .dockBounce:
-            executeDockBounce(context)
+            return executeDockBounce(context)
         case .badgeTab:
-            executeBadgeTab(context)
+            return executeBadgeTab(context)
         case .styleTab:
-            executeStyleTab(context)
+            return executeStyleTab(context)
         // Automation
         case .runScript:
-            executeRunScript(context)
+            return executeRunScript(context)
         case .runShortcut:
-            executeRunShortcut(context)
+            return executeRunShortcut(context)
         case .executeSnippet:
-            executeExecuteSnippet(context)
+            return executeExecuteSnippet(context)
         // Integration
         case .webhook:
-            executeWebhook(context)
+            return executeWebhook(context)
         case .sendSlack:
-            executeSendSlack(context)
+            return executeSendSlack(context)
         case .sendDiscord:
-            executeSendDiscord(context)
+            return executeSendDiscord(context)
         // DevOps
         case .dockerBump:
-            executeDockerBump(context)
+            return executeDockerBump(context)
         case .dockerCompose:
-            executeDockerCompose(context)
+            return executeDockerCompose(context)
         case .kubernetesRollout:
-            executeKubernetesRollout(context)
+            return executeKubernetesRollout(context)
         // Productivity
         case .copyToClipboard:
-            executeCopyToClipboard(context)
+            return executeCopyToClipboard(context)
         case .writeToFile:
-            executeWriteToFile(context)
+            return executeWriteToFile(context)
         case .openURL:
-            executeOpenURL(context)
+            return executeOpenURL(context)
         case .gitCommit:
-            executeGitCommit(context)
+            return executeGitCommit(context)
         // Accessibility
         case .voiceAnnounce:
-            executeVoiceAnnounce(context)
+            return executeVoiceAnnounce(context)
         case .flashScreen:
-            executeFlashScreen(context)
+            return executeFlashScreen(context)
         case .menuBarAlert:
-            executeMenuBarAlert(context)
+            return executeMenuBarAlert(context)
         // Time Tracking
         case .startTimer:
-            executeStartTimer(context)
+            return executeStartTimer(context)
         case .stopTimer:
-            executeStopTimer(context)
+            return executeStopTimer(context)
         case .logTime:
-            executeLogTime(context)
+            return executeLogTime(context)
         }
     }
 
@@ -171,15 +201,21 @@ final class NotificationActionExecutor {
 
     // MARK: - Basic Actions
 
-    private func executeShowNotification(_ ctx: ActionContext) {
+    private func executeShowNotification(_ ctx: ActionContext) -> ExecutionReport {
         let customTitle = ctx.interpolate(ctx.configValue("customTitle"))
         let customBody = ctx.interpolate(ctx.configValue("customBody"))
         let title = customTitle.isEmpty ? ctx.event.notificationTitle(toolOverride: nil) : customTitle
         let body = customBody.isEmpty ? ctx.event.notificationBody : customBody
-        NotificationManager.shared.dispatchActionNotification(title: title, body: body, for: ctx.event)
+        var report = ExecutionReport()
+        if NotificationManager.shared.dispatchActionNotification(title: title, body: body, for: ctx.event) {
+            report.recordSuccess(.showNotification)
+        } else {
+            report.recordFailure("showNotification failed to dispatch")
+        }
+        return report
     }
 
-    private func executePlaySound(_ ctx: ActionContext) {
+    private func executePlaySound(_ ctx: ActionContext) -> ExecutionReport {
         let soundName = ctx.configValue("sound") ?? "default"
         let volume = Float(ctx.configInt("volume", default: 100)) / 100.0
 
@@ -204,23 +240,35 @@ final class NotificationActionExecutor {
                 }
             }
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.playSound)
+        return report
     }
 
-    private func executeFocusWindow(_ ctx: ActionContext) {
+    private func executeFocusWindow(_ ctx: ActionContext) -> ExecutionReport {
         let focusTab = ctx.configBool("focusTab", default: true)
-
-        DispatchQueue.main.async { [weak self] in
-            NSApp.activate(ignoringOtherApps: true)
-
-            if focusTab, let tabID = ctx.event.tabID {
-                self?.delegate?.focusTab(tabID: tabID)
-            } else if focusTab {
+        var report = ExecutionReport()
+        NSApp.activate(ignoringOtherApps: true)
+        if focusTab {
+            if let tabID = ctx.event.tabID {
+                if delegate?.focusTab(tabID: tabID) == true {
+                    Log.info("Action focusWindow: Focused tab \(tabID)")
+                    report.recordSuccess(.focusWindow)
+                } else {
+                    Log.warn("Action focusWindow: Explicit tabID not found across windows for event \(ctx.event.id.uuidString)")
+                    report.recordFailure("focusWindow failed for explicit tabID \(tabID.uuidString)")
+                }
+            } else {
                 Log.warn("Action focusWindow: Missing explicit tabID for event \(ctx.event.id.uuidString)")
+                report.recordFailure("focusWindow missing explicit tabID")
             }
+        } else {
+            report.recordSuccess(.focusWindow)
         }
+        return report
     }
 
-    private func executeDockBounce(_ ctx: ActionContext) {
+    private func executeDockBounce(_ ctx: ActionContext) -> ExecutionReport {
         let critical = ctx.configBool("critical", default: false)
 
         DispatchQueue.main.async {
@@ -228,80 +276,100 @@ final class NotificationActionExecutor {
             NSApp.requestUserAttention(attentionType)
             Log.info("Action dockBounce: Requested user attention (critical=\(critical))")
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.dockBounce)
+        return report
     }
 
-    private func executeBadgeTab(_ ctx: ActionContext) {
+    private func executeBadgeTab(_ ctx: ActionContext) -> ExecutionReport {
         let badgeText = ctx.configValue("badgeText") ?? "!"
         let badgeColor = ctx.configValue("badgeColor") ?? "red"
-
-        DispatchQueue.main.async { [weak self] in
-            guard let tabID = ctx.event.tabID else {
-                Log.warn("Action badgeTab: Missing explicit tabID for event \(ctx.event.id.uuidString)")
-                return
-            }
-            self?.delegate?.badgeTab(tabID: tabID, text: badgeText, color: badgeColor)
+        var report = ExecutionReport()
+        guard let tabID = ctx.event.tabID else {
+            let note = "badgeTab missing explicit tabID"
+            Log.warn("Action badgeTab: Missing explicit tabID for event \(ctx.event.id.uuidString)")
+            report.recordFailure(note)
+            return report
         }
+        if delegate?.badgeTab(tabID: tabID, text: badgeText, color: badgeColor) == true {
+            report.recordSuccess(.badgeTab)
+        } else {
+            let note = "badgeTab failed for explicit tabID \(tabID.uuidString)"
+            Log.warn("Action badgeTab: Explicit tabID not found across windows for event \(ctx.event.id.uuidString)")
+            report.recordFailure(note)
+        }
+        return report
     }
 
     /// Tracks the last style preset applied per tab to avoid redundant re-applies.
     private var lastAppliedPreset: [UUID: String] = [:]
 
-    private func executeStyleTab(_ ctx: ActionContext) {
+    private func executeStyleTab(_ ctx: ActionContext) -> ExecutionReport {
         let stylePreset = ctx.configValue("style") ?? "waiting"
         let config = ctx.config.config // Pass all config to handler
         let autoClearSeconds = ctx.configInt("autoClearSeconds", default: 0)
+        var report = ExecutionReport()
 
         // All pendingStyleClears access and delegate calls on main queue
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            guard let tabID = ctx.event.tabID else {
-                Log.warn("Action styleTab: Missing explicit tabID for event \(ctx.event.id.uuidString)")
-                return
-            }
-
-            // Suppress redundant style re-applies: if the tab already has this style
-            // and an auto-clear timer is running, don't re-set and restart the timer.
-            // This prevents idle re-notifications from resetting the 30s clear countdown.
-            if stylePreset != "clear",
-               lastAppliedPreset[tabID] == stylePreset,
-               pendingStyleClears[tabID] != nil {
-                Log.trace("Skipping redundant style '\(stylePreset)' for tab \(tabID)")
-                return
-            }
-
-            let resolvedTabID = delegate?.styleTab(tabID: tabID, preset: stylePreset, config: config)
-
-            // Key timers by resolved tab ID so different tabs running the same tool don't collide
-            guard let resolvedTabID else { return }
-
-            if stylePreset == "clear" {
-                lastAppliedPreset.removeValue(forKey: resolvedTabID)
-            } else {
-                lastAppliedPreset[resolvedTabID] = stylePreset
-            }
-
-            // Cancel any pending auto-clear for this specific tab
-            pendingStyleClears[resolvedTabID]?.cancel()
-            pendingStyleClears.removeValue(forKey: resolvedTabID)
-
-            if autoClearSeconds > 0 {
-                let workItem = DispatchWorkItem { [weak self] in
-                    self?.pendingStyleClears.removeValue(forKey: resolvedTabID)
-                    self?.lastAppliedPreset.removeValue(forKey: resolvedTabID)
-                    self?.delegate?.styleTab(tabID: resolvedTabID, preset: "clear", config: [:])
-                }
-                pendingStyleClears[resolvedTabID] = workItem
-                DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(autoClearSeconds), execute: workItem)
-            }
+        guard let tabID = ctx.event.tabID else {
+            let note = "styleTab missing explicit tabID"
+            Log.warn("Action styleTab: Missing explicit tabID for event \(ctx.event.id.uuidString)")
+            report.recordFailure(note)
+            return report
         }
+
+        // Suppress redundant style re-applies: if the tab already has this style
+        // and an auto-clear timer is running, don't re-set and restart the timer.
+        // This prevents idle re-notifications from resetting the 30s clear countdown.
+        if stylePreset != "clear",
+           lastAppliedPreset[tabID] == stylePreset,
+           pendingStyleClears[tabID] != nil {
+            Log.trace("Skipping redundant style '\(stylePreset)' for tab \(tabID)")
+            report.recordSuccess(.styleTab)
+            return report
+        }
+
+        let resolvedTabID = delegate?.styleTab(tabID: tabID, preset: stylePreset, config: config)
+
+        // Key timers by resolved tab ID so different tabs running the same tool don't collide
+        guard let resolvedTabID else {
+            let note = "styleTab failed for explicit tabID \(tabID.uuidString)"
+            Log.warn("Action styleTab: Explicit tabID not found across windows for event \(ctx.event.id.uuidString)")
+            report.recordFailure(note)
+            return report
+        }
+
+        if stylePreset == "clear" {
+            lastAppliedPreset.removeValue(forKey: resolvedTabID)
+        } else {
+            lastAppliedPreset[resolvedTabID] = stylePreset
+        }
+
+        // Cancel any pending auto-clear for this specific tab
+        pendingStyleClears[resolvedTabID]?.cancel()
+        pendingStyleClears.removeValue(forKey: resolvedTabID)
+
+        if autoClearSeconds > 0 {
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.pendingStyleClears.removeValue(forKey: resolvedTabID)
+                self?.lastAppliedPreset.removeValue(forKey: resolvedTabID)
+                _ = self?.delegate?.styleTab(tabID: resolvedTabID, preset: "clear", config: [:])
+            }
+            pendingStyleClears[resolvedTabID] = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(autoClearSeconds), execute: workItem)
+        }
+        report.recordSuccess(.styleTab)
+        return report
     }
 
     // MARK: - Automation Actions
 
-    private func executeRunScript(_ ctx: ActionContext) {
+    private func executeRunScript(_ ctx: ActionContext) -> ExecutionReport {
         guard let script = ctx.configValue("script"), !script.isEmpty else {
             Log.warn("Action runScript: No script provided")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("runScript missing script")
+            return report
         }
 
         let shell = ctx.configValue("shell") ?? "/bin/zsh"
@@ -345,13 +413,21 @@ final class NotificationActionExecutor {
             }
         } catch {
             Log.error("Action runScript: Failed to execute: \(error.localizedDescription)")
+            var report = ExecutionReport()
+            report.recordFailure("runScript failed to launch: \(error.localizedDescription)")
+            return report
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.runScript)
+        return report
     }
 
-    private func executeRunShortcut(_ ctx: ActionContext) {
+    private func executeRunShortcut(_ ctx: ActionContext) -> ExecutionReport {
         guard let shortcutName = ctx.configValue("shortcutName"), !shortcutName.isEmpty else {
             Log.warn("Action runShortcut: No shortcut name provided")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("runShortcut missing shortcutName")
+            return report
         }
 
         let passEventData = ctx.configBool("passEventData", default: true)
@@ -388,32 +464,47 @@ final class NotificationActionExecutor {
             }
         } catch {
             Log.error("Action runShortcut: Failed: \(error.localizedDescription)")
+            var report = ExecutionReport()
+            report.recordFailure("runShortcut failed to launch: \(error.localizedDescription)")
+            return report
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.runShortcut)
+        return report
     }
 
-    private func executeExecuteSnippet(_ ctx: ActionContext) {
+    private func executeExecuteSnippet(_ ctx: ActionContext) -> ExecutionReport {
         guard let snippetId = ctx.configValue("snippetId"), !snippetId.isEmpty else {
             Log.warn("Action executeSnippet: No snippet ID provided")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("executeSnippet missing snippetId")
+            return report
         }
 
         let autoExecute = ctx.configBool("autoExecute", default: false)
-
-        DispatchQueue.main.async { [weak self] in
-            guard let tabID = ctx.event.tabID else {
-                Log.warn("Action executeSnippet: Missing explicit tabID for event \(ctx.event.id.uuidString)")
-                return
-            }
-            self?.delegate?.insertSnippet(id: snippetId, tabID: tabID, autoExecute: autoExecute)
+        var report = ExecutionReport()
+        guard let tabID = ctx.event.tabID else {
+            Log.warn("Action executeSnippet: Missing explicit tabID for event \(ctx.event.id.uuidString)")
+            report.recordFailure("executeSnippet missing explicit tabID")
+            return report
         }
+        if delegate?.insertSnippet(id: snippetId, tabID: tabID, autoExecute: autoExecute) == true {
+            report.recordSuccess(.executeSnippet)
+        } else {
+            Log.warn("Action executeSnippet: Explicit tabID not found across windows for event \(ctx.event.id.uuidString)")
+            report.recordFailure("executeSnippet failed for explicit tabID \(tabID.uuidString)")
+        }
+        return report
     }
 
     // MARK: - Integration Actions
 
-    private func executeWebhook(_ ctx: ActionContext) {
+    private func executeWebhook(_ ctx: ActionContext) -> ExecutionReport {
         guard let urlString = ctx.configValue("url"), let url = URL(string: urlString) else {
             Log.warn("Action webhook: Invalid URL")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("webhook invalid URL")
+            return report
         }
 
         let method = ctx.configValue("method") ?? "POST"
@@ -457,12 +548,17 @@ final class NotificationActionExecutor {
                 }
             }
         }.resume()
+        var report = ExecutionReport()
+        report.recordSuccess(.webhook)
+        return report
     }
 
-    private func executeSendSlack(_ ctx: ActionContext) {
+    private func executeSendSlack(_ ctx: ActionContext) -> ExecutionReport {
         guard let webhookUrl = ctx.configValue("webhookUrl"), let url = URL(string: webhookUrl) else {
             Log.warn("Action sendSlack: Invalid webhook URL")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("sendSlack invalid webhook URL")
+            return report
         }
 
         let username = ctx.configValue("username") ?? "Chau7"
@@ -491,12 +587,17 @@ final class NotificationActionExecutor {
                 Log.info("Action sendSlack: Message sent")
             }
         }.resume()
+        var report = ExecutionReport()
+        report.recordSuccess(.sendSlack)
+        return report
     }
 
-    private func executeSendDiscord(_ ctx: ActionContext) {
+    private func executeSendDiscord(_ ctx: ActionContext) -> ExecutionReport {
         guard let webhookUrl = ctx.configValue("webhookUrl"), let url = URL(string: webhookUrl) else {
             Log.warn("Action sendDiscord: Invalid webhook URL")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("sendDiscord invalid webhook URL")
+            return report
         }
 
         let username = ctx.configValue("username") ?? "Chau7"
@@ -523,14 +624,19 @@ final class NotificationActionExecutor {
                 Log.info("Action sendDiscord: Message sent")
             }
         }.resume()
+        var report = ExecutionReport()
+        report.recordSuccess(.sendDiscord)
+        return report
     }
 
     // MARK: - DevOps Actions
 
-    private func executeDockerBump(_ ctx: ActionContext) {
+    private func executeDockerBump(_ ctx: ActionContext) -> ExecutionReport {
         guard let container = ctx.configValue("container"), !container.isEmpty else {
             Log.warn("Action dockerBump: No container specified")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("dockerBump missing container")
+            return report
         }
 
         let operation = ctx.configValue("operation") ?? "restart"
@@ -563,13 +669,21 @@ final class NotificationActionExecutor {
             }
         default:
             Log.warn("Action dockerBump: Unknown operation: \(operation)")
+            var report = ExecutionReport()
+            report.recordFailure("dockerBump unknown operation: \(operation)")
+            return report
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.dockerBump)
+        return report
     }
 
-    private func executeDockerCompose(_ ctx: ActionContext) {
+    private func executeDockerCompose(_ ctx: ActionContext) -> ExecutionReport {
         guard let composePath = ctx.configValue("composePath"), !composePath.isEmpty else {
             Log.warn("Action dockerCompose: No compose file path specified")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("dockerCompose missing composePath")
+            return report
         }
 
         let operation = ctx.configValue("operation") ?? "restart"
@@ -594,16 +708,23 @@ final class NotificationActionExecutor {
             args += ["pull"] + serviceArgs
         default:
             Log.warn("Action dockerCompose: Unknown operation: \(operation)")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("dockerCompose unknown operation: \(operation)")
+            return report
         }
 
         runProcess(executable: dockerComposePath, arguments: args, label: "dockerCompose")
+        var report = ExecutionReport()
+        report.recordSuccess(.dockerCompose)
+        return report
     }
 
-    private func executeKubernetesRollout(_ ctx: ActionContext) {
+    private func executeKubernetesRollout(_ ctx: ActionContext) -> ExecutionReport {
         guard let deployment = ctx.configValue("deployment"), !deployment.isEmpty else {
             Log.warn("Action kubernetesRollout: No deployment specified")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("kubernetesRollout missing deployment")
+            return report
         }
 
         let namespace = ctx.configValue("namespace") ?? "default"
@@ -628,15 +749,20 @@ final class NotificationActionExecutor {
             args += ["rollout", "status", "deployment/\(deployment)"]
         default:
             Log.warn("Action kubernetesRollout: Unknown operation: \(operation)")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("kubernetesRollout unknown operation: \(operation)")
+            return report
         }
 
         runProcess(executable: kubectlPath, arguments: args, label: "kubernetesRollout")
+        var report = ExecutionReport()
+        report.recordSuccess(.kubernetesRollout)
+        return report
     }
 
     // MARK: - Productivity Actions
 
-    private func executeCopyToClipboard(_ ctx: ActionContext) {
+    private func executeCopyToClipboard(_ ctx: ActionContext) -> ExecutionReport {
         let content = ctx.interpolate(ctx.configValue("content"))
 
         DispatchQueue.main.async {
@@ -645,12 +771,17 @@ final class NotificationActionExecutor {
             pasteboard.setString(content, forType: .string)
             Log.info("Action copyToClipboard: Copied \(content.count) characters")
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.copyToClipboard)
+        return report
     }
 
-    private func executeWriteToFile(_ ctx: ActionContext) {
+    private func executeWriteToFile(_ ctx: ActionContext) -> ExecutionReport {
         guard let filePath = ctx.configValue("filePath"), !filePath.isEmpty else {
             Log.warn("Action writeToFile: No file path specified")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("writeToFile missing filePath")
+            return report
         }
 
         let format = ctx.configValue("format") ?? "text"
@@ -684,25 +815,39 @@ final class NotificationActionExecutor {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
             // Atomic open-or-create+append via fopen "a" — no TOCTOU race
-            guard let lineData = (line + "\n").data(using: .utf8) else { return }
+            guard let lineData = (line + "\n").data(using: .utf8) else {
+                var report = ExecutionReport()
+                report.recordFailure("writeToFile failed to encode UTF-8 line")
+                return report
+            }
             try Self.appendToFile(atPath: expandedPath, data: lineData)
 
             Log.info("Action writeToFile: Appended to \(filePath)")
         } catch {
             Log.error("Action writeToFile: Failed: \(error.localizedDescription)")
+            var report = ExecutionReport()
+            report.recordFailure("writeToFile failed: \(error.localizedDescription)")
+            return report
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.writeToFile)
+        return report
     }
 
-    private func executeOpenURL(_ ctx: ActionContext) {
+    private func executeOpenURL(_ ctx: ActionContext) -> ExecutionReport {
         guard let urlTemplate = ctx.configValue("url"), !urlTemplate.isEmpty else {
             Log.warn("Action openURL: No URL specified")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("openURL missing url")
+            return report
         }
 
         let urlString = ctx.interpolate(urlTemplate)
         guard let url = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) else {
             Log.warn("Action openURL: Invalid URL: \(urlString)")
-            return
+            var report = ExecutionReport()
+            report.recordFailure("openURL invalid URL: \(urlString)")
+            return report
         }
 
         let browser = ctx.configValue("browser") ?? "default"
@@ -729,9 +874,12 @@ final class NotificationActionExecutor {
             }
             Log.info("Action openURL: Opened \(url)")
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.openURL)
+        return report
     }
 
-    private func executeGitCommit(_ ctx: ActionContext) {
+    private func executeGitCommit(_ ctx: ActionContext) -> ExecutionReport {
         let message = ctx.interpolate(ctx.configValue("message") ?? "Auto-commit: ${type}")
         let addAll = ctx.configBool("addAll", default: true)
         let push = ctx.configBool("push", default: false)
@@ -774,11 +922,14 @@ final class NotificationActionExecutor {
 
             Log.info("Action gitCommit: Completed successfully")
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.gitCommit)
+        return report
     }
 
     // MARK: - Accessibility Actions
 
-    private func executeVoiceAnnounce(_ ctx: ActionContext) {
+    private func executeVoiceAnnounce(_ ctx: ActionContext) -> ExecutionReport {
         let text = ctx.interpolate(ctx.configValue("text"))
         let voice = ctx.configValue("voice") ?? "default"
         let rate = ctx.configInt("rate", default: 175)
@@ -797,9 +948,12 @@ final class NotificationActionExecutor {
 
             Log.info("Action voiceAnnounce: Speaking '\(text.prefix(50))...'")
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.voiceAnnounce)
+        return report
     }
 
-    private func executeFlashScreen(_ ctx: ActionContext) {
+    private func executeFlashScreen(_ ctx: ActionContext) -> ExecutionReport {
         let colorName = ctx.configValue("color") ?? "white"
         let duration = ctx.configInt("duration", default: 200)
         let count = ctx.configInt("count", default: 2)
@@ -845,9 +999,12 @@ final class NotificationActionExecutor {
             self?.flashWindow?.orderOut(nil)
             self?.flashWindow = nil
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.flashScreen)
+        return report
     }
 
-    private func executeMenuBarAlert(_ ctx: ActionContext) {
+    private func executeMenuBarAlert(_ ctx: ActionContext) -> ExecutionReport {
         let duration = ctx.configInt("duration", default: 5)
         let animate = ctx.configBool("animate", default: true)
 
@@ -855,20 +1012,26 @@ final class NotificationActionExecutor {
             self?.delegate?.flashMenuBar(duration: duration, animate: animate)
             Log.info("Action menuBarAlert: Alert for \(duration) seconds")
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.menuBarAlert)
+        return report
     }
 
     // MARK: - Time Tracking Actions
 
-    private func executeStartTimer(_ ctx: ActionContext) {
+    private func executeStartTimer(_ ctx: ActionContext) -> ExecutionReport {
         let timerName = ctx.interpolate(ctx.configValue("timerName") ?? ctx.event.tool)
         let project = ctx.configValue("project") ?? ""
 
         activeTimers[timerName] = Date()
 
         Log.info("Action startTimer: Started '\(timerName)' for project '\(project)'")
+        var report = ExecutionReport()
+        report.recordSuccess(.startTimer)
+        return report
     }
 
-    private func executeStopTimer(_ ctx: ActionContext) {
+    private func executeStopTimer(_ ctx: ActionContext) -> ExecutionReport {
         let timerName = ctx.configValue("timerName")
 
         var stoppedTimer: (name: String, start: Date)?
@@ -890,9 +1053,16 @@ final class NotificationActionExecutor {
         } else {
             Log.warn("Action stopTimer: No active timer found")
         }
+        var report = ExecutionReport()
+        if stoppedTimer != nil {
+            report.recordSuccess(.stopTimer)
+        } else {
+            report.recordFailure("stopTimer found no active timer")
+        }
+        return report
     }
 
-    private func executeLogTime(_ ctx: ActionContext) {
+    private func executeLogTime(_ ctx: ActionContext) -> ExecutionReport {
         let service = ctx.configValue("service") ?? "file"
         let description = ctx.interpolate(ctx.configValue("description") ?? "${type}: ${message}")
 
@@ -922,11 +1092,20 @@ final class NotificationActionExecutor {
                 Log.info("Action logTime: Logged to \(filePath)")
             } catch {
                 Log.error("Action logTime: Failed to write file: \(error.localizedDescription)")
+                var report = ExecutionReport()
+                report.recordFailure("logTime failed: \(error.localizedDescription)")
+                return report
             }
 
         default:
             Log.warn("Action logTime: Unknown service: \(service)")
+            var report = ExecutionReport()
+            report.recordFailure("logTime unknown service: \(service)")
+            return report
         }
+        var report = ExecutionReport()
+        report.recordSuccess(.logTime)
+        return report
     }
 
     // MARK: - Process Helpers
@@ -1005,7 +1184,7 @@ final class NotificationActionAdapter: NotificationActionDelegate {
         self.statusBar = statusBar
     }
 
-    func focusTab(tabID: UUID) {
+    func focusTab(tabID: UUID) -> Bool {
         TerminalControlService.shared.focusTabAcrossWindows(tabID: tabID)
     }
 
@@ -1016,11 +1195,11 @@ final class NotificationActionAdapter: NotificationActionDelegate {
         )
     }
 
-    func badgeTab(tabID: UUID, text: String, color: String) {
+    func badgeTab(tabID: UUID, text: String, color: String) -> Bool {
         TerminalControlService.shared.badgeTabAcrossWindows(tabID: tabID, text: text, color: color)
     }
 
-    func insertSnippet(id: String, tabID: UUID, autoExecute: Bool) {
+    func insertSnippet(id: String, tabID: UUID, autoExecute: Bool) -> Bool {
         TerminalControlService.shared.insertSnippetAcrossWindows(id: id, tabID: tabID, autoExecute: autoExecute)
     }
 

@@ -424,6 +424,32 @@ final class TerminalSessionModelTests: XCTestCase {
         RuntimeSessionManager.shared.resetForTesting()
     }
 
+    func testRestoredAISessionSkipsFallbackBeforeAnyExplicitUserCommand() async {
+        RuntimeSessionManager.shared.resetForTesting()
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.ownerTabID = UUID()
+        session.currentDirectory = "/tmp/chau7"
+        session.restoreAIMetadata(
+            provider: "codex",
+            sessionId: "019d4a14-a656-72f0-a136-4c03ce6d907c"
+        )
+        session.pendingWaitingInputFallbackArmed = true
+        session.pendingWaitingInputFallbackSawLiveOutput = true
+        session.status = .running
+
+        XCTAssertTrue(session.suppressWaitingInputFallbackUntilNextUserCommand)
+
+        session.handlePromptDetected()
+        let expectation = expectation(description: "restored prompt handling settled")
+        DispatchQueue.main.async { expectation.fulfill() }
+        await fulfillment(of: [expectation], timeout: 1.0)
+
+        XCTAssertFalse(model.recentEvents.contains { $0.type == "waiting_input" })
+        RuntimeSessionManager.shared.resetForTesting()
+    }
+
     func testUserCommandClearsResumePrefillFallbackSuppression() async {
         RuntimeSessionManager.shared.resetForTesting()
         let model = AppModel()

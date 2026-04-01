@@ -68,6 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Runtime Turn Send for Adopted Sessions**: MCP clients can now send prompts through `runtime_turn_send` even when the runtime session was adopted from an existing tab
 
 ### Fixed
+- **Restored Session Prompt Fallback Leak**: Restored AI tabs now suppress terminal prompt `waiting_input` fallback as soon as their provider metadata is restored, not only after resume-prefill delivery. This stops startup tab highlights caused by restored Codex/Claude sessions before any real user command runs.
+- **Notification Action Outcome Accounting**: Notification delivery no longer counts tab-scoped actions as successful just because they were requested. Focus, style, badge, and snippet actions now report real success/failure into the delivery ledger and logs, so a notification is always explainable end-to-end.
 - **Bug Report Hardening**: Fixed rate limit bypass in relay `/issue` endpoint (DO errors no longer skip throttle), added title length cap, HTTPS enforcement on submission endpoint, removed AI session fallback that leaked all sessions, tab title path redaction, stale window reference cleanup on close, and background-thread terminal history capture.
 - **Restore Prefill Notification Noise**: System-injected resume prefills no longer arm prompt-return `waiting_input` notifications during launch/restore. Fallback waiting-input delivery stays suppressed until a real user command runs after the restore flow.
 - **Tailed `terminal_session` Notification Spam**: Terminal-session events replayed from the event log no longer re-enter user-facing notification delivery. They still appear in the unified event stream, but live notifications now only come from canonical ingress, not from tailed echoes.
@@ -265,7 +267,7 @@ Initial development release
 
 ### Added
 - **Core Terminal**:
-  - SwiftTerm-based terminal emulation (custom fork)
+  - Terminal emulation
   - Startup line display before shell prompt
   - Terminal defaults wiring
 
@@ -302,7 +304,6 @@ Initial development release
 - SwiftUI-based architecture
 - macOS 13+ (Ventura) minimum
 - Swift 5.9+ required
-- SwiftTerm fork for custom terminal features
 
 ---
 
