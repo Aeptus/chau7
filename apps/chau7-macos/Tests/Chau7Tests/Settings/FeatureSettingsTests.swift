@@ -215,6 +215,7 @@ final class FeatureSettingsTests: XCTestCase {
         _ = settings.cursorBlink // default: true
         _ = settings.isAPIAnalyticsEnabled // default: false
         _ = settings.apiAnalyticsLogPrompts // default: false
+        _ = settings.apiAnalyticsIncludeOpenAI // default: true
         _ = settings.isRemoteEnabled // default: false
         _ = settings.isTmuxIntegrationEnabled // default: false
         _ = settings.isTmuxAutoAttachEnabled // default: false

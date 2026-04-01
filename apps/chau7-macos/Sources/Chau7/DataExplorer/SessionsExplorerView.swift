@@ -34,7 +34,7 @@ struct SessionsExplorerView: View {
         }
         repoGroups = byRepo.map { path, runs in
             let providers = Set(runs.map(\.provider))
-            let totalTokens = runs.reduce(0) { $0 + ($1.totalInputTokens ?? 0) + ($1.totalOutputTokens ?? 0) }
+            let totalTokens = runs.reduce(0) { $0 + $1.tokenUsage.totalBillableTokens }
             let totalTurns = runs.reduce(0) { $0 + $1.turnCount }
             let lastActive = runs.map(\.startedAt).max() ?? Date.distantPast
             return RepoRunGroup(

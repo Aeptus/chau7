@@ -546,6 +546,12 @@ Key patterns:
 - Codex rollout extraction now reads run-local token deltas, including cached input and reasoning output fields, instead of reusing lifetime cumulative totals across multiple runs.
 - Implausible historical token totals are now invalidated instead of being kept as if they were trustworthy analytics.
 
+## Recent Analytics UX
+
+- The debug console analytics view now separates proxy-captured API calls from transcript-derived AI run telemetry instead of mixing them into one misleading table.
+- Run cost coverage now distinguishes priced runs from missing-cost runs, so transcript-derived Claude/Codex data no longer appears as `$0.0000` when cost is actually unavailable.
+- Proxy settings now expose an explicit OpenAI-compatible routing toggle for analytics, so OpenAI/Codex interception can be enabled or disabled intentionally.
+
 ## Recent Tab Behavior
 
 - Reopen Closed Tab now restores the original overlay tab identity metadata, including the tab ID, creation timestamp, and repo grouping membership.

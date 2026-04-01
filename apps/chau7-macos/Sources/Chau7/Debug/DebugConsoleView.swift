@@ -7,6 +7,11 @@ import Chau7Core
 /// A hidden debug console accessible via Cmd+Shift+L (when enabled).
 /// Shows real-time state, token optimizer runtime, event history, and allows generating bug reports.
 struct DebugConsoleView: View {
+    private enum AnalyticsMode: String, CaseIterable {
+        case apiCalls = "API Calls"
+        case aiRuns = "AI Runs"
+    }
+
     @ObservedObject var appModel: AppModel
     @ObservedObject var overlayModel: OverlayTabsModel
     @ObservedObject private var settings = FeatureSettings.shared
@@ -25,9 +30,14 @@ struct DebugConsoleView: View {
     @State private var ctoCommandLog: [CTOManager.CommandLogEntry] = []
     @State private var ctoShowAdvanced = false
     @State private var ctoTimePeriod: CTOTimePeriod = .session
+    @State private var analyticsMode: AnalyticsMode = .apiCalls
     @State private var aiPerTabStats: [TabTokenConsumption] = []
     @State private var providerStats: [ProviderConsumptionStats] = []
-    @State private var dailyCostTrend: [(date: String, cost: Double, tokens: Int)] = []
+    @State private var dailyCostTrend: [(date: String, cost: Double, tokens: Int, pricedRunCount: Int, totalRunCount: Int)] = []
+    @State private var proxyStats: APICallStats = .init()
+    @State private var proxyProviderStats: [ProxyProviderAnalytics] = []
+    @State private var proxyDailyTrend: [ProxyDailyAnalyticsPoint] = []
+    @State private var recentProxyCalls: [APICallEvent] = []
     @State private var ptyLogInfo: [(name: String, size: UInt64)] = []
     @State private var ctoPerSessionGain: [String: CTOGainStats] = [:]
     // Category & level filtering
@@ -60,7 +70,7 @@ struct DebugConsoleView: View {
                 Text(L("debug.perfTab", "Perf")).tag(4)
                 Text(L("Logs", "Logs")).tag(5)
                 Text(L("Report", "Report")).tag(6)
-                Text("API Analytics").tag(7)
+                Text("Analytics").tag(7)
                 Text("Health").tag(8)
             }
             .pickerStyle(.segmented)
@@ -78,7 +88,7 @@ struct DebugConsoleView: View {
                 case 4: performanceView
                 case 5: logsView
                 case 6: reportView
-                case 7: apiAnalyticsView
+                case 7: analyticsView
                 case 8: healthDashboardView
                 default: stateView
                 }
@@ -1574,102 +1584,206 @@ struct DebugConsoleView: View {
 
     // MARK: - Report View
 
-    // MARK: - API Analytics Tab
+    // MARK: - Analytics Tab
 
-    private var apiAnalyticsView: some View {
+    private var analyticsView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // Per-provider summary
-                GroupBox("Cost by Provider") {
-                    if providerStats.isEmpty {
-                        Text("No API usage data yet.").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(providerStats, id: \.provider) { stat in
-                            HStack {
-                                Text(stat.provider).bold()
-                                Spacer()
-                                Text("\(stat.runCount) runs")
-                                    .foregroundStyle(.secondary)
-                                Text("\(stat.totalInputTokens + stat.totalOutputTokens) tokens")
-                                    .foregroundStyle(.secondary)
-                                Text(String(format: "$%.4f", stat.totalCostUSD))
-                                    .monospaced()
-                            }
-                        }
+                Picker("", selection: $analyticsMode) {
+                    ForEach(AnalyticsMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
                     }
                 }
+                .pickerStyle(.segmented)
 
-                // Per-tab token consumption
-                GroupBox("Tokens by Tab") {
-                    if aiPerTabStats.isEmpty {
-                        Text("No per-tab data yet.").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(aiPerTabStats.prefix(20), id: \.tabID) { stat in
-                            let descriptor = debugTabDescriptor(
-                                for: stat.tabID,
-                                fallbackProvider: stat.lastProvider,
-                                fallbackLocationPath: stat.lastLocationPath
-                            )
-                            HStack {
-                                Text(descriptor.label)
-                                    .lineLimit(1)
-                                if let provider = descriptor.providerBadge {
-                                    Text(provider)
-                                        .foregroundStyle(.secondary)
-                                        .font(.caption)
-                                }
-                                Spacer()
-                                Text("in: \(stat.totalInputTokens)")
-                                    .foregroundStyle(.blue)
-                                Text("out: \(stat.totalOutputTokens)")
-                                    .foregroundStyle(.green)
-                                Text(String(format: "$%.4f", stat.totalCostUSD))
-                                    .monospaced()
-                            }
-                        }
-                    }
-                }
-
-                // Daily cost trend
-                GroupBox("Daily Cost (Last 7 Days)") {
-                    if dailyCostTrend.isEmpty {
-                        Text("No daily data yet.").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(dailyCostTrend, id: \.date) { day in
-                            HStack {
-                                Text(day.date).monospaced().font(.caption)
-                                Spacer()
-                                Text("\(day.tokens) tokens")
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
-                                Text(String(format: "$%.4f", day.cost))
-                                    .monospaced()
-                                    .bold()
-                            }
-                        }
-                    }
-                }
-
-                // Total runs count
-                GroupBox("Summary") {
-                    let totalRuns = TelemetryStore.shared.runCount()
-                    let totalCost = providerStats.reduce(0.0) { $0 + $1.totalCostUSD }
-                    let totalTokens = providerStats.reduce(0) { $0 + $1.totalInputTokens + $1.totalOutputTokens }
-                    HStack {
-                        Text("Total runs: \(totalRuns)")
-                        Spacer()
-                        Text("Total tokens: \(totalTokens)")
-                        Spacer()
-                        Text(String(format: "Total cost: $%.4f", totalCost)).bold()
-                    }
+                if analyticsMode == .apiCalls {
+                    proxyAnalyticsView
+                } else {
+                    runAnalyticsView
                 }
             }
             .padding()
         }
         .onAppear {
-            aiPerTabStats = TelemetryStore.shared.tokenUsagePerTab()
-            providerStats = TelemetryStore.shared.consumptionPerProvider()
-            dailyCostTrend = TelemetryStore.shared.dailyCostTrend()
+            refreshAnalyticsData()
+        }
+    }
+
+    private var proxyAnalyticsView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            GroupBox("Proxy API Summary") {
+                if proxyStats.callCount == 0 {
+                    Text("No proxy-captured API calls yet.").foregroundStyle(.secondary)
+                } else {
+                    HStack {
+                        Text("Calls: \(proxyStats.callCount)")
+                        Spacer()
+                        Text("Tokens: \(proxyStats.totalTokens)")
+                        Spacer()
+                        Text(String(format: "Cost: $%.4f", proxyStats.totalCost)).bold()
+                        Spacer()
+                        Text(String(format: "Avg latency: %.0fms", proxyStats.averageLatencyMs))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            GroupBox("Calls by Provider") {
+                if proxyProviderStats.isEmpty {
+                    Text("No provider data yet.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(proxyProviderStats) { stat in
+                        HStack {
+                            Text(stat.provider.capitalized).bold()
+                            Spacer()
+                            Text("\(stat.callCount) calls")
+                                .foregroundStyle(.secondary)
+                            Text("\(stat.totalTokens) tokens")
+                                .foregroundStyle(.secondary)
+                            Text(String(format: "$%.4f", stat.totalCostUSD))
+                                .monospaced()
+                        }
+                    }
+                }
+            }
+
+            GroupBox("Daily Proxy Cost (Last 7 Days)") {
+                if proxyDailyTrend.isEmpty {
+                    Text("No daily proxy data yet.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(proxyDailyTrend) { day in
+                        HStack {
+                            Text(day.date).monospaced().font(.caption)
+                            Spacer()
+                            Text("\(day.callCount) calls")
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                            Text("\(day.totalTokens) tokens")
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                            Text(String(format: "$%.4f", day.totalCostUSD))
+                                .monospaced()
+                                .bold()
+                        }
+                    }
+                }
+            }
+
+            GroupBox("Recent Proxy Calls") {
+                if recentProxyCalls.isEmpty {
+                    Text("No recent proxy calls recorded.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(recentProxyCalls.prefix(15)) { call in
+                        HStack {
+                            Text(call.provider.displayName)
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(call.model)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Spacer()
+                            Text("\(call.totalTokens) tokens")
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                            Text(call.formattedCost)
+                                .monospaced()
+                            Text(call.formattedLatency)
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var runAnalyticsView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            GroupBox("Run Telemetry by Provider") {
+                if providerStats.isEmpty {
+                    Text("No AI run telemetry yet.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(providerStats, id: \.provider) { stat in
+                        HStack {
+                            Text(stat.provider).bold()
+                            Spacer()
+                            Text("\(stat.runCount) runs")
+                                .foregroundStyle(.secondary)
+                            Text("\(stat.totalBillableTokens) billable-ish tokens")
+                                .foregroundStyle(.secondary)
+                            Text(runCostLabel(for: stat))
+                                .monospaced()
+                                .foregroundStyle(stat.pricedRunCount > 0 ? .primary : .secondary)
+                        }
+                    }
+                }
+            }
+
+            GroupBox("Run Tokens by Tab") {
+                if aiPerTabStats.isEmpty {
+                    Text("No per-tab run data yet.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(aiPerTabStats.prefix(20), id: \.tabID) { stat in
+                        let descriptor = debugTabDescriptor(
+                            for: stat.tabID,
+                            fallbackProvider: stat.lastProvider,
+                            fallbackLocationPath: stat.lastLocationPath
+                        )
+                        HStack {
+                            Text(descriptor.label)
+                                .lineLimit(1)
+                            if let provider = descriptor.providerBadge {
+                                Text(provider)
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                            }
+                            Spacer()
+                            Text("billable: \(stat.totalBillableTokens)")
+                                .foregroundStyle(.secondary)
+                            Text(runCostLabel(for: stat))
+                                .monospaced()
+                                .foregroundStyle(stat.pricedRunCount > 0 ? .primary : .secondary)
+                        }
+                    }
+                }
+            }
+
+            GroupBox("Run Cost Coverage (Last 7 Days)") {
+                if dailyCostTrend.isEmpty {
+                    Text("No daily run data yet.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(dailyCostTrend, id: \.date) { day in
+                        HStack {
+                            Text(day.date).monospaced().font(.caption)
+                            Spacer()
+                            Text("\(day.tokens) tokens")
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                            Text(runCostLabel(cost: day.cost, pricedCount: day.pricedRunCount, missingCount: max(0, day.totalRunCount - day.pricedRunCount)))
+                                .monospaced()
+                                .bold()
+                                .foregroundStyle(day.pricedRunCount > 0 ? .primary : .secondary)
+                        }
+                    }
+                }
+            }
+
+            GroupBox("Run Summary") {
+                let totalRuns = TelemetryStore.shared.runCount()
+                let totalTokens = providerStats.reduce(0) { $0 + $1.totalBillableTokens }
+                let totalPricedRuns = providerStats.reduce(0) { $0 + $1.pricedRunCount }
+                let totalMissingCostRuns = providerStats.reduce(0) { $0 + $1.missingCostRunCount }
+                let totalCost = providerStats.reduce(0.0) { $0 + $1.totalCostUSD }
+                HStack {
+                    Text("Runs: \(totalRuns)")
+                    Spacer()
+                    Text("Billable-ish tokens: \(totalTokens)")
+                    Spacer()
+                    Text(runCostLabel(cost: totalCost, pricedCount: totalPricedRuns, missingCount: totalMissingCostRuns))
+                        .bold()
+                }
+            }
+
         }
     }
 
@@ -1883,6 +1997,36 @@ struct DebugConsoleView: View {
         }
     }
 
+    private func refreshAnalyticsData() {
+        aiPerTabStats = TelemetryStore.shared.tokenUsagePerTab()
+        providerStats = TelemetryStore.shared.consumptionPerProvider()
+        dailyCostTrend = TelemetryStore.shared.dailyCostTrend()
+
+        proxyStats = ProxyAnalyticsStore.shared.overallStats()
+        proxyProviderStats = ProxyAnalyticsStore.shared.providerStats()
+        proxyDailyTrend = ProxyAnalyticsStore.shared.dailyTrend()
+        recentProxyCalls = ProxyAnalyticsStore.shared.recentCalls()
+    }
+
+    private func runCostLabel(for stat: ProviderConsumptionStats) -> String {
+        runCostLabel(cost: stat.totalCostUSD, pricedCount: stat.pricedRunCount, missingCount: stat.missingCostRunCount)
+    }
+
+    private func runCostLabel(for stat: TabTokenConsumption) -> String {
+        runCostLabel(cost: stat.totalCostUSD, pricedCount: stat.pricedRunCount, missingCount: stat.missingCostRunCount)
+    }
+
+    private func runCostLabel(cost: Double, pricedCount: Int, missingCount: Int) -> String {
+        if pricedCount == 0 {
+            return missingCount > 0 ? "cost unavailable" : "no cost data"
+        }
+        let prefix = String(format: "$%.4f", cost)
+        if missingCount > 0 {
+            return "\(prefix) partial"
+        }
+        return prefix
+    }
+
     /// Command log filtered by the selected time period.
     private var ctoFilteredLog: [CTOManager.CommandLogEntry] {
         guard ctoTimePeriod != .all else { return ctoCommandLog }
@@ -1972,6 +2116,9 @@ struct DebugConsoleView: View {
             }
             if selectedTab == 5 {
                 loadLogs()
+            }
+            if selectedTab == 7 {
+                refreshAnalyticsData()
             }
         }
     }

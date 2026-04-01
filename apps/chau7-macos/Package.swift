@@ -64,6 +64,8 @@ let package = Package(
                 "Terminal/Rendering/README.md",
                 "Terminal/Session/README.md",
                 "Terminal/Views/README.md",
+                "Telemetry/README.md",
+                "TokenOptimization/README.md",
                 "Utilities/README.md",
                 "DataExplorer/README.md",
                 "Repository/README.md",

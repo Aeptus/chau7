@@ -40,6 +40,15 @@ struct ProxySettingsView: View {
                 isOn: $settings.apiAnalyticsLogPrompts
             )
 
+            SettingsToggle(
+                label: L("settings.proxy.includeOpenAI", "Route OpenAI-Compatible Clients"),
+                help: L(
+                    "settings.proxy.includeOpenAI.help",
+                    "Inject OPENAI_BASE_URL so Codex CLI and other OpenAI-compatible clients are routed through the proxy. Disable if you only want Anthropic and Gemini analytics."
+                ),
+                isOn: $settings.apiAnalyticsIncludeOpenAI
+            )
+
             Divider()
                 .padding(.vertical, 8)
 
@@ -214,7 +223,7 @@ struct ProxySettingsView: View {
 
     private func openDatabaseFolder() {
         let path = RuntimeIsolation.appSupportDirectory(named: "Chau7")
-            .appendingPathComponent("proxy", isDirectory: true)
+            .appendingPathComponent("Proxy", isDirectory: true)
 
         // Create directory if it doesn't exist
         try? FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
@@ -224,7 +233,7 @@ struct ProxySettingsView: View {
 
     private func clearAnalyticsData() {
         let dbPath = RuntimeIsolation.appSupportDirectory(named: "Chau7")
-            .appendingPathComponent("proxy", isDirectory: true)
+            .appendingPathComponent("Proxy", isDirectory: true)
             .appendingPathComponent("analytics.db")
 
         do {
