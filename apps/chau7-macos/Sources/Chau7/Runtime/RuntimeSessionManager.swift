@@ -226,14 +226,15 @@ final class RuntimeSessionManager {
                 // Read transcript tokens before completing the turn
                 readTranscriptTokens(for: session, event: event)
 
-                // Capture terminal output for exit classification
+                // Capture terminal output and turnID before completeTurn clears them
                 let output = captureOutput(for: session)
+                let turnIDForOutput = session.currentTurnID
                 let result = session.completeTurn(summary: event.message, terminalOutput: output)
 
                 if let output, !output.isEmpty {
                     session.journal.append(
                         sessionID: session.id,
-                        turnID: nil, // turn already cleared
+                        turnID: turnIDForOutput,
                         type: RuntimeEventType.outputChunk.rawValue,
                         data: ["output": String(output.prefix(4096))]
                     )

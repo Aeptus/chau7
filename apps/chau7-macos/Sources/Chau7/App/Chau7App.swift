@@ -415,6 +415,11 @@ struct Chau7App: App {
                 }
                 .keyboardShortcut("/", modifiers: [.command])
 
+                Button(L("Report Issue", "Report Issue")) {
+                    appDelegate.reportIssue()
+                }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+
                 Divider()
 
                 Button(L("Debug Console", "Debug Console")) {
