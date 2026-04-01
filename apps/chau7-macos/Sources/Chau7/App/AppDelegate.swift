@@ -998,7 +998,10 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     func handleTabDrop(tabID: UUID, from sourceModel: OverlayTabsModel, atScreenPoint point: CGPoint) -> Bool {
-        guard let sourceIndex = overlayHosts.firstIndex(where: { $0.model === sourceModel }) else { return false }
+        guard let sourceIndex = overlayHosts.firstIndex(where: { $0.model === sourceModel }) else {
+            Log.warn("handleTabDrop: source model not found in overlayHosts")
+            return false
+        }
 
         let candidates = overlayHosts.enumerated().compactMap { index, host -> OverlayWindowDropCandidate? in
             guard host.window.isVisible, !host.window.isMiniaturized else { return nil }
@@ -1009,14 +1012,21 @@ private final class OverlayBlurView: NSVisualEffectView {
             )
         }
 
+        Log.info("handleTabDrop: point=\(Int(point.x)),\(Int(point.y)) candidates=\(candidates.count) source=\(sourceIndex)")
+        for c in candidates {
+            Log.info("  window \(c.index): tabBar=\(Int(c.primaryFrame.minX)),\(Int(c.primaryFrame.minY)),\(Int(c.primaryFrame.width))x\(Int(c.primaryFrame.height)) window=\(Int(c.fallbackFrame.minX)),\(Int(c.fallbackFrame.minY)),\(Int(c.fallbackFrame.width))x\(Int(c.fallbackFrame.height))")
+        }
+
         guard let targetIndex = OverlayWindowDropResolver.targetIndex(
             at: point,
             candidates: candidates,
             excluding: sourceIndex
         ) else {
+            Log.info("handleTabDrop: no target window at drop point")
             return false
         }
 
+        Log.info("handleTabDrop: moving tab to window \(targetIndex)")
         moveTab(tabID, fromWindowIndex: sourceIndex, toWindowIndex: targetIndex)
         return true
     }
