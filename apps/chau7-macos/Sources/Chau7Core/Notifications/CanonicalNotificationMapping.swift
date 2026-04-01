@@ -53,10 +53,14 @@ public enum NotificationSemanticMapping {
     }
 
     public static func normalize(_ value: String) -> String {
-        value
+        let normalizedWhitespace = value
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-            .replacingOccurrences(of: "-", with: "_")
-            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: " ")
+
+        return normalizedWhitespace
+            .split(whereSeparator: { $0.isWhitespace })
+            .map(String.init)
+            .joined(separator: "_")
     }
 }
