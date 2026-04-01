@@ -1,6 +1,22 @@
 # RTK Upstream Sync Process
 
-CTO (`chau7_optim`) is forked from [RTK](https://github.com/rtk-ai/rtk) by Patrick Szymkowiak, licensed under MIT (see `LICENSE-RTK`).
+CTO (`chau7_optim`) is forked from [RTK](https://github.com/rtk-ai/rtk) by Patrick Szymkowiak.
+
+## License Status
+
+The local fork preserves the MIT license text that accompanied the imported RTK code in `LICENSE-RTK`.
+
+As of 2026-04-01, RTK upstream publishes inconsistent license metadata:
+
+- GitHub `LICENSE`: Apache License 2.0
+- `Cargo.toml` package metadata: MIT
+
+Until that history is clarified upstream, Chau7 keeps both local notice files:
+
+- `LICENSE-RTK` for the preserved MIT text in the forked subtree
+- `LICENSE-RTK-APACHE` as a conservative downstream notice for redistributed RTK-derived code
+
+If upstream adds a `NOTICE` file or clarifies the historical license on the fork point, update this section and `THIRD_PARTY_NOTICES.md`.
 
 This document tracks upstream changes and provides a repeatable process for porting improvements.
 

@@ -91,7 +91,15 @@ struct AboutSettingsView: View {
             // Acknowledgments
             SettingsSectionHeader(L("settings.about.acknowledgments", "Acknowledgments"), icon: "heart")
 
-            SettingsDescription(text: L("settings.about.terminalCredit", "Chau7 uses a Rust-based terminal emulator with Metal GPU rendering."))
+            SettingsDescription(text: L("settings.about.stackSummary", "Chau7 combines Swift, Rust, and Go components across the app, terminal backend, and local proxy."))
+            SettingsDescription(text: L("settings.about.licenseSummary", "Open-source acknowledgments and third-party notice files are listed in Help > Technology, Licenses & Acknowledgments."))
+
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.about.openAcknowledgments", "Open Acknowledgments"), icon: "doc.text.magnifyingglass") {
+                    AppDelegate.shared?.showTechnologyLicenses()
+                }
+            ])
+
             SettingsDescription(text: L("settings.about.copyright", "Copyright © 2024-2025. All rights reserved."))
         }
     }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# build-dist.sh — Build a distributable Chau7.dmg for sharing.
+# build-dist.sh — Build a shareable pre-release Chau7.dmg for testing.
 #
 # This script:
 #   1. Rebuilds Go proxy with -trimpath (strips build-machine paths)
@@ -10,7 +10,7 @@ set -euo pipefail
 #   4. Assembles app bundle
 #   5. Strips debug symbols from all binaries
 #   6. Ad-hoc codesigns
-#   7. Creates a DMG
+#   7. Creates a DMG with install instructions and legal notices
 #
 # Usage:
 #   ./Scripts/build-dist.sh                   # arm64 only (fast)
@@ -144,7 +144,7 @@ info "Code signing..."
 codesign --force --sign - --deep "$APP_DIR"
 info "Ad-hoc signed"
 
-# ── 8. Create DMG with installer layout ──
+# ── 8. Create DMG with drag-to-install layout ──
 info "Preparing DMG contents..."
 DMG_STAGING="$DIST_DIR/dmg-staging"
 rm -rf "$DMG_STAGING"
@@ -156,61 +156,33 @@ cp -R "$APP_DIR" "$DMG_STAGING/"
 # Create Applications symlink for drag-to-install
 ln -s /Applications "$DMG_STAGING/Applications"
 
-# Create one-click installer script
-cat > "$DMG_STAGING/Install Chau7.command" << 'INSTALLER'
-#!/bin/bash
-# One-click Chau7 installer
-set -e
+# Add a simple install/readme file for pre-notarization builds.
+cat > "$DMG_STAGING/README - Install Chau7.txt" << 'README'
+Chau7 Pre-Release
 
-APP_NAME="Chau7"
-DMG_DIR="$(cd "$(dirname "$0")" && pwd)"
-SRC="$DMG_DIR/$APP_NAME.app"
-DST="/Applications/$APP_NAME.app"
+Install:
+1. Drag Chau7.app to Applications.
+2. Open Chau7 from Applications.
 
-clear
-echo ""
-echo "  ╔═══════════════════════════════════════╗"
-echo "  ║        Installing Chau7...            ║"
-echo "  ╚═══════════════════════════════════════╝"
-echo ""
+Because this build is not notarized yet, macOS may warn that the app is from an unidentified developer.
+If that happens:
+1. In Finder, open Applications.
+2. Control-click Chau7.app.
+3. Choose Open.
+4. Confirm Open in the dialog.
 
-if [[ ! -d "$SRC" ]]; then
-    echo "  ✗ $APP_NAME.app not found next to this script."
-    echo "    Make sure you're running from the mounted DMG."
-    exit 1
+Notes:
+- This is a pre-release package for testing before Apple Developer signing/notarization is configured.
+- Third-party notices are bundled inside Chau7.app at:
+  Contents/Resources/Legal/
+README
+
+# Surface legal notices next to the app as well.
+DMG_LEGAL_DIR="$DMG_STAGING/Legal Notices"
+mkdir -p "$DMG_LEGAL_DIR"
+if [[ -d "$APP_DIR/Contents/Resources/Legal" ]]; then
+    cp -R "$APP_DIR/Contents/Resources/Legal/." "$DMG_LEGAL_DIR/"
 fi
-
-# Check if already running
-if pgrep -xq "$APP_NAME"; then
-    echo "  Chau7 is running — quitting it first..."
-    osascript -e "tell application \"$APP_NAME\" to quit" 2>/dev/null || true
-    sleep 1
-fi
-
-# Copy to /Applications (may need sudo for /Applications permissions)
-echo "  → Copying to /Applications..."
-if cp -R "$SRC" "$DST" 2>/dev/null; then
-    : # success without sudo
-else
-    echo "  (need admin permission)"
-    sudo cp -R "$SRC" "$DST"
-fi
-
-# Remove quarantine flag — this prevents the Gatekeeper
-# "unidentified developer" dialog entirely.
-echo "  → Removing quarantine flag..."
-xattr -cr "$DST" 2>/dev/null || sudo xattr -cr "$DST" 2>/dev/null || true
-
-echo "  → Launching Chau7..."
-open "$DST"
-
-echo ""
-echo "  ✓ Chau7 installed and running!"
-echo ""
-echo "  You can close this window."
-echo ""
-INSTALLER
-chmod +x "$DMG_STAGING/Install Chau7.command"
 
 info "Creating DMG..."
 rm -f "$DMG_PATH"
@@ -230,10 +202,9 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  $APP_NAME.dmg is ready to share!"
 echo ""
-echo "  Your friend can either:"
-echo "  a) Double-click 'Install Chau7.command' (easiest)"
-echo "     → auto-installs, strips quarantine, launches"
-echo "  b) Drag Chau7 → Applications folder alias"
+echo "  This is a pre-release DMG for testing."
+echo "  Install by dragging Chau7.app to Applications."
+echo "  If Gatekeeper blocks first launch, use Finder: Control-click -> Open."
 echo ""
 if ! $UNIVERSAL; then
     echo "  ⚠ arm64 only (Apple Silicon)."

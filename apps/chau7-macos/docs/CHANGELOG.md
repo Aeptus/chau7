@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Technology, Licenses & Acknowledgments Help Page**: New help topic documenting the monorepo layout, languages, Rust crates, bundled binaries, third-party dependencies (swift-atomics, RTK fork), system frameworks, and notice file locations. Accessible from Help menu and About settings.
+- **Third-Party Notices**: Added `THIRD_PARTY_NOTICES.md` and `LICENSE-RTK-APACHE` for RTK dual-license tracking (MIT + Apache-2.0 upstream ambiguity).
 - **Privacy-First Bug Report Dialog**: New in-app issue reporter (⌥⌘I) with all sensitive sections off by default, per-toggle tab pickers, live markdown preview, inline privacy warnings, and optional remembered contact info. Submits privately via Cloudflare Worker relay.
 - **Issue Reporting Privacy Page**: In-app GDPR-compliant privacy disclosure accessible from the bug report dialog. Lists sub-processors (Cloudflare, GitHub) with data categories, retention, legal basis (Art. 6(1)(f)), international transfer coverage, DPA links, and data subject rights.
 - **Relay /issue Endpoint**: Cloudflare Worker `POST /issue` proxies to GitHub Issues API with server-side PAT, Durable Object rate limiting (5/hour/IP), repo path sanitization, and CORS support.
@@ -108,6 +110,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Phantom Window on Launch**: Closed windows no longer reappear on relaunch — disabled macOS native state restoration (`isRestorable = false`) and hardened the save filter with explicit hidden-window tracking
 
 ### Changed
+- **SwiftTerm References Removed**: All docs, README, architecture diagrams, and code comments now reference the native Rust terminal backend. `SWIFTTERM_FORK.md` deleted. `ARCHITECTURE.md` dependency table updated from SwiftTerm to swift-atomics.
+- **RTK License Provenance**: `UPSTREAM-SYNC.md` now documents the MIT/Apache-2.0 ambiguity in RTK upstream and the dual notice file strategy.
+- **CI gofmt Check**: `ci-lib.sh` gofmt check now uses explicit binary paths to avoid PATH shadowing.
 - **Canonical Notification Coverage for All Sources**: The provider adapter layer now covers every notification source, including shell, app, terminal-session, history-monitor, events-log, and API-proxy events. The shared notification system no longer has pass-through sources outside the canonical adapter boundary.
 - **Single Notification Ingress Handoff**: `AppModel` now ingests events once and hands accepted canonical events directly to `NotificationManager`, eliminating the previous double-ingest path between the unified event stream and notification delivery.
 - **Strict Notification Delivery Boundaries**: Notification ingress now runs through one shared adapter-backed contract, and tab-targeting actions (`styleTab`, `badgeTab`, `focusTab`, snippet insertion, persistent-style clearing) require an explicitly resolved `tabID`. Notification delivery no longer falls back to late `TabResolver` heuristics inside overlay styling or NotificationCenter side channels.

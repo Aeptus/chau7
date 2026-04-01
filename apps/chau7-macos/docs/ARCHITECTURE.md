@@ -37,8 +37,8 @@ Chau7 is a macOS terminal companion app designed for AI CLI tools. It provides t
 │  └──────────────────────────────────────────────────────────┘  │
 │                            │                                  │
 │  ┌─────────────────────────┴───────────────────────────────┐  │
-│  │                    SwiftTerm (Fork)                      │  │
-│  │              Terminal Emulation Engine                   │  │
+│  │               Native Rust Terminal Backend               │  │
+│  │            Terminal Emulation and Rendering              │  │
 │  └──────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -92,7 +92,7 @@ Chau7 is a macOS terminal companion app designed for AI CLI tools. It provides t
 │         └────────────────┼───────────────────┘           │
 │                          ▼                               │
 │  ┌───────────────────────────────────────────────────┐  │
-│  │                 SwiftTerm LocalProcess             │  │
+│  │          RustTerminalView + PTY Integration       │  │
 │  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -115,23 +115,23 @@ Pure Swift library with no UI dependencies:
 ### Terminal Output Flow
 
 ```
-PTY → LocalProcess → SwiftTerm → Buffer → AnsiParser → Render
-                         │
-                         ▼
-              TerminalSessionModel
-                         │
-                    ┌────┴────┐
-                    ▼         ▼
-            AI Detection   Notifications
+PTY → Rust terminal backend → Buffer → AnsiParser → Render
+                    │
+                    ▼
+         TerminalSessionModel
+                    │
+               ┌────┴────┐
+               ▼         ▼
+       AI Detection   Notifications
 ```
 
 ### User Input Flow
 
 ```
-Keyboard → SwiftTerm → PTY → Shell
-              │
-              ▼
-      Input Tracking → Command Detection → Tab Theming
+Keyboard → Rust terminal backend → PTY → Shell
+                       │
+                       ▼
+               Input Tracking → Command Detection → Tab Theming
 ```
 
 ### Settings Flow
@@ -283,7 +283,7 @@ extension View {
 
 | Dependency | Purpose | Version |
 |------------|---------|---------|
-| SwiftTerm | Terminal emulation | Fork @ b97d811 |
+| swift-atomics | Atomic primitives for concurrency/performance-sensitive code | 1.3.0 |
 
 ### System Frameworks
 
