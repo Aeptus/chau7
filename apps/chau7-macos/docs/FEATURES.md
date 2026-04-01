@@ -551,6 +551,7 @@ Key patterns:
 - The debug console analytics view now separates proxy-captured API calls from transcript-derived AI run telemetry instead of mixing them into one misleading table.
 - Run cost coverage now distinguishes priced runs from missing-cost runs, so transcript-derived Claude/Codex data no longer appears as `$0.0000` when cost is actually unavailable.
 - Proxy settings now expose an explicit OpenAI-compatible routing toggle for analytics, so OpenAI/Codex interception can be enabled or disabled intentionally.
+- The debug console can now rebuild transcript-derived run metrics in place, repairing historical Claude/Codex rows after parser or accounting fixes land.
 
 ## Recent Tab Behavior
 

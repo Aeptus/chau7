@@ -1784,6 +1784,19 @@ struct DebugConsoleView: View {
                 }
             }
 
+            HStack {
+                Spacer()
+                Button("Rebuild Transcript Metrics") {
+                    DispatchQueue.global(qos: .utility).async {
+                        let report = TelemetryRepairService.shared.rebuildTranscriptDerivedRuns()
+                        DispatchQueue.main.async {
+                            refreshAnalyticsData()
+                        }
+                        Log.info("DebugConsole: rebuilt telemetry transcript metrics inspected=\(report.inspectedRuns) rebuilt=\(report.rebuiltRuns) invalidated=\(report.invalidatedRuns)")
+                    }
+                }
+            }
+
         }
     }
 
