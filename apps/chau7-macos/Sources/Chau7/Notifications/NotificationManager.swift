@@ -290,17 +290,20 @@ final class NotificationManager {
                 routingRetryCounts.removeValue(forKey: preparedEvent.id)
                 return
             }
-            NotificationActionExecutor.shared.execute(actions: actions, for: preparedEvent)
-            let actionNames = actions.filter(\.enabled).map(\.actionType.rawValue)
+            let report = NotificationActionExecutor.shared.execute(actions: actions, for: preparedEvent)
+            let actionNames = report.successfulActions
             Log.info(
-                "Notification delivery executed style-only actions: id=\(preparedEvent.id.uuidString) trigger=\(baseRateLimitKey) actions=\(actionNames.joined(separator: ", "))"
+                "Notification delivery executed style-only actions: id=\(preparedEvent.id.uuidString) trigger=\(baseRateLimitKey) actions=\(actionNames.joined(separator: ", ")) notes=\(report.notes.joined(separator: " | "))"
             )
+            for note in report.notes {
+                history.appendNote(eventID: preparedEvent.id, note: note)
+            }
             history.markActionsExecuted(
                 eventID: preparedEvent.id,
                 triggerId: baseRateLimitKey,
                 actionsExecuted: actionNames,
-                didDispatchBanner: actionNames.contains(NotificationActionType.showNotification.rawValue),
-                didStyleTab: actionNames.contains(NotificationActionType.styleTab.rawValue)
+                didDispatchBanner: report.didDispatchBanner,
+                didStyleTab: report.didStyleTab
             )
             history.markCompleted(eventID: preparedEvent.id)
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
@@ -314,12 +317,12 @@ final class NotificationManager {
                 return
             }
             let partition = NotificationActionRequirements.partitionByResolvedTabRequirement(actions)
+            var aggregateReport = NotificationActionExecutor.ExecutionReport()
             if !partition.nonTabScoped.isEmpty {
-                NotificationActionExecutor.shared.execute(actions: partition.nonTabScoped, for: preparedEvent)
+                aggregateReport.append(
+                    NotificationActionExecutor.shared.execute(actions: partition.nonTabScoped, for: preparedEvent)
+                )
             }
-
-            var executedActions = partition.nonTabScoped.filter(\.enabled).map(\.actionType.rawValue)
-            var didStyleTab = false
 
             if !partition.tabScoped.isEmpty {
                 guard preparedEvent.tabID != nil else {
@@ -332,18 +335,17 @@ final class NotificationManager {
                     history.markActionsExecuted(
                         eventID: preparedEvent.id,
                         triggerId: triggerId,
-                        actionsExecuted: executedActions,
-                        didDispatchBanner: executedActions.contains(NotificationActionType.showNotification.rawValue),
+                        actionsExecuted: aggregateReport.successfulActions,
+                        didDispatchBanner: aggregateReport.didDispatchBanner,
                         didStyleTab: false
                     )
                     history.markCompleted(eventID: preparedEvent.id)
                     routingRetryCounts.removeValue(forKey: preparedEvent.id)
                     return
                 }
-                NotificationActionExecutor.shared.execute(actions: partition.tabScoped, for: preparedEvent)
-                let tabScopedNames = partition.tabScoped.filter(\.enabled).map(\.actionType.rawValue)
-                executedActions.append(contentsOf: tabScopedNames)
-                didStyleTab = tabScopedNames.contains(NotificationActionType.styleTab.rawValue)
+                aggregateReport.append(
+                    NotificationActionExecutor.shared.execute(actions: partition.tabScoped, for: preparedEvent)
+                )
             }
 
             if let supplementalStyleAction = NotificationStylePlanner.supplementalStyleAction(
@@ -351,24 +353,27 @@ final class NotificationManager {
                 from: actions
             ) {
                 if preparedEvent.tabID != nil {
-                    NotificationActionExecutor.shared.execute(actions: [supplementalStyleAction], for: preparedEvent)
-                    executedActions.append(NotificationActionType.styleTab.rawValue)
-                    didStyleTab = true
+                    aggregateReport.append(
+                        NotificationActionExecutor.shared.execute(actions: [supplementalStyleAction], for: preparedEvent)
+                    )
                 } else {
                     let reason = "Skipped supplemental style action without explicit tabID"
                     Log.warn("\(reason) id=\(preparedEvent.id.uuidString) type=\(preparedEvent.type) tool=\(preparedEvent.tool)")
                     history.appendNote(eventID: preparedEvent.id, note: reason)
                 }
             }
+            for note in aggregateReport.notes {
+                history.appendNote(eventID: preparedEvent.id, note: note)
+            }
             Log.info(
-                "Notification delivery executed configured actions: id=\(preparedEvent.id.uuidString) trigger=\(triggerId) actions=\(executedActions.joined(separator: ", "))"
+                "Notification delivery executed configured actions: id=\(preparedEvent.id.uuidString) trigger=\(triggerId) actions=\(aggregateReport.successfulActions.joined(separator: ", ")) notes=\(aggregateReport.notes.joined(separator: " | "))"
             )
             history.markActionsExecuted(
                 eventID: preparedEvent.id,
                 triggerId: triggerId,
-                actionsExecuted: executedActions,
-                didDispatchBanner: executedActions.contains(NotificationActionType.showNotification.rawValue),
-                didStyleTab: didStyleTab
+                actionsExecuted: aggregateReport.successfulActions,
+                didDispatchBanner: aggregateReport.didDispatchBanner,
+                didStyleTab: aggregateReport.didStyleTab
             )
             history.markCompleted(eventID: preparedEvent.id)
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
@@ -438,8 +443,11 @@ final class NotificationManager {
             history.appendNote(eventID: event.id, note: reason)
             return false
         }
-        NotificationActionExecutor.shared.execute(actions: [action], for: event)
-        return true
+        let report = NotificationActionExecutor.shared.execute(actions: [action], for: event)
+        for note in report.notes {
+            history.appendNote(eventID: event.id, note: note)
+        }
+        return report.didStyleTab
     }
 
     // MARK: - Notification Dispatch
