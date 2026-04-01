@@ -284,11 +284,13 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     private var claudeTerminalTailer: FileTailer<String>?
     private var cleanupTimer: DispatchSourceTimer?
     private var appEventEmitter: AppEventEmitter?
+    private var pendingClaudeWaitingInputFallbacks: [String: DispatchWorkItem] = [:]
     private let maxLogLines = 300
     private let maxHistoryEntries = 200
     private let maxTerminalLines = 250
     private let terminalPrefillLines = 200
     private let maxEntryAgeSeconds: TimeInterval = 7 * 24 * 60 * 60 // 7 days
+    var claudeWaitingInputFallbackDelay: TimeInterval = 0.75
     private var notificationSettingsSnapshot: NotificationSettingsSnapshot?
 
     private struct NotificationSettingsSnapshot {
@@ -423,6 +425,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     }
 
     deinit {
+        pendingClaudeWaitingInputFallbacks.values.forEach { $0.cancel() }
         Log.warn("AppModel deinit — possible SwiftUI scene recreation (pid=\(ProcessInfo.processInfo.processIdentifier))")
     }
 
@@ -1021,89 +1024,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         // Set up callbacks (all called on main thread)
         monitor.onEvent = { [weak self] event in
-            guard let self else { return }
-            claudeCodeEvents.append(event)
-
-            // Feed runtime state first so Claude hook events can pick up a
-            // stable runtime-owned tab binding before they enter the generic
-            // notification path.
-            RuntimeSessionManager.shared.handleClaudeEvent(event)
-
-            // Trim after runtime processing so the event is always available
-            // when sessionForClaudeSessionID looks it up.
-            claudeCodeEvents.trimToLast(50)
-
-            let runtimeTabID = RuntimeSessionManager.shared.sessionForClaudeSessionID(event.sessionId)?.tabID
-
-            // Also feed into the tool-agnostic recentEvents stream so Claude Code
-            // events appear in the command center timeline alongside events from
-            // other tools (Cursor, Codex, etc.). Without this, only the notification
-            // system sees Claude Code events — the timeline would be empty.
-            //
-            // Use "Claude" as the tool name — NOT event.toolName (which is an
-            // internal Claude tool like "Write", "Bash", "Read"). TabResolver
-            // matches the tool field against tab branding to resolve which tab
-            // the event belongs to. Internal tool names are unmatchable, causing
-            // the onlyWhenTabInactive guard to misfire and tab styling to fail.
-            let aiEvent = AIEvent(
-                source: .claudeCode,
-                type: event.type.rawValue,
-                rawType: event.type.rawValue,
-                tool: "Claude",
-                title: event.title,
-                message: event.message,
-                notificationType: event.notificationType,
-                ts: DateFormatters.iso8601.string(from: event.timestamp),
-                directory: event.cwd.isEmpty ? nil : event.cwd,
-                tabID: runtimeTabID ?? resolveTabID(
-                    toolName: "Claude",
-                    directory: event.cwd.isEmpty ? nil : event.cwd,
-                    tabID: nil,
-                    sessionID: event.sessionId.isEmpty ? nil : event.sessionId
-                ),
-                sessionID: event.sessionId.isEmpty ? nil : event.sessionId,
-                producer: "claude_code_monitor",
-                reliability: .authoritative
-            )
-
-            Task { @MainActor [weak self] in
-                self?.publishUnifiedEvent(aiEvent, notify: true)
-            }
-
-            // Bridge session IDs from Claude Code hooks to the telemetry system.
-            // Hook events carry sessionId + cwd; match to in-progress telemetry runs
-            // so content extraction can find the right transcript files on run end.
-            if !event.sessionId.isEmpty, !event.cwd.isEmpty {
-                TelemetryRecorder.shared.updateSessionID(
-                    provider: "claude", cwd: event.cwd, sessionID: event.sessionId
-                )
-            }
-
-            // Keep menu bar / command center session snapshots in sync for every
-            // session state transition, especially `sessionEnd` which does not
-            // trigger the idle/response-complete callbacks below.
-            syncClaudeCodeSessions()
+            self?.handleClaudeCodeMonitorEvent(event)
         }
 
         monitor.onSessionIdle = { [weak self] session in
-            Log.info("Claude Code session idle: \(session.projectName) (\(session.id.prefix(8)))")
-            self?.syncClaudeCodeSessions()
-            // Route idle notification through the unified pipeline (was previously
-            // handled by ClaudeCodeMonitor.notifySessionIdle directly)
-            self?.recordEvent(
-                source: .claudeCode, type: "idle", tool: "Claude",
-                message: "Waiting for input in \(session.projectName)",
-                notify: true,
-                directory: session.cwd.isEmpty ? nil : session.cwd,
-                sessionID: session.id,
-                producer: "claude_code_idle",
-                reliability: .authoritative
-            )
+            self?.handleClaudeCodeSessionIdle(session)
         }
 
         monitor.onResponseComplete = { [weak self] event in
-            Log.info("Claude Code response complete: \(event.projectName)")
-            self?.syncClaudeCodeSessions()
+            self?.handleClaudeCodeResponseComplete(event)
         }
 
         // Start monitoring
@@ -1124,6 +1053,123 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         // Initial sync
         syncClaudeCodeSessions()
+    }
+
+    func handleClaudeCodeMonitorEvent(_ event: ClaudeCodeEvent) {
+        cancelPendingClaudeWaitingInputFallback(sessionID: event.sessionId)
+        claudeCodeEvents.append(event)
+
+        // Feed runtime state first so Claude hook events can pick up a
+        // stable runtime-owned tab binding before they enter the generic
+        // notification path.
+        RuntimeSessionManager.shared.handleClaudeEvent(event)
+
+        // Trim after runtime processing so the event is always available
+        // when sessionForClaudeSessionID looks it up.
+        claudeCodeEvents.trimToLast(50)
+
+        let runtimeTabID = RuntimeSessionManager.shared.sessionForClaudeSessionID(event.sessionId)?.tabID
+        let aiEvent = AIEvent(
+            source: .claudeCode,
+            type: event.type.rawValue,
+            rawType: event.type.rawValue,
+            tool: "Claude",
+            title: event.title,
+            message: event.message,
+            notificationType: event.notificationType,
+            ts: DateFormatters.iso8601.string(from: event.timestamp),
+            directory: event.cwd.isEmpty ? nil : event.cwd,
+            tabID: runtimeTabID ?? resolveTabID(
+                toolName: "Claude",
+                directory: event.cwd.isEmpty ? nil : event.cwd,
+                tabID: nil,
+                sessionID: event.sessionId.isEmpty ? nil : event.sessionId
+            ),
+            sessionID: event.sessionId.isEmpty ? nil : event.sessionId,
+            producer: "claude_code_monitor",
+            reliability: .authoritative
+        )
+
+        Task { @MainActor [weak self] in
+            self?.publishUnifiedEvent(aiEvent, notify: true)
+        }
+
+        if !event.sessionId.isEmpty, !event.cwd.isEmpty {
+            TelemetryRecorder.shared.updateSessionID(
+                provider: "claude", cwd: event.cwd, sessionID: event.sessionId
+            )
+        }
+
+        syncClaudeCodeSessions()
+    }
+
+    func handleClaudeCodeSessionIdle(_ session: ClaudeCodeMonitor.ClaudeSessionInfo) {
+        Log.info("Claude Code session idle: \(session.projectName) (\(session.id.prefix(8)))")
+        cancelPendingClaudeWaitingInputFallback(sessionID: session.id)
+        syncClaudeCodeSessions()
+        recordEvent(
+            source: .claudeCode, type: "idle", tool: "Claude",
+            message: "Waiting for input in \(session.projectName)",
+            notify: true,
+            directory: session.cwd.isEmpty ? nil : session.cwd,
+            sessionID: session.id,
+            producer: "claude_code_idle",
+            reliability: .authoritative
+        )
+    }
+
+    func handleClaudeCodeResponseComplete(_ event: ClaudeCodeEvent) {
+        Log.info("Claude Code response complete: \(event.projectName)")
+        syncClaudeCodeSessions()
+        scheduleClaudeWaitingInputFallback(for: event)
+    }
+
+    private func scheduleClaudeWaitingInputFallback(for event: ClaudeCodeEvent) {
+        let sessionID = event.sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sessionID.isEmpty else { return }
+        cancelPendingClaudeWaitingInputFallback(sessionID: sessionID)
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingClaudeWaitingInputFallbacks.removeValue(forKey: sessionID)
+
+            let directory = event.cwd.isEmpty ? nil : event.cwd
+            let runtimeTabID = RuntimeSessionManager.shared.sessionForClaudeSessionID(sessionID)?.tabID
+            let tabID = runtimeTabID ?? resolveTabID(
+                toolName: "Claude",
+                directory: directory,
+                tabID: nil,
+                sessionID: sessionID
+            )
+            let location = event.projectName == "Unknown" ? "Claude" : event.projectName
+            let fallbackEvent = AIEvent(
+                source: .claudeCode,
+                type: "waiting_input",
+                tool: "Claude",
+                title: event.title,
+                message: "Claude is waiting for your input in \(location)",
+                notificationType: "idle_prompt",
+                ts: DateFormatters.iso8601.string(from: event.timestamp),
+                directory: directory,
+                tabID: tabID,
+                sessionID: sessionID,
+                producer: "claude_response_complete_fallback",
+                reliability: .fallback
+            )
+            self.publishUnifiedEvent(fallbackEvent, notify: true)
+        }
+
+        pendingClaudeWaitingInputFallbacks[sessionID] = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + claudeWaitingInputFallbackDelay,
+            execute: work
+        )
+    }
+
+    private func cancelPendingClaudeWaitingInputFallback(sessionID: String) {
+        let trimmed = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        pendingClaudeWaitingInputFallbacks.removeValue(forKey: trimmed)?.cancel()
     }
 
     private var pendingSyncWork: DispatchWorkItem?

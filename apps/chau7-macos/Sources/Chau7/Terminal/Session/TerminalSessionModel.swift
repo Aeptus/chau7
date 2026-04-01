@@ -364,6 +364,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     var pendingAIRoundTripCompleted = false
     var pendingWaitingInputFallbackArmed = false
     var pendingWaitingInputFallbackSawLiveOutput = false
+    var suppressWaitingInputFallbackUntilNextUserCommand = false
     var outputLatencySampleCount = 0
     var outputLatencyTotalMs: Double = 0
     let inputLagLogThresholdMs: Double = 60
@@ -1170,6 +1171,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         pendingPrefillInput = text
         pendingWaitingInputFallbackArmed = false
         pendingWaitingInputFallbackSawLiveOutput = false
+        suppressWaitingInputFallbackUntilNextUserCommand = true
         flushPendingPrefillInputIfReady()
     }
 
