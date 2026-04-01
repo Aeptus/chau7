@@ -1838,6 +1838,23 @@ struct DebugConsoleView: View {
                         healthRow("Ligatures enabled", value: FeatureSettings.shared.enableLigatures ? "Yes" : "No")
                     }
                 }
+
+                GroupBox("Notification Reliability") {
+                    let history = NotificationManager.shared.history.recent(limit: 100)
+                    let completed = history.filter { $0.deliveryState == NotificationHistory.DeliveryState.completed.rawValue }.count
+                    let dropped = history.filter { $0.deliveryState == NotificationHistory.DeliveryState.dropped.rawValue }.count
+                    let retries = history.filter { $0.deliveryState == NotificationHistory.DeliveryState.retryScheduled.rawValue }.count
+                    let rateLimited = history.filter(\.wasRateLimited).count
+                    let authoritative = history.filter { $0.reliability == AIEventReliability.authoritative.rawValue }.count
+                    VStack(alignment: .leading, spacing: 4) {
+                        healthRow("Ledger entries", value: "\(history.count)")
+                        healthRow("Completed", value: "\(completed)", warn: completed == 0 && !history.isEmpty)
+                        healthRow("Dropped", value: "\(dropped)", warn: dropped > 0)
+                        healthRow("Retry scheduled", value: "\(retries)", warn: retries > 0)
+                        healthRow("Rate limited", value: "\(rateLimited)", warn: rateLimited > 0)
+                        healthRow("Authoritative events", value: "\(authoritative)")
+                    }
+                }
             }
             .padding()
         }

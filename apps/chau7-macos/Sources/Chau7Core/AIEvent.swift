@@ -58,6 +58,12 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
     public static let continueAI = AIEventSource(rawValue: "continue_ai")
 }
 
+public enum AIEventReliability: String, Codable, Sendable {
+    case authoritative
+    case fallback
+    case heuristic
+}
+
 /// A tool-agnostic event from any monitored source.
 ///
 /// This is the **primary event type** for the entire app. All monitors produce AIEvents,
@@ -83,8 +89,23 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
     public let tabID: UUID?
     /// AI session ID (e.g. Claude session ID) for tab disambiguation.
     public let sessionID: String?
+    /// Which subsystem emitted the event (for audit/debugging).
+    public let producer: String?
+    /// Confidence class used for routing and fallback suppression.
+    public let reliability: AIEventReliability
 
-    public init(source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String, directory: String? = nil, tabID: UUID? = nil, sessionID: String? = nil) {
+    public init(
+        source: AIEventSource = .unknown,
+        type: String,
+        tool: String,
+        message: String,
+        ts: String,
+        directory: String? = nil,
+        tabID: UUID? = nil,
+        sessionID: String? = nil,
+        producer: String? = nil,
+        reliability: AIEventReliability? = nil
+    ) {
         self.id = UUID()
         self.source = source
         self.type = type
@@ -94,9 +115,23 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         self.directory = directory
         self.tabID = tabID
         self.sessionID = sessionID
+        self.producer = producer
+        self.reliability = reliability ?? Self.defaultReliability(for: source)
     }
 
-    public init(id: UUID, source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String, directory: String? = nil, tabID: UUID? = nil, sessionID: String? = nil) {
+    public init(
+        id: UUID,
+        source: AIEventSource = .unknown,
+        type: String,
+        tool: String,
+        message: String,
+        ts: String,
+        directory: String? = nil,
+        tabID: UUID? = nil,
+        sessionID: String? = nil,
+        producer: String? = nil,
+        reliability: AIEventReliability? = nil
+    ) {
         self.id = id
         self.source = source
         self.type = type
@@ -106,6 +141,8 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         self.directory = directory
         self.tabID = tabID
         self.sessionID = sessionID
+        self.producer = producer
+        self.reliability = reliability ?? Self.defaultReliability(for: source)
     }
 
     /// Returns a copy with `tabID` filled in, if it was previously nil.
@@ -120,13 +157,30 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
             ts: ts,
             directory: directory,
             tabID: tabID,
-            sessionID: sessionID
+            sessionID: sessionID,
+            producer: producer,
+            reliability: reliability
         )
     }
 
     /// Returns the routing target for tab resolution from this event's fields.
     public var tabTarget: TabTarget {
         TabTarget(tool: tool, directory: directory, tabID: tabID, sessionID: sessionID)
+    }
+
+    public var normalizedType: String {
+        type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    public static func defaultReliability(for source: AIEventSource) -> AIEventReliability {
+        switch source {
+        case .runtime, .claudeCode, .terminalSession, .shell, .app:
+            return .authoritative
+        case .historyMonitor:
+            return .fallback
+        default:
+            return .heuristic
+        }
     }
 
     /// Returns the notification title for this event.

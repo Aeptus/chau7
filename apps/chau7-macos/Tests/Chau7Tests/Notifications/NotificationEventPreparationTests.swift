@@ -50,8 +50,9 @@ final class NotificationEventPreparationTests: XCTestCase {
             return expectedTabID
         }
 
-        if case .proceed(let resolvedEvent) = decision {
-            XCTAssertEqual(resolvedEvent.tabID, expectedTabID)
+        if case .proceed(let prepared) = decision {
+            XCTAssertEqual(prepared.event.tabID, expectedTabID)
+            XCTAssertEqual(prepared.resolutionMethod, "resolved_via_tab_resolver")
         } else {
             XCTFail("Expected enabled event to proceed")
         }
@@ -75,8 +76,9 @@ final class NotificationEventPreparationTests: XCTestCase {
         }
 
         XCTAssertEqual(resolverCallCount, 0)
-        if case .proceed(let preparedEvent) = decision {
-            XCTAssertEqual(preparedEvent.tabID, explicitTabID)
+        if case .proceed(let prepared) = decision {
+            XCTAssertEqual(prepared.event.tabID, explicitTabID)
+            XCTAssertEqual(prepared.resolutionMethod, "explicit_tab")
         } else {
             XCTFail("Expected explicit-tab event to proceed")
         }

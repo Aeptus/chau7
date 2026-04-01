@@ -1792,6 +1792,14 @@ private struct NotificationHistoryTabView: View {
     @State private var entries: [NotificationHistory.Entry] = []
     @State private var refreshToken = UUID()
 
+    private var summaryText: String {
+        let completed = entries.filter { $0.deliveryState == NotificationHistory.DeliveryState.completed.rawValue }.count
+        let dropped = entries.filter { $0.deliveryState == NotificationHistory.DeliveryState.dropped.rawValue }.count
+        let retries = entries.filter { $0.deliveryState == NotificationHistory.DeliveryState.retryScheduled.rawValue }.count
+        let authoritative = entries.filter { $0.reliability == AIEventReliability.authoritative.rawValue }.count
+        return "completed \(completed)  dropped \(dropped)  retrying \(retries)  authoritative \(authoritative)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SettingsSectionHeader(L("settings.notifications.history", "Notification History"), icon: "clock.arrow.circlepath")
@@ -1800,6 +1808,12 @@ private struct NotificationHistoryTabView: View {
                 Text(L("settings.notifications.history.description", "Recent notification events (last 100, in-memory only)."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if !entries.isEmpty {
+                    Text(summaryText)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.tertiary)
+                }
 
                 Spacer()
 
@@ -1881,7 +1895,7 @@ private struct NotificationHistoryEntryRow: View {
                     .foregroundColor(.green)
             }
 
-            Text(entry.triggerId)
+            Text(entry.triggerId ?? entry.deliveryState)
                 .font(.caption.monospaced())
                 .foregroundStyle(.primary)
                 .lineLimit(1)
@@ -1893,16 +1907,41 @@ private struct NotificationHistoryEntryRow: View {
                     .lineLimit(1)
             }
 
+            Text(entry.reliability)
+                .font(.caption2.monospaced())
+                .foregroundStyle(entry.reliability == AIEventReliability.authoritative.rawValue ? .green : .secondary)
+
             Spacer()
 
-            Text(entry.message.prefix(40) + (entry.message.count > 40 ? "..." : ""))
+            let status = [
+                entry.didDispatchBanner ? "banner" : nil,
+                entry.didStyleTab ? "style" : nil,
+                entry.dropReason
+            ]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+
+            Text(status.isEmpty ? String(entry.message.prefix(40) + (entry.message.count > 40 ? "..." : "")) : status)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
         }
         .padding(.vertical, 2)
         .padding(.horizontal, 6)
-        .background(entry.wasRateLimited ? Color.orange.opacity(0.05) : Color.clear)
+        .background(rowBackground)
         .cornerRadius(3)
+    }
+
+    private var rowBackground: Color {
+        if entry.wasRateLimited {
+            return Color.orange.opacity(0.05)
+        }
+        if entry.deliveryState == NotificationHistory.DeliveryState.dropped.rawValue {
+            return Color.red.opacity(0.05)
+        }
+        if entry.deliveryState == NotificationHistory.DeliveryState.retryScheduled.rawValue {
+            return Color.yellow.opacity(0.06)
+        }
+        return Color.clear
     }
 }

@@ -13,7 +13,10 @@ final class NotificationCoalescingTests: XCTestCase {
         )
 
         let key = MonitoringSchedule.notificationCoalescingKey(for: event)
-        XCTAssertEqual(key, "claude_code|finished|claude|event:\(event.id.uuidString.lowercased())")
+        XCTAssertEqual(
+            key,
+            "claude_code|authoritative|unknown|finished|claude|event:\(event.id.uuidString.lowercased())"
+        )
     }
 
     func testCoalescingKeyVariesBySource() {
@@ -51,7 +54,10 @@ final class NotificationCoalescingTests: XCTestCase {
         )
 
         let key = MonitoringSchedule.notificationCoalescingKey(for: event)
-        XCTAssertEqual(key, "history_monitor|||event:\(event.id.uuidString.lowercased())")
+        XCTAssertEqual(
+            key,
+            "history_monitor|fallback|unknown|||event:\(event.id.uuidString.lowercased())"
+        )
     }
 
     func testCoalescingKeyScopesBySessionWhenTabIDMissing() {
@@ -65,7 +71,10 @@ final class NotificationCoalescingTests: XCTestCase {
         )
 
         let key = MonitoringSchedule.notificationCoalescingKey(for: event)
-        XCTAssertEqual(key, "runtime|permission|claude|session:session-123")
+        XCTAssertEqual(
+            key,
+            "runtime|authoritative|unknown|permission|claude|session:session-123"
+        )
     }
 
     func testCoalescingKeyScopesByDirectoryWhenNoTabOrSessionExists() {
@@ -79,7 +88,10 @@ final class NotificationCoalescingTests: XCTestCase {
         )
 
         let key = MonitoringSchedule.notificationCoalescingKey(for: event)
-        XCTAssertEqual(key, "shell|finished|codex|dir:/tmp/chau7")
+        XCTAssertEqual(
+            key,
+            "shell|authoritative|unknown|finished|codex|dir:/tmp/chau7"
+        )
     }
 
     func testRateLimitKeyIncludesIdentityScope() {

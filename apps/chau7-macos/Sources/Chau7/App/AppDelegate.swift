@@ -110,9 +110,16 @@ private final class OverlayBlurView: NSVisualEffectView {
             }
         }
 
-        // Show splash screen while initializing
+        // Show splash: welcome on first launch, spinner on subsequent
         splashController = SplashWindowController()
-        splashController?.show()
+        if !SplashWindowController.hasShownWelcome {
+            splashController?.showWelcome { [weak self] in
+                self?.finishLaunching()
+            }
+            SplashWindowController.hasShownWelcome = true
+        } else {
+            splashController?.show()
+        }
 
         applyAppTheme()
         installKeyMonitor()
@@ -180,7 +187,13 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         // Wait for shell to initialize and run integration, then show
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.finishLaunching()
+            if self?.splashController?.onWelcomeDismiss != nil {
+                // Welcome flow: mark app ready, dismiss happens when user clicks "Get Started"
+                self?.splashController?.markAppReady()
+            } else {
+                // Normal splash: dismiss immediately
+                self?.finishLaunching()
+            }
         }
     }
 
@@ -1168,6 +1181,14 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func showHelp() {
         HelpWindowController.shared.show()
+    }
+
+    func showWelcomeFromMenu() {
+        let controller = SplashWindowController()
+        controller.showWelcome { [weak controller] in
+            controller?.dismiss {}
+        }
+        controller.markAppReady() // app is already running, dismiss on button click
     }
 
     func showKeyboardShortcuts() {

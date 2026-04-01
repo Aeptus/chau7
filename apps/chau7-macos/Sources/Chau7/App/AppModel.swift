@@ -810,7 +810,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             type: "update_available",
             tool: "Chau7",
             message: "This is a test notification from Chau7.",
-            ts: DateFormatters.nowISO8601()
+            ts: DateFormatters.nowISO8601(),
+            producer: "app_model_test",
+            reliability: .authoritative
         )
         Task { @MainActor in NotificationManager.shared.notify(for: event) }
     }
@@ -823,7 +825,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         notify: Bool,
         directory: String? = nil,
         tabID: UUID? = nil,
-        sessionID: String? = nil
+        sessionID: String? = nil,
+        producer: String? = nil,
+        reliability: AIEventReliability? = nil
     ) {
         // Sanitize message to remove escape sequences before logging/storing
         let sanitizedMessage = EscapeSequenceSanitizer.sanitizeForLogging(message)
@@ -836,7 +840,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             ts: DateFormatters.nowISO8601(),
             directory: directory,
             tabID: resolvedTabID,
-            sessionID: sessionID
+            sessionID: sessionID,
+            producer: producer,
+            reliability: reliability
         )
         // Use trace level for high-frequency events, info for important ones
         let isHighFrequency = ["process_started", "process_ended"].contains(type)
@@ -1056,7 +1062,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                     tabID: nil,
                     sessionID: event.sessionId.isEmpty ? nil : event.sessionId
                 ),
-                sessionID: event.sessionId.isEmpty ? nil : event.sessionId
+                sessionID: event.sessionId.isEmpty ? nil : event.sessionId,
+                producer: "claude_code_monitor",
+                reliability: .authoritative
             )
             recentEvents.append(aiEvent)
             recentEvents.trimToLast(25)
@@ -1092,7 +1100,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 message: "Waiting for input in \(session.projectName)",
                 notify: true,
                 directory: session.cwd.isEmpty ? nil : session.cwd,
-                sessionID: session.id
+                sessionID: session.id,
+                producer: "claude_code_idle",
+                reliability: .authoritative
             )
         }
 
@@ -1106,7 +1116,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 message: "Claude finished in \(event.projectName)",
                 notify: true,
                 directory: event.cwd.isEmpty ? nil : event.cwd,
-                sessionID: event.sessionId
+                sessionID: event.sessionId,
+                producer: "claude_code_complete",
+                reliability: .authoritative
             )
         }
 
@@ -1308,7 +1320,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                         notify: true,
                         directory: directory,
                         tabID: tabID,
-                        sessionID: sessionId
+                        sessionID: sessionId,
+                        producer: "history_idle_monitor",
+                        reliability: .fallback
                     )
                 }
             }
@@ -1342,7 +1356,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 ts: DateFormatters.nowISO8601(),
                 directory: directory,
                 tabID: tabID,
-                sessionID: entry.sessionId
+                sessionID: entry.sessionId,
+                producer: "history_idle_monitor",
+                reliability: .fallback
             )
             NotificationManager.shared.notify(for: event)
             guard let self else { return }
