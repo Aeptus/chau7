@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Privacy-First Bug Report Dialog**: New in-app issue reporter (⌥⌘I) with all sensitive sections off by default, per-toggle tab pickers, live markdown preview, inline privacy warnings, and optional remembered contact info. Submits privately via Cloudflare Worker relay.
+- **Issue Reporting Privacy Page**: In-app GDPR-compliant privacy disclosure accessible from the bug report dialog. Lists sub-processors (Cloudflare, GitHub) with data categories, retention, legal basis (Art. 6(1)(f)), international transfer coverage, DPA links, and data subject rights.
 - **Relay /issue Endpoint**: Cloudflare Worker `POST /issue` proxies to GitHub Issues API with server-side PAT, Durable Object rate limiting (5/hour/IP), repo path sanitization, and CORS support.
 - **Repo-Level Aggregated Metrics**: Per-repository stats (command count, success rate, AI runs, tokens, cost, providers, top tools) computed on demand from both SQLite stores. Surfaced in Debug Console "Repos" analytics tab, Data Explorer enriched rows, and TabHoverCard condensed line (togglable via `hoverCardShowRepoStats`).
 - **Click-to-Copy Document Name**: Clicking the file name in the text editor pane header copies it to the clipboard.
@@ -67,6 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Runtime Turn Send for Adopted Sessions**: MCP clients can now send prompts through `runtime_turn_send` even when the runtime session was adopted from an existing tab
 
 ### Fixed
+- **Restore Prefill Notification Noise**: System-injected resume prefills no longer arm prompt-return `waiting_input` notifications during launch/restore. Fallback waiting-input delivery stays suppressed until a real user command runs after the restore flow.
+- **Tailed `terminal_session` Notification Spam**: Terminal-session events replayed from the event log no longer re-enter user-facing notification delivery. They still appear in the unified event stream, but live notifications now only come from canonical ingress, not from tailed echoes.
 - **History Monitor False Finishes**: Prompt-only Codex and Claude history entries no longer synthesize `finished` events after the idle timeout. History-monitor completions now require response-side activity instead of treating every new user prompt as completed work.
 - **Default AI Notification Policy**: AI-facing notification defaults are now stricter. Finished, failed, and permission requests remain enabled by default, while noisy events-log passthrough triggers like `needs_validation`, custom `notification`, and wildcard `other` no longer ship enabled.
 - **Runtime Failure Classification**: Non-success runtime exits now emit `failed` instead of generic `error`, so they follow the same default notification and tab-style policy as other AI task failures.
@@ -102,6 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Phantom Window on Launch**: Closed windows no longer reappear on relaunch — disabled macOS native state restoration (`isRestorable = false`) and hardened the save filter with explicit hidden-window tracking
 
 ### Changed
+- **Canonical Notification Coverage for All Sources**: The provider adapter layer now covers every notification source, including shell, app, terminal-session, history-monitor, events-log, and API-proxy events. The shared notification system no longer has pass-through sources outside the canonical adapter boundary.
+- **Single Notification Ingress Handoff**: `AppModel` now ingests events once and hands accepted canonical events directly to `NotificationManager`, eliminating the previous double-ingest path between the unified event stream and notification delivery.
 - **Strict Notification Delivery Boundaries**: Notification ingress now runs through one shared adapter-backed contract, and tab-targeting actions (`styleTab`, `badgeTab`, `focusTab`, snippet insertion, persistent-style clearing) require an explicitly resolved `tabID`. Notification delivery no longer falls back to late `TabResolver` heuristics inside overlay styling or NotificationCenter side channels.
 - **Provider Adapter Notification Layer**: AI provider events are now canonicalized before they enter the shared notification stream. App-level event publishing, event-log tailing, and Claude hook delivery now all flow through provider adapters so settings, history, and tab styling operate on one semantic event model instead of mixed raw provider events.
 - **Canonical Notification Name Normalization**: Shared semantic notification mapping now preserves word boundaries when normalizing provider hook names, so values like `permission prompt`, `idle-prompt`, and `auth success` consistently map onto the canonical trigger keys used by adapters and settings.

@@ -8,6 +8,7 @@ public struct TerminalPromptNotificationContext: Equatable, Sendable {
     public let providerIsRestored: Bool
     public let hasPendingPrefillInput: Bool
     public let suppressUntilNextUserCommand: Bool
+    public let hasRecentSystemResumePrefill: Bool
     public let commandLooksLikeResume: Bool
     public let observedAIRoundTrip: Bool
     public let sessionID: String?
@@ -20,6 +21,7 @@ public struct TerminalPromptNotificationContext: Equatable, Sendable {
         providerIsRestored: Bool,
         hasPendingPrefillInput: Bool,
         suppressUntilNextUserCommand: Bool,
+        hasRecentSystemResumePrefill: Bool,
         commandLooksLikeResume: Bool,
         observedAIRoundTrip: Bool,
         sessionID: String?
@@ -31,6 +33,7 @@ public struct TerminalPromptNotificationContext: Equatable, Sendable {
         self.providerIsRestored = providerIsRestored
         self.hasPendingPrefillInput = hasPendingPrefillInput
         self.suppressUntilNextUserCommand = suppressUntilNextUserCommand
+        self.hasRecentSystemResumePrefill = hasRecentSystemResumePrefill
         self.commandLooksLikeResume = commandLooksLikeResume
         self.observedAIRoundTrip = observedAIRoundTrip
         self.sessionID = sessionID
@@ -61,6 +64,9 @@ public enum TerminalPromptNotificationAdapter {
             return false
         }
         guard !context.suppressUntilNextUserCommand else {
+            return false
+        }
+        guard !context.hasRecentSystemResumePrefill else {
             return false
         }
         guard !context.commandLooksLikeResume else {

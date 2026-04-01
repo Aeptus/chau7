@@ -34,6 +34,7 @@ AI Integration,LLM Error Explanation,"One-click error analysis via OpenAI, Anthr
 AI Integration,Claude Code Deep Integration,"Monitor Claude Code hook events: prompts, tools, permissions, responses — first-class agentic workflow support",Shipped,Yes
 AI Integration,AI Event Notifications,"Notifications for finished, failed, permission, needs_validation, tool_complete, session_end, idle, and related AI events; default AI policy enables only finished, failed, and permission requests",Shipped,Yes
 AI Integration,Provider Adapter Notification Layer,"Provider-specific events are translated into one shared semantic notification model before settings, history, styling, and delivery run",Shipped,Yes
+AI Integration,Full-Source Canonical Notification Adapters,"Shell, app, terminal-session, history-monitor, events-log, and API-proxy events now pass through the same canonical adapter boundary instead of bypassing the shared notification model",Shipped,Yes
 AI Integration,Canonical Provider Event Normalization,"Provider hook names normalize through one shared mapper that preserves semantic separators so values like permission prompt idle-prompt and auth success resolve to the same canonical trigger keys",Shipped,Yes
 AI Integration,Claude Hook Notification Ownership,"Claude notification hooks own waiting-input and attention-required delivery; raw response_complete stays state-only",Shipped,Yes
 AI Integration,Authoritative Notification Routing,"Runtime and hook-backed finished failed and permission events take priority, while history-derived events act only as fallback and are suppressed after an authoritative delivery for the same session or tab",Shipped,Yes
@@ -42,7 +43,9 @@ AI Integration,Simplified AI Notification Settings,"AI-first notification overvi
 AI Integration,Semantic AI Attention Controls,"Waiting-input and attention-required states are managed as needs-me attention instead of being grouped under generic finished events",Shipped,Yes
 AI Integration,Notification Delivery Ledger,"Each AI notification records delivery state, coalescing, retries, drop reasons, resolved tab identity, and banner or style outcomes for deterministic debugging",Shipped,Yes
 AI Integration,Canonical Notification Ledger Ingress,"Provider events are canonicalized before the delivery ledger and coalescing queue record them, so shared history and timeline surfaces use canonical semantics with raw-type notes retained for debugging",Shipped,Yes
+AI Integration,Single Notification Ingress Handoff,"Unified event publication and notification delivery now share one accepted-event handoff so events are canonicalized once before they are displayed and delivered",Shipped,Yes
 AI Integration,Strict Notification Delivery Boundaries,"Notification ingress flows through one shared contract and tab-targeting actions only execute with an explicit resolved tabID, eliminating late overlay re-resolution and NotificationCenter side-channel delivery",Shipped,Yes
+AI Integration,Restore Prefill Notification Suppression,"System resume prefills do not generate prompt-return waiting-input notifications during launch or restore; fallback attention resumes only after the next real user command",Shipped,Yes
 AI Integration,Runtime Session Startup,"MCP-created runtime sessions transition to ready after launch, and attach_tab_id sessions start usable immediately",Shipped,Yes
 MCP Server,MCP Command Filter Hardening,"Permission checks parse background separators, tabs, and newlines before applying allow/block/approval rules",Shipped,Yes
 MCP Server,Backend Launch Environment Validation,"Runtime backend launch strings drop invalid environment variable names before shell interpolation",Shipped,Yes
@@ -213,6 +216,7 @@ Debugging,State Inspector,View live app state: tabs and sessions and models,Ship
 Debugging,Feature Profiler,Per-feature timing metrics with os.signpost integration,Shipped,No
 Debugging,Structured Logging,"Category-based logging with correlation IDs (App, Tabs, Terminal, Render, etc.)",Shipped,No
 Debugging,Privacy-First Bug Report Dialog,"In-app issue reporter (⌥⌘I) with all sensitive data off by default, per-toggle tab pickers, live markdown preview, and private relay submission",Shipped,Yes
+Debugging,Issue Reporting Privacy Page,"GDPR-compliant sub-processor disclosure (Cloudflare, GitHub) with data categories, retention, legal basis (Art. 6(1)(f)), DPA links, and data subject rights",Shipped,Yes
 Debugging,Verbose & Trace Modes,CHAU7_VERBOSE=1 and CHAU7_TRACE=1 for deep diagnostics,Shipped,No
 Command Palette,Command Palette,Cmd+Shift+P for fuzzy-searchable command palette (VS Code style),Shipped,No
 Monitoring,Dev Server Detection,Auto-detect running dev servers by port scanning,Shipped,No

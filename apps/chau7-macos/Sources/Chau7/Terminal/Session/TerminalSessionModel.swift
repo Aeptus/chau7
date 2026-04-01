@@ -366,6 +366,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     var pendingWaitingInputFallbackArmed = false
     var pendingWaitingInputFallbackSawLiveOutput = false
     var suppressWaitingInputFallbackUntilNextUserCommand = false
+    var deliveredSystemResumePrefillSinceLastUserCommand = false
     var outputLatencySampleCount = 0
     var outputLatencyTotalMs: Double = 0
     let inputLagLogThresholdMs: Double = 60
@@ -1193,6 +1194,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             let insertion = SnippetInsertion(text: text, placeholders: [], finalCursorOffset: text.count)
             pendingPrefillInput = nil
             pendingPrefillRetries = 0
+            deliveredSystemResumePrefillSinceLastUserCommand = true
+            suppressWaitingInputFallbackUntilNextUserCommand = true
+            pendingWaitingInputFallbackArmed = false
+            pendingWaitingInputFallbackSawLiveOutput = false
             activeTerminalView?.insertSnippet(insertion)
             Log.info("Resume prefill delivered: \(text.prefix(60))")
             return

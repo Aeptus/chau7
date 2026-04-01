@@ -11,6 +11,7 @@ final class TerminalPromptNotificationAdapterTests: XCTestCase {
             providerIsRestored: false,
             hasPendingPrefillInput: false,
             suppressUntilNextUserCommand: false,
+            hasRecentSystemResumePrefill: false,
             commandLooksLikeResume: false,
             observedAIRoundTrip: true,
             sessionID: "session-1"
@@ -28,6 +29,7 @@ final class TerminalPromptNotificationAdapterTests: XCTestCase {
             providerIsRestored: true,
             hasPendingPrefillInput: false,
             suppressUntilNextUserCommand: false,
+            hasRecentSystemResumePrefill: false,
             commandLooksLikeResume: true,
             observedAIRoundTrip: true,
             sessionID: "session-1"
@@ -45,6 +47,7 @@ final class TerminalPromptNotificationAdapterTests: XCTestCase {
             providerIsRestored: false,
             hasPendingPrefillInput: false,
             suppressUntilNextUserCommand: false,
+            hasRecentSystemResumePrefill: false,
             commandLooksLikeResume: false,
             observedAIRoundTrip: true,
             sessionID: "session-1"
@@ -62,6 +65,25 @@ final class TerminalPromptNotificationAdapterTests: XCTestCase {
             providerIsRestored: true,
             hasPendingPrefillInput: false,
             suppressUntilNextUserCommand: true,
+            hasRecentSystemResumePrefill: false,
+            commandLooksLikeResume: false,
+            observedAIRoundTrip: true,
+            sessionID: "session-1"
+        )
+
+        XCTAssertFalse(TerminalPromptNotificationAdapter.shouldEmitWaitingInput(from: context))
+    }
+
+    func testDoesNotEmitAfterSystemResumePrefillUntilRealUserCommand() {
+        let context = TerminalPromptNotificationContext(
+            previousStatus: "running",
+            hasOwnerTab: true,
+            runtimeOwnsTab: false,
+            providerID: "codex",
+            providerIsRestored: true,
+            hasPendingPrefillInput: false,
+            suppressUntilNextUserCommand: false,
+            hasRecentSystemResumePrefill: true,
             commandLooksLikeResume: false,
             observedAIRoundTrip: true,
             sessionID: "session-1"
