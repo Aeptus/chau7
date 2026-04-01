@@ -56,6 +56,6 @@ final class CanonicalNotificationMappingTests: XCTestCase {
     func testNormalize() {
         XCTAssertEqual(NotificationSemanticMapping.normalize(" Permission Prompt "), "permission_prompt")
         XCTAssertEqual(NotificationSemanticMapping.normalize("idle-prompt"), "idle_prompt")
-        XCTAssertEqual(NotificationSemanticMapping.normalize("auth success"), "authsuccess")
+        XCTAssertEqual(NotificationSemanticMapping.normalize("auth success"), "auth_success")
     }
 }
