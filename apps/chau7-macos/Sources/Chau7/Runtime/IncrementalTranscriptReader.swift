@@ -11,6 +11,7 @@ import Chau7Core
 final class IncrementalTranscriptReader {
     private let sessionDir: URL
     private var fileOffsets: [URL: UInt64] = [:]
+    private var seenUsageKeys: Set<String> = []
 
     /// Cumulative totals across all reads.
     private(set) var cumulativeInput = 0
@@ -79,6 +80,14 @@ final class IncrementalTranscriptReader {
                       let message = obj["message"] as? [String: Any],
                       let usage = message["usage"] as? [String: Any]
                 else { continue }
+
+                let role = (message["role"] as? String) ?? (obj["type"] as? String) ?? ""
+                guard role == "assistant" else { continue }
+
+                if let usageKey = ClaudeTranscriptUsageParser.requestUsageKey(obj: obj, message: message),
+                   !seenUsageKeys.insert(usageKey).inserted {
+                    continue
+                }
 
                 // Same field extraction as ClaudeCodeContentProvider lines 62-70
                 let input = (usage["input_tokens"] as? Int) ?? 0

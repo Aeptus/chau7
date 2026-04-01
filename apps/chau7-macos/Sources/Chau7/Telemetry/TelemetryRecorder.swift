@@ -88,15 +88,30 @@ final class TelemetryRecorder {
                 cwd: run.cwd,
                 startedAt: run.startedAt
             ) {
-                run.model = content.model ?? run.model
-                run.totalInputTokens = content.totalInputTokens
-                run.totalOutputTokens = content.totalOutputTokens
-                run.costUSD = content.costUSD
-                run.rawTranscriptRef = content.rawTranscriptRef
-                run.turnCount = content.turns.count
-                turns = content.turns
-                toolCalls = content.toolCalls
-                Log.info("TelemetryRecorder: extracted \(turns.count) turns, \(toolCalls.count) tool calls, model=\(content.model ?? "?")")
+                let normalized = TelemetryMetricsSanitizer.sanitize(content, provider: run.provider)
+                if let warning = normalized.warning {
+                    Log.warn("TelemetryRecorder: \(warning) run=\(runID)")
+                }
+
+                let finalContent = normalized.content
+                run.model = finalContent.model ?? run.model
+                run.totalInputTokens = finalContent.totalInputTokens
+                run.totalCachedInputTokens = finalContent.totalCachedInputTokens
+                run.totalOutputTokens = finalContent.totalOutputTokens
+                run.totalReasoningOutputTokens = finalContent.totalReasoningOutputTokens
+                run.costUSD = finalContent.costUSD
+                run.tokenUsageSource = finalContent.tokenUsageSource
+                run.tokenUsageState = finalContent.tokenUsageState
+                run.costSource = finalContent.costSource
+                run.costState = finalContent.costState
+                run.rawTranscriptRef = finalContent.rawTranscriptRef
+                run.turnCount = finalContent.turns.count
+                if finalContent.tokenUsageState == .invalid {
+                    run.errorMessage = "invalidated implausible token metrics during extraction"
+                }
+                turns = finalContent.turns
+                toolCalls = finalContent.toolCalls
+                Log.info("TelemetryRecorder: extracted \(turns.count) turns, \(toolCalls.count) tool calls, model=\(finalContent.model ?? "?")")
             } else {
                 Log.warn("TelemetryRecorder: content extraction returned nil for run \(runID) session=\(run.sessionID ?? "nil") cwd=\(run.cwd)")
             }

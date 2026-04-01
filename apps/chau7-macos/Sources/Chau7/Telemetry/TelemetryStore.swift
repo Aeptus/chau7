@@ -41,6 +41,7 @@ final class TelemetryStore {
         sqlite3_exec(db, "PRAGMA foreign_keys=ON", nil, nil, nil)
         verifyIntegrity()
         createTables()
+        applyMigrations()
     }
 
     /// Quick integrity check on startup. If the database is corrupt, log and
@@ -84,8 +85,14 @@ final class TelemetryStore {
             duration_ms INTEGER,
             exit_status INTEGER,
             total_input_tokens INTEGER,
+            total_cached_input_tokens INTEGER,
             total_output_tokens INTEGER,
+            total_reasoning_output_tokens INTEGER,
             cost_usd REAL,
+            token_usage_source TEXT,
+            token_usage_state TEXT,
+            cost_source TEXT,
+            cost_state TEXT,
             turn_count INTEGER DEFAULT 0,
             tags TEXT,
             metadata TEXT,
@@ -108,7 +115,9 @@ final class TelemetryStore {
             role TEXT NOT NULL,
             content TEXT,
             input_tokens INTEGER,
+            cached_input_tokens INTEGER,
             output_tokens INTEGER,
+            reasoning_output_tokens INTEGER,
             tool_calls TEXT,
             timestamp TEXT,
             duration_ms INTEGER
@@ -172,6 +181,99 @@ final class TelemetryStore {
         }
     }
 
+    private func applyMigrations() {
+        guard let db else { return }
+        ensureColumn(table: "runs", name: "total_cached_input_tokens", definition: "INTEGER")
+        ensureColumn(table: "runs", name: "total_reasoning_output_tokens", definition: "INTEGER")
+        ensureColumn(table: "runs", name: "token_usage_source", definition: "TEXT")
+        ensureColumn(table: "runs", name: "token_usage_state", definition: "TEXT")
+        ensureColumn(table: "runs", name: "cost_source", definition: "TEXT")
+        ensureColumn(table: "runs", name: "cost_state", definition: "TEXT")
+
+        ensureColumn(table: "turns", name: "cached_input_tokens", definition: "INTEGER")
+        ensureColumn(table: "turns", name: "reasoning_output_tokens", definition: "INTEGER")
+
+        sqlite3_exec(
+            db,
+            """
+            UPDATE runs
+            SET token_usage_state = COALESCE(token_usage_state,
+                CASE
+                    WHEN total_input_tokens IS NULL
+                         AND total_cached_input_tokens IS NULL
+                         AND total_output_tokens IS NULL
+                         AND total_reasoning_output_tokens IS NULL
+                    THEN 'missing'
+                    ELSE 'complete'
+                END
+            ),
+            cost_state = COALESCE(cost_state,
+                CASE
+                    WHEN cost_usd IS NULL THEN 'missing'
+                    ELSE 'complete'
+                END
+            ),
+            cost_source = COALESCE(cost_source,
+                CASE
+                    WHEN cost_usd IS NULL THEN 'unavailable'
+                    ELSE 'observed'
+                END
+            )
+            """,
+            nil,
+            nil,
+            nil
+        )
+
+        sqlite3_exec(
+            db,
+            """
+            UPDATE runs
+            SET total_input_tokens = NULL,
+                total_cached_input_tokens = NULL,
+                total_output_tokens = NULL,
+                total_reasoning_output_tokens = NULL,
+                cost_usd = NULL,
+                token_usage_source = NULL,
+                token_usage_state = 'invalid',
+                cost_source = 'unavailable',
+                cost_state = 'missing',
+                error_message = COALESCE(error_message, 'invalidated historical telemetry metrics that exceeded sanity thresholds')
+            WHERE COALESCE(total_input_tokens, 0) > 100000000
+               OR COALESCE(total_cached_input_tokens, 0) > 100000000
+               OR COALESCE(total_output_tokens, 0) > 100000000
+               OR COALESCE(total_reasoning_output_tokens, 0) > 100000000
+               OR (
+                    COALESCE(total_input_tokens, 0) +
+                    COALESCE(total_cached_input_tokens, 0) +
+                    COALESCE(total_output_tokens, 0) +
+                    COALESCE(total_reasoning_output_tokens, 0)
+                  ) > 150000000
+            """,
+            nil,
+            nil,
+            nil
+        )
+    }
+
+    private func ensureColumn(table: String, name: String, definition: String) {
+        guard let db else { return }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let colName = sqlite3_column_text(stmt, 1), String(cString: colName) == name {
+                return
+            }
+        }
+
+        let sql = "ALTER TABLE \(table) ADD COLUMN \(name) \(definition)"
+        if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
+            Log.warn("TelemetryStore: failed to add column \(table).\(name)")
+        }
+    }
+
     // MARK: - Write
 
     /// Insert a new run record. Use finalizeRun() to update it on completion.
@@ -188,9 +290,10 @@ final class TelemetryStore {
         INSERT OR IGNORE INTO runs
         (run_id, session_id, tab_id, provider, model, cwd, repo_path,
          started_at, ended_at, duration_ms, exit_status,
-         total_input_tokens, total_output_tokens, cost_usd,
+         total_input_tokens, total_cached_input_tokens, total_output_tokens, total_reasoning_output_tokens,
+         cost_usd, token_usage_source, token_usage_state, cost_source, cost_state,
          turn_count, tags, metadata, raw_transcript_ref, parent_run_id, error_message)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """
 
         var stmt: OpaquePointer?
@@ -209,14 +312,20 @@ final class TelemetryStore {
         bindInt(stmt, 10, run.durationMs)
         bindInt(stmt, 11, run.exitStatus)
         bindInt(stmt, 12, run.totalInputTokens)
-        bindInt(stmt, 13, run.totalOutputTokens)
-        bindDouble(stmt, 14, run.costUSD)
-        bindInt(stmt, 15, run.turnCount)
-        bindText(stmt, 16, Self.encodeJSON(run.tags))
-        bindText(stmt, 17, Self.encodeJSON(run.metadata))
-        bindText(stmt, 18, run.rawTranscriptRef)
-        bindText(stmt, 19, run.parentRunID)
-        bindText(stmt, 20, run.errorMessage)
+        bindInt(stmt, 13, run.totalCachedInputTokens)
+        bindInt(stmt, 14, run.totalOutputTokens)
+        bindInt(stmt, 15, run.totalReasoningOutputTokens)
+        bindDouble(stmt, 16, run.costUSD)
+        bindText(stmt, 17, run.tokenUsageSource?.rawValue)
+        bindText(stmt, 18, run.tokenUsageState.rawValue)
+        bindText(stmt, 19, run.costSource?.rawValue)
+        bindText(stmt, 20, run.costState.rawValue)
+        bindInt(stmt, 21, run.turnCount)
+        bindText(stmt, 22, Self.encodeJSON(run.tags))
+        bindText(stmt, 23, Self.encodeJSON(run.metadata))
+        bindText(stmt, 24, run.rawTranscriptRef)
+        bindText(stmt, 25, run.parentRunID)
+        bindText(stmt, 26, run.errorMessage)
 
         if sqlite3_step(stmt) != SQLITE_DONE {
             let err = String(cString: sqlite3_errmsg(db))
@@ -237,7 +346,9 @@ final class TelemetryStore {
             let updateSQL = """
             UPDATE runs SET
                 session_id = ?, model = ?, ended_at = ?, duration_ms = ?, exit_status = ?,
-                total_input_tokens = ?, total_output_tokens = ?, cost_usd = ?,
+                total_input_tokens = ?, total_cached_input_tokens = ?, total_output_tokens = ?,
+                total_reasoning_output_tokens = ?, cost_usd = ?, token_usage_source = ?,
+                token_usage_state = ?, cost_source = ?, cost_state = ?,
                 turn_count = ?, raw_transcript_ref = ?, error_message = ?
             WHERE run_id = ?
             """
@@ -249,12 +360,18 @@ final class TelemetryStore {
                 bindInt(stmt, 4, run.durationMs)
                 bindInt(stmt, 5, run.exitStatus)
                 bindInt(stmt, 6, run.totalInputTokens)
-                bindInt(stmt, 7, run.totalOutputTokens)
-                bindDouble(stmt, 8, run.costUSD)
-                bindInt(stmt, 9, run.turnCount)
-                bindText(stmt, 10, run.rawTranscriptRef)
-                bindText(stmt, 11, run.errorMessage)
-                bindText(stmt, 12, run.id)
+                bindInt(stmt, 7, run.totalCachedInputTokens)
+                bindInt(stmt, 8, run.totalOutputTokens)
+                bindInt(stmt, 9, run.totalReasoningOutputTokens)
+                bindDouble(stmt, 10, run.costUSD)
+                bindText(stmt, 11, run.tokenUsageSource?.rawValue)
+                bindText(stmt, 12, run.tokenUsageState.rawValue)
+                bindText(stmt, 13, run.costSource?.rawValue)
+                bindText(stmt, 14, run.costState.rawValue)
+                bindInt(stmt, 15, run.turnCount)
+                bindText(stmt, 16, run.rawTranscriptRef)
+                bindText(stmt, 17, run.errorMessage)
+                bindText(stmt, 18, run.id)
                 sqlite3_step(stmt)
                 sqlite3_finalize(stmt)
             }
@@ -286,9 +403,9 @@ final class TelemetryStore {
         guard let db else { return }
         let sql = """
         INSERT OR IGNORE INTO turns
-        (turn_id, run_id, turn_index, role, content, input_tokens, output_tokens,
-         tool_calls, timestamp, duration_ms)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
+        (turn_id, run_id, turn_index, role, content, input_tokens, cached_input_tokens, output_tokens,
+         reasoning_output_tokens, tool_calls, timestamp, duration_ms)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         """
 
         var stmt: OpaquePointer?
@@ -301,10 +418,12 @@ final class TelemetryStore {
         bindText(stmt, 4, turn.role.rawValue)
         bindText(stmt, 5, turn.content)
         bindInt(stmt, 6, turn.inputTokens)
-        bindInt(stmt, 7, turn.outputTokens)
-        bindText(stmt, 8, Self.encodeJSON(turn.toolCalls))
-        bindText(stmt, 9, turn.timestamp.map { Self.isoString(from: $0) })
-        bindInt(stmt, 10, turn.durationMs)
+        bindInt(stmt, 7, turn.cachedInputTokens)
+        bindInt(stmt, 8, turn.outputTokens)
+        bindInt(stmt, 9, turn.reasoningOutputTokens)
+        bindText(stmt, 10, Self.encodeJSON(turn.toolCalls))
+        bindText(stmt, 11, turn.timestamp.map { Self.isoString(from: $0) })
+        bindInt(stmt, 12, turn.durationMs)
 
         if sqlite3_step(stmt) != SQLITE_DONE {
             let err = String(cString: sqlite3_errmsg(db))
@@ -373,6 +492,104 @@ final class TelemetryStore {
             bindText(stmt, 2, runID)
             sqlite3_step(stmt)
         }
+    }
+
+    func rewriteCompletedRun(_ run: TelemetryRun, turns: [TelemetryTurn], toolCalls: [TelemetryToolCall]) {
+        queue.sync {
+            guard let db else { return }
+            sqlite3_exec(db, "BEGIN", nil, nil, nil)
+
+            deleteChildren(table: "tool_calls", runID: run.id)
+            deleteChildren(table: "turns", runID: run.id)
+
+            let updateSQL = """
+            UPDATE runs SET
+                session_id = ?, tab_id = ?, provider = ?, model = ?, cwd = ?, repo_path = ?,
+                started_at = ?, ended_at = ?, duration_ms = ?, exit_status = ?,
+                total_input_tokens = ?, total_cached_input_tokens = ?, total_output_tokens = ?,
+                total_reasoning_output_tokens = ?, cost_usd = ?, token_usage_source = ?,
+                token_usage_state = ?, cost_source = ?, cost_state = ?, turn_count = ?,
+                tags = ?, metadata = ?, raw_transcript_ref = ?, parent_run_id = ?, error_message = ?
+            WHERE run_id = ?
+            """
+
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, updateSQL, -1, &stmt, nil) == SQLITE_OK {
+                bindText(stmt, 1, run.sessionID)
+                bindText(stmt, 2, run.tabID)
+                bindText(stmt, 3, run.provider)
+                bindText(stmt, 4, run.model)
+                bindText(stmt, 5, run.cwd)
+                bindText(stmt, 6, run.repoPath)
+                bindText(stmt, 7, Self.isoString(from: run.startedAt))
+                bindText(stmt, 8, run.endedAt.map { Self.isoString(from: $0) })
+                bindInt(stmt, 9, run.durationMs)
+                bindInt(stmt, 10, run.exitStatus)
+                bindInt(stmt, 11, run.totalInputTokens)
+                bindInt(stmt, 12, run.totalCachedInputTokens)
+                bindInt(stmt, 13, run.totalOutputTokens)
+                bindInt(stmt, 14, run.totalReasoningOutputTokens)
+                bindDouble(stmt, 15, run.costUSD)
+                bindText(stmt, 16, run.tokenUsageSource?.rawValue)
+                bindText(stmt, 17, run.tokenUsageState.rawValue)
+                bindText(stmt, 18, run.costSource?.rawValue)
+                bindText(stmt, 19, run.costState.rawValue)
+                bindInt(stmt, 20, run.turnCount)
+                bindText(stmt, 21, Self.encodeJSON(run.tags))
+                bindText(stmt, 22, Self.encodeJSON(run.metadata))
+                bindText(stmt, 23, run.rawTranscriptRef)
+                bindText(stmt, 24, run.parentRunID)
+                bindText(stmt, 25, run.errorMessage)
+                bindText(stmt, 26, run.id)
+                sqlite3_step(stmt)
+                sqlite3_finalize(stmt)
+            }
+
+            for turn in turns {
+                _insertTurn(turn)
+            }
+            for call in toolCalls {
+                _insertToolCall(call)
+            }
+
+            sqlite3_exec(db, "COMMIT", nil, nil, nil)
+        }
+    }
+
+    func invalidateRunMetrics(_ runID: String, reason: String?) {
+        queue.sync {
+            guard let db else { return }
+            let sql = """
+            UPDATE runs
+            SET total_input_tokens = NULL,
+                total_cached_input_tokens = NULL,
+                total_output_tokens = NULL,
+                total_reasoning_output_tokens = NULL,
+                cost_usd = NULL,
+                token_usage_source = NULL,
+                token_usage_state = 'invalid',
+                cost_source = 'unavailable',
+                cost_state = 'missing',
+                error_message = COALESCE(?, error_message)
+            WHERE run_id = ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, reason)
+            bindText(stmt, 2, runID)
+            sqlite3_step(stmt)
+        }
+    }
+
+    private func deleteChildren(table: String, runID: String) {
+        guard let db else { return }
+        let sql = "DELETE FROM \(table) WHERE run_id = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        bindText(stmt, 1, runID)
+        sqlite3_step(stmt)
     }
 
     func insertRemoteClientEvent(_ event: RemoteClientTelemetryEvent) {
@@ -689,6 +906,7 @@ final class TelemetryStore {
                 SELECT *
                 FROM runs
                 WHERE tab_id IS NOT NULL
+                  AND COALESCE(token_usage_state, 'missing') != 'invalid'
             """
             if after != nil {
                 sql += " AND started_at >= ?"
@@ -698,8 +916,12 @@ final class TelemetryStore {
             tab_rollup AS (
                 SELECT tab_id,
                        COUNT(*) AS run_count,
+                       SUM(CASE WHEN COALESCE(cost_state, 'missing') IN ('complete', 'estimated') AND cost_usd IS NOT NULL THEN 1 ELSE 0 END) AS priced_run_count,
+                       SUM(CASE WHEN COALESCE(cost_state, 'missing') = 'missing' OR cost_usd IS NULL THEN 1 ELSE 0 END) AS missing_cost_run_count,
                        COALESCE(SUM(total_input_tokens),0) AS total_input_tokens,
+                       COALESCE(SUM(total_cached_input_tokens),0) AS total_cached_input_tokens,
                        COALESCE(SUM(total_output_tokens),0) AS total_output_tokens,
+                       COALESCE(SUM(total_reasoning_output_tokens),0) AS total_reasoning_output_tokens,
                        COALESCE(SUM(cost_usd),0) AS total_cost_usd
                 FROM filtered_runs
                 GROUP BY tab_id
@@ -721,14 +943,20 @@ final class TelemetryStore {
             )
             SELECT tab_rollup.tab_id,
                    tab_rollup.run_count,
+                   tab_rollup.priced_run_count,
+                   tab_rollup.missing_cost_run_count,
                    tab_rollup.total_input_tokens,
+                   tab_rollup.total_cached_input_tokens,
                    tab_rollup.total_output_tokens,
+                   tab_rollup.total_reasoning_output_tokens,
                    tab_rollup.total_cost_usd,
                    latest_per_tab.last_provider,
                    latest_per_tab.last_location_path
             FROM tab_rollup
             LEFT JOIN latest_per_tab ON latest_per_tab.tab_id = tab_rollup.tab_id
-            ORDER BY tab_rollup.total_input_tokens + tab_rollup.total_output_tokens DESC
+            ORDER BY
+                tab_rollup.total_input_tokens + tab_rollup.total_cached_input_tokens +
+                tab_rollup.total_output_tokens + tab_rollup.total_reasoning_output_tokens DESC
             """
 
             var stmt: OpaquePointer?
@@ -745,11 +973,15 @@ final class TelemetryStore {
                 results.append(TabTokenConsumption(
                     tabID: tabID,
                     runCount: Int(sqlite3_column_int64(stmt, 1)),
-                    totalInputTokens: Int(sqlite3_column_int64(stmt, 2)),
-                    totalOutputTokens: Int(sqlite3_column_int64(stmt, 3)),
-                    totalCostUSD: sqlite3_column_double(stmt, 4),
-                    lastProvider: colText(stmt, 5),
-                    lastLocationPath: colText(stmt, 6)
+                    pricedRunCount: Int(sqlite3_column_int64(stmt, 2)),
+                    missingCostRunCount: Int(sqlite3_column_int64(stmt, 3)),
+                    totalInputTokens: Int(sqlite3_column_int64(stmt, 4)),
+                    totalCachedInputTokens: Int(sqlite3_column_int64(stmt, 5)),
+                    totalOutputTokens: Int(sqlite3_column_int64(stmt, 6)),
+                    totalReasoningOutputTokens: Int(sqlite3_column_int64(stmt, 7)),
+                    totalCostUSD: sqlite3_column_double(stmt, 8),
+                    lastProvider: colText(stmt, 9),
+                    lastLocationPath: colText(stmt, 10)
                 ))
             }
             return results
@@ -761,9 +993,16 @@ final class TelemetryStore {
         queue.sync {
             guard let db else { return [] }
             var sql = """
-            SELECT provider, COUNT(*), COALESCE(SUM(total_input_tokens),0),
-                   COALESCE(SUM(total_output_tokens),0), COALESCE(SUM(cost_usd),0)
+            SELECT provider, COUNT(*),
+                   SUM(CASE WHEN COALESCE(cost_state, 'missing') IN ('complete', 'estimated') AND cost_usd IS NOT NULL THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(cost_state, 'missing') = 'missing' OR cost_usd IS NULL THEN 1 ELSE 0 END),
+                   COALESCE(SUM(total_input_tokens),0),
+                   COALESCE(SUM(total_cached_input_tokens),0),
+                   COALESCE(SUM(total_output_tokens),0),
+                   COALESCE(SUM(total_reasoning_output_tokens),0),
+                   COALESCE(SUM(cost_usd),0)
             FROM runs WHERE provider IS NOT NULL
+              AND COALESCE(token_usage_state, 'missing') != 'invalid'
             """
             if after != nil {
                 sql += " AND started_at >= ?"
@@ -784,9 +1023,13 @@ final class TelemetryStore {
                 results.append(ProviderConsumptionStats(
                     provider: provider,
                     runCount: Int(sqlite3_column_int64(stmt, 1)),
-                    totalInputTokens: Int(sqlite3_column_int64(stmt, 2)),
-                    totalOutputTokens: Int(sqlite3_column_int64(stmt, 3)),
-                    totalCostUSD: sqlite3_column_double(stmt, 4)
+                    pricedRunCount: Int(sqlite3_column_int64(stmt, 2)),
+                    missingCostRunCount: Int(sqlite3_column_int64(stmt, 3)),
+                    totalInputTokens: Int(sqlite3_column_int64(stmt, 4)),
+                    totalCachedInputTokens: Int(sqlite3_column_int64(stmt, 5)),
+                    totalOutputTokens: Int(sqlite3_column_int64(stmt, 6)),
+                    totalReasoningOutputTokens: Int(sqlite3_column_int64(stmt, 7)),
+                    totalCostUSD: sqlite3_column_double(stmt, 8)
                 ))
             }
             return results
@@ -794,27 +1037,35 @@ final class TelemetryStore {
     }
 
     /// Daily cost trend for the last N days.
-    func dailyCostTrend(days: Int = 7) -> [(date: String, cost: Double, tokens: Int)] {
+    func dailyCostTrend(days: Int = 7) -> [(date: String, cost: Double, tokens: Int, pricedRunCount: Int, totalRunCount: Int)] {
         queue.sync {
             guard let db else { return [] }
             let sql = """
             SELECT date(started_at) as day,
+                   COUNT(*),
+                   SUM(CASE WHEN COALESCE(cost_state, 'missing') IN ('complete', 'estimated') AND cost_usd IS NOT NULL THEN 1 ELSE 0 END),
                    COALESCE(SUM(cost_usd), 0),
-                   COALESCE(SUM(total_input_tokens), 0) + COALESCE(SUM(total_output_tokens), 0)
+                   COALESCE(SUM(total_input_tokens), 0) +
+                   COALESCE(SUM(total_cached_input_tokens), 0) +
+                   COALESCE(SUM(total_output_tokens), 0) +
+                   COALESCE(SUM(total_reasoning_output_tokens), 0)
             FROM runs
             WHERE started_at >= date('now', '-\(max(1, min(days, 90))) days')
+              AND COALESCE(token_usage_state, 'missing') != 'invalid'
             GROUP BY day ORDER BY day
             """
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
             defer { sqlite3_finalize(stmt) }
 
-            var results: [(String, Double, Int)] = []
+            var results: [(String, Double, Int, Int, Int)] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
                 guard let day = colText(stmt, 0) else { continue }
-                let cost = sqlite3_column_double(stmt, 1)
-                let tokens = Int(sqlite3_column_int64(stmt, 2))
-                results.append((day, cost, tokens))
+                let totalRuns = Int(sqlite3_column_int64(stmt, 1))
+                let pricedRuns = Int(sqlite3_column_int64(stmt, 2))
+                let cost = sqlite3_column_double(stmt, 3)
+                let tokens = Int(sqlite3_column_int64(stmt, 4))
+                results.append((day, cost, tokens, pricedRuns, totalRuns))
             }
             return results
         }
@@ -844,8 +1095,14 @@ final class TelemetryStore {
             durationMs: intByName(stmt, "duration_ms"),
             exitStatus: intByName(stmt, "exit_status"),
             totalInputTokens: intByName(stmt, "total_input_tokens"),
+            totalCachedInputTokens: intByName(stmt, "total_cached_input_tokens"),
             totalOutputTokens: intByName(stmt, "total_output_tokens"),
+            totalReasoningOutputTokens: intByName(stmt, "total_reasoning_output_tokens"),
             costUSD: doubleByName(stmt, "cost_usd"),
+            tokenUsageSource: colByName(stmt, "token_usage_source").flatMap(TokenUsageSource.init(rawValue:)),
+            tokenUsageState: colByName(stmt, "token_usage_state").flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
+            costSource: colByName(stmt, "cost_source").flatMap(CostSource.init(rawValue:)),
+            costState: colByName(stmt, "cost_state").flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
             turnCount: intByName(stmt, "turn_count") ?? 0,
             tags: Self.decodeJSON(colByName(stmt, "tags")) ?? [],
             metadata: Self.decodeJSON(colByName(stmt, "metadata")) ?? [:],
@@ -870,7 +1127,9 @@ final class TelemetryStore {
             role: role,
             content: colByName(stmt, "content"),
             inputTokens: intByName(stmt, "input_tokens"),
+            cachedInputTokens: intByName(stmt, "cached_input_tokens"),
             outputTokens: intByName(stmt, "output_tokens"),
+            reasoningOutputTokens: intByName(stmt, "reasoning_output_tokens"),
             toolCalls: toolCalls,
             timestamp: colByName(stmt, "timestamp").flatMap { Self.isoDate(from: $0) },
             durationMs: intByName(stmt, "duration_ms")

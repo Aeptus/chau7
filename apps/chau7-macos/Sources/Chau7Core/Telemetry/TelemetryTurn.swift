@@ -8,7 +8,9 @@ public struct TelemetryTurn: Codable, Identifiable, Sendable {
     public let role: TurnRole
     public var content: String?
     public var inputTokens: Int?
+    public var cachedInputTokens: Int?
     public var outputTokens: Int?
+    public var reasoningOutputTokens: Int?
     public var toolCalls: [TelemetryToolCall]
     public var timestamp: Date?
     public var durationMs: Int?
@@ -20,7 +22,9 @@ public struct TelemetryTurn: Codable, Identifiable, Sendable {
         role: TurnRole,
         content: String? = nil,
         inputTokens: Int? = nil,
+        cachedInputTokens: Int? = nil,
         outputTokens: Int? = nil,
+        reasoningOutputTokens: Int? = nil,
         toolCalls: [TelemetryToolCall] = [],
         timestamp: Date? = nil,
         durationMs: Int? = nil
@@ -31,10 +35,21 @@ public struct TelemetryTurn: Codable, Identifiable, Sendable {
         self.role = role
         self.content = content
         self.inputTokens = inputTokens
+        self.cachedInputTokens = cachedInputTokens
         self.outputTokens = outputTokens
+        self.reasoningOutputTokens = reasoningOutputTokens
         self.toolCalls = toolCalls
         self.timestamp = timestamp
         self.durationMs = durationMs
+    }
+
+    public var tokenUsage: TokenUsage {
+        TokenUsage(
+            inputTokens: inputTokens ?? 0,
+            cachedInputTokens: cachedInputTokens ?? 0,
+            outputTokens: outputTokens ?? 0,
+            reasoningOutputTokens: reasoningOutputTokens ?? 0
+        )
     }
 }
 

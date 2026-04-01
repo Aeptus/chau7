@@ -292,6 +292,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.7 | 2026-04-01 | Transcript-derived AI run metrics now use canonical token fields, run-local slicing, Claude usage deduplication, and invalidation of implausible historical totals |
 | 0.5.6 | 2026-03-29 | Remote relay control frames now require encryption after handshake, and remote push registration uses HTTP(S) relay endpoints instead of websocket URLs |
 | 0.5.5 | 2026-03-29 | Runtime Claude events now bind to exact session IDs and preserve multiple same-directory agent tabs without cwd collisions |
 | 0.5.4 | 2026-03-29 | History store clears now serialize with queued async writes so pending inserts cannot resurrect deleted rows |

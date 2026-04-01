@@ -258,3 +258,5 @@ Remote,Encrypted Relay Control Frames,Remote relay control frames now require en
 Persistence,Stale Window State Cleanup,Termination clears persisted tab/window state and backup files when every overlay window has been hidden or closed,Shipped,Yes
 Notifications,Disabled Single-Action Rules,Notification pipeline now checks action enabled state before using the native showNotification fast path,Shipped,Yes
 Overlay,Reopen Closed Tab Identity,Closed tabs reopen with their original tab ID, creation timestamp, and repo grouping membership intact,Shipped,Yes
+Telemetry,Canonical Run Token Metrics,"Transcript-derived AI runs now persist separate input, cached-input, output, and reasoning-output token fields with validity/source metadata",Shipped,Yes
+Telemetry,Transcript Metric Sanitization,"Claude/Codex transcript extraction now slices per run, deduplicates repeated usage blocks, and invalidates implausible historical totals",Shipped,Yes

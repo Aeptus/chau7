@@ -25,6 +25,15 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
         inputTokens + outputTokens
     }
 
+    public var tokenUsage: TokenUsage {
+        TokenUsage(
+            inputTokens: inputTokens,
+            cachedInputTokens: 0,
+            outputTokens: outputTokens,
+            reasoningOutputTokens: 0
+        )
+    }
+
     public var isSuccess: Bool {
         (200 ..< 300).contains(statusCode)
     }

@@ -29,6 +29,15 @@ public struct TurnStats: Codable, Sendable {
         inputTokens + outputTokens
     }
 
+    public var tokenUsage: TokenUsage {
+        TokenUsage(
+            inputTokens: inputTokens,
+            cachedInputTokens: cacheCreationTokens + cacheReadTokens,
+            outputTokens: outputTokens,
+            reasoningOutputTokens: 0
+        )
+    }
+
     public init() {}
 
     /// Record a tool invocation, optionally with a file path.

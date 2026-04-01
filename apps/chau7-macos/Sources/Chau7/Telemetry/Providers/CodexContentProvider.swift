@@ -44,112 +44,22 @@ final class CodexContentProvider: RunContentProvider {
         guard let data = try? Data(contentsOf: file),
               let text = String(data: data, encoding: .utf8) else { return nil }
 
-        var model: String?
-        var turns: [TelemetryTurn] = []
-        var toolCalls: [TelemetryToolCall] = []
-        var totalInputTokens: Int?
-        var totalOutputTokens: Int?
-        var turnIndex = 0
-        var callIndex = 0
-
-        for line in text.components(separatedBy: .newlines) where !line.isEmpty {
-            guard let lineData = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any]
-            else { continue }
-
-            let type = obj["type"] as? String ?? ""
-            let payload = obj["payload"] as? [String: Any] ?? [:]
-            let timestamp = obj["timestamp"] as? String
-
-            switch type {
-            case "turn_context":
-                if model == nil, let m = payload["model"] as? String {
-                    model = m
-                }
-
-            case "response_item":
-                let roleStr = payload["role"] as? String ?? ""
-                let role: TurnRole
-                switch roleStr {
-                case "user": role = .human
-                case "assistant": role = .assistant
-                case "developer", "system": role = .system
-                default: continue
-                }
-
-                var contentText = ""
-                var turnToolCalls: [TelemetryToolCall] = []
-
-                if let content = payload["content"] as? [[String: Any]] {
-                    for block in content {
-                        let blockType = block["type"] as? String ?? ""
-                        switch blockType {
-                        case "output_text", "input_text":
-                            if let t = block["text"] as? String {
-                                if !contentText.isEmpty { contentText += "\n" }
-                                contentText += t
-                            }
-                        case "function_call":
-                            let turnID = "\(runID)-t\(turnIndex)"
-                            let toolName = (block["name"] as? String) ?? "unknown"
-                            let args = block["arguments"] as? String
-                            let call = TelemetryToolCall(
-                                id: (block["call_id"] as? String) ?? UUID().uuidString,
-                                runID: runID, turnID: turnID,
-                                toolName: toolName,
-                                arguments: args,
-                                status: .success,
-                                callIndex: callIndex
-                            )
-                            turnToolCalls.append(call)
-                            toolCalls.append(call)
-                            callIndex += 1
-                        case "function_call_output":
-                            if let output = block["output"] as? String {
-                                if !contentText.isEmpty { contentText += "\n" }
-                                contentText += "[tool_result] \(output)"
-                            }
-                        default:
-                            break
-                        }
-                    }
-                }
-
-                let turnID = "\(runID)-t\(turnIndex)"
-                let isoDate = timestamp.flatMap { Self.parseISO8601($0) }
-                turns.append(TelemetryTurn(
-                    id: turnID, runID: runID, turnIndex: turnIndex,
-                    role: role,
-                    content: contentText.isEmpty ? nil : contentText,
-                    toolCalls: turnToolCalls,
-                    timestamp: isoDate
-                ))
-                turnIndex += 1
-
-            case "event_msg":
-                let eventType = payload["type"] as? String ?? ""
-                if eventType == "token_count",
-                   let info = payload["info"] as? [String: Any],
-                   let total = info["total_token_usage"] as? [String: Any] {
-                    // Take the cumulative total (last token_count event has the final sum)
-                    totalInputTokens = total["input_tokens"] as? Int
-                    totalOutputTokens = total["output_tokens"] as? Int
-                }
-
-            default:
-                break
-            }
-        }
-
-        guard !turns.isEmpty else { return nil }
+        let parsed = CodexRolloutParser.parse(jsonl: text, runID: runID, startedAt: startedAt)
+        guard !parsed.turns.isEmpty else { return nil }
 
         return ExtractedRunContent(
-            model: model,
-            turns: turns,
-            totalInputTokens: totalInputTokens,
-            totalOutputTokens: totalOutputTokens,
+            model: parsed.model,
+            turns: parsed.turns,
+            totalInputTokens: parsed.tokenUsage.inputTokens > 0 ? parsed.tokenUsage.inputTokens : nil,
+            totalCachedInputTokens: parsed.tokenUsage.cachedInputTokens > 0 ? parsed.tokenUsage.cachedInputTokens : nil,
+            totalOutputTokens: parsed.tokenUsage.outputTokens > 0 ? parsed.tokenUsage.outputTokens : nil,
+            totalReasoningOutputTokens: parsed.tokenUsage.reasoningOutputTokens > 0 ? parsed.tokenUsage.reasoningOutputTokens : nil,
+            tokenUsageSource: .transcriptDelta,
+            tokenUsageState: .complete,
+            costSource: .unavailable,
+            costState: .missing,
             rawTranscriptRef: file.path,
-            toolCalls: toolCalls
+            toolCalls: parsed.toolCalls
         )
     }
 
@@ -199,6 +109,10 @@ final class CodexContentProvider: RunContentProvider {
         return ExtractedRunContent(
             turns: turns,
             totalInputTokens: tokensUsed > 0 ? tokensUsed : nil,
+            tokenUsageSource: tokensUsed > 0 ? .transcriptSnapshot : nil,
+            tokenUsageState: tokensUsed > 0 ? .estimated : .missing,
+            costSource: .unavailable,
+            costState: .missing,
             rawTranscriptRef: rolloutPath
         )
     }

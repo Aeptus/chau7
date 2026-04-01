@@ -15,8 +15,14 @@ public struct TelemetryRun: Codable, Identifiable, Sendable {
     public var durationMs: Int?
     public var exitStatus: Int?
     public var totalInputTokens: Int?
+    public var totalCachedInputTokens: Int?
     public var totalOutputTokens: Int?
+    public var totalReasoningOutputTokens: Int?
     public var costUSD: Double?
+    public var tokenUsageSource: TokenUsageSource?
+    public var tokenUsageState: TelemetryMetricState
+    public var costSource: CostSource?
+    public var costState: TelemetryMetricState
     public var turnCount: Int
     public var tags: [String]
     public var metadata: [String: String]
@@ -37,8 +43,14 @@ public struct TelemetryRun: Codable, Identifiable, Sendable {
         durationMs: Int? = nil,
         exitStatus: Int? = nil,
         totalInputTokens: Int? = nil,
+        totalCachedInputTokens: Int? = nil,
         totalOutputTokens: Int? = nil,
+        totalReasoningOutputTokens: Int? = nil,
         costUSD: Double? = nil,
+        tokenUsageSource: TokenUsageSource? = nil,
+        tokenUsageState: TelemetryMetricState = .missing,
+        costSource: CostSource? = nil,
+        costState: TelemetryMetricState = .missing,
         turnCount: Int = 0,
         tags: [String] = [],
         metadata: [String: String] = [:],
@@ -58,14 +70,29 @@ public struct TelemetryRun: Codable, Identifiable, Sendable {
         self.durationMs = durationMs
         self.exitStatus = exitStatus
         self.totalInputTokens = totalInputTokens
+        self.totalCachedInputTokens = totalCachedInputTokens
         self.totalOutputTokens = totalOutputTokens
+        self.totalReasoningOutputTokens = totalReasoningOutputTokens
         self.costUSD = costUSD
+        self.tokenUsageSource = tokenUsageSource
+        self.tokenUsageState = tokenUsageState
+        self.costSource = costSource
+        self.costState = costState
         self.turnCount = turnCount
         self.tags = tags
         self.metadata = metadata
         self.rawTranscriptRef = rawTranscriptRef
         self.parentRunID = parentRunID
         self.errorMessage = errorMessage
+    }
+
+    public var tokenUsage: TokenUsage {
+        TokenUsage(
+            inputTokens: totalInputTokens ?? 0,
+            cachedInputTokens: totalCachedInputTokens ?? 0,
+            outputTokens: totalOutputTokens ?? 0,
+            reasoningOutputTokens: totalReasoningOutputTokens ?? 0
+        )
     }
 }
 

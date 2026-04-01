@@ -35,8 +35,14 @@ public struct ExtractedRunContent: Sendable {
     public var model: String?
     public var turns: [TelemetryTurn]
     public var totalInputTokens: Int?
+    public var totalCachedInputTokens: Int?
     public var totalOutputTokens: Int?
+    public var totalReasoningOutputTokens: Int?
     public var costUSD: Double?
+    public var tokenUsageSource: TokenUsageSource?
+    public var tokenUsageState: TelemetryMetricState
+    public var costSource: CostSource?
+    public var costState: TelemetryMetricState
     public var rawTranscriptRef: String?
     public var toolCalls: [TelemetryToolCall]
 
@@ -44,16 +50,28 @@ public struct ExtractedRunContent: Sendable {
         model: String? = nil,
         turns: [TelemetryTurn] = [],
         totalInputTokens: Int? = nil,
+        totalCachedInputTokens: Int? = nil,
         totalOutputTokens: Int? = nil,
+        totalReasoningOutputTokens: Int? = nil,
         costUSD: Double? = nil,
+        tokenUsageSource: TokenUsageSource? = nil,
+        tokenUsageState: TelemetryMetricState = .missing,
+        costSource: CostSource? = nil,
+        costState: TelemetryMetricState = .missing,
         rawTranscriptRef: String? = nil,
         toolCalls: [TelemetryToolCall] = []
     ) {
         self.model = model
         self.turns = turns
         self.totalInputTokens = totalInputTokens
+        self.totalCachedInputTokens = totalCachedInputTokens
         self.totalOutputTokens = totalOutputTokens
+        self.totalReasoningOutputTokens = totalReasoningOutputTokens
         self.costUSD = costUSD
+        self.tokenUsageSource = tokenUsageSource
+        self.tokenUsageState = tokenUsageState
+        self.costSource = costSource
+        self.costState = costState
         self.rawTranscriptRef = rawTranscriptRef
         self.toolCalls = toolCalls
     }
