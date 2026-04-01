@@ -162,16 +162,23 @@ async function handleIssueCreate(
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
   const rateLimitId = env.SESSION.idFromName("issue-ratelimit");
   const rateLimitDO = env.SESSION.get(rateLimitId);
-  const rlCheck = await rateLimitDO.fetch(
-    new Request("https://internal/ratelimit/check", {
-      method: "POST",
-      body: JSON.stringify({ ip, max: ISSUE_RATE_MAX, windowMs: ISSUE_RATE_WINDOW_MS }),
-    })
-  );
-  if (rlCheck.status === 429) {
+  let rlCheck: Response;
+  try {
+    rlCheck = await rateLimitDO.fetch(
+      new Request("https://internal/ratelimit/check", {
+        method: "POST",
+        body: JSON.stringify({ ip, max: ISSUE_RATE_MAX, windowMs: ISSUE_RATE_WINDOW_MS }),
+      })
+    );
+  } catch (e) {
+    console.error("Rate limit DO error:", e);
+    return jsonResponse({ error: "Rate limit check failed. Try again." }, 503);
+  }
+  if (rlCheck.status !== 200) {
+    const code = rlCheck.status === 429 ? 429 : 503;
     return jsonResponse(
-      { error: "Rate limited. Maximum 5 reports per hour." },
-      429
+      { error: code === 429 ? "Rate limited. Maximum 5 reports per hour." : "Rate limit check failed." },
+      code
     );
   }
 
@@ -189,6 +196,13 @@ async function handleIssueCreate(
   if (!title || !issueBody) {
     return jsonResponse(
       { error: "Both 'title' and 'body' are required and must be non-empty." },
+      400
+    );
+  }
+
+  if (title.length > 256) {
+    return jsonResponse(
+      { error: `Title too long (${title.length} chars, max 256).` },
       400
     );
   }
