@@ -907,7 +907,11 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         tailer = FileTailer<AIEvent>.eventTailer(fileURL: url) { [weak self] event in
             Log.trace("Event received: type=\(event.type) tool=\(event.tool) message=\"\(event.message)\"")
             DispatchQueue.main.async {
-                self?.publishUnifiedEvent(event, notify: true)
+                let shouldNotify = event.source != .terminalSession
+                if !shouldNotify {
+                    Log.trace("Skipping notification delivery for tailed terminal_session event: type=\(event.type) tool=\(event.tool)")
+                }
+                self?.publishUnifiedEvent(event, notify: shouldNotify)
             }
         }
         tailer?.start()
@@ -1395,34 +1399,35 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     }
 
     private func publishUnifiedEvent(_ event: AIEvent, notify: Bool) {
-        let sharedEvent: AIEvent?
+        let acceptedEvent: NotificationIngress.AcceptedEvent?
         switch NotificationIngress.ingest(event) {
         case .accept(let accepted):
-            sharedEvent = accepted.sharedEvent
+            acceptedEvent = accepted
         case .drop(let reason):
             Log.trace("Notification ingress dropped unified event: \(reason) id=\(event.id.uuidString) type=\(event.type) source=\(event.source.rawValue)")
-            sharedEvent = nil
+            acceptedEvent = nil
         }
 
-        guard let sharedEvent else { return }
+        guard let acceptedEvent else { return }
 
         if Thread.isMainThread {
             MainActor.assumeIsolated {
-                publishUnifiedEventOnMain(sharedEvent, notify: notify)
+                publishUnifiedEventOnMain(acceptedEvent, notify: notify)
             }
         } else {
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
-                    self?.publishUnifiedEventOnMain(sharedEvent, notify: notify)
+                    self?.publishUnifiedEventOnMain(acceptedEvent, notify: notify)
                 }
             }
         }
     }
 
     @MainActor
-    private func publishUnifiedEventOnMain(_ event: AIEvent, notify: Bool) {
+    private func publishUnifiedEventOnMain(_ acceptedEvent: NotificationIngress.AcceptedEvent, notify: Bool) {
+        let event = acceptedEvent.sharedEvent
         if notify {
-            NotificationManager.shared.notify(for: event)
+            NotificationManager.shared.notify(acceptedEvent: acceptedEvent)
         }
         recentEvents.append(event)
         recentEvents.trimToLast(25)

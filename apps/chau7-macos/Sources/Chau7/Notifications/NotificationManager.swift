@@ -94,33 +94,36 @@ final class NotificationManager {
         }
     }
 
+    func notify(acceptedEvent: NotificationIngress.AcceptedEvent) {
+        ingestAcceptedEvent(acceptedEvent)
+    }
+
     private func ingestEvent(_ event: AIEvent) {
         switch NotificationIngress.ingest(event) {
         case .drop(let reason):
             Log.trace("Notification ingress dropped: \(reason) id=\(event.id.uuidString) type=\(event.type) tool=\(event.tool)")
             return
         case .accept(let accepted):
-            let adapted = accepted.sharedEvent
-            let canonical = accepted.canonicalEvent
-            let semanticDescription = canonical?.kind.rawValue ?? "passthrough"
-            Log.info(
-                """
-                Notification ingress accepted: id=\(adapted.id.uuidString) source=\(adapted.source.rawValue) type=\(adapted.type) semantic=\(semanticDescription) reliability=\(adapted.reliability
-                    .rawValue) tabID=\(adapted.tabID?.uuidString ?? "nil") sessionID=\(adapted.sessionID ?? "nil")
-                """
-            )
-            if let canonical {
-                history.begin(
-                    event: adapted,
-                    semanticKind: canonical.kind.rawValue,
-                    rawType: canonical.rawType,
-                    notificationType: canonical.notificationType
-                )
-            } else {
-                history.begin(event: adapted)
-            }
-            enqueueEvent(adapted)
+            ingestAcceptedEvent(accepted)
         }
+    }
+
+    private func ingestAcceptedEvent(_ accepted: NotificationIngress.AcceptedEvent) {
+        let adapted = accepted.sharedEvent
+        let canonical = accepted.canonicalEvent
+        Log.info(
+            """
+            Notification ingress accepted: id=\(adapted.id.uuidString) source=\(adapted.source.rawValue) type=\(adapted.type) semantic=\(canonical.kind.rawValue) reliability=\(adapted.reliability
+                .rawValue) tabID=\(adapted.tabID?.uuidString ?? "nil") sessionID=\(adapted.sessionID ?? "nil")
+            """
+        )
+        history.begin(
+            event: adapted,
+            semanticKind: canonical.kind.rawValue,
+            rawType: canonical.rawType,
+            notificationType: canonical.notificationType
+        )
+        enqueueEvent(adapted)
     }
 
     private func enqueueEvent(_ event: AIEvent) {

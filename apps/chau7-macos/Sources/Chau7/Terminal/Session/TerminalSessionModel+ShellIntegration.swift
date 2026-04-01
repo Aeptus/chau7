@@ -504,6 +504,7 @@ extension TerminalSessionModel {
             providerIsRestored: aiDetection.isRestored,
             hasPendingPrefillInput: hasPendingResumePrefillActivity,
             suppressUntilNextUserCommand: suppressWaitingInputFallbackUntilNextUserCommand,
+            hasRecentSystemResumePrefill: deliveredSystemResumePrefillSinceLastUserCommand,
             commandLooksLikeResume: resumeCommand != nil,
             observedAIRoundTrip: pendingWaitingInputFallbackArmed && pendingWaitingInputFallbackSawLiveOutput,
             sessionID: effectiveAISessionId
@@ -940,7 +941,11 @@ extension TerminalSessionModel {
             commandPendingDetection = false
             return
         }
-        suppressWaitingInputFallbackUntilNextUserCommand = false
+        let resumeMetadata = AIResumeParser.extractMetadata(from: trimmed)
+        if resumeMetadata == nil {
+            suppressWaitingInputFallbackUntilNextUserCommand = false
+            deliveredSystemResumePrefillSinceLastUserCommand = false
+        }
 
         // Security: check if the PTY has echo disabled (password prompt, passphrase, etc.)
         // If so, mark as sensitive to prevent recording in history.

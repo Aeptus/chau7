@@ -94,6 +94,7 @@ Detection methods:
 - **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
 - **AI event notifications** — supports finished, failed, permission, needs_validation, tool_complete, session_end, idle, and related AI events. Default AI attention policy enables only finished, failed, and permission requests, with noisier triggers available in settings.
 - **Provider adapter notification architecture** — Claude, Codex/runtime, and terminal fallback sources translate provider-specific events into one shared semantic event layer before notification settings, history, styling, and delivery run.
+- **Full-source canonical notification adapters** — shell, app, terminal-session, history-monitor, events-log, and API-proxy events now also flow through the same canonical adapter boundary. The shared notification layer no longer accepts raw pass-through event sources.
 - **Canonical provider event normalization** — provider hook names normalize through one shared mapper that preserves semantic separators, so values like `permission prompt`, `idle-prompt`, and `auth success` resolve to the same canonical trigger keys everywhere.
 - **Claude hook notification ownership** — Claude `notification` hooks own waiting-input and attention-required delivery. Raw `response_complete` remains session state, not a user-facing notification trigger.
 - **Authoritative notification routing** — runtime and hook-backed `finished`, `failed`, and `permission` events are treated as authoritative, while history-derived events act as fallback only and are suppressed if an authoritative delivery already landed for the same session or tab.
@@ -102,7 +103,9 @@ Detection methods:
 - **Semantic AI notification controls** — the AI-first settings overview treats waiting-input and attention-required states as “needs me” attention, instead of folding them into the generic finished bucket.
 - **Notification delivery ledger** — every AI notification records its lifecycle, including coalescing, retry scheduling, trigger decisions, drop reasons, and banner/tab-style outcomes for deterministic debugging.
 - **Canonical notification ledger ingress** — provider events are canonicalized before they enter the delivery ledger and coalescing queue, so shared history and timeline surfaces show canonical semantics while still retaining raw-type notes for forensic debugging.
+- **Single ingress handoff** — the unified event stream and notification delivery now share one accepted-event handoff, so events are ingested and canonicalized once before they are both displayed and delivered.
 - **Strict notification delivery boundaries** — user-facing notification ingress flows through one shared contract, and tab-targeting actions only execute with an explicit resolved `tabID`. Tab highlight, badge, focus, snippet, and persistent-style cleanup no longer re-resolve targets late through overlay heuristics or NotificationCenter side channels.
+- **Restore-prefill suppression** — system resume prefills no longer generate prompt-return `waiting_input` notifications or tab highlights during startup. Fallback waiting-input delivery resumes only after the next real user command.
 - **Runtime session startup** — MCP-created runtime sessions become ready immediately after launch, and `attach_tab_id` sessions start usable without a manual state repair step.
 - **MCP command filter hardening** — permission checks now recognize background separators, tabs, and newlines before deciding whether a command is allowed, blocked, or needs approval.
 - **Backend launch environment validation** — runtime backend launch strings now drop invalid environment variable names before shell interpolation.
@@ -384,6 +387,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Feature profiler with os.signpost integration.
 - Structured logging with category-based filtering and correlation IDs.
 - Privacy-first bug report dialog (⌥⌘I): all sensitive data off by default, per-toggle tab pickers, live preview, submit privately via relay.
+- In-app issue reporting privacy page: GDPR-compliant sub-processor disclosure (Cloudflare, GitHub) with data categories, retention, legal basis, DPA links, and data subject rights.
 - Verbose (`CHAU7_VERBOSE=1`) and trace (`CHAU7_TRACE=1`) modes.
 
 ### Monitoring
