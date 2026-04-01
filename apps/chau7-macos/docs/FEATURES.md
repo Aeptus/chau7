@@ -93,9 +93,12 @@ Detection methods:
 - **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.
 - **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
 - **AI event notifications** — supports finished, failed, permission, needs_validation, tool_complete, session_end, idle, and related AI events. Default AI attention policy enables only finished, failed, and permission requests, with noisier triggers available in settings.
+- **Provider adapter notification architecture** — Claude, Codex/runtime, and terminal fallback sources translate provider-specific events into one shared semantic event layer before notification settings, history, styling, and delivery run.
+- **Claude hook notification ownership** — Claude `notification` hooks own waiting-input and attention-required delivery. Raw `response_complete` remains session state, not a user-facing notification trigger.
 - **Authoritative notification routing** — runtime and hook-backed `finished`, `failed`, and `permission` events are treated as authoritative, while history-derived events act as fallback only and are suppressed if an authoritative delivery already landed for the same session or tab.
 - **Retry-before-fallback delivery** — authoritative AI events briefly retry exact tab routing before dropping into broader fallback logic, reducing missed highlights and same-repo misroutes during startup and restore churn.
 - **Simplified AI notification settings** — the Notifications screen now opens with an AI-first overview for Finished, Failed, and Permission Request, with direct controls for banner, tab highlight, sound, and dock bounce. Per-tool overrides and raw trigger plumbing remain available under Advanced.
+- **Semantic AI notification controls** — the AI-first settings overview treats waiting-input and attention-required states as “needs me” attention, instead of folding them into the generic finished bucket.
 - **Notification delivery ledger** — every AI notification records its lifecycle, including coalescing, retry scheduling, trigger decisions, drop reasons, and banner/tab-style outcomes for deterministic debugging.
 - **Runtime session startup** — MCP-created runtime sessions become ready immediately after launch, and `attach_tab_id` sessions start usable without a manual state repair step.
 - **MCP command filter hardening** — permission checks now recognize background separators, tabs, and newlines before deciding whether a command is allowed, blocked, or needs approval.
