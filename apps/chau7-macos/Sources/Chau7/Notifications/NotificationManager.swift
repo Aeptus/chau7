@@ -95,20 +95,29 @@ final class NotificationManager {
     }
 
     private func ingestEvent(_ event: AIEvent) {
-        switch NotificationProviderAdapterRegistry.adapt(event) {
+        switch NotificationIngress.ingest(event) {
         case .drop(let reason):
-            Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
+            Log.trace("Notification ingress dropped: \(reason) id=\(event.id.uuidString) type=\(event.type) tool=\(event.tool)")
             return
-        case .passThrough(let adapted):
-            history.begin(event: adapted)
-            enqueueEvent(adapted)
-        case .emit(let adapted, let canonical):
+        case .accept(let accepted):
+            let adapted = accepted.sharedEvent
+            let canonical = accepted.canonicalEvent
+            let semanticDescription = canonical?.kind.rawValue ?? "passthrough"
+            Log.info(
+                """
+                Notification ingress accepted: id=\(adapted.id.uuidString) source=\(adapted.source.rawValue) type=\(adapted.type) semantic=\(semanticDescription) reliability=\(adapted.reliability.rawValue) tabID=\(adapted.tabID?.uuidString ?? "nil") sessionID=\(adapted.sessionID ?? "nil")
+                """
+            )
+            if let canonical {
             history.begin(
                 event: adapted,
                 semanticKind: canonical.kind.rawValue,
                 rawType: canonical.rawType,
                 notificationType: canonical.notificationType
             )
+            } else {
+                history.begin(event: adapted)
+            }
             enqueueEvent(adapted)
         }
     }
@@ -168,6 +177,11 @@ final class NotificationManager {
             resolutionMethod = prepared.resolutionMethod
         }
 
+        Log.info(
+            """
+            Notification delivery prepared: id=\(preparedEvent.id.uuidString) type=\(preparedEvent.type) tool=\(preparedEvent.tool) resolution=\(resolutionMethod) tabID=\(preparedEvent.tabID?.uuidString ?? "nil") sessionID=\(preparedEvent.sessionID ?? "nil")
+            """
+        )
         history.markPrepared(event: preparedEvent, resolutionMethod: resolutionMethod)
 
         if NotificationDeliverySemantics.requiresAuthoritativeRouting(preparedEvent),
@@ -242,6 +256,9 @@ final class NotificationManager {
             let didStyleTab = applyDefaultTabStyle(for: preparedEvent)
             var actions = ["showNotification"]
             if didStyleTab { actions.append("styleTab") }
+            Log.info(
+                "Notification delivery executed default path: id=\(preparedEvent.id.uuidString) trigger=\(baseRateLimitKey) banner=\(didDispatchBanner) styled=\(didStyleTab)"
+            )
             history.markActionsExecuted(
                 eventID: preparedEvent.id,
                 triggerId: baseRateLimitKey,
@@ -261,8 +278,18 @@ final class NotificationManager {
                 routingRetryCounts.removeValue(forKey: preparedEvent.id)
                 return
             }
+            guard preparedEvent.tabID != nil else {
+                let reason = "Style-only notification delivery requires explicit tabID"
+                Log.warn("\(reason) id=\(preparedEvent.id.uuidString) type=\(preparedEvent.type) tool=\(preparedEvent.tool)")
+                history.markDropped(eventID: preparedEvent.id, triggerId: baseRateLimitKey, reason: reason)
+                routingRetryCounts.removeValue(forKey: preparedEvent.id)
+                return
+            }
             NotificationActionExecutor.shared.execute(actions: actions, for: preparedEvent)
             let actionNames = actions.filter(\.enabled).map(\.actionType.rawValue)
+            Log.info(
+                "Notification delivery executed style-only actions: id=\(preparedEvent.id.uuidString) trigger=\(baseRateLimitKey) actions=\(actionNames.joined(separator: ", "))"
+            )
             history.markActionsExecuted(
                 eventID: preparedEvent.id,
                 triggerId: baseRateLimitKey,
@@ -281,17 +308,56 @@ final class NotificationManager {
                 routingRetryCounts.removeValue(forKey: preparedEvent.id)
                 return
             }
-            NotificationActionExecutor.shared.execute(actions: actions, for: preparedEvent)
-            var executedActions = actions.filter(\.enabled).map(\.actionType.rawValue)
-            var didStyleTab = executedActions.contains(NotificationActionType.styleTab.rawValue)
+            let partition = NotificationActionRequirements.partitionByResolvedTabRequirement(actions)
+            if !partition.nonTabScoped.isEmpty {
+                NotificationActionExecutor.shared.execute(actions: partition.nonTabScoped, for: preparedEvent)
+            }
+
+            var executedActions = partition.nonTabScoped.filter(\.enabled).map(\.actionType.rawValue)
+            var didStyleTab = false
+
+            if !partition.tabScoped.isEmpty {
+                guard preparedEvent.tabID != nil else {
+                    let skipped = partition.tabScoped
+                        .filter(\.enabled)
+                        .map(\.actionType.rawValue)
+                    let reason = "Skipped tab-scoped notification actions without explicit tabID: \(skipped.joined(separator: ", "))"
+                    Log.warn("\(reason) id=\(preparedEvent.id.uuidString) type=\(preparedEvent.type) tool=\(preparedEvent.tool)")
+                    history.appendNote(eventID: preparedEvent.id, note: reason)
+                    history.markActionsExecuted(
+                        eventID: preparedEvent.id,
+                        triggerId: triggerId,
+                        actionsExecuted: executedActions,
+                        didDispatchBanner: executedActions.contains(NotificationActionType.showNotification.rawValue),
+                        didStyleTab: false
+                    )
+                    history.markCompleted(eventID: preparedEvent.id)
+                    routingRetryCounts.removeValue(forKey: preparedEvent.id)
+                    return
+                }
+                NotificationActionExecutor.shared.execute(actions: partition.tabScoped, for: preparedEvent)
+                let tabScopedNames = partition.tabScoped.filter(\.enabled).map(\.actionType.rawValue)
+                executedActions.append(contentsOf: tabScopedNames)
+                didStyleTab = tabScopedNames.contains(NotificationActionType.styleTab.rawValue)
+            }
+
             if let supplementalStyleAction = NotificationStylePlanner.supplementalStyleAction(
                 for: preparedEvent,
                 from: actions
             ) {
-                NotificationActionExecutor.shared.execute(actions: [supplementalStyleAction], for: preparedEvent)
-                executedActions.append(NotificationActionType.styleTab.rawValue)
-                didStyleTab = true
+                if preparedEvent.tabID != nil {
+                    NotificationActionExecutor.shared.execute(actions: [supplementalStyleAction], for: preparedEvent)
+                    executedActions.append(NotificationActionType.styleTab.rawValue)
+                    didStyleTab = true
+                } else {
+                    let reason = "Skipped supplemental style action without explicit tabID"
+                    Log.warn("\(reason) id=\(preparedEvent.id.uuidString) type=\(preparedEvent.type) tool=\(preparedEvent.tool)")
+                    history.appendNote(eventID: preparedEvent.id, note: reason)
+                }
             }
+            Log.info(
+                "Notification delivery executed configured actions: id=\(preparedEvent.id.uuidString) trigger=\(triggerId) actions=\(executedActions.joined(separator: ", "))"
+            )
             history.markActionsExecuted(
                 eventID: preparedEvent.id,
                 triggerId: triggerId,
@@ -361,6 +427,12 @@ final class NotificationManager {
     @discardableResult
     private func applyDefaultTabStyle(for event: AIEvent) -> Bool {
         guard let action = NotificationStylePlanner.defaultStyleAction(for: event) else { return false }
+        guard event.tabID != nil else {
+            let reason = "Skipped default tab style without explicit tabID"
+            Log.warn("\(reason) id=\(event.id.uuidString) type=\(event.type) tool=\(event.tool)")
+            history.appendNote(eventID: event.id, note: reason)
+            return false
+        }
         NotificationActionExecutor.shared.execute(actions: [action], for: event)
         return true
     }

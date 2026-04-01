@@ -4,10 +4,6 @@ import Chau7Core
 import Combine
 import SwiftUI
 
-extension Notification.Name {
-    static let clearPersistentTabStyle = Notification.Name("com.chau7.clearPersistentTabStyle")
-}
-
 // MARK: - Tab Notification Styling
 
 /// Visual styling that can be applied to a tab via the notification system.
@@ -276,10 +272,7 @@ struct OverlayTab: Identifiable, Equatable {
             session.ownerTabID = tabID
             session.onPermissionResolved = {
                 DispatchQueue.main.async {
-                    NotificationCenter.default.post(
-                        name: .clearPersistentTabStyle,
-                        object: tabID
-                    )
+                    _ = TerminalControlService.shared.clearPersistentNotificationStyleAcrossWindows(tabID: tabID)
                 }
             }
         }
@@ -495,7 +488,6 @@ final class OverlayTabsModel: ObservableObject {
     var ctoModeObserver: NSObjectProtocol?
     var ctoFlagObserver: NSObjectProtocol?
     var renderSuspensionObserver: NSObjectProtocol?
-    var persistentStyleObserver: NSObjectProtocol?
     var suspensionDebounceItem: DispatchWorkItem?
     var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
 
@@ -543,15 +535,6 @@ final class OverlayTabsModel: ObservableObject {
             for (index, state) in restoredPayload.rawStates.enumerated() where index < tabs.count {
                 restoreTabState(for: tabs[index], state: state)
             }
-        }
-
-        // Observe permission-resolved to clear persistent red borders
-        self.persistentStyleObserver = NotificationCenter.default.addObserver(
-            forName: .clearPersistentTabStyle,
-            object: nil, queue: .main
-        ) { [weak self] notification in
-            guard let tabID = notification.object as? UUID else { return }
-            self?.clearPersistentStyle(for: tabID)
         }
 
         // Setup task lifecycle observers (v1.1)
@@ -636,7 +619,6 @@ final class OverlayTabsModel: ObservableObject {
         if let ctoModeObserver { NotificationCenter.default.removeObserver(ctoModeObserver) }
         if let ctoFlagObserver { NotificationCenter.default.removeObserver(ctoFlagObserver) }
         if let renderSuspensionObserver { NotificationCenter.default.removeObserver(renderSuspensionObserver) }
-        if let persistentStyleObserver { NotificationCenter.default.removeObserver(persistentStyleObserver) }
     }
 
     // MARK: - Tab State Persistence
@@ -1338,33 +1320,32 @@ final class OverlayTabsModel: ObservableObject {
         Log.info("Persistent tab style cleared for tab \(tabID) (permission resolved)")
     }
 
+    @discardableResult
+    func clearPersistentNotificationStyle(on tabID: UUID) -> Bool {
+        guard let index = tabs.firstIndex(where: { $0.id == tabID }),
+              tabs[index].notificationStyle?.persistent == true else { return false }
+        clearPersistentStyle(for: tabID)
+        return true
+    }
+
     /// Clears notification style from a tab
     func clearNotificationStyle(for tabID: UUID? = nil) {
         setNotificationStyle(nil, for: tabID)
     }
 
-    /// Applies a notification style to a tab based on tool name (used by notification action system)
     @discardableResult
-    func applyNotificationStyle(
-        for target: TabTarget,
-        stylePreset: String,
-        config: [String: String],
-        logOnMiss: Bool = true
-    ) -> UUID? {
+    func applyNotificationStyle(to tabID: UUID, stylePreset: String, config: [String: String]) -> Bool {
         dispatchPrecondition(condition: .onQueue(.main))
 
-        guard let tab = resolveTab(for: target) else {
-            if logOnMiss {
-                Log.info("applyNotificationStyle: No tab found matching tool '\(target.tool)'")
-            }
-            return nil
+        guard tabs.contains(where: { $0.id == tabID }) else {
+            return false
         }
 
         let style: TabNotificationStyle? = stylePreset == "clear"
             ? nil
             : buildNotificationStyle(preset: stylePreset, config: config)
 
-        return setNotificationStyle(style, for: tab.id) ? tab.id : nil
+        return setNotificationStyle(style, for: tabID)
     }
 
     /// Builds a TabNotificationStyle from preset and config
@@ -1463,39 +1444,47 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     /// Finds the tab matching the target and selects it.
+    @discardableResult
+    func focusTab(id tabID: UUID) -> Bool {
+        guard tabs.contains(where: { $0.id == tabID }) else {
+            return false
+        }
+        selectTab(id: tabID)
+        return true
+    }
+
     func focusTab(for target: TabTarget) {
         guard let tab = resolveTab(for: target) else {
             Log.info("focusTab: No tab found for '\(target.tool)'")
             return
         }
-        selectTab(id: tab.id)
+        _ = focusTab(id: tab.id)
     }
 
-    /// Sets a badge on the tab matching the target via the unified TabNotificationStyle.
-    func setBadge(for target: TabTarget, text: String, color: String) {
-        guard let tab = resolveTab(for: target) else {
-            Log.info("setBadge: No tab found for '\(target.tool)'")
-            return
+    @discardableResult
+    func setBadge(on tabID: UUID, text: String, color: String) -> Bool {
+        guard let tab = tabs.first(where: { $0.id == tabID }) else {
+            return false
         }
         var style = tab.notificationStyle ?? TabNotificationStyle()
         style.badgeText = text
         style.badgeColor = colorFromString(color)
-        if setNotificationStyle(style, for: tab.id) {
-            Log.info("setBadge: Set badge '\(text)' on tab for '\(target.tool)'")
-        }
+        return setNotificationStyle(style, for: tabID)
     }
 
-    /// Inserts a snippet by ID into the tab matching the target.
-    func insertSnippet(id snippetId: String, for target: TabTarget, autoExecute: Bool) {
+    @discardableResult
+    func insertSnippet(id snippetId: String, on tabID: UUID, autoExecute: Bool) -> Bool {
         guard let entry = SnippetManager.shared.entries.first(where: { $0.snippet.id == snippetId }) else {
             Log.warn("insertSnippet: Snippet '\(snippetId)' not found")
-            return
+            return false
         }
-        if let tab = resolveTab(for: target) {
-            selectTab(id: tab.id)
+        guard tabs.contains(where: { $0.id == tabID }) else {
+            return false
         }
+        _ = focusTab(id: tabID)
         insertSnippet(entry)
-        Log.info("insertSnippet: Inserted snippet '\(snippetId)' for tool '\(target.tool)'")
+        Log.info("insertSnippet: Inserted snippet '\(snippetId)' for tab \(tabID)")
+        return true
     }
 
     /// Returns true if the given target matches the currently selected tab.

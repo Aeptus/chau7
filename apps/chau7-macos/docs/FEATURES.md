@@ -102,6 +102,7 @@ Detection methods:
 - **Semantic AI notification controls** — the AI-first settings overview treats waiting-input and attention-required states as “needs me” attention, instead of folding them into the generic finished bucket.
 - **Notification delivery ledger** — every AI notification records its lifecycle, including coalescing, retry scheduling, trigger decisions, drop reasons, and banner/tab-style outcomes for deterministic debugging.
 - **Canonical notification ledger ingress** — provider events are canonicalized before they enter the delivery ledger and coalescing queue, so shared history and timeline surfaces show canonical semantics while still retaining raw-type notes for forensic debugging.
+- **Strict notification delivery boundaries** — user-facing notification ingress flows through one shared contract, and tab-targeting actions only execute with an explicit resolved `tabID`. Tab highlight, badge, focus, snippet, and persistent-style cleanup no longer re-resolve targets late through overlay heuristics or NotificationCenter side channels.
 - **Runtime session startup** — MCP-created runtime sessions become ready immediately after launch, and `attach_tab_id` sessions start usable without a manual state repair step.
 - **MCP command filter hardening** — permission checks now recognize background separators, tabs, and newlines before deciding whether a command is allowed, blocked, or needs approval.
 - **Backend launch environment validation** — runtime backend launch strings now drop invalid environment variable names before shell interpolation.

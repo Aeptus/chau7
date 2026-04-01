@@ -163,6 +163,12 @@ final class NotificationHistory {
         }
     }
 
+    func appendNote(eventID: UUID, note: String) {
+        update(eventID) { entry in
+            entry.notes.append(note)
+        }
+    }
+
     func recent(limit: Int = 50) -> [Entry] {
         Array(order.suffix(limit).reversed()).compactMap { entriesByID[$0] }
     }

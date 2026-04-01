@@ -364,7 +364,7 @@ final class RemoteControlManager: ObservableObject {
             return
         }
         if let approvalContext, let uuid = tabRegistry.uuid(for: approvalContext.tabID) {
-            NotificationCenter.default.post(name: .clearPersistentTabStyle, object: uuid)
+            _ = TerminalControlService.shared.clearPersistentNotificationStyleAcrossWindows(tabID: uuid)
         }
         TerminalControlService.shared.resolveApproval(requestID: response.requestID, approved: response.approved)
         sendRemoteActivity()

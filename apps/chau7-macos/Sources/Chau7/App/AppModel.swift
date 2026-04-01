@@ -1396,10 +1396,11 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
     private func publishUnifiedEvent(_ event: AIEvent, notify: Bool) {
         let sharedEvent: AIEvent?
-        switch NotificationProviderAdapterRegistry.adapt(event) {
-        case .emit(let adapted, _), .passThrough(let adapted):
-            sharedEvent = adapted
-        case .drop:
+        switch NotificationIngress.ingest(event) {
+        case .accept(let accepted):
+            sharedEvent = accepted.sharedEvent
+        case .drop(let reason):
+            Log.trace("Notification ingress dropped unified event: \(reason) id=\(event.id.uuidString) type=\(event.type) source=\(event.source.rawValue)")
             sharedEvent = nil
         }
 
