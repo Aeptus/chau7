@@ -14,6 +14,10 @@ private final class OverlayBlurView: NSVisualEffectView {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    /// Direct reference for code that can't use NSApp.delegate as? AppDelegate
+    /// (e.g., SwiftUI gesture handlers where the cast may fail due to @NSApplicationDelegateAdaptor wrapping).
+    static weak var shared: AppDelegate?
+
     private static let passwordAutofillSelector = NSSelectorFromString("_handleInsertFromPasswordsCommand:")
     var model: AppModel?
     var overlayModel: OverlayTabsModel?
@@ -50,6 +54,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var activityToken: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.shared = self
         Log.info("AppDelegate did finish launching.")
         didFinishLaunching = true
 

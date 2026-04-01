@@ -245,7 +245,7 @@ final class RuntimeControlService {
             _ = controlService.closeTab(tabID: session.tabID.uuidString, force: true)
         }
 
-        return encodeAny(["ok": stopped, "session_id": sessionID])
+        return encodeAny(["ok": stopped, "session_id": sessionID, "final_state": session.state.rawValue])
     }
 
     // MARK: - Turn Management
@@ -285,6 +285,7 @@ final class RuntimeControlService {
         return encodeAny([
             "turn_id": turnID,
             "status": "accepted",
+            "session_state": session.state.rawValue,
             "cursor": session.journal.latestCursor
         ])
     }
@@ -304,6 +305,9 @@ final class RuntimeControlService {
         ]
         if let turnID = session.currentTurnID {
             result["current_turn_id"] = turnID
+        }
+        if let exitReason = session.lastExitReason {
+            result["last_exit_reason"] = exitReason.rawValue
         }
         if let approval = session.pendingApproval {
             result["pending_approval"] = [

@@ -757,7 +757,7 @@ private struct ToolbarTabBarView: View {
             }
         }
 
-        if let appDelegate = NSApp.delegate as? AppDelegate {
+        if let appDelegate = AppDelegate.shared {
             let moved = appDelegate.handleGroupDrop(
                 repoGroupID: groupID, from: overlayModel, atScreenPoint: dropScreenPoint
             )
@@ -1186,7 +1186,7 @@ private struct ToolbarTabBarView: View {
         let to = dragCurrentSlot
         Log.info("Tab drag end: tab=\(tab.displayTitle) from=\(from) to=\(to) dropPoint=(\(Int(dropScreenPoint.x)),\(Int(dropScreenPoint.y)))")
 
-        let movedAcrossWindows = (NSApp.delegate as? AppDelegate)?
+        let movedAcrossWindows = (AppDelegate.shared)?
             .handleTabDrop(tabID: tab.id, from: overlayModel, atScreenPoint: dropScreenPoint)
             ?? false
 
@@ -1570,7 +1570,7 @@ struct Chau7OverlayView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .padding(.trailing, 12)
                 }
-                .padding(.top, OverlayLayout.tabBarHeight + 8)
+                .padding(.top, OverlayLayout.tabBarHeight + 10)
                 .padding(.trailing, 4)
                 .zIndex(11)
             }
@@ -1590,7 +1590,7 @@ struct Chau7OverlayView: View {
     }
 
     private var reportIssueShortcutText: String {
-        settings.shortcut(for: "reportIssue")?.displayString ?? "⇧⌘I"
+        settings.shortcut(for: "reportIssue")?.displayString ?? "⌥⌘I"
     }
 }
 
