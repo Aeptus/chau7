@@ -31,6 +31,10 @@
 /*.png
   Cache-Control: public, max-age=86400
 
+/Chau7.dmg
+  Content-Disposition: attachment; filename="Chau7.dmg"
+  Cache-Control: public, max-age=86400
+
 /sitemap.xml
   Content-Type: application/xml
   Cache-Control: public, max-age=3600

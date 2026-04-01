@@ -146,7 +146,7 @@ TEMPLATE = """\
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>{cta}</h2>
-                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <a href="/Chau7.dmg" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
@@ -174,7 +174,7 @@ TEMPLATE = """\
                 <div class="footer-nav-col">
                     <h4>Resources</h4>
                     <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
-                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="/Chau7.dmg" target="_blank">Releases</a>
                     <a href="/llms.txt">llms.txt</a>
                 </div>
                 <div class="footer-nav-col">

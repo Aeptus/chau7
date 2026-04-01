@@ -28,7 +28,7 @@ class SiteNav extends HTMLElement {
                 <a href="/the-tech">The Tech</a>
                 <a href="/compare">Compare</a>
                 <a href="/pronunciation">How to say it</a>
-                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank" rel="noopener">Download</a>
+                <a href="/Chau7.dmg" class="nav-cta-download" download>Download</a>
             </div>
         </div>
     </nav>`;
@@ -65,7 +65,7 @@ class SiteFooter extends HTMLElement {
                 <div class="footer-nav-col">
                     <h4>Resources</h4>
                     <a href="https://github.com/nicmusic/chau7" target="_blank" rel="noopener">GitHub</a>
-                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank" rel="noopener">Releases</a>
+                    <a href="/Chau7.dmg" download>Download</a>
                     <a href="/llms.txt">llms.txt</a>
                     <a href="/llm">LLM Context</a>
                 </div>
@@ -85,7 +85,7 @@ class SiteFooter extends HTMLElement {
                 </div>
             </div>
             <div class="footer-bottom">
-                <span>310 Swift files &middot; Rust backend &middot; Metal GPU &middot; 1743 tests</span>
+                <span>311 Swift files &middot; Rust backend &middot; Metal GPU &middot; 1746 tests</span>
             </div>
         </div>
     </footer>`;
