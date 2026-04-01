@@ -75,6 +75,14 @@ final class NotificationTriggerCatalogTests: XCTestCase {
         XCTAssertEqual(trigger?.type, "finished")
     }
 
+    func testTriggerDirectLookupWaitingInput() {
+        let trigger = NotificationTriggerCatalog.trigger(source: .codex, type: "waiting_input")
+        XCTAssertNotNil(trigger)
+        XCTAssertEqual(trigger?.source, .codex)
+        XCTAssertEqual(trigger?.type, "waiting_input")
+        XCTAssertTrue(trigger?.defaultEnabled ?? false)
+    }
+
     func testTriggerDirectLookupCaseInsensitive() {
         let trigger = NotificationTriggerCatalog.trigger(source: .claudeCode, type: "FINISHED")
         XCTAssertNotNil(trigger)

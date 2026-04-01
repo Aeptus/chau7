@@ -1,6 +1,7 @@
 import XCTest
 #if !SWIFT_PACKAGE
 @testable import Chau7
+import Chau7Core
 
 @MainActor
 final class TerminalSessionModelTests: XCTestCase {
@@ -297,6 +298,59 @@ final class TerminalSessionModelTests: XCTestCase {
             session.tabIdentifier.isEmpty,
             "Tab identifier should not be empty"
         )
+    }
+
+    func testHandlePromptDetectedEmitsWaitingInputFallbackForSupportedAITool() async {
+        RuntimeSessionManager.shared.resetForTesting()
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let tabID = UUID()
+
+        session.ownerTabID = tabID
+        session.currentDirectory = "/tmp/mockup"
+        session.status = .running
+        session.lastDetectedAppName = "Codex"
+        session.lastAIProvider = "codex"
+
+        session.handlePromptDetected()
+        let expectation = expectation(description: "waiting input event recorded")
+        DispatchQueue.main.async { expectation.fulfill() }
+        await fulfillment(of: [expectation], timeout: 1.0)
+
+        let event = model.recentEvents.last
+        XCTAssertEqual(event?.source, .codex)
+        XCTAssertEqual(event?.type, "waiting_input")
+        XCTAssertEqual(event?.tabID, tabID)
+        XCTAssertEqual(event?.producer, "terminal_prompt_waiting_input")
+        XCTAssertEqual(event?.reliability, .fallback)
+        RuntimeSessionManager.shared.resetForTesting()
+    }
+
+    func testHandlePromptDetectedSkipsFallbackWhenRuntimeSessionOwnsTab() async {
+        RuntimeSessionManager.shared.resetForTesting()
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let tabID = UUID()
+
+        session.ownerTabID = tabID
+        session.currentDirectory = "/tmp/mockup"
+        session.status = .running
+        session.lastDetectedAppName = "Codex"
+        session.lastAIProvider = "codex"
+
+        _ = RuntimeSessionManager.shared.createSession(
+            tabID: tabID,
+            backend: CodexBackend(),
+            config: SessionConfig(directory: "/tmp/mockup", provider: "codex")
+        )
+
+        session.handlePromptDetected()
+        let expectation = expectation(description: "prompt handling settled")
+        DispatchQueue.main.async { expectation.fulfill() }
+        await fulfillment(of: [expectation], timeout: 1.0)
+
+        XCTAssertFalse(model.recentEvents.contains { $0.type == "waiting_input" })
+        RuntimeSessionManager.shared.resetForTesting()
     }
 
     // MARK: - Default Current Directory

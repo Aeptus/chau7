@@ -232,7 +232,10 @@ private struct AINotificationOverviewSection: View {
     }
 
     private func preference(for event: AINotificationPrimaryEvent) -> AINotificationPrimaryPreference {
-        let triggerId = AINotificationSettingsBridge.groupTriggerId(for: event, group: aiGroup)
+        let triggerId = AINotificationSettingsBridge.managedTriggerTypes(for: event)
+            .map { aiGroup.groupTriggerId(for: $0) }
+            .first { !(settings.groupActionBindings[$0] ?? []).isEmpty }
+            ?? AINotificationSettingsBridge.groupTriggerId(for: event, group: aiGroup)
         return AINotificationSettingsBridge.preference(
             for: event,
             currentActions: settings.groupActionBindings[triggerId] ?? [],
@@ -241,21 +244,24 @@ private struct AINotificationOverviewSection: View {
     }
 
     private func updatePreference(_ preference: AINotificationPrimaryPreference, for event: AINotificationPrimaryEvent) {
-        let triggerId = AINotificationSettingsBridge.groupTriggerId(for: event, group: aiGroup)
         var bindings = settings.groupActionBindings
-        bindings[triggerId] = AINotificationSettingsBridge.updatedActions(
-            for: event,
-            preference: preference,
-            currentActions: bindings[triggerId] ?? [],
-            defaultActions: NotificationSettings.defaultGroupActionBindings[triggerId] ?? []
-        )
+        for triggerType in AINotificationSettingsBridge.managedTriggerTypes(for: event) {
+            let triggerId = aiGroup.groupTriggerId(for: triggerType)
+            bindings[triggerId] = AINotificationSettingsBridge.updatedActions(
+                for: event,
+                preference: preference,
+                currentActions: bindings[triggerId] ?? [],
+                defaultActions: NotificationSettings.defaultGroupActionBindings[triggerId] ?? []
+            )
+        }
         settings.groupActionBindings = bindings
     }
 
     private func perSourceOverrideCount(for event: AINotificationPrimaryEvent) -> Int {
-        NotificationTriggerCatalog.all.filter {
+        let triggerTypes = Set(AINotificationSettingsBridge.managedTriggerTypes(for: event))
+        return NotificationTriggerCatalog.all.filter {
             aiGroup.contains(source: $0.source)
-                && $0.type == event.rawValue
+                && triggerTypes.contains($0.type)
                 && settings.notificationTriggerState.hasPerTriggerOverride(for: $0)
         }.count
     }

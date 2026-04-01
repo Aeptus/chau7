@@ -56,6 +56,22 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
     public static let aider = AIEventSource(rawValue: "aider")
     public static let cline = AIEventSource(rawValue: "cline")
     public static let continueAI = AIEventSource(rawValue: "continue_ai")
+
+    public static func forProvider(_ provider: String?) -> AIEventSource? {
+        guard let trimmed = provider?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        guard let tool = AIToolRegistry.allTools.first(where: {
+            $0.resumeProviderKey?.lowercased() == trimmed
+                || $0.displayName.lowercased() == trimmed
+                || $0.commandNames.contains(trimmed)
+        }),
+              let rawValue = tool.eventSourceRawValue else {
+            return nil
+        }
+        return AIEventSource(rawValue: rawValue)
+    }
 }
 
 public enum AIEventReliability: String, Codable, Sendable {
@@ -202,7 +218,7 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         switch type.lowercased() {
         case "needs_validation":
             return "\(prefix): Needs review"
-        case "idle":
+        case "idle", "waiting_input":
             return "\(prefix): Waiting for input"
         case "finished":
             return "\(prefix): Finished"
@@ -236,6 +252,8 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
             return message.isEmpty ? "Your input is required." : message
         case "idle":
             return message.isEmpty ? "No new history entries for a while." : message
+        case "waiting_input":
+            return message.isEmpty ? "Ready for your input." : message
         case "finished":
             return message.isEmpty ? "Done." : message
         case "failed":

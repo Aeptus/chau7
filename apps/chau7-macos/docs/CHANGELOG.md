@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Click-to-Copy Document Name**: Clicking the file name in the text editor pane header copies it to the clipboard.
 - **Notification Delivery Ledger**: Every AI notification event now records an explicit delivery lifecycle (ingested, coalesced, retry scheduled, prepared, dropped, rate-limited, actions executed, completed) with resolved tab, drop reason, and banner/style outcomes.
 - **Notification Reliability Dashboard**: Debug surfaces now summarize recent notification completions, drops, retries, rate limits, and authoritative deliveries for faster triage.
 - **Repository Tab Grouping**: Tabs can be grouped by git repository (Off/Auto/Manual modes). Grouped tabs show an inline repo-name tag chip with a thin connecting line overlaying their top borders, and suppress the redundant repo path from individual tab titles. Auto mode groups by detected gitRootPath; Manual mode lets users right-click to add/remove tabs from groups. Free drag reorder preserved.

@@ -53,6 +53,15 @@ public enum AINotificationSettingsBridge {
         .showNotification, .styleTab, .playSound, .dockBounce
     ]
 
+    public static func managedTriggerTypes(for event: AINotificationPrimaryEvent) -> [String] {
+        switch event {
+        case .permission:
+            return ["permission", "waiting_input"]
+        case .finished, .failed:
+            return [event.rawValue]
+        }
+    }
+
     public static func groupTriggerId(
         for event: AINotificationPrimaryEvent,
         group: NotificationTriggerGroup = NotificationTriggerCatalog.aiCodingGroup
@@ -84,9 +93,10 @@ public enum AINotificationSettingsBridge {
         group: NotificationTriggerGroup = NotificationTriggerCatalog.aiCodingGroup,
         catalog: [NotificationTrigger] = NotificationTriggerCatalog.all
     ) -> Bool {
-        catalog.contains {
+        let triggerTypes = Set(managedTriggerTypes(for: event))
+        return catalog.contains {
             group.contains(source: $0.source)
-                && $0.type == event.rawValue
+                && triggerTypes.contains($0.type)
                 && state.isEnabled(for: $0)
         }
     }
@@ -99,8 +109,11 @@ public enum AINotificationSettingsBridge {
         catalog: [NotificationTrigger] = NotificationTriggerCatalog.all
     ) -> NotificationTriggerState {
         var updated = state
-        updated.setGroupEnabled(enabled, groupId: group.id, type: event.rawValue)
-        for trigger in catalog where group.contains(source: trigger.source) && trigger.type == event.rawValue {
+        let triggerTypes = Set(managedTriggerTypes(for: event))
+        for type in triggerTypes {
+            updated.setGroupEnabled(enabled, groupId: group.id, type: type)
+        }
+        for trigger in catalog where group.contains(source: trigger.source) && triggerTypes.contains(trigger.type) {
             updated.removeOverride(for: trigger)
         }
         return updated

@@ -222,8 +222,12 @@ final class RuntimeSessionManager {
                     )
                 }
 
-                // Emit finished notification
-                emitNotification(session: session, type: "finished", message: event.message)
+                // Emit waiting-input notification for interactive agent responses.
+                emitNotification(
+                    session: session,
+                    type: "waiting_input",
+                    message: event.message.isEmpty ? "\(session.backend.name) is waiting for your input." : event.message
+                )
 
                 // Check token threshold (emit if > 100k total tokens)
                 if result.stats.totalTokens > 100_000 {

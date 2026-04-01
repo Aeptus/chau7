@@ -862,12 +862,12 @@ private struct ToolbarTabBarView: View {
                                         }
                                     )
                                     .gesture(
-                                        DragGesture(minimumDistance: 10, coordinateSpace: .global)
-                                            .onChanged { value in
+                                        DragGesture(minimumDistance: 10)
+                                            .onChanged { _ in
                                                 handleGroupDrag(groupID: groupID)
                                             }
-                                            .onEnded { value in
-                                                handleGroupDragEnd(groupID: groupID, dropScreenPoint: value.location)
+                                            .onEnded { _ in
+                                                handleGroupDragEnd(groupID: groupID, dropScreenPoint: NSEvent.mouseLocation)
                                             }
                                     )
                                     .opacity(draggingGroupID == groupID ? 0.5 : 1.0)
@@ -1085,12 +1085,14 @@ private struct ToolbarTabBarView: View {
         .zIndex(draggingTabID == tab.id ? 1 : 0)
         // Gesture-based tab reordering (more reliable than .onDrag in ScrollViews)
         .gesture(
-            DragGesture(minimumDistance: 5, coordinateSpace: .global)
+            DragGesture(minimumDistance: 5)
                 .onChanged { value in
                     handleTabDrag(tab: tab, translation: value.translation)
                 }
-                .onEnded { value in
-                    handleTabDragEnd(tab: tab, dropScreenPoint: value.location)
+                .onEnded { _ in
+                    // Use NSEvent.mouseLocation for reliable screen coordinates
+                    // (DragGesture coordinate spaces are view-relative, not screen)
+                    handleTabDragEnd(tab: tab, dropScreenPoint: NSEvent.mouseLocation)
                 }
         )
     }

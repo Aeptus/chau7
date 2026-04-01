@@ -1109,15 +1109,18 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         monitor.onResponseComplete = { [weak self] event in
             Log.info("Claude Code response complete: \(event.projectName)")
             self?.syncClaudeCodeSessions()
+            guard RuntimeSessionManager.shared.sessionForClaudeSessionID(event.sessionId) == nil else {
+                return
+            }
             self?.recordEvent(
                 source: .claudeCode,
-                type: "finished",
+                type: "waiting_input",
                 tool: "Claude",
-                message: "Claude finished in \(event.projectName)",
+                message: "Claude is waiting for your input in \(event.projectName)",
                 notify: true,
                 directory: event.cwd.isEmpty ? nil : event.cwd,
                 sessionID: event.sessionId,
-                producer: "claude_code_complete",
+                producer: "claude_code_waiting_input",
                 reliability: .authoritative
             )
         }

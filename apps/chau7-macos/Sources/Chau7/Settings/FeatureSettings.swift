@@ -193,6 +193,16 @@ struct NotificationSettings: Equatable {
                 "persistent": "true"
             ])
         ],
+        "ai_coding.waiting_input": [
+            NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
+                "style": "custom",
+                "customColor": "red",
+                "borderWidth": "2",
+                "borderStyle": "solid",
+                "persistent": "true"
+            ])
+        ],
         "ai_coding.idle": [
             NotificationActionConfig(actionType: .showNotification, enabled: true)
         ]
@@ -238,6 +248,8 @@ private extension FeatureSettings {
                 state.setEnabled(filters.needsValidation, for: trigger)
             case "permission":
                 state.setEnabled(filters.permissionRequest, for: trigger)
+            case "waiting_input":
+                state.setEnabled(filters.permissionRequest, for: trigger)
             case "tool_complete":
                 state.setEnabled(filters.toolComplete, for: trigger)
             case "session_end":
@@ -262,7 +274,7 @@ private extension FeatureSettings {
             taskFinished: anyEnabled("finished"),
             taskFailed: anyEnabled("failed"),
             needsValidation: anyEnabled("needs_validation"),
-            permissionRequest: anyEnabled("permission"),
+            permissionRequest: anyEnabled("permission") || anyEnabled("waiting_input"),
             toolComplete: anyEnabled("tool_complete"),
             sessionEnd: anyEnabled("session_end"),
             commandIdle: anyEnabled("idle")
@@ -332,11 +344,13 @@ private extension FeatureSettings {
             "claude_code.finished": finishedActions,
             "claude_code.failed": failedActions,
             "claude_code.permission": permissionActions,
+            "claude_code.waiting_input": permissionActions,
             "claude_code.idle": idleActions,
             // Codex triggers
             "codex.finished": finishedActions,
             "codex.failed": failedActions,
             "codex.permission": permissionActions,
+            "codex.waiting_input": permissionActions,
             "codex.idle": idleActions,
             // App triggers
             "app.file_conflict": conflictActions
