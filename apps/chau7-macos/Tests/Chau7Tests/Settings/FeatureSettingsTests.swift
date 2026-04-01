@@ -46,6 +46,42 @@ final class FeatureSettingsTests: XCTestCase {
         XCTAssertFalse(filters.commandIdle)
     }
 
+    func testNotificationTriggerStateMapsWaitingInputToPermissionRequest() {
+        let state = FeatureSettings.triggerState(
+            from: NotificationFilters(
+                taskFinished: false,
+                taskFailed: false,
+                needsValidation: false,
+                permissionRequest: true,
+                toolComplete: false,
+                sessionEnd: false,
+                commandIdle: false
+            )
+        )
+
+        let waitingTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "waiting_input")
+        let attentionTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "attention_required")
+        let finishedTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "finished")
+
+        XCTAssertNotNil(waitingTrigger)
+        XCTAssertNotNil(attentionTrigger)
+        XCTAssertNotNil(finishedTrigger)
+        XCTAssertTrue(state.isEnabled(for: waitingTrigger!))
+        XCTAssertTrue(state.isEnabled(for: attentionTrigger!))
+        XCTAssertFalse(state.isEnabled(for: finishedTrigger!))
+    }
+
+    func testLegacyNotificationFiltersTreatWaitingInputAsPermissionRequest() {
+        var state = NotificationTriggerState()
+        let waitingTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "waiting_input")!
+        state.setEnabled(true, for: waitingTrigger)
+
+        let filters = FeatureSettings.legacyNotificationFilters(from: state)
+
+        XCTAssertFalse(filters.taskFinished)
+        XCTAssertTrue(filters.permissionRequest)
+    }
+
     // MARK: - Color Scheme Defaults
 
     func testDefaultColorSchemeName() {
