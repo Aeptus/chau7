@@ -49,13 +49,26 @@ final class NotificationHistory {
         self.maxEntries = maxEntries
     }
 
-    func begin(event: AIEvent) {
+    func begin(
+        event: AIEvent,
+        semanticKind: String? = nil,
+        rawType: String? = nil,
+        notificationType: String? = nil
+    ) {
+        let effectiveRawType = rawType ?? event.rawType
+        var notes: [String] = []
+        if let effectiveRawType, effectiveRawType != event.type {
+            notes.append("rawType:\(effectiveRawType)")
+        }
+        if let notificationType {
+            notes.append("notificationType:\(notificationType)")
+        }
         let entry = Entry(
             id: event.id,
             source: event.source.rawValue,
             type: event.type,
-            rawType: event.rawType ?? event.type,
-            semanticKind: nil,
+            rawType: effectiveRawType,
+            semanticKind: semanticKind,
             tool: event.tool,
             message: event.message,
             notificationType: event.notificationType,
@@ -71,7 +84,7 @@ final class NotificationHistory {
             resolvedTabID: event.tabID?.uuidString,
             didDispatchBanner: false,
             didStyleTab: false,
-            notes: []
+            notes: notes
         )
         store(entry)
     }

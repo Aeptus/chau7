@@ -89,12 +89,32 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
-            return XCTFail("Expected runtime canonicalization")
+        guard case let .passThrough(adapted) = decision else {
+            return XCTFail("Expected runtime canonical event to pass through unchanged")
         }
 
-        XCTAssertEqual(canonical.kind, .waitingForInput)
         XCTAssertEqual(adapted.type, "waiting_input")
         XCTAssertEqual(adapted.tool, "Codex")
+    }
+
+    func testUnsupportedGenericAIEventIsDropped() {
+        let event = AIEvent(
+            source: .runtime,
+            type: "provider_internal_state",
+            rawType: "provider_internal_state",
+            tool: "Codex",
+            message: "internal state",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "session-1",
+            producer: "runtime_session_manager",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .drop(reason) = decision else {
+            return XCTFail("Expected unsupported generic AI raw event to be dropped")
+        }
+
+        XCTAssertTrue(reason.contains("Unsupported generic AI raw event"))
     }
 }

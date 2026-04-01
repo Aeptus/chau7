@@ -14,6 +14,15 @@ public enum NotificationProviderAdapterRegistry {
                 return nil
             }
         }
+
+        public var canonicalEvent: CanonicalNotificationEvent? {
+            switch self {
+            case .emit(_, let canonical):
+                return canonical
+            case .passThrough, .drop:
+                return nil
+            }
+        }
     }
 
     public static func adapt(_ event: AIEvent) -> Decision {
@@ -41,13 +50,16 @@ public enum NotificationProviderAdapterRegistry {
     }
 
     private static func adaptGenericAIEvent(_ event: AIEvent) -> Decision {
+        if event.rawType == nil, NotificationSemanticMapping.kind(rawType: event.type) != .unknown {
+            return .passThrough(event)
+        }
         let providerEvent = NotificationProviderEvent(event: event)
         let kind = NotificationSemanticMapping.kind(
             rawType: providerEvent.rawType,
             notificationType: providerEvent.notificationType
         )
         guard kind != .unknown else {
-            return .passThrough(event)
+            return .drop(reason: "Unsupported generic AI raw event \(providerEvent.rawType ?? event.type)")
         }
         let canonical = providerEvent.canonicalEvent(kind: kind, reliability: event.reliability)
         return .emit(canonical.asAIEvent(source: event.source, producer: event.producer), canonical: canonical)

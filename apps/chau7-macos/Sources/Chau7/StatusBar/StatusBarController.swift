@@ -407,7 +407,7 @@ final class CommandCenterViewModel: ObservableObject {
                 id: entry.id,
                 icon: entry.wasRateLimited ? "bell.slash" : "bell.fill",
                 iconColor: entry.wasRateLimited ? .gray : .orange,
-                title: triggerLabel ?? Self.humanReadableType(entry.type),
+                title: triggerLabel ?? Self.humanReadableType(entry.type, semanticKind: entry.semanticKind),
                 detail: Self.cleanDetail(tool: entry.tool, message: entry.message),
                 timestamp: entry.timestamp,
                 isRateLimited: entry.wasRateLimited
@@ -502,22 +502,35 @@ final class CommandCenterViewModel: ObservableObject {
             .replacingOccurrences(of: "-", with: "_")
     }
 
+    private static func eventSemanticKind(for event: AIEvent) -> NotificationSemanticKind {
+        NotificationSemanticMapping.kind(
+            rawType: event.rawType ?? event.type,
+            notificationType: event.notificationType
+        )
+    }
+
     /// Icon for an AIEvent, chosen by type first, then by source for unknown types.
     private static func eventIcon(for event: AIEvent) -> String {
+        switch eventSemanticKind(for: event) {
+        case .taskFinished: return "text.bubble"
+        case .taskFailed: return "exclamationmark.circle"
+        case .permissionRequired: return "exclamationmark.triangle"
+        case .waitingForInput: return "keyboard"
+        case .attentionRequired: return "bell"
+        case .authenticationSucceeded: return "checkmark.shield"
+        case .idle: return "moon"
+        case .informational, .unknown: break
+        }
+
         switch normalizedEventType(event.type) {
         case "user_prompt", "userprompt": return "person.fill"
         case "tool_start", "toolstart", "tool_called", "toolcalled": return "hammer"
         case "tool_complete": return "checkmark.circle"
-        case "permission", "permission_request": return "exclamationmark.triangle"
-        case "response_complete", "finished": return "text.bubble"
         case "session_end": return "xmark.circle"
-        case "idle": return "moon"
-        case "error", "failed": return "exclamationmark.circle"
         case "api_call": return "arrow.up.arrow.down"
         case "file_edited": return "doc.text"
         case "context_limit": return "gauge.with.dots.needle.33percent"
         case "token_threshold", "cost_threshold": return "dollarsign.circle"
-        case "notification": return "bell"
         default:
             // Fall back to source-based icon for unrecognized types
             switch event.source {
@@ -533,13 +546,20 @@ final class CommandCenterViewModel: ObservableObject {
 
     /// Color for an AIEvent based on its type string.
     private static func eventColor(for event: AIEvent) -> Color {
+        switch eventSemanticKind(for: event) {
+        case .taskFinished: return .blue
+        case .taskFailed: return .red
+        case .permissionRequired: return .yellow
+        case .waitingForInput, .attentionRequired: return .orange
+        case .authenticationSucceeded: return .green
+        case .idle: return .gray
+        case .informational, .unknown: break
+        }
+
         switch normalizedEventType(event.type) {
         case "user_prompt": return .green
-        case "permission", "permission_request": return .yellow
-        case "session_end", "error", "failed": return .red
-        case "response_complete", "finished": return .blue
+        case "session_end": return .red
         case "tool_complete": return .cyan
-        case "idle": return .gray
         case "api_call": return .purple
         default: return .secondary
         }
@@ -548,6 +568,27 @@ final class CommandCenterViewModel: ObservableObject {
     /// Human-readable title from an AIEvent.
     /// Works across all tool sources — not Claude Code specific.
     private static func humanReadableEvent(_ event: AIEvent) -> String {
+        switch eventSemanticKind(for: event) {
+        case .taskFinished:
+            return L("statusBar.timeline.responseComplete", "Finished responding")
+        case .taskFailed:
+            return L("statusBar.timeline.error", "Error occurred")
+        case .permissionRequired:
+            return L("statusBar.timeline.permissionRequest", "Needs permission")
+        case .waitingForInput:
+            return L("statusBar.timeline.waitingInput", "Waiting for input")
+        case .attentionRequired:
+            return event.message.isEmpty
+                ? L("statusBar.timeline.notification", "Needs attention")
+                : event.message
+        case .authenticationSucceeded:
+            return L("statusBar.timeline.authenticated", "Authenticated")
+        case .idle:
+            return L("statusBar.timeline.sessionIdle", "Session idle")
+        case .informational, .unknown:
+            break
+        }
+
         switch normalizedEventType(event.type) {
         case "user_prompt", "userprompt":
             return L("statusBar.timeline.userPrompt", "Prompt sent")
@@ -559,16 +600,8 @@ final class CommandCenterViewModel: ObservableObject {
         case "tool_complete":
             return L("statusBar.timeline.toolComplete", "%@ done")
                 .replacingOccurrences(of: "%@", with: friendlyToolName(event.tool))
-        case "permission", "permission_request":
-            return L("statusBar.timeline.permissionRequest", "Needs permission")
-        case "response_complete", "finished":
-            return L("statusBar.timeline.responseComplete", "Finished responding")
         case "session_end":
             return L("statusBar.timeline.sessionEnded", "Session ended")
-        case "idle":
-            return L("statusBar.timeline.sessionIdle", "Session idle")
-        case "error", "failed":
-            return L("statusBar.timeline.error", "Error occurred")
         case "api_call":
             return "\(friendlySourceName(event.source)) API call"
         case "file_edited":
@@ -577,14 +610,10 @@ final class CommandCenterViewModel: ObservableObject {
             return L("statusBar.timeline.contextLimit", "Context limit reached")
         case "token_threshold", "cost_threshold":
             return L("statusBar.timeline.usageThreshold", "Usage threshold")
-        case "notification":
-            return event.message.isEmpty
-                ? L("statusBar.timeline.notification", "Notification")
-                : event.message
         case "command_finished":
             return L("statusBar.timeline.commandFinished", "Command finished")
         default:
-            return humanReadableType(normalizedEventType(event.type))
+            return humanReadableType(normalizedEventType(event.type), semanticKind: nil)
         }
     }
 
@@ -598,7 +627,7 @@ final class CommandCenterViewModel: ObservableObject {
             let file = extractFileName(from: event.message)
             if let file { return "\(source) — \(file)" }
             return event.message.isEmpty ? source : "\(source) — \(event.message)"
-        case "permission", "permission_request":
+        case "permission", "permission_request", "waiting_input", "attention_required":
             if !event.tool.isEmpty {
                 return "\(source) — \(friendlyToolName(event.tool))"
             }
@@ -627,12 +656,40 @@ final class CommandCenterViewModel: ObservableObject {
     /// Human-readable type string for notification history entries.
     /// NotificationHistory stores AIEvent.type as a string — these are the same
     /// tool-agnostic type values used across all monitored tools.
-    private static func humanReadableType(_ type: String) -> String {
+    private static func humanReadableType(_ type: String, semanticKind: String?) -> String {
+        if let semanticKind,
+           let kind = NotificationSemanticKind(rawValue: semanticKind) {
+            switch kind {
+            case .taskFinished:
+                return L("statusBar.timeline.responseComplete", "Finished responding")
+            case .taskFailed:
+                return L("statusBar.timeline.error", "Error occurred")
+            case .permissionRequired:
+                return L("statusBar.timeline.permissionRequest", "Needs permission")
+            case .waitingForInput:
+                return L("statusBar.timeline.waitingInput", "Waiting for input")
+            case .attentionRequired:
+                return L("statusBar.timeline.notification", "Needs attention")
+            case .authenticationSucceeded:
+                return L("statusBar.timeline.authenticated", "Authenticated")
+            case .idle:
+                return L("statusBar.timeline.sessionIdle", "Session idle")
+            case .informational:
+                return L("statusBar.timeline.info", "Information")
+            case .unknown:
+                break
+            }
+        }
+
         switch type {
-        case "finished", "response_complete":
+        case "finished":
             return L("statusBar.timeline.responseComplete", "Finished responding")
-        case "permission", "permission_request":
+        case "permission":
             return L("statusBar.timeline.permissionRequest", "Needs permission")
+        case "waiting_input":
+            return L("statusBar.timeline.waitingInput", "Waiting for input")
+        case "attention_required":
+            return L("statusBar.timeline.notification", "Needs attention")
         case "idle":
             return L("statusBar.timeline.sessionIdle", "Session idle")
         case "tool_called", "tool_start":
