@@ -262,3 +262,4 @@ Telemetry,Canonical Run Token Metrics,"Transcript-derived AI runs now persist se
 Telemetry,Transcript Metric Sanitization,"Claude/Codex transcript extraction now slices per run, deduplicates repeated usage blocks, and invalidates implausible historical totals",Shipped,Yes
 Debug,Split Analytics Views,"Debug console now separates proxy API-call analytics from transcript-derived AI run telemetry, with explicit cost coverage labeling for missing run pricing",Shipped,Yes
 Settings,OpenAI Proxy Routing Toggle,"Proxy settings expose an explicit toggle for routing OpenAI-compatible clients such as Codex through the local analytics proxy",Shipped,Yes
+Telemetry,Historical Metrics Repair,"Debug console can rebuild transcript-derived Claude/Codex run metrics in place to repair historical token corruption after parser fixes",Shipped,Yes
