@@ -737,33 +737,25 @@ private struct ToolbarTabBarView: View {
 
     // MARK: - Group Bracket Drag
 
-    private func handleGroupDrag(groupID: String, translation: CGSize) {
+    private func handleGroupDrag(groupID: String) {
         overlayModel.dismissHoverCard()
         if draggingGroupID == nil {
             draggingGroupID = groupID
-            // Capture starting screen point from bracket geometry
-            if let frame = overlayModel.groupBracketHitTestFrames.first(where: { $0.repoGroupID == groupID }) {
-                let midX = (frame.minX + frame.maxX) / 2
-                groupDragStartScreenPoint = CGPoint(x: midX, y: 0)
-            }
         }
     }
 
-    private func handleGroupDragEnd(groupID: String, translation: CGSize) {
+    private func handleGroupDragEnd(groupID: String, dropScreenPoint: CGPoint) {
         guard draggingGroupID == groupID else { return }
         defer {
             withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
                 draggingGroupID = nil
-                groupDragStartScreenPoint = nil
             }
         }
 
-        guard let startPoint = groupDragStartScreenPoint else { return }
-        let dropPoint = CGPoint(x: startPoint.x + translation.width, y: startPoint.y + translation.height)
-
+        // dropScreenPoint is in global (screen) coordinates from DragGesture(.global)
         if let appDelegate = NSApp.delegate as? AppDelegate {
             let moved = appDelegate.handleGroupDrop(
-                repoGroupID: groupID, from: overlayModel, atScreenPoint: dropPoint
+                repoGroupID: groupID, from: overlayModel, atScreenPoint: dropScreenPoint
             )
             if moved {
                 Log.info("Group drag completed: \(URL(fileURLWithPath: groupID).lastPathComponent) moved to other window")
@@ -870,12 +862,12 @@ private struct ToolbarTabBarView: View {
                                         }
                                     )
                                     .gesture(
-                                        DragGesture(minimumDistance: 10)
+                                        DragGesture(minimumDistance: 10, coordinateSpace: .global)
                                             .onChanged { value in
-                                                handleGroupDrag(groupID: groupID, translation: value.translation)
+                                                handleGroupDrag(groupID: groupID)
                                             }
                                             .onEnded { value in
-                                                handleGroupDragEnd(groupID: groupID, translation: value.translation)
+                                                handleGroupDragEnd(groupID: groupID, dropScreenPoint: value.location)
                                             }
                                     )
                                     .opacity(draggingGroupID == groupID ? 0.5 : 1.0)
@@ -1093,12 +1085,12 @@ private struct ToolbarTabBarView: View {
         .zIndex(draggingTabID == tab.id ? 1 : 0)
         // Gesture-based tab reordering (more reliable than .onDrag in ScrollViews)
         .gesture(
-            DragGesture(minimumDistance: 5)
+            DragGesture(minimumDistance: 5, coordinateSpace: .global)
                 .onChanged { value in
                     handleTabDrag(tab: tab, translation: value.translation)
                 }
                 .onEnded { value in
-                    handleTabDragEnd(tab: tab, translation: value.translation)
+                    handleTabDragEnd(tab: tab, dropScreenPoint: value.location)
                 }
         )
     }
@@ -1184,15 +1176,15 @@ private struct ToolbarTabBarView: View {
         )
     }
 
-    private func handleTabDragEnd(tab: OverlayTab, translation: CGSize) {
+    private func handleTabDragEnd(tab: OverlayTab, dropScreenPoint: CGPoint) {
         // Ignore if this isn't the tab being dragged (or no drag active)
         guard draggingTabID == tab.id else { return }
 
         let from = dragHomeIndex
         let to = dragCurrentSlot
-        let movedAcrossWindows = dragStartScreenPoint
-            .map { CGPoint(x: $0.x + translation.width, y: $0.y + translation.height) }
-            .flatMap { (NSApp.delegate as? AppDelegate)?.handleTabDrop(tabID: tab.id, from: overlayModel, atScreenPoint: $0) }
+        // dropScreenPoint is in global (screen) coordinates from DragGesture(.global)
+        let movedAcrossWindows = (NSApp.delegate as? AppDelegate)?
+            .handleTabDrop(tabID: tab.id, from: overlayModel, atScreenPoint: dropScreenPoint)
             ?? false
 
         // Clear drag visuals and commit reorder in the same animation transaction
