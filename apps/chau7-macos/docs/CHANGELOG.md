@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Privacy-First Bug Report Dialog**: New in-app issue reporter (⌥⌘I) with all sensitive sections off by default, per-toggle tab pickers, live markdown preview, inline privacy warnings, and optional remembered contact info. Submits privately via Cloudflare Worker relay.
+- **Relay /issue Endpoint**: Cloudflare Worker `POST /issue` proxies to GitHub Issues API with server-side PAT, Durable Object rate limiting (5/hour/IP), repo path sanitization, and CORS support.
 - **Repo-Level Aggregated Metrics**: Per-repository stats (command count, success rate, AI runs, tokens, cost, providers, top tools) computed on demand from both SQLite stores. Surfaced in Debug Console "Repos" analytics tab, Data Explorer enriched rows, and TabHoverCard condensed line (togglable via `hoverCardShowRepoStats`).
 - **Click-to-Copy Document Name**: Clicking the file name in the text editor pane header copies it to the clipboard.
 - **Notification Delivery Ledger**: Every AI notification event now records an explicit delivery lifecycle (ingested, coalesced, retry scheduled, prepared, dropped, rate-limited, actions executed, completed) with resolved tab, drop reason, and banner/style outcomes.

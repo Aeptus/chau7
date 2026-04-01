@@ -212,7 +212,7 @@ Debugging,Debug Console,"Cmd+Shift+D — live log viewer with State, Contexts, E
 Debugging,State Inspector,View live app state: tabs and sessions and models,Shipped,No
 Debugging,Feature Profiler,Per-feature timing metrics with os.signpost integration,Shipped,No
 Debugging,Structured Logging,"Category-based logging with correlation IDs (App, Tabs, Terminal, Render, etc.)",Shipped,No
-Debugging,Bug Report Generator,One-click detailed bug reports with full app state snapshot,Shipped,No
+Debugging,Privacy-First Bug Report Dialog,"In-app issue reporter (⌥⌘I) with all sensitive data off by default, per-toggle tab pickers, live markdown preview, and private relay submission",Shipped,Yes
 Debugging,Verbose & Trace Modes,CHAU7_VERBOSE=1 and CHAU7_TRACE=1 for deep diagnostics,Shipped,No
 Command Palette,Command Palette,Cmd+Shift+P for fuzzy-searchable command palette (VS Code style),Shipped,No
 Monitoring,Dev Server Detection,Auto-detect running dev servers by port scanning,Shipped,No
