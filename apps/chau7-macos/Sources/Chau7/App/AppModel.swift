@@ -503,8 +503,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             message: message,
             ts: DateFormatters.iso8601.string(from: event.timestamp)
         )
-        recentEvents.append(aiEvent)
-        recentEvents.trimToLast(25)
+        DispatchQueue.main.async { [weak self] in
+            self?.publishUnifiedEvent(aiEvent, notify: false)
+        }
 
         Log.info("API call recorded: \(event.provider.rawValue) \(event.model) $\(String(format: "%.4f", event.costUSD))")
     }
@@ -852,12 +853,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             Log.info("Recorded event: type=\(type) tool=\(tool) message=\"\(sanitizedMessage)\"")
         }
         DispatchQueue.main.async { [weak self] in
-            if notify {
-                NotificationManager.shared.notify(for: event)
-            }
-            guard let self else { return }
-            recentEvents.append(event)
-            recentEvents.trimToLast(25)
+            self?.publishUnifiedEvent(event, notify: notify)
         }
     }
 
@@ -908,10 +904,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         tailer = FileTailer<AIEvent>.eventTailer(fileURL: url) { [weak self] event in
             Log.trace("Event received: type=\(event.type) tool=\(event.tool) message=\"\(event.message)\"")
             DispatchQueue.main.async {
-                NotificationManager.shared.notify(for: event)
-                guard let self else { return }
-                self.recentEvents.append(event)
-                self.recentEvents.trimToLast(25)
+                self?.publishUnifiedEvent(event, notify: true)
             }
         }
         tailer?.start()
@@ -1073,13 +1066,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 reliability: .authoritative
             )
 
-            recentEvents.append(aiEvent)
-            recentEvents.trimToLast(25)
-
-            // Feed into the notification pipeline so tab styling, system
-            // notifications, and all configured actions fire for Claude Code events.
-            Task { @MainActor in
-                NotificationManager.shared.notify(for: aiEvent)
+            Task { @MainActor [weak self] in
+                self?.publishUnifiedEvent(aiEvent, notify: true)
             }
 
             // Bridge session IDs from Claude Code hooks to the telemetry system.
@@ -1356,11 +1344,41 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 producer: "history_idle_monitor",
                 reliability: .fallback
             )
-            NotificationManager.shared.notify(for: event)
-            guard let self else { return }
-            recentEvents.append(event)
-            recentEvents.trimToLast(25)
+            self?.publishUnifiedEvent(event, notify: true)
         }
+    }
+
+    private func publishUnifiedEvent(_ event: AIEvent, notify: Bool) {
+        let sharedEvent: AIEvent?
+        switch NotificationProviderAdapterRegistry.adapt(event) {
+        case .emit(let adapted, _), .passThrough(let adapted):
+            sharedEvent = adapted
+        case .drop:
+            sharedEvent = nil
+        }
+
+        guard let sharedEvent else { return }
+
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                publishUnifiedEventOnMain(sharedEvent, notify: notify)
+            }
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.publishUnifiedEventOnMain(sharedEvent, notify: notify)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func publishUnifiedEventOnMain(_ event: AIEvent, notify: Bool) {
+        if notify {
+            NotificationManager.shared.notify(for: event)
+        }
+        recentEvents.append(event)
+        recentEvents.trimToLast(25)
     }
 
     private func appendTerminalLine(_ line: String, toolName: String) {
