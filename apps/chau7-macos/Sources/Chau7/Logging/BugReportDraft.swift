@@ -16,6 +16,9 @@ final class BugReportDraft: ObservableObject {
     let currentTabID: UUID?
     let availableTabs: [(id: UUID, label: String)]
 
+    /// Shared formatter — allocated once, not per render cycle.
+    private static let isoFormatter = ISO8601DateFormatter()
+
     // MARK: - User Input
 
     @Published var userDescription = ""
@@ -103,6 +106,15 @@ final class BugReportDraft: ObservableObject {
         return result
     }
 
+    /// Redact a tab title — shell may set it to a full path.
+    static func redactTitle(_ title: String) -> String {
+        // If the title looks like an absolute path, redact it
+        if title.hasPrefix("/") || title.hasPrefix(NSHomeDirectory()) {
+            return redactPath(title)
+        }
+        return title
+    }
+
     // MARK: - Terminal History Capture
 
     /// Reads the last N lines of scrollback from a tab via TerminalControlService.
@@ -123,7 +135,7 @@ final class BugReportDraft: ObservableObject {
         var sections: [String] = []
 
         // Header — always included
-        sections.append("# Chau7 Bug Report\nGenerated: \(ISO8601DateFormatter().string(from: snapshot.timestamp))")
+        sections.append("# Chau7 Bug Report\nGenerated: \(Self.isoFormatter.string(from: snapshot.timestamp))")
 
         // Contact info — only if provided
         if !contactName.isEmpty || !contactHandle.isEmpty {
@@ -151,7 +163,8 @@ final class BugReportDraft: ObservableObject {
 
         // Tab metadata
         if includeTabMetadata, let tab = tabState(for: metadataTabID) {
-            var tabSection = "## Tab: \(tab.customTitle ?? tab.title)"
+            let displayTitle = Self.redactTitle(tab.customTitle ?? tab.title)
+            var tabSection = "## Tab: \(displayTitle)"
             tabSection += "\n- Status: \(tab.status)"
             tabSection += "\n- Active App: \(tab.activeAppName ?? "none")"
             tabSection += "\n- Directory: \(Self.redactPath(tab.currentDirectory))"
@@ -170,12 +183,11 @@ final class BugReportDraft: ObservableObject {
             }
         }
 
-        // AI session
+        // AI session — only include sessions matching the selected tab, never all
         if includeAISession, let sessionTabID = aiSessionTabID {
             let tabDir = tabState(for: sessionTabID)?.currentDirectory ?? ""
             let matching = snapshot.claudeSessions.filter { session in
                 guard !tabDir.isEmpty else { return false }
-                // Compare raw paths: exact match or one is a prefix of the other
                 return session.projectName == tabDir
                     || tabDir.hasPrefix(session.projectName)
                     || session.projectName.hasPrefix(tabDir)
@@ -186,18 +198,11 @@ final class BugReportDraft: ObservableObject {
                     aiSection += "\n- State: \(session.state)"
                     aiSection += " | Project: \(Self.redactPath(session.projectName))"
                     aiSection += " | Last tool: \(session.lastToolName ?? "none")"
-                    aiSection += " | Last activity: \(ISO8601DateFormatter().string(from: session.lastActivity))"
+                    aiSection += " | Last activity: \(Self.isoFormatter.string(from: session.lastActivity))"
                 }
                 sections.append(aiSection)
-            } else if !snapshot.claudeSessions.isEmpty {
-                // Fallback: include all sessions if we can't match by tab
-                var aiSection = "## AI Sessions"
-                for session in snapshot.claudeSessions {
-                    aiSection += "\n- Project: \(Self.redactPath(session.projectName))"
-                    aiSection += " | State: \(session.state)"
-                    aiSection += " | Last tool: \(session.lastToolName ?? "none")"
-                }
-                sections.append(aiSection)
+            } else {
+                sections.append("## AI Sessions\n(No AI session found for the selected tab)")
             }
         }
 
@@ -230,6 +235,9 @@ final class BugReportDraft: ObservableObject {
         let endpoint = FeatureSettings.shared.bugReportIssueEndpoint
         guard let url = URL(string: endpoint), !endpoint.isEmpty else {
             throw BugReportError.invalidEndpoint
+        }
+        guard url.scheme == "https" else {
+            throw BugReportError.insecureEndpoint
         }
 
         let title = "Bug report from Chau7 \(snapshot.appVersion)"
@@ -268,9 +276,10 @@ final class BugReportDraft: ObservableObject {
         return 0 // success but no issue number returned
     }
 
-    /// Save report locally as a fallback.
-    func saveLocally() -> String? {
-        let report = markdownReport
+    /// Save report locally. Uses the provided snapshot if available (e.g. same
+    /// string that was submitted), otherwise captures the current state.
+    func saveLocally(preparedReport: String? = nil) -> String? {
+        let report = preparedReport ?? markdownReport
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         let filename = "chau7-bug-report-\(formatter.string(from: Date())).md"
@@ -307,6 +316,7 @@ final class BugReportDraft: ObservableObject {
 
 enum BugReportError: LocalizedError {
     case invalidEndpoint
+    case insecureEndpoint
     case rateLimited
     case networkError(String)
     case serverError(Int, String)
@@ -315,6 +325,8 @@ enum BugReportError: LocalizedError {
         switch self {
         case .invalidEndpoint:
             return "Issue reporting endpoint is not configured."
+        case .insecureEndpoint:
+            return "Issue reporting endpoint must use HTTPS."
         case .rateLimited:
             return "Too many reports submitted recently. Please try again later."
         case .networkError(let msg):
