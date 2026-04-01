@@ -1029,14 +1029,21 @@ struct DebugConsoleView: View {
     }
 
     private var eventsForDisplay: [AIEvent] {
-        let mappedClaudeEvents = appModel.claudeCodeEvents.map { event in
-            AIEvent(
+        let mappedClaudeEvents = appModel.claudeCodeEvents.compactMap { event in
+            let rawEvent = AIEvent(
                 source: .claudeCode,
                 type: event.type.rawValue,
                 tool: event.toolName.isEmpty ? (event.hook.isEmpty ? "Claude" : event.hook) : event.toolName,
                 message: event.message,
                 ts: DateFormatters.iso8601.string(from: event.timestamp)
             )
+
+            switch NotificationProviderAdapterRegistry.adapt(rawEvent) {
+            case .emit(let adapted, _), .passThrough(let adapted):
+                return adapted
+            case .drop:
+                return nil
+            }
         }
 
         if showAllEvents {
@@ -1080,19 +1087,20 @@ struct DebugConsoleView: View {
     }
 
     private func aiEventTypeColor(_ type: String) -> Color {
-        let normalized = type.lowercased()
-        if normalized.contains("error") || normalized.contains("failed") {
+        let semanticKind = NotificationSemanticMapping.kind(rawType: type)
+        switch semanticKind {
+        case .taskFailed:
             return .red
-        }
-        if normalized.contains("permission") {
+        case .permissionRequired:
             return .yellow
-        }
-        if normalized.contains("idle") {
+        case .waitingForInput, .attentionRequired, .idle:
             return .orange
-        }
-        if normalized == "responsecomplete" || normalized == "response_complete" || normalized == "finished" {
+        case .taskFinished:
             return .purple
+        default:
+            break
         }
+        let normalized = type.lowercased()
         if normalized.contains("tool") || normalized.contains("process_") {
             return .blue
         }

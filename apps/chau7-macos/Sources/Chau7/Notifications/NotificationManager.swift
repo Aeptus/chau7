@@ -90,8 +90,26 @@ final class NotificationManager {
         }
 
         DispatchQueue.main.async { [weak self] in
-            self?.history.begin(event: event)
-            self?.enqueueEvent(event)
+            self?.ingestEvent(event)
+        }
+    }
+
+    private func ingestEvent(_ event: AIEvent) {
+        switch NotificationProviderAdapterRegistry.adapt(event) {
+        case .drop(let reason):
+            Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
+            return
+        case .passThrough(let adapted):
+            history.begin(event: adapted)
+            enqueueEvent(adapted)
+        case .emit(let adapted, let canonical):
+            history.begin(
+                event: adapted,
+                semanticKind: canonical.kind.rawValue,
+                rawType: canonical.rawType,
+                notificationType: canonical.notificationType
+            )
+            enqueueEvent(adapted)
         }
     }
 
@@ -133,34 +151,16 @@ final class NotificationManager {
     private func processEvent(_ event: AIEvent) {
         pruneAuthoritativeEvents()
 
-        let normalizedEvent: AIEvent
-        switch NotificationProviderAdapterRegistry.adapt(event) {
-        case .drop(let reason):
-            Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
-            history.markDropped(eventID: event.id, reason: reason)
-            return
-        case .passThrough(let adapted):
-            normalizedEvent = adapted
-        case .emit(let adapted, let canonical):
-            normalizedEvent = adapted
-            history.markCanonicalized(
-                eventID: event.id,
-                semanticKind: canonical.kind.rawValue,
-                rawType: canonical.rawType,
-                notificationType: canonical.notificationType
-            )
-        }
-
         let ns = FeatureSettings.shared.notificationSettings
         let preparedEvent: AIEvent
         let resolutionMethod: String
         switch NotificationEventPreparation.prepare(
-            normalizedEvent,
+            event,
             triggerState: ns.triggerState,
             tabResolver: tabResolver
         ) {
         case .drop(let reason):
-            Log.trace("Notification dropped: \(reason) (type=\(normalizedEvent.type) tool=\(normalizedEvent.tool))")
+            Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
             history.markDropped(eventID: event.id, reason: reason)
             return
         case .proceed(let prepared):
