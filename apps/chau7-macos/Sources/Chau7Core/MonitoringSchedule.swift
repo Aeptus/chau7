@@ -157,13 +157,14 @@ public enum MonitoringSchedule {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
         let identity = notificationIdentityKey(for: event)
-        return "\(event.source.rawValue)|\(normalizedType)|\(normalizedTool)|\(identity)"
+        let producer = event.producer?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "unknown"
+        return "\(event.source.rawValue)|\(event.reliability.rawValue)|\(producer)|\(normalizedType)|\(normalizedTool)|\(identity)"
     }
 
     /// Scopes notification rate limiting by both trigger and event identity.
     /// Without this, one noisy tab can suppress the same trigger on a different tab.
     public static func notificationRateLimitKey(triggerID: String, event: AIEvent) -> String {
-        "\(triggerID)|\(notificationIdentityKey(for: event))"
+        "\(triggerID)|\(event.reliability.rawValue)|\(notificationIdentityKey(for: event))"
     }
 
     private static func normalizedNotificationIdentityComponent(_ rawValue: String?) -> String? {

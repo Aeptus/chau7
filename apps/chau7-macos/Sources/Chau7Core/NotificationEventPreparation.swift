@@ -1,9 +1,19 @@
 import Foundation
 
 public enum NotificationEventPreparation {
+    public struct PreparedEvent: Equatable {
+        public let event: AIEvent
+        public let resolutionMethod: String
+
+        public init(event: AIEvent, resolutionMethod: String) {
+            self.event = event
+            self.resolutionMethod = resolutionMethod
+        }
+    }
+
     public enum Decision: Equatable {
         case drop(reason: String)
-        case proceed(AIEvent)
+        case proceed(PreparedEvent)
     }
 
     public static func prepare(
@@ -16,10 +26,19 @@ public enum NotificationEventPreparation {
             return .drop(reason: "Trigger \(trigger.id) disabled")
         }
 
-        guard event.tabID == nil, let tabResolver else {
-            return .proceed(event)
+        guard event.tabID == nil else {
+            return .proceed(PreparedEvent(event: event, resolutionMethod: "explicit_tab"))
         }
 
-        return .proceed(event.resolvingTabID(tabResolver(event.tabTarget)))
+        guard let tabResolver else {
+            return .proceed(PreparedEvent(event: event, resolutionMethod: "unresolved"))
+        }
+
+        let resolvedTabID = tabResolver(event.tabTarget)
+        let resolutionMethod = resolvedTabID == nil ? "unresolved" : "resolved_via_tab_resolver"
+        return .proceed(PreparedEvent(
+            event: event.resolvingTabID(resolvedTabID),
+            resolutionMethod: resolutionMethod
+        ))
     }
 }

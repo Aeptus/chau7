@@ -489,6 +489,10 @@ final class RuntimeSessionManager {
 
     /// Emit an AIEvent into the notification system for a runtime session.
     private func emitNotification(session: RuntimeSession, type: String, message: String) {
+        lock.lock()
+        let externalSessionID = runtimeToClaudeSession[session.id]
+        lock.unlock()
+
         let event = AIEvent(
             source: .runtime,
             type: type,
@@ -496,7 +500,10 @@ final class RuntimeSessionManager {
             message: message,
             ts: DateFormatters.nowISO8601(),
             directory: session.config.directory,
-            tabID: session.tabID
+            tabID: session.tabID,
+            sessionID: externalSessionID ?? session.id,
+            producer: "runtime_session_manager",
+            reliability: .authoritative
         )
         Task { @MainActor in
             NotificationManager.shared.notify(for: event)

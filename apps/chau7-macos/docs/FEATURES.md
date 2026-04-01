@@ -93,7 +93,10 @@ Detection methods:
 - **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.
 - **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
 - **AI event notifications** — supports finished, failed, permission, needs_validation, tool_complete, session_end, idle, and related AI events. Default AI attention policy enables only finished, failed, and permission requests, with noisier triggers available in settings.
+- **Authoritative notification routing** — runtime and hook-backed `finished`, `failed`, and `permission` events are treated as authoritative, while history-derived events act as fallback only and are suppressed if an authoritative delivery already landed for the same session or tab.
+- **Retry-before-fallback delivery** — authoritative AI events briefly retry exact tab routing before dropping into broader fallback logic, reducing missed highlights and same-repo misroutes during startup and restore churn.
 - **Simplified AI notification settings** — the Notifications screen now opens with an AI-first overview for Finished, Failed, and Permission Request, with direct controls for banner, tab highlight, sound, and dock bounce. Per-tool overrides and raw trigger plumbing remain available under Advanced.
+- **Notification delivery ledger** — every AI notification records its lifecycle, including coalescing, retry scheduling, trigger decisions, drop reasons, and banner/tab-style outcomes for deterministic debugging.
 - **Runtime session startup** — MCP-created runtime sessions become ready immediately after launch, and `attach_tab_id` sessions start usable without a manual state repair step.
 - **MCP command filter hardening** — permission checks now recognize background separators, tabs, and newlines before deciding whether a command is allowed, blocked, or needs approval.
 - **Backend launch environment validation** — runtime backend launch strings now drop invalid environment variable names before shell interpolation.
@@ -366,6 +369,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 ### Debugging
 
 - Debug console (`Cmd+Shift+D`) — State, Contexts, Events, Logs, Report tabs.
+- Notification reliability dashboard — Debug Console health view summarizes recent completed, dropped, retried, rate-limited, and authoritative notification deliveries.
 - Data Explorer (`Cmd+Shift+D`) reloads its history and telemetry content whenever the singleton window is reopened.
 - Sessions Explorer rows use the latest run metadata for provider and repo labels.
 - Live state inspector for tabs, sessions, and models.

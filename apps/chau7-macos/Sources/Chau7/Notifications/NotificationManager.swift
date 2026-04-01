@@ -46,6 +46,9 @@ final class NotificationManager {
     private var pendingNotifications: [String: AIEvent] = [:]
     private var pendingNotificationOrder: [String] = []
     private var pendingNotificationFlushWorkItem: DispatchWorkItem?
+    private var routingRetryCounts: [UUID: Int] = [:]
+    private var recentAuthoritativeEvents: [String: Date] = [:]
+    private let authoritativeRetryDelays: [TimeInterval] = [0.05, 0.15, 0.5]
 
     private init() {
         guard !isIsolatedTestMode else {
@@ -87,6 +90,7 @@ final class NotificationManager {
         }
 
         DispatchQueue.main.async { [weak self] in
+            self?.history.begin(event: event)
             self?.enqueueEvent(event)
         }
     }
@@ -98,6 +102,8 @@ final class NotificationManager {
 
         if isNewKey {
             pendingNotificationOrder.append(key)
+        } else {
+            history.markCoalesced(eventID: event.id, key: key)
         }
 
         if pendingNotificationFlushWorkItem != nil {
@@ -125,8 +131,11 @@ final class NotificationManager {
 
     /// All processing on main actor — delegates decision to pure pipeline, then executes.
     private func processEvent(_ event: AIEvent) {
+        pruneAuthoritativeEvents()
+
         let ns = FeatureSettings.shared.notificationSettings
         let preparedEvent: AIEvent
+        let resolutionMethod: String
         switch NotificationEventPreparation.prepare(
             event,
             triggerState: ns.triggerState,
@@ -134,10 +143,32 @@ final class NotificationManager {
         ) {
         case .drop(let reason):
             Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
+            history.markDropped(eventID: event.id, reason: reason)
             return
-        case .proceed(let resolvedEvent):
-            preparedEvent = resolvedEvent
+        case .proceed(let prepared):
+            preparedEvent = prepared.event
+            resolutionMethod = prepared.resolutionMethod
         }
+
+        history.markPrepared(event: preparedEvent, resolutionMethod: resolutionMethod)
+
+        if NotificationDeliverySemantics.requiresAuthoritativeRouting(preparedEvent),
+           preparedEvent.tabID == nil,
+           scheduleRoutingRetryIfNeeded(for: preparedEvent) {
+            return
+        }
+
+        if NotificationDeliverySemantics.shouldSuppressAsFallback(
+            preparedEvent,
+            authoritativeEvents: recentAuthoritativeEvents
+        ) {
+            let reason = "Suppressed fallback event shadowed by authoritative delivery"
+            Log.trace("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
+            history.markDropped(eventID: preparedEvent.id, reason: reason)
+            return
+        }
+
+        registerAuthoritativeEventIfNeeded(preparedEvent)
 
         let input = NotificationPipeline.Input(
             event: preparedEvent,
@@ -156,16 +187,19 @@ final class NotificationManager {
         switch decision {
         case .drop(let reason):
             Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
+            history.markDropped(eventID: preparedEvent.id, reason: reason)
+            routingRetryCounts.removeValue(forKey: preparedEvent.id)
 
         case .fireDefault(let triggerId):
             let baseRateLimitKey = triggerId ?? "unmatched.\(event.source.rawValue).\(event.tool.lowercased())"
             let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: preparedEvent)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
                 Log.info("Rate limited: \(rateLimitKey) for tool=\(event.tool)")
-                history.record(event: preparedEvent, triggerId: baseRateLimitKey, actionsExecuted: [], wasRateLimited: true)
+                history.markRateLimited(eventID: preparedEvent.id, triggerId: baseRateLimitKey)
+                routingRetryCounts.removeValue(forKey: preparedEvent.id)
                 return
             }
-            showDefaultNotification(for: preparedEvent)
+            let didDispatchBanner = showDefaultNotification(for: preparedEvent)
             // Safe to call without re-checking isToolTabActive: processEvent runs
             // entirely on @MainActor, so no tab switch can interleave between the
             // pipeline's active-tab check and this call. The pipeline already
@@ -173,46 +207,104 @@ final class NotificationManager {
             let didStyleTab = applyDefaultTabStyle(for: preparedEvent)
             var actions = ["showNotification"]
             if didStyleTab { actions.append("styleTab") }
-            history.record(event: preparedEvent, triggerId: baseRateLimitKey, actionsExecuted: actions, wasRateLimited: false)
+            history.markActionsExecuted(
+                eventID: preparedEvent.id,
+                triggerId: baseRateLimitKey,
+                actionsExecuted: actions,
+                didDispatchBanner: didDispatchBanner,
+                didStyleTab: didStyleTab
+            )
+            history.markCompleted(eventID: preparedEvent.id)
+            routingRetryCounts.removeValue(forKey: preparedEvent.id)
 
         case .fireStyleOnly(let triggerId, let actions):
             let baseRateLimitKey = triggerId ?? "unmatched.\(event.source.rawValue).\(event.tool.lowercased())"
             let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: preparedEvent)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
                 Log.info("Rate limited: \(rateLimitKey) for tool=\(event.tool)")
-                history.record(event: preparedEvent, triggerId: baseRateLimitKey, actionsExecuted: [], wasRateLimited: true)
+                history.markRateLimited(eventID: preparedEvent.id, triggerId: baseRateLimitKey)
+                routingRetryCounts.removeValue(forKey: preparedEvent.id)
                 return
             }
             NotificationActionExecutor.shared.execute(actions: actions, for: preparedEvent)
-            history.record(
-                event: preparedEvent,
+            let actionNames = actions.filter(\.enabled).map(\.actionType.rawValue)
+            history.markActionsExecuted(
+                eventID: preparedEvent.id,
                 triggerId: baseRateLimitKey,
-                actionsExecuted: actions.filter(\.enabled).map(\.actionType.rawValue),
-                wasRateLimited: false
+                actionsExecuted: actionNames,
+                didDispatchBanner: actionNames.contains(NotificationActionType.showNotification.rawValue),
+                didStyleTab: actionNames.contains(NotificationActionType.styleTab.rawValue)
             )
+            history.markCompleted(eventID: preparedEvent.id)
+            routingRetryCounts.removeValue(forKey: preparedEvent.id)
 
         case .fireActions(let triggerId, let actions):
             let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: triggerId, event: preparedEvent)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
                 Log.info("Rate limited: \(triggerId) for tool=\(event.tool)")
-                history.record(event: preparedEvent, triggerId: triggerId, actionsExecuted: [], wasRateLimited: true)
+                history.markRateLimited(eventID: preparedEvent.id, triggerId: triggerId)
+                routingRetryCounts.removeValue(forKey: preparedEvent.id)
                 return
             }
             NotificationActionExecutor.shared.execute(actions: actions, for: preparedEvent)
             var executedActions = actions.filter(\.enabled).map(\.actionType.rawValue)
+            var didStyleTab = executedActions.contains(NotificationActionType.styleTab.rawValue)
             if let supplementalStyleAction = NotificationStylePlanner.supplementalStyleAction(
                 for: preparedEvent,
                 from: actions
             ) {
                 NotificationActionExecutor.shared.execute(actions: [supplementalStyleAction], for: preparedEvent)
                 executedActions.append(NotificationActionType.styleTab.rawValue)
+                didStyleTab = true
             }
-            history.record(
-                event: preparedEvent,
+            history.markActionsExecuted(
+                eventID: preparedEvent.id,
                 triggerId: triggerId,
                 actionsExecuted: executedActions,
-                wasRateLimited: false
+                didDispatchBanner: executedActions.contains(NotificationActionType.showNotification.rawValue),
+                didStyleTab: didStyleTab
             )
+            history.markCompleted(eventID: preparedEvent.id)
+            routingRetryCounts.removeValue(forKey: preparedEvent.id)
+        }
+    }
+
+    private func scheduleRoutingRetryIfNeeded(for event: AIEvent) -> Bool {
+        let attempts = routingRetryCounts[event.id] ?? 0
+        guard attempts < authoritativeRetryDelays.count,
+              event.sessionID != nil || event.directory != nil else {
+            return false
+        }
+
+        let nextAttempt = attempts + 1
+        routingRetryCounts[event.id] = nextAttempt
+        history.markRetryScheduled(
+            eventID: event.id,
+            attempt: nextAttempt,
+            reason: "authoritative event missing exact tab route"
+        )
+
+        let delay = authoritativeRetryDelays[attempts]
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.enqueueEvent(event)
+        }
+        return true
+    }
+
+    private func registerAuthoritativeEventIfNeeded(_ event: AIEvent) {
+        guard event.reliability == .authoritative else {
+            return
+        }
+        let now = Date()
+        for key in NotificationDeliverySemantics.authorityKeys(for: event) {
+            recentAuthoritativeEvents[key] = now
+        }
+        routingRetryCounts.removeValue(forKey: event.id)
+    }
+
+    private func pruneAuthoritativeEvents(now: Date = Date()) {
+        recentAuthoritativeEvents = recentAuthoritativeEvents.filter {
+            now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.authorityRetentionSeconds
         }
     }
 
@@ -237,26 +329,31 @@ final class NotificationManager {
     /// Used by the executor's .showNotification action — routes through the full
     /// authorization check + AppleScript fallback chain so custom-action notifications
     /// get the same reliability as default notifications.
-    func dispatchActionNotification(title: String, body: String, for event: AIEvent) {
+    @discardableResult
+    func dispatchActionNotification(title: String, body: String, for event: AIEvent) -> Bool {
         dispatchNotification(title: title, body: body, for: event)
     }
 
-    private func showDefaultNotification(for event: AIEvent) {
+    @discardableResult
+    private func showDefaultNotification(for event: AIEvent) -> Bool {
         let tabTitle = tabTitleProvider?(event.tabTarget)
         let repoName = repoNameProvider?(event.tabTarget)
         let title = event.notificationTitle(toolOverride: tabTitle, repoName: repoName)
-        dispatchNotification(title: title, body: event.notificationBody, for: event)
+        return dispatchNotification(title: title, body: event.notificationBody, for: event)
     }
 
-    private func dispatchNotification(title: String, body: String, for event: AIEvent) {
+    @discardableResult
+    private func dispatchNotification(title: String, body: String, for event: AIEvent) -> Bool {
         guard !isIsolatedTestMode else {
             Log.info("Skipping notification dispatch in isolated test mode: \(title)")
-            return
+            return false
         }
         if shouldUseNativeNotifications() {
             tryNativeNotification(title: title, body: body, for: event)
+            return true
         } else {
             sendAppleScriptNotification(title: title, body: body)
+            return true
         }
     }
 

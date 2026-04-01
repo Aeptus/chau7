@@ -1,71 +1,166 @@
 import Foundation
 import Chau7Core
 
-/// In-memory ring buffer of fired notification events for audit/debugging.
-/// All access is `@MainActor`-isolated since the notification pipeline runs on main.
+/// In-memory delivery ledger for notification events.
+/// Tracks ingestion, routing, decision, and output execution so failures are explainable.
 @MainActor
 final class NotificationHistory {
 
+    enum DeliveryState: String, Codable {
+        case ingested
+        case coalesced
+        case retryScheduled
+        case prepared
+        case dropped
+        case rateLimited
+        case actionsExecuted
+        case completed
+    }
+
     struct Entry: Identifiable, Codable {
         let id: UUID
-        let triggerId: String
         let source: String
         let type: String
         let tool: String
         let message: String
         let timestamp: Date
-        let actionsExecuted: [String]
-        let wasRateLimited: Bool
+        let reliability: String
+        let producer: String?
+        var triggerId: String?
+        var actionsExecuted: [String]
+        var wasRateLimited: Bool
+        var deliveryState: String
+        var dropReason: String?
+        var resolutionMethod: String?
+        var resolvedTabID: String?
+        var didDispatchBanner: Bool
+        var didStyleTab: Bool
+        var notes: [String]
     }
 
-    private var entries: [Entry] = []
+    private var entriesByID: [UUID: Entry] = [:]
+    private var order: [UUID] = []
     private let maxEntries: Int
 
     init(maxEntries: Int = 100) {
         self.maxEntries = maxEntries
     }
 
-    /// Record a notification event. Drops the oldest entry when full.
-    func record(_ entry: Entry) {
-        if entries.count >= maxEntries {
-            entries.removeFirst()
-        }
-        entries.append(entry)
-    }
-
-    /// Convenience: record from an AIEvent and metadata.
-    func record(
-        event: AIEvent,
-        triggerId: String,
-        actionsExecuted: [String],
-        wasRateLimited: Bool
-    ) {
+    func begin(event: AIEvent) {
         let entry = Entry(
             id: event.id,
-            triggerId: triggerId,
             source: event.source.rawValue,
             type: event.type,
             tool: event.tool,
             message: event.message,
             timestamp: Date(),
-            actionsExecuted: actionsExecuted,
-            wasRateLimited: wasRateLimited
+            reliability: event.reliability.rawValue,
+            producer: event.producer,
+            triggerId: nil,
+            actionsExecuted: [],
+            wasRateLimited: false,
+            deliveryState: DeliveryState.ingested.rawValue,
+            dropReason: nil,
+            resolutionMethod: nil,
+            resolvedTabID: event.tabID?.uuidString,
+            didDispatchBanner: false,
+            didStyleTab: false,
+            notes: []
         )
-        record(entry)
+        store(entry)
     }
 
-    /// Return the most recent entries (newest first).
+    func markCoalesced(eventID: UUID, key: String) {
+        update(eventID) { entry in
+            entry.deliveryState = DeliveryState.coalesced.rawValue
+            entry.notes.append("coalesced:\(key)")
+        }
+    }
+
+    func markRetryScheduled(eventID: UUID, attempt: Int, reason: String) {
+        update(eventID) { entry in
+            entry.deliveryState = DeliveryState.retryScheduled.rawValue
+            entry.dropReason = nil
+            entry.notes.append("retry#\(attempt):\(reason)")
+        }
+    }
+
+    func markPrepared(event: AIEvent, resolutionMethod: String) {
+        update(event.id) { entry in
+            entry.deliveryState = DeliveryState.prepared.rawValue
+            entry.resolutionMethod = resolutionMethod
+            entry.resolvedTabID = event.tabID?.uuidString
+        }
+    }
+
+    func markDropped(eventID: UUID, triggerId: String? = nil, reason: String) {
+        update(eventID) { entry in
+            entry.deliveryState = DeliveryState.dropped.rawValue
+            entry.triggerId = triggerId ?? entry.triggerId
+            entry.dropReason = reason
+        }
+    }
+
+    func markRateLimited(eventID: UUID, triggerId: String) {
+        update(eventID) { entry in
+            entry.deliveryState = DeliveryState.rateLimited.rawValue
+            entry.triggerId = triggerId
+            entry.wasRateLimited = true
+        }
+    }
+
+    func markActionsExecuted(
+        eventID: UUID,
+        triggerId: String?,
+        actionsExecuted: [String],
+        didDispatchBanner: Bool,
+        didStyleTab: Bool
+    ) {
+        update(eventID) { entry in
+            entry.deliveryState = DeliveryState.actionsExecuted.rawValue
+            entry.triggerId = triggerId ?? entry.triggerId
+            entry.actionsExecuted = actionsExecuted
+            entry.didDispatchBanner = entry.didDispatchBanner || didDispatchBanner
+            entry.didStyleTab = entry.didStyleTab || didStyleTab
+            entry.dropReason = nil
+        }
+    }
+
+    func markCompleted(eventID: UUID) {
+        update(eventID) { entry in
+            entry.deliveryState = DeliveryState.completed.rawValue
+        }
+    }
+
     func recent(limit: Int = 50) -> [Entry] {
-        Array(entries.suffix(limit).reversed())
+        Array(order.suffix(limit).reversed()).compactMap { entriesByID[$0] }
     }
 
-    /// Clear all history.
     func clear() {
-        entries.removeAll()
+        entriesByID.removeAll()
+        order.removeAll()
     }
 
-    /// Total entries currently held.
     var count: Int {
-        entries.count
+        entriesByID.count
+    }
+
+    private func store(_ entry: Entry) {
+        if entriesByID[entry.id] == nil {
+            if order.count >= maxEntries, let oldest = order.first {
+                order.removeFirst()
+                entriesByID.removeValue(forKey: oldest)
+            }
+            order.append(entry.id)
+        }
+        entriesByID[entry.id] = entry
+    }
+
+    private func update(_ eventID: UUID, mutate: (inout Entry) -> Void) {
+        guard var entry = entriesByID[eventID] else {
+            return
+        }
+        mutate(&entry)
+        entriesByID[eventID] = entry
     }
 }

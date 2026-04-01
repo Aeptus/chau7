@@ -400,6 +400,12 @@ struct Chau7App: App {
             }
 
             CommandGroup(replacing: .help) {
+                Button(L("Welcome to Chau7", "Welcome to Chau7")) {
+                    appDelegate.showWelcomeFromMenu()
+                }
+
+                Divider()
+
                 Button(L("Chau7 Help", "Chau7 Help")) {
                     appDelegate.showHelp()
                 }
