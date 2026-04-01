@@ -56,22 +56,50 @@ struct BugReportDialogView: View {
 
     // MARK: - Disclosure
 
+    @State private var showPrivacyInfo = false
+
     private var disclosureSection: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "lock.shield")
-                .font(.system(size: 14))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+                Text(L(
+                    "bugReport.disclosure",
+                    "This goes to a private endpoint only Chau7's dev team can see. Nothing leaves your machine until you hit Submit. We read every report — yes, actually."
+                ))
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-                .padding(.top, 2)
-            Text(L(
-                "bugReport.disclosure",
-                "This report is submitted privately to a secure endpoint maintained by Chau7's developers. Only the development team can view submitted reports. No data is sent until you click Submit."
-            ))
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
+            }
+
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "hand.raised")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.orange)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L(
+                        "bugReport.dataNotice",
+                        "By default this report contains zero data from your Chau7 session. Nada. If you want to help us debug faster, you can opt into sharing diagnostics below — but fair warning: once it's out there, it's out of your hands."
+                    ))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+
+                    Button {
+                        showPrivacyInfo = true
+                    } label: {
+                        Text(L("bugReport.privacyLink", "Who sees what? (Third-party providers)"))
+                            .font(.system(size: 10))
+                            .foregroundStyle(.blue)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
-        .padding(10)
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .sheet(isPresented: $showPrivacyInfo) {
+            IssueReportingPrivacyView { showPrivacyInfo = false }
+        }
     }
 
     // MARK: - Description
