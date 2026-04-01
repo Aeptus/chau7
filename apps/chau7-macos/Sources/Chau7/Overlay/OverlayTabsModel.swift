@@ -402,6 +402,10 @@ final class OverlayTabsModel: ObservableObject {
     /// Each entry maps a tab UUID to its global x-range (minX, maxX) in the window.
     var tabHitTestFrames: [(tabID: UUID, minX: CGFloat, maxX: CGFloat)] = []
 
+    /// Group bracket hit-test ranges for right-click and drag (populated by SwiftUI preferences).
+    /// Each entry maps a repoGroupID to its global x-range.
+    var groupBracketHitTestFrames: [(repoGroupID: String, minX: CGFloat, maxX: CGFloat)] = []
+
     /// Token to force SwiftUI to re-render the tab bar when incremented
     @Published var tabBarRefreshToken = 0
     /// Last reported rendered tab count from the view (for watchdog)

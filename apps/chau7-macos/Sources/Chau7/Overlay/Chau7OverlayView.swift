@@ -311,6 +311,11 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
 
     /// Install an application-level right-click monitor. NSHostingView swallows
     /// rightMouseDown internally, so we intercept before it reaches the view.
+    private enum TabBarHitResult {
+        case tab(OverlayTab)
+        case groupBracket(repoGroupID: String, firstTab: OverlayTab)
+    }
+
     func installRightClickMonitor() {
         rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
             guard let self, let window = window, event.window === window else { return event }
@@ -318,15 +323,42 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
             guard bounds.contains(location) else { return event }
             guard let model = tabsModel else { return event }
 
-            guard let hitTab = hitTestTab(at: location, in: model) else { return event }
+            guard let hitResult = hitTest(at: location, in: model) else { return event }
 
             // Refresh window titles lazily — only when the menu is actually shown
             refreshWindowTitles?()
 
-            let menu = buildTabContextMenu(for: hitTab, model: model)
+            let menu: NSMenu
+            switch hitResult {
+            case .tab(let tab):
+                menu = buildTabContextMenu(for: tab, model: model)
+            case .groupBracket(let repoGroupID, let firstTab):
+                menu = buildGroupContextMenu(for: repoGroupID, firstTab: firstTab, model: model)
+            }
             NSMenu.popUpContextMenu(menu, with: event, for: self)
             return nil // consume the event
         }
+    }
+
+    /// Hit-test that checks group brackets first, then individual tabs.
+    private func hitTest(at point: NSPoint, in model: OverlayTabsModel) -> TabBarHitResult? {
+        let globalPoint = window?.convertPoint(toScreen: convert(point, to: nil)) ?? point
+        let globalX = globalPoint.x
+
+        // Check bracket frames first — clicking on the group header targets the group
+        for frame in model.groupBracketHitTestFrames {
+            if globalX >= frame.minX, globalX <= frame.maxX {
+                if let firstTab = model.tabs.first(where: { $0.repoGroupID == frame.repoGroupID }) {
+                    return .groupBracket(repoGroupID: frame.repoGroupID, firstTab: firstTab)
+                }
+            }
+        }
+
+        // Fall through to individual tab hit-test
+        if let tab = hitTestTab(at: point, in: model) {
+            return .tab(tab)
+        }
+        return nil
     }
 
     func removeRightClickMonitor() {
@@ -384,6 +416,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         do {
             menu.addItem(.separator())
             if let groupID = tab.repoGroupID {
+                Log.info("Context menu group: tab=\(tab.displayTitle) groupID=\(URL(fileURLWithPath: groupID).lastPathComponent)")
                 let ungroupItem = NSMenuItem(title: "Remove from Repo Group", action: #selector(contextRemoveFromGroup(_:)), keyEquivalent: "")
                 ungroupItem.target = self
                 ungroupItem.representedObject = tab.id
@@ -393,6 +426,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
                 let groupWindowSubmenu = NSMenu()
                 groupWindowSubmenu.autoenablesItems = false
                 groupWindowSubmenu.addItem(menuItem(title: "New Window") { [weak self] in
+                    Log.info("Move Group to New Window: groupID=\(URL(fileURLWithPath: groupID).lastPathComponent)")
                     self?.tabsModel?.onMoveGroupToWindow?(groupID, -1)
                 })
                 if !model.otherWindowTitles.isEmpty {
@@ -427,6 +461,57 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         closeItem.target = self
         closeItem.representedObject = tab.id
         menu.addItem(closeItem)
+
+        return menu
+    }
+
+    /// Context menu for clicking on a group bracket (not a specific tab).
+    private func buildGroupContextMenu(for repoGroupID: String, firstTab: OverlayTab, model: OverlayTabsModel) -> NSMenu {
+        menuActions.removeAll()
+        let menu = NSMenu()
+        let repoName = URL(fileURLWithPath: repoGroupID).lastPathComponent
+
+        // Move Group to Window submenu
+        let windowSubmenu = NSMenu()
+        windowSubmenu.autoenablesItems = false
+        windowSubmenu.addItem(menuItem(title: "New Window") { [weak self] in
+            self?.tabsModel?.onMoveGroupToWindow?(repoGroupID, -1)
+        })
+        if !model.otherWindowTitles.isEmpty {
+            windowSubmenu.addItem(.separator())
+            for window in model.otherWindowTitles {
+                let windowIndex = window.id
+                windowSubmenu.addItem(menuItem(title: window.title) { [weak self] in
+                    self?.tabsModel?.onMoveGroupToWindow?(repoGroupID, windowIndex)
+                })
+            }
+        }
+        let moveItem = NSMenuItem(title: "Move \"\(repoName)\" to Window", action: nil, keyEquivalent: "")
+        moveItem.submenu = windowSubmenu
+        menu.addItem(moveItem)
+
+        menu.addItem(.separator())
+
+        // Ungroup
+        menu.addItem(menuItem(title: "Remove from Repo Group") { [weak self] in
+            guard let model = self?.tabsModel else { return }
+            let groupTabs = model.tabs.filter { $0.repoGroupID == repoGroupID }
+            for tab in groupTabs {
+                model.removeTabFromRepoGroup(tabID: tab.id)
+            }
+        })
+
+        menu.addItem(.separator())
+
+        // Close group
+        let groupCount = model.tabs.filter { $0.repoGroupID == repoGroupID }.count
+        menu.addItem(menuItem(title: "Close Group (\(groupCount) tabs)") { [weak self] in
+            guard let model = self?.tabsModel else { return }
+            let groupTabs = model.tabs.filter { $0.repoGroupID == repoGroupID }
+            for tab in groupTabs {
+                model.closeTab(id: tab.id)
+            }
+        })
 
         return menu
     }
@@ -562,6 +647,14 @@ private struct RenderedTabCountKey: PreferenceKey {
     }
 }
 
+/// Preference key for tracking group bracket frames (for hit-testing and drag)
+private struct BracketFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
 /// Preference key for tracking tab bar size (for visibility-based recovery)
 private struct TabBarSizeKey: PreferenceKey {
     static var defaultValue: CGSize = .zero
@@ -640,6 +733,42 @@ private struct ToolbarTabBarView: View {
         overlayModel.tabHitTestFrames = frames
     }
 
+    // MARK: - Group Bracket Drag
+
+    private func handleGroupDrag(groupID: String, translation: CGSize) {
+        overlayModel.dismissHoverCard()
+        if draggingGroupID == nil {
+            draggingGroupID = groupID
+            // Capture starting screen point from bracket geometry
+            if let frame = overlayModel.groupBracketHitTestFrames.first(where: { $0.repoGroupID == groupID }) {
+                let midX = (frame.minX + frame.maxX) / 2
+                groupDragStartScreenPoint = CGPoint(x: midX, y: 0)
+            }
+        }
+    }
+
+    private func handleGroupDragEnd(groupID: String, translation: CGSize) {
+        guard draggingGroupID == groupID else { return }
+        defer {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                draggingGroupID = nil
+                groupDragStartScreenPoint = nil
+            }
+        }
+
+        guard let startPoint = groupDragStartScreenPoint else { return }
+        let dropPoint = CGPoint(x: startPoint.x + translation.width, y: startPoint.y + translation.height)
+
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            let moved = appDelegate.handleGroupDrop(
+                repoGroupID: groupID, from: overlayModel, atScreenPoint: dropPoint
+            )
+            if moved {
+                Log.info("Group drag completed: \(URL(fileURLWithPath: groupID).lastPathComponent) moved to other window")
+            }
+        }
+    }
+
     /// Computes segments from visible tabs: contiguous runs of same repoGroupID become groups.
     private var tabBarSegments: [TabBarSegment] {
         // Always respect existing repoGroupID — the mode only controls auto-assignment.
@@ -696,6 +825,10 @@ private struct ToolbarTabBarView: View {
     @State private var lastVisibilityLogAt: Date = .distantPast
     @State private var tabMidXPositions: [UUID: CGFloat] = [:]
 
+    // Group bracket drag state
+    @State private var draggingGroupID: String?
+    @State private var groupDragStartScreenPoint: CGPoint?
+
     var body: some View {
         let selected = overlayModel.selectedTab
 
@@ -724,6 +857,26 @@ private struct ToolbarTabBarView: View {
                                         tabSpacing: tabSpacing,
                                         tabCount: groupTabs.count
                                     )
+                                    .contentShape(Rectangle())
+                                    .background(
+                                        GeometryReader { proxy in
+                                            Color.clear
+                                                .preference(
+                                                    key: BracketFramePreferenceKey.self,
+                                                    value: [groupID: proxy.frame(in: .global)]
+                                                )
+                                        }
+                                    )
+                                    .gesture(
+                                        DragGesture(minimumDistance: 10)
+                                            .onChanged { value in
+                                                handleGroupDrag(groupID: groupID, translation: value.translation)
+                                            }
+                                            .onEnded { value in
+                                                handleGroupDragEnd(groupID: groupID, translation: value.translation)
+                                            }
+                                    )
+                                    .opacity(draggingGroupID == groupID ? 0.5 : 1.0)
 
                                     ForEach(Array(groupTabs.enumerated()), id: \.element.id) { idx, tab in
                                         let isFirst = idx == 0
@@ -731,6 +884,7 @@ private struct ToolbarTabBarView: View {
                                         tabView(for: tab, hideRepoPath: true)
                                             .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
                                             .fixedSize(horizontal: false, vertical: true)
+                                            .opacity(draggingGroupID == groupID ? 0.5 : 1.0)
                                             .overlay(alignment: .top) {
                                                 // Use a stroked path (not filled rect) to match
                                                 // the bracket's stroke rendering exactly.
@@ -772,6 +926,11 @@ private struct ToolbarTabBarView: View {
                         .onPreferenceChange(TabMidXPreferenceKey.self) { positions in
                             tabMidXPositions = positions
                             rebuildHitTestFrames(widths: tabWidths, positions: positions)
+                        }
+                        .onPreferenceChange(BracketFramePreferenceKey.self) { frames in
+                            overlayModel.groupBracketHitTestFrames = frames.map { groupID, rect in
+                                (repoGroupID: groupID, minX: rect.minX, maxX: rect.maxX)
+                            }.sorted(by: { $0.minX < $1.minX })
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -1578,7 +1737,6 @@ struct RepoTagChip: View {
             .padding(.horizontal, 4)
             .padding(.vertical, 3)
             .frame(height: OverlayLayout.tabChipHeight, alignment: .center)
-            .allowsHitTesting(false)
     }
 
     /// Deterministic color for a repo path — same repo always gets the same color.

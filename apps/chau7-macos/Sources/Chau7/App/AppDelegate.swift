@@ -1021,6 +1021,30 @@ private final class OverlayBlurView: NSVisualEffectView {
         return true
     }
 
+    func handleGroupDrop(repoGroupID: String, from sourceModel: OverlayTabsModel, atScreenPoint point: CGPoint) -> Bool {
+        guard let sourceIndex = overlayHosts.firstIndex(where: { $0.model === sourceModel }) else { return false }
+
+        let candidates = overlayHosts.enumerated().compactMap { index, host -> OverlayWindowDropCandidate? in
+            guard host.window.isVisible, !host.window.isMiniaturized else { return nil }
+            return OverlayWindowDropCandidate(
+                index: index,
+                primaryFrame: host.model.tabBarDropFrame,
+                fallbackFrame: host.window.frame
+            )
+        }
+
+        guard let targetIndex = OverlayWindowDropResolver.targetIndex(
+            at: point,
+            candidates: candidates,
+            excluding: sourceIndex
+        ) else {
+            return false
+        }
+
+        moveGroup(repoGroupID, fromWindowIndex: sourceIndex, toWindowIndex: targetIndex)
+        return true
+    }
+
     // MARK: - Multi-Window Restoration
 
     /// Restore additional windows saved in the multi-window state.
