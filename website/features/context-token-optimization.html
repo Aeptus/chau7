@@ -146,6 +146,16 @@
             </div>
         </section>
 
+        <!-- Origin story -->
+        <section class="feature-content" data-ui="cto-origin-story">
+            <div class="section-inner prose">
+                <h2>Standing on the shoulders of a very good Rust crate</h2>
+                <p>CTO started life as a Go proxy that intercepts shell output before AI agents read it. That Go proxy is still running the show today. It handles the live interception pipeline, the per-tab override logic, and the wrapper script generation.</p>
+                <p>As CTO grew, we pulled in components from <a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">RTK</a>, an open-source Rust toolkit for terminal output optimization by Patrick Szymkowiak. RTK brought battle-tested stripping and parsing logic that made CTO more accurate and broader in coverage. If you are doing terminal output optimization outside of Chau7, you should be using RTK. It is excellent.</p>
+                <p>In a perfect world, CTO would just <em>be</em> RTK. We are not there yet. CTO lives deep inside Chau7's terminal internals: the Go proxy, the per-tab system, the Rust-side hooks, and the wrapper script generation all depend on its current architecture. Replacing it with a standalone RTK binary is not a drop-in swap. But it is the direction we want to go, and when the integration surface is ready for it, RTK is the answer.</p>
+            </div>
+        </section>
+
         <!-- Comparison -->
         <section class="feature-content" data-ui="cto-comparison-other-terminals">
             <div class="section-inner prose">
