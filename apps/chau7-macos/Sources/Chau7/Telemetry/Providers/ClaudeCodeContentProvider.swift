@@ -42,121 +42,29 @@ final class ClaudeCodeContentProvider: RunContentProvider {
 
         if jsonlFiles.isEmpty { return nil }
 
-        var allTurns: [TelemetryTurn] = []
-        var allToolCalls: [TelemetryToolCall] = []
-        var totalInput = 0
-        var totalOutput = 0
-        var model: String?
-        var turnIndex = 0
-        var callIndex = 0
+        var state = ClaudeTranscriptUsageParser.State()
 
         for file in jsonlFiles.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             guard let data = try? Data(contentsOf: file),
                   let text = String(data: data, encoding: .utf8) else { continue }
-
-            for line in text.components(separatedBy: .newlines) where !line.isEmpty {
-                guard let lineData = line.data(using: .utf8),
-                      let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                      let message = obj["message"] as? [String: Any]
-                else { continue }
-
-                let roleStr = (message["role"] as? String) ?? (obj["type"] as? String) ?? ""
-
-                // Extract model from assistant messages
-                if let m = message["model"] as? String, model == nil {
-                    model = m
-                }
-
-                // Extract token usage
-                if let usage = message["usage"] as? [String: Any] {
-                    let input = (usage["input_tokens"] as? Int) ?? 0
-                    let cacheCreation = (usage["cache_creation_input_tokens"] as? Int) ?? 0
-                    let cacheRead = (usage["cache_read_input_tokens"] as? Int) ?? 0
-                    let output = (usage["output_tokens"] as? Int) ?? 0
-                    totalInput += input + cacheCreation + cacheRead
-                    totalOutput += output
-                }
-
-                // Build turn
-                let role: TurnRole
-                switch roleStr {
-                case "user": role = .human
-                case "assistant": role = .assistant
-                case "system": role = .system
-                default: continue
-                }
-
-                // Extract content text and tool calls from content blocks
-                var contentText = ""
-                var turnToolCalls: [TelemetryToolCall] = []
-
-                if let content = message["content"] as? [[String: Any]] {
-                    for block in content {
-                        let blockType = block["type"] as? String ?? ""
-                        switch blockType {
-                        case "text":
-                            if let t = block["text"] as? String {
-                                if !contentText.isEmpty { contentText += "\n" }
-                                contentText += t
-                            }
-                        case "tool_use":
-                            let turnID = "\(runID)-t\(turnIndex)"
-                            let toolName = (block["name"] as? String) ?? "unknown"
-                            var argsJSON: String?
-                            if let input = block["input"] {
-                                if let data = try? JSONSerialization.data(withJSONObject: input) {
-                                    argsJSON = String(data: data, encoding: .utf8)
-                                }
-                            }
-                            let call = TelemetryToolCall(
-                                id: (block["id"] as? String) ?? UUID().uuidString,
-                                runID: runID, turnID: turnID,
-                                toolName: toolName,
-                                arguments: argsJSON,
-                                status: .success,
-                                callIndex: callIndex
-                            )
-                            turnToolCalls.append(call)
-                            allToolCalls.append(call)
-                            callIndex += 1
-                        case "tool_result":
-                            if let resultContent = block["content"] as? String {
-                                if !contentText.isEmpty { contentText += "\n" }
-                                contentText += "[tool_result] \(resultContent)"
-                            }
-                        default:
-                            break
-                        }
-                    }
-                } else if let content = message["content"] as? String {
-                    contentText = content
-                }
-
-                let turnID = "\(runID)-t\(turnIndex)"
-                let turn = TelemetryTurn(
-                    id: turnID,
-                    runID: runID,
-                    turnIndex: turnIndex,
-                    role: role,
-                    content: contentText.isEmpty ? nil : contentText,
-                    inputTokens: role == .assistant ? (message["usage"] as? [String: Any])?["input_tokens"] as? Int : nil,
-                    outputTokens: role == .assistant ? (message["usage"] as? [String: Any])?["output_tokens"] as? Int : nil,
-                    toolCalls: turnToolCalls
-                )
-                allTurns.append(turn)
-                turnIndex += 1
-            }
+            ClaudeTranscriptUsageParser.ingest(jsonl: text, runID: runID, startedAt: startedAt, state: &state)
         }
 
-        guard !allTurns.isEmpty else { return nil }
+        guard !state.turns.isEmpty else { return nil }
 
         return ExtractedRunContent(
-            model: model,
-            turns: allTurns,
-            totalInputTokens: totalInput > 0 ? totalInput : nil,
-            totalOutputTokens: totalOutput > 0 ? totalOutput : nil,
+            model: state.model,
+            turns: state.turns,
+            totalInputTokens: state.tokenUsage.inputTokens > 0 ? state.tokenUsage.inputTokens : nil,
+            totalCachedInputTokens: state.tokenUsage.cachedInputTokens > 0 ? state.tokenUsage.cachedInputTokens : nil,
+            totalOutputTokens: state.tokenUsage.outputTokens > 0 ? state.tokenUsage.outputTokens : nil,
+            totalReasoningOutputTokens: state.tokenUsage.reasoningOutputTokens > 0 ? state.tokenUsage.reasoningOutputTokens : nil,
+            tokenUsageSource: .transcriptDelta,
+            tokenUsageState: .complete,
+            costSource: .unavailable,
+            costState: .missing,
             rawTranscriptRef: sessionDir.path,
-            toolCalls: allToolCalls
+            toolCalls: state.toolCalls
         )
     }
 

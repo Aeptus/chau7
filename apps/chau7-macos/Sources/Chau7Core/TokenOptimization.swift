@@ -459,8 +459,12 @@ public struct CTOGainStats: Codable, Equatable, Sendable {
 public struct TabTokenConsumption: Identifiable, Sendable {
     public let tabID: String
     public let runCount: Int
+    public let pricedRunCount: Int
+    public let missingCostRunCount: Int
     public let totalInputTokens: Int
+    public let totalCachedInputTokens: Int
     public let totalOutputTokens: Int
+    public let totalReasoningOutputTokens: Int
     public let totalCostUSD: Double
     /// Most recent provider for this tab (e.g. "claude"), for label display when the tab is closed.
     public let lastProvider: String?
@@ -473,19 +477,31 @@ public struct TabTokenConsumption: Identifiable, Sendable {
     public init(
         tabID: String,
         runCount: Int,
+        pricedRunCount: Int = 0,
+        missingCostRunCount: Int = 0,
         totalInputTokens: Int,
+        totalCachedInputTokens: Int = 0,
         totalOutputTokens: Int,
+        totalReasoningOutputTokens: Int = 0,
         totalCostUSD: Double,
         lastProvider: String? = nil,
         lastLocationPath: String? = nil
     ) {
         self.tabID = tabID
         self.runCount = runCount
+        self.pricedRunCount = pricedRunCount
+        self.missingCostRunCount = missingCostRunCount
         self.totalInputTokens = totalInputTokens
+        self.totalCachedInputTokens = totalCachedInputTokens
         self.totalOutputTokens = totalOutputTokens
+        self.totalReasoningOutputTokens = totalReasoningOutputTokens
         self.totalCostUSD = totalCostUSD
         self.lastProvider = lastProvider
         self.lastLocationPath = lastLocationPath
+    }
+
+    public var totalBillableTokens: Int {
+        totalInputTokens + totalCachedInputTokens + totalOutputTokens + totalReasoningOutputTokens
     }
 }
 
@@ -493,19 +509,41 @@ public struct TabTokenConsumption: Identifiable, Sendable {
 public struct ProviderConsumptionStats: Identifiable, Sendable {
     public let provider: String
     public let runCount: Int
+    public let pricedRunCount: Int
+    public let missingCostRunCount: Int
     public let totalInputTokens: Int
+    public let totalCachedInputTokens: Int
     public let totalOutputTokens: Int
+    public let totalReasoningOutputTokens: Int
     public let totalCostUSD: Double
     public var id: String {
         provider
     }
 
-    public init(provider: String, runCount: Int, totalInputTokens: Int, totalOutputTokens: Int, totalCostUSD: Double) {
+    public init(
+        provider: String,
+        runCount: Int,
+        pricedRunCount: Int = 0,
+        missingCostRunCount: Int = 0,
+        totalInputTokens: Int,
+        totalCachedInputTokens: Int = 0,
+        totalOutputTokens: Int,
+        totalReasoningOutputTokens: Int = 0,
+        totalCostUSD: Double
+    ) {
         self.provider = provider
         self.runCount = runCount
+        self.pricedRunCount = pricedRunCount
+        self.missingCostRunCount = missingCostRunCount
         self.totalInputTokens = totalInputTokens
+        self.totalCachedInputTokens = totalCachedInputTokens
         self.totalOutputTokens = totalOutputTokens
+        self.totalReasoningOutputTokens = totalReasoningOutputTokens
         self.totalCostUSD = totalCostUSD
+    }
+
+    public var totalBillableTokens: Int {
+        totalInputTokens + totalCachedInputTokens + totalOutputTokens + totalReasoningOutputTokens
     }
 }
 

@@ -539,6 +539,13 @@ Key patterns:
 - On termination, Chau7 clears persisted tab/window state and backup files when every overlay window has been hidden or closed, preventing stale windows from resurrecting on next launch.
 - Notification pipeline optimizations now respect disabled single-action rules instead of promoting them to native default notifications.
 
+## Recent Telemetry Integrity
+
+- Transcript-derived AI run metrics now store canonical token fields for input, cached input, output, and reasoning output instead of overloading a single input/output pair.
+- Claude transcript extraction now slices runs by start time and deduplicates repeated assistant usage blocks so fragmented message payloads do not multiply token totals.
+- Codex rollout extraction now reads run-local token deltas, including cached input and reasoning output fields, instead of reusing lifetime cumulative totals across multiple runs.
+- Implausible historical token totals are now invalidated instead of being kept as if they were trustworthy analytics.
+
 ## Recent Tab Behavior
 
 - Reopen Closed Tab now restores the original overlay tab identity metadata, including the tab ID, creation timestamp, and repo grouping membership.
