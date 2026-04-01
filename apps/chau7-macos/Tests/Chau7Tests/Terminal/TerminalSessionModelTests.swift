@@ -378,7 +378,7 @@ final class TerminalSessionModelTests: XCTestCase {
         RuntimeSessionManager.shared.resetForTesting()
     }
 
-    func testHandlePromptDetectedSkipsFallbackDuringResumePrefill() async {
+    func testHandlePromptDetectedSkipsFallbackDuringPendingResumePrefill() async {
         RuntimeSessionManager.shared.resetForTesting()
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
@@ -401,7 +401,7 @@ final class TerminalSessionModelTests: XCTestCase {
         RuntimeSessionManager.shared.resetForTesting()
     }
 
-    func testHandlePromptDetectedSkipsFallbackDuringResumePrefill() async {
+    func testHandlePromptDetectedSkipsFallbackAfterDeliveredResumePrefillUntilUserCommand() async {
         RuntimeSessionManager.shared.resetForTesting()
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
@@ -421,6 +421,37 @@ final class TerminalSessionModelTests: XCTestCase {
         await fulfillment(of: [expectation], timeout: 1.0)
 
         XCTAssertFalse(model.recentEvents.contains { $0.type == "waiting_input" })
+        RuntimeSessionManager.shared.resetForTesting()
+    }
+
+    func testUserCommandClearsResumePrefillFallbackSuppression() async {
+        RuntimeSessionManager.shared.resetForTesting()
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let tabID = UUID()
+
+        session.ownerTabID = tabID
+        session.currentDirectory = "/tmp/mockup"
+        session.lastDetectedAppName = "Codex"
+        session.lastAIProvider = "codex"
+        session.prefillInput("codex resume 019d0000-0000-7000-8000-000000000000")
+
+        XCTAssertTrue(session.suppressWaitingInputFallbackUntilNextUserCommand)
+
+        session.handleInputLine("continue")
+        XCTAssertFalse(session.suppressWaitingInputFallbackUntilNextUserCommand)
+
+        session.status = .running
+        session.handleOutput(Data("assistant output".utf8))
+        session.handlePromptDetected()
+
+        let expectation = expectation(description: "prompt handling settled")
+        DispatchQueue.main.async { expectation.fulfill() }
+        await fulfillment(of: [expectation], timeout: 1.0)
+
+        let event = model.recentEvents.last
+        XCTAssertEqual(event?.type, "waiting_input")
+        XCTAssertEqual(event?.tabID, tabID)
         RuntimeSessionManager.shared.resetForTesting()
     }
 

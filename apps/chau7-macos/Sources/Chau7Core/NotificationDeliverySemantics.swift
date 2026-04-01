@@ -12,6 +12,29 @@ public enum NotificationDeliverySemantics {
             && event.tabID == nil
     }
 
+    public static func shouldDropAfterRoutingFailure(
+        _ event: AIEvent,
+        retryAttempts: Int,
+        maxRetryAttempts: Int
+    ) -> Bool {
+        requiresAuthoritativeRouting(event)
+            && (
+                retryAttempts >= maxRetryAttempts
+                    || (event.sessionID == nil && event.directory == nil)
+            )
+    }
+
+    public static func unresolvedRoutingDropReason(
+        for event: AIEvent,
+        retryAttempts: Int,
+        maxRetryAttempts: Int
+    ) -> String {
+        if event.sessionID == nil && event.directory == nil {
+            return "Authoritative \(event.normalizedType) event missing exact routing identity"
+        }
+        return "Authoritative \(event.normalizedType) event unresolved after \(retryAttempts)/\(maxRetryAttempts) routing attempts"
+    }
+
     public static func authorityKeys(for event: AIEvent) -> [String] {
         guard authoritativeRoutingTypes.contains(event.normalizedType) else {
             return []

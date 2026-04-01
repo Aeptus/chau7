@@ -171,9 +171,26 @@ final class NotificationManager {
         history.markPrepared(event: preparedEvent, resolutionMethod: resolutionMethod)
 
         if NotificationDeliverySemantics.requiresAuthoritativeRouting(preparedEvent),
-           preparedEvent.tabID == nil,
-           scheduleRoutingRetryIfNeeded(for: preparedEvent) {
-            return
+           preparedEvent.tabID == nil {
+            if scheduleRoutingRetryIfNeeded(for: preparedEvent) {
+                return
+            }
+            let attempts = routingRetryCounts[preparedEvent.id] ?? authoritativeRetryDelays.count
+            if NotificationDeliverySemantics.shouldDropAfterRoutingFailure(
+                preparedEvent,
+                retryAttempts: attempts,
+                maxRetryAttempts: authoritativeRetryDelays.count
+            ) {
+                let reason = NotificationDeliverySemantics.unresolvedRoutingDropReason(
+                    for: preparedEvent,
+                    retryAttempts: attempts,
+                    maxRetryAttempts: authoritativeRetryDelays.count
+                )
+                Log.warn("\(reason) (tool=\(preparedEvent.tool) session=\(preparedEvent.sessionID ?? "nil"))")
+                history.markDropped(eventID: preparedEvent.id, reason: reason)
+                routingRetryCounts.removeValue(forKey: preparedEvent.id)
+                return
+            }
         }
 
         if NotificationDeliverySemantics.shouldSuppressAsFallback(

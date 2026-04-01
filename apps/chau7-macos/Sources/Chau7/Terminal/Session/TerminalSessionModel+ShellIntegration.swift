@@ -503,6 +503,7 @@ extension TerminalSessionModel {
             providerID: effectiveAIProvider,
             providerIsRestored: aiDetection.isRestored,
             hasPendingPrefillInput: hasPendingResumePrefillActivity,
+            suppressUntilNextUserCommand: suppressWaitingInputFallbackUntilNextUserCommand,
             commandLooksLikeResume: resumeCommand != nil,
             observedAIRoundTrip: pendingWaitingInputFallbackArmed && pendingWaitingInputFallbackSawLiveOutput,
             sessionID: effectiveAISessionId
@@ -939,6 +940,7 @@ extension TerminalSessionModel {
             commandPendingDetection = false
             return
         }
+        suppressWaitingInputFallbackUntilNextUserCommand = false
 
         // Security: check if the PTY has echo disabled (password prompt, passphrase, etc.)
         // If so, mark as sensitive to prevent recording in history.
