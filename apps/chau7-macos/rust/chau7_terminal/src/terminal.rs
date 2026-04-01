@@ -1169,8 +1169,8 @@ impl Chau7Terminal {
                     // Bold brightening: when a cell is bold and has a standard
                     // ANSI foreground color (indices 0-7), promote it to the
                     // corresponding bright variant (8-15).  This matches the
-                    // traditional xterm convention used by SwiftTerm and most
-                    // other terminals.  Without this, CLI tools that rely on
+                    // traditional xterm convention used by most terminals.
+                    // Without this, CLI tools that rely on
                     // bold+color (e.g. Claude Code, Codex) appear too dim.
                     let fg_color = if is_bold {
                         match cell.fg {

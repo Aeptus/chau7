@@ -6,7 +6,7 @@ Chau7 is a macOS menu bar helper and floating terminal overlay built for AI-assi
 
 - Menu bar status item with quick toggles, recent activity, and session status.
 - Native notifications for AI events and command idle detection.
-- Multi-tab SwiftTerm overlay with rename, colors, last-command badges, and git branch indicator.
+- Multi-tab terminal overlay with rename, colors, last-command badges, and git branch indicator.
 - Command palette, search overlay (regex + case sensitivity), snippets, clipboard history, bookmarks, and broadcast input.
 - AI CLI detection with auto tab theming and custom detection rules.
 - Claude Code event monitoring with permission and response-complete alerts.
@@ -26,7 +26,7 @@ For a complete feature inventory, see `docs/FEATURES.md`:
 
 - macOS 13+ (Ventura)
 - Xcode 15+ or Swift 5.9+ to build
-- Network access the first time to fetch SwiftTerm via Swift Package Manager
+- Network access the first time to fetch Swift Package Manager dependencies
 
 ## Local CI
 
@@ -119,6 +119,29 @@ To install the production Launchpad app (`com.chau7.app`) into `/Applications`:
 Note: this script refuses to replace `/Applications/Chau7.app` while it is running.
 Replacing a running app causes TCC code-requirement mismatches and repeated permission prompts.
 
+### Share a pre-release DMG
+
+Before Apple Developer signing and notarization are set up, you can still build a clean testing DMG:
+
+```bash
+./Scripts/build-dist.sh --universal
+```
+
+This produces `apps/chau7-macos/dist/Chau7.dmg` with:
+
+- `Chau7.app`
+- an `Applications` symlink
+- a short install/readme text file
+- bundled legal notices inside the app and in the DMG
+
+Important limits for this pre-release package:
+
+- it is ad-hoc signed, not Developer ID signed
+- it is not notarized
+- first launch on another Mac may require Finder: Control-click `Chau7.app` -> `Open`
+
+Once Apple Developer signing is available, this DMG flow should be upgraded to Developer ID signing, notarization, and stapling.
+
 Optional: launch it after install:
 
 ```bash
@@ -156,7 +179,7 @@ Logs are written to:
 
 ## Chau7 terminal window
 
-The app now ships with a floating terminal overlay powered by SwiftTerm.
+The app ships with a floating terminal overlay powered by the native Rust terminal backend.
 It starts automatically and provides:
 - A shell running your default login shell (configurable)
 - Tabs with standard shortcuts (Cmd+T, Cmd+W, Cmd+Shift+[ / ], Ctrl+Tab)

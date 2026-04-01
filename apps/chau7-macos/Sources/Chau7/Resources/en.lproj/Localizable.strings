@@ -1364,6 +1364,9 @@
 "settings.about.acknowledgments.openSource" = "Open Source Libraries";
 "settings.about.acknowledgments.contributors" = "Contributors";
 "settings.about.acknowledgments.viewLicenses" = "View Licenses";
+"settings.about.stackSummary" = "Chau7 combines Swift, Rust, and Go components across the app, terminal backend, and local proxy.";
+"settings.about.licenseSummary" = "Open-source acknowledgments and third-party notice files are listed in Help > Technology, Licenses & Acknowledgments.";
+"settings.about.openAcknowledgments" = "Open Acknowledgments";
 
 // Copyright
 "settings.about.copyright" = "© 2024 Chau7. All rights reserved.";

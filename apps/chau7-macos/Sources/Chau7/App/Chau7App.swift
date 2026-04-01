@@ -410,6 +410,10 @@ struct Chau7App: App {
                     appDelegate.showHelp()
                 }
 
+                Button(L("Technology, Licenses & Acknowledgments", "Technology, Licenses & Acknowledgments")) {
+                    appDelegate.showTechnologyLicenses()
+                }
+
                 Button(L("Keyboard Shortcuts...", "Keyboard Shortcuts...")) {
                     appDelegate.showKeyboardShortcuts()
                 }

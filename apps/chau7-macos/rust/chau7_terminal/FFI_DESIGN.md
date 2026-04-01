@@ -8,7 +8,7 @@ The FFI layer exposes a C-compatible interface that Swift can call using `@conve
 
 - **Runtime flexibility**: The Rust library can be updated independently
 - **Build isolation**: Swift and Rust compilation are decoupled
-- **Graceful degradation**: The app can fall back to SwiftTerm if the Rust library is unavailable
+- **Graceful degradation**: The app can fall back to safe no-op behavior or alternate rendering paths if the Rust library is unavailable
 
 ## Memory Ownership Rules
 

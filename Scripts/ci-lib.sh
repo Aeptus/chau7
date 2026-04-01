@@ -75,15 +75,18 @@ ci_should_run_for_paths() {
 ci_gofmt_check_dir() {
   local dir="$1"
   local label="$2"
-  local files=()
-  while IFS= read -r f; do files+=("$f"); done < <(find "$CI_REPO_ROOT/$dir" -type f -name '*.go' | sort)
-  if [[ ${#files[@]} -eq 0 ]]; then
+  local find_bin="/usr/bin/find"
+  local sort_bin="/usr/bin/sort"
+  local gofmt_bin
+  gofmt_bin="$(command -v gofmt)"
+
+  if ! "$find_bin" "$CI_REPO_ROOT/$dir" -type f -name '*.go' -print -quit | grep -q .; then
     return 0
   fi
 
   ci_section "$label"
   local output
-  output="$(gofmt -l "${files[@]}")"
+  output="$("$find_bin" "$CI_REPO_ROOT/$dir" -type f -name '*.go' -exec "$gofmt_bin" -l '{}' + | "$sort_bin")"
   if [[ -n "$output" ]]; then
     printf '%s\n' "$output" >&2
     ci_fail "gofmt reported unformatted Go files in $dir"

@@ -390,6 +390,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Structured logging with category-based filtering and correlation IDs.
 - Privacy-first bug report dialog (⌥⌘I): all sensitive data off by default, per-toggle tab pickers, live preview, HTTPS-only submission via relay, tab title redaction, background history capture, no AI session fallback leak.
 - In-app issue reporting privacy page: GDPR-compliant sub-processor disclosure (Cloudflare, GitHub) with data categories, retention, legal basis, DPA links, and data subject rights.
+- Technology, Licenses & Acknowledgments help page: monorepo layout, languages, Rust crates, bundled binaries, third-party dependencies, system frameworks, and notice file locations. Accessible from Help menu and About settings.
 - Verbose (`CHAU7_VERBOSE=1`) and trace (`CHAU7_TRACE=1`) modes.
 
 ### Monitoring

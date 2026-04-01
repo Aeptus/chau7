@@ -7,6 +7,9 @@ BUILD_DIR="${1:-$ROOT_DIR/.build/release}"
 OUT_DIR="${2:-$ROOT_DIR/build}"
 SHOW_DOCK_ICON="${SHOW_DOCK_ICON:-1}"
 BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-com.chau7.app.dev}"
+APP_VERSION="${CHAU7_VERSION:-1.0}"
+APP_BUILD_NUMBER="${CHAU7_BUILD_NUMBER:-1}"
+APP_COPYRIGHT="${CHAU7_COPYRIGHT:-Local build}"
 
 export CHAU7_LOG_ROOT="$ROOT_DIR"
 CHAU7_LOG_NAME="build-app"
@@ -24,6 +27,7 @@ if [[ "${CHAU7_LOG_SUPPRESS_HEADER:-0}" != "1" ]]; then
   log_info "Output dir: $OUT_DIR"
   log_info "Show dock icon: $SHOW_DOCK_ICON"
   log_info "Bundle identifier: $BUNDLE_IDENTIFIER"
+  log_info "Version: $APP_VERSION ($APP_BUILD_NUMBER)"
 fi
 
 finish() {
@@ -66,9 +70,9 @@ cat <<PLIST > "$CONTENTS/Info.plist"
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0</string>
+  <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>$APP_BUILD_NUMBER</string>
   <key>LSUIElement</key>
   $LSUI_ELEMENT_VALUE
   <key>LSMultipleInstancesProhibited</key>
@@ -76,7 +80,7 @@ cat <<PLIST > "$CONTENTS/Info.plist"
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSHumanReadableCopyright</key>
-  <string>Local build</string>
+  <string>$APP_COPYRIGHT</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
@@ -151,6 +155,25 @@ for helper in chau7-md chau7-optim; do
         run_cmd cp "$HELPER_BIN" "$CONTENTS/Resources/$helper"
         log_ok "Copied helper binary: $helper"
     fi
+done
+
+# Bundle third-party notices for source and binary distribution.
+LEGAL_DIR="$CONTENTS/Resources/Legal"
+REPO_NOTICE="$ROOT_DIR/../../THIRD_PARTY_NOTICES.md"
+RTK_NOTICE_DIR="$ROOT_DIR/rust/chau7_optim"
+
+run_cmd mkdir -p "$LEGAL_DIR"
+if [[ -f "$REPO_NOTICE" ]]; then
+  run_cmd cp "$REPO_NOTICE" "$LEGAL_DIR/THIRD_PARTY_NOTICES.md"
+  log_ok "Bundled third-party notices"
+else
+  log_warn "Third-party notice index not found at $REPO_NOTICE"
+fi
+
+for legal_file in LICENSE-RTK LICENSE-RTK-APACHE UPSTREAM-SYNC.md; do
+  if [[ -f "$RTK_NOTICE_DIR/$legal_file" ]]; then
+    run_cmd cp "$RTK_NOTICE_DIR/$legal_file" "$LEGAL_DIR/$legal_file"
+  fi
 done
 
 # Copy Go proxy binary if available

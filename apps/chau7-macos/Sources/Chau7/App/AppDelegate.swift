@@ -1270,6 +1270,10 @@ private final class OverlayBlurView: NSVisualEffectView {
         HelpWindowController.shared.show()
     }
 
+    func showTechnologyLicenses() {
+        HelpWindowController.shared.show(topicID: "technology-licenses")
+    }
+
     func showWelcomeFromMenu() {
         // Reuse the existing property so ARC keeps the controller alive while the window is visible.
         splashController = SplashWindowController()
