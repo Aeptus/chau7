@@ -125,17 +125,12 @@ final class AINotificationSettingsBridgeTests: XCTestCase {
         XCTAssertEqual(updated.groupOverrides["ai_coding.finished"], true)
     }
 
-    func testFinishedPrimaryEventAlsoCoversWaitingInput() {
+    func testFinishedPrimaryEventNoLongerCoversWaitingInput() {
         let waitingTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "waiting_input")!
         var state = NotificationTriggerState()
+        let finishedTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "finished")!
+        state.setEnabled(false, for: finishedTrigger)
         state.setEnabled(true, for: waitingTrigger)
-
-        XCTAssertTrue(
-            AINotificationSettingsBridge.isEffectivelyEnabled(
-                for: .finished,
-                state: state
-            )
-        )
 
         let updated = AINotificationSettingsBridge.updatedStateForPrimaryToggle(
             state,
@@ -143,21 +138,38 @@ final class AINotificationSettingsBridgeTests: XCTestCase {
             enabled: false
         )
 
-        XCTAssertNil(updated.overrides[waitingTrigger.id])
+        XCTAssertEqual(updated.overrides[waitingTrigger.id], true)
         XCTAssertEqual(updated.groupOverrides["ai_coding.finished"], false)
-        XCTAssertEqual(updated.groupOverrides["ai_coding.waiting_input"], false)
+        XCTAssertNil(updated.groupOverrides["ai_coding.waiting_input"])
     }
 
-    func testPermissionPrimaryEventNoLongerCoversWaitingInput() {
+    func testPermissionPrimaryEventCoversWaitingInput() {
         let waitingTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "waiting_input")!
         var state = NotificationTriggerState()
         state.setEnabled(true, for: waitingTrigger)
 
-        XCTAssertFalse(
+        XCTAssertTrue(
             AINotificationSettingsBridge.isEffectivelyEnabled(
                 for: .permission,
                 state: state
             )
         )
+    }
+
+    func testPermissionPrimaryToggleAlsoControlsAttentionRequired() {
+        let attentionTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "attention_required")!
+        var state = NotificationTriggerState()
+        state.setEnabled(true, for: attentionTrigger)
+
+        let updated = AINotificationSettingsBridge.updatedStateForPrimaryToggle(
+            state,
+            event: .permission,
+            enabled: false
+        )
+
+        XCTAssertNil(updated.overrides[attentionTrigger.id])
+        XCTAssertEqual(updated.groupOverrides["ai_coding.permission"], false)
+        XCTAssertEqual(updated.groupOverrides["ai_coding.waiting_input"], false)
+        XCTAssertEqual(updated.groupOverrides["ai_coding.attention_required"], false)
     }
 }

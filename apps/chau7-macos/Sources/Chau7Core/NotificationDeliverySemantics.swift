@@ -1,7 +1,9 @@
 import Foundation
 
 public enum NotificationDeliverySemantics {
-    public static let authoritativeRoutingTypes: Set<String> = ["finished", "failed", "permission", "waiting_input"]
+    public static let authoritativeRoutingTypes: Set<String> = [
+        "finished", "failed", "permission", "waiting_input", "attention_required"
+    ]
     public static let authorityRetentionSeconds: TimeInterval = 180
 
     public static func requiresAuthoritativeRouting(_ event: AIEvent) -> Bool {

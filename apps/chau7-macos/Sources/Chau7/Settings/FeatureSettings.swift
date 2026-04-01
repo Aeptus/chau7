@@ -253,7 +253,7 @@ private extension FeatureSettings {
             case "finished":
                 state.setEnabled(filters.taskFinished, for: trigger)
             case "waiting_input", "attention_required":
-                state.setEnabled(filters.taskFinished, for: trigger)
+                state.setEnabled(filters.permissionRequest, for: trigger)
             case "failed":
                 state.setEnabled(filters.taskFailed, for: trigger)
             case "needs_validation":
@@ -281,10 +281,10 @@ private extension FeatureSettings {
         }
 
         return NotificationFilters(
-            taskFinished: anyEnabled("finished") || anyEnabled("waiting_input") || anyEnabled("attention_required"),
+            taskFinished: anyEnabled("finished"),
             taskFailed: anyEnabled("failed"),
             needsValidation: anyEnabled("needs_validation"),
-            permissionRequest: anyEnabled("permission"),
+            permissionRequest: anyEnabled("permission") || anyEnabled("waiting_input") || anyEnabled("attention_required"),
             toolComplete: anyEnabled("tool_complete"),
             sessionEnd: anyEnabled("session_end"),
             commandIdle: anyEnabled("idle")
