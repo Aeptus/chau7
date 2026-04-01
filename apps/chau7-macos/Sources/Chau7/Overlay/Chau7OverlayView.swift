@@ -812,7 +812,7 @@ private struct ToolbarTabBarView: View {
     @State private var dragOffset: CGFloat = 0
     @State private var dragHomeIndex = 0 // Original index when drag started
     @State private var dragCurrentSlot = 0 // Visual slot the dragged tab occupies
-    @State private var dragStartScreenPoint: CGPoint?
+    // dragStartScreenPoint removed — NSEvent.mouseLocation used at drag end instead
     /// Must match HStack spacing in the tab bar ForEach.
     private let tabSpacing: CGFloat = 8
     @State private var lastTinySizeLogAt: Date = .distantPast
@@ -821,7 +821,6 @@ private struct ToolbarTabBarView: View {
 
     // Group bracket drag state
     @State private var draggingGroupID: String?
-    @State private var groupDragStartScreenPoint: CGPoint?
 
     var body: some View {
         let selected = overlayModel.selectedTab
@@ -1137,12 +1136,6 @@ private struct ToolbarTabBarView: View {
             draggingTabID = tab.id
             dragHomeIndex = home
             dragCurrentSlot = home
-            let fallbackX = overlayModel.overlayWindow?.frame.midX ?? 0
-            let fallbackY = overlayModel.overlayWindow.map { $0.frame.maxY - (OverlayLayout.tabBarHeight / 2) } ?? 0
-            dragStartScreenPoint = CGPoint(
-                x: tabMidXPositions[tab.id] ?? fallbackX,
-                y: overlayModel.tabBarDropFrame.isEmpty ? fallbackY : overlayModel.tabBarDropFrame.midY
-            )
             Log.info("Tab drag started (gesture): tabID=\(tab.id), homeIndex=\(home)")
         }
 
@@ -1195,7 +1188,6 @@ private struct ToolbarTabBarView: View {
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
             draggingTabID = nil
             dragOffset = 0
-            dragStartScreenPoint = nil
             if !movedAcrossWindows, from != to {
                 overlayModel.moveTab(fromIndex: from, toIndex: to)
             }
