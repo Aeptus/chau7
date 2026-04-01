@@ -68,7 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Runtime Turn Send for Adopted Sessions**: MCP clients can now send prompts through `runtime_turn_send` even when the runtime session was adopted from an existing tab
 
 ### Fixed
-- **Bug Report Hardening**: Fixed rate limit bypass in relay `/issue` endpoint (DO errors no longer skip throttle), added title length cap, HTTPS enforcement on submission endpoint, removed AI session fallback that leaked all sessions, tab title path redaction, and stale window reference cleanup on close.
+- **Bug Report Hardening**: Fixed rate limit bypass in relay `/issue` endpoint (DO errors no longer skip throttle), added title length cap, HTTPS enforcement on submission endpoint, removed AI session fallback that leaked all sessions, tab title path redaction, stale window reference cleanup on close, and background-thread terminal history capture.
 - **Restore Prefill Notification Noise**: System-injected resume prefills no longer arm prompt-return `waiting_input` notifications during launch/restore. Fallback waiting-input delivery stays suppressed until a real user command runs after the restore flow.
 - **Tailed `terminal_session` Notification Spam**: Terminal-session events replayed from the event log no longer re-enter user-facing notification delivery. They still appear in the unified event stream, but live notifications now only come from canonical ingress, not from tailed echoes.
 - **History Monitor False Finishes**: Prompt-only Codex and Claude history entries no longer synthesize `finished` events after the idle timeout. History-monitor completions now require response-side activity instead of treating every new user prompt as completed work.

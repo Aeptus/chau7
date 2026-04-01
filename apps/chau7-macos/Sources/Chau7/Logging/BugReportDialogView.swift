@@ -221,7 +221,7 @@ struct BugReportDialogView: View {
             )
             .onChange(of: draft.includeTerminalHistory) { enabled in
                 if enabled, let tabID = draft.historyTabID {
-                    draft.cachedTerminalHistory = draft.captureTabHistory(tabID: tabID)
+                    refreshTerminalHistory(tabID: tabID)
                 } else if !enabled {
                     draft.cachedTerminalHistory = nil
                 }
@@ -231,7 +231,7 @@ struct BugReportDialogView: View {
                     .padding(.leading, 20)
                     .onChange(of: draft.historyTabID) { newTabID in
                         if let tabID = newTabID {
-                            draft.cachedTerminalHistory = draft.captureTabHistory(tabID: tabID)
+                            refreshTerminalHistory(tabID: tabID)
                         }
                     }
             }
@@ -359,6 +359,18 @@ struct BugReportDialogView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
+    }
+
+    // MARK: - Helpers
+
+    /// Capture terminal history on a background queue to avoid blocking the UI.
+    private func refreshTerminalHistory(tabID: UUID) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let output = draft.captureTabHistory(tabID: tabID)
+            DispatchQueue.main.async {
+                draft.cachedTerminalHistory = output
+            }
+        }
     }
 
     // MARK: - Reusable Components
