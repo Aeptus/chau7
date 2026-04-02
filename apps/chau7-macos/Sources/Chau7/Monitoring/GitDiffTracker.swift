@@ -82,11 +82,58 @@ final class GitDiffTracker {
         return files
     }
 
+    /// Result of a git command that captures both outputs and exit status.
+    struct GitResult {
+        let stdout: String
+        let stderr: String
+        let exitCode: Int32
+
+        var succeeded: Bool {
+            exitCode == 0
+        }
+    }
+
+    /// Runs a git command and returns stdout, stderr, and exit code.
+    /// Use this for write operations where the caller needs error details.
+    static func runGitWithStatus(args: [String], in directory: String) -> GitResult {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", directory] + args
+        var env = ProcessInfo.processInfo.environment
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        process.environment = env
+
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+
+        do {
+            try process.run()
+        } catch {
+            return GitResult(stdout: "", stderr: "Failed to launch git: \(error.localizedDescription)", exitCode: -1)
+        }
+
+        let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: deadline)
+
+        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        deadline.cancel()
+
+        let stdout = String(data: outData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let stderr = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return GitResult(stdout: stdout, stderr: stderr, exitCode: process.terminationStatus)
+    }
+
     static func runGit(args: [String], in directory: String) -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-C", directory] + args
-        process.environment = ["GIT_TERMINAL_PROMPT": "0"]
+        var env = ProcessInfo.processInfo.environment
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        process.environment = env
 
         let pipe = Pipe()
         process.standardOutput = pipe

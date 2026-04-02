@@ -42,6 +42,7 @@ final class RuntimeSession: @unchecked Sendable {
     private var _wasInterrupted = false
     private var _lastExitReason: TurnExitReason?
     private var _lastTurnSubmittedAt: Date?
+    private var approvalTimeoutWork: DispatchWorkItem?
 
     // MARK: - Lock-Acquiring Accessors
 
@@ -315,12 +316,34 @@ final class RuntimeSession: @unchecked Sendable {
             data: ["approval_id": approval.id, "tool": tool, "description": description]
         )
 
+        scheduleApprovalTimeout()
+
         return approval
+    }
+
+    private static let approvalTimeoutSeconds: TimeInterval = 30
+
+    private func scheduleApprovalTimeout() {
+        approvalTimeoutWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let currentState = state
+            guard currentState == .awaitingApproval else { return }
+            Log.warn("RuntimeSession \(id): approval timed out after \(Int(Self.approvalTimeoutSeconds))s, recovering to ready")
+            lock.lock()
+            _pendingApproval = nil
+            lock.unlock()
+            transition(.turnCompleted)
+        }
+        approvalTimeoutWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.approvalTimeoutSeconds, execute: work)
     }
 
     /// Resolve a pending approval. Transitions back to `.busy`.
     @discardableResult
     func resolveApproval(id approvalID: String, approved: Bool, resolvedBy: String) -> Bool {
+        approvalTimeoutWork?.cancel()
+        approvalTimeoutWork = nil
         lock.lock()
         guard _pendingApproval?.id == approvalID else {
             let actual = _pendingApproval?.id ?? "none"

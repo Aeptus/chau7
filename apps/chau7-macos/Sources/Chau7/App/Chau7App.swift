@@ -307,6 +307,11 @@ struct Chau7App: App {
                     }
                     .keyboardShortcut("d", modifiers: [.command, .option, .shift])
 
+                    Button(L("Repository", "Repository")) {
+                        appDelegate.openRepositoryPane()
+                    }
+                    .keyboardShortcut("b", modifiers: [.command, .option])
+
                     Button(L("Append Selection to Editor", "Append Selection to Editor")) {
                         appDelegate.appendSelectionToEditor()
                     }
