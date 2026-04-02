@@ -348,10 +348,10 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
         }
     }
 
-    /// Send a prompt to the agent asking for a commit message.
+    /// Send a prompt to the agent asking for a commit message suggestion.
     func askAgentForCommitMessage() {
         guard let tabID else { return }
-        let prompt = "/commit\n"
+        let prompt = "Suggest a concise commit message for the changes you made. Just output the message, nothing else.\n"
         _ = TerminalControlService.shared.sendInput(
             tabID: tabID.uuidString,
             input: prompt
@@ -372,12 +372,8 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
         for (name, tally) in stats.toolTallies {
             toolsUsed[name] = tally.count
         }
-        let duration: TimeInterval?
-        if let started = session.lastTurnSubmittedAt {
-            duration = Date().timeIntervalSince(started)
-        } else {
-            duration = nil
-        }
+        // Session duration from creation, not last turn (avoids growing while idle)
+        let duration = Date().timeIntervalSince(session.createdAt)
         return TurnSummaryInfo(
             turnCount: session.turnCount,
             toolsUsed: toolsUsed,

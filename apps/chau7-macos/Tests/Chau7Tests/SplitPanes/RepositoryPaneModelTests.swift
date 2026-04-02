@@ -1,5 +1,6 @@
 import XCTest
 @testable import Chau7
+@testable import Chau7Core
 
 final class RepositoryPaneModelTests: XCTestCase {
 
@@ -397,5 +398,77 @@ final class RepositoryPaneModelTests: XCTestCase {
 
         XCTAssertTrue(model.sessionTouchedFiles.isEmpty)
         XCTAssertNil(model.turnSummary)
+    }
+
+    // MARK: - SessionFilesTracker
+
+    func testSessionFilesTrackerNormalization() {
+        let tracker = SessionFilesTracker()
+        tracker.gitRoot = "/Users/me/projects/MyApp"
+
+        // Simulate by adding directly via journal
+        let journal = EventJournal(capacity: 100)
+        journal.append(
+            sessionID: "test",
+            turnID: "t1",
+            type: RuntimeEventType.toolUse.rawValue,
+            data: ["tool": "Edit", "file": "/Users/me/projects/MyApp/src/main.swift"]
+        )
+        journal.append(
+            sessionID: "test",
+            turnID: "t1",
+            type: RuntimeEventType.toolUse.rawValue,
+            data: ["tool": "Write", "file": "tests/test.swift"] // already relative
+        )
+        journal.append(
+            sessionID: "test",
+            turnID: "t1",
+            type: RuntimeEventType.toolResult.rawValue, // not a tool_use, should be skipped
+            data: ["tool": "Edit"]
+        )
+
+        tracker.update(from: journal)
+
+        XCTAssertEqual(tracker.touchedFiles, ["src/main.swift", "tests/test.swift"])
+    }
+
+    func testSessionFilesTrackerReset() {
+        let tracker = SessionFilesTracker()
+        let journal = EventJournal(capacity: 100)
+        journal.append(
+            sessionID: "test",
+            turnID: "t1",
+            type: RuntimeEventType.toolUse.rawValue,
+            data: ["tool": "Edit", "file": "a.swift"]
+        )
+        tracker.update(from: journal)
+        XCTAssertEqual(tracker.touchedFiles.count, 1)
+
+        tracker.reset()
+        XCTAssertTrue(tracker.touchedFiles.isEmpty)
+    }
+
+    func testSessionFilesTrackerIncrementalReads() {
+        let tracker = SessionFilesTracker()
+        let journal = EventJournal(capacity: 100)
+
+        journal.append(
+            sessionID: "test",
+            turnID: "t1",
+            type: RuntimeEventType.toolUse.rawValue,
+            data: ["tool": "Edit", "file": "a.swift"]
+        )
+        tracker.update(from: journal)
+        XCTAssertEqual(tracker.touchedFiles.count, 1)
+
+        // Second update — only new events
+        journal.append(
+            sessionID: "test",
+            turnID: "t2",
+            type: RuntimeEventType.toolUse.rawValue,
+            data: ["tool": "Write", "file": "b.swift"]
+        )
+        tracker.update(from: journal)
+        XCTAssertEqual(tracker.touchedFiles, ["a.swift", "b.swift"])
     }
 }
