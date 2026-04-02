@@ -186,7 +186,7 @@ final class AppEventEmitter {
     private func setupMemoryTimer() {
         let timer = DispatchSource.makeTimerSource(queue: .main)
         // Check memory every 30 seconds
-        timer.schedule(deadline: .now() + .seconds(30), repeating: .seconds(30))
+        timer.schedule(deadline: .now() + .seconds(30), repeating: .seconds(30), leeway: .seconds(5))
         timer.setEventHandler { [weak self] in
             self?.checkMemory()
         }

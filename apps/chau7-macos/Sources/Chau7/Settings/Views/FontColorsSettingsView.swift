@@ -51,8 +51,8 @@ struct FontColorsSettingsView: View {
                         customFontValid = NSFontManager.shared.font(withFamily: customFontInput, traits: [], weight: 5, size: 12) != nil
                     }
                 }
-                .onChange(of: customFontInput) { newValue in
-                    let family = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                .onChange(of: customFontInput) {
+                    let family = customFontInput.trimmingCharacters(in: .whitespacesAndNewlines)
                     if family.isEmpty {
                         customFontValid = nil
                     } else {

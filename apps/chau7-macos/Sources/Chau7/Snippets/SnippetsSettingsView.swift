@@ -338,7 +338,7 @@ struct SnippetsSettingsView: View {
                 Toggle(L("Enable Snippets", "Enable Snippets"), isOn: $settings.isSnippetsEnabled)
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .onChange(of: settings.isSnippetsEnabled) { _ in
+                    .onChange(of: settings.isSnippetsEnabled) {
                         snippetManager.refreshConfiguration()
                     }
 
@@ -346,7 +346,7 @@ struct SnippetsSettingsView: View {
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .disabled(!settings.isSnippetsEnabled)
-                    .onChange(of: settings.isRepoSnippetsEnabled) { _ in
+                    .onChange(of: settings.isRepoSnippetsEnabled) {
                         snippetManager.refreshConfiguration()
                     }
 
@@ -1027,14 +1027,14 @@ private struct SnippetEditorPanel: View {
                                 .foregroundColor(.red)
                         }
                     }
-                    .onChange(of: draft.source) { newValue in
-                        if newValue == .repo, draft.repoPath.isEmpty, let first = repoOptions.first {
+                    .onChange(of: draft.source) {
+                        if draft.source == .repo, draft.repoPath.isEmpty, let first = repoOptions.first {
                             draft.repoPath = first
                         }
                     }
-                    .onChange(of: draft.repoPath) { newValue in
-                        if !newValue.isEmpty {
-                            FeatureSettings.shared.recordRecentRepo(newValue)
+                    .onChange(of: draft.repoPath) {
+                        if !draft.repoPath.isEmpty {
+                            FeatureSettings.shared.recordRecentRepo(draft.repoPath)
                         }
                     }
                     .onAppear {
@@ -1078,8 +1078,8 @@ private struct SnippetEditorPanel: View {
             }
             .padding()
         }
-        .onChange(of: repoSnippetsEnabled) { enabled in
-            if !enabled, draft.source == .repo {
+        .onChange(of: repoSnippetsEnabled) {
+            if !repoSnippetsEnabled, draft.source == .repo {
                 draft.source = .global
                 draft.repoPath = ""
             }
@@ -1113,7 +1113,7 @@ private struct ImportExportSheet: View {
                     Text(SnippetSource.repo.displayName).tag(SnippetSource.repo)
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: selectedSource) { _ in
+                .onChange(of: selectedSource) {
                     generateExport()
                 }
 

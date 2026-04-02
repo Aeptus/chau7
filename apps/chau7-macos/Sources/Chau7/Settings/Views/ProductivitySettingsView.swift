@@ -58,7 +58,7 @@ struct ProductivitySettingsView: View {
                 help: L("settings.productivity.enableSnippets.help", "Use reusable text snippets with placeholders"),
                 isOn: $settings.isSnippetsEnabled
             )
-            .onChange(of: settings.isSnippetsEnabled) { _ in
+            .onChange(of: settings.isSnippetsEnabled) {
                 SnippetManager.shared.refreshConfiguration()
             }
 
@@ -68,7 +68,7 @@ struct ProductivitySettingsView: View {
                 isOn: $settings.isRepoSnippetsEnabled,
                 disabled: !settings.isSnippetsEnabled
             )
-            .onChange(of: settings.isRepoSnippetsEnabled) { _ in
+            .onChange(of: settings.isRepoSnippetsEnabled) {
                 SnippetManager.shared.refreshConfiguration()
             }
 
@@ -90,7 +90,7 @@ struct ProductivitySettingsView: View {
                 ),
                 isOn: $settings.allowProtectedFolderAccess
             )
-            .onChange(of: settings.allowProtectedFolderAccess) { _ in
+            .onChange(of: settings.allowProtectedFolderAccess) {
                 if settings.allowProtectedFolderAccess {
                     ProtectedPathPolicy.resetAccessChecks()
                 }

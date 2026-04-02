@@ -147,7 +147,21 @@ struct OverlayTab: Identifiable, Equatable {
         self.createdAt = Date()
     }
 
+    /// Init with a pre-built split controller (for dashboard tabs).
+    init(appModel: AppModel, splitController: SplitPaneController) {
+        self.id = UUID()
+        self.splitController = splitController
+        self.createdAt = Date()
+    }
+
+    /// Whether this tab is a multi-agent dashboard (no terminal).
+    var isDashboard: Bool {
+        if case .dashboard = splitController.root { return true }
+        return false
+    }
+
     var displayTitle: String {
+        if isDashboard { return customTitle ?? "Overview" }
         if let customTitle, !customTitle.isEmpty {
             return customTitle
         }
@@ -2657,6 +2671,36 @@ final class OverlayTabsModel: ObservableObject {
     func removeTabFromRepoGroup(tabID: UUID) {
         guard let idx = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         tabs[idx].repoGroupID = nil
+    }
+
+    /// Toggle the agent dashboard tab for a repo group.
+    /// If one exists, focus it. If not, create a new dashboard tab.
+    func toggleDashboard(for repoGroupID: String) {
+        // Check if a dashboard for this repo already exists
+        if let existing = tabs.first(where: { $0.isDashboard && $0.repoGroupID == repoGroupID }) {
+            selectTab(id: existing.id)
+            return
+        }
+
+        // Create a new dashboard tab
+        let dashboard = AgentDashboardModel(repoGroupID: repoGroupID)
+        dashboard.onSwitchToTab = { [weak self] tabID in
+            self?.selectTab(id: tabID)
+        }
+        let controller = SplitPaneController(appModel: appModel)
+        let dashboardID = UUID()
+        controller.root = .dashboard(id: dashboardID, dashboard: dashboard)
+        controller.focusedPaneID = dashboardID
+
+        var tab = OverlayTab(appModel: appModel, splitController: controller)
+        tab.customTitle = "Overview"
+        tab.repoGroupID = repoGroupID
+        tab.stampOwnerTabID()
+
+        // Insert near the repo group
+        let insertIdx = tabs.firstIndex(where: { $0.repoGroupID == repoGroupID }) ?? tabs.endIndex
+        tabs.insert(tab, at: insertIdx)
+        selectTab(id: tab.id)
     }
 
     func groupAllSameRepo(asTab tabID: UUID) {

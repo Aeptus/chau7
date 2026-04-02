@@ -1527,7 +1527,7 @@ private struct EventMonitoringSection: View {
                 help: L("settings.notifications.monitorAIEvents.help", "Watch for AI CLI events like task completion, failures, and permission requests"),
                 isOn: $model.isMonitoring
             )
-            .onChange(of: model.isMonitoring) { _ in
+            .onChange(of: model.isMonitoring) {
                 model.applyMonitoringState()
             }
 

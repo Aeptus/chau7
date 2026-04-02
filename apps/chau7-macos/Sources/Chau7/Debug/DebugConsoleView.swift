@@ -101,12 +101,12 @@ struct DebugConsoleView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { startRefresh() }
         .onDisappear { stopRefresh() }
-        .onChange(of: selectedTab) { newValue in
-            if newValue == 1 {
+        .onChange(of: selectedTab) {
+            if selectedTab == 1 {
                 refreshCTOData()
             }
         }
-        .onChange(of: ctoTimePeriod) { _ in
+        .onChange(of: ctoTimePeriod) {
             refreshCTOData()
         }
     }
@@ -127,8 +127,8 @@ struct DebugConsoleView: View {
             Toggle(L("Auto-refresh", "Auto-refresh"), isOn: $autoRefresh)
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .onChange(of: autoRefresh) { newValue in
-                    if newValue { startRefresh() } else { stopRefresh() }
+                .onChange(of: autoRefresh) {
+                    if autoRefresh { startRefresh() } else { stopRefresh() }
                 }
 
             Button(action: onClose) {

@@ -81,8 +81,8 @@ struct RepositoriesSettingsView: View {
             }
         }
         .onAppear { reload() }
-        .onChange(of: selectedRepo) { newPath in
-            guard let path = newPath,
+        .onChange(of: selectedRepo) {
+            guard let path = selectedRepo,
                   let repo = repos.first(where: { $0.path == path }) else { return }
             editDescription = repo.metadata.description ?? ""
             editLabels = repo.metadata.labels.joined(separator: ", ")

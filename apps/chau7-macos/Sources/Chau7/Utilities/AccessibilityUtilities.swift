@@ -206,11 +206,11 @@ struct AccessibilityFocusHelper<Value: Hashable>: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: binding.wrappedValue) { newValue in
-                focusedField = newValue
+            .onChange(of: binding.wrappedValue) {
+                focusedField = binding.wrappedValue
             }
-            .onChange(of: focusedField) { newValue in
-                binding.wrappedValue = newValue
+            .onChange(of: focusedField) {
+                binding.wrappedValue = focusedField
             }
     }
 }

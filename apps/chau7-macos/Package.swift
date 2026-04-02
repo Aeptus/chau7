@@ -5,7 +5,7 @@ let package = Package(
     name: "Chau7",
     defaultLocalization: "en",
     platforms: [
-        .macOS(.v13),
+        .macOS(.v14),
         .iOS(.v17)
     ],
     products: [

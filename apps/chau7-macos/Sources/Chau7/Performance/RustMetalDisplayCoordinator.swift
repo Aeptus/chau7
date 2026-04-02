@@ -194,10 +194,16 @@ final class RustMetalDisplayCoordinator: NSObject {
 
     /// Called every 500ms to toggle blink phases.
     private func handleBlinkTick() {
+        // Skip entirely when window is not visible (hidden, occluded, miniaturized)
+        guard let window = metalView.window,
+              window.isVisible,
+              window.occlusionState.contains(.visible) else {
+            return
+        }
+
         // Cursor blink: pause for 1 second after keyboard activity
         let timeSinceActivity = Date().timeIntervalSince(lastActivityTime)
         if timeSinceActivity < 1.0 {
-            // Recent activity — keep cursor visible, don't blink
             renderer.cursorBlinkPhase = true
         } else {
             renderer.cursorBlinkPhase.toggle()

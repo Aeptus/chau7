@@ -826,6 +826,17 @@ private final class OverlayBlurView: NSVisualEffectView {
         ensureActiveOverlayModel()?.forceRefreshSelectedTab()
     }
 
+    // MARK: - Dashboard
+
+    func toggleDashboard() {
+        guard let model = ensureActiveOverlayModel() else { return }
+        if let repoGroupID = model.selectedTab?.repoGroupID {
+            model.toggleDashboard(for: repoGroupID)
+        } else if let gitRoot = model.selectedTab?.session?.gitRootPath {
+            model.toggleDashboard(for: gitRoot)
+        }
+    }
+
     // MARK: - Pane Actions
 
     func splitHorizontally() {
