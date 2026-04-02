@@ -69,12 +69,13 @@ final class TerminalControlService {
 
     @discardableResult
     func applyNotificationStyleAcrossWindows(to tabID: UUID, stylePreset: String, config: [String: String]) -> UUID? {
-        for (_, model) in allModels {
+        let models = allModels
+        for (_, model) in models {
             if model.applyNotificationStyle(to: tabID, stylePreset: stylePreset, config: config) {
                 return tabID
             }
         }
-        Log.warn("applyNotificationStyle: Explicit tabID not found across windows for tab \(tabID)")
+        Log.warn("applyNotificationStyle: tabID \(tabID) not found across \(models.count) windows (\(models.flatMap(\.model.tabs).count) total tabs)")
         return nil
     }
 
@@ -118,9 +119,17 @@ final class TerminalControlService {
                 return true
             }
         }
-        Log.warn("clearPersistentStyle: Explicit tabID not found across windows for tab \(tabID)")
+        // Downgrade to debug during the first 30s after launch — tabs may still be restoring
+        let uptime = ProcessInfo.processInfo.systemUptime
+        if uptime < startupUptime + 30 {
+            Log.debug("clearPersistentStyle: tabID \(tabID) not found (startup grace period)")
+        } else {
+            Log.warn("clearPersistentStyle: tabID \(tabID) not found across windows")
+        }
         return false
     }
+
+    private let startupUptime = ProcessInfo.processInfo.systemUptime
 
     // MARK: - Tab Operations
 
