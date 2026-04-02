@@ -807,7 +807,7 @@ extension OverlayTabsModel {
 
                 if !commands.isEmpty {
                     // Space prefix suppresses shell history; clear hides restore commands
-                    session.sendOrQueueInput(" \(commands.joined(separator: " && ")) && clear\n")
+                    session.sendOrQueueSystemRestoreInput(" \(commands.joined(separator: " && ")) && clear\n")
                 }
 
                 if let (resumePaneID, resumeCommand) = resumeTarget,

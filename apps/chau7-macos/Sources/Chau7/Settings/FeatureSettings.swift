@@ -2660,7 +2660,7 @@ final class FeatureSettings: ObservableObject {
         // Bug Report Contact Info
         self.bugReportContactName = defaults.string(forKey: Keys.bugReportContactName) ?? ""
         self.bugReportContactHandle = defaults.string(forKey: Keys.bugReportContactHandle) ?? ""
-        self.bugReportIssueEndpoint = defaults.string(forKey: Keys.bugReportIssueEndpoint) ?? ""
+        self.bugReportIssueEndpoint = defaults.string(forKey: Keys.bugReportIssueEndpoint) ?? "https://issues.chau7.sh"
     }
 
     private static func mcpAndRemoteSettings(from defaults: UserDefaults) -> MCPRemoteSettings {

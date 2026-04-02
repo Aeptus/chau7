@@ -450,6 +450,41 @@ final class TerminalSessionModelTests: XCTestCase {
         RuntimeSessionManager.shared.resetForTesting()
     }
 
+    func testSystemRestoreInputDoesNotClearWaitingInputSuppression() async {
+        RuntimeSessionManager.shared.resetForTesting()
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.ownerTabID = UUID()
+        session.currentDirectory = "/tmp/chau7"
+        session.restoreAIMetadata(
+            provider: "codex",
+            sessionId: "019d4a14-a656-72f0-a136-4c03ce6d907c"
+        )
+        session.lastDetectedAppName = "Codex"
+        session.lastAIProvider = "codex"
+
+        XCTAssertTrue(session.suppressWaitingInputFallbackUntilNextUserCommand)
+
+        session.sendOrQueueSystemRestoreInput(" cat '/tmp/chau7_restore.txt' && clear\n")
+        session.handleInputLine(" cat '/tmp/chau7_restore.txt' && clear")
+
+        XCTAssertTrue(session.suppressWaitingInputFallbackUntilNextUserCommand)
+        XCTAssertNil(session.pendingSystemRestoreInputLine)
+
+        session.pendingWaitingInputFallbackArmed = true
+        session.pendingWaitingInputFallbackSawLiveOutput = true
+        session.status = .running
+        session.handlePromptDetected()
+
+        let expectation = expectation(description: "system restore prompt handling settled")
+        DispatchQueue.main.async { expectation.fulfill() }
+        await fulfillment(of: [expectation], timeout: 1.0)
+
+        XCTAssertFalse(model.recentEvents.contains { $0.type == "waiting_input" })
+        RuntimeSessionManager.shared.resetForTesting()
+    }
+
     func testUserCommandClearsResumePrefillFallbackSuppression() async {
         RuntimeSessionManager.shared.resetForTesting()
         let model = AppModel()
