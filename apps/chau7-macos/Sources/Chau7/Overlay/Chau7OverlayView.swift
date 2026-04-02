@@ -1639,7 +1639,7 @@ private struct ShortcutHelperHintView: View {
 
 /// ASCII loading bar shown during shell startup, replacing the old 5s-only indicator.
 /// Two modes: normal loading (top-left bar below TIP) and slow/hung warning (centered).
-/// Uses @ObservedObject so SwiftUI observes session property changes
+/// Session is @Observable so SwiftUI tracks property-level access directly
 /// (OverlayTab is Equatable by id only, so ForEach won't re-diff on session changes).
 private struct ShellLoadingBar: View {
     var session: TerminalSessionModel

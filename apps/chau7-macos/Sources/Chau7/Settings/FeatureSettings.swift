@@ -582,7 +582,7 @@ final class FeatureSettings {
             UserDefaults.standard.set(fontFamily, forKey: Keys.fontFamily)
             // Don't post .terminalFontChanged here — that notification triggers
             // applyDefaultFontSize() which resets per-tab zoom. Font family changes
-            // are picked up by SwiftUI's @ObservedObject observation directly.
+            // are picked up by SwiftUI's @Observable property tracking directly.
         }
     }
 

@@ -51,7 +51,7 @@ struct TabHoverCard: View {
     }
 }
 
-// MARK: - Card Content (reactive via @ObservedObject)
+// MARK: - Card Content (reactive via @Observable)
 
 private struct TabHoverCardContent: View {
     let tab: OverlayTab

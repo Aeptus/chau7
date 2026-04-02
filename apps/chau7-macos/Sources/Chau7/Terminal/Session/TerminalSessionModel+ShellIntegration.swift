@@ -1,6 +1,5 @@
 import Foundation
 import AppKit
-import Combine
 import Chau7Core
 
 // MARK: - Shell Integration (Issue #8 fix)
