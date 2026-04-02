@@ -317,6 +317,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.17 | 2026-04-02 | Codex notify-hook events now export the owning overlay tab UUID, and authoritative stale tab IDs are corrected via exact session binding before notification delivery |
 | 0.5.16 | 2026-04-02 | Arabic, French, and Hebrew localizations now include the new acknowledgments/about stack summary, license summary, and open-acknowledgments strings |
 | 0.5.15 | 2026-04-02 | The website compare page now points directly at the hosted Chau7 DMG download and the shared footer test count reflects the latest suite size |
 | 0.5.14 | 2026-04-02 | The issue-intake relay now serves a small landing page on issues.chau7.sh while keeping POST issue submission at the root endpoint for the app |
