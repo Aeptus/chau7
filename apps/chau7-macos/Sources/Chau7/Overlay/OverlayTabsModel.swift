@@ -1,7 +1,6 @@
 import Foundation
 import AppKit
 import Chau7Core
-import Combine
 import SwiftUI
 
 // MARK: - Tab Notification Styling
@@ -386,107 +385,114 @@ struct ClosedTabEntry {
 }
 
 /// Manages terminal tabs, search, and broadcast mode for the overlay window.
-/// - Note: Thread Safety - @Published properties must be modified on main thread.
+/// - Note: Thread Safety - observed properties must be modified on main thread.
 ///   All methods assume main thread execution.
-final class OverlayTabsModel: ObservableObject {
+@Observable
+final class OverlayTabsModel {
     static var lastArchivedMultiWindowTabStateFingerprint: Int?
     static var lastArchivedMultiWindowTabStateAt: Date = .distantPast
 
-    @Published var tabs: [OverlayTab]
-    @Published var selectedTabID: UUID
-    @Published var isSearchVisible = false
-    @Published var searchQuery = ""
-    @Published var searchResults: [String] = []
-    @Published var searchMatchCount = 0
-    @Published var isCaseSensitive = false // Issue #23 fix
-    @Published var isRegexSearch = false
-    @Published var isSemanticSearch = false
-    @Published var searchError: String?
-    @Published var isRenameVisible = false
-    @Published var renameText = ""
-    @Published var renameColor: TabColor = .blue
-    @Published var suspendedTabIDs: Set<UUID> = []
+    var tabs: [OverlayTab] {
+        didSet { onTabsChanged?() }
+    }
+
+    var selectedTabID: UUID {
+        didSet { onSelectedTabIDChanged?() }
+    }
+
+    var isSearchVisible = false
+    var searchQuery = ""
+    var searchResults: [String] = []
+    var searchMatchCount = 0
+    var isCaseSensitive = false // Issue #23 fix
+    var isRegexSearch = false
+    var isSemanticSearch = false
+    var searchError: String?
+    var isRenameVisible = false
+    var renameText = ""
+    var renameColor: TabColor = .blue
+    var suspendedTabIDs: Set<UUID> = []
 
     // MARK: - Tab Switch Optimization State
 
     /// Previous tab index for directional animation
-    @Published var previousTabIndex = 0
+    var previousTabIndex = 0
     /// Whether the terminal content is ready to display (for snapshot swap)
-    @Published var isTerminalReady = true
+    var isTerminalReady = true
     /// Generation counter for isTerminalReady — prevents stale asyncAfter
     /// callbacks from clobbering the state after rapid tab switches.
-    var terminalReadyGeneration: UInt64 = 0
+    @ObservationIgnored var terminalReadyGeneration: UInt64 = 0
     /// Set of tab IDs currently being pre-warmed (on hover)
-    var prewarmingTabIDs: Set<UUID> = []
+    @ObservationIgnored var prewarmingTabIDs: Set<UUID> = []
 
     // MARK: - Tab Bar Recovery
 
     /// Tab hit-test ranges for right-click context menu (populated by SwiftUI preference changes).
     /// Each entry maps a tab UUID to its global x-range (minX, maxX) in the window.
-    var tabHitTestFrames: [(tabID: UUID, minX: CGFloat, maxX: CGFloat)] = []
+    @ObservationIgnored var tabHitTestFrames: [(tabID: UUID, minX: CGFloat, maxX: CGFloat)] = []
 
     /// Group bracket hit-test ranges for right-click and drag (populated by SwiftUI preferences).
     /// Each entry maps a repoGroupID to its global x-range.
-    var groupBracketHitTestFrames: [(repoGroupID: String, minX: CGFloat, maxX: CGFloat)] = []
+    @ObservationIgnored var groupBracketHitTestFrames: [(repoGroupID: String, minX: CGFloat, maxX: CGFloat)] = []
 
     /// Token to force SwiftUI to re-render the tab bar when incremented
-    @Published var tabBarRefreshToken = 0
+    var tabBarRefreshToken = 0
     /// Last reported rendered tab count from the view (for watchdog)
     /// -1 means the view hasn't reported yet (avoids false positive on startup)
-    var lastReportedRenderedCount: Int = -1
+    @ObservationIgnored var lastReportedRenderedCount: Int = -1
     /// Last reported tab bar size (for visibility-based recovery)
-    var lastReportedTabBarSize: CGSize = .zero
+    @ObservationIgnored var lastReportedTabBarSize: CGSize = .zero
     /// Timestamp of last preference update from the view (for staleness detection)
-    var lastPreferenceUpdateTime = Date()
+    @ObservationIgnored var lastPreferenceUpdateTime = Date()
     /// How long without a preference update before considering the view stale
-    let stalenessThreshold: TimeInterval = 20.0
-    let refreshCooldown: TimeInterval = 10.0
-    var lastForcedRefreshAt: Date = .distantPast
-    var watchdogRecoveryCount = 0
-    var watchdogSkipCount = 0
-    var lastWatchdogSummaryAt = Date()
-    var lastWatchdogReason = ""
+    @ObservationIgnored let stalenessThreshold: TimeInterval = 20.0
+    @ObservationIgnored let refreshCooldown: TimeInterval = 10.0
+    @ObservationIgnored var lastForcedRefreshAt: Date = .distantPast
+    @ObservationIgnored var watchdogRecoveryCount = 0
+    @ObservationIgnored var watchdogSkipCount = 0
+    @ObservationIgnored var lastWatchdogSummaryAt = Date()
+    @ObservationIgnored var lastWatchdogReason = ""
     /// Timer for watchdog that checks tab bar health
-    var tabBarWatchdogTimer: DispatchSourceTimer?
-    var consecutiveHealthyChecks = 0
+    @ObservationIgnored var tabBarWatchdogTimer: DispatchSourceTimer?
+    @ObservationIgnored var consecutiveHealthyChecks = 0
     /// Counter to limit consecutive watchdog refresh attempts
-    var watchdogRefreshAttempts = 0
+    @ObservationIgnored var watchdogRefreshAttempts = 0
     /// Minimum acceptable tab bar width per tab (for visibility detection)
-    let minWidthPerTab: CGFloat = 30
+    @ObservationIgnored let minWidthPerTab: CGFloat = 30
     /// Last reported tab bar frame in global coordinates for cross-window tab drops.
-    var tabBarDropFrame: CGRect = .zero
+    @ObservationIgnored var tabBarDropFrame: CGRect = .zero
     /// Tracks whether the tab bar is expected to be visible
-    var isTabBarVisible = true
-    var lastTabBarVisibilityLogAt: Date = .distantPast
+    @ObservationIgnored var isTabBarVisible = true
+    @ObservationIgnored var lastTabBarVisibilityLogAt: Date = .distantPast
 
     // F13: Broadcast Input
-    @Published var isBroadcastMode = false
-    @Published var broadcastExcludedTabIDs: Set<UUID> = []
+    var isBroadcastMode = false
+    var broadcastExcludedTabIDs: Set<UUID> = []
 
     // F16: Clipboard History
-    @Published var isClipboardHistoryVisible = false
+    var isClipboardHistoryVisible = false
 
     // F17: Bookmarks
-    @Published var isBookmarkListVisible = false
+    var isBookmarkListVisible = false
 
     // F21: Snippets
-    @Published var isSnippetManagerVisible = false
+    var isSnippetManagerVisible = false
 
     // Hover Card
-    @Published var hoverCardTabID: UUID?
-    @Published var hoverCardAnchorX: CGFloat = 0
-    var hoverCardTimer: DispatchWorkItem?
-    var hoverCardDismissTimer: DispatchWorkItem?
+    var hoverCardTabID: UUID?
+    var hoverCardAnchorX: CGFloat = 0
+    @ObservationIgnored var hoverCardTimer: DispatchWorkItem?
+    @ObservationIgnored var hoverCardDismissTimer: DispatchWorkItem?
 
     // Task Lifecycle (v1.1)
-    @Published var currentCandidate: TaskCandidate?
-    @Published var currentTask: TrackedTask?
-    @Published var isTaskAssessmentVisible = false
+    var currentCandidate: TaskCandidate?
+    var currentTask: TrackedTask?
+    var isTaskAssessmentVisible = false
 
     // Reopen Closed Tab (Cmd+Shift+T)
     /// LIFO stack of recently closed tabs (max 10, in-memory only)
-    var closedTabStack: [ClosedTabEntry] = []
-    let maxClosedTabs = 10
+    @ObservationIgnored var closedTabStack: [ClosedTabEntry] = []
+    @ObservationIgnored let maxClosedTabs = 10
 
     /// Whether there are any closed tabs available to reopen
     var canReopenClosedTab: Bool {
@@ -494,37 +500,41 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     // Git root path observation is now handled via session.onGitRootPathChanged callbacks
-    var renameTabID: UUID?
-    var renameOriginalTitle = ""
-    var renameOriginalColor: TabColor = .blue
-    var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
-    var liveRenderExemptTabIDs: Set<UUID> = []
+    @ObservationIgnored var renameTabID: UUID?
+    @ObservationIgnored var renameOriginalTitle = ""
+    @ObservationIgnored var renameOriginalColor: TabColor = .blue
+    @ObservationIgnored var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
+    @ObservationIgnored var liveRenderExemptTabIDs: Set<UUID> = []
     /// Per-pane token for restore-time resume prefills.
     /// Prevents stale delayed retries from writing outdated commands.
-    var latestRestoreResumeTokenByPaneID: [UUID: String] = [:]
-    var isRenderSuspensionEnabled = false
+    @ObservationIgnored var latestRestoreResumeTokenByPaneID: [UUID: String] = [:]
+    @ObservationIgnored var isRenderSuspensionEnabled = false
     // Reduced from 5.0s to 2.0s — combined with CVDisplayLink pausing, this
     // means background tabs stop rendering 3 seconds sooner, saving significant CPU.
-    var renderSuspensionDelay: TimeInterval = 5.0
-    var needsFreshTabOnShow = false
-    var isDiagnosticsLoggingEnabled = false
+    @ObservationIgnored var renderSuspensionDelay: TimeInterval = 5.0
+    @ObservationIgnored var needsFreshTabOnShow = false
+    @ObservationIgnored var isDiagnosticsLoggingEnabled = false
     /// Auto-save timer moved to AppDelegate for coordinated multi-window saves.
     /// Last archived snapshot fingerprint to avoid writing duplicate archive files.
-    var lastArchivedTabStateFingerprint: Int?
+    @ObservationIgnored var lastArchivedTabStateFingerprint: Int?
     /// Minimum time between archived snapshots unless we're terminating.
-    var lastArchivedTabStateAt: Date = .distantPast
+    @ObservationIgnored var lastArchivedTabStateAt: Date = .distantPast
     /// CTO notification observer tokens (stored for cleanup in deinit)
-    var ctoModeObserver: NSObjectProtocol?
-    var ctoFlagObserver: NSObjectProtocol?
-    var renderSuspensionObserver: NSObjectProtocol?
-    var suspensionDebounceItem: DispatchWorkItem?
-    var ctoFlagDebounceItem: DispatchWorkItem?
-    var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
+    @ObservationIgnored var ctoModeObserver: NSObjectProtocol?
+    @ObservationIgnored var ctoFlagObserver: NSObjectProtocol?
+    @ObservationIgnored var renderSuspensionObserver: NSObjectProtocol?
+    @ObservationIgnored var suspensionDebounceItem: DispatchWorkItem?
+    @ObservationIgnored var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
 
-    weak var overlayWindow: NSWindow?
-    var onCloseLastTab: (() -> Void)?
+    /// Callback invoked when `tabs` changes — used by RemoteControlManager
+    @ObservationIgnored var onTabsChanged: (() -> Void)?
+    /// Callback invoked when `selectedTabID` changes — used by RemoteControlManager
+    @ObservationIgnored var onSelectedTabIDChanged: (() -> Void)?
 
-    let appModel: AppModel
+    @ObservationIgnored weak var overlayWindow: NSWindow?
+    @ObservationIgnored var onCloseLastTab: (() -> Void)?
+
+    @ObservationIgnored let appModel: AppModel
     struct RestorableTabsPayload {
         let tabs: [OverlayTab]
         let selectedID: UUID
@@ -619,18 +629,14 @@ final class OverlayTabsModel: ObservableObject {
         }
 
         // CTO: refresh tab bar when a session's flag state changes (e.g. AI detected)
+        // With @Observable, property-level mutations auto-trigger observation,
+        // so no manual objectWillChange or debounce is needed.
         self.ctoFlagObserver = NotificationCenter.default.addObserver(
             forName: .ctoFlagRecalculated,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            guard let self else { return }
-            ctoFlagDebounceItem?.cancel()
-            let item = DispatchWorkItem { [weak self] in
-                self?.objectWillChange.send()
-            }
-            self.ctoFlagDebounceItem = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: item)
+        ) { _ in
+            // No-op: @Observable tracks property-level changes automatically
         }
 
         self.renderSuspensionObserver = NotificationCenter.default.addObserver(
@@ -651,9 +657,8 @@ final class OverlayTabsModel: ObservableObject {
                 guard let self else { return }
                 Log.trace("renderSuspension: session state changed tabSession=\(session.tabIdentifier)")
                 updateSuspensionState()
-                // Note: don't call objectWillChange.send() here — @Published
-                // properties in updateSuspensionState already trigger it when
-                // suspendedTabIDs changes. Extra sends cause redundant rebuilds.
+                // Note: with @Observable, property mutations auto-trigger
+                // observation — no manual send needed.
             }
             self.suspensionDebounceItem = item
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: item)
@@ -1359,7 +1364,6 @@ final class OverlayTabsModel: ObservableObject {
         }
 
         tabs[index].notificationStyle = style
-        objectWillChange.send()
         if let style {
             let desc = style.icon ?? "border/color"
             Log.info("Tab notification style set: \(desc) for tab \(targetID)")
@@ -1383,7 +1387,6 @@ final class OverlayTabsModel: ObservableObject {
         guard let index = tabs.firstIndex(where: { $0.id == tabID }),
               tabs[index].notificationStyle?.persistent == true else { return }
         tabs[index].notificationStyle = nil
-        objectWillChange.send()
         Log.info("Persistent tab style cleared for tab \(tabID) (permission resolved)")
     }
 
@@ -1580,9 +1583,6 @@ final class OverlayTabsModel: ObservableObject {
             "lastRendered": String(lastReportedRenderedCount),
             "memory": String(format: "%.1fMB", PerfTracker.currentMemoryMB() ?? 0)
         ])
-        // Also trigger objectWillChange to ensure all observers update
-        objectWillChange.send()
-
         // Recreate the toolbar entirely - this is the only reliable recovery when
         // the NSHostingView in the toolbar becomes stale after window hide/show cycles.
         // Direct manipulation of the hosting view causes crashes (EXC_BREAKPOINT).
@@ -1634,10 +1634,7 @@ final class OverlayTabsModel: ObservableObject {
             }
             Log.info("forceRefreshSelectedTab: unhid Rust view + Metal for tab \(selectedTabID)")
         }
-        // 3. Trigger SwiftUI re-render
-        objectWillChange.send()
-
-        // 4. Re-focus
+        // 3. Re-focus
         focusSelected()
 
         logVisualState(reason: "forceRefreshSelectedTab")
@@ -2107,9 +2104,7 @@ final class OverlayTabsModel: ObservableObject {
         }
         clearRenameState(shouldFocus: true)
 
-        // Notify SwiftUI of the change. No toolbar recreation needed for rename -
-        // objectWillChange should be sufficient for normal property updates.
-        objectWillChange.send()
+        // With @Observable, tab property mutations auto-trigger SwiftUI updates.
     }
 
     func cancelRename() {

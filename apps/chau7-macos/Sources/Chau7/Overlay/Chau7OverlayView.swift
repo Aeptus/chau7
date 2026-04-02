@@ -687,7 +687,7 @@ private struct TabBarFrameKey: PreferenceKey {
 
 /// SwiftUI view for the tab bar that goes in the unified toolbar
 private struct ToolbarTabBarView: View {
-    @ObservedObject var overlayModel: OverlayTabsModel
+    var overlayModel: OverlayTabsModel
     @State private var draggingTabID: UUID?
     @State private var tabWidths: [UUID: CGFloat] = [:]
     @State private var recoveryDebounce: DispatchWorkItem?
@@ -1334,7 +1334,7 @@ struct CursorPlaceholderView: View {
 }
 
 struct Chau7OverlayView: View {
-    @ObservedObject var overlayModel: OverlayTabsModel
+    var overlayModel: OverlayTabsModel
     var appModel: AppModel
     var settings = FeatureSettings.shared
 
@@ -2182,7 +2182,7 @@ struct OverlayCloseButton: View {
 }
 
 struct SearchOverlayView: View {
-    @ObservedObject var model: OverlayTabsModel
+    @Bindable var model: OverlayTabsModel
     var settings = FeatureSettings.shared
     @FocusState private var isFocused: Bool
 
@@ -2346,7 +2346,7 @@ struct SearchResultRow: View {
 }
 
 struct RenameOverlayView: View {
-    @ObservedObject var model: OverlayTabsModel
+    @Bindable var model: OverlayTabsModel
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -2402,7 +2402,7 @@ struct RenameOverlayView: View {
 // MARK: - F16: Clipboard History Overlay
 
 struct ClipboardHistoryOverlayView: View {
-    @ObservedObject var model: OverlayTabsModel
+    var model: OverlayTabsModel
     var clipboardManager = ClipboardHistoryManager.shared
 
     var body: some View {
@@ -2519,7 +2519,7 @@ struct ClipboardItemRow: View {
 // MARK: - F17: Bookmarks Overlay
 
 struct BookmarkListOverlayView: View {
-    @ObservedObject var model: OverlayTabsModel
+    var model: OverlayTabsModel
     var bookmarkManager = BookmarkManager.shared
     @State private var newBookmarkLabel = ""
 
@@ -2643,7 +2643,7 @@ struct BookmarkRow: View {
 // MARK: - F21: Snippets Overlay
 
 struct SnippetManagerOverlayView: View {
-    @ObservedObject var model: OverlayTabsModel
+    var model: OverlayTabsModel
     var manager = SnippetManager.shared
     var settings = FeatureSettings.shared
     @State private var query = ""

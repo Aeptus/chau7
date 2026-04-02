@@ -660,7 +660,7 @@ final class TerminalControlService {
             for (_, session) in model.tabs[index].splitController.terminalSessions {
                 session.tabTitleOverride = model.tabs[index].customTitle
             }
-            model.objectWillChange.send()
+            // With @Observable, tabs[index] mutation auto-triggers SwiftUI updates.
 
             return self.encodeAny([
                 "ok": true,

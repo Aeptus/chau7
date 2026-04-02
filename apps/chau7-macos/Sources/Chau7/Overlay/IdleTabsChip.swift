@@ -4,7 +4,7 @@ import SwiftUI
 /// idle tabs with hover card support and click-to-select.
 struct IdleTabsChip: View {
     let tabs: [OverlayTab]
-    @ObservedObject var overlayModel: OverlayTabsModel
+    var overlayModel: OverlayTabsModel
     let idleDuration: (OverlayTab) -> String
 
     @State private var isExpanded = false
