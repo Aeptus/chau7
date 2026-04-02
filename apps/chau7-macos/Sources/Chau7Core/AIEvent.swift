@@ -50,6 +50,7 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
 
     public static let claudeCode = AIEventSource(rawValue: "claude_code")
     public static let codex = AIEventSource(rawValue: "codex")
+    public static let gemini = AIEventSource(rawValue: "gemini")
     public static let cursor = AIEventSource(rawValue: "cursor")
     public static let windsurf = AIEventSource(rawValue: "windsurf")
     public static let copilot = AIEventSource(rawValue: "copilot")

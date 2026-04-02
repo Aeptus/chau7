@@ -2,6 +2,28 @@ import XCTest
 @testable import Chau7Core
 
 final class NotificationProviderAdapterRegistryTests: XCTestCase {
+    func testGeminiProviderCanonicalizesThroughGenericAdapter() {
+        let event = AIEvent(
+            source: .gemini,
+            type: "finished",
+            rawType: "finished",
+            tool: "Gemini",
+            message: "Done",
+            ts: "2026-04-02T00:00:00Z",
+            sessionID: "gemini-session-1",
+            producer: "gemini_monitor",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(adapted, canonical) = decision else {
+            return XCTFail("Expected Gemini event to canonicalize")
+        }
+
+        XCTAssertEqual(adapted.type, "finished")
+        XCTAssertEqual(canonical.kind, .taskFinished)
+    }
+
     func testClaudeNotificationEventMapsToWaitingInput() {
         let event = AIEvent(
             id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,

@@ -317,6 +317,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.18 | 2026-04-02 | Gemini is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
 | 0.5.17 | 2026-04-02 | Codex notify-hook events now export the owning overlay tab UUID, and authoritative stale tab IDs are corrected via exact session binding before notification delivery |
 | 0.5.16 | 2026-04-02 | Arabic, French, and Hebrew localizations now include the new acknowledgments/about stack summary, license summary, and open-acknowledgments strings |
 | 0.5.15 | 2026-04-02 | The website compare page now points directly at the hosted Chau7 DMG download and the shared footer test count reflects the latest suite size |

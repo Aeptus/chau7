@@ -738,6 +738,7 @@ final class CommandCenterViewModel: ObservableObject {
         switch source {
         case .claudeCode: return "Claude Code"
         case .codex: return "Codex"
+        case .gemini: return "Gemini"
         case .cursor: return "Cursor"
         case .windsurf: return "Windsurf"
         case .copilot: return "Copilot"
