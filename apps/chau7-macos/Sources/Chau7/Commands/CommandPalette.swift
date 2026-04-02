@@ -595,13 +595,17 @@ final class CommandPaletteProvider {
 
 // MARK: - Command Palette Controller
 
-final class CommandPaletteController: ObservableObject {
+@Observable
+final class CommandPaletteController {
     static let shared = CommandPaletteController()
 
-    @Published var isVisible = false
+    var isVisible = false
 
+    @ObservationIgnored
     private var window: NSWindow?
+    @ObservationIgnored
     private var hostingView: NSHostingView<AnyView>?
+    @ObservationIgnored
     private let provider = CommandPaletteProvider()
 
     private init() {}

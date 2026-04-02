@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 // MARK: - Split Pane View
 
 struct SplitPaneView: View {
-    @ObservedObject var controller: SplitPaneController
+    var controller: SplitPaneController
     let isSuspended: Bool
     let isActive: Bool
 
@@ -246,7 +246,7 @@ struct TerminalPaneView: View {
 
 struct TextEditorPaneView: View {
     let id: UUID
-    @ObservedObject var editor: TextEditorModel
+    var editor: TextEditorModel
     let onFocus: () -> Void
     let onClose: () -> Void
     /// Callback to run a command in the terminal (for markdown runbooks)
@@ -489,7 +489,7 @@ struct TextEditorPaneView: View {
 
 struct TextEditorContent: NSViewRepresentable {
     @Binding var text: String
-    @ObservedObject var editor: TextEditorModel
+    var editor: TextEditorModel
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()

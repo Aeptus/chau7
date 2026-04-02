@@ -8,7 +8,8 @@ import Chau7Core
 /// as toggles change, powering the live preview in `BugReportDialogView`.
 ///
 /// Privacy-first: all sensitive sections are OFF by default.
-final class BugReportDraft: ObservableObject {
+@Observable
+final class BugReportDraft {
 
     // MARK: - Snapshot (immutable, captured once)
 
@@ -17,41 +18,42 @@ final class BugReportDraft: ObservableObject {
     let availableTabs: [(id: UUID, label: String)]
 
     /// Shared formatter — allocated once, not per render cycle.
+    @ObservationIgnored
     private static let isoFormatter = ISO8601DateFormatter()
 
     // MARK: - User Input
 
-    @Published var userDescription = ""
-    @Published var contactName: String
-    @Published var contactHandle: String
-    @Published var saveContactInfo: Bool
+    var userDescription = ""
+    var contactName: String
+    var contactHandle: String
+    var saveContactInfo: Bool
 
     // MARK: - Global Toggles
 
-    @Published var includeFeatureFlags = true
-    @Published var includeLogs = false
-    @Published var includeEvents = false
+    var includeFeatureFlags = true
+    var includeLogs = false
+    var includeEvents = false
 
     // MARK: - Per-Toggle Tab Pickers
 
-    @Published var includeTabMetadata = false
-    @Published var metadataTabID: UUID?
+    var includeTabMetadata = false
+    var metadataTabID: UUID?
 
-    @Published var includeTerminalHistory = false
-    @Published var historyTabID: UUID?
+    var includeTerminalHistory = false
+    var historyTabID: UUID?
 
-    @Published var includeAISession = false
+    var includeAISession = false
 
     // MARK: - Cached Tab History
 
     /// Cached terminal output, populated on toggle-on to avoid I/O in computed property.
-    @Published var cachedTerminalHistory: String?
+    var cachedTerminalHistory: String?
 
     // MARK: - Submission State
 
-    @Published var isSubmitting = false
-    @Published var submitError: String?
-    @Published var submitSuccess: Int? // issue number
+    var isSubmitting = false
+    var submitError: String?
+    var submitSuccess: Int? // issue number
 
     // MARK: - Init
 

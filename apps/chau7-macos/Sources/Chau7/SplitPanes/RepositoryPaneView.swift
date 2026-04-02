@@ -8,7 +8,7 @@ import SwiftUI
 /// in a diff viewer or file preview pane.
 struct RepositoryPaneView: View {
     let id: UUID
-    @ObservedObject var repo: RepositoryPaneModel
+    @Bindable var repo: RepositoryPaneModel
     let onFocus: () -> Void
     let onClose: () -> Void
     var onFileClicked: ((String, String) -> Void)? // (path, directory)

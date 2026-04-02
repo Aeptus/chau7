@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 /// Read-only file preview with syntax highlighting for text and native rendering for images.
 struct FilePreviewPaneView: View {
     let id: UUID
-    @ObservedObject var preview: FilePreviewModel
+    var preview: FilePreviewModel
     let onFocus: () -> Void
     let onClose: () -> Void
 

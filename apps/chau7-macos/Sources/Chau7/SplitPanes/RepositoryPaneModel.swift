@@ -9,36 +9,42 @@ import Foundation
 ///
 /// Follows the same pattern as `DiffViewerModel`: injectable runner,
 /// background execution, `@Published` state, token-based cancellation.
-final class RepositoryPaneModel: ObservableObject, Identifiable {
+@Observable
+final class RepositoryPaneModel: Identifiable {
     let id = UUID()
 
     // MARK: - Dependencies
 
+    @ObservationIgnored
     private let gitRunner: ([String], String) -> String
+    @ObservationIgnored
     private let gitRunnerWithStatus: ([String], String) -> GitDiffTracker.GitResult
+    @ObservationIgnored
     private let loadQueue = DispatchQueue(label: "com.chau7.repo-pane", qos: .userInitiated)
 
     // MARK: - Configuration
 
-    @Published var directory: String?
+    var directory: String?
 
     /// Tab UUID — set by SplitPaneController for RuntimeSession lookup.
+    @ObservationIgnored
     var tabID: UUID?
 
     // MARK: - Session Mode
 
     /// Whether the pane is in session-aware mode (agent active/recent).
-    @Published var isSessionMode = false
+    var isSessionMode = false
     /// Manual override to force full git mode.
-    @Published var forceGitMode = false
+    var forceGitMode = false
     /// Files the agent touched across all turns (accumulated from journal).
-    @Published var sessionTouchedFiles: Set<String> = []
+    var sessionTouchedFiles: Set<String> = []
     /// Per-file diff stats: additions and deletions.
-    @Published var diffStats: [String: DiffStat] = [:]
+    var diffStats: [String: DiffStat] = [:]
     /// Turn summary for display.
-    @Published var turnSummary: TurnSummaryInfo?
+    var turnSummary: TurnSummaryInfo?
 
     /// Tracks files across turns by reading the EventJournal.
+    @ObservationIgnored
     private let sessionTracker = SessionFilesTracker()
 
     // MARK: - Session File Partitioning
@@ -77,36 +83,37 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
 
     // MARK: - Branch State
 
-    @Published var currentBranch: String?
-    @Published var branches: [String] = []
-    @Published var remoteBranches: [String] = []
-    @Published var branchDetails: [String: BranchDetail] = [:]
-    @Published var aheadBehind: (ahead: Int, behind: Int)?
+    var currentBranch: String?
+    var branches: [String] = []
+    var remoteBranches: [String] = []
+    var branchDetails: [String: BranchDetail] = [:]
+    var aheadBehind: (ahead: Int, behind: Int)?
 
     // MARK: - File Status
 
-    @Published var stagedFiles: [FileStatus] = []
-    @Published var unstagedFiles: [FileStatus] = []
-    @Published var untrackedFiles: [String] = []
-    @Published var conflictedFiles: [String] = []
+    var stagedFiles: [FileStatus] = []
+    var unstagedFiles: [FileStatus] = []
+    var untrackedFiles: [String] = []
+    var conflictedFiles: [String] = []
 
     // MARK: - Commit
 
-    @Published var commitMessage = ""
-    @Published var isAmend = false
+    var commitMessage = ""
+    var isAmend = false
 
     // MARK: - History
 
-    @Published var commits: [CommitEntry] = []
+    var commits: [CommitEntry] = []
+    @ObservationIgnored
     var commitLogLimit = 50
 
     // MARK: - Stash
 
-    @Published var stashes: [StashEntry] = []
+    var stashes: [StashEntry] = []
 
     // MARK: - History Search
 
-    @Published var historySearchText = ""
+    var historySearchText = ""
 
     var filteredCommits: [CommitEntry] {
         guard !historySearchText.isEmpty else { return commits }
@@ -136,9 +143,10 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
 
     // MARK: - General State
 
-    @Published var isLoading = false
-    @Published var lastError: String?
-    @Published var operationInProgress: String?
+    var isLoading = false
+    var lastError: String?
+    var operationInProgress: String?
+    @ObservationIgnored
     var lastRefreshDate: Date?
 
     /// Display name derived from directory.

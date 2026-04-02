@@ -6,7 +6,7 @@ import AppKit
 /// Displays a unified git diff with colored additions/deletions, line numbers, and mode toggle.
 struct DiffViewerPaneView: View {
     let id: UUID
-    @ObservedObject var diff: DiffViewerModel
+    @Bindable var diff: DiffViewerModel
     let onFocus: () -> Void
     let onClose: () -> Void
 
