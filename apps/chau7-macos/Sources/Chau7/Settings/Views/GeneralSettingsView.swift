@@ -5,7 +5,7 @@ import AppKit
 
 struct GeneralSettingsView: View {
     var model: AppModel
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     @State private var showResetConfirmation = false
 
     var body: some View {

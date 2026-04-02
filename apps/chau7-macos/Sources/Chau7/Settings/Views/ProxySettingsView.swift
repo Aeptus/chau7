@@ -3,7 +3,7 @@ import Chau7Core
 
 /// Settings view for API Analytics proxy configuration
 struct ProxySettingsView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     @State private var proxyStatus: ProxyStatus = .disabled
     @State private var showingClearConfirmation = false
 

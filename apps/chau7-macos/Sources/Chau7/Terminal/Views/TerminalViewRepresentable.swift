@@ -201,7 +201,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     var isSuspended: Bool
     var isActive: Bool
     var onFilePathClicked: ((String, Int?, Int?) -> Void)?
-    @ObservedObject private var settings = FeatureSettings.shared
+    var settings = FeatureSettings.shared
 
     func makeNSView(context: Context) -> UnifiedTerminalContainerView {
         Log.trace("TerminalViewRepresentable: makeNSView — Rust backend")

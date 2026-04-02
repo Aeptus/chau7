@@ -64,24 +64,17 @@ final class RemoteControlManager: ObservableObject {
         ipc.start()
         refreshPairedDevices()
 
-        FeatureSettings.shared.$isRemoteEnabled
-            .receive(on: RunLoop.main)
-            .sink { [weak self] enabled in
-                if enabled {
-                    self?.startAgent()
-                } else {
-                    self?.stopAgent()
-                }
+        FeatureSettings.shared.onRemoteEnabledChanged = { [weak self] enabled in
+            if enabled {
+                self?.startAgent()
+            } else {
+                self?.stopAgent()
             }
-            .store(in: &cancellables)
+        }
 
-        FeatureSettings.shared.$remoteRelayURL
-            .dropFirst()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.restartAgentIfRunning()
-            }
-            .store(in: &cancellables)
+        FeatureSettings.shared.onRemoteRelayURLChanged = { [weak self] _ in
+            self?.restartAgentIfRunning()
+        }
 
         overlayModel.$tabs
             .receive(on: RunLoop.main)

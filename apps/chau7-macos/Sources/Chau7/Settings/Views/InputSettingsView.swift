@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Input Settings
 
 struct InputSettingsView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     @State private var editingShortcut: KeyboardShortcut?
     @State private var showShortcutEditor = false
 
@@ -188,7 +188,7 @@ struct KeyboardShortcutRow: View {
 
 struct ShortcutEditorSheet: View {
     let shortcut: KeyboardShortcut
-    @ObservedObject var settings: FeatureSettings
+    @Bindable var settings: FeatureSettings
     let onDismiss: () -> Void
 
     @State private var key: String

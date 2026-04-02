@@ -4,7 +4,7 @@ import AppKit
 // MARK: - Font & Colors Settings
 
 struct FontColorsSettingsView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     @State private var customFontInput = ""
     @State private var customFontValid: Bool? // nil = not yet validated
 

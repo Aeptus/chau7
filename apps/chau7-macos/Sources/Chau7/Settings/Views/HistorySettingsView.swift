@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 // MARK: - History Settings
 
 struct HistorySettingsView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    private var settings = FeatureSettings.shared
     @State private var totalRecords = 0
     @State private var databaseSize = ""
     @State private var showClearConfirmation = false

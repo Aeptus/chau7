@@ -548,7 +548,8 @@ enum DangerousCommandHighlightScope: String, CaseIterable, Codable {
 
 /// Centralized feature flags and settings for Chau7.
 /// All features can be toggled in Settings and values are persisted in UserDefaults.
-final class FeatureSettings: ObservableObject {
+@Observable
+final class FeatureSettings {
     static let shared = FeatureSettings()
 
     private struct MCPRemoteSettings {
@@ -576,7 +577,7 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Font Settings (NEW)
 
-    @Published var fontFamily: String {
+    var fontFamily: String {
         didSet {
             UserDefaults.standard.set(fontFamily, forKey: Keys.fontFamily)
             // Don't post .terminalFontChanged here — that notification triggers
@@ -587,7 +588,7 @@ final class FeatureSettings: ObservableObject {
 
     /// NSFont weight value (0=ultralight, 5=regular, 9=bold, 14=ultra-heavy).
     /// Maps to NSFontManager weight parameter.
-    @Published var fontWeight: Int {
+    var fontWeight: Int {
         didSet {
             let clamped = max(0, min(fontWeight, 14))
             if fontWeight != clamped { fontWeight = clamped
@@ -597,7 +598,7 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var fontSize: Int {
+    var fontSize: Int {
         didSet {
             let clamped = max(8, min(fontSize, 72))
             if fontSize != clamped {
@@ -609,13 +610,13 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var customFontFamily: String {
+    var customFontFamily: String {
         didSet {
             UserDefaults.standard.set(customFontFamily, forKey: Keys.customFontFamily)
         }
     }
 
-    @Published var defaultZoomPercent: Int {
+    var defaultZoomPercent: Int {
         didSet {
             let clamped = max(50, min(defaultZoomPercent, 200))
             if defaultZoomPercent != clamped {
@@ -969,14 +970,14 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Color Scheme Settings (NEW)
 
-    @Published var colorSchemeName: String {
+    var colorSchemeName: String {
         didSet {
             UserDefaults.standard.set(colorSchemeName, forKey: Keys.colorSchemeName)
             NotificationCenter.default.post(name: .terminalColorsChanged, object: nil)
         }
     }
 
-    @Published var customColorScheme: TerminalColorScheme? {
+    var customColorScheme: TerminalColorScheme? {
         didSet {
             if let scheme = customColorScheme,
                let data = JSONOperations.encode(scheme, context: "customColorScheme") {
@@ -997,25 +998,25 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Shell Settings (NEW)
 
-    @Published var shellType: ShellType {
+    var shellType: ShellType {
         didSet { UserDefaults.standard.set(shellType.rawValue, forKey: Keys.shellType) }
     }
 
-    @Published var customShellPath: String {
+    var customShellPath: String {
         didSet { UserDefaults.standard.set(customShellPath, forKey: Keys.customShellPath) }
     }
 
-    @Published var startupCommand: String {
+    var startupCommand: String {
         didSet { UserDefaults.standard.set(startupCommand, forKey: Keys.startupCommand) }
     }
 
-    @Published var isLsColorsEnabled: Bool {
+    var isLsColorsEnabled: Bool {
         didSet { UserDefaults.standard.set(isLsColorsEnabled, forKey: Keys.lsColorsEnabled) }
     }
 
     // MARK: - Keyboard Shortcuts (NEW)
 
-    @Published var customShortcuts: [KeyboardShortcut] {
+    var customShortcuts: [KeyboardShortcut] {
         didSet {
             if let data = JSONOperations.encode(customShortcuts, context: "customShortcuts") {
                 UserDefaults.standard.set(data, forKey: Keys.customShortcuts)
@@ -1023,7 +1024,7 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var isShortcutHelperHintEnabled: Bool {
+    var isShortcutHelperHintEnabled: Bool {
         didSet { UserDefaults.standard.set(isShortcutHelperHintEnabled, forKey: Keys.shortcutHelperHint) }
     }
 
@@ -1070,9 +1071,9 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Notification Settings
 
-    private var _isUpdatingNotificationSettings = false
+    @ObservationIgnored private var _isUpdatingNotificationSettings = false
 
-    @Published var notificationSettings: NotificationSettings {
+    var notificationSettings: NotificationSettings {
         didSet {
             guard !_isUpdatingNotificationSettings else { return }
             _isUpdatingNotificationSettings = true
@@ -1280,36 +1281,36 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Find Defaults (NEW)
 
-    @Published var findCaseSensitiveDefault: Bool {
+    var findCaseSensitiveDefault: Bool {
         didSet { UserDefaults.standard.set(findCaseSensitiveDefault, forKey: Keys.findCaseSensitiveDefault) }
     }
 
-    @Published var findRegexDefault: Bool {
+    var findRegexDefault: Bool {
         didSet { UserDefaults.standard.set(findRegexDefault, forKey: Keys.findRegexDefault) }
     }
 
     // MARK: - Tab Behavior
 
-    @Published var lastTabCloseBehavior: LastTabCloseBehavior {
+    var lastTabCloseBehavior: LastTabCloseBehavior {
         didSet { UserDefaults.standard.set(lastTabCloseBehavior.rawValue, forKey: Keys.lastTabCloseBehavior) }
     }
 
     /// Where to insert new tabs: "end" or "after" (after current tab)
-    @Published var newTabPosition: String {
+    var newTabPosition: String {
         didSet { UserDefaults.standard.set(newTabPosition, forKey: Keys.newTabPosition) }
     }
 
     /// When enabled, new tabs inherit the current tab's directory.
-    @Published var newTabsUseCurrentDirectory: Bool {
+    var newTabsUseCurrentDirectory: Bool {
         didSet { UserDefaults.standard.set(newTabsUseCurrentDirectory, forKey: Keys.newTabsUseCurrentDirectory) }
     }
 
-    @Published var alwaysShowTabBar: Bool {
+    var alwaysShowTabBar: Bool {
         didSet { UserDefaults.standard.set(alwaysShowTabBar, forKey: Keys.alwaysShowTabBar) }
     }
 
     /// When true, the toolbar stays visible in fullscreen (like Chrome's "Always Show Toolbar in Full Screen")
-    @Published var alwaysShowToolbarInFullscreen: Bool {
+    var alwaysShowToolbarInFullscreen: Bool {
         didSet {
             UserDefaults.standard.set(alwaysShowToolbarInFullscreen, forKey: Keys.alwaysShowToolbarInFullscreen)
             NotificationCenter.default.post(name: .fullscreenToolbarSettingChanged, object: nil)
@@ -1317,21 +1318,21 @@ final class FeatureSettings: ObservableObject {
     }
 
     /// When true, shows a warning dialog before closing a tab with a running process
-    @Published var warnOnCloseWithRunningProcess: Bool {
+    var warnOnCloseWithRunningProcess: Bool {
         didSet { UserDefaults.standard.set(warnOnCloseWithRunningProcess, forKey: Keys.warnOnCloseWithProcess) }
     }
 
     /// When true, always shows a warning dialog before closing any tab
-    @Published var alwaysWarnOnTabClose: Bool {
+    var alwaysWarnOnTabClose: Bool {
         didSet { UserDefaults.standard.set(alwaysWarnOnTabClose, forKey: Keys.alwaysWarnOnTabClose) }
     }
 
     /// Collect tabs idle for 10+ minutes into a dropdown at the start of the tab bar
-    @Published var groupIdleTabs: Bool = UserDefaults.standard.object(forKey: "tabs.groupIdleTabs") as? Bool ?? true {
+    var groupIdleTabs: Bool = UserDefaults.standard.object(forKey: "tabs.groupIdleTabs") as? Bool ?? true {
         didSet { UserDefaults.standard.set(groupIdleTabs, forKey: "tabs.groupIdleTabs") }
     }
 
-    @Published var idleTabThresholdMinutes: Int = UserDefaults.standard.object(forKey: "tabs.idleTabThresholdMinutes") as? Int ?? 10 {
+    var idleTabThresholdMinutes: Int = UserDefaults.standard.object(forKey: "tabs.idleTabThresholdMinutes") as? Int ?? 10 {
         didSet { UserDefaults.standard.set(idleTabThresholdMinutes, forKey: "tabs.idleTabThresholdMinutes") }
     }
 
@@ -1340,22 +1341,28 @@ final class FeatureSettings: ObservableObject {
         TimeInterval(max(1, idleTabThresholdMinutes) * 60)
     }
 
-    @Published var repoGroupingMode: RepoGroupingMode = {
+    /// Called when repoGroupingMode changes (replaces Combine $repoGroupingMode publisher).
+    @ObservationIgnored var onRepoGroupingModeChanged: ((RepoGroupingMode) -> Void)?
+
+    var repoGroupingMode: RepoGroupingMode = {
         guard let raw = UserDefaults.standard.string(forKey: "tabs.repoGroupingMode"),
               let mode = RepoGroupingMode(rawValue: raw) else { return .off }
         return mode
     }() {
-        didSet { UserDefaults.standard.set(repoGroupingMode.rawValue, forKey: "tabs.repoGroupingMode") }
+        didSet {
+            UserDefaults.standard.set(repoGroupingMode.rawValue, forKey: "tabs.repoGroupingMode")
+            onRepoGroupingModeChanged?(repoGroupingMode)
+        }
     }
 
     // MARK: - Menu Bar Only Mode
 
-    @Published var menuBarOnlyMode: Bool {
+    var menuBarOnlyMode: Bool {
         didSet { UserDefaults.standard.set(menuBarOnlyMode, forKey: "window.menuBarOnlyMode") }
     }
 
     /// When true, the terminal window floats above other apps (.floating level).
-    @Published var windowFloating: Bool {
+    var windowFloating: Bool {
         didSet {
             UserDefaults.standard.set(windowFloating, forKey: "window.floating")
             NotificationCenter.default.post(name: .init("windowFloatingChanged"), object: nil)
@@ -1364,7 +1371,7 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Window Transparency
 
-    @Published var windowOpacity: Double {
+    var windowOpacity: Double {
         didSet {
             let clamped = max(0.3, min(windowOpacity, 1.0))
             if windowOpacity != clamped {
@@ -1378,7 +1385,7 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - App Theme
 
-    @Published var appTheme: AppTheme {
+    var appTheme: AppTheme {
         didSet {
             UserDefaults.standard.set(appTheme.rawValue, forKey: Keys.appTheme)
             NotificationCenter.default.post(name: .appThemeChanged, object: nil)
@@ -1387,7 +1394,7 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Language Setting
 
-    @Published var appLanguage: AppLanguage {
+    var appLanguage: AppLanguage {
         didSet {
             UserDefaults.standard.set(appLanguage.rawValue, forKey: Keys.appLanguage)
             LocalizationManager.shared.currentLanguage = appLanguage
@@ -1396,7 +1403,7 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Launch at Login
 
-    @Published var launchAtLogin: Bool {
+    var launchAtLogin: Bool {
         didSet {
             UserDefaults.standard.set(launchAtLogin, forKey: Keys.launchAtLogin)
             if oldValue != launchAtLogin {
@@ -1407,7 +1414,7 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - iCloud Sync (NEW)
 
-    @Published var iCloudSyncEnabled: Bool {
+    var iCloudSyncEnabled: Bool {
         didSet {
             UserDefaults.standard.set(iCloudSyncEnabled, forKey: Keys.iCloudSyncEnabled)
             if iCloudSyncEnabled {
@@ -1418,7 +1425,7 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - F05: Auto Tab Themes by AI Model
 
-    @Published var isAutoTabThemeEnabled: Bool {
+    var isAutoTabThemeEnabled: Bool {
         didSet { UserDefaults.standard.set(isAutoTabThemeEnabled, forKey: Keys.autoTabTheme) }
     }
 
@@ -1435,171 +1442,171 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - F18: Copy-on-Select
 
-    @Published var isCopyOnSelectEnabled: Bool {
+    var isCopyOnSelectEnabled: Bool {
         didSet { UserDefaults.standard.set(isCopyOnSelectEnabled, forKey: Keys.copyOnSelect) }
     }
 
     // MARK: - F19: Line Timestamps
 
-    @Published var isLineTimestampsEnabled: Bool {
+    var isLineTimestampsEnabled: Bool {
         didSet { UserDefaults.standard.set(isLineTimestampsEnabled, forKey: Keys.lineTimestamps) }
     }
 
-    @Published var timestampFormat: String {
+    var timestampFormat: String {
         didSet { UserDefaults.standard.set(timestampFormat, forKey: Keys.timestampFormat) }
     }
 
     // MARK: - Tab Display Customization
 
     /// Show AI product logos and dev server icons in tabs
-    @Published var showTabIcons: Bool {
+    var showTabIcons: Bool {
         didSet { UserDefaults.standard.set(showTabIcons, forKey: Keys.showTabIcons) }
     }
 
     /// Show the working directory path next to the tab title
-    @Published var showTabPath: Bool {
+    var showTabPath: Bool {
         didSet { UserDefaults.standard.set(showTabPath, forKey: Keys.showTabPath) }
     }
 
     /// Show the git branch indicator in tabs
-    @Published var showTabGitIndicator: Bool {
+    var showTabGitIndicator: Bool {
         didSet { UserDefaults.standard.set(showTabGitIndicator, forKey: Keys.showTabGitIndicator) }
     }
 
     /// Show the CTO bolt icon in tabs (independent of CTO being enabled)
-    @Published var showTabCTOIndicator: Bool {
+    var showTabCTOIndicator: Bool {
         didSet { UserDefaults.standard.set(showTabCTOIndicator, forKey: Keys.showTabCTOIndicator) }
     }
 
     /// Allow toggling per-tab CTO override directly from tab indicator clicks.
     /// Disable this to prevent accidental misclicks while still showing override state.
-    @Published var allowTabCTOToggle: Bool {
+    var allowTabCTOToggle: Bool {
         didSet { UserDefaults.standard.set(allowTabCTOToggle, forKey: Keys.allowTabCTOToggle) }
     }
 
     /// Show the broadcast indicator in tabs
-    @Published var showTabBroadcastIndicator: Bool {
+    var showTabBroadcastIndicator: Bool {
         didSet { UserDefaults.standard.set(showTabBroadcastIndicator, forKey: Keys.showTabBroadcastIndicator) }
     }
 
     // MARK: - Hover Card Sections
 
-    @Published var hoverCardShowDirectory: Bool {
+    var hoverCardShowDirectory: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowDirectory, forKey: Keys.hoverCardShowDirectory) }
     }
 
-    @Published var hoverCardShowGitBranch: Bool {
+    var hoverCardShowGitBranch: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowGitBranch, forKey: Keys.hoverCardShowGitBranch) }
     }
 
-    @Published var hoverCardShowShellIntegration: Bool {
+    var hoverCardShowShellIntegration: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowShellIntegration, forKey: Keys.hoverCardShowShellIntegration) }
     }
 
-    @Published var hoverCardShowDevServer: Bool {
+    var hoverCardShowDevServer: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowDevServer, forKey: Keys.hoverCardShowDevServer) }
     }
 
-    @Published var hoverCardShowLastCommand: Bool {
+    var hoverCardShowLastCommand: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowLastCommand, forKey: Keys.hoverCardShowLastCommand) }
     }
 
-    @Published var hoverCardShowAISession: Bool {
+    var hoverCardShowAISession: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowAISession, forKey: Keys.hoverCardShowAISession) }
     }
 
-    @Published var hoverCardShowRepoStats: Bool {
+    var hoverCardShowRepoStats: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowRepoStats, forKey: Keys.hoverCardShowRepoStats) }
     }
 
-    @Published var hoverCardShowProcesses: Bool {
+    var hoverCardShowProcesses: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowProcesses, forKey: Keys.hoverCardShowProcesses) }
     }
 
-    @Published var hoverCardShowTokenOptimization: Bool {
+    var hoverCardShowTokenOptimization: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowTokenOptimization, forKey: Keys.hoverCardShowTokenOptimization) }
     }
 
-    @Published var hoverCardShowBroadcast: Bool {
+    var hoverCardShowBroadcast: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowBroadcast, forKey: Keys.hoverCardShowBroadcast) }
     }
 
-    @Published var hoverCardShowConflicts: Bool {
+    var hoverCardShowConflicts: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowConflicts, forKey: Keys.hoverCardShowConflicts) }
     }
 
-    @Published var hoverCardShowNotificationState: Bool {
+    var hoverCardShowNotificationState: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowNotificationState, forKey: Keys.hoverCardShowNotificationState) }
     }
 
-    @Published var hoverCardShowFooter: Bool {
+    var hoverCardShowFooter: Bool {
         didSet { UserDefaults.standard.set(hoverCardShowFooter, forKey: Keys.hoverCardShowFooter) }
     }
 
     /// When enabled, only the custom title is shown (hides all other tab elements
     /// except the close button). Has no effect on tabs without a custom title.
-    @Published var customTitleOnly: Bool {
+    var customTitleOnly: Bool {
         didSet { UserDefaults.standard.set(customTitleOnly, forKey: Keys.customTitleOnly) }
     }
 
     // MARK: - F20: Last Command Badge
 
-    @Published var isLastCommandBadgeEnabled: Bool {
+    var isLastCommandBadgeEnabled: Bool {
         didSet { UserDefaults.standard.set(isLastCommandBadgeEnabled, forKey: Keys.lastCommandBadge) }
     }
 
     // MARK: - F03: Cmd+Click Paths
 
-    @Published var isCmdClickPathsEnabled: Bool {
+    var isCmdClickPathsEnabled: Bool {
         didSet { UserDefaults.standard.set(isCmdClickPathsEnabled, forKey: Keys.cmdClickPaths) }
     }
 
     /// Open Cmd+Click file paths in internal editor (right panel) instead of external editor
-    @Published var cmdClickOpensInternalEditor: Bool {
+    var cmdClickOpensInternalEditor: Bool {
         didSet { UserDefaults.standard.set(cmdClickOpensInternalEditor, forKey: Keys.cmdClickOpensInternalEditor) }
     }
 
     /// Option+click to position cursor in the command line (like iTerm2)
-    @Published var isOptionClickCursorEnabled: Bool {
+    var isOptionClickCursorEnabled: Bool {
         didSet { UserDefaults.standard.set(isOptionClickCursorEnabled, forKey: Keys.optionClickCursor) }
     }
 
     /// Allow terminal apps (vim, tmux, Codex, etc.) to capture mouse events.
     /// When enabled, hold Shift while clicking/dragging to force text selection.
     /// When disabled, mouse events always perform text selection.
-    @Published var isMouseReportingEnabled: Bool {
+    var isMouseReportingEnabled: Bool {
         didSet { UserDefaults.standard.set(isMouseReportingEnabled, forKey: Keys.mouseReporting) }
     }
 
     /// Use Metal GPU rendering for the terminal.
     /// Renders terminal cells on the GPU instead of CoreGraphics.
     /// Changes take effect for new tabs only.
-    @Published var useMetalRenderer: Bool {
+    var useMetalRenderer: Bool {
         didSet { UserDefaults.standard.set(useMetalRenderer, forKey: Keys.useMetalRenderer) }
     }
 
     /// Enable font ligature rendering (e.g., =>, ->, === in Fira Code, JetBrains Mono).
-    @Published var enableLigatures: Bool = UserDefaults.standard.bool(forKey: "terminal.enableLigatures") {
+    var enableLigatures: Bool = UserDefaults.standard.bool(forKey: "terminal.enableLigatures") {
         didSet { UserDefaults.standard.set(enableLigatures, forKey: "terminal.enableLigatures") }
     }
 
     /// Click on input line to position cursor (like modern text editors).
     /// Single click moves cursor, click+drag selects text.
-    @Published var isClickToPositionEnabled: Bool {
+    var isClickToPositionEnabled: Bool {
         didSet { UserDefaults.standard.set(isClickToPositionEnabled, forKey: Keys.clickToPosition) }
     }
 
-    @Published var defaultEditor: String {
+    var defaultEditor: String {
         didSet { UserDefaults.standard.set(defaultEditor, forKey: Keys.defaultEditor) }
     }
 
-    @Published var urlHandler: URLHandler {
+    var urlHandler: URLHandler {
         didSet { UserDefaults.standard.set(urlHandler.rawValue, forKey: Keys.urlHandler) }
     }
 
     // MARK: - Custom AI Detection (NEW)
 
-    @Published var customAIDetectionRules: [CustomAIDetectionRule] {
+    var customAIDetectionRules: [CustomAIDetectionRule] {
         didSet {
             if let data = JSONOperations.encode(customAIDetectionRules, context: "customAIDetectionRules") {
                 UserDefaults.standard.set(data, forKey: Keys.customAIDetectionRules)
@@ -1609,17 +1616,17 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - F13: Broadcast Input
 
-    @Published var isBroadcastEnabled: Bool {
+    var isBroadcastEnabled: Bool {
         didSet { UserDefaults.standard.set(isBroadcastEnabled, forKey: Keys.broadcastEnabled) }
     }
 
     // MARK: - F16: Clipboard History
 
-    @Published var isClipboardHistoryEnabled: Bool {
+    var isClipboardHistoryEnabled: Bool {
         didSet { UserDefaults.standard.set(isClipboardHistoryEnabled, forKey: Keys.clipboardHistory) }
     }
 
-    @Published var clipboardHistoryMaxItems: Int {
+    var clipboardHistoryMaxItems: Int {
         didSet {
             let clamped = max(1, min(clipboardHistoryMaxItems, 1000))
             if clipboardHistoryMaxItems != clamped {
@@ -1632,11 +1639,11 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - F17: Bookmarks
 
-    @Published var isBookmarksEnabled: Bool {
+    var isBookmarksEnabled: Bool {
         didSet { UserDefaults.standard.set(isBookmarksEnabled, forKey: Keys.bookmarksEnabled) }
     }
 
-    @Published var maxBookmarksPerTab: Int {
+    var maxBookmarksPerTab: Int {
         didSet {
             let clamped = max(1, min(maxBookmarksPerTab, 200))
             if maxBookmarksPerTab != clamped {
@@ -1649,23 +1656,23 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - F21: Snippets
 
-    @Published var isSnippetsEnabled: Bool {
+    var isSnippetsEnabled: Bool {
         didSet { UserDefaults.standard.set(isSnippetsEnabled, forKey: Keys.snippetsEnabled) }
     }
 
-    @Published var isRepoSnippetsEnabled: Bool {
+    var isRepoSnippetsEnabled: Bool {
         didSet { UserDefaults.standard.set(isRepoSnippetsEnabled, forKey: Keys.repoSnippetsEnabled) }
     }
 
-    @Published var allowProtectedFolderAccess: Bool {
+    var allowProtectedFolderAccess: Bool {
         didSet { UserDefaults.standard.set(allowProtectedFolderAccess, forKey: Keys.allowProtectedFolderAccess) }
     }
 
-    @Published var recentRepoRoots: [String] {
+    var recentRepoRoots: [String] {
         didSet { UserDefaults.standard.set(recentRepoRoots, forKey: Keys.recentRepoRoots) }
     }
 
-    @Published var repoSnippetPath: String {
+    var repoSnippetPath: String {
         didSet {
             let trimmed = repoSnippetPath.trimmingCharacters(in: .whitespacesAndNewlines)
             if repoSnippetPath != trimmed {
@@ -1676,11 +1683,11 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var snippetInsertMode: String {
+    var snippetInsertMode: String {
         didSet { UserDefaults.standard.set(snippetInsertMode, forKey: Keys.snippetInsertMode) }
     }
 
-    @Published var snippetPlaceholdersEnabled: Bool {
+    var snippetPlaceholdersEnabled: Bool {
         didSet { UserDefaults.standard.set(snippetPlaceholdersEnabled, forKey: Keys.snippetPlaceholders) }
     }
 
@@ -1696,33 +1703,33 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - F08: Smart Syntax Highlighting
 
-    @Published var isSyntaxHighlightEnabled: Bool {
+    var isSyntaxHighlightEnabled: Bool {
         didSet { UserDefaults.standard.set(isSyntaxHighlightEnabled, forKey: Keys.syntaxHighlight) }
     }
 
-    @Published var isClickableURLsEnabled: Bool {
+    var isClickableURLsEnabled: Bool {
         didSet { UserDefaults.standard.set(isClickableURLsEnabled, forKey: Keys.clickableURLs) }
     }
 
     // MARK: - Inline Images (iTerm2 imgcat protocol)
 
-    @Published var isInlineImagesEnabled: Bool {
+    var isInlineImagesEnabled: Bool {
         didSet { UserDefaults.standard.set(isInlineImagesEnabled, forKey: Keys.inlineImages) }
     }
 
-    @Published var isJSONPrettyPrintEnabled: Bool {
+    var isJSONPrettyPrintEnabled: Bool {
         didSet { UserDefaults.standard.set(isJSONPrettyPrintEnabled, forKey: Keys.jsonPrettyPrint) }
     }
 
     // MARK: - F07: Semantic Scrollback Search
 
-    @Published var isSemanticSearchEnabled: Bool {
+    var isSemanticSearchEnabled: Bool {
         didSet { UserDefaults.standard.set(isSemanticSearchEnabled, forKey: Keys.semanticSearch) }
     }
 
     // MARK: - F02: Split Panes
 
-    @Published var isSplitPanesEnabled: Bool {
+    var isSplitPanesEnabled: Bool {
         didSet { UserDefaults.standard.set(isSplitPanesEnabled, forKey: Keys.splitPanes) }
     }
 
@@ -1731,7 +1738,7 @@ final class FeatureSettings: ObservableObject {
     /// Enables immediate display flush after input for reduced perceived latency.
     /// Forces CATransaction.flush() after each keystroke to ensure pending display
     /// updates are rendered immediately rather than waiting for the next frame.
-    @Published var isLocalEchoEnabled: Bool {
+    var isLocalEchoEnabled: Bool {
         didSet { UserDefaults.standard.set(isLocalEchoEnabled, forKey: Keys.localEchoEnabled) }
     }
 
@@ -1740,32 +1747,32 @@ final class FeatureSettings: ObservableObject {
     /// When enabled, new terminal output will NOT auto-scroll to the bottom if the user
     /// has scrolled up. The user's scroll position is preserved until they manually scroll
     /// back to the bottom. Default: true (smart behavior enabled).
-    @Published var isSmartScrollEnabled: Bool {
+    var isSmartScrollEnabled: Bool {
         didSet { UserDefaults.standard.set(isSmartScrollEnabled, forKey: Keys.smartScrollEnabled) }
     }
 
     // MARK: - F11: Keybindings
 
-    @Published var keybindingPreset: String {
+    var keybindingPreset: String {
         didSet { UserDefaults.standard.set(keybindingPreset, forKey: Keys.keybindingPreset) }
     }
 
     // MARK: - Overlay Positions
 
-    @Published var overlayPositionsVersion = 0
+    var overlayPositionsVersion = 0
 
     // MARK: - General Terminal Settings
 
-    @Published var cursorStyle: String {
+    var cursorStyle: String {
         didSet { UserDefaults.standard.set(cursorStyle, forKey: Keys.cursorStyle) }
     }
 
-    @Published var cursorBlink: Bool {
+    var cursorBlink: Bool {
         didSet { UserDefaults.standard.set(cursorBlink, forKey: Keys.cursorBlink) }
     }
 
     /// Cursor blink interval in seconds (0.3–2.0). Only applies when cursorBlink is true.
-    @Published var cursorBlinkRate: Double {
+    var cursorBlinkRate: Double {
         didSet {
             let clamped = max(0.3, min(cursorBlinkRate, 2.0))
             if cursorBlinkRate != clamped { cursorBlinkRate = clamped
@@ -1776,13 +1783,13 @@ final class FeatureSettings: ObservableObject {
     }
 
     /// Custom cursor color as hex string (e.g. "#FF6600"). Empty = use theme default.
-    @Published var cursorColor: String {
+    var cursorColor: String {
         didSet { UserDefaults.standard.set(cursorColor, forKey: "terminal.cursorColor") }
     }
 
     /// Unicode ambiguous-width treatment: 1 = single-width (Western), 2 = double-width (East Asian).
     /// Affects terminal grid layout for characters in the Unicode Ambiguous width category.
-    @Published var unicodeAmbiguousWidth: Int {
+    var unicodeAmbiguousWidth: Int {
         didSet {
             let clamped = (unicodeAmbiguousWidth == 2) ? 2 : 1
             if unicodeAmbiguousWidth != clamped { unicodeAmbiguousWidth = clamped
@@ -1792,7 +1799,7 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var scrollbackLines: Int {
+    var scrollbackLines: Int {
         didSet {
             let clamped = max(100, min(scrollbackLines, 100_000))
             if scrollbackLines != clamped {
@@ -1805,7 +1812,7 @@ final class FeatureSettings: ObservableObject {
 
     /// Maximum number of scrollback lines restored when tabs are recovered.
     /// Set to 0 to disable scrollback restoration.
-    @Published var restoredScrollbackLines: Int {
+    var restoredScrollbackLines: Int {
         didSet {
             let clamped = max(0, min(restoredScrollbackLines, 10000))
             if restoredScrollbackLines != clamped {
@@ -1816,21 +1823,21 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var bellEnabled: Bool {
+    var bellEnabled: Bool {
         didSet { UserDefaults.standard.set(bellEnabled, forKey: Keys.bellEnabled) }
     }
 
-    @Published var bellSound: String {
+    var bellSound: String {
         didSet { UserDefaults.standard.set(bellSound, forKey: Keys.bellSound) }
     }
 
     /// Visual flash on bell (combinable with audible bell)
-    @Published var bellVisual: Bool {
+    var bellVisual: Bool {
         didSet { UserDefaults.standard.set(bellVisual, forKey: "terminal.bellVisual") }
     }
 
     /// Minimum seconds between bell triggers (rate limiting to prevent spam)
-    @Published var bellRateLimitSeconds: Double {
+    var bellRateLimitSeconds: Double {
         didSet {
             let clamped = max(0, min(bellRateLimitSeconds, 60))
             if bellRateLimitSeconds != clamped { bellRateLimitSeconds = clamped
@@ -1840,14 +1847,14 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var dangerousCommandHighlightScope: DangerousCommandHighlightScope {
+    var dangerousCommandHighlightScope: DangerousCommandHighlightScope {
         didSet {
             UserDefaults.standard.set(dangerousCommandHighlightScope.rawValue, forKey: Keys.dangerousCommandHighlightScope)
             NotificationCenter.default.post(name: .terminalDangerousCommandHighlightChanged, object: nil)
         }
     }
 
-    @Published var dangerousCommandPatterns: [String] {
+    var dangerousCommandPatterns: [String] {
         didSet {
             if let data = JSONOperations.encode(dangerousCommandPatterns, context: "dangerousCommandPatterns") {
                 UserDefaults.standard.set(data, forKey: Keys.dangerousCommandPatterns)
@@ -1856,7 +1863,7 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var dangerousOutputHighlightIdleDelayMs: Int {
+    var dangerousOutputHighlightIdleDelayMs: Int {
         didSet {
             let clamped = max(0, min(dangerousOutputHighlightIdleDelayMs, 5000))
             if dangerousOutputHighlightIdleDelayMs != clamped {
@@ -1867,7 +1874,7 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var dangerousOutputHighlightMaxIntervalMs: Int {
+    var dangerousOutputHighlightMaxIntervalMs: Int {
         didSet {
             let clamped = max(250, min(dangerousOutputHighlightMaxIntervalMs, 10000))
             if dangerousOutputHighlightMaxIntervalMs != clamped {
@@ -1878,14 +1885,14 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var dangerousOutputHighlightLowPowerEnabled: Bool {
+    var dangerousOutputHighlightLowPowerEnabled: Bool {
         didSet {
             UserDefaults.standard.set(dangerousOutputHighlightLowPowerEnabled, forKey: Keys.dangerousOutputHighlightLowPowerEnabled)
             NotificationCenter.default.post(name: .terminalDangerousCommandHighlightChanged, object: nil)
         }
     }
 
-    @Published var defaultStartDirectory: String {
+    var defaultStartDirectory: String {
         didSet {
             let trimmed = defaultStartDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
             let normalized = trimmed.isEmpty
@@ -1901,14 +1908,14 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - API Analytics Settings
 
-    @Published var isAPIAnalyticsEnabled: Bool {
+    var isAPIAnalyticsEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isAPIAnalyticsEnabled, forKey: Keys.apiAnalyticsEnabled)
             NotificationCenter.default.post(name: .apiAnalyticsSettingsChanged, object: nil)
         }
     }
 
-    @Published var apiAnalyticsPort: Int {
+    var apiAnalyticsPort: Int {
         didSet {
             let clamped = max(1024, min(apiAnalyticsPort, 65535))
             if apiAnalyticsPort != clamped {
@@ -1919,7 +1926,7 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var apiAnalyticsLogPrompts: Bool {
+    var apiAnalyticsLogPrompts: Bool {
         didSet {
             UserDefaults.standard.set(apiAnalyticsLogPrompts, forKey: Keys.apiAnalyticsLogPrompts)
         }
@@ -1927,7 +1934,7 @@ final class FeatureSettings: ObservableObject {
 
     /// Redirect OpenAI traffic through the proxy. Disable for subscription-based
     /// Codex which requires WebSocket transport incompatible with HTTP proxying.
-    @Published var apiAnalyticsIncludeOpenAI: Bool {
+    var apiAnalyticsIncludeOpenAI: Bool {
         didSet {
             UserDefaults.standard.set(apiAnalyticsIncludeOpenAI, forKey: Keys.apiAnalyticsIncludeOpenAI)
         }
@@ -1935,7 +1942,7 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Token Optimization (CTO) Settings
 
-    @Published var tokenOptimizationMode: TokenOptimizationMode {
+    var tokenOptimizationMode: TokenOptimizationMode {
         didSet {
             UserDefaults.standard.set(tokenOptimizationMode.rawValue, forKey: Keys.tokenOptimizationMode)
             NotificationCenter.default.post(name: .tokenOptimizationModeChanged, object: nil)
@@ -1944,35 +1951,35 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - MCP Settings
 
-    @Published var mcpEnabled: Bool {
+    var mcpEnabled: Bool {
         didSet { UserDefaults.standard.set(mcpEnabled, forKey: Keys.mcpEnabled) }
     }
 
-    @Published var mcpMaxTabs: Int {
+    var mcpMaxTabs: Int {
         didSet { UserDefaults.standard.set(mcpMaxTabs, forKey: Keys.mcpMaxTabs) }
     }
 
-    @Published var mcpRequiresApproval: Bool {
+    var mcpRequiresApproval: Bool {
         didSet { UserDefaults.standard.set(mcpRequiresApproval, forKey: Keys.mcpRequiresApproval) }
     }
 
-    @Published var mcpShowTabIndicator: Bool {
+    var mcpShowTabIndicator: Bool {
         didSet { UserDefaults.standard.set(mcpShowTabIndicator, forKey: Keys.mcpShowTabIndicator) }
     }
 
-    @Published var mcpPermissionMode: MCPPermissionMode {
+    var mcpPermissionMode: MCPPermissionMode {
         didSet { UserDefaults.standard.set(mcpPermissionMode.rawValue, forKey: Keys.mcpPermissionMode) }
     }
 
-    @Published var mcpAllowedCommands: [String] {
+    var mcpAllowedCommands: [String] {
         didSet { UserDefaults.standard.set(mcpAllowedCommands, forKey: Keys.mcpAllowedCommands) }
     }
 
-    @Published var mcpBlockedCommands: [String] {
+    var mcpBlockedCommands: [String] {
         didSet { UserDefaults.standard.set(mcpBlockedCommands, forKey: Keys.mcpBlockedCommands) }
     }
 
-    @Published var mcpProfiles: [MCPProfile] {
+    var mcpProfiles: [MCPProfile] {
         didSet {
             if let data = try? JSONEncoder().encode(mcpProfiles) {
                 UserDefaults.standard.set(data, forKey: Keys.mcpProfiles)
@@ -1997,13 +2004,19 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Remote Control Settings
 
-    @Published var isRemoteEnabled: Bool {
+    /// Called when isRemoteEnabled changes (replaces Combine $isRemoteEnabled publisher).
+    @ObservationIgnored var onRemoteEnabledChanged: ((Bool) -> Void)?
+    /// Called when remoteRelayURL changes (replaces Combine $remoteRelayURL publisher).
+    @ObservationIgnored var onRemoteRelayURLChanged: ((String) -> Void)?
+
+    var isRemoteEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isRemoteEnabled, forKey: Keys.remoteEnabled)
+            onRemoteEnabledChanged?(isRemoteEnabled)
         }
     }
 
-    @Published var remoteRelayURL: String {
+    var remoteRelayURL: String {
         didSet {
             let trimmed = remoteRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
             if remoteRelayURL != trimmed {
@@ -2011,12 +2024,13 @@ final class FeatureSettings: ObservableObject {
                 return
             }
             UserDefaults.standard.set(remoteRelayURL, forKey: Keys.remoteRelayURL)
+            onRemoteRelayURLChanged?(remoteRelayURL)
         }
     }
 
     // MARK: - Shell Event Detection Settings
 
-    @Published var shellEventConfig: ShellEventConfig {
+    var shellEventConfig: ShellEventConfig {
         didSet {
             if let data = JSONOperations.encode(shellEventConfig, context: "shellEventConfig") {
                 UserDefaults.standard.set(data, forKey: Keys.shellEventConfig)
@@ -2024,7 +2038,7 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var appEventConfig: AppEventConfig {
+    var appEventConfig: AppEventConfig {
         didSet {
             if let data = JSONOperations.encode(appEventConfig, context: "appEventConfig") {
                 UserDefaults.standard.set(data, forKey: Keys.appEventConfig)
@@ -2034,7 +2048,7 @@ final class FeatureSettings: ObservableObject {
 
     /// Tracks whether we've already asked for notification permissions (persisted).
     /// This prevents repeated automatic prompts while still allowing manual requests.
-    @Published var hasRequestedNotificationPermission: Bool {
+    var hasRequestedNotificationPermission: Bool {
         didSet {
             UserDefaults.standard.set(hasRequestedNotificationPermission, forKey: Keys.hasRequestedNotificationPermission)
         }
@@ -2042,17 +2056,17 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - LLM / Error Explanation
 
-    @Published var errorExplainEnabled: Bool {
+    var errorExplainEnabled: Bool {
         didSet { UserDefaults.standard.set(errorExplainEnabled, forKey: Keys.errorExplainEnabled) }
     }
 
     // MARK: - CTO Integration
 
-    @Published var isCTOEnabled: Bool {
+    var isCTOEnabled: Bool {
         didSet { UserDefaults.standard.set(isCTOEnabled, forKey: Keys.ctoEnabled) }
     }
 
-    @Published var ctoPrefix: String {
+    var ctoPrefix: String {
         didSet {
             let trimmed = ctoPrefix.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .newlines)
             if ctoPrefix != trimmed {
@@ -2063,7 +2077,7 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    @Published var ctoTabOverrides: [String: Bool] {
+    var ctoTabOverrides: [String: Bool] {
         didSet { UserDefaults.standard.set(ctoTabOverrides, forKey: Keys.ctoTabOverrides) }
     }
 
@@ -2092,17 +2106,23 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Bug Report Contact Info
 
-    @Published var bugReportContactName: String {
+    var bugReportContactName: String {
         didSet { UserDefaults.standard.set(bugReportContactName, forKey: Keys.bugReportContactName) }
     }
 
-    @Published var bugReportContactHandle: String {
+    var bugReportContactHandle: String {
         didSet { UserDefaults.standard.set(bugReportContactHandle, forKey: Keys.bugReportContactHandle) }
     }
 
-    @Published var bugReportIssueEndpoint: String {
+    var bugReportIssueEndpoint: String {
         didSet { UserDefaults.standard.set(bugReportIssueEndpoint, forKey: Keys.bugReportIssueEndpoint) }
     }
+
+    // MARK: - Profile Version Counter
+
+    /// Bumped on every write to savedProfiles / activeProfileId so @Observable picks up changes.
+    /// Must live in the main class body (not an extension) because extensions cannot have stored properties.
+    private var _profileVersion = 0
 
     // MARK: - Keys
 
@@ -2795,7 +2815,7 @@ final class FeatureSettings: ObservableObject {
     // MARK: - Overlay Positions Cache (Performance Optimization)
 
     /// Cached overlay positions to avoid repeated UserDefaults parsing
-    private var cachedOverlayPositions: [String: [String: [String: Double]]]?
+    @ObservationIgnored private var cachedOverlayPositions: [String: [String: [String: Double]]]?
 
     func overlayOffset(for id: String, workspace: String?) -> CGSize {
         let key = overlayWorkspaceKey(workspace)
@@ -3513,8 +3533,8 @@ final class FeatureSettings: ObservableObject {
         return "\(bundleID).settings"
     }
 
-    private var iCloudSyncWorkItem: DispatchWorkItem?
-    private let iCloudSyncDebounceInterval: TimeInterval = 2.0 // 2 seconds debounce
+    @ObservationIgnored private var iCloudSyncWorkItem: DispatchWorkItem?
+    @ObservationIgnored private let iCloudSyncDebounceInterval: TimeInterval = 2.0 // 2 seconds debounce
 
     func syncToiCloud() {
         guard !RuntimeIsolation.isIsolatedTestMode() else { return }
@@ -3725,6 +3745,7 @@ extension FeatureSettings {
 
     var savedProfiles: [SettingsProfile] {
         get {
+            _ = _profileVersion // read-access triggers observation
             guard let data = UserDefaults.standard.data(forKey: Self.profilesKey),
                   let profiles = JSONOperations.decode([SettingsProfile].self, from: data, context: "savedProfiles") else {
                 return SettingsProfile.defaultProfiles
@@ -3735,18 +3756,19 @@ extension FeatureSettings {
             if let data = JSONOperations.encode(newValue, context: "savedProfiles") {
                 UserDefaults.standard.set(data, forKey: Self.profilesKey)
             }
-            objectWillChange.send()
+            _profileVersion += 1
         }
     }
 
     var activeProfileId: UUID? {
         get {
+            _ = _profileVersion // read-access triggers observation
             guard let idString = UserDefaults.standard.string(forKey: Self.activeProfileKey) else { return nil }
             return UUID(uuidString: idString)
         }
         set {
             UserDefaults.standard.set(newValue?.uuidString, forKey: Self.activeProfileKey)
-            objectWillChange.send()
+            _profileVersion += 1
         }
     }
 

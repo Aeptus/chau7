@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 struct RemoteSettingsView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     @ObservedObject private var remote = RemoteControlManager.shared
     @State private var devicePendingRevocation: RemotePairedDevice?
 

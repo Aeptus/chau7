@@ -13,7 +13,7 @@ import AppKit
 /// - Reset to defaults button
 struct DangerousCommandSettingsView: View {
     @Bindable private var guard_ = DangerousCommandGuard.shared
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     @State private var newPattern = ""
     @State private var newBlockCommand = ""
     @State private var showResetConfirmation = false

@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 // MARK: - Sync & Backup Settings
 
 struct ProfilesBackupSettingsView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     @State private var switcher = ProfileAutoSwitcher()
     @State private var showImportSheet = false
     @State private var importError: String?

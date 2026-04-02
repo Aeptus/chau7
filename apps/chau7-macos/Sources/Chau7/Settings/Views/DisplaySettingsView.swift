@@ -4,7 +4,7 @@ import AppKit
 // MARK: - Display Settings
 
 struct DisplaySettingsView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

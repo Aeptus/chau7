@@ -239,7 +239,7 @@ struct MenuBarPanelView: View {
 struct StreamView: View {
     let selection: StreamSelection
     var model: AppModel
-    @ObservedObject private var settings = FeatureSettings.shared
+    var settings = FeatureSettings.shared
 
     private static let timeFormatter = Formatters.mediumTime
 

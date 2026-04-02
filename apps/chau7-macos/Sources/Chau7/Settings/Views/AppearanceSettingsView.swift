@@ -47,7 +47,7 @@ struct ColorSchemePreview: View {
 // Used by FontColorsSettingsView
 
 struct LiveTerminalPreview: View {
-    @ObservedObject var settings: FeatureSettings
+    var settings: FeatureSettings
 
     private var scheme: TerminalColorScheme {
         settings.currentColorScheme

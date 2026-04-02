@@ -5,7 +5,7 @@ import SwiftUI
 /// Persistent bar at the top of the settings window showing the active profile
 /// and providing quick access to profile switching and creation.
 struct ProfileSelectorBar: View {
-    @ObservedObject var settings = FeatureSettings.shared
+    var settings = FeatureSettings.shared
     let overlayModel: OverlayTabsModel?
 
     @State private var showCreateProfile = false
@@ -124,7 +124,7 @@ struct ProfileSelectorBar: View {
 // MARK: - Create Profile Sheet
 
 struct CreateProfileSheet: View {
-    @ObservedObject var settings: FeatureSettings
+    var settings: FeatureSettings
     var defaultName = ""
     let onDismiss: () -> Void
 

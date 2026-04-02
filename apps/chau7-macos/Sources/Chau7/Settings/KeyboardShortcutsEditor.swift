@@ -5,7 +5,7 @@ import Carbon
 // MARK: - Keyboard Shortcuts Editor View
 
 struct KeyboardShortcutsEditorView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    private var settings = FeatureSettings.shared
     @State private var editingShortcut: KeyboardShortcut?
     @State private var searchText = ""
     @State private var showConflictAlert = false
