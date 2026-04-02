@@ -22,6 +22,7 @@ struct RepositoryPaneView: View {
     @State private var stashMessage = ""
     @State private var showBranchPicker = false
     @State private var showCopiedToast = false
+    @State private var draftPersistWork: DispatchWorkItem?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -52,7 +53,10 @@ struct RepositoryPaneView: View {
             }
         }
         .onChange(of: repo.commitMessage) { _ in
-            repo.persistDraft()
+            draftPersistWork?.cancel()
+            let work = DispatchWorkItem { [weak repo] in repo?.persistDraft() }
+            draftPersistWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
         }
     }
 

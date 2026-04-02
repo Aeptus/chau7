@@ -512,6 +512,9 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
             let isCurrent = line.hasPrefix("*")
             let cleaned = isCurrent ? String(trimmed.dropFirst(2)) : trimmed
 
+            // Skip detached HEAD entries like "(HEAD detached at abc1234)"
+            if cleaned.hasPrefix("(") { continue }
+
             // Split on whitespace: name, hash, message...
             let parts = cleaned.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
             guard parts.count >= 2 else {
