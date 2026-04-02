@@ -162,7 +162,11 @@ public struct AIDetectionState: Sendable {
             guard appName == lastDetectedApp else { return false }
             return setDetected(appName, now: now)
         case .restored:
-            // Live detection overrides restoration
+            // Live detection overrides restoration, but only if it matches the
+            // restored provider (or no provider was restored yet). Without this
+            // guard, strings like "openai codex" in Claude's output hijack the
+            // tab icon. Only command-level detection can switch providers.
+            if let last = lastDetectedApp, appName != last { return false }
             return setDetected(appName, now: now)
         case .detected:
             // Already detected — shouldn't reach here (prepareHaystack returns nil)
@@ -225,7 +229,9 @@ public struct AIDetectionState: Sendable {
         currentApp = appName
         phase = .restored
         detectedAt = nil
-        // Don't set lastDetectedApp — restored sessions shouldn't lock re-detection
+        // Set lastDetectedApp so output matching can only confirm the same provider,
+        // not switch to a different one (prevents hijacking from output content).
+        lastDetectedApp = appName
         return true
     }
 
