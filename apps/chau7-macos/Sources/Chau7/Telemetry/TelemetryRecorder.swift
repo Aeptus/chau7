@@ -34,6 +34,23 @@ final class TelemetryRecorder {
         repoPath: String? = nil,
         sessionID: String? = nil
     ) {
+        // End any existing active run for this tab before starting a new one.
+        // This prevents orphaned runs when a new AI session starts in the same tab
+        // without the previous session being explicitly ended (e.g., Codex exits
+        // via alternate screen without a detectable exit pattern).
+        lock.lock()
+        if let previousRunID = activeRuns.removeValue(forKey: tabID),
+           var previousRun = inProgressRuns.removeValue(forKey: previousRunID) {
+            lock.unlock()
+            previousRun.endedAt = Date()
+            previousRun.exitStatus = nil
+            previousRun.durationMs = Int(Date().timeIntervalSince(previousRun.startedAt) * 1000)
+            store.finalizeRun(previousRun, turns: [], toolCalls: [])
+            Log.info("TelemetryRecorder: auto-ended orphaned run \(previousRunID) for tab \(tabID)")
+        } else {
+            lock.unlock()
+        }
+
         let runID = UUID().uuidString
         let run = TelemetryRun(
             id: runID,
