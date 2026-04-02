@@ -119,17 +119,16 @@ final class TerminalControlService {
                 return true
             }
         }
-        // Downgrade to debug during the first 30s after launch — tabs may still be restoring
-        let uptime = ProcessInfo.processInfo.systemUptime
-        if uptime < startupUptime + 30 {
-            Log.debug("clearPersistentStyle: tabID \(tabID) not found (startup grace period)")
+        // Tab exists in a model but style clear failed — likely a lazy-loaded tab
+        // whose view hasn't materialized yet (e.g., Window 2 background tabs).
+        let tabExistsInModel = allTabs.contains { $0.id == tabID }
+        if tabExistsInModel {
+            Log.debug("clearPersistentStyle: tabID \(tabID) exists but no persistent style to clear")
         } else {
             Log.warn("clearPersistentStyle: tabID \(tabID) not found across windows")
         }
         return false
     }
-
-    private let startupUptime = ProcessInfo.processInfo.systemUptime
 
     // MARK: - Tab Operations
 
@@ -763,6 +762,31 @@ final class TerminalControlService {
             ] as [String: Any]
         }
         return encodeAny(result)
+    }
+
+    func repoGetEvents(repoPath: String, limit: Int) -> String {
+        // Check the per-repo event buffer in AppModel (populated on event ingestion)
+        let events: [AIEvent]
+        if let appModel = allModels.first?.model.appModel {
+            events = Array((appModel.eventsByRepo[repoPath] ?? []).suffix(limit))
+        } else {
+            events = []
+        }
+        let result: [[String: Any]] = events.map { event in
+            var entry: [String: Any] = [
+                "id": event.id.uuidString,
+                "source": event.source.rawValue,
+                "type": event.type,
+                "tool": event.tool,
+                "message": String(event.message.prefix(200)),
+                "ts": event.ts
+            ]
+            if let dir = event.directory { entry["directory"] = dir }
+            if let tab = event.tabID { entry["tab_id"] = tab.uuidString }
+            if let session = event.sessionID { entry["session_id"] = session }
+            return entry
+        }
+        return encodeAny(["repo_path": repoPath, "count": result.count, "events": result])
     }
 
     /// Find the OverlayTabsModel that owns a given tab UUID.

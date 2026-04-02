@@ -288,6 +288,9 @@ final class AppModel {
     /// Tool-agnostic event stream from ALL monitors (file tailer, terminal, API proxy, hooks, etc.).
     /// This is the canonical event feed for cross-tool UI — command center timeline, notifications, etc.
     var recentEvents: [AIEvent] = []
+    /// Per-repo event buffers. Keyed by git root path, each holds the last 50 events for that repo.
+    @ObservationIgnored var eventsByRepo: [String: [AIEvent]] = [:]
+    private static let perRepoEventLimit = 50
     /// Claude Code hook-specific events. Only use for Claude Code-specific UI (e.g. hook debugging).
     /// For cross-tool UI, use `recentEvents` instead — see AIEvent.swift header for rationale.
     var claudeCodeEvents: [ClaudeCodeEvent] = []
@@ -1453,6 +1456,18 @@ final class AppModel {
         }
         recentEvents.append(event)
         recentEvents.trimToLast(25)
+
+        // Index by repo for per-repo event queries (MCP, debug console)
+        let repo = event.repoPath
+            ?? event.directory.flatMap { RepositoryCache.shared.cachedModel(forRoot: $0)?.rootPath }
+        if let repo {
+            var buffer = eventsByRepo[repo, default: []]
+            buffer.append(event)
+            if buffer.count > Self.perRepoEventLimit {
+                buffer.removeFirst(buffer.count - Self.perRepoEventLimit)
+            }
+            eventsByRepo[repo] = buffer
+        }
     }
 
     private func appendTerminalLine(_ line: String, toolName: String) {

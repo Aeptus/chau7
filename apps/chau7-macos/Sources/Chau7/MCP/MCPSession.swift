@@ -377,6 +377,19 @@ final class MCPSession {
                 ]
             ],
 
+            [
+                "name": "repo_get_events",
+                "description": "Get recent events for a repository. Returns AI tool events (finished, permission, tool_called, etc.) scoped to the given repo.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "repo_path": ["type": "string", "description": "Absolute path to the repository root"],
+                        "limit": ["type": "integer", "description": "Max events to return (default 20, max 50)"]
+                    ],
+                    "required": ["repo_path"]
+                ]
+            ],
+
             // MARK: Runtime API Tools
 
             [
@@ -634,6 +647,13 @@ final class MCPSession {
             }
             let limit = arguments["limit"] as? Int ?? 20
             return controlService.repoFrequentCommands(repoPath: repoPath, limit: limit)
+
+        case "repo_get_events":
+            guard let repoPath = arguments["repo_path"] as? String else {
+                return jsonError("repo_path is required")
+            }
+            let limit = min(arguments["limit"] as? Int ?? 20, 50)
+            return controlService.repoGetEvents(repoPath: repoPath, limit: limit)
 
         // Runtime API
         case let name where name.hasPrefix("runtime_"):

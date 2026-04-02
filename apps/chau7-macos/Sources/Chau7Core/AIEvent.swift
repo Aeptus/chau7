@@ -117,6 +117,9 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
     public let notificationType: String?
     public let ts: String
     public let directory: String?
+    /// Git repository root path derived from `directory`. Enables per-repo
+    /// event filtering, notification routing, and MCP event queries.
+    public let repoPath: String?
     public let tabID: UUID?
     /// AI session ID (e.g. Claude session ID) for tab disambiguation.
     public let sessionID: String?
@@ -135,6 +138,7 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         notificationType: String? = nil,
         ts: String,
         directory: String? = nil,
+        repoPath: String? = nil,
         tabID: UUID? = nil,
         sessionID: String? = nil,
         producer: String? = nil,
@@ -150,6 +154,7 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         self.notificationType = notificationType
         self.ts = ts
         self.directory = directory
+        self.repoPath = repoPath
         self.tabID = tabID
         self.sessionID = sessionID
         self.producer = producer
@@ -167,6 +172,7 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         notificationType: String? = nil,
         ts: String,
         directory: String? = nil,
+        repoPath: String? = nil,
         tabID: UUID? = nil,
         sessionID: String? = nil,
         producer: String? = nil,
@@ -182,6 +188,7 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         self.notificationType = notificationType
         self.ts = ts
         self.directory = directory
+        self.repoPath = repoPath
         self.tabID = tabID
         self.sessionID = sessionID
         self.producer = producer
@@ -202,6 +209,7 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
             notificationType: notificationType,
             ts: ts,
             directory: directory,
+            repoPath: repoPath,
             tabID: tabID,
             sessionID: sessionID,
             producer: producer,
@@ -362,6 +370,7 @@ public enum AIEventParser {
         let ts = try getString("ts", default: DateFormatters.nowISO8601())
 
         let directory = dict["directory"] as? String ?? dict["cwd"] as? String
+        let repoPath = dict["repoPath"] as? String ?? dict["repo_path"] as? String
         let rawTabID = dict["tabID"] as? String
             ?? dict["tabId"] as? String
             ?? dict["tab_id"] as? String
@@ -397,6 +406,7 @@ public enum AIEventParser {
             notificationType: notificationType,
             ts: ts,
             directory: directory,
+            repoPath: repoPath,
             tabID: tabID,
             sessionID: preservesOpaqueSessionIdentity
                 ? sanitizeOpaqueSessionIdentifier(rawSessionID)
