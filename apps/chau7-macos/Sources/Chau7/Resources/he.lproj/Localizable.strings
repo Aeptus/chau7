@@ -1255,6 +1255,9 @@
 "settings.about.acknowledgments.openSource" = "ספריות קוד פתוח";
 "settings.about.acknowledgments.contributors" = "תורמים";
 "settings.about.acknowledgments.viewLicenses" = "צפה ברישיונות";
+"settings.about.stackSummary" = "Chau7 משלב רכיבי Swift, Rust ו-Go באפליקציה, במנוע הטרמינל ובפרוקסי המקומי.";
+"settings.about.licenseSummary" = "תודות לקוד פתוח וקובצי הודעות צד שלישי מופיעים בעזרה > טכנולוגיות, רישיונות ותודות.";
+"settings.about.openAcknowledgments" = "פתח תודות";
 
 // זכויות יוצרים
 "settings.about.copyright" = "© 2024 Chau7. כל הזכויות שמורות.";

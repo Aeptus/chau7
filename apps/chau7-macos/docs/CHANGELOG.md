@@ -317,6 +317,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.16 | 2026-04-02 | Arabic, French, and Hebrew localizations now include the new acknowledgments/about stack summary, license summary, and open-acknowledgments strings |
 | 0.5.15 | 2026-04-02 | The website compare page now points directly at the hosted Chau7 DMG download and the shared footer test count reflects the latest suite size |
 | 0.5.14 | 2026-04-02 | The issue-intake relay now serves a small landing page on issues.chau7.sh while keeping POST issue submission at the root endpoint for the app |
 | 0.5.13 | 2026-04-02 | Restore-time shell commands now preserve waiting-input suppression, notification action delegates return real cross-window outcomes, and bug-report issue intake defaults to issues.chau7.sh |

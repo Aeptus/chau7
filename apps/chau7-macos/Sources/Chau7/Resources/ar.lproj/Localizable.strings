@@ -1255,6 +1255,9 @@
 "settings.about.acknowledgments.openSource" = "مكتبات مفتوحة المصدر";
 "settings.about.acknowledgments.contributors" = "المساهمون";
 "settings.about.acknowledgments.viewLicenses" = "عرض التراخيص";
+"settings.about.stackSummary" = "يجمع Chau7 بين مكوّنات Swift وRust وGo عبر التطبيق ومحرك الطرفية والوكيل المحلي.";
+"settings.about.licenseSummary" = "تُدرج إشعارات المصادر المفتوحة وملفات الإشعارات الخاصة بالطرف الثالث في مساعدة > التقنيات والتراخيص والشكر.";
+"settings.about.openAcknowledgments" = "فتح صفحة الشكر";
 
 // حقوق النشر
 "settings.about.copyright" = "© 2024 Chau7. جميع الحقوق محفوظة.";

@@ -563,6 +563,7 @@ Key patterns:
 - Restore-time shell maintenance commands now stay tagged as system input so waiting-input suppression survives startup, notification actions report real cross-window success, and bug reports default to the dedicated issues.chau7.sh intake endpoint.
 - The issue-intake relay now serves a lightweight landing page on issues.chau7.sh for browser visits while still accepting app-submitted bug reports at the root POST endpoint.
 - The public compare page now links directly to the hosted Chau7 DMG download, and the shared website footer copy reflects the current automated test count.
+- Arabic, French, and Hebrew localizations now include the latest acknowledgments/about stack summary and license summary copy.
 - Remote control relay traffic now rejects cleartext control frames after the encrypted session is established, and remote push registration/notify calls normalize websocket relay URLs back to HTTP(S) endpoints before POSTing.
 - On termination, Chau7 clears persisted tab/window state and backup files when every overlay window has been hidden or closed, preventing stale windows from resurrecting on next launch.
 - Notification pipeline optimizations now respect disabled single-action rules instead of promoting them to native default notifications.
