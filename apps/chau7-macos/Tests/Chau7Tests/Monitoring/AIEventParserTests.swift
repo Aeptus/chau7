@@ -29,7 +29,10 @@ final class AIEventParserIdentifierTests: XCTestCase {
     func testParsePreservesRichProviderFields() throws {
         let tabID = UUID()
         let line = """
-        {"source":"codex","type":"agent-turn-complete","rawType":"agent-turn-complete","tool":"Codex","title":"Codex finished","message":"Done","notificationType":"idle_prompt","ts":"2026-04-02T10:00:00Z","cwd":"/tmp/project","session_id":"thread_123","tab_id":"\(tabID.uuidString)","producer":"codex_notify_hook","reliability":"authoritative"}
+        {"source":"codex","type":"agent-turn-complete","rawType":"agent-turn-complete","tool":"Codex","title":"Codex finished","message":"Done","notificationType":"idle_prompt","ts":"2026-04-02T10:00:00Z","cwd":"/tmp/project","session_id":"thread_123","tab_id":"\(
+            tabID
+                .uuidString
+        )","producer":"codex_notify_hook","reliability":"authoritative"}
         """
 
         let event = try AIEventParser.parse(line: line)
@@ -40,5 +43,18 @@ final class AIEventParserIdentifierTests: XCTestCase {
         XCTAssertEqual(event.producer, "codex_notify_hook")
         XCTAssertEqual(event.reliability, .authoritative)
         XCTAssertEqual(event.tabID, tabID)
+    }
+
+    func testParsePreservesOpaqueAuthoritativeCodexSessionIdentifier() throws {
+        let longThreadID = "thread_1234567890abcdefghijklmnopqrstuvwxyz_extra_segment"
+        let line = """
+        {"source":"codex","type":"agent-turn-complete","rawType":"agent-turn-complete","tool":"Codex","message":"Done","ts":"2026-04-02T10:00:00Z","session_id":"\(
+            longThreadID
+        )","producer":"codex_notify_hook","reliability":"authoritative"}
+        """
+
+        let event = try AIEventParser.parse(line: line)
+
+        XCTAssertEqual(event.sessionID, longThreadID)
     }
 }

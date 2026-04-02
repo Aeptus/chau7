@@ -8,6 +8,7 @@ enum SavedSplitNodeKind: String, Codable {
     case textEditor
     case filePreview
     case diffViewer
+    case repositoryPane
     case split
 }
 
@@ -23,6 +24,7 @@ final class SavedSplitNode: Codable, Equatable {
     let diffFilePath: String?
     let diffDirectory: String?
     let diffMode: String?
+    let repoDirectory: String?
 
     init(
         kind: SavedSplitNodeKind,
@@ -35,7 +37,8 @@ final class SavedSplitNode: Codable, Equatable {
         previewFilePath: String? = nil,
         diffFilePath: String? = nil,
         diffDirectory: String? = nil,
-        diffMode: String? = nil
+        diffMode: String? = nil,
+        repoDirectory: String? = nil
     ) {
         self.kind = kind
         self.id = id
@@ -48,6 +51,7 @@ final class SavedSplitNode: Codable, Equatable {
         self.diffFilePath = diffFilePath
         self.diffDirectory = diffDirectory
         self.diffMode = diffMode
+        self.repoDirectory = repoDirectory
     }
 
     static func == (lhs: SavedSplitNode, rhs: SavedSplitNode) -> Bool {
@@ -60,6 +64,7 @@ final class SavedSplitNode: Codable, Equatable {
             lhs.diffFilePath == rhs.diffFilePath &&
             lhs.diffDirectory == rhs.diffDirectory &&
             lhs.diffMode == rhs.diffMode &&
+            lhs.repoDirectory == rhs.repoDirectory &&
             lhs.first == rhs.first &&
             lhs.second == rhs.second
     }
@@ -77,6 +82,7 @@ enum PaneType: String, Codable {
     case textEditor
     case filePreview
     case diffViewer
+    case repositoryPane
 }
 
 /// Represents a node in the split pane tree
@@ -85,6 +91,7 @@ indirect enum SplitNode: Identifiable {
     case textEditor(id: UUID, editor: TextEditorModel)
     case filePreview(id: UUID, preview: FilePreviewModel)
     case diffViewer(id: UUID, diff: DiffViewerModel)
+    case repositoryPane(id: UUID, repo: RepositoryPaneModel)
     case split(id: UUID, direction: SplitDirection, first: SplitNode, second: SplitNode, ratio: CGFloat)
 
     var id: UUID {
@@ -92,7 +99,8 @@ indirect enum SplitNode: Identifiable {
         case .terminal(let id, _),
              .textEditor(let id, _),
              .filePreview(let id, _),
-             .diffViewer(let id, _):
+             .diffViewer(let id, _),
+             .repositoryPane(let id, _):
             return id
         case .split(let id, _, _, _, _):
             return id
@@ -105,7 +113,8 @@ indirect enum SplitNode: Identifiable {
         case .terminal(let id, _),
              .textEditor(let id, _),
              .filePreview(let id, _),
-             .diffViewer(let id, _):
+             .diffViewer(let id, _),
+             .repositoryPane(let id, _):
             return [id]
         case .split(_, _, let first, let second, _):
             return first.allPaneIDs + second.allPaneIDs
@@ -117,7 +126,7 @@ indirect enum SplitNode: Identifiable {
         switch self {
         case .terminal(let id, _):
             return [id]
-        case .textEditor, .filePreview, .diffViewer:
+        case .textEditor, .filePreview, .diffViewer, .repositoryPane:
             return []
         case .split(_, _, let first, let second, _):
             return first.allTerminalIDs + second.allTerminalIDs
@@ -129,7 +138,7 @@ indirect enum SplitNode: Identifiable {
         switch self {
         case .terminal(_, let session):
             return [session]
-        case .textEditor, .filePreview, .diffViewer:
+        case .textEditor, .filePreview, .diffViewer, .repositoryPane:
             return []
         case .split(_, _, let first, let second, _):
             return first.allSessions + second.allSessions
@@ -141,7 +150,7 @@ indirect enum SplitNode: Identifiable {
         switch self {
         case .terminal(let id, let session):
             return [(id: id, session: session)]
-        case .textEditor, .filePreview, .diffViewer:
+        case .textEditor, .filePreview, .diffViewer, .repositoryPane:
             return []
         case .split(_, _, let first, let second, _):
             return first.terminalSessionPairs + second.terminalSessionPairs
@@ -194,6 +203,17 @@ indirect enum SplitNode: Identifiable {
                 diffFilePath: diff.filePath,
                 diffDirectory: diff.directory,
                 diffMode: diff.diffMode.rawValue
+            )
+        case .repositoryPane(let id, let repo):
+            return SavedSplitNode(
+                kind: .repositoryPane,
+                id: id.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: nil,
+                repoDirectory: repo.directory
             )
         case .split(let id, let direction, let first, let second, let ratio):
             return SavedSplitNode(
@@ -255,6 +275,13 @@ extension SplitNode {
                 diff.loadDiff(file: file, in: dir, mode: mode)
             }
             return .diffViewer(id: resolvedID, diff: diff)
+        case .repositoryPane:
+            let repo = RepositoryPaneModel()
+            if let dir = node.repoDirectory,
+               !dir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                repo.load(directory: dir)
+            }
+            return .repositoryPane(id: resolvedID, repo: repo)
         case .split:
             guard let firstSaved = node.first, let secondSaved = node.second else {
                 return .terminal(id: resolvedID, session: TerminalSessionModel(appModel: appModel))
@@ -280,7 +307,7 @@ extension SplitNode {
         switch self {
         case .terminal(_, let session):
             session.closeSession()
-        case .textEditor, .filePreview, .diffViewer:
+        case .textEditor, .filePreview, .diffViewer, .repositoryPane:
             break
         case .split(_, _, let first, let second, _):
             first.closeAllSessions()
@@ -293,7 +320,7 @@ extension SplitNode {
         switch self {
         case .terminal(let termId, let session):
             return termId == id ? session : nil
-        case .textEditor, .filePreview, .diffViewer:
+        case .textEditor, .filePreview, .diffViewer, .repositoryPane:
             return nil
         case .split(_, _, let first, let second, _):
             return first.findSession(id: id) ?? second.findSession(id: id)
@@ -303,7 +330,7 @@ extension SplitNode {
     /// Finds a text editor model by ID
     func findEditor(id: UUID) -> TextEditorModel? {
         switch self {
-        case .terminal, .filePreview, .diffViewer:
+        case .terminal, .filePreview, .diffViewer, .repositoryPane:
             return nil
         case .textEditor(let editorId, let editor):
             return editorId == id ? editor : nil
@@ -315,7 +342,7 @@ extension SplitNode {
     /// Finds the first text editor in the tree
     func findFirstEditor() -> TextEditorModel? {
         switch self {
-        case .terminal, .filePreview, .diffViewer:
+        case .terminal, .filePreview, .diffViewer, .repositoryPane:
             return nil
         case .textEditor(_, let editor):
             return editor
@@ -327,7 +354,7 @@ extension SplitNode {
     /// Finds a file preview model by ID
     func findFilePreview(id: UUID) -> FilePreviewModel? {
         switch self {
-        case .terminal, .textEditor, .diffViewer:
+        case .terminal, .textEditor, .diffViewer, .repositoryPane:
             return nil
         case .filePreview(let paneId, let preview):
             return paneId == id ? preview : nil
@@ -339,7 +366,7 @@ extension SplitNode {
     /// Finds the first file preview in the tree
     func findFirstFilePreview() -> FilePreviewModel? {
         switch self {
-        case .terminal, .textEditor, .diffViewer:
+        case .terminal, .textEditor, .diffViewer, .repositoryPane:
             return nil
         case .filePreview(_, let preview):
             return preview
@@ -351,7 +378,7 @@ extension SplitNode {
     /// Finds a diff viewer model by ID
     func findDiffViewer(id: UUID) -> DiffViewerModel? {
         switch self {
-        case .terminal, .textEditor, .filePreview:
+        case .terminal, .textEditor, .filePreview, .repositoryPane:
             return nil
         case .diffViewer(let paneId, let diff):
             return paneId == id ? diff : nil
@@ -363,13 +390,42 @@ extension SplitNode {
     /// Finds the first diff viewer in the tree
     func findFirstDiffViewer() -> DiffViewerModel? {
         switch self {
-        case .terminal, .textEditor, .filePreview:
+        case .terminal, .textEditor, .filePreview, .repositoryPane:
             return nil
         case .diffViewer(_, let diff):
             return diff
         case .split(_, _, let first, let second, _):
             return first.findFirstDiffViewer() ?? second.findFirstDiffViewer()
         }
+    }
+
+    /// Finds a repository pane model by ID
+    func findRepositoryPane(id: UUID) -> RepositoryPaneModel? {
+        switch self {
+        case .repositoryPane(let paneId, let repo):
+            return paneId == id ? repo : nil
+        case .terminal, .textEditor, .filePreview, .diffViewer:
+            return nil
+        case .split(_, _, let first, let second, _):
+            return first.findRepositoryPane(id: id) ?? second.findRepositoryPane(id: id)
+        }
+    }
+
+    /// Finds the first repository pane in the tree
+    func findFirstRepositoryPane() -> RepositoryPaneModel? {
+        switch self {
+        case .repositoryPane(_, let repo):
+            return repo
+        case .terminal, .textEditor, .filePreview, .diffViewer:
+            return nil
+        case .split(_, _, let first, let second, _):
+            return first.findFirstRepositoryPane() ?? second.findFirstRepositoryPane()
+        }
+    }
+
+    /// Whether the tree contains a repository pane
+    var hasRepositoryPane: Bool {
+        findFirstRepositoryPane() != nil
     }
 
     /// Gets the pane type for a given ID
@@ -383,6 +439,8 @@ extension SplitNode {
             return paneId == id ? .filePreview : nil
         case .diffViewer(let paneId, _):
             return paneId == id ? .diffViewer : nil
+        case .repositoryPane(let paneId, _):
+            return paneId == id ? .repositoryPane : nil
         case .split(_, _, let first, let second, _):
             return first.paneType(for: id) ?? second.paneType(for: id)
         }
@@ -391,7 +449,7 @@ extension SplitNode {
     /// Checks if tree has any text editors
     var hasTextEditor: Bool {
         switch self {
-        case .terminal, .filePreview, .diffViewer:
+        case .terminal, .filePreview, .diffViewer, .repositoryPane:
             return false
         case .textEditor:
             return true
@@ -869,7 +927,7 @@ final class SplitPaneController: ObservableObject {
         func findSession(_ node: SplitNode) -> TerminalSessionModel? {
             switch node {
             case .terminal(_, let session): return session
-            case .textEditor, .filePreview, .diffViewer: return nil
+            case .textEditor, .filePreview, .diffViewer, .repositoryPane: return nil
             case .split(_, _, let first, let second, _):
                 return findSession(first) ?? findSession(second)
             }
@@ -1028,12 +1086,35 @@ final class SplitPaneController: ObservableObject {
         }
     }
 
+    // MARK: - Repository Pane
+
+    /// Splits the focused pane with a repository pane
+    func splitWithRepositoryPane(direction: SplitDirection, directory: String) {
+        let repo = RepositoryPaneModel()
+        repo.load(directory: directory)
+        let newID = UUID()
+        let newNode = SplitNode.repositoryPane(id: newID, repo: repo)
+
+        root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
+        focusedPaneID = newID
+    }
+
+    /// Opens a repository pane, reusing an existing one or creating a new split
+    func openRepositoryPane(directory: String) {
+        if let repo = root.findFirstRepositoryPane() {
+            repo.load(directory: directory)
+        } else {
+            splitWithRepositoryPane(direction: .horizontal, directory: directory)
+        }
+    }
+
     private func splitNode(_ node: SplitNode, targetID: UUID, direction: SplitDirection, newNode: SplitNode) -> SplitNode {
         switch node {
         case .terminal(let id, _),
              .textEditor(let id, _),
              .filePreview(let id, _),
-             .diffViewer(let id, _):
+             .diffViewer(let id, _),
+             .repositoryPane(let id, _):
             if id == targetID {
                 return .split(
                     id: UUID(),
@@ -1089,7 +1170,8 @@ final class SplitPaneController: ObservableObject {
 
         case .textEditor(let id, _),
              .filePreview(let id, _),
-             .diffViewer(let id, _):
+             .diffViewer(let id, _),
+             .repositoryPane(let id, _):
             if id == targetID {
                 return (nil, nil)
             }
@@ -1156,7 +1238,7 @@ final class SplitPaneController: ObservableObject {
             switch node {
             case .terminal(_, let session):
                 return session
-            case .textEditor, .filePreview, .diffViewer:
+            case .textEditor, .filePreview, .diffViewer, .repositoryPane:
                 return nil
             case .split(_, _, let first, let second, _):
                 return findFirst(first) ?? findFirst(second)
@@ -1174,7 +1256,7 @@ final class SplitPaneController: ObservableObject {
 
     private func adjustRatioInNode(_ node: SplitNode, targetID: UUID, delta: CGFloat) -> SplitNode {
         switch node {
-        case .terminal, .textEditor, .filePreview, .diffViewer:
+        case .terminal, .textEditor, .filePreview, .diffViewer, .repositoryPane:
             return node
 
         case .split(let id, let dir, let first, let second, var ratio):
@@ -1204,7 +1286,7 @@ final class SplitPaneController: ObservableObject {
 
     private func updateRatioInNode(_ node: SplitNode, splitID: UUID, newRatio: CGFloat) -> SplitNode {
         switch node {
-        case .terminal, .textEditor, .filePreview, .diffViewer:
+        case .terminal, .textEditor, .filePreview, .diffViewer, .repositoryPane:
             return node
 
         case .split(let id, let dir, let first, let second, let ratio):

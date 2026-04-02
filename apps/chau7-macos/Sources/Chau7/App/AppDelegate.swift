@@ -816,6 +816,15 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
+    func openRepositoryPane() {
+        guard let model = ensureActiveOverlayModel(),
+              let tab = model.tabs.first(where: { $0.id == model.selectedTabID }),
+              let session = tab.session else { return }
+
+        let dir = session.gitRootPath ?? session.currentDirectory
+        model.openRepositoryPaneInCurrentTab(directory: dir)
+    }
+
     func showChangedFiles() {
         guard let model = ensureActiveOverlayModel(),
               let tab = model.tabs.first(where: { $0.id == model.selectedTabID }),

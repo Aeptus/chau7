@@ -256,6 +256,10 @@ struct OverlayTab: Identifiable, Equatable {
         splitController.openDiffViewer(filePath: filePath, directory: directory, mode: mode)
     }
 
+    func openRepositoryPane(directory: String) {
+        splitController.openRepositoryPane(directory: directory)
+    }
+
     init(appModel: AppModel, splitController: SplitPaneController, id: UUID = UUID(), createdAt: Date = Date()) {
         self.id = id
         self.splitController = splitController
@@ -2627,6 +2631,10 @@ final class OverlayTabsModel: ObservableObject {
 
     func openDiffViewerInCurrentTab(filePath: String, directory: String, mode: DiffMode = .workingTree) {
         selectedTab?.openDiffViewer(filePath: filePath, directory: directory, mode: mode)
+    }
+
+    func openRepositoryPaneInCurrentTab(directory: String) {
+        selectedTab?.openRepositoryPane(directory: directory)
     }
 
     func closeFocusedPaneInCurrentTab() {

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Repository Pane**: Full git UI as a split pane (⌘⌥B). Stage/unstage files, commit, switch/create/delete branches, push/pull, stash save/pop/drop, commit history, merge conflict resolution (accept ours/theirs). All operations run via background `Process` with inline error display. Persists across tab restore.
 - **Technology, Licenses & Acknowledgments Help Page**: New help topic documenting the monorepo layout, languages, Rust crates, bundled binaries, third-party dependencies (swift-atomics, RTK fork), system frameworks, and notice file locations. Accessible from Help menu and About settings.
 - **Third-Party Notices**: Added `THIRD_PARTY_NOTICES.md` and `LICENSE-RTK-APACHE` for RTK dual-license tracking (MIT + Apache-2.0 upstream ambiguity).
 - **Privacy-First Bug Report Dialog**: New in-app issue reporter (⌥⌘I) with all sensitive sections off by default, per-toggle tab pickers, live markdown preview, inline privacy warnings, and optional remembered contact info. Submits privately via Cloudflare Worker relay.

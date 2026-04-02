@@ -80,6 +80,17 @@ struct SplitNodeView: View {
                 onClose: { onClosePane(id) }
             )
 
+        case .repositoryPane(let id, let repo):
+            RepositoryPaneView(
+                id: id,
+                repo: repo,
+                onFocus: { onFocus(id) },
+                onClose: { onClosePane(id) },
+                onFileClicked: { path, _ in
+                    onFilePathClicked?(path, nil, nil)
+                }
+            )
+
         case .split(let splitID, let direction, let first, let second, let ratio):
             SplitContainerView(
                 splitID: splitID,

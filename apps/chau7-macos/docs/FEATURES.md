@@ -244,6 +244,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Built-in text editor in split panes — syntax highlighting, line numbers, bracket matching, find/replace.
 - Click-to-copy document name in the editor pane header.
 - Multi-language syntax: HTML, CSS, JavaScript, Python, and more.
+- Repository pane (`Cmd+Opt+B`): full git UI — stage, commit, branch, push/pull, stash, history, merge conflict resolution.
 
 ### Windows
 
