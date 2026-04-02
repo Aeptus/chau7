@@ -7,7 +7,7 @@ import Chau7Core
 /// Top-level notification settings view with a simplified AI-first front door.
 /// Advanced trigger plumbing stays available, but no longer leads the screen.
 struct NotificationsSettingsView: View {
-    @ObservedObject var model: AppModel
+    var model: AppModel
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var selectedTab: NotificationTab = .overview
 
@@ -65,7 +65,7 @@ private enum NotificationTab: String, CaseIterable {
 // MARK: - Overview Tab
 
 private struct OverviewTabView: View {
-    @ObservedObject var model: AppModel
+    var model: AppModel
     let onOpenAdvanced: () -> Void
 
     var body: some View {
@@ -83,7 +83,7 @@ private struct OverviewTabView: View {
 // MARK: - Advanced Tab
 
 private struct AdvancedTriggersTabView: View {
-    @ObservedObject var model: AppModel
+    var model: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -100,7 +100,7 @@ private struct AdvancedTriggersTabView: View {
 // MARK: - Status & Permissions Section
 
 private struct StatusPermissionsSection: View {
-    @ObservedObject var model: AppModel
+    var model: AppModel
 
     private var permissionState: AppModel.NotificationPermissionState {
         model.notificationPermissionState
@@ -1516,7 +1516,7 @@ private struct EventDetectionThresholdsSection: View {
 // MARK: - Event Monitoring Section
 
 private struct EventMonitoringSection: View {
-    @ObservedObject var model: AppModel
+    @Bindable var model: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

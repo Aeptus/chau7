@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import SwiftUI
 import Chau7Core
 
@@ -18,7 +17,6 @@ final class StatusBarController: NSObject {
     private var globalEventMonitor: Any?
     private var localEventMonitor: Any?
     private weak var model: AppModel?
-    private var monitoringCancellable: AnyCancellable?
 
     /// Panel view model — lives as long as the controller so popover doesn't recreate state.
     private var panelViewModel: CommandCenterViewModel?
@@ -95,19 +93,18 @@ final class StatusBarController: NSObject {
             }
         }
 
-        monitoringCancellable = model.$isMonitoring
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
+        model.onMonitoringChanged = { [weak self] in
+            DispatchQueue.main.async {
                 self?.updateIcon()
             }
+        }
     }
 
     /// Cleanup all resources. Call from applicationWillTerminate.
     func cleanup() {
         NotificationCenter.default.removeObserver(self)
         panelViewModel?.onBadgeCountsChange = nil
-        monitoringCancellable?.cancel()
-        monitoringCancellable = nil
+        model?.onMonitoringChanged = nil
 
         if let globalEventMonitor {
             NSEvent.removeMonitor(globalEventMonitor)

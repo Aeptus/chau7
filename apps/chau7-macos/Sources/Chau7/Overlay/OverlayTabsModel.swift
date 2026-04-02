@@ -493,7 +493,7 @@ final class OverlayTabsModel: ObservableObject {
         !closedTabStack.isEmpty
     }
 
-    var repoGroupCancellables: [UUID: AnyCancellable] = [:]
+    // Git root path observation is now handled via session.onGitRootPathChanged callbacks
     var repoGroupModeCancellable: AnyCancellable?
     var renameTabID: UUID?
     var renameOriginalTitle = ""
@@ -2583,17 +2583,23 @@ final class OverlayTabsModel: ObservableObject {
         case .off:
             // Keep existing repoGroupIDs — tabBarSegments always renders them.
             // Only stop auto-update subscriptions.
-            repoGroupCancellables.removeAll()
+            clearAllGitRootCallbacks()
         case .auto:
             applyAutoGroupingToAllTabs()
         case .manual:
             // Keep existing groups, stop auto-updates
-            repoGroupCancellables.removeAll()
+            clearAllGitRootCallbacks()
+        }
+    }
+
+    private func clearAllGitRootCallbacks() {
+        for tab in tabs {
+            tab.session?.onGitRootPathChanged = nil
         }
     }
 
     func applyAutoGroupingToAllTabs() {
-        repoGroupCancellables.removeAll()
+        clearAllGitRootCallbacks()
         for i in tabs.indices {
             // Preserve restored repoGroupID when gitRootPath is still nil
             // (git detection is async and may not have completed yet)
@@ -2610,18 +2616,17 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     func observeGitRootForAutoGrouping(tabID: UUID, session: TerminalSessionModel) {
-        let cancellable = session.$gitRootPath
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] newRoot in
+        session.onGitRootPathChanged = { [weak self] newRoot in
+            DispatchQueue.main.async {
                 guard let self,
                       FeatureSettings.shared.repoGroupingMode == .auto,
-                      let idx = tabs.firstIndex(where: { $0.id == tabID }) else { return }
-                tabs[idx].repoGroupID = newRoot
+                      let idx = self.tabs.firstIndex(where: { $0.id == tabID }) else { return }
+                self.tabs[idx].repoGroupID = newRoot
                 if let newRoot {
-                    coalesceGroup(repoGroupID: newRoot)
+                    self.coalesceGroup(repoGroupID: newRoot)
                 }
             }
-        repoGroupCancellables[tabID] = cancellable
+        }
     }
 
     /// Called when a new tab is added — always assign repoGroupID from gitRootPath
@@ -2656,7 +2661,9 @@ final class OverlayTabsModel: ObservableObject {
 
     /// Called when a tab is closed — clean up subscription.
     func cleanupRepoGroupingForTab(_ tabID: UUID) {
-        repoGroupCancellables.removeValue(forKey: tabID)
+        if let tab = tabs.first(where: { $0.id == tabID }) {
+            tab.session?.onGitRootPathChanged = nil
+        }
     }
 
     /// Manual mode actions

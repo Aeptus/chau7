@@ -3,7 +3,7 @@ import AppKit
 
 @main
 struct Chau7App: App {
-    @StateObject private var model: AppModel
+    @State private var model: AppModel
     @StateObject private var overlayModel: OverlayTabsModel
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
@@ -19,7 +19,7 @@ struct Chau7App: App {
         TerminalSessionModel.preInitialize()
 
         let model = AppModel()
-        _model = StateObject(wrappedValue: model)
+        _model = State(wrappedValue: model)
         let overlayModel = OverlayTabsModel(appModel: model)
         // All resolvers search ALL windows via TerminalControlService.allTabs,
         // not just window 0's overlayModel. Without this, notifications for tabs

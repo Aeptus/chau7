@@ -1225,7 +1225,7 @@ private struct BranchIndicator: View {
 
 /// Separate view to properly observe session's git status changes
 private struct GitBranchBadge: View {
-    @ObservedObject var session: TerminalSessionModel
+    var session: TerminalSessionModel
 
     var body: some View {
         if session.isGitRepo {
@@ -1247,7 +1247,7 @@ private struct GitBranchBadge: View {
 
 /// Separate view to properly observe session's dev server status
 private struct DevServerBadge: View {
-    @ObservedObject var session: TerminalSessionModel
+    var session: TerminalSessionModel
 
     var body: some View {
         if let server = session.devServer {
@@ -1335,7 +1335,7 @@ struct CursorPlaceholderView: View {
 
 struct Chau7OverlayView: View {
     @ObservedObject var overlayModel: OverlayTabsModel
-    @ObservedObject var appModel: AppModel
+    var appModel: AppModel
     @ObservedObject private var settings = FeatureSettings.shared
 
     var body: some View {
@@ -1642,7 +1642,7 @@ private struct ShortcutHelperHintView: View {
 /// Uses @ObservedObject so SwiftUI observes session property changes
 /// (OverlayTab is Equatable by id only, so ForEach won't re-diff on session changes).
 private struct ShellLoadingBar: View {
-    @ObservedObject var session: TerminalSessionModel
+    var session: TerminalSessionModel
 
     private static let barWidth = 28
     private static let litWidth = 10
@@ -2019,7 +2019,7 @@ struct UnifiedTabButton: View {
 /// Without this, `UnifiedTabButton` (which takes `OverlayTab` as a struct value)
 /// would never re-render for session property changes.
 struct TabSessionContent: View {
-    @ObservedObject var session: TerminalSessionModel
+    var session: TerminalSessionModel
     let customTitle: String?
     let isMinimalDisplay: Bool
     var hideRepoPath = false

@@ -1,6 +1,5 @@
 import Foundation
 import AppKit
-import Combine
 import Darwin
 import Chau7Core
 
@@ -18,9 +17,10 @@ enum CommandStatus: String {
 }
 
 /// Model for a terminal session, managing shell state, search, and output capture.
-/// - Note: Thread Safety - @Published properties must be modified on main thread.
+/// - Note: Thread Safety - Properties must be modified on main thread.
 ///   Callbacks may arrive on background threads and dispatch to main via DispatchQueue.main.async.
-final class TerminalSessionModel: NSObject, ObservableObject {
+@Observable
+final class TerminalSessionModel {
     private enum PendingTerminalAction {
         case text(String)
         case keyPress(TerminalKeyPress)
@@ -85,26 +85,45 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let cwd: String
     }
 
-    @Published var title = "Shell"
-    @Published var currentDirectory: String = TerminalSessionModel.defaultStartDirectory()
+    var title = "Shell" {
+        didSet { onSessionStateChanged?() }
+    }
+
+    var currentDirectory: String = TerminalSessionModel.defaultStartDirectory() {
+        didSet { onSessionStateChanged?() }
+    }
 
     /// Unique identifier for this terminal tab, used for task lifecycle tracking
-    let tabIdentifier: String = UUID().uuidString
+    @ObservationIgnored let tabIdentifier: String = UUID().uuidString
+
+    /// Callback invoked when session state changes, for non-SwiftUI observers
+    /// (e.g. RemoteControlManager). Replaces the old objectWillChange.sink pattern.
+    @ObservationIgnored var onSessionStateChanged: (() -> Void)?
 
     /// The owning tab's UUID, set by OverlayTabsModel at tab creation time.
     /// Propagated to ShellEventDetector so emitted events carry a deterministic tabID
     /// for the fast-path in TabResolver.
-    var ownerTabID: UUID? {
+    @ObservationIgnored var ownerTabID: UUID? {
         didSet { shellEventDetector.ownerTabID = ownerTabID }
     }
 
-    @Published var status: CommandStatus = .idle
-    @Published var isGitRepo = false
-    @Published var gitBranch: String?
-    @Published var gitRootPath: String?
-    @Published var activeAppName: String? {
+    var status: CommandStatus = .idle {
+        didSet { onSessionStateChanged?() }
+    }
+
+    var isGitRepo = false
+    var gitBranch: String?
+    /// Callback invoked when `gitRootPath` changes (used by OverlayTabsModel for auto-grouping).
+    @ObservationIgnored var onGitRootPathChanged: ((String?) -> Void)?
+
+    var gitRootPath: String? {
+        didSet { onGitRootPathChanged?(gitRootPath) }
+    }
+
+    var activeAppName: String? {
         didSet {
             recalculateCTOFlag()
+            onSessionStateChanged?()
             if activeAppName != oldValue {
                 NotificationCenter.default.post(
                     name: .terminalSessionRenderSuspensionStateChanged,
@@ -193,25 +212,27 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         return "app=\(app) provider=\(provider) sessionId=\(sessionId) status=\(effectiveStatus.rawValue) prompt=\(effectiveIsAtPrompt)"
     }
 
-    @Published var devServer: DevServerMonitor.DevServerInfo?
-    @Published var processGroup: ProcessGroupSnapshot?
-    @Published var tabTitleOverride: String?
-    @Published var fontSize: CGFloat = 13
-    @Published var searchMatches: [SearchMatch] = []
-    @Published var activeSearchIndex = 0
+    var devServer: DevServerMonitor.DevServerInfo?
+    var processGroup: ProcessGroupSnapshot?
+    var tabTitleOverride: String?
+    var fontSize: CGFloat = 13
+    var searchMatches: [SearchMatch] = []
+    var activeSearchIndex = 0
     /// Whether the shell is at a prompt (not running a command). Used by history key monitor.
-    @Published var isAtPrompt = true
+    var isAtPrompt = true {
+        didSet { onSessionStateChanged?() }
+    }
 
     /// Called when a permission/question is answered (user submits input after waiting).
     /// Used to clear the persistent red border on the tab.
-    var onPermissionResolved: (() -> Void)?
+    @ObservationIgnored var onPermissionResolved: (() -> Void)?
 
     /// Whether the shell is still loading (no prompt yet). Cleared on first OSC 7.
-    @Published var isShellLoading = true
+    var isShellLoading = true
 
     /// Set to true when no PTY output arrives within the startup timeout (shell may be hung).
     /// Cleared automatically on first output.
-    @Published var shellStartupSlow = false
+    var shellStartupSlow = false
 
     /// Last time output was observed for this terminal session.
     /// Used by tab restore logic to choose the best-matching AI session when
@@ -247,18 +268,11 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// (from a wrong restore) but output detection identifies "Codex",
     /// the Claude session ID in `lastAISessionId` is invalid for Codex.
     func updateLastDetectedApp(_ app: String) {
-        let oldEffective = effectiveAIProvider
         lastDetectedAppName = app
         if let newProvider = AIResumeParser.normalizeProviderName(app),
            let oldProvider = AIResumeParser.normalizeProviderName(lastAIProvider ?? ""),
            newProvider != oldProvider {
             lastAISessionId = nil
-        }
-        // Trigger view update when the effective provider changes (e.g., restored
-        // as Codex but live detection now sees Claude). effectiveAIProvider is
-        // computed from non-@Published state, so SwiftUI won't notice otherwise.
-        if effectiveAIProvider != oldEffective {
-            objectWillChange.send()
         }
     }
 
@@ -317,106 +331,106 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     // MARK: - Latency Telemetry (non-Published for performance)
 
-    // These change on every keystroke. Keeping them as @Published would cause
-    // SwiftUI to trigger updateNSView on every keystroke, adding unnecessary overhead.
+    // These change on every keystroke. @ObservationIgnored prevents SwiftUI from
+    // triggering updateNSView on every keystroke, adding unnecessary overhead.
     // The debug console has its own 1-second refresh timer to read these values.
-    var inputLatencyMs: Int?
-    var inputLatencyAverageMs: Int?
-    var outputLatencyMs: Int?
-    var outputLatencyAverageMs: Int?
-    var dangerousHighlightDelayMs: Int?
-    var dangerousHighlightAverageMs: Int?
-    @Published var lagTimeline: [LagEvent] = []
+    @ObservationIgnored var inputLatencyMs: Int?
+    @ObservationIgnored var inputLatencyAverageMs: Int?
+    @ObservationIgnored var outputLatencyMs: Int?
+    @ObservationIgnored var outputLatencyAverageMs: Int?
+    @ObservationIgnored var dangerousHighlightDelayMs: Int?
+    @ObservationIgnored var dangerousHighlightAverageMs: Int?
+    var lagTimeline: [LagEvent] = []
 
-    weak var appModel: AppModel?
+    @ObservationIgnored weak var appModel: AppModel?
     /// Rust terminal view
-    weak var rustTerminalView: RustTerminalView?
+    @ObservationIgnored weak var rustTerminalView: RustTerminalView?
     /// Strong reference to keep the Rust terminal view alive across SwiftUI view recreations
-    private var retainedRustTerminalView: RustTerminalView?
+    @ObservationIgnored private var retainedRustTerminalView: RustTerminalView?
     /// Prefill command queued when restore/restoration occurs before terminal is ready.
-    private var pendingPrefillInput: String?
+    @ObservationIgnored private var pendingPrefillInput: String?
     /// Retry counter for pending prefill flush attempts.
-    private var pendingPrefillRetries = 0
+    @ObservationIgnored private var pendingPrefillRetries = 0
     /// The next echoed command line that should be treated as a system-injected
     /// restore command rather than explicit user input.
-    var pendingSystemRestoreInputLine: String?
+    @ObservationIgnored var pendingSystemRestoreInputLine: String?
     var hasPendingResumePrefillActivity: Bool {
         pendingPrefillInput != nil || pendingPrefillRetries > 0 || isShellLoading
     }
 
     /// Input queued before the terminal view exists. Preserves ordering between raw
     /// text input and synthesized key presses, then flushes on view attachment.
-    private var pendingTerminalActions: [PendingTerminalAction] = []
+    @ObservationIgnored private var pendingTerminalActions: [PendingTerminalAction] = []
     /// Cached snapshot of the last rendered terminal frame, used for instant tab-switch visuals
     /// when the actual NSView has been removed from the hierarchy (distant-tab optimization).
-    var lastRenderedSnapshot: NSImage?
-    private var settingsObservers: [NSObjectProtocol] = []
-    private var idleTimer: DispatchSourceTimer?
-    var lastInputAt = Date()
-    var lastOutputAt = Date()
-    var commandStartedAt = Date.distantPast // Track when command started for "stuck" detection
-    var hasPendingCommand = false
-    var inputBuffer = ""
+    @ObservationIgnored var lastRenderedSnapshot: NSImage?
+    @ObservationIgnored private var settingsObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var idleTimer: DispatchSourceTimer?
+    @ObservationIgnored var lastInputAt = Date()
+    @ObservationIgnored var lastOutputAt = Date()
+    @ObservationIgnored var commandStartedAt = Date.distantPast // Track when command started for "stuck" detection
+    @ObservationIgnored var hasPendingCommand = false
+    @ObservationIgnored var inputBuffer = ""
     /// Shared repository model for this session's current git repo (nil if not in a repo)
-    @Published var repositoryModel: RepositoryModel?
-    var searchUpdateWorkItem: DispatchWorkItem?
-    let searchQueue = DispatchQueue(label: "com.chau7.search", qos: .utility)
-    var searchQuery = ""
-    var cachedBufferData: Data? // Cached buffer data for search
-    var bufferNeedsRefresh = true // Flag to invalidate cache on output
-    var bufferLineCount = 0
-    var pendingInputLatencyAt: CFAbsoluteTime?
-    var inputLatencySampleCount = 0
-    var inputLatencyTotalMs: Double = 0
-    var pendingOutputLatencyAt: CFAbsoluteTime?
-    var pendingAITimingInputAt: Date?
-    var pendingAITimingInputChars = 0
-    var pendingAIRoundTripCompleted = false
-    var pendingWaitingInputFallbackArmed = false
-    var pendingWaitingInputFallbackSawLiveOutput = false
-    var suppressWaitingInputFallbackUntilNextUserCommand = false
-    var didLogRestoreSuppressionOnce = false
-    var deliveredSystemResumePrefillSinceLastUserCommand = false
-    var outputLatencySampleCount = 0
-    var outputLatencyTotalMs: Double = 0
-    let inputLagLogThresholdMs: Double = 60
-    let outputLagLogThresholdMs: Double = 120
-    let highlightLagLogThresholdMs: Double = 120
-    let maxAcceptedLatencyMs: Double = 10000
-    let latencyLogCooldownSeconds: TimeInterval = 15
-    var lastInputLagLogAt: Date?
-    var lastOutputLagLogAt: Date?
-    var lastHighlightLagLogAt: Date?
-    let lagTimelineCapacity = 120
-    private let latencySampleCapacity = 120
-    var inputLatencySamples: LatencySampleBuffer
-    var outputLatencySamples: LatencySampleBuffer
-    var dangerousHighlightSamples: LatencySampleBuffer
-    var outputBurstStartAt = Date.distantPast
-    var outputBurstBytes = 0
-    var outputBurstChunks = 0
-    var outputBurstActive = false
-    let outputBurstWindowSeconds: TimeInterval = 2.0
-    let outputBurstIdleThreshold: TimeInterval = 0.35
-    let outputBurstBytesThreshold = 64 * 1024
-    let outputBurstChunksThreshold = 24
-    var dangerousHighlightSampleCount = 0
-    var dangerousHighlightTotalMs: Double = 0
-    var outputRiskCacheVersion = 0
-    var outputRiskCache: [Int: (version: Int, isRisk: Bool)] = [:]
-    let outputRiskCacheMaxEntries = 800
-    var dirtyOutputRange: ClosedRange<Int>?
-    var outputLatencyFallbackWorkItem: DispatchWorkItem?
-    let outputLatencyFallbackSeconds: TimeInterval = 0.2
-    let aiTimingWindowSeconds: TimeInterval = 120
-    let remoteOutputQueue = DispatchQueue(label: "com.chau7.remoteOutput", qos: .utility)
+    var repositoryModel: RepositoryModel?
+    @ObservationIgnored var searchUpdateWorkItem: DispatchWorkItem?
+    @ObservationIgnored let searchQueue = DispatchQueue(label: "com.chau7.search", qos: .utility)
+    @ObservationIgnored var searchQuery = ""
+    @ObservationIgnored var cachedBufferData: Data? // Cached buffer data for search
+    @ObservationIgnored var bufferNeedsRefresh = true // Flag to invalidate cache on output
+    @ObservationIgnored var bufferLineCount = 0
+    @ObservationIgnored var pendingInputLatencyAt: CFAbsoluteTime?
+    @ObservationIgnored var inputLatencySampleCount = 0
+    @ObservationIgnored var inputLatencyTotalMs: Double = 0
+    @ObservationIgnored var pendingOutputLatencyAt: CFAbsoluteTime?
+    @ObservationIgnored var pendingAITimingInputAt: Date?
+    @ObservationIgnored var pendingAITimingInputChars = 0
+    @ObservationIgnored var pendingAIRoundTripCompleted = false
+    @ObservationIgnored var pendingWaitingInputFallbackArmed = false
+    @ObservationIgnored var pendingWaitingInputFallbackSawLiveOutput = false
+    @ObservationIgnored var suppressWaitingInputFallbackUntilNextUserCommand = false
+    @ObservationIgnored var didLogRestoreSuppressionOnce = false
+    @ObservationIgnored var deliveredSystemResumePrefillSinceLastUserCommand = false
+    @ObservationIgnored var outputLatencySampleCount = 0
+    @ObservationIgnored var outputLatencyTotalMs: Double = 0
+    @ObservationIgnored let inputLagLogThresholdMs: Double = 60
+    @ObservationIgnored let outputLagLogThresholdMs: Double = 120
+    @ObservationIgnored let highlightLagLogThresholdMs: Double = 120
+    @ObservationIgnored let maxAcceptedLatencyMs: Double = 10000
+    @ObservationIgnored let latencyLogCooldownSeconds: TimeInterval = 15
+    @ObservationIgnored var lastInputLagLogAt: Date?
+    @ObservationIgnored var lastOutputLagLogAt: Date?
+    @ObservationIgnored var lastHighlightLagLogAt: Date?
+    @ObservationIgnored let lagTimelineCapacity = 120
+    @ObservationIgnored private let latencySampleCapacity = 120
+    @ObservationIgnored var inputLatencySamples: LatencySampleBuffer
+    @ObservationIgnored var outputLatencySamples: LatencySampleBuffer
+    @ObservationIgnored var dangerousHighlightSamples: LatencySampleBuffer
+    @ObservationIgnored var outputBurstStartAt = Date.distantPast
+    @ObservationIgnored var outputBurstBytes = 0
+    @ObservationIgnored var outputBurstChunks = 0
+    @ObservationIgnored var outputBurstActive = false
+    @ObservationIgnored let outputBurstWindowSeconds: TimeInterval = 2.0
+    @ObservationIgnored let outputBurstIdleThreshold: TimeInterval = 0.35
+    @ObservationIgnored let outputBurstBytesThreshold = 64 * 1024
+    @ObservationIgnored let outputBurstChunksThreshold = 24
+    @ObservationIgnored var dangerousHighlightSampleCount = 0
+    @ObservationIgnored var dangerousHighlightTotalMs: Double = 0
+    @ObservationIgnored var outputRiskCacheVersion = 0
+    @ObservationIgnored var outputRiskCache: [Int: (version: Int, isRisk: Bool)] = [:]
+    @ObservationIgnored let outputRiskCacheMaxEntries = 800
+    @ObservationIgnored var dirtyOutputRange: ClosedRange<Int>?
+    @ObservationIgnored var outputLatencyFallbackWorkItem: DispatchWorkItem?
+    @ObservationIgnored let outputLatencyFallbackSeconds: TimeInterval = 0.2
+    @ObservationIgnored let aiTimingWindowSeconds: TimeInterval = 120
+    @ObservationIgnored let remoteOutputQueue = DispatchQueue(label: "com.chau7.remoteOutput", qos: .utility)
     /// Queue for heavy output processing to avoid blocking main thread (Fix #6)
-    let outputProcessingQueue = DispatchQueue(label: "com.chau7.outputProcessing", qos: .userInitiated)
-    var pendingRemoteOutput = Data()
-    var remoteOutputFlushWorkItem: DispatchWorkItem?
-    let remoteOutputFlushInterval: TimeInterval = 0.05
-    let remoteOutputMaxBufferBytes = 256 * 1024
-    let remoteOutputBatchingEnabled: Bool = {
+    @ObservationIgnored let outputProcessingQueue = DispatchQueue(label: "com.chau7.outputProcessing", qos: .userInitiated)
+    @ObservationIgnored var pendingRemoteOutput = Data()
+    @ObservationIgnored var remoteOutputFlushWorkItem: DispatchWorkItem?
+    @ObservationIgnored let remoteOutputFlushInterval: TimeInterval = 0.05
+    @ObservationIgnored let remoteOutputMaxBufferBytes = 256 * 1024
+    @ObservationIgnored let remoteOutputBatchingEnabled: Bool = {
         if let raw = EnvVars.get(EnvVars.remoteOutputBatch) {
             let lowered = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return !(lowered == "0" || lowered == "false" || lowered == "off")
@@ -424,38 +438,38 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         return true
     }()
 
-    private var didClearOnLaunch = false
-    var didApplyShellIntegration = false
-    var shellIntegrationOutputCount = 0
-    private var shouldAutoFocusOnAttach = true // Auto-focus when terminal view is attached
-    var didStartDevServerMonitor = false // Track if dev server monitor has started
+    @ObservationIgnored private var didClearOnLaunch = false
+    @ObservationIgnored var didApplyShellIntegration = false
+    @ObservationIgnored var shellIntegrationOutputCount = 0
+    @ObservationIgnored private var shouldAutoFocusOnAttach = true // Auto-focus when terminal view is attached
+    @ObservationIgnored var didStartDevServerMonitor = false // Track if dev server monitor has started
     // AI detection state machine — handles sliding buffer, cooldown, re-detection
     // locking, and phase transitions. See AIDetectionState.swift for details.
-    var aiDetection = AIDetectionState()
-    var pendingCommandLine: String?
-    var promptSeenForPendingCommand = false
-    var commandFinishedNotified = false
+    @ObservationIgnored var aiDetection = AIDetectionState()
+    @ObservationIgnored var pendingCommandLine: String?
+    @ObservationIgnored var promptSeenForPendingCommand = false
+    @ObservationIgnored var commandFinishedNotified = false
     /// True once the shell sends any OSC 133 marker. When set, heuristic
     /// command detection (echo-based start, timeout-based finish) is suppressed
     /// in favor of the authoritative shell signals.
-    private(set) var hasShellIntegration = false
-    private let terminationStateQueue = DispatchQueue(label: "com.chau7.terminal.termination")
-    private var didHandleProcessTermination = false
-    private var closeSessionRequested = false
-    private var forcedTerminationWorkItem: DispatchWorkItem?
-    let dangerousCommandTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
-    var dangerousOutputHighlightWorkItem: DispatchWorkItem?
-    var dangerousOutputHighlightLastRun = Date.distantPast
+    @ObservationIgnored private(set) var hasShellIntegration = false
+    @ObservationIgnored private let terminationStateQueue = DispatchQueue(label: "com.chau7.terminal.termination")
+    @ObservationIgnored private var didHandleProcessTermination = false
+    @ObservationIgnored private var closeSessionRequested = false
+    @ObservationIgnored private var forcedTerminationWorkItem: DispatchWorkItem?
+    @ObservationIgnored let dangerousCommandTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
+    @ObservationIgnored var dangerousOutputHighlightWorkItem: DispatchWorkItem?
+    @ObservationIgnored var dangerousOutputHighlightLastRun = Date.distantPast
     /// Cached dangerous output rows from the most recent async scan (for in-grid tinting).
-    var cachedDangerousOutputRowSet: Set<Int> = []
-    var scrollHighlightWorkItem: DispatchWorkItem?
-    let scrollHighlightDebounceSeconds: TimeInterval = 0.15
+    @ObservationIgnored var cachedDangerousOutputRowSet: Set<Int> = []
+    @ObservationIgnored var scrollHighlightWorkItem: DispatchWorkItem?
+    @ObservationIgnored let scrollHighlightDebounceSeconds: TimeInterval = 0.15
 
-    let semanticDetector = SemanticOutputDetector()
-    let devServerMonitor = DevServerMonitor()
-    let processResourceMonitor = ProcessResourceMonitor()
-    lazy var shellEventDetector = ShellEventDetector(appModel: appModel)
-    private let gitDiffTracker = GitDiffTracker()
+    @ObservationIgnored let semanticDetector = SemanticOutputDetector()
+    @ObservationIgnored let devServerMonitor = DevServerMonitor()
+    @ObservationIgnored let processResourceMonitor = ProcessResourceMonitor()
+    @ObservationIgnored lazy var shellEventDetector = ShellEventDetector(appModel: appModel)
+    @ObservationIgnored private let gitDiffTracker = GitDiffTracker()
     static let osc7Prefix = Data([0x1B, 0x5D, 0x37, 0x3B])
     static let aiExitMarkerPrefix = Data("\u{001b}]9;chau7;exit=".utf8)
     static let aiExitMarkerSuffix = Data([0x07])
@@ -470,21 +484,21 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// Serial queue for synchronizing AI log state access.
     /// Required because `processAILogOutput` runs on outputProcessingQueue while
     /// `finishAILogging` and `startAILoggingIfNeeded` run on the main thread.
-    let aiLogQueue = DispatchQueue(label: "com.chau7.terminal.ailog")
-    var aiLogSession: AITerminalLogSession?
-    var aiLogContext: AILogContext?
-    var aiLogPrefixBuffer = Data()
+    @ObservationIgnored let aiLogQueue = DispatchQueue(label: "com.chau7.terminal.ailog")
+    @ObservationIgnored var aiLogSession: AITerminalLogSession?
+    @ObservationIgnored var aiLogContext: AILogContext?
+    @ObservationIgnored var aiLogPrefixBuffer = Data()
 
     /// Path to the most recent AI session's PTY log. Preserved after the session ends
     /// so MCP tools (tab_output source=pty_log, tab_last_response) can read it.
-    var lastPTYLogPath: String?
+    @ObservationIgnored var lastPTYLogPath: String?
 
     /// When true, output-based AI detection is suppressed to give command-based
     /// detection priority. Set when input containing a newline is sent (a command
     /// is being submitted), cleared when handleInputLine processes it.
     /// Prevents false positives where output pattern matching (e.g. "cline" in
     /// "decline") fires before command tokenization (e.g. "claude") runs.
-    var commandPendingDetection = false
+    @ObservationIgnored var commandPendingDetection = false
 
     var notificationTabName: String {
         if let override = tabTitleOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -523,7 +537,6 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         self.inputLatencySamples = LatencySampleBuffer(capacity: latencySampleCapacity)
         self.outputLatencySamples = LatencySampleBuffer(capacity: latencySampleCapacity)
         self.dangerousHighlightSamples = LatencySampleBuffer(capacity: latencySampleCapacity)
-        super.init()
         applyDefaultFontSize()
         installSettingsObservers()
         refreshGitStatus(path: currentDirectory)

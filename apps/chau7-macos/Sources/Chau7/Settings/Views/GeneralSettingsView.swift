@@ -4,7 +4,7 @@ import AppKit
 // MARK: - General Settings
 
 struct GeneralSettingsView: View {
-    @ObservedObject var model: AppModel
+    var model: AppModel
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var showResetConfirmation = false
 
