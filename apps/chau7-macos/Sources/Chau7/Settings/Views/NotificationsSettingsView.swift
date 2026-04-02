@@ -8,7 +8,7 @@ import Chau7Core
 /// Advanced trigger plumbing stays available, but no longer leads the screen.
 struct NotificationsSettingsView: View {
     var model: AppModel
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     @State private var selectedTab: NotificationTab = .overview
 
     var body: some View {
@@ -170,7 +170,7 @@ private struct StatusPermissionsSection: View {
 // MARK: - AI Overview
 
 private struct AINotificationOverviewSection: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     let onOpenAdvanced: () -> Void
 
     private let aiGroup = NotificationTriggerCatalog.aiCodingGroup
@@ -425,7 +425,7 @@ private struct TriggerGroup: Identifiable {
 /// Merges the old "Notification Filters" and "Trigger Actions" sections into one.
 /// Each trigger row shows its enable/disable toggle AND its action chain in one place.
 private struct UnifiedTriggerSection: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     @State private var expandedCategories: Set<TriggerCategory> = [.aiApps]
     @State private var expandedSources: Set<String> = []
     @State private var expandedTriggerId: String?
@@ -823,7 +823,7 @@ private struct UnifiedTriggerRow: View {
     let onDeleteAction: (UUID) -> Void
     let onToggleAction: (UUID, Bool) -> Void
 
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
 
     private var actions: [NotificationActionConfig] {
         settings.triggerActionBindings[trigger.id] ?? []
@@ -936,7 +936,7 @@ private struct UnifiedTriggerRow: View {
 // MARK: - AI Coding Group Section
 
 private struct AICodingGroupSection: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     @Binding var expandedTriggerId: String?
     let onAddAction: (String) -> Void
     let onEditAction: (String, NotificationActionConfig) -> Void
@@ -991,7 +991,7 @@ private struct GroupTriggerRow: View {
     let onDeleteAction: (UUID) -> Void
     let onToggleAction: (UUID, Bool) -> Void
 
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
 
     private var isOn: Bool {
         settings.notificationTriggerState.isGroupEnabled(
@@ -1202,7 +1202,7 @@ private struct OverrideSourceSection: View {
     let onDeleteAction: (String, UUID) -> Void
     let onToggleAction: (String, UUID, Bool) -> Void
 
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -1269,7 +1269,7 @@ private struct OverrideTriggerRow: View {
     let onDeleteAction: (UUID) -> Void
     let onToggleAction: (UUID, Bool) -> Void
 
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
 
     private var hasOverride: Bool {
         settings.notificationTriggerState.hasPerTriggerOverride(for: trigger)
@@ -1398,7 +1398,7 @@ private struct OverrideTriggerRow: View {
 // MARK: - Event Detection Thresholds Section
 
 private struct EventDetectionThresholdsSection: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1556,7 +1556,7 @@ private struct EventMonitoringSection: View {
 // MARK: - Behavior Tab (Conditions + Rate Limiting)
 
 private struct BehaviorTabView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1575,7 +1575,7 @@ private struct BehaviorTabView: View {
 // MARK: - Rate Limiting Section
 
 private struct RateLimitingSection: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1649,7 +1649,7 @@ private struct RateLimitingSection: View {
 // MARK: - Default Conditions Section
 
 private struct DefaultConditionsSection: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     @State private var selectedTriggerId: String?
 
     private var configuredTriggers: [(trigger: NotificationTrigger, condition: TriggerCondition)] {

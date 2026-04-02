@@ -2,7 +2,7 @@ import SwiftUI
 import Chau7Core
 
 struct MCPSettingsView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
 
     @State private var newAllowedCommand = ""
     @State private var newBlockedCommand = ""

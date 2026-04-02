@@ -4,7 +4,7 @@ import AppKit
 // MARK: - Snippets Settings View
 
 struct SnippetsSettingsView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     private var snippetManager = SnippetManager.shared
     @State private var selectedSource: SnippetSource? = .global
     @State private var searchText = ""

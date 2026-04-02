@@ -7,7 +7,7 @@ import Chau7Core
 /// mode selection, input prefix, per-tab overrides, optimizer status, and
 /// token savings analytics.
 struct TokenOptimizationSettingsView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    private var settings = FeatureSettings.shared
     let overlayModel: OverlayTabsModel?
     @State private var wrapperHealth: [WrapperHealth] = []
     @State private var mdRendererInstalled = false

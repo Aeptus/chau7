@@ -494,7 +494,6 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     // Git root path observation is now handled via session.onGitRootPathChanged callbacks
-    var repoGroupModeCancellable: AnyCancellable?
     var renameTabID: UUID?
     var renameOriginalTitle = ""
     var renameOriginalColor: TabColor = .blue
@@ -2565,12 +2564,10 @@ final class OverlayTabsModel: ObservableObject {
     // MARK: - Repo Tab Grouping
 
     func setupRepoGrouping() {
-        // Observe mode changes
-        repoGroupModeCancellable = FeatureSettings.shared.$repoGroupingMode
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] newMode in
-                self?.handleRepoGroupingModeChange(newMode)
-            }
+        // Observe mode changes via didSet callback
+        FeatureSettings.shared.onRepoGroupingModeChanged = { [weak self] newMode in
+            self?.handleRepoGroupingModeChange(newMode)
+        }
 
         // Set initial state
         if FeatureSettings.shared.repoGroupingMode == .auto {

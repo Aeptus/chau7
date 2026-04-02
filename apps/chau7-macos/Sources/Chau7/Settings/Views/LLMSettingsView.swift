@@ -5,7 +5,7 @@ import Chau7Core
 /// Allows users to select a provider, enter API keys (stored in Keychain),
 /// configure endpoints, models, and test the connection.
 struct LLMSettingsView: View {
-    @ObservedObject var settings: FeatureSettings
+    var settings: FeatureSettings
     @State private var selectedProvider: LLMProviderType = .openai
     @State private var apiKeyInput = ""
     @State private var endpointInput = ""

@@ -5,7 +5,7 @@ import Chau7Core
 // MARK: - AI Integration Settings
 
 struct AIIntegrationSettingsView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
+    @Bindable private var settings = FeatureSettings.shared
     @State private var newCustomPattern = ""
     @State private var newCustomName = ""
     @State private var newCustomColor: TabColor = .gray

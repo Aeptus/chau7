@@ -1336,7 +1336,7 @@ struct CursorPlaceholderView: View {
 struct Chau7OverlayView: View {
     @ObservedObject var overlayModel: OverlayTabsModel
     var appModel: AppModel
-    @ObservedObject private var settings = FeatureSettings.shared
+    var settings = FeatureSettings.shared
 
     var body: some View {
         // Tab bar is now in the unified toolbar (Safari-style)
@@ -2102,7 +2102,7 @@ struct DraggableOverlay<Content: View>: View {
     let workspace: String?
     let maxWidth: CGFloat?
     @ViewBuilder let content: Content
-    @ObservedObject private var settings = FeatureSettings.shared
+    var settings = FeatureSettings.shared
     @State private var dragOffset: CGSize = .zero
     @GestureState private var dragTranslation: CGSize = .zero
 
@@ -2183,7 +2183,7 @@ struct OverlayCloseButton: View {
 
 struct SearchOverlayView: View {
     @ObservedObject var model: OverlayTabsModel
-    @ObservedObject private var settings = FeatureSettings.shared
+    var settings = FeatureSettings.shared
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -2645,7 +2645,7 @@ struct BookmarkRow: View {
 struct SnippetManagerOverlayView: View {
     @ObservedObject var model: OverlayTabsModel
     var manager = SnippetManager.shared
-    @ObservedObject private var settings = FeatureSettings.shared
+    var settings = FeatureSettings.shared
     @State private var query = ""
     @State private var draft = SnippetDraft()
     @State private var editingEntry: SnippetEntry?
