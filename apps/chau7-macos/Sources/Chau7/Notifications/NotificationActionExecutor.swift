@@ -1185,22 +1185,22 @@ final class NotificationActionAdapter: NotificationActionDelegate {
     }
 
     func focusTab(tabID: UUID) -> Bool {
-        TerminalControlService.shared.focusTabAcrossWindows(tabID: tabID)
+        return TerminalControlService.shared.focusTabAcrossWindows(tabID: tabID)
     }
 
     @discardableResult
     func styleTab(tabID: UUID, preset: String, config: [String: String]) -> UUID? {
-        TerminalControlService.shared.applyNotificationStyleAcrossWindows(
+        return TerminalControlService.shared.applyNotificationStyleAcrossWindows(
             to: tabID, stylePreset: preset, config: config
         )
     }
 
     func badgeTab(tabID: UUID, text: String, color: String) -> Bool {
-        TerminalControlService.shared.badgeTabAcrossWindows(tabID: tabID, text: text, color: color)
+        return TerminalControlService.shared.badgeTabAcrossWindows(tabID: tabID, text: text, color: color)
     }
 
     func insertSnippet(id: String, tabID: UUID, autoExecute: Bool) -> Bool {
-        TerminalControlService.shared.insertSnippetAcrossWindows(id: id, tabID: tabID, autoExecute: autoExecute)
+        return TerminalControlService.shared.insertSnippetAcrossWindows(id: id, tabID: tabID, autoExecute: autoExecute)
     }
 
     func flashMenuBar(duration: Int, animate: Bool) {
