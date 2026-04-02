@@ -366,7 +366,7 @@ final class MCPServerManager {
         guard clientFD >= 0 else { return }
 
         clientSockets.append(clientFD)
-        Log.info("MCPServer: client connected (fd=\(clientFD))")
+        Log.info("MCPServer: client connected (fd=\(clientFD), active=\(clientSockets.count))")
 
         // Handle client on a dedicated queue
         let clientQueue = DispatchQueue(label: "com.chau7.mcp.client.\(clientFD)")
@@ -378,7 +378,7 @@ final class MCPServerManager {
 
             self?.queue.async { [weak self] in
                 self?.clientSockets.removeAll(where: { $0 == clientFD })
-                Log.info("MCPServer: client disconnected (fd=\(clientFD))")
+                Log.info("MCPServer: client disconnected (fd=\(clientFD), active=\(self?.clientSockets.count ?? 0))")
             }
         }
     }
