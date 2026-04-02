@@ -8,14 +8,20 @@ final class NotificationActionExecutorTests: XCTestCase {
     private final class MockDelegate: NotificationActionDelegate {
         var focusResult = false
         var styleResult: UUID?
+        var styleCallResults: [UUID?] = []
         var badgeResult = false
         var snippetResult = false
+        var resolvedExactTabID: UUID?
+        var resolveTarget: TabTarget?
 
         func focusTab(tabID: UUID) -> Bool {
             focusResult
         }
 
         func styleTab(tabID: UUID, preset: String, config: [String: String]) -> UUID? {
+            if !styleCallResults.isEmpty {
+                return styleCallResults.removeFirst()
+            }
             styleResult
         }
 
@@ -28,6 +34,11 @@ final class NotificationActionExecutorTests: XCTestCase {
         }
 
         func flashMenuBar(duration: Int, animate: Bool) {}
+
+        func resolveExactTab(target: TabTarget) -> UUID? {
+            resolveTarget = target
+            return resolvedExactTabID
+        }
     }
 
     private func makeEvent(tabID: UUID? = UUID()) -> AIEvent {
@@ -71,6 +82,38 @@ final class NotificationActionExecutorTests: XCTestCase {
         XCTAssertEqual(report.successfulActions, [NotificationActionType.styleTab.rawValue])
         XCTAssertTrue(report.didStyleTab)
         XCTAssertTrue(report.notes.isEmpty)
+    }
+
+    func testStyleActionRecoversStaleExplicitTabViaExactSessionResolution() {
+        let delegate = MockDelegate()
+        let executor = NotificationActionExecutor.shared
+        let staleTabID = UUID()
+        let recoveredTabID = UUID()
+        delegate.styleCallResults = [nil, recoveredTabID]
+        delegate.resolvedExactTabID = recoveredTabID
+        executor.delegate = delegate
+
+        let report = executor.execute(
+            actions: [NotificationActionConfig(actionType: .styleTab, enabled: true)],
+            for: AIEvent(
+                source: .codex,
+                type: "finished",
+                tool: "Codex",
+                message: "done",
+                ts: "2026-04-02T12:00:00Z",
+                directory: "/tmp/chau7",
+                tabID: staleTabID,
+                sessionID: "thread_123",
+                reliability: .authoritative
+            )
+        )
+
+        XCTAssertEqual(report.successfulActions, [NotificationActionType.styleTab.rawValue])
+        XCTAssertTrue(report.didStyleTab)
+        XCTAssertEqual(
+            delegate.resolveTarget,
+            TabTarget(tool: "Codex", directory: "/tmp/chau7", tabID: nil, sessionID: "thread_123")
+        )
     }
 
     func testBadgeActionReportsFailureWhenDelegateCannotResolveExplicitTab() {

@@ -105,6 +105,43 @@ enum TabResolver {
         return nil
     }
 
+    static func resolveStrictSession(_ target: TabTarget, in tabs: [OverlayTab]) -> OverlayTab? {
+        guard let sessionID = target.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sessionID.isEmpty else {
+            return nil
+        }
+
+        let candidates = toolMatchCandidates(for: target.tool)
+        let matchingTabs = tabs.filter { tab in
+            tab.splitController.terminalSessions.contains { _, session in
+                guard session.effectiveAISessionId == sessionID else { return false }
+                guard !candidates.isEmpty else { return true }
+                return sessionMatchesCandidates(session, candidates: candidates)
+            }
+        }
+
+        guard !matchingTabs.isEmpty else { return nil }
+        if matchingTabs.count == 1 {
+            return matchingTabs[0]
+        }
+
+        if let directory = target.directory?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !directory.isEmpty {
+            let normalizedDirectory = URL(fileURLWithPath: directory).standardized.path
+            let directoryMatches = matchingTabs.filter { tab in
+                tab.splitController.terminalSessions.contains { _, session in
+                    guard session.effectiveAISessionId == sessionID else { return false }
+                    return URL(fileURLWithPath: session.currentDirectory).standardized.path == normalizedDirectory
+                }
+            }
+            if directoryMatches.count == 1 {
+                return directoryMatches[0]
+            }
+        }
+
+        return nil
+    }
+
     // MARK: - Helpers
 
     /// Normalizes a tool/app label for case-insensitive comparison, using the

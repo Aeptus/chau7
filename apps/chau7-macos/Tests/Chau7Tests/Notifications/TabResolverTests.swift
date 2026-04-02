@@ -56,5 +56,20 @@ final class TabResolverTests: XCTestCase {
 
         XCTAssertEqual(resolved?.id, overlayModel.tabs[1].id)
     }
+
+    func testResolveStrictSessionReturnsNilWhenSessionMatchIsAmbiguous() {
+        let sessionID = "019d25d0-d0bd-7501-99ba-1f937c17b29b"
+        overlayModel.tabs[0].session?.restoreAIMetadata(provider: "codex", sessionId: sessionID)
+
+        overlayModel.newTab()
+        overlayModel.tabs[1].session?.restoreAIMetadata(provider: "codex", sessionId: sessionID)
+
+        let resolved = TabResolver.resolveStrictSession(
+            TabTarget(tool: "Codex", sessionID: sessionID),
+            in: overlayModel.tabs
+        )
+
+        XCTAssertNil(resolved)
+    }
 }
 #endif
