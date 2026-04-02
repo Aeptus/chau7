@@ -6,32 +6,42 @@ import Chau7Core
 /// When the proxy completes forwarding an API call, it sends a JSON message to this server,
 /// which then broadcasts the event via NotificationCenter.
 @MainActor
-public final class ProxyIPCServer: ObservableObject {
+@Observable
+public final class ProxyIPCServer {
 
     // MARK: - Singleton
 
     public static let shared = ProxyIPCServer()
 
-    // MARK: - Published State
+    // MARK: - Observable State
 
-    @Published public private(set) var isListening = false
-    @Published public private(set) var recentEvents: [APICallEvent] = []
+    public private(set) var isListening = false
+    public private(set) var recentEvents: [APICallEvent] = []
 
-    // Task lifecycle state
-    @Published public private(set) var pendingCandidates: [String: TaskCandidate] = [:] // tabId -> candidate
-    @Published public private(set) var activeTasks: [String: TrackedTask] = [:] // tabId -> task
+    /// Task lifecycle state
+    public private(set) var pendingCandidates: [String: TaskCandidate] = [:] { // tabId -> candidate
+        didSet { onPendingCandidatesChange?(pendingCandidates) }
+    }
+
+    public private(set) var activeTasks: [String: TrackedTask] = [:] { // tabId -> task
+        didSet { onActiveTasksChange?(activeTasks) }
+    }
+
+    /// Callbacks for cross-class subscribers (replaces Combine $property.sink)
+    @ObservationIgnored public var onPendingCandidatesChange: (([String: TaskCandidate]) -> Void)?
+    @ObservationIgnored public var onActiveTasksChange: (([String: TrackedTask]) -> Void)?
 
     // MARK: - Private Properties
 
-    private var socketFD: Int32 = -1
-    private var clientFD: Int32 = -1
-    private var listeningSource: DispatchSourceRead?
-    private var clientSource: DispatchSourceRead?
-    private let queue = DispatchQueue(label: "com.chau7.proxy.ipc", qos: .utility)
-    private let logger = Logger(subsystem: "com.chau7.proxy", category: "IPCServer")
+    @ObservationIgnored private var socketFD: Int32 = -1
+    @ObservationIgnored private var clientFD: Int32 = -1
+    @ObservationIgnored private var listeningSource: DispatchSourceRead?
+    @ObservationIgnored private var clientSource: DispatchSourceRead?
+    @ObservationIgnored private let queue = DispatchQueue(label: "com.chau7.proxy.ipc", qos: .utility)
+    @ObservationIgnored private let logger = Logger(subsystem: "com.chau7.proxy", category: "IPCServer")
 
-    private var buffer = Data()
-    private let maxRecentEvents = 100
+    @ObservationIgnored private var buffer = Data()
+    @ObservationIgnored private let maxRecentEvents = 100
 
     /// Socket path
     private var socketPath: URL {

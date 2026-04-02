@@ -1,28 +1,39 @@
 import Foundation
-import Combine
 
 /// Shared observable model for a single git repository.
 /// One instance per unique git root path, shared across all tabs in that repo.
 /// Branch changes publish to all subscribers automatically.
-final class RepositoryModel: ObservableObject, Identifiable {
+@Observable
+final class RepositoryModel: Identifiable {
     let id: String
     let rootPath: String
 
-    @Published var branch: String?
-    @Published var metadata: RepoMetadata = .empty
-    @Published var stats: RepoStats?
+    var branch: String? {
+        didSet {
+            if branch != oldValue {
+                onBranchChange?(branch)
+            }
+        }
+    }
+
+    var metadata: RepoMetadata = .empty
+    var stats: RepoStats?
+
+    /// Callback invoked on main thread when `branch` changes.
+    /// TerminalSessionModel sets this to receive branch updates without Combine.
+    @ObservationIgnored var onBranchChange: ((String?) -> Void)?
 
     /// Display name derived from root path (e.g. "Chau7")
     var repoName: String {
         URL(fileURLWithPath: rootPath).lastPathComponent
     }
 
-    private var refreshWorkItem: DispatchWorkItem?
-    private var saveWorkItem: DispatchWorkItem?
-    private static let gitQueue = DispatchQueue(label: "com.chau7.repository.git", qos: .utility)
-    private static let metadataQueue = DispatchQueue(label: "com.chau7.repository.metadata", qos: .utility)
-    private let gitRunner: ([String], String) -> String
-    private let refreshDelay: TimeInterval
+    @ObservationIgnored private var refreshWorkItem: DispatchWorkItem?
+    @ObservationIgnored private var saveWorkItem: DispatchWorkItem?
+    @ObservationIgnored private static let gitQueue = DispatchQueue(label: "com.chau7.repository.git", qos: .utility)
+    @ObservationIgnored private static let metadataQueue = DispatchQueue(label: "com.chau7.repository.metadata", qos: .utility)
+    @ObservationIgnored private let gitRunner: ([String], String) -> String
+    @ObservationIgnored private let refreshDelay: TimeInterval
 
     init(
         rootPath: String,

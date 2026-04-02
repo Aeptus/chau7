@@ -359,7 +359,6 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     var inputBuffer = ""
     /// Shared repository model for this session's current git repo (nil if not in a repo)
     @Published var repositoryModel: RepositoryModel?
-    private var repoBranchCancellable: AnyCancellable?
     var searchUpdateWorkItem: DispatchWorkItem?
     let searchQueue = DispatchQueue(label: "com.chau7.search", qos: .utility)
     var searchQuery = ""
@@ -550,7 +549,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         stopIdleTimer()
-        repoBranchCancellable?.cancel()
+        repositoryModel?.onBranchChange = nil
         searchUpdateWorkItem?.cancel()
         aiLogSession?.close()
         devServerMonitor.stop()
@@ -949,7 +948,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
         // Stop all background work
         stopIdleTimer()
-        repoBranchCancellable?.cancel()
+        repositoryModel?.onBranchChange = nil
         searchUpdateWorkItem?.cancel()
 
         // Capture telemetry buffer before sending exit — the view may detach
@@ -1833,19 +1832,15 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             gitRootPath = model?.rootPath
             gitBranch = model?.branch
 
-            // Subscribe to branch changes from the shared model
+            // Subscribe to branch changes from the shared model via didSet callback
             if model !== oldModel {
-                repoBranchCancellable?.cancel()
-                if let model {
-                    repoBranchCancellable = model.$branch
-                        .receive(on: DispatchQueue.main)
-                        .sink { [weak self] newBranch in
-                            guard let self, gitBranch != newBranch else { return }
-                            gitBranch = newBranch
-                            shellEventDetector.gitBranchChanged(to: newBranch)
-                        }
-                } else {
-                    repoBranchCancellable = nil
+                oldModel?.onBranchChange = nil
+                model?.onBranchChange = { [weak self] newBranch in
+                    DispatchQueue.main.async {
+                        guard let self, self.gitBranch != newBranch else { return }
+                        self.gitBranch = newBranch
+                        self.shellEventDetector.gitBranchChanged(to: newBranch)
+                    }
                 }
             }
 
