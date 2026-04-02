@@ -292,4 +292,5 @@ Settings,OpenAI Proxy Routing Toggle,"Proxy settings expose an explicit toggle f
 Telemetry,Historical Metrics Repair,"Debug console can rebuild transcript-derived Claude/Codex run metrics in place to repair historical token corruption after parser fixes",Shipped,Yes
 Notifications,Codex Hook Preservation,"Codex notify hook installation preserves existing user notify commands, retains authoritative opaque thread IDs, and only disables prompt fallback once Chau7 confirms the hook is installed",Shipped,Yes
 Notifications,Codex Tab Identity Correction,"Codex notify-hook events now export the owning overlay tab UUID, and authoritative stale explicit tab IDs are corrected via exact session binding before notification delivery",Shipped,Yes
+Notifications,Amazon Q Normalized Source,"Amazon Q now has a dedicated normalized AI event source with first-class trigger catalog, settings grouping, and timeline/source labels",Shipped,Yes
 Debug,Technology Licenses & Acknowledgments,"In-app help page documenting monorepo layout, languages, Rust crates, bundled binaries, third-party dependencies, system frameworks, and notice files",Shipped,No

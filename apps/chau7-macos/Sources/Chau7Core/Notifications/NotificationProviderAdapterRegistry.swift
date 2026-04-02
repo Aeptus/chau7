@@ -30,7 +30,7 @@ public enum NotificationProviderAdapterRegistry {
             return adaptClaudeCodeEvent(event)
         case .codex:
             return adaptCodexEvent(event)
-        case .runtime, .gemini, .chatgpt, .cursor, .windsurf, .copilot, .aider, .cline, .cody, .continueAI:
+        case .runtime, .gemini, .chatgpt, .cursor, .windsurf, .copilot, .aider, .cline, .cody, .amazonQ, .continueAI:
             return adaptGenericAIEvent(event)
         case .historyMonitor, .eventsLog:
             return adaptFallbackAIEvent(event)

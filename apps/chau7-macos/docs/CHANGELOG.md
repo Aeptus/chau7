@@ -317,6 +317,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.21 | 2026-04-02 | Amazon Q is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
 | 0.5.20 | 2026-04-02 | Cody is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
 | 0.5.19 | 2026-04-02 | ChatGPT is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
 | 0.5.18 | 2026-04-02 | Gemini is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
