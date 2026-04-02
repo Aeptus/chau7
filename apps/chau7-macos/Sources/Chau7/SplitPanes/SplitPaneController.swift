@@ -508,20 +508,23 @@ extension SplitNode {
 // MARK: - Text Editor Model
 
 /// Model for a text editor pane
-final class TextEditorModel: ObservableObject, Identifiable {
+@Observable
+final class TextEditorModel: Identifiable {
     let id = UUID()
 
-    @Published var content = ""
-    @Published var filePath: String?
-    @Published var isDirty = false
-    @Published var isLoading = false
-    @Published var lastError: String?
-    @Published var scrollToLine: Int? // F03: Line to scroll to after loading (set after content loads)
+    var content = ""
+    var filePath: String?
+    var isDirty = false
+    var isLoading = false
+    var lastError: String?
+    var scrollToLine: Int? // F03: Line to scroll to after loading (set after content loads)
 
     /// Pending line to scroll to after next load completes
+    @ObservationIgnored
     private var pendingScrollToLine: Int?
 
     /// Token to track current loading operation (prevents race conditions)
+    @ObservationIgnored
     private var loadingToken: UUID?
 
     /// The file name for display
@@ -632,18 +635,21 @@ final class TextEditorModel: ObservableObject, Identifiable {
 
 /// Read-only file viewer model — lighter than TextEditorModel (no editing, no dirty tracking).
 /// Supports both text files (with syntax highlighting) and image files.
-final class FilePreviewModel: ObservableObject, Identifiable {
+@Observable
+final class FilePreviewModel: Identifiable {
     let id = UUID()
 
-    @Published var content = ""
-    @Published var filePath: String?
-    @Published var isLoading = false
-    @Published var lastError: String?
-    @Published var imageData: Data?
-    @Published var isImageFile = false
-    @Published var scrollToLine: Int?
+    var content = ""
+    var filePath: String?
+    var isLoading = false
+    var lastError: String?
+    var imageData: Data?
+    var isImageFile = false
+    var scrollToLine: Int?
 
+    @ObservationIgnored
     private var pendingScrollToLine: Int?
+    @ObservationIgnored
     private var loadingToken: UUID?
 
     static let imageExtensions: Set = [
@@ -750,21 +756,25 @@ struct DiffHunk: Identifiable {
 
 /// Model for a git diff viewer pane.
 /// Loads unified diff output via `git diff` and parses it into structured hunks.
-final class DiffViewerModel: ObservableObject, Identifiable {
+@Observable
+final class DiffViewerModel: Identifiable {
     let id = UUID()
 
-    @Published var filePath: String?
-    @Published var directory: String?
-    @Published var isLoading = false
-    @Published var lastError: String?
-    @Published var hunks: [DiffHunk] = []
-    @Published var diffMode: DiffMode = .workingTree
-    @Published var rawDiff = ""
-    @Published var additions = 0
-    @Published var deletions = 0
+    var filePath: String?
+    var directory: String?
+    var isLoading = false
+    var lastError: String?
+    var hunks: [DiffHunk] = []
+    var diffMode: DiffMode = .workingTree
+    var rawDiff = ""
+    var additions = 0
+    var deletions = 0
 
+    @ObservationIgnored
     private let gitRunner: ([String], String) -> String
+    @ObservationIgnored
     private let loadQueue: DispatchQueue
+    @ObservationIgnored
     private var loadingToken: UUID?
 
     init(
@@ -948,14 +958,17 @@ final class DiffViewerModel: ObservableObject, Identifiable {
 // MARK: - Split Pane Controller
 
 /// Manages split pane layout for a tab
-final class SplitPaneController: ObservableObject {
-    @Published var root: SplitNode
-    @Published var focusedPaneID: UUID
+@Observable
+final class SplitPaneController {
+    var root: SplitNode
+    var focusedPaneID: UUID
 
+    @ObservationIgnored
     private weak var appModel: AppModel?
 
     /// The owning tab's UUID, propagated to new terminal sessions so events
     /// carry a deterministic tabID for the TabResolver fast-path.
+    @ObservationIgnored
     var ownerTabID: UUID? {
         didSet {
             // Stamp tabID on existing repo panes (e.g. after restore)
@@ -967,6 +980,7 @@ final class SplitPaneController: ObservableObject {
 
     /// Applies tab-level configuration to current and future terminal sessions.
     /// Used to keep split-created sessions aligned with the parent tab's callbacks.
+    @ObservationIgnored
     var terminalSessionConfigurator: ((TerminalSessionModel) -> Void)? {
         didSet {
             for (_, session) in terminalSessions {
@@ -989,8 +1003,10 @@ final class SplitPaneController: ObservableObject {
     }
 
     /// F03: Callback for terminal Cmd+Click on file paths - opens in internal editor
-    lazy var onFilePathClicked: (String, Int?, Int?) -> Void = { [weak self] path, line, _ in
-        self?.openFileInEditor(path: path, line: line)
+    var onFilePathClicked: (String, Int?, Int?) -> Void {
+        { [weak self] path, line, _ in
+            self?.openFileInEditor(path: path, line: line)
+        }
     }
 
     private func configureTerminalSession(_ session: TerminalSessionModel) {

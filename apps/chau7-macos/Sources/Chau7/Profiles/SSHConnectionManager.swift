@@ -103,11 +103,12 @@ struct SSHConnection: Identifiable, Codable, Equatable, Hashable {
 
 // MARK: - SSH Connection Manager
 
-final class SSHConnectionManager: ObservableObject {
+@Observable
+final class SSHConnectionManager {
     static let shared = SSHConnectionManager()
 
-    @Published var connections: [SSHConnection] = []
-    @Published var folders: [String] = [] // For organizing connections
+    var connections: [SSHConnection] = []
+    var folders: [String] = [] // For organizing connections
 
     private let storageKey = "ssh.connections"
     private let foldersKey = "ssh.folders"
@@ -312,7 +313,7 @@ final class SSHConnectionManager: ObservableObject {
 // MARK: - SSH Connection View
 
 struct SSHConnectionView: View {
-    @ObservedObject private var manager = SSHConnectionManager.shared
+    var manager = SSHConnectionManager.shared
     @State private var selectedConnection: SSHConnection?
     @State private var isEditing = false
     @State private var editingConnection: SSHConnection?

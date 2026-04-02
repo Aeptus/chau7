@@ -17,26 +17,32 @@ import Chau7Core
 /// - {"method": "list_snippets"} -> all snippets
 /// - {"method": "run_snippet", "params": {"name": "..."}}
 /// - {"method": "get_status"} -> app status (version, tabs, uptime)
+@Observable
 @MainActor
-final class ScriptingAPI: ObservableObject {
+final class ScriptingAPI {
     static let shared = ScriptingAPI()
 
-    @Published var isEnabled: Bool {
+    var isEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "feature.scriptingAPI")
             if isEnabled { startServer() } else { stopServer() }
         }
     }
 
-    @Published private(set) var isRunning = false
-    @Published private(set) var connectedClients = 0
+    private(set) var isRunning = false
+    private(set) var connectedClients = 0
 
+    @ObservationIgnored
     private var socketFD: Int32 = -1
+    @ObservationIgnored
     private var listeningSource: DispatchSourceRead?
+    @ObservationIgnored
     private var clientHandlers: [Int32: ScriptingClientHandler] = [:]
+    @ObservationIgnored
     private let socketQueue = DispatchQueue(label: "com.chau7.scripting", qos: .userInitiated)
 
     /// Timestamp when the server was started, used for uptime calculation.
+    @ObservationIgnored
     private var startTime: Date?
 
     private var socketPath: String {

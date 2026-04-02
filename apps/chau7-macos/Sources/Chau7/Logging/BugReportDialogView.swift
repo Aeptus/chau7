@@ -6,7 +6,7 @@ import SwiftUI
 /// sections are OFF by default. Each sensitive toggle has its own tab picker
 /// and an inline privacy warning.
 struct BugReportDialogView: View {
-    @ObservedObject var draft: BugReportDraft
+    @Bindable var draft: BugReportDraft
     let onClose: () -> Void
 
     @State private var savedPath: String?

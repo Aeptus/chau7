@@ -12,7 +12,7 @@ import AppKit
 /// - Block list management (view/remove always-blocked commands)
 /// - Reset to defaults button
 struct DangerousCommandSettingsView: View {
-    @ObservedObject private var guard_ = DangerousCommandGuard.shared
+    @Bindable private var guard_ = DangerousCommandGuard.shared
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var newPattern = ""
     @State private var newBlockCommand = ""

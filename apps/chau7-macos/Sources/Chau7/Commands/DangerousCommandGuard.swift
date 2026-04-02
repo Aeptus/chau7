@@ -9,12 +9,13 @@ import Chau7Core
 ///
 /// This is a non-invasive guard: it only delays the Enter keystroke
 /// delivery, never modifies the command text.
+@Observable
 @MainActor
-final class DangerousCommandGuard: ObservableObject {
+final class DangerousCommandGuard {
     static let shared = DangerousCommandGuard()
 
     /// Whether the guard is currently active
-    @Published var isEnabled: Bool {
+    var isEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "feature.dangerousCommandGuard")
             Log.info("DangerousCommandGuard: \(isEnabled ? "enabled" : "disabled")")
@@ -22,18 +23,19 @@ final class DangerousCommandGuard: ObservableObject {
     }
 
     /// Commands that are always allowed (user has confirmed "always allow")
-    @Published var allowList: Set<String> {
+    var allowList: Set<String> {
         didSet { saveAllowList() }
     }
 
     /// Commands that are always blocked
-    @Published var blockList: Set<String> {
+    var blockList: Set<String> {
         didSet { saveBlockList() }
     }
 
     /// Per-directory allowlists: directory path → set of allowed commands.
     /// Commands in a directory allowlist are only allowed when the terminal's
     /// working directory matches (or is a child of) the allowlist key.
+    @ObservationIgnored
     private var directoryAllowLists: [String: Set<String>] {
         didSet { saveDirectoryAllowLists() }
     }
@@ -74,16 +76,17 @@ final class DangerousCommandGuard: ObservableObject {
         self.allowList = allowList
         self.blockList = blockList
         self.directoryAllowLists = [:]
-        self._testPatterns = testPatterns
+        self.testPatternsOverride = testPatterns
     }
     #endif
 
     /// Override patterns for testing; nil means use FeatureSettings.shared.
-    private var _testPatterns: [String]?
+    @ObservationIgnored
+    private var testPatternsOverride: [String]?
 
     /// Resolved patterns: test override or FeatureSettings.
     private var resolvedPatterns: [String] {
-        _testPatterns ?? FeatureSettings.shared.dangerousCommandPatterns
+        testPatternsOverride ?? FeatureSettings.shared.dangerousCommandPatterns
     }
 
     // MARK: - Check
