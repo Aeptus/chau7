@@ -260,6 +260,18 @@ struct OverlayTab: Identifiable, Equatable {
         splitController.openRepositoryPane(directory: directory)
     }
 
+    func toggleTextEditor(filePath: String? = nil) {
+        splitController.toggleTextEditor(filePath: filePath)
+    }
+
+    func toggleFilePreview(filePath: String? = nil) {
+        splitController.toggleFilePreview(filePath: filePath)
+    }
+
+    func toggleRepositoryPane(directory: String) {
+        splitController.toggleRepositoryPane(directory: directory)
+    }
+
     init(appModel: AppModel, splitController: SplitPaneController, id: UUID = UUID(), createdAt: Date = Date()) {
         self.id = id
         self.splitController = splitController
@@ -2635,6 +2647,18 @@ final class OverlayTabsModel: ObservableObject {
 
     func openRepositoryPaneInCurrentTab(directory: String) {
         selectedTab?.openRepositoryPane(directory: directory)
+    }
+
+    func toggleTextEditorInCurrentTab(filePath: String? = nil) {
+        selectedTab?.toggleTextEditor(filePath: filePath)
+    }
+
+    func toggleFilePreviewInCurrentTab(filePath: String? = nil) {
+        selectedTab?.toggleFilePreview(filePath: filePath)
+    }
+
+    func toggleRepositoryPaneInCurrentTab(directory: String) {
+        selectedTab?.toggleRepositoryPane(directory: directory)
     }
 
     func closeFocusedPaneInCurrentTab() {
