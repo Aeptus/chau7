@@ -493,7 +493,6 @@ final class OverlayTabsModel: ObservableObject {
         !closedTabStack.isEmpty
     }
 
-    var taskCancellables: Set<AnyCancellable> = []
     var repoGroupCancellables: [UUID: AnyCancellable] = [:]
     var repoGroupModeCancellable: AnyCancellable?
     var renameTabID: UUID?
@@ -2817,23 +2816,21 @@ final class OverlayTabsModel: ObservableObject {
         MainActor.assumeIsolated {
             let ipc = ProxyIPCServer.shared
 
-            // Observe pending candidates
-            ipc.$pendingCandidates
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] candidates in
+            // Observe pending candidates via didSet callback
+            ipc.onPendingCandidatesChange = { [weak self] candidates in
+                DispatchQueue.main.async {
                     guard let self else { return }
-                    updateCurrentCandidate(from: candidates)
+                    self.updateCurrentCandidate(from: candidates)
                 }
-                .store(in: &taskCancellables)
+            }
 
-            // Observe active tasks
-            ipc.$activeTasks
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] tasks in
+            // Observe active tasks via didSet callback
+            ipc.onActiveTasksChange = { [weak self] tasks in
+                DispatchQueue.main.async {
                     guard let self else { return }
-                    updateCurrentTask(from: tasks)
+                    self.updateCurrentTask(from: tasks)
                 }
-                .store(in: &taskCancellables)
+            }
         }
     }
 

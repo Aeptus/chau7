@@ -18,7 +18,6 @@ final class StatusBarController: NSObject {
     private var globalEventMonitor: Any?
     private var localEventMonitor: Any?
     private weak var model: AppModel?
-    private var badgeCancellable: AnyCancellable?
     private var monitoringCancellable: AnyCancellable?
 
     /// Panel view model — lives as long as the controller so popover doesn't recreate state.
@@ -89,12 +88,12 @@ final class StatusBarController: NSObject {
             object: nil
         )
 
-        // Reactive badge updates from session state changes
-        badgeCancellable = panelViewModel.$badgeCounts
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] counts in
+        // Reactive badge updates from session state changes via didSet callback
+        panelViewModel.onBadgeCountsChange = { [weak self] counts in
+            DispatchQueue.main.async {
                 self?.updateBadgeAndIcon(counts: counts)
             }
+        }
 
         monitoringCancellable = model.$isMonitoring
             .receive(on: DispatchQueue.main)
@@ -106,8 +105,7 @@ final class StatusBarController: NSObject {
     /// Cleanup all resources. Call from applicationWillTerminate.
     func cleanup() {
         NotificationCenter.default.removeObserver(self)
-        badgeCancellable?.cancel()
-        badgeCancellable = nil
+        panelViewModel?.onBadgeCountsChange = nil
         monitoringCancellable?.cancel()
         monitoringCancellable = nil
 
@@ -341,17 +339,24 @@ struct CommandCenterSessionSummary: Identifiable, Equatable {
 ///   from Cursor, Codex, Copilot, Aider, and other monitored tools.
 /// - `NotificationHistory` → unified timeline (notification-fired events, also tool-agnostic via `AIEvent`)
 ///
-/// All derived state is computed from @Published properties, so SwiftUI re-evaluates automatically.
+/// All derived state is computed from observable properties, so SwiftUI re-evaluates automatically.
 @MainActor
-final class CommandCenterViewModel: ObservableObject {
-    let model: AppModel
-    let onClose: () -> Void
-    @Published private(set) var liveSessions: [CommandCenterSessionSummary] = []
-    @Published private(set) var attentionSessions: [CommandCenterSessionSummary] = []
-    @Published private(set) var badgeCounts: CommandCenterBadgeCounts = .empty
-    @Published var showQuitConfirmation = false
-    private let sessionSource: () -> [CommandCenterSessionSummary]
-    private var refreshCancellable: AnyCancellable?
+@Observable
+final class CommandCenterViewModel {
+    @ObservationIgnored let model: AppModel
+    @ObservationIgnored let onClose: () -> Void
+    private(set) var liveSessions: [CommandCenterSessionSummary] = []
+    private(set) var attentionSessions: [CommandCenterSessionSummary] = []
+    private(set) var badgeCounts: CommandCenterBadgeCounts = .empty {
+        didSet { onBadgeCountsChange?(badgeCounts) }
+    }
+
+    var showQuitConfirmation = false
+    @ObservationIgnored private let sessionSource: () -> [CommandCenterSessionSummary]
+    @ObservationIgnored private var refreshTimer: Timer?
+
+    /// Callback for StatusBarController to observe badge changes without Combine.
+    @ObservationIgnored var onBadgeCountsChange: ((CommandCenterBadgeCounts) -> Void)?
 
     init(
         model: AppModel,
@@ -368,12 +373,16 @@ final class CommandCenterViewModel: ObservableObject {
         refreshSessions()
 
         if autoRefresh {
-            self.refreshCancellable = Timer.publish(every: 1.0, on: .main, in: .common)
-                .autoconnect()
-                .sink { [weak self] _ in
+            self.refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                Task { @MainActor in
                     self?.refreshSessions()
                 }
+            }
         }
+    }
+
+    deinit {
+        refreshTimer?.invalidate()
     }
 
     var attentionCount: Int {
@@ -810,7 +819,7 @@ struct UnifiedTimelineEntry: Identifiable {
 // MARK: - Status Bar Panel View
 
 struct StatusBarPanelView: View {
-    @ObservedObject var viewModel: CommandCenterViewModel
+    @Bindable var viewModel: CommandCenterViewModel
 
     private var model: AppModel {
         viewModel.model
@@ -1006,7 +1015,7 @@ struct StatusBarPanelView: View {
 // MARK: - Hero Zone
 
 private struct HeroZoneView: View {
-    @ObservedObject var viewModel: CommandCenterViewModel
+    var viewModel: CommandCenterViewModel
 
     var body: some View {
         if viewModel.attentionCount > 0 {

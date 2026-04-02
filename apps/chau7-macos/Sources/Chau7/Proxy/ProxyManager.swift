@@ -7,26 +7,27 @@ import Chau7Core
 /// It starts the proxy when API analytics is enabled and stops it when disabled.
 /// The proxy runs as a subprocess, communicating back via Unix socket IPC.
 @MainActor
-public final class ProxyManager: ObservableObject {
+@Observable
+public final class ProxyManager {
 
     // MARK: - Singleton
 
     public static let shared = ProxyManager()
 
-    // MARK: - Published State
+    // MARK: - Observable State
 
-    @Published public private(set) var isRunning = false
-    @Published public private(set) var lastError: String?
-    @Published public private(set) var port = 18080
-    @Published public private(set) var tlsPort = 18081
+    public private(set) var isRunning = false
+    public private(set) var lastError: String?
+    public private(set) var port = 18080
+    public private(set) var tlsPort = 18081
 
     // MARK: - Private Properties
 
-    private var process: Process?
-    private var outputPipe: Pipe?
-    private var errorPipe: Pipe?
-    private var isStopping = false
-    private let logger = Logger(subsystem: "com.chau7.proxy", category: "ProxyManager")
+    @ObservationIgnored private var process: Process?
+    @ObservationIgnored private var outputPipe: Pipe?
+    @ObservationIgnored private var errorPipe: Pipe?
+    @ObservationIgnored private var isStopping = false
+    @ObservationIgnored private let logger = Logger(subsystem: "com.chau7.proxy", category: "ProxyManager")
 
     /// Path to the bundled proxy binary
     private var proxyBinaryPath: URL? {
