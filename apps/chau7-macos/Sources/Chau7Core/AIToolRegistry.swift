@@ -110,7 +110,7 @@ public enum AIToolRegistry {
             resumeFormat: nil,
             logoAssetName: "chatgpt-logo",
             tabColorName: "green",
-            eventSourceRawValue: nil
+            eventSourceRawValue: "chatgpt"
         ),
         // — Copilot (GitHub) —
         AIToolDefinition(

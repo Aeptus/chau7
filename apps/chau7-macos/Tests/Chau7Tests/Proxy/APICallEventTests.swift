@@ -16,7 +16,7 @@ final class APICallEventTests: XCTestCase {
     func testAllEventSourcesUnique() {
         let sources: [AIEventSource] = [
             .eventsLog, .terminalSession, .historyMonitor, .app, .apiProxy,
-            .unknown, .shell, .claudeCode, .codex, .gemini, .cursor, .windsurf,
+            .unknown, .shell, .claudeCode, .codex, .gemini, .chatgpt, .cursor, .windsurf,
             .copilot, .aider, .cline, .continueAI
         ]
         let rawValues = sources.map { $0.rawValue }
@@ -214,6 +214,7 @@ final class AIEventSourceExtendedTests: XCTestCase {
     func testSourceForProviderReturnsDedicatedAISource() {
         XCTAssertEqual(AIEventSource.forProvider("codex"), .codex)
         XCTAssertEqual(AIEventSource.forProvider("gemini"), .gemini)
+        XCTAssertEqual(AIEventSource.forProvider("ChatGPT"), .chatgpt)
         XCTAssertEqual(AIEventSource.forProvider("Aider"), .aider)
         XCTAssertEqual(AIEventSource.forProvider("continue"), .continueAI)
         XCTAssertNil(AIEventSource.forProvider("nonexistent-tool"))

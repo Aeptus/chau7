@@ -739,6 +739,7 @@ final class CommandCenterViewModel: ObservableObject {
         case .claudeCode: return "Claude Code"
         case .codex: return "Codex"
         case .gemini: return "Gemini"
+        case .chatgpt: return "ChatGPT"
         case .cursor: return "Cursor"
         case .windsurf: return "Windsurf"
         case .copilot: return "Copilot"
