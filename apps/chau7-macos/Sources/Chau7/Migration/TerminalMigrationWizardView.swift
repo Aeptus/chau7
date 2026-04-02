@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Step-by-step wizard for importing profiles from Terminal.app and iTerm2.
 struct TerminalMigrationWizardView: View {
-    @StateObject private var wizard = TerminalMigrationWizard()
+    @State private var wizard = TerminalMigrationWizard()
     @State private var currentStep: WizardStep = .welcome
     @State private var selectedProfileIDs: Set<UUID> = []
     @Environment(\.dismiss) private var dismiss

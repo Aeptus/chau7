@@ -7,14 +7,15 @@ import Chau7Core
 /// Tracks active and completed command executions with their line ranges,
 /// timing, and exit status for visual grouping in the terminal overlay.
 @MainActor
-final class CommandBlockManager: ObservableObject {
+@Observable
+final class CommandBlockManager {
     static let shared = CommandBlockManager()
 
     /// Maximum number of blocks retained per tab
     static let maxBlocksPerTab = 200
 
     /// Blocks indexed by tab ID, ordered oldest-first
-    @Published private(set) var blocksByTab: [String: [CommandBlock]] = [:]
+    private(set) var blocksByTab: [String: [CommandBlock]] = [:]
 
     private init() {
         Log.info("CommandBlockManager initialized")

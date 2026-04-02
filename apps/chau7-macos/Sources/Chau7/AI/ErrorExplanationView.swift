@@ -4,7 +4,7 @@ import Chau7Core
 /// SwiftUI view that displays an LLM-generated explanation of a terminal error.
 /// Shows a summary, detailed explanation, confidence indicator, and suggested fixes.
 struct ErrorExplanationView: View {
-    @ObservedObject var explainer: ErrorExplainer
+    var explainer: ErrorExplainer
     let onApplyFix: ((String) -> Void)?
     let onDismiss: (() -> Void)?
 

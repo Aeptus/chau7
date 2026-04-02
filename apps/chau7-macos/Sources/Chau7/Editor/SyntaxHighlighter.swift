@@ -239,7 +239,8 @@ final class SyntaxHighlighter {
 // MARK: - Semantic Output Detector (F07 support)
 
 /// Detects semantic meaning in terminal output for F07 search
-final class SemanticOutputDetector: ObservableObject {
+@Observable
+final class SemanticOutputDetector {
     /// Represents a detected command block
     struct CommandBlock: Identifiable {
         let id = UUID()
@@ -254,7 +255,7 @@ final class SemanticOutputDetector: ObservableObject {
     }
 
     /// Detected command blocks
-    @Published private(set) var blocks: [CommandBlock] = []
+    private(set) var blocks: [CommandBlock] = []
 
     /// Current block being built
     private var currentBlock: (command: String, startRow: Int, lastRow: Int, timestamp: Date, exitCode: Int32?)?

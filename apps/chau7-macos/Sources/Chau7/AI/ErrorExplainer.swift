@@ -5,11 +5,12 @@ import Chau7Core
 /// Feeds the last N lines of terminal output to the LLM and returns
 /// a structured explanation with suggested fixes.
 @MainActor
-final class ErrorExplainer: ObservableObject {
-    @Published private(set) var isLoading = false
-    @Published private(set) var lastExplanation: ErrorExplanation?
-    @Published private(set) var lastFixes: [FixSuggestion] = []
-    @Published private(set) var lastError: String?
+@Observable
+final class ErrorExplainer {
+    private(set) var isLoading = false
+    private(set) var lastExplanation: ErrorExplanation?
+    private(set) var lastFixes: [FixSuggestion] = []
+    private(set) var lastError: String?
 
     private let client = LLMClient()
 

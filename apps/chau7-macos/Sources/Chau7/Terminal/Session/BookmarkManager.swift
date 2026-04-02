@@ -3,10 +3,11 @@ import Foundation
 // MARK: - F17: Bookmark Manager
 
 /// Manages terminal bookmarks per tab with configurable limits
-final class BookmarkManager: ObservableObject {
+@Observable
+final class BookmarkManager {
     static let shared = BookmarkManager()
 
-    @Published private(set) var bookmarks: [UUID: [Bookmark]] = [:] // tabID -> bookmarks
+    private(set) var bookmarks: [UUID: [Bookmark]] = [:] // tabID -> bookmarks
 
     struct Bookmark: Identifiable, Equatable {
         let id = UUID()

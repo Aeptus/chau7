@@ -6,11 +6,12 @@ import Chau7Core
 /// (directory, SSH host, running processes, environment variables) and
 /// switches the active settings profile when a match is found.
 @MainActor
-final class ProfileAutoSwitcher: ObservableObject {
+@Observable
+final class ProfileAutoSwitcher {
     static let shared = ProfileAutoSwitcher()
 
-    @Published private(set) var isActive = false
-    @Published private(set) var currentMatchedRule: ProfileSwitchRule?
+    private(set) var isActive = false
+    private(set) var currentMatchedRule: ProfileSwitchRule?
 
     /// The profile name that was active before auto-switching
     private var previousProfileName: String?

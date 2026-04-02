@@ -1,12 +1,12 @@
 import Foundation
-import Combine
 
 /// Detects when multiple tabs modify the same file, indicating potential merge conflicts.
 @MainActor
-final class ConflictDetector: ObservableObject {
+@Observable
+final class ConflictDetector {
     static let shared = ConflictDetector()
 
-    @Published private(set) var activeConflicts: [FileConflict] = []
+    private(set) var activeConflicts: [FileConflict] = []
 
     /// How far back to look at command blocks for changed files (seconds).
     var lookbackWindow: TimeInterval = 300 // 5 minutes

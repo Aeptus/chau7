@@ -4,14 +4,17 @@ import Chau7Core
 /// Syncs SSH profiles between ~/.ssh/config and Chau7's SSH connection manager.
 /// Watches the config file for changes and auto-imports new hosts.
 @MainActor
-final class SharedSSHProfileManager: ObservableObject {
+@Observable
+final class SharedSSHProfileManager {
     static let shared = SharedSSHProfileManager()
 
-    @Published var configEntries: [SSHConfigEntry] = []
-    @Published var isWatching = false
-    @Published var lastSyncTime: Date?
+    var configEntries: [SSHConfigEntry] = []
+    var isWatching = false
+    var lastSyncTime: Date?
 
+    @ObservationIgnored
     private var fileMonitorSource: DispatchSourceFileSystemObject?
+    @ObservationIgnored
     private var fileDescriptor: Int32 = -1
 
     private var sshConfigPath: String {

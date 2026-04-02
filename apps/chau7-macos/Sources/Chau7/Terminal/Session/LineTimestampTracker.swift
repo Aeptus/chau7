@@ -4,12 +4,13 @@ import AppKit
 // MARK: - F19: Line Timestamps
 
 /// Tracks timestamps for terminal output lines
-final class LineTimestampTracker: ObservableObject {
+@Observable
+final class LineTimestampTracker {
     /// Maximum number of timestamps to track (matching scrollback buffer)
     private let maxEntries: Int
 
     /// Timestamps indexed by absolute row number
-    @Published private(set) var timestamps: [Int: Date] = [:]
+    private(set) var timestamps: [Int: Date] = [:]
 
     /// Current line count (tracks where we are in the buffer)
     private var currentRow = 0
@@ -21,6 +22,7 @@ final class LineTimestampTracker: ObservableObject {
     private var lastUpdateTime: Date = .distantPast
 
     /// Formatter for displaying timestamps
+    @ObservationIgnored
     private lazy var formatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = FeatureSettings.shared.timestampFormat
@@ -128,7 +130,7 @@ import SwiftUI
 
 /// A view that displays timestamps alongside terminal content
 struct TimestampOverlayView: View {
-    @ObservedObject var tracker: LineTimestampTracker
+    var tracker: LineTimestampTracker
     let visibleRowRange: Range<Int>
     let rowHeight: CGFloat
 

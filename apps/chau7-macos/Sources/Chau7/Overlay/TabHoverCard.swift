@@ -57,7 +57,7 @@ private struct TabHoverCardContent: View {
     let tab: OverlayTab
     @ObservedObject var session: TerminalSessionModel
     @ObservedObject private var settings = FeatureSettings.shared
-    @ObservedObject private var conflictDetector = ConflictDetector.shared
+    var conflictDetector = ConflictDetector.shared
     let isSuspended: Bool
     let isBroadcastIncluded: Bool
     let onHoverChanged: (Bool) -> Void

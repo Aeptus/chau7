@@ -7,7 +7,7 @@ import Chau7Core
 /// Shows command blocks as colored segments, a draggable scrub handle,
 /// timestamp display, and replay controls.
 struct TimelineScrubberView: View {
-    @ObservedObject var recorder: SessionRecorder
+    var recorder: SessionRecorder
     let commandBlocks: [CommandBlock]
     let sessionStart: Date
     let sessionEnd: Date

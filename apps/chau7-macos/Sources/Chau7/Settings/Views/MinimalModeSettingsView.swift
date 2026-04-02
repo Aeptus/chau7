@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Minimal Mode Settings
 
 struct MinimalModeSettingsView: View {
-    @ObservedObject private var minimalMode = MinimalMode.shared
+    @Bindable private var minimalMode = MinimalMode.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

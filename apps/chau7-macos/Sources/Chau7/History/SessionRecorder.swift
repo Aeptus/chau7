@@ -8,10 +8,11 @@ import Chau7Core
 /// Storage: ~/Library/Application Support/Chau7/recordings/
 /// Format: Binary file with JSON metadata sidecar
 @MainActor
-final class SessionRecorder: ObservableObject {
-    @Published var isRecording = false
-    @Published var currentRecording: SessionRecordingMeta?
-    @Published var recordings: [SessionRecordingMeta] = []
+@Observable
+final class SessionRecorder {
+    var isRecording = false
+    var currentRecording: SessionRecordingMeta?
+    var recordings: [SessionRecordingMeta] = []
 
     /// Maximum recording size in bytes (default 50MB)
     var maxRecordingBytes = 50 * 1024 * 1024
