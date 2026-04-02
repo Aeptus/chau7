@@ -497,9 +497,12 @@ extension TerminalSessionModel {
         let runtimeOwnsTab = ownerTabID.flatMap { RuntimeSessionManager.shared.sessionForTab($0) } != nil
         let resumeCommand = pendingCommandLine.flatMap(AIResumeParser.extractMetadata(from:))
         if aiDetection.isRestored && suppressWaitingInputFallbackUntilNextUserCommand {
-            Log.info(
-                "Suppressing terminal prompt waiting_input fallback for restored tab=\(tabIdentifier) provider=\(effectiveAIProvider ?? "nil") until explicit user command"
-            )
+            if !didLogRestoreSuppressionOnce {
+                didLogRestoreSuppressionOnce = true
+                Log.info(
+                    "Suppressing waiting_input fallback for restored tab=\(tabIdentifier) provider=\(effectiveAIProvider ?? "nil") until user command"
+                )
+            }
             return
         }
         let context = TerminalPromptNotificationContext(
@@ -513,7 +516,8 @@ extension TerminalSessionModel {
             hasRecentSystemResumePrefill: deliveredSystemResumePrefillSinceLastUserCommand,
             commandLooksLikeResume: resumeCommand != nil,
             observedAIRoundTrip: pendingWaitingInputFallbackArmed && pendingWaitingInputFallbackSawLiveOutput,
-            sessionID: effectiveAISessionId
+            sessionID: effectiveAISessionId,
+            providerHasAuthoritativeNotifications: hasAuthoritativeNotifications(for: effectiveAIProvider)
         )
         guard TerminalPromptNotificationAdapter.shouldEmitWaitingInput(from: context),
               let provider = effectiveAIProvider,
@@ -540,6 +544,26 @@ extension TerminalSessionModel {
             producer: "terminal_prompt_waiting_input",
             reliability: .fallback
         )
+    }
+
+    private func hasAuthoritativeNotifications(for provider: String?) -> Bool {
+        guard let normalizedProvider = AIResumeParser.normalizeProviderName(provider ?? "") else {
+            return false
+        }
+
+        switch normalizedProvider {
+        case "claude":
+            return true
+        case "codex":
+            let helperPath = RuntimeIsolation.pathInHome(".chau7/bin/\(CodexNotifyHookConfiguration.helperName)")
+            let configPath = RuntimeIsolation.pathInHome(".codex/config.toml")
+            guard let content = try? String(contentsOfFile: configPath, encoding: .utf8) else {
+                return false
+            }
+            return CodexNotifyHookConfiguration.notifyIncludesHelper(in: content, helperPath: helperPath)
+        default:
+            return false
+        }
     }
 
     private func markWaitingInputFallbackOutputIfNeeded() {
@@ -940,6 +964,10 @@ extension TerminalSessionModel {
         let sanitized = EscapeSequenceSanitizer.sanitize(line)
         let transformed = applyCTOPrefixIfNeeded(to: sanitized)
         let trimmed = transformed.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isSystemRestoreInput = pendingSystemRestoreInputLine == trimmed
+        if isSystemRestoreInput {
+            pendingSystemRestoreInputLine = nil
+        }
         guard !trimmed.isEmpty else {
             pendingCommandLine = nil
             promptSeenForPendingCommand = false
@@ -948,7 +976,7 @@ extension TerminalSessionModel {
             return
         }
         let resumeMetadata = AIResumeParser.extractMetadata(from: trimmed)
-        if resumeMetadata == nil {
+        if resumeMetadata == nil, !isSystemRestoreInput {
             suppressWaitingInputFallbackUntilNextUserCommand = false
             deliveredSystemResumePrefillSinceLastUserCommand = false
         }
@@ -956,7 +984,9 @@ extension TerminalSessionModel {
         // Security: check if the PTY has echo disabled (password prompt, passphrase, etc.)
         // If so, mark as sensitive to prevent recording in history.
         let echoDisabled = activeTerminalView?.isPtyEchoDisabled ?? false
-        CommandHistoryManager.shared.recordCommand(trimmed, tabID: tabIdentifier, isSensitive: echoDisabled)
+        if !isSystemRestoreInput {
+            CommandHistoryManager.shared.recordCommand(trimmed, tabID: tabIdentifier, isSensitive: echoDisabled)
+        }
         guard !echoDisabled else {
             Log.trace("Skipping echo-disabled input from persistence and shell event tracking")
             return
@@ -979,10 +1009,18 @@ extension TerminalSessionModel {
         updateActiveAppName(from: trimmed)
         // Command-based detection has had its chance — release the output detection gate.
         commandPendingDetection = false
-        noteAIInputTimingIfNeeded(for: trimmed)
-        recordInputLineIfNeeded()
-        trackSemanticCommand(trimmed)
-        recordDangerousCommandLineIfNeeded(trimmed)
+        if !isSystemRestoreInput {
+            noteAIInputTimingIfNeeded(for: trimmed)
+            recordInputLineIfNeeded()
+            trackSemanticCommand(trimmed)
+            recordDangerousCommandLineIfNeeded(trimmed)
+        } else {
+            clearPendingAITiming()
+            clearWaitingInputFallbackTracking()
+            Log.info(
+                "Ignoring system restore input for tab=\(tabIdentifier); keeping waiting_input fallback suppressed until explicit user command"
+            )
+        }
         guard let targetRaw = cdTarget(from: trimmed) else { return }
 
         var target: String
@@ -1026,7 +1064,8 @@ extension TerminalSessionModel {
                     let outputIdleFor = Date().timeIntervalSince(lastOutputAt)
                     if outputIdleFor >= stuckSeconds {
                         status = .stuck
-                        Log.info("Command marked as stuck after \(Int(runningFor))s")
+                        let cmd = (pendingCommandLine ?? "").prefix(60)
+                        Log.info("Command marked as stuck after \(Int(runningFor))s tab=\(tabIdentifier) cmd=\(cmd)")
                         return
                     }
                 }
