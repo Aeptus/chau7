@@ -786,6 +786,7 @@ extension OverlayTabsModel {
 
                 // Restore scrollback via cat through the shell so the terminal re-renders
                 // content at the current column width (injectOutput doesn't reflow text).
+                // stty -echo suppresses command echo so the cat/cd/clear aren't visible.
                 // Leading space suppresses history in zsh/bash (HIST_IGNORE_SPACE).
                 var commands: [String] = []
                 if let scrollback = effectivePaneState.scrollbackContent,
@@ -806,8 +807,11 @@ extension OverlayTabsModel {
                 }
 
                 if !commands.isEmpty {
-                    // Space prefix suppresses shell history; clear hides restore commands
-                    session.sendOrQueueSystemRestoreInput(" \(commands.joined(separator: " && ")) && clear\n")
+                    // stty -echo: hide the command itself from the terminal
+                    // stty echo: restore normal echo after
+                    // clear: wipe the visible screen so only restored scrollback shows
+                    let restoreChain = commands.joined(separator: " && ")
+                    session.sendOrQueueSystemRestoreInput(" stty -echo && \(restoreChain) && clear && stty echo\n")
                 }
 
                 if let (resumePaneID, resumeCommand) = resumeTarget,

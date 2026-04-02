@@ -763,6 +763,23 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(environment["CHAU7_USER_XDG_CONFIG_HOME"], ShellLaunchEnvironment.userXDGConfigHome())
     }
 
+    func testBuildEnvironmentUsesOwnerTabUUIDForChau7TabIDWhenAvailable() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let ownerTabID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+        session.ownerTabID = ownerTabID
+
+        let environment = Dictionary(
+            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry in
+                let parts = entry.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { return nil }
+                return (parts[0], parts[1])
+            }
+        )
+
+        XCTAssertEqual(environment["CHAU7_TAB_ID"], ownerTabID.uuidString)
+    }
+
     func testPreInitializeZshWrapperUsesRuntimeShellEnvironment() throws {
         TerminalSessionModel.preInitialize()
         guard let integrationDir = TerminalSessionModel.getShellIntegrationDir() else {
