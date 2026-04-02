@@ -118,6 +118,13 @@ fi
 if [[ -n "$RESOURCE_BUNDLE" ]]; then
   run_cmd cp -R "$RESOURCE_BUNDLE" "$CONTENTS/Resources/"
   log_ok "Copied resource bundle: $(basename "$RESOURCE_BUNDLE")"
+
+  # The proxy is bundled directly in Contents/Resources below; keep only one copy.
+  BUNDLE_PROXY="$CONTENTS/Resources/$(basename "$RESOURCE_BUNDLE")/chau7-proxy"
+  if [[ -f "$BUNDLE_PROXY" ]]; then
+    run_cmd rm -f "$BUNDLE_PROXY"
+    log_ok "Removed duplicate proxy from resource bundle"
+  fi
 else
   log_warn "Resource bundle not found in $BUILD_DIR (falling back to raw Resources/ copy)."
   if [[ -d "$ROOT_DIR/Resources" ]]; then

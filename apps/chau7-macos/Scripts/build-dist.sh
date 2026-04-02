@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# build-dist.sh — Build a shareable pre-release Chau7.dmg for testing.
+# build-dist.sh — Build a shareable pre-release Chau7 DMG for testing.
 #
 # This script:
 #   1. Rebuilds Go proxy with -trimpath (strips build-machine paths)
@@ -10,18 +10,17 @@ set -euo pipefail
 #   4. Assembles app bundle
 #   5. Strips debug symbols from all binaries
 #   6. Ad-hoc codesigns
-#   7. Creates a DMG with install instructions and legal notices
+#   7. Creates a styled drag-to-install DMG
 #
 # Usage:
-#   ./Scripts/build-dist.sh                   # arm64 only (fast)
-#   ./Scripts/build-dist.sh --universal       # arm64 + x86_64 (slow)
+#   ./Scripts/build-dist.sh                   # Apple Silicon only (default)
+#   ./Scripts/build-dist.sh --universal       # arm64 + x86_64 helpers (larger)
 
 APP_NAME="Chau7"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
-DMG_PATH="$DIST_DIR/$APP_NAME.dmg"
 UNIVERSAL=false
 
 while [[ $# -gt 0 ]]; do
@@ -31,9 +30,68 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if $UNIVERSAL; then
+    DMG_BASENAME="$APP_NAME-Universal"
+else
+    DMG_BASENAME="$APP_NAME-AppleSilicon"
+fi
+
+DMG_PATH="$DIST_DIR/$DMG_BASENAME.dmg"
+TEMP_DMG_PATH="$DIST_DIR/$DMG_BASENAME-temp.dmg"
+
 info()  { echo -e "\033[0;32m[DIST]\033[0m $1"; }
 warn()  { echo -e "\033[1;33m[DIST]\033[0m $1"; }
 error() { echo -e "\033[0;31m[DIST]\033[0m $1"; exit 1; }
+
+cleanup_dmg_mount() {
+    local mount_point="${1:-}"
+    if [[ -n "$mount_point" ]] && mount | grep -Fq "on $mount_point "; then
+        hdiutil detach "$mount_point" >/dev/null 2>&1 || true
+    fi
+}
+
+apply_dmg_layout() {
+    local mount_point="$1"
+    local background_path="$mount_point/.background/background.jpg"
+
+    mkdir -p "$mount_point/.background"
+    swift "$ROOT_DIR/Scripts/make-dmg-background.swift" \
+        "$background_path" \
+        "$ROOT_DIR/Resources/AppDockIcon.png"
+
+    chflags hidden "$mount_point/.background" >/dev/null 2>&1 || true
+
+    if ! command -v osascript >/dev/null 2>&1; then
+        warn "osascript not available; skipping custom Finder window layout"
+        return 0
+    fi
+
+    osascript <<APPLESCRIPT
+tell application "Finder"
+    tell disk "$APP_NAME"
+        open
+        delay 1
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set bounds of container window to {120, 120, 840, 580}
+        set opts to the icon view options of container window
+        set arrangement of opts to not arranged
+        set icon size of opts to 128
+        set text size of opts to 14
+        set background picture of opts to file ".background:background.jpg"
+
+        set position of item "$APP_NAME.app" of container window to {178, 232}
+        set position of item "Applications" of container window to {542, 232}
+
+        close
+        open
+        update without registering applications
+        delay 2
+    end tell
+end tell
+APPLESCRIPT
+}
 
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
@@ -48,7 +106,8 @@ if $UNIVERSAL; then
     lipo -create -output build/darwin/chau7-proxy build/darwin/chau7-proxy-arm64 build/darwin/chau7-proxy-amd64
 else
     mkdir -p build/darwin
-    go build -trimpath -ldflags "-s -w" -o build/darwin/chau7-proxy .
+    GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o build/darwin/chau7-proxy-arm64 .
+    cp build/darwin/chau7-proxy-arm64 build/darwin/chau7-proxy
 fi
 cd "$ROOT_DIR"
 info "Go proxy built (trimpath + stripped)"
@@ -156,42 +215,46 @@ cp -R "$APP_DIR" "$DMG_STAGING/"
 # Create Applications symlink for drag-to-install
 ln -s /Applications "$DMG_STAGING/Applications"
 
-# Add a simple install/readme file for pre-notarization builds.
-cat > "$DMG_STAGING/README - Install Chau7.txt" << 'README'
-Chau7 Pre-Release
-
-Install:
-1. Drag Chau7.app to Applications.
-2. Open Chau7 from Applications.
-
-Because this build is not notarized yet, macOS may warn that the app is from an unidentified developer.
-If that happens:
-1. In Finder, open Applications.
-2. Control-click Chau7.app.
-3. Choose Open.
-4. Confirm Open in the dialog.
-
-Notes:
-- This is a pre-release package for testing before Apple Developer signing/notarization is configured.
-- Third-party notices are bundled inside Chau7.app at:
-  Contents/Resources/Legal/
-README
-
-# Surface legal notices next to the app as well.
-DMG_LEGAL_DIR="$DMG_STAGING/Legal Notices"
-mkdir -p "$DMG_LEGAL_DIR"
-if [[ -d "$APP_DIR/Contents/Resources/Legal" ]]; then
-    cp -R "$APP_DIR/Contents/Resources/Legal/." "$DMG_LEGAL_DIR/"
-fi
-
-info "Creating DMG..."
+info "Creating styled DMG..."
 rm -f "$DMG_PATH"
+rm -f "$TEMP_DMG_PATH"
+
+DMG_SIZE_MB=$(( $(du -sm "$DMG_STAGING" | awk '{print $1}') + 80 ))
 hdiutil create \
+    -fs APFS \
     -volname "$APP_NAME" \
     -srcfolder "$DMG_STAGING" \
     -ov \
+    -format UDRW \
+    -size "${DMG_SIZE_MB}m" \
+    "$TEMP_DMG_PATH"
+
+MOUNT_OUTPUT="$(hdiutil attach -readwrite -noverify -noautoopen "$TEMP_DMG_PATH")"
+MOUNT_POINT="$(echo "$MOUNT_OUTPUT" | awk '/\/Volumes\// { sub(/^.*\/Volumes\//, "/Volumes/"); print; exit }')"
+
+if [[ -z "$MOUNT_POINT" ]]; then
+    rm -rf "$DMG_STAGING"
+    error "Could not determine DMG mount point"
+fi
+
+trap 'cleanup_dmg_mount "$MOUNT_POINT"' EXIT
+
+if ! apply_dmg_layout "$MOUNT_POINT"; then
+    warn "Could not apply custom Finder layout; continuing with default layout"
+fi
+
+bless --folder "$MOUNT_POINT" --openfolder "$MOUNT_POINT" >/dev/null 2>&1 || true
+sync
+sleep 2
+hdiutil detach "$MOUNT_POINT"
+trap - EXIT
+
+hdiutil convert "$TEMP_DMG_PATH" \
+    -ov \
     -format UDBZ \
-    "$DMG_PATH"
+    -o "$DMG_PATH" >/dev/null
+
+rm -f "$TEMP_DMG_PATH"
 
 rm -rf "$DMG_STAGING"
 
@@ -200,14 +263,15 @@ info "Distribution ready: $DMG_PATH ($DMG_SIZE)"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  $APP_NAME.dmg is ready to share!"
+echo "  $DMG_BASENAME.dmg is ready to share!"
 echo ""
 echo "  This is a pre-release DMG for testing."
 echo "  Install by dragging Chau7.app to Applications."
 echo "  If Gatekeeper blocks first launch, use Finder: Control-click -> Open."
 echo ""
 if ! $UNIVERSAL; then
-    echo "  ⚠ arm64 only (Apple Silicon)."
-    echo "    Run with --universal for Intel+ARM support."
+    echo "  Apple Silicon only (arm64)."
+else
+    echo "  Universal helper payload enabled."
 fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -124,15 +124,22 @@ Replacing a running app causes TCC code-requirement mismatches and repeated perm
 Before Apple Developer signing and notarization are set up, you can still build a clean testing DMG:
 
 ```bash
-./Scripts/build-dist.sh --universal
+./Scripts/build-dist.sh
 ```
 
-This produces `apps/chau7-macos/dist/Chau7.dmg` with:
+This produces `apps/chau7-macos/dist/Chau7-AppleSilicon.dmg` with:
 
 - `Chau7.app`
 - an `Applications` symlink
-- a short install/readme text file
-- bundled legal notices inside the app and in the DMG
+- bundled legal notices inside the app
+
+If you explicitly want the larger mixed-architecture helper build, use:
+
+```bash
+./Scripts/build-dist.sh --universal
+```
+
+That produces `apps/chau7-macos/dist/Chau7-Universal.dmg`.
 
 Important limits for this pre-release package:
 

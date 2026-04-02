@@ -73,7 +73,6 @@ let package = Package(
                 "Views/README.md",
             ],
             resources: [
-                .copy("Resources/chau7-proxy"),
                 .process("Resources/ar.lproj"),
                 .process("Resources/en.lproj"),
                 .process("Resources/fr.lproj"),
