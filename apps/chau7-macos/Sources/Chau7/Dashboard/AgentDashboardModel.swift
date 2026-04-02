@@ -38,6 +38,10 @@ final class AgentDashboardModel: ObservableObject, Identifiable {
         self.repoGroupID = repoGroupID
     }
 
+    deinit {
+        stopPolling()
+    }
+
     // MARK: - Lifecycle
 
     func startPolling() {
@@ -153,7 +157,6 @@ final class AgentDashboardModel: ObservableObject, Identifiable {
             .filter { $0.value.count >= 2 }
             .map { path, agents in
                 DashboardConflict(
-                    id: UUID(),
                     filePath: path,
                     agents: agents.map { .init(sessionID: $0.sessionID, backendName: $0.backendName) },
                     severity: .warning
@@ -174,7 +177,7 @@ final class AgentDashboardModel: ObservableObject, Identifiable {
 
             for event in events {
                 entries.append(TimelineEntry(
-                    id: UUID(),
+                    id: "\(event.sessionID):\(event.seq)",
                     timestamp: event.timestamp,
                     sessionID: event.sessionID,
                     backendName: session.backend.name,
@@ -193,11 +196,14 @@ final class AgentDashboardModel: ObservableObject, Identifiable {
         let dir = session.config.directory
         return dir == repoGroupID
             || dir.hasPrefix(repoGroupID + "/")
-            || repoGroupID.hasPrefix(dir + "/")
     }
 
     private func extractLastTool(from journal: EventJournal) -> String? {
-        let (events, _, _) = journal.events(after: 0, limit: 500)
+        // Read only the last 20 events — enough to find the most recent tool_use
+        let oldest = journal.oldestAvailableCursor
+        let latest = journal.latestCursor
+        let start = latest > 20 ? latest - 20 : oldest
+        let (events, _, _) = journal.events(after: start, limit: 20)
         return events.last(where: { $0.type == RuntimeEventType.toolUse.rawValue })?.data["tool"]
     }
 
@@ -249,7 +255,10 @@ struct AgentCardData: Identifiable {
 }
 
 struct DashboardConflict: Identifiable {
-    let id: UUID
+    var id: String {
+        filePath
+    }
+
     let filePath: String
     let agents: [AgentRef]
     let severity: ConflictSeverity
@@ -273,7 +282,7 @@ enum OverallStatus {
 }
 
 struct TimelineEntry: Identifiable {
-    let id: UUID
+    let id: String // sessionID:seq for stable SwiftUI diffing
     let timestamp: Date
     let sessionID: String
     let backendName: String

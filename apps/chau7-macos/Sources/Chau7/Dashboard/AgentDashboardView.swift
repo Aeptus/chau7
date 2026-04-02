@@ -232,7 +232,7 @@ struct AgentDashboardView: View {
             } else {
                 ForEach(model.timeline.prefix(50)) { entry in
                     HStack(spacing: 6) {
-                        Text(timeFormatter.string(from: entry.timestamp))
+                        Text(Self.timeFormatter.string(from: entry.timestamp))
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundStyle(.tertiary)
                             .frame(width: 55, alignment: .leading)
@@ -326,9 +326,9 @@ struct AgentDashboardView: View {
         return "\(count)"
     }
 
-    private var timeFormatter: DateFormatter {
+    private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"
         return f
-    }
+    }()
 }
