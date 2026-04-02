@@ -10,6 +10,7 @@ import Chau7Core
     func badgeTab(tabID: UUID, text: String, color: String) -> Bool
     func insertSnippet(id: String, tabID: UUID, autoExecute: Bool) -> Bool
     func flashMenuBar(duration: Int, animate: Bool)
+    func resolveExactTab(target: TabTarget) -> UUID?
 }
 
 /// Executes notification actions in response to events
@@ -329,7 +330,12 @@ final class NotificationActionExecutor {
             return report
         }
 
-        let resolvedTabID = delegate?.styleTab(tabID: tabID, preset: stylePreset, config: config)
+        let resolvedTabID = resolveLiveStyleTabID(
+            event: ctx.event,
+            explicitTabID: tabID,
+            preset: stylePreset,
+            config: config
+        )
 
         // Key timers by resolved tab ID so different tabs running the same tool don't collide
         guard let resolvedTabID else {
@@ -360,6 +366,39 @@ final class NotificationActionExecutor {
         }
         report.recordSuccess(.styleTab)
         return report
+    }
+
+    private func resolveLiveStyleTabID(
+        event: AIEvent,
+        explicitTabID: UUID,
+        preset: String,
+        config: [String: String]
+    ) -> UUID? {
+        if let resolved = delegate?.styleTab(tabID: explicitTabID, preset: preset, config: config) {
+            return resolved
+        }
+
+        guard let sessionID = event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sessionID.isEmpty else {
+            return nil
+        }
+
+        let exactTarget = TabTarget(
+            tool: event.tool,
+            directory: event.directory,
+            tabID: nil,
+            sessionID: sessionID
+        )
+
+        guard let recoveredTabID = delegate?.resolveExactTab(target: exactTarget),
+              recoveredTabID != explicitTabID else {
+            return nil
+        }
+
+        Log.info(
+            "Action styleTab: recovered stale tabID \(explicitTabID) via exact session \(sessionID) -> \(recoveredTabID)"
+        )
+        return delegate?.styleTab(tabID: recoveredTabID, preset: preset, config: config)
     }
 
     // MARK: - Automation Actions
@@ -1205,5 +1244,10 @@ final class NotificationActionAdapter: NotificationActionDelegate {
 
     func flashMenuBar(duration: Int, animate: Bool) {
         statusBar.flashAlert(duration: duration, animate: animate)
+    }
+
+    func resolveExactTab(target: TabTarget) -> UUID? {
+        let tabs = TerminalControlService.shared.allTabs
+        return TabResolver.resolveStrictSession(target, in: tabs)?.id
     }
 }
