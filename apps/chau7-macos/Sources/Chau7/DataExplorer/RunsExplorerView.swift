@@ -60,8 +60,8 @@ struct RunsExplorerView: View {
             }
         }
         .onAppear { reload() }
-        .onChange(of: selectedRunID) { newID in
-            guard let id = newID else { toolSummary = []
+        .onChange(of: selectedRunID) {
+            guard let id = selectedRunID else { toolSummary = []
                 return
             }
             toolSummary = TelemetryStore.shared.toolCallSummary(runID: id)

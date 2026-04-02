@@ -942,9 +942,9 @@ private struct ToolbarTabBarView: View {
                     .id("tabbar-scroll-\(overlayModel.tabBarRefreshToken)")
                     // Hardening: ensure ScrollView content maintains minimum size
                     .fixedSize(horizontal: false, vertical: true)
-                    .onChange(of: overlayModel.selectedTabID) { newID in
+                    .onChange(of: overlayModel.selectedTabID) {
                         withAnimation(.easeInOut(duration: 0.25)) {
-                            proxy.scrollTo(newID, anchor: .center)
+                            proxy.scrollTo(overlayModel.selectedTabID, anchor: .center)
                         }
                     }
                 }
@@ -991,8 +991,8 @@ private struct ToolbarTabBarView: View {
         .onPreferenceChange(TabBarFrameKey.self) { frame in
             overlayModel.reportTabBarDropFrame(frame)
         }
-        .onChange(of: overlayModel.tabs.count) { newCount in
-            Log.trace("ToolbarTabBarView: tabs.count changed to \(newCount)")
+        .onChange(of: overlayModel.tabs.count) {
+            Log.trace("ToolbarTabBarView: tabs.count changed to \(overlayModel.tabs.count)")
         }
         .onAppear {
             let now = Date()
@@ -1348,13 +1348,13 @@ struct Chau7OverlayView: View {
                     delay: appModel.suspendRenderDelaySeconds
                 )
             }
-            .onChange(of: appModel.isSuspendBackgroundRendering) { _ in
+            .onChange(of: appModel.isSuspendBackgroundRendering) {
                 overlayModel.configureRenderSuspension(
                     enabled: appModel.isSuspendBackgroundRendering,
                     delay: appModel.suspendRenderDelaySeconds
                 )
             }
-            .onChange(of: appModel.suspendRenderDelayText) { _ in
+            .onChange(of: appModel.suspendRenderDelayText) {
                 overlayModel.configureRenderSuspension(
                     enabled: appModel.isSuspendBackgroundRendering,
                     delay: appModel.suspendRenderDelaySeconds
@@ -1903,8 +1903,8 @@ struct UnifiedTabButton: View {
             .onAppear {
                 isPulsing = tab.notificationStyle?.shouldPulse == true
             }
-            .onChange(of: tab.notificationStyle?.shouldPulse) { shouldPulse in
-                isPulsing = shouldPulse == true
+            .onChange(of: tab.notificationStyle?.shouldPulse) {
+                isPulsing = tab.notificationStyle?.shouldPulse == true
             }
     }
 
@@ -2148,10 +2148,10 @@ struct DraggableOverlay<Content: View>: View {
         .onAppear {
             dragOffset = settings.overlayOffset(for: id, workspace: workspace)
         }
-        .onChange(of: settings.overlayPositionsVersion) { _ in
+        .onChange(of: settings.overlayPositionsVersion) {
             dragOffset = settings.overlayOffset(for: id, workspace: workspace)
         }
-        .onChange(of: workspaceKey) { _ in
+        .onChange(of: workspaceKey) {
             dragOffset = settings.overlayOffset(for: id, workspace: workspace)
         }
     }
@@ -2195,7 +2195,7 @@ struct SearchOverlayView: View {
                         .focused($isFocused)
                         .accessibilityLabel(L("Search terminal", "Search terminal"))
                         .accessibilityHint(L("Enter text to search in terminal output", "Enter text to search in terminal output"))
-                        .onChange(of: model.searchQuery) { _ in
+                        .onChange(of: model.searchQuery) {
                             model.refreshSearch()
                         }
                         .onSubmit {
@@ -2223,7 +2223,7 @@ struct SearchOverlayView: View {
                             ? L("status.currentlyEnabled", "Currently enabled")
                             : L("status.currentlyDisabled", "Currently disabled")
                     )
-                    .onChange(of: model.isCaseSensitive) { _ in
+                    .onChange(of: model.isCaseSensitive) {
                         model.refreshSearch()
                     }
                     .disabled(model.isSemanticSearch)
@@ -2241,7 +2241,7 @@ struct SearchOverlayView: View {
                             ? L("status.currentlyEnabled", "Currently enabled")
                             : L("status.currentlyDisabled", "Currently disabled")
                     )
-                    .onChange(of: model.isRegexSearch) { _ in
+                    .onChange(of: model.isRegexSearch) {
                         model.refreshSearch()
                     }
                     .disabled(model.isSemanticSearch)
@@ -2255,7 +2255,7 @@ struct SearchOverlayView: View {
                         .controlSize(.small)
                         .help(L("Semantic command search", "Semantic command search"))
                         .accessibilityLabel(L("Semantic command search", "Semantic command search"))
-                        .onChange(of: model.isSemanticSearch) { _ in
+                        .onChange(of: model.isSemanticSearch) {
                             model.refreshSearch()
                         }
                     }

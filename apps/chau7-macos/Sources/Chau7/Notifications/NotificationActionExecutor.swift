@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import AVFoundation
 import Chau7Core
 
 /// Protocol for UI actions triggered by the notification system.
@@ -65,7 +66,7 @@ final class NotificationActionExecutor {
     /// Held to prevent the flash window from being deallocated during animation
     private var flashWindow: NSWindow?
     /// Held to prevent the speech synthesizer from being deallocated before speech completes
-    private var speechSynthesizer: NSSpeechSynthesizer?
+    private var speechSynthesizer: AVSpeechSynthesizer?
 
     private init() {}
 
@@ -974,16 +975,16 @@ final class NotificationActionExecutor {
         let rate = ctx.configInt("rate", default: 175)
 
         DispatchQueue.main.async { [weak self] in
-            let synthesizer = NSSpeechSynthesizer()
+            let synthesizer = AVSpeechSynthesizer()
+            let utterance = AVSpeechUtterance(string: text)
+            utterance.rate = Float(rate) / 350.0 // NSSpeechSynthesizer used words/min, AVSpeech uses 0.0-1.0
 
             if voice != "default" {
-                synthesizer.setVoice(NSSpeechSynthesizer.VoiceName(rawValue: "com.apple.speech.synthesis.voice.\(voice.lowercased())"))
+                utterance.voice = AVSpeechSynthesisVoice(identifier: "com.apple.speech.synthesis.voice.\(voice.lowercased())")
             }
 
-            synthesizer.rate = Float(rate)
-            // Hold reference to prevent deallocation before speech completes
             self?.speechSynthesizer = synthesizer
-            synthesizer.startSpeaking(text)
+            synthesizer.speak(utterance)
 
             Log.info("Action voiceAnnounce: Speaking '\(text.prefix(50))...'")
         }

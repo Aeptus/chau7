@@ -199,17 +199,17 @@ struct MenuBarPanelView: View {
                 .foregroundStyle(.secondary)
 
             Toggle(L("Monitor AI events", "Monitor AI events"), isOn: $model.isMonitoring)
-                .onChange(of: model.isMonitoring) { _ in
+                .onChange(of: model.isMonitoring) {
                     model.applyMonitoringState()
                 }
 
             Toggle(L("Monitor history logs", "Monitor history logs"), isOn: $model.isIdleMonitoring)
-                .onChange(of: model.isIdleMonitoring) { _ in
+                .onChange(of: model.isIdleMonitoring) {
                     model.applyIdleMonitoringState()
                 }
 
             Toggle(L("Monitor terminal logs", "Monitor terminal logs"), isOn: $model.isTerminalMonitoring)
-                .onChange(of: model.isTerminalMonitoring) { _ in
+                .onChange(of: model.isTerminalMonitoring) {
                     model.applyTerminalMonitoringState()
                 }
         }
@@ -414,9 +414,9 @@ struct SettingsRootView: View {
         }
         .frame(minWidth: 860, minHeight: 650)
         .localized()
-        .onChange(of: searchQuery) { newQuery in
+        .onChange(of: searchQuery) {
             // Auto-select first matching section when searching
-            if !newQuery.isEmpty, let firstMatch = filteredSections.first {
+            if !searchQuery.isEmpty, let firstMatch = filteredSections.first {
                 selection = firstMatch
             }
         }

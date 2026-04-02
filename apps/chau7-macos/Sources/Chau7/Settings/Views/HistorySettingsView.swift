@@ -33,8 +33,8 @@ struct HistorySettingsView: View {
                 Toggle("", isOn: $persistentHistoryEnabled)
                     .toggleStyle(.switch)
                     .labelsHidden()
-                    .onChange(of: persistentHistoryEnabled) { newValue in
-                        UserDefaults.standard.set(newValue, forKey: "feature.persistentHistory")
+                    .onChange(of: persistentHistoryEnabled) {
+                        UserDefaults.standard.set(persistentHistoryEnabled, forKey: "feature.persistentHistory")
                     }
             }
 
@@ -56,8 +56,8 @@ struct HistorySettingsView: View {
                         EmptyView()
                     }
                     .frame(maxWidth: 280)
-                    .onChange(of: maxRecordsValue) { newValue in
-                        let intValue = Int(newValue)
+                    .onChange(of: maxRecordsValue) {
+                        let intValue = Int(maxRecordsValue)
                         PersistentHistoryStore.shared.maxRecords = intValue
                         UserDefaults.standard.set(intValue, forKey: "history.maxRecords")
                     }

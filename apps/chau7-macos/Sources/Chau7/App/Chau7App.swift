@@ -317,6 +317,11 @@ struct Chau7App: App {
                     }
                     .keyboardShortcut("e", modifiers: [.command, .option, .shift])
 
+                    Button(L("Agent Dashboard", "Agent Dashboard")) {
+                        appDelegate.toggleDashboard()
+                    }
+                    .keyboardShortcut("g", modifiers: [.command, .control])
+
                     Divider()
 
                     Button(L("Close Pane", "Close Pane")) {

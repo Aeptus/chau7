@@ -123,9 +123,9 @@ struct CommandPaletteView: View {
                     .padding(.vertical, 4)
                 }
                 .frame(maxHeight: 350)
-                .onChange(of: selectedIndex) { newValue in
+                .onChange(of: selectedIndex) {
                     withAnimation(.easeInOut(duration: 0.1)) {
-                        proxy.scrollTo(newValue, anchor: .center)
+                        proxy.scrollTo(selectedIndex, anchor: .center)
                     }
                 }
             }
@@ -165,7 +165,7 @@ struct CommandPaletteView: View {
                 shouldFocusSearch = false
             }
         }
-        .onChange(of: searchText) { _ in
+        .onChange(of: searchText) {
             selectedIndex = 0
         }
     }

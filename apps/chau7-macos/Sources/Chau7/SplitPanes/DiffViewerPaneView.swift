@@ -84,7 +84,7 @@ struct DiffViewerPaneView: View {
             }
             .pickerStyle(.segmented)
             .frame(width: 140)
-            .onChange(of: diff.diffMode) { _ in diff.refresh() }
+            .onChange(of: diff.diffMode) { diff.refresh() }
 
             Button { diff.refresh() } label: {
                 Image(systemName: "arrow.clockwise")

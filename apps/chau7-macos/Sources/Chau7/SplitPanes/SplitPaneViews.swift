@@ -92,6 +92,9 @@ struct SplitNodeView: View {
                 }
             )
 
+        case .dashboard(_, let dashboard):
+            AgentDashboardView(model: dashboard)
+
         case .split(let splitID, let direction, let first, let second, let ratio):
             SplitContainerView(
                 splitID: splitID,
@@ -210,8 +213,8 @@ struct SplitContainerView: View {
         .onAppear {
             liveRatio = modelRatio
         }
-        .onChange(of: modelRatio) { newRatio in
-            liveRatio = newRatio
+        .onChange(of: modelRatio) {
+            liveRatio = modelRatio
         }
     }
 }
@@ -404,8 +407,8 @@ struct TextEditorPaneView: View {
         .onTapGesture {
             onFocus()
         }
-        .onChange(of: editor.filePath) { newPath in
-            isMarkdownMode = newPath?.hasSuffix(".md") == true
+        .onChange(of: editor.filePath) {
+            isMarkdownMode = editor.filePath?.hasSuffix(".md") == true
         }
         .fileImporter(
             isPresented: $showFilePicker,

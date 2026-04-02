@@ -21,7 +21,7 @@ struct LogsSettingsView: View {
                 help: L("settings.logs.monitorHistoryLogs.help", "Watch AI CLI history files for session activity and idle detection"),
                 isOn: $model.isIdleMonitoring
             )
-            .onChange(of: model.isIdleMonitoring) { _ in
+            .onChange(of: model.isIdleMonitoring) {
                 model.applyIdleMonitoringState()
             }
 
@@ -83,7 +83,7 @@ struct LogsSettingsView: View {
                 help: L("settings.logs.monitorTerminalLogs.help", "Watch PTY wrapper output files for terminal activity"),
                 isOn: $model.isTerminalMonitoring
             )
-            .onChange(of: model.isTerminalMonitoring) { _ in
+            .onChange(of: model.isTerminalMonitoring) {
                 model.applyTerminalMonitoringState()
             }
 
@@ -92,7 +92,7 @@ struct LogsSettingsView: View {
                 help: L("settings.logs.normalizeOutput.help", "Strip ANSI codes and control characters from log display"),
                 isOn: $model.isTerminalNormalize
             )
-            .onChange(of: model.isTerminalNormalize) { _ in
+            .onChange(of: model.isTerminalNormalize) {
                 model.restartTerminalMonitors()
             }
 

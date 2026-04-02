@@ -17,7 +17,7 @@ struct EditorSettingsView: View {
                 range: 8 ... 36,
                 suffix: " pt"
             )
-            .onChange(of: config.fontSize) { _ in config.save() }
+            .onChange(of: config.fontSize) { config.save() }
 
             Divider()
                 .padding(.vertical, 8)
@@ -32,21 +32,21 @@ struct EditorSettingsView: View {
                 range: 2 ... 8,
                 suffix: " spaces"
             )
-            .onChange(of: config.tabSize) { _ in config.save() }
+            .onChange(of: config.tabSize) { config.save() }
 
             SettingsToggle(
                 label: L("settings.editor.useSpaces", "Use Spaces for Tabs"),
                 help: L("settings.editor.useSpaces.help", "Insert spaces instead of tab characters when pressing Tab"),
                 isOn: $config.useSpacesForTabs
             )
-            .onChange(of: config.useSpacesForTabs) { _ in config.save() }
+            .onChange(of: config.useSpacesForTabs) { config.save() }
 
             SettingsToggle(
                 label: L("settings.editor.autoIndent", "Auto-Indent"),
                 help: L("settings.editor.autoIndent.help", "Automatically match indentation of the previous line on Enter"),
                 isOn: $config.autoIndent
             )
-            .onChange(of: config.autoIndent) { _ in config.save() }
+            .onChange(of: config.autoIndent) { config.save() }
 
             Divider()
                 .padding(.vertical, 8)
@@ -59,28 +59,28 @@ struct EditorSettingsView: View {
                 help: L("settings.editor.wordWrap.help", "Wrap long lines to fit the editor width"),
                 isOn: $config.wordWrap
             )
-            .onChange(of: config.wordWrap) { _ in config.save() }
+            .onChange(of: config.wordWrap) { config.save() }
 
             SettingsToggle(
                 label: L("settings.editor.lineNumbers", "Line Numbers"),
                 help: L("settings.editor.lineNumbers.help", "Show line numbers in the editor gutter"),
                 isOn: $config.showLineNumbers
             )
-            .onChange(of: config.showLineNumbers) { _ in config.save() }
+            .onChange(of: config.showLineNumbers) { config.save() }
 
             SettingsToggle(
                 label: L("settings.editor.highlightCurrentLine", "Highlight Current Line"),
                 help: L("settings.editor.highlightCurrentLine.help", "Visually highlight the line where the cursor is positioned"),
                 isOn: $config.highlightCurrentLine
             )
-            .onChange(of: config.highlightCurrentLine) { _ in config.save() }
+            .onChange(of: config.highlightCurrentLine) { config.save() }
 
             SettingsToggle(
                 label: L("settings.editor.minimap", "Minimap"),
                 help: L("settings.editor.minimap.help", "Show a minimap overview of the file on the right side"),
                 isOn: $config.showMinimap
             )
-            .onChange(of: config.showMinimap) { _ in config.save() }
+            .onChange(of: config.showMinimap) { config.save() }
 
             Divider()
                 .padding(.vertical, 8)
@@ -93,7 +93,7 @@ struct EditorSettingsView: View {
                 help: L("settings.editor.bracketMatching.help", "Highlight matching brackets, parentheses, and braces"),
                 isOn: $config.bracketMatching
             )
-            .onChange(of: config.bracketMatching) { _ in config.save() }
+            .onChange(of: config.bracketMatching) { config.save() }
 
             Divider()
                 .padding(.vertical, 8)
@@ -113,7 +113,7 @@ struct EditorSettingsView: View {
                     (value: "monokai", label: L("settings.editor.themeMonokai", "Monokai"))
                 ]
             )
-            .onChange(of: config.theme) { _ in config.save() }
+            .onChange(of: config.theme) { config.save() }
 
             Divider()
                 .padding(.vertical, 8)

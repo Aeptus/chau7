@@ -30,7 +30,7 @@ struct LLMSettingsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
-            .onChange(of: selectedProvider) { _ in loadProviderSettings() }
+            .onChange(of: selectedProvider) { loadProviderSettings() }
 
             // API Key
             if selectedProvider.requiresAPIKey {

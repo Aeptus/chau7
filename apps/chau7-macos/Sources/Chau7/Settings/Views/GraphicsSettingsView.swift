@@ -26,7 +26,7 @@ struct GraphicsSettingsView: View {
                 help: L("Allow programs to display inline images using the Sixel graphics protocol (DCS sequences)"),
                 isOn: $bridge.isSixelEnabled
             )
-            .onChange(of: bridge.isSixelEnabled) { _ in
+            .onChange(of: bridge.isSixelEnabled) {
                 bridge.saveSettings()
             }
 
@@ -47,7 +47,7 @@ struct GraphicsSettingsView: View {
                 help: L("Allow programs to display inline images using the Kitty graphics protocol (APC sequences)"),
                 isOn: $bridge.isKittyGraphicsEnabled
             )
-            .onChange(of: bridge.isKittyGraphicsEnabled) { _ in
+            .onChange(of: bridge.isKittyGraphicsEnabled) {
                 bridge.saveSettings()
             }
 
@@ -62,8 +62,8 @@ struct GraphicsSettingsView: View {
                 width: 200,
                 disabled: !bridge.isKittyGraphicsEnabled
             )
-            .onChange(of: cacheSliderValue) { newValue in
-                bridge.kittyCacheLimitMB = Int(newValue)
+            .onChange(of: cacheSliderValue) {
+                bridge.kittyCacheLimitMB = Int(cacheSliderValue)
                 bridge.saveSettings()
             }
 

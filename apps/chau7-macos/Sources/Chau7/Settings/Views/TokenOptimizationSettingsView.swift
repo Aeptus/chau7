@@ -174,7 +174,7 @@ struct TokenOptimizationSettingsView: View {
         .onAppear {
             refreshAll()
         }
-        .onChange(of: settings.tokenOptimizationMode) { _ in
+        .onChange(of: settings.tokenOptimizationMode) {
             refreshAll()
         }
     }

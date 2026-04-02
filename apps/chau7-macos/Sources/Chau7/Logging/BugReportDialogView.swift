@@ -219,18 +219,18 @@ struct BugReportDialogView: View {
                 description: L("bugReport.toggle.history.desc", "Last 50 lines of terminal output from the selected tab."),
                 warning: L("bugReport.toggle.history.warn", "Terminal output may contain commands, file paths, API keys, or other sensitive content.")
             )
-            .onChange(of: draft.includeTerminalHistory) { enabled in
-                if enabled, let tabID = draft.historyTabID {
+            .onChange(of: draft.includeTerminalHistory) {
+                if draft.includeTerminalHistory, let tabID = draft.historyTabID {
                     refreshTerminalHistory(tabID: tabID)
-                } else if !enabled {
+                } else if !draft.includeTerminalHistory {
                     draft.cachedTerminalHistory = nil
                 }
             }
             if draft.includeTerminalHistory {
                 tabPicker(selection: $draft.historyTabID)
                     .padding(.leading, 20)
-                    .onChange(of: draft.historyTabID) { newTabID in
-                        if let tabID = newTabID {
+                    .onChange(of: draft.historyTabID) {
+                        if let tabID = draft.historyTabID {
                             refreshTerminalHistory(tabID: tabID)
                         }
                     }

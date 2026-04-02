@@ -11,6 +11,8 @@ final class FileTailer<T> {
     private let createIfMissing: Bool
 
     private var timer: DispatchSourceTimer?
+    private var fsSource: DispatchSourceFileSystemObject?
+    private var monitorFD: Int32 = -1
     private var offset: UInt64 = 0
     private var buffer = ""
     private let queue: DispatchQueue
@@ -57,8 +59,33 @@ final class FileTailer<T> {
         offset = currentFileSize() ?? 0
         Log.trace("FileTailer start. path=\(fileURL.path) offset=\(offset)")
 
+        // Primary: kqueue file system monitoring (fires immediately on write)
+        let fd = Darwin.open(fileURL.path, O_EVTONLY)
+        if fd >= 0 {
+            monitorFD = fd
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: fd,
+                eventMask: [.write, .extend, .rename],
+                queue: queue
+            )
+            source.setEventHandler { [weak self] in
+                self?.tick()
+            }
+            source.setCancelHandler { Darwin.close(fd) }
+            source.resume()
+            fsSource = source
+        }
+
+        // Safety-net: slow poll at 5x the original interval catches edge cases
+        // (NFS, file replacement, kqueue not available)
+        let safetyInterval: DispatchTimeInterval
+        switch pollInterval {
+        case .milliseconds(let ms): safetyInterval = .milliseconds(ms * 5)
+        case .seconds(let s): safetyInterval = .seconds(s * 5)
+        default: safetyInterval = .seconds(3)
+        }
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now(), repeating: pollInterval)
+        timer.schedule(deadline: .now() + safetyInterval, repeating: safetyInterval, leeway: .seconds(1))
         timer.setEventHandler { [weak self] in
             self?.tick()
         }
@@ -68,6 +95,9 @@ final class FileTailer<T> {
 
     /// Stops monitoring and cleans up resources.
     func stop() {
+        fsSource?.cancel()
+        fsSource = nil
+        monitorFD = -1
         timer?.cancel()
         timer = nil
         buffer = ""
