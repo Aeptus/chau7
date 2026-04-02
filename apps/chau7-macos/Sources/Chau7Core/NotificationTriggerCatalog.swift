@@ -243,6 +243,12 @@ public enum NotificationTriggerCatalog {
             sortOrder: 22
         ),
         NotificationTriggerSourceInfo(
+            id: .chatgpt,
+            labelKey: "notifications.source.chatgpt",
+            labelFallback: "ChatGPT",
+            sortOrder: 23
+        ),
+        NotificationTriggerSourceInfo(
             id: .cursor,
             labelKey: "notifications.source.cursor",
             labelFallback: "Cursor",
@@ -333,6 +339,7 @@ public enum NotificationTriggerCatalog {
         (.claudeCode, "Claude Code", "claudeCode"),
         (.codex, "Codex", "codex"),
         (.gemini, "Gemini", "gemini"),
+        (.chatgpt, "ChatGPT", "chatgpt"),
         (.cursor, "Cursor", "cursor"),
         (.windsurf, "Windsurf", "windsurf"),
         (.copilot, "GitHub Copilot", "copilot"),

@@ -270,6 +270,7 @@ Networking,TLS/WSS Proxy Support,TLS and WebSocket proxy for Codex OpenAI API ca
 Networking,API Proxy Interception,Transparent HTTP/HTTPS proxy for API call capture and analysis,Shipped,Yes
 Networking,Configurable Proxy Endpoints,Set custom proxy host and port for API interception,Shipped,No
 Remote,iPhone Approval Context,Remote approvals and notifications include repo/branch directory recent command and MCP source notes,Shipped,Yes
+Notifications,ChatGPT Normalized Source,"ChatGPT now has a dedicated normalized AI event source with first-class trigger catalog, settings grouping, and timeline/source labels",Shipped,Yes
 Notifications,Gemini Normalized Source,"Gemini now has a dedicated normalized AI event source with first-class trigger catalog, settings grouping, and timeline/source labels",Shipped,Yes
 Runtime,Shell Backend Argv Escaping,Generic shell backend now shell-escapes each JSON-RPC argument to preserve literal argv boundaries,Shipped,Yes
 Runtime,Claude Session Identity Routing,Runtime Claude events now bind to exact session IDs and preserve multiple same-directory agent tabs without cwd collisions,Shipped,Yes
