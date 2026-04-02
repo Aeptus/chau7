@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - About Settings
 
 struct AboutSettingsView: View {
-    @ObservedObject var model: AppModel
+    var model: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

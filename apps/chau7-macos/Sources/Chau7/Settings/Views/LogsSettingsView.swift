@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Logs Settings
 
 struct LogsSettingsView: View {
-    @ObservedObject var model: AppModel
+    @Bindable var model: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

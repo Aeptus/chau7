@@ -31,7 +31,7 @@ final class RemoteControlManager: ObservableObject {
     private var connectedPairedDeviceID: String?
     private var connectedClientAppState: RemoteClientAppState = .foreground
     private var connectedClientStreamMode: RemoteClientStreamMode = .full
-    private var sessionStateCancellables: [String: AnyCancellable] = [:]
+    private var subscribedSessionIDs: Set<String> = []
     private var activityRefreshWorkItem: DispatchWorkItem?
     private var backgroundSnapshotTask: Task<Void, Never>?
     private var outputFlushTask: Task<Void, Never>?
@@ -419,23 +419,26 @@ final class RemoteControlManager: ObservableObject {
 
     private func rebuildSessionStateSubscriptions() {
         guard let overlayModel else {
-            sessionStateCancellables.removeAll()
+            subscribedSessionIDs.removeAll()
             return
         }
 
         let sessions = overlayModel.tabs.compactMap(\.session)
         let validIDs = Set(sessions.map(\.tabIdentifier))
 
-        for staleID in sessionStateCancellables.keys where !validIDs.contains(staleID) {
-            sessionStateCancellables.removeValue(forKey: staleID)
+        // Remove stale subscriptions
+        for staleID in subscribedSessionIDs where !validIDs.contains(staleID) {
+            subscribedSessionIDs.remove(staleID)
         }
 
-        for session in sessions where sessionStateCancellables[session.tabIdentifier] == nil {
-            sessionStateCancellables[session.tabIdentifier] = session.objectWillChange
-                .receive(on: RunLoop.main)
-                .sink { [weak self] _ in
+        // Subscribe to new sessions via callback
+        for session in sessions where !subscribedSessionIDs.contains(session.tabIdentifier) {
+            subscribedSessionIDs.insert(session.tabIdentifier)
+            session.onSessionStateChanged = { [weak self] in
+                DispatchQueue.main.async {
                     self?.scheduleRemoteActivityRefresh()
                 }
+            }
         }
     }
 

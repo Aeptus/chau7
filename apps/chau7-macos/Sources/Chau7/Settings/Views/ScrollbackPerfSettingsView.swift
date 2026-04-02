@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Scrollback & Performance Settings
 
 struct ScrollbackPerfSettingsView: View {
-    @ObservedObject var model: AppModel
+    @Bindable var model: AppModel
     @ObservedObject private var settings = FeatureSettings.shared
 
     var body: some View {

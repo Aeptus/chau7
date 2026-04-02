@@ -197,7 +197,7 @@ final class UnifiedTerminalContainerView: NSView {
 }
 
 struct TerminalViewRepresentable: NSViewRepresentable {
-    @ObservedObject var model: TerminalSessionModel
+    var model: TerminalSessionModel
     var isSuspended: Bool
     var isActive: Bool
     var onFilePathClicked: ((String, Int?, Int?) -> Void)?

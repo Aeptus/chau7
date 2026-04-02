@@ -11,10 +11,24 @@ struct SessionStatus: Identifiable, Equatable {
     var lastSeen: Date
 }
 
+/// Bridges UNUserNotificationCenterDelegate to AppModel without requiring NSObject inheritance.
+final class NotificationDelegateHelper: NSObject, UNUserNotificationCenterDelegate {
+    weak var appModel: AppModel?
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler(appModel?.notificationPresentationOptions() ?? [])
+    }
+}
+
 /// Main application model managing state, monitoring, and notifications.
-/// - Note: Thread Safety - @Published properties must be modified on main thread.
+/// - Note: Thread Safety - Properties must be modified on main thread.
 ///   Use DispatchQueue.main.async when updating state from background callbacks.
-final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
+@Observable
+final class AppModel {
     enum NotificationPermissionState: String, Codable {
         case unavailableNotBundled
         case unknown
@@ -90,25 +104,29 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
     }
 
-    @Published var isMonitoring: Bool {
+    /// Called when `isMonitoring` changes (used by StatusBarController to update the icon).
+    @ObservationIgnored var onMonitoringChanged: (() -> Void)?
+
+    var isMonitoring: Bool {
         didSet {
             UserDefaults.standard.set(isMonitoring, forKey: Keys.isMonitoring)
+            onMonitoringChanged?()
         }
     }
 
-    @Published var logPath: String {
+    var logPath: String {
         didSet {
             UserDefaults.standard.set(logPath, forKey: Keys.logPath)
         }
     }
 
-    @Published var isIdleMonitoring: Bool {
+    var isIdleMonitoring: Bool {
         didSet {
             UserDefaults.standard.set(isIdleMonitoring, forKey: Keys.isIdleMonitoring)
         }
     }
 
-    @Published var idleSecondsText: String {
+    var idleSecondsText: String {
         didSet {
             let normalized = Self.normalizeSecondsText(
                 idleSecondsText,
@@ -131,7 +149,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
     }
 
-    @Published var staleSecondsText: String {
+    var staleSecondsText: String {
         didSet {
             let idle = Self.parseSecondsText(idleSecondsText, defaultValue: 5.0)
             let normalized = Self.normalizeSecondsText(
@@ -147,43 +165,43 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
     }
 
-    @Published var isTerminalMonitoring: Bool {
+    var isTerminalMonitoring: Bool {
         didSet {
             UserDefaults.standard.set(isTerminalMonitoring, forKey: Keys.isTerminalMonitoring)
         }
     }
 
-    @Published var codexTerminalPath: String {
+    var codexTerminalPath: String {
         didSet {
             UserDefaults.standard.set(codexTerminalPath, forKey: Keys.codexTerminalPath)
         }
     }
 
-    @Published var claudeTerminalPath: String {
+    var claudeTerminalPath: String {
         didSet {
             UserDefaults.standard.set(claudeTerminalPath, forKey: Keys.claudeTerminalPath)
         }
     }
 
-    @Published var isTerminalNormalize: Bool {
+    var isTerminalNormalize: Bool {
         didSet {
             UserDefaults.standard.set(isTerminalNormalize, forKey: Keys.isTerminalNormalize)
         }
     }
 
-    @Published var isTerminalAnsi: Bool {
+    var isTerminalAnsi: Bool {
         didSet {
             UserDefaults.standard.set(isTerminalAnsi, forKey: Keys.isTerminalAnsi)
         }
     }
 
-    @Published var isSuspendBackgroundRendering: Bool {
+    var isSuspendBackgroundRendering: Bool {
         didSet {
             UserDefaults.standard.set(isSuspendBackgroundRendering, forKey: Keys.isSuspendBackgroundRendering)
         }
     }
 
-    @Published var suspendRenderDelayText: String {
+    var suspendRenderDelayText: String {
         didSet {
             let normalized = Self.normalizeSecondsText(
                 suspendRenderDelayText,
@@ -198,29 +216,29 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
     }
 
-    @Published var codexHistoryPath: String {
+    var codexHistoryPath: String {
         didSet {
             UserDefaults.standard.set(codexHistoryPath, forKey: Keys.codexHistoryPath)
         }
     }
 
-    @Published var claudeHistoryPath: String {
+    var claudeHistoryPath: String {
         didSet {
             UserDefaults.standard.set(claudeHistoryPath, forKey: Keys.claudeHistoryPath)
         }
     }
 
-    @Published var notificationStatus = "Unknown"
-    @Published var notificationPermissionState: NotificationPermissionState = .unknown
-    @Published var notificationWarning: String?
-    @Published var logFilePath = ""
-    @Published var logLines: [String] = []
-    @Published var toolHistoryEntries: [String: [HistoryEntry]] = [:]
-    @Published var toolTerminalLines: [String: [String]] = [:]
-    @Published var sessionStatuses: [SessionStatus] = []
+    var notificationStatus = "Unknown"
+    var notificationPermissionState: NotificationPermissionState = .unknown
+    var notificationWarning: String?
+    var logFilePath = ""
+    var logLines: [String] = []
+    var toolHistoryEntries: [String: [HistoryEntry]] = [:]
+    var toolTerminalLines: [String: [String]] = [:]
+    var sessionStatuses: [SessionStatus] = []
     /// Tracks when each session last emitted a "finished" notification
     /// via the active→idle bridge. 30-second cooldown prevents rapid re-firing.
-    private var sessionFinishedTimestamps: [String: Date] = [:]
+    @ObservationIgnored private var sessionFinishedTimestamps: [String: Date] = [:]
 
     /// Backward-compat computed accessors for MainPanelView / LogsSettingsView
     var codexHistoryEntries: [HistoryEntry] {
@@ -269,29 +287,32 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
     /// Tool-agnostic event stream from ALL monitors (file tailer, terminal, API proxy, hooks, etc.).
     /// This is the canonical event feed for cross-tool UI — command center timeline, notifications, etc.
-    @Published var recentEvents: [AIEvent] = []
+    var recentEvents: [AIEvent] = []
     /// Claude Code hook-specific events. Only use for Claude Code-specific UI (e.g. hook debugging).
     /// For cross-tool UI, use `recentEvents` instead — see AIEvent.swift header for rationale.
-    @Published var claudeCodeEvents: [ClaudeCodeEvent] = []
-    @Published var claudeCodeSessions: [ClaudeCodeMonitor.ClaudeSessionInfo] = []
-    @Published var apiCallEvents: [APICallEvent] = []
-    @Published var apiCallStats: APICallStats?
+    var claudeCodeEvents: [ClaudeCodeEvent] = []
+    var claudeCodeSessions: [ClaudeCodeMonitor.ClaudeSessionInfo] = []
+    var apiCallEvents: [APICallEvent] = []
+    var apiCallStats: APICallStats?
 
-    private var tailer: FileTailer<AIEvent>?
-    private var apiCallObserver: Any?
-    private var idleMonitors: [HistoryIdleMonitor] = []
-    private var codexTerminalTailer: FileTailer<String>?
-    private var claudeTerminalTailer: FileTailer<String>?
-    private var cleanupTimer: DispatchSourceTimer?
-    private var appEventEmitter: AppEventEmitter?
-    private var pendingClaudeWaitingInputFallbacks: [String: DispatchWorkItem] = [:]
-    private let maxLogLines = 300
-    private let maxHistoryEntries = 200
-    private let maxTerminalLines = 250
-    private let terminalPrefillLines = 200
-    private let maxEntryAgeSeconds: TimeInterval = 7 * 24 * 60 * 60 // 7 days
-    var claudeWaitingInputFallbackDelay: TimeInterval = 0.75
-    private var notificationSettingsSnapshot: NotificationSettingsSnapshot?
+    /// Delegate helper for UNUserNotificationCenter (requires NSObject subclass).
+    @ObservationIgnored let notificationDelegateHelper = NotificationDelegateHelper()
+
+    @ObservationIgnored private var tailer: FileTailer<AIEvent>?
+    @ObservationIgnored private var apiCallObserver: Any?
+    @ObservationIgnored private var idleMonitors: [HistoryIdleMonitor] = []
+    @ObservationIgnored private var codexTerminalTailer: FileTailer<String>?
+    @ObservationIgnored private var claudeTerminalTailer: FileTailer<String>?
+    @ObservationIgnored private var cleanupTimer: DispatchSourceTimer?
+    @ObservationIgnored private var appEventEmitter: AppEventEmitter?
+    @ObservationIgnored private var pendingClaudeWaitingInputFallbacks: [String: DispatchWorkItem] = [:]
+    @ObservationIgnored private let maxLogLines = 300
+    @ObservationIgnored private let maxHistoryEntries = 200
+    @ObservationIgnored private let maxTerminalLines = 250
+    @ObservationIgnored private let terminalPrefillLines = 200
+    @ObservationIgnored private let maxEntryAgeSeconds: TimeInterval = 7 * 24 * 60 * 60 // 7 days
+    @ObservationIgnored var claudeWaitingInputFallbackDelay: TimeInterval = 0.75
+    @ObservationIgnored private var notificationSettingsSnapshot: NotificationSettingsSnapshot?
 
     private struct NotificationSettingsSnapshot {
         let authorizationStatus: UNAuthorizationStatus
@@ -339,7 +360,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         static let claudeHistoryPath = "claudeHistoryPath"
     }
 
-    override init() {
+    init() {
         Log.configure()
         let defaults = UserDefaults.standard
         let home = RuntimeIsolation.homeDirectory()
@@ -399,9 +420,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             ?? defaults.string(forKey: Keys.claudeHistoryPath)
             ?? defaultClaudeHistoryPath
 
-        super.init()
-
         self.logFilePath = Log.filePath
+        notificationDelegateHelper.appModel = self
         Log.sink = { [weak self] line in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -441,7 +461,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         // Only use UNUserNotificationCenter if running as a proper app bundle
         // This allows running from command line for testing
         if Bundle.main.bundleIdentifier != nil, !RuntimeIsolation.isIsolatedTestMode() {
-            UNUserNotificationCenter.current().delegate = self
+            UNUserNotificationCenter.current().delegate = notificationDelegateHelper
             requestNotificationPermission()
             refreshNotificationStatus()
         } else if Bundle.main.bundleIdentifier == nil {
@@ -781,7 +801,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
     }
 
-    private func notificationPresentationOptions() -> UNNotificationPresentationOptions {
+    func notificationPresentationOptions() -> UNNotificationPresentationOptions {
         guard let snapshot = notificationSettingsSnapshot else { return [] }
         var options: UNNotificationPresentationOptions = []
         if snapshot.alertSetting == .enabled, snapshot.alertStyle != .none {
@@ -1178,7 +1198,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         RuntimeSessionManager.shared.exactClaudeTabID(sessionID: sessionID, cwd: directory)
     }
 
-    private var pendingSyncWork: DispatchWorkItem?
+    @ObservationIgnored private var pendingSyncWork: DispatchWorkItem?
 
     /// Coalesced session sync — multiple rapid events within 100ms share a single sync.
     private func syncClaudeCodeSessions() {
@@ -1272,7 +1292,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
     /// Injected by Chau7App to resolve tab IDs for history-monitor events.
     /// Uses TabResolver with the overlay model's tabs. Set during app init.
-    var tabIDResolver: ((TabTarget) -> UUID?)?
+    @ObservationIgnored var tabIDResolver: ((TabTarget) -> UUID?)?
 
     /// Eagerly resolve which tab a history-monitor event belongs to.
     private func resolveTabForSession(toolName: String, sessionID: String, directory: String?) -> UUID? {
@@ -1451,11 +1471,4 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
     }
 
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        completionHandler(notificationPresentationOptions())
-    }
 }

@@ -7,7 +7,7 @@ import Chau7Core
 
 /// Wrapper view for the standalone settings window (opened via Cmd+,)
 struct SettingsWindowView: View {
-    @ObservedObject var model: AppModel
+    var model: AppModel
     let overlayModel: OverlayTabsModel?
 
     var body: some View {
@@ -54,7 +54,7 @@ enum StreamSelection: Hashable, Identifiable {
 }
 
 struct MenuBarPanelView: View {
-    @ObservedObject var model: AppModel
+    @Bindable var model: AppModel
     @State private var streamSelection: StreamSelection = .history(providerKey: "codex")
 
     var body: some View {
@@ -238,7 +238,7 @@ struct MenuBarPanelView: View {
 
 struct StreamView: View {
     let selection: StreamSelection
-    @ObservedObject var model: AppModel
+    var model: AppModel
     @ObservedObject private var settings = FeatureSettings.shared
 
     private static let timeFormatter = Formatters.mediumTime
@@ -355,7 +355,7 @@ struct StreamView: View {
 // MARK: - Settings Root View (SettingsSection is now in SettingsSearch.swift)
 
 struct SettingsRootView: View {
-    @ObservedObject var model: AppModel
+    var model: AppModel
     let overlayModel: OverlayTabsModel?
     @State private var selection: SettingsSection = .general
     @State private var searchQuery = ""
@@ -494,7 +494,7 @@ struct SettingsSidebarRow: View {
 
 struct SettingsDetailView: View {
     let selection: SettingsSection
-    @ObservedObject var model: AppModel
+    var model: AppModel
     let overlayModel: OverlayTabsModel?
     var searchQuery = ""
 

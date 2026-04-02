@@ -13,7 +13,7 @@ struct DebugConsoleView: View {
         case repos = "Repos"
     }
 
-    @ObservedObject var appModel: AppModel
+    var appModel: AppModel
     @ObservedObject var overlayModel: OverlayTabsModel
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var selectedTab = 0
