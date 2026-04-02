@@ -428,6 +428,24 @@ extension SplitNode {
         findFirstRepositoryPane() != nil
     }
 
+    /// Finds the first pane ID matching the given type.
+    func firstPaneID(ofType type: PaneType) -> UUID? {
+        switch self {
+        case .terminal(let id, _):
+            return type == .terminal ? id : nil
+        case .textEditor(let id, _):
+            return type == .textEditor ? id : nil
+        case .filePreview(let id, _):
+            return type == .filePreview ? id : nil
+        case .diffViewer(let id, _):
+            return type == .diffViewer ? id : nil
+        case .repositoryPane(let id, _):
+            return type == .repositoryPane ? id : nil
+        case .split(_, _, let first, let second, _):
+            return first.firstPaneID(ofType: type) ?? second.firstPaneID(ofType: type)
+        }
+    }
+
     /// Gets the pane type for a given ID
     func paneType(for id: UUID) -> PaneType? {
         switch self {
@@ -1031,6 +1049,15 @@ final class SplitPaneController: ObservableObject {
         focusedPaneID = newID
     }
 
+    /// Toggles the text editor pane: closes if one exists, opens if not.
+    func toggleTextEditor(filePath: String? = nil) {
+        if let paneID = root.firstPaneID(ofType: .textEditor) {
+            closePane(id: paneID)
+        } else {
+            splitWithTextEditor(direction: .horizontal, filePath: filePath)
+        }
+    }
+
     /// Opens a file in the existing text editor, or creates a new split if none exists
     func openFileInEditor(path: String, line: Int? = nil) {
         if let editor = root.findFirstEditor() {
@@ -1053,6 +1080,15 @@ final class SplitPaneController: ObservableObject {
 
         root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
         focusedPaneID = newID
+    }
+
+    /// Toggles the file preview pane: closes if one exists, opens if not.
+    func toggleFilePreview(filePath: String? = nil) {
+        if let paneID = root.firstPaneID(ofType: .filePreview) {
+            closePane(id: paneID)
+        } else {
+            splitWithFilePreview(direction: .horizontal, filePath: filePath)
+        }
     }
 
     /// Opens a file in the existing preview pane, or creates a new split if none exists
@@ -1099,7 +1135,17 @@ final class SplitPaneController: ObservableObject {
         focusedPaneID = newID
     }
 
-    /// Opens a repository pane, reusing an existing one or creating a new split
+    /// Toggles the repository pane: closes if one exists, opens if not.
+    func toggleRepositoryPane(directory: String) {
+        if let paneID = root.firstPaneID(ofType: .repositoryPane) {
+            closePane(id: paneID)
+        } else {
+            splitWithRepositoryPane(direction: .horizontal, directory: directory)
+        }
+    }
+
+    /// Opens a repository pane, reusing an existing one or creating a new split.
+    /// For toggle behavior (close if open), use `toggleRepositoryPane` instead.
     func openRepositoryPane(directory: String) {
         if let repo = root.findFirstRepositoryPane() {
             repo.load(directory: directory)

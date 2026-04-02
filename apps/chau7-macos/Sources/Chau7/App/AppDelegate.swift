@@ -787,11 +787,11 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     func openTextEditorPane() {
-        ensureActiveOverlayModel()?.openTextEditorInCurrentTab()
+        ensureActiveOverlayModel()?.toggleTextEditorInCurrentTab()
     }
 
     func openFilePreviewPane() {
-        ensureActiveOverlayModel()?.openFilePreviewInCurrentTab()
+        ensureActiveOverlayModel()?.toggleFilePreviewInCurrentTab()
     }
 
     func openDiffViewerPane() {
@@ -822,7 +822,7 @@ private final class OverlayBlurView: NSVisualEffectView {
               let session = tab.session else { return }
 
         let dir = session.gitRootPath ?? session.currentDirectory
-        model.openRepositoryPaneInCurrentTab(directory: dir)
+        model.toggleRepositoryPaneInCurrentTab(directory: dir)
     }
 
     func showChangedFiles() {
