@@ -553,6 +553,9 @@ Key patterns:
 
 ## Recent Runtime Safety
 
+- Codex notify hook installation now preserves pre-existing user `notify` commands instead of clobbering them, so Chau7 can subscribe to authoritative Codex turn events without breaking local workflows.
+- Authoritative Codex notify-hook events now keep opaque thread IDs intact for routing, instead of dropping them through the shorter resume-session validator.
+- Codex prompt-return fallback now stays enabled until Chau7 confirms its notify hook is actually installed, preventing silent loss of `waiting_input` when the authoritative path is unavailable.
 - Shell JSON-RPC sessions now preserve argv boundaries when launching the generic shell backend, so quoted user arguments stay literal instead of being reinterpreted by the shell.
 - Claude runtime sessions now keep separate bindings for same-directory agent tabs, so tool events, approval prompts, and finished notifications stay attached to the correct tab after another session opens in the same repo.
 - Remote control relay traffic now rejects cleartext control frames after the encrypted session is established, and remote push registration/notify calls normalize websocket relay URLs back to HTTP(S) endpoints before POSTing.

@@ -376,6 +376,8 @@ public enum AIEventParser {
         } else {
             reliability = nil
         }
+        let preservesOpaqueSessionIdentity =
+            source == .codex && producer == "codex_notify_hook" && reliability == .authoritative
 
         return AIEvent(
             source: source,
@@ -388,9 +390,18 @@ public enum AIEventParser {
             ts: ts,
             directory: directory,
             tabID: tabID,
-            sessionID: sessionID,
+            sessionID: preservesOpaqueSessionIdentity
+                ? sanitizeOpaqueSessionIdentifier(rawSessionID)
+                : sessionID,
             producer: producer,
             reliability: reliability
         )
+    }
+
+    private static func sanitizeOpaqueSessionIdentifier(_ rawValue: String?) -> String? {
+        guard let rawValue else { return nil }
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 256 else { return nil }
+        return trimmed
     }
 }
