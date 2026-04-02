@@ -1513,7 +1513,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         dict["TERM_SESSION_ID"] = UUID().uuidString
         dict["SHELL"] = defaultShell()
         dict["CHAU7_SESSION_ID"] = dict["TERM_SESSION_ID"] ?? UUID().uuidString
-        dict["CHAU7_TAB_ID"] = tabIdentifier
+        dict["CHAU7_TAB_ID"] = ownerTabID?.uuidString ?? tabIdentifier
         dict["CHAU7_PROJECT"] = currentDirectory
         dict["CHAU7_AI_EVENTS_LOG"] = sharedEventsLogPathForEnvironment()
 
