@@ -4,7 +4,7 @@ import AppKit
 // MARK: - Graphics Settings
 
 struct GraphicsSettingsView: View {
-    @ObservedObject private var bridge = SixelKittyBridge.shared
+    @Bindable private var bridge = SixelKittyBridge.shared
 
     /// Tracks the slider value as Double for smooth interaction
     @State private var cacheSliderValue: Double = 256

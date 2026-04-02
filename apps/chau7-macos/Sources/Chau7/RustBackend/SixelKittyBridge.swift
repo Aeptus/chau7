@@ -9,12 +9,13 @@ import AppKit
 /// 2. Converts decoded image data into InlineImageView displays
 /// 3. Manages the Kitty image cache size setting
 @MainActor
-final class SixelKittyBridge: ObservableObject {
+@Observable
+final class SixelKittyBridge {
     static let shared = SixelKittyBridge()
 
-    @Published var isSixelEnabled = false
-    @Published var isKittyGraphicsEnabled = false
-    @Published var kittyCacheLimitMB = 256 // Default 256MB cache
+    var isSixelEnabled = false
+    var isKittyGraphicsEnabled = false
+    var kittyCacheLimitMB = 256 // Default 256MB cache
 
     private init() {
         loadSettings()

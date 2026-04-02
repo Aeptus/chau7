@@ -6,7 +6,7 @@ import SwiftUI
 /// Displays agent cards with status, files, tokens, and conflicts.
 /// Polls every 2 seconds via the model. Lives inside a non-terminal tab.
 struct AgentDashboardView: View {
-    @ObservedObject var model: AgentDashboardModel
+    var model: AgentDashboardModel
 
     var body: some View {
         VStack(spacing: 0) {

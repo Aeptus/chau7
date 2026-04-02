@@ -2,24 +2,25 @@ import Foundation
 import os.log
 import Chau7Core
 
-final class RemoteIPCServer: ObservableObject {
+@Observable
+final class RemoteIPCServer {
     static let shared = RemoteIPCServer()
 
-    @Published private(set) var isListening = false
+    private(set) var isListening = false
 
-    var onFrame: ((RemoteFrame) -> Void)?
-    var onClientConnected: (() -> Void)?
-    var onClientDisconnected: (() -> Void)?
+    @ObservationIgnored var onFrame: ((RemoteFrame) -> Void)?
+    @ObservationIgnored var onClientConnected: (() -> Void)?
+    @ObservationIgnored var onClientDisconnected: (() -> Void)?
 
-    private var socketFD: Int32 = -1
-    private var clientFD: Int32 = -1
-    private var listeningSource: DispatchSourceRead?
-    private var clientSource: DispatchSourceRead?
-    private var isListeningState = false
-    private let queue = DispatchQueue(label: "com.chau7.remote.ipc", qos: .utility)
-    private let logger = Logger(subsystem: "com.chau7.remote", category: "IPCServer")
-    private var buffer = Data()
-    private let maxFrameSize = 5 * 1024 * 1024
+    @ObservationIgnored private var socketFD: Int32 = -1
+    @ObservationIgnored private var clientFD: Int32 = -1
+    @ObservationIgnored private var listeningSource: DispatchSourceRead?
+    @ObservationIgnored private var clientSource: DispatchSourceRead?
+    @ObservationIgnored private var isListeningState = false
+    @ObservationIgnored private let queue = DispatchQueue(label: "com.chau7.remote.ipc", qos: .utility)
+    @ObservationIgnored private let logger = Logger(subsystem: "com.chau7.remote", category: "IPCServer")
+    @ObservationIgnored private var buffer = Data()
+    @ObservationIgnored private let maxFrameSize = 5 * 1024 * 1024
 
     private var socketPath: URL {
         RuntimeIsolation.appSupportDirectory(named: "Chau7")

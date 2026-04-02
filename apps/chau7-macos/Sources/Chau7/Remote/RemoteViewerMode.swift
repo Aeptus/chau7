@@ -12,20 +12,21 @@ import Chau7Core
 /// - Owner can revoke viewer access at any time
 /// - Viewer count is shown in the status bar
 @MainActor
-final class RemoteViewerMode: ObservableObject {
+@Observable
+final class RemoteViewerMode {
     static let shared = RemoteViewerMode()
 
-    @Published var isEnabled: Bool {
+    var isEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "feature.remoteViewer")
             Log.info("RemoteViewerMode: \(isEnabled ? "enabled" : "disabled")")
         }
     }
 
-    @Published var isSharing = false
-    @Published var connectedViewers: [RemoteViewer] = []
-    @Published var pendingApprovals: [RemoteViewer] = []
-    @Published var shareLink: String?
+    var isSharing = false
+    var connectedViewers: [RemoteViewer] = []
+    var pendingApprovals: [RemoteViewer] = []
+    var shareLink: String?
 
     /// Maximum simultaneous viewers
     var maxViewers: Int {
@@ -40,7 +41,7 @@ final class RemoteViewerMode: ObservableObject {
     }
 
     /// Known viewer IDs that are auto-approved
-    @Published var knownViewerIDs: Set<String> = []
+    var knownViewerIDs: Set<String> = []
 
     private init() {
         self.isEnabled = UserDefaults.standard.bool(forKey: "feature.remoteViewer")
