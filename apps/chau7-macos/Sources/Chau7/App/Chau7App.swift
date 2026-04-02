@@ -4,7 +4,7 @@ import AppKit
 @main
 struct Chau7App: App {
     @State private var model: AppModel
-    @StateObject private var overlayModel: OverlayTabsModel
+    @State private var overlayModel: OverlayTabsModel
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     private static var initCount = 0
@@ -61,7 +61,7 @@ struct Chau7App: App {
             return TabResolver.resolve(target, in: tabs)?.id
         }
 
-        _overlayModel = StateObject(wrappedValue: overlayModel)
+        _overlayModel = State(wrappedValue: overlayModel)
         _ = SnippetManager.shared
         AppIcon.apply()
         let policy: NSApplication.ActivationPolicy = FeatureSettings.shared.menuBarOnlyMode ? .accessory : .regular

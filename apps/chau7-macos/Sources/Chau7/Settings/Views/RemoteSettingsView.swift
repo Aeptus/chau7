@@ -3,7 +3,7 @@ import AppKit
 
 struct RemoteSettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
-    @ObservedObject private var remote = RemoteControlManager.shared
+    private var remote = RemoteControlManager.shared
     @State private var devicePendingRevocation: RemotePairedDevice?
 
     var body: some View {

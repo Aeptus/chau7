@@ -7,7 +7,7 @@ import Chau7Core
 /// Outer wrapper resolves the tab by ID; inner `TabHoverCardContent` holds
 /// `@ObservedObject var session` for live updates (same pattern as `TabSessionContent`).
 struct TabHoverCard: View {
-    @ObservedObject var overlayModel: OverlayTabsModel
+    var overlayModel: OverlayTabsModel
     let anchorX: CGFloat
 
     private var tab: OverlayTab? {

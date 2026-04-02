@@ -14,7 +14,7 @@ struct DebugConsoleView: View {
     }
 
     var appModel: AppModel
-    @ObservedObject var overlayModel: OverlayTabsModel
+    var overlayModel: OverlayTabsModel
     @Bindable private var settings = FeatureSettings.shared
     @State private var selectedTab = 0
     @State private var showAllEvents = true

@@ -1,43 +1,42 @@
 import Foundation
-import Combine
 import os.log
 import Chau7Core
 import Darwin
 
 @MainActor
-final class RemoteControlManager: ObservableObject {
+@Observable
+final class RemoteControlManager {
     static let shared = RemoteControlManager()
 
-    @Published private(set) var isAgentRunning = false
-    @Published private(set) var isIPCConnected = false
-    @Published private(set) var sessionStatus: String?
-    @Published private(set) var pairingInfo: RemotePairingInfo?
-    @Published private(set) var lastError: String?
-    @Published private(set) var pairedDevices: [RemotePairedDevice] = []
-    @Published private(set) var remoteActivity: RemoteActivityState?
-    @Published private(set) var interactivePrompts: [RemoteInteractivePrompt] = []
+    private(set) var isAgentRunning = false
+    private(set) var isIPCConnected = false
+    private(set) var sessionStatus: String?
+    private(set) var pairingInfo: RemotePairingInfo?
+    private(set) var lastError: String?
+    private(set) var pairedDevices: [RemotePairedDevice] = []
+    private(set) var remoteActivity: RemoteActivityState?
+    private(set) var interactivePrompts: [RemoteInteractivePrompt] = []
 
-    private var process: Process?
-    private var outputPipe: Pipe?
-    private var errorPipe: Pipe?
-    private let logger = Logger(subsystem: "com.chau7.remote", category: "RemoteManager")
-    private var cancellables: Set<AnyCancellable> = []
-    private weak var overlayModel: OverlayTabsModel?
+    @ObservationIgnored private var process: Process?
+    @ObservationIgnored private var outputPipe: Pipe?
+    @ObservationIgnored private var errorPipe: Pipe?
+    @ObservationIgnored private let logger = Logger(subsystem: "com.chau7.remote", category: "RemoteManager")
+    @ObservationIgnored private weak var overlayModel: OverlayTabsModel?
 
-    private var tabRegistry = RemoteTabRegistry()
-    private var seqCounter: UInt64 = 1
-    private var pendingProtectedInputs: [String: ProtectedRemoteInput] = [:]
-    private var approvalContexts: [String: PendingRemoteApprovalContext] = [:]
-    private var connectedPairedDeviceID: String?
-    private var connectedClientAppState: RemoteClientAppState = .foreground
-    private var connectedClientStreamMode: RemoteClientStreamMode = .full
-    private var subscribedSessionIDs: Set<String> = []
-    private var activityRefreshWorkItem: DispatchWorkItem?
-    private var backgroundSnapshotTask: Task<Void, Never>?
-    private var outputFlushTask: Task<Void, Never>?
-    private var pendingOutputByTabID = RemotePendingOutputBuffer<Data>()
+    @ObservationIgnored private var tabRegistry = RemoteTabRegistry()
+    @ObservationIgnored private var seqCounter: UInt64 = 1
+    @ObservationIgnored private var pendingProtectedInputs: [String: ProtectedRemoteInput] = [:]
+    @ObservationIgnored private var approvalContexts: [String: PendingRemoteApprovalContext] = [:]
+    @ObservationIgnored private var connectedPairedDeviceID: String?
+    @ObservationIgnored private var connectedClientAppState: RemoteClientAppState = .foreground
+    @ObservationIgnored private var connectedClientStreamMode: RemoteClientStreamMode = .full
+    @ObservationIgnored private var subscribedSessionIDs: Set<String> = []
+    @ObservationIgnored private var activityRefreshWorkItem: DispatchWorkItem?
+    @ObservationIgnored private var backgroundSnapshotTask: Task<Void, Never>?
+    @ObservationIgnored private var outputFlushTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingOutputByTabID = RemotePendingOutputBuffer<Data>()
 
-    private let ipc = RemoteIPCServer.shared
+    @ObservationIgnored private let ipc = RemoteIPCServer.shared
 
     private init() {}
 
@@ -76,25 +75,19 @@ final class RemoteControlManager: ObservableObject {
             self?.restartAgentIfRunning()
         }
 
-        overlayModel.$tabs
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.sendTabList()
-                self?.sendSelectedTabSnapshot()
-                self?.scheduleBackgroundSnapshotPrefetch()
-                self?.rebuildSessionStateSubscriptions()
-                self?.scheduleRemoteActivityRefresh()
-            }
-            .store(in: &cancellables)
+        overlayModel.onTabsChanged = { [weak self] in
+            self?.sendTabList()
+            self?.sendSelectedTabSnapshot()
+            self?.scheduleBackgroundSnapshotPrefetch()
+            self?.rebuildSessionStateSubscriptions()
+            self?.scheduleRemoteActivityRefresh()
+        }
 
-        overlayModel.$selectedTabID
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.sendTabList()
-                self?.sendSelectedTabSnapshot()
-                self?.scheduleRemoteActivityRefresh()
-            }
-            .store(in: &cancellables)
+        overlayModel.onSelectedTabIDChanged = { [weak self] in
+            self?.sendTabList()
+            self?.sendSelectedTabSnapshot()
+            self?.scheduleRemoteActivityRefresh()
+        }
 
         rebuildSessionStateSubscriptions()
     }
