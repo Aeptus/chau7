@@ -1366,6 +1366,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         searchQuery = ""
         searchMatches = []
         activeSearchIndex = 0
+        cachedBufferData = nil
+        bufferNeedsRefresh = true
         highlightView?.scheduleDisplay() // Use batched display for better latency
     }
 

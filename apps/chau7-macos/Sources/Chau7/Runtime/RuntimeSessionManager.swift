@@ -662,16 +662,27 @@ final class RuntimeSessionManager {
 
     /// Extract file path from a Claude Code event (tool-specific).
     private func extractFilePath(from event: ClaudeCodeEvent) -> String? {
-        // Claude Code hook events include the file in the message for file-editing tools
+        // Claude Code hook events include the file in the message for file-editing tools.
+        // Only extract for tools that operate on files.
+        let fileTools: Set = ["Write", "Edit", "Read", "NotebookEdit"]
+        guard fileTools.contains(event.toolName) else { return nil }
+
         let message = event.message
         guard !message.isEmpty else { return nil }
 
-        // Common patterns: "Write /path/to/file", "Edit /path/to/file"
-        // The message often IS the file path for tool events
-        if message.hasPrefix("/") {
-            // Looks like a path — take just the path portion
-            return message.components(separatedBy: .whitespaces).first
+        // The message is often the file path itself.
+        // Handle both absolute (/path) and relative (src/file.swift) paths.
+        let candidate = message.components(separatedBy: .whitespaces).first ?? message
+
+        if candidate.hasPrefix("/") {
+            return candidate
         }
+
+        // Relative path — resolve against the event's cwd if available
+        if !candidate.isEmpty, !event.cwd.isEmpty {
+            return event.cwd + "/" + candidate
+        }
+
         return nil
     }
 
