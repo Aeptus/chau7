@@ -399,6 +399,16 @@ final class RuntimeSessionManager {
         let existingBindings = runtimeToClaudeSession
         lock.unlock()
 
+        if let normalizedClaudeSessionID,
+           let exactTabID = resolveClaudeTabBySessionID(normalizedClaudeSessionID, cwd: event.cwd),
+           let exactSession = sessionForTab(exactTabID) {
+            associateClaudeSessionID(normalizedClaudeSessionID, withRuntimeSessionID: exactSession.id)
+            Log.info(
+                "RuntimeSessionManager: resolved Claude session \(normalizedClaudeSessionID) via exact tab \(exactTabID)"
+            )
+            return exactSession
+        }
+
         let claudeCandidates = candidates.filter { $0.backend.name == "claude" }
         guard !claudeCandidates.isEmpty else { return nil }
 
@@ -412,7 +422,22 @@ final class RuntimeSessionManager {
             return boundClaudeSessionID == normalizedClaudeSessionID
         }
 
-        let chosen = chooseClaudeCandidate(from: eligibleCandidates.isEmpty ? claudeCandidates : eligibleCandidates)
+        let chosenPool = eligibleCandidates.isEmpty ? claudeCandidates : eligibleCandidates
+        guard chosenPool.count == 1 else {
+            let runtimeSessionIDs = chosenPool.map(\.id).joined(separator: ", ")
+            if let normalizedClaudeSessionID {
+                Log.warn(
+                    "RuntimeSessionManager: refusing ambiguous Claude binding for session=\(normalizedClaudeSessionID) cwd=\(event.cwd) candidates=[\(runtimeSessionIDs)]"
+                )
+            } else {
+                Log.warn(
+                    "RuntimeSessionManager: refusing ambiguous Claude binding without session ID for cwd=\(event.cwd) candidates=[\(runtimeSessionIDs)]"
+                )
+            }
+            return nil
+        }
+
+        let chosen = chosenPool.first
         guard let chosen else { return nil }
 
         if let normalizedClaudeSessionID {
@@ -420,24 +445,6 @@ final class RuntimeSessionManager {
         }
 
         return chosen
-    }
-
-    private func chooseClaudeCandidate(from candidates: [RuntimeSession]) -> RuntimeSession? {
-        guard !candidates.isEmpty else { return nil }
-        let activeTurnCandidates = candidates.filter { $0.currentTurnID != nil || $0.state == .busy || $0.state == .awaitingApproval }
-        let pool = activeTurnCandidates.isEmpty ? candidates : activeTurnCandidates
-        return pool.max { lhs, rhs in
-            compareClaudeCandidatePriority(lhs, rhs)
-        }
-    }
-
-    private func compareClaudeCandidatePriority(_ lhs: RuntimeSession, _ rhs: RuntimeSession) -> Bool {
-        let lhsTurnDate = lhs.lastTurnSubmittedAt ?? lhs.createdAt
-        let rhsTurnDate = rhs.lastTurnSubmittedAt ?? rhs.createdAt
-        if lhsTurnDate != rhsTurnDate {
-            return lhsTurnDate < rhsTurnDate
-        }
-        return lhs.createdAt < rhs.createdAt
     }
 
     private func associateClaudeSessionID(_ claudeSessionID: String, withRuntimeSessionID runtimeSessionID: String) {
@@ -461,43 +468,118 @@ final class RuntimeSessionManager {
     private func tryAdoptFromEvent(_ event: ClaudeCodeEvent) -> RuntimeSession? {
         guard !event.cwd.isEmpty else { return nil }
 
-        // Find the tab with matching cwd
-        let tabID = resolveTabByCwd(event.cwd)
+        let normalizedClaudeSessionID = normalizeClaudeSessionID(event.sessionId)
+        let tabID: UUID?
+        if let normalizedClaudeSessionID {
+            tabID = resolveClaudeTabBySessionID(normalizedClaudeSessionID, cwd: event.cwd)
+            if tabID == nil {
+                Log.warn(
+                    "RuntimeSessionManager: refusing Claude auto-adopt without exact tab for session=\(normalizedClaudeSessionID) cwd=\(event.cwd)"
+                )
+            }
+        } else {
+            tabID = resolveUniqueClaudeTabByCwd(event.cwd)
+            if tabID == nil {
+                Log.warn(
+                    "RuntimeSessionManager: refusing Claude auto-adopt without exact session ID for cwd=\(event.cwd)"
+                )
+            }
+        }
         guard let tabID else { return nil }
 
         let backend = ClaudeCodeBackend()
         let session = adoptSession(tabID: tabID, backend: backend, cwd: event.cwd)
+        if let normalizedClaudeSessionID {
+            associateClaudeSessionID(normalizedClaudeSessionID, withRuntimeSessionID: session.id)
+        }
         Log.info("RuntimeSessionManager: auto-adopted session \(session.id) for cwd=\(event.cwd)")
         return session
     }
 
     /// Find a tab UUID by working directory, searching all registered windows.
-    private func resolveTabByCwd(_ cwd: String) -> UUID? {
+    private func resolveClaudeTabBySessionID(_ sessionID: String, cwd: String) -> UUID? {
         // Must run on main thread since OverlayTabsModel is main-thread-only
         return {
             if Thread.isMainThread {
-                return _resolveTabByCwd(cwd)
+                return _resolveClaudeTabBySessionID(sessionID, cwd: cwd)
             }
-            return DispatchQueue.main.sync { _resolveTabByCwd(cwd) }
+            return DispatchQueue.main.sync { _resolveClaudeTabBySessionID(sessionID, cwd: cwd) }
         }()
     }
 
-    private func _resolveTabByCwd(_ cwd: String) -> UUID? {
+    private func _resolveClaudeTabBySessionID(_ sessionID: String, cwd: String) -> UUID? {
+        let matches = listClaudeTabs().filter { summary in
+            guard summary.sessionID == sessionID else { return false }
+            if cwd.isEmpty { return true }
+            return summary.cwd == cwd
+        }
+
+        guard matches.count == 1 else {
+            if !matches.isEmpty {
+                let tabIDs = matches.map(\.tabID.uuidString).joined(separator: ", ")
+                Log.warn(
+                    "RuntimeSessionManager: ambiguous Claude tab resolution for session=\(sessionID) cwd=\(cwd) matches=[\(tabIDs)]"
+                )
+            }
+            return nil
+        }
+        return matches.first?.tabID
+    }
+
+    private func resolveUniqueClaudeTabByCwd(_ cwd: String) -> UUID? {
+        // Must run on main thread since OverlayTabsModel is main-thread-only
+        return {
+            if Thread.isMainThread {
+                return _resolveUniqueClaudeTabByCwd(cwd)
+            }
+            return DispatchQueue.main.sync { _resolveUniqueClaudeTabByCwd(cwd) }
+        }()
+    }
+
+    private func _resolveUniqueClaudeTabByCwd(_ cwd: String) -> UUID? {
+        let matches = listClaudeTabs().filter { $0.cwd == cwd }
+        guard matches.count == 1 else {
+            if !matches.isEmpty {
+                let tabIDs = matches.map(\.tabID.uuidString).joined(separator: ", ")
+                Log.warn(
+                    "RuntimeSessionManager: ambiguous Claude cwd resolution for cwd=\(cwd) matches=[\(tabIDs)]"
+                )
+            }
+            return nil
+        }
+        return matches.first?.tabID
+    }
+
+    private struct ClaudeTabSummary {
+        let tabID: UUID
+        let cwd: String
+        let sessionID: String?
+    }
+
+    private func listClaudeTabs() -> [ClaudeTabSummary] {
         let controlService = TerminalControlService.shared
-        // Use listTabs to find matching tab
         let tabsJSON = controlService.listTabs()
         guard let data = tabsJSON.data(using: .utf8),
               let tabs = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return nil
+            return []
         }
-        for tab in tabs {
-            if let tabCwd = tab["cwd"] as? String, tabCwd == cwd,
-               let tabIDStr = tab["tab_id"] as? String,
-               let uuid = UUID(uuidString: tabIDStr) {
-                return uuid
+        return tabs.compactMap { tab in
+            guard let tabIDStr = tab["tab_id"] as? String,
+                  let uuid = UUID(uuidString: tabIDStr) else {
+                return nil
             }
+            let provider = AIResumeParser.normalizeProviderName(
+                (tab["ai_provider"] as? String) ?? (tab["active_app"] as? String) ?? ""
+            )
+            guard provider == "claude" else { return nil }
+            let sessionID = (tab["ai_session_id"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return ClaudeTabSummary(
+                tabID: uuid,
+                cwd: (tab["cwd"] as? String) ?? "",
+                sessionID: sessionID?.isEmpty == false ? sessionID : nil
+            )
         }
-        return nil
     }
 
     // MARK: - Output Capture

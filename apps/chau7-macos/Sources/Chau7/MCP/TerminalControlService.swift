@@ -805,6 +805,12 @@ final class TerminalControlService {
         if let rawApp = session?.activeAppName {
             result["raw_active_app"] = rawApp
         }
+        if let aiProvider = session?.effectiveAIProvider {
+            result["ai_provider"] = aiProvider
+        }
+        if let aiSessionID = session?.effectiveAISessionId {
+            result["ai_session_id"] = aiSessionID
+        }
         if let branch = session?.gitBranch {
             result["git_branch"] = branch
         }

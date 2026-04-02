@@ -317,6 +317,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.11 | 2026-04-02 | Claude runtime binding now fails closed on ambiguous same-repo tabs and uses exact tab session metadata before adopting or routing notification events |
 | 0.5.9 | 2026-04-01 | Transcript-derived Claude/Codex run telemetry can now be rebuilt in place from the debug console to repair historical token corruption |
 | 0.5.10 | 2026-04-02 | Codex notify hook installation now preserves existing user hooks, retains authoritative opaque thread IDs, and only disables prompt fallback when the Codex hook is actually installed |
 | 0.5.8 | 2026-04-01 | Debug analytics now separates proxy API-call data from AI run telemetry, and proxy settings expose explicit OpenAI-compatible routing control |

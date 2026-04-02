@@ -51,6 +51,8 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertEqual(json["status"] as? String, CommandStatus.idle.rawValue)
         XCTAssertEqual(json["is_at_prompt"] as? Bool, true)
         XCTAssertEqual(json["active_app"] as? String, "Claude")
+        XCTAssertEqual(json["ai_provider"] as? String, "claude")
+        XCTAssertEqual(json["ai_session_id"] as? String, "session-123")
 
         XCTAssertEqual(json["raw_status"] as? String, CommandStatus.running.rawValue)
         XCTAssertEqual(json["raw_is_at_prompt"] as? Bool, false)
