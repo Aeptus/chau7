@@ -189,7 +189,7 @@ public enum AIToolRegistry {
             resumeFormat: nil,
             logoAssetName: nil,
             tabColorName: nil,
-            eventSourceRawValue: nil
+            eventSourceRawValue: "amazon_q"
         ),
         // — Devin —
         AIToolDefinition(
