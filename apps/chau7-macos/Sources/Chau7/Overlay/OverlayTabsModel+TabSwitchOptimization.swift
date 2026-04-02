@@ -38,9 +38,14 @@ extension OverlayTabsModel {
         }
     }
 
-    func newTab(selectNewTab: Bool = true) {
+    /// Create a new tab.
+    /// - Parameters:
+    ///   - inherit: When `true` (default, Cmd+T), inherits the current tab's working directory
+    ///     and repo group. When `false` ("+" button), opens at the default path with no group.
+    ///   - selectNewTab: Whether to select the new tab after creation.
+    func newTab(inherit: Bool = true, selectNewTab: Bool = true) {
         dispatchPrecondition(condition: .onQueue(.main))
-        Log.trace("newTab: creating new tab, current tabs.count=\(tabs.count)")
+        Log.trace("newTab: creating new tab, inherit=\(inherit), current tabs.count=\(tabs.count)")
         needsFreshTabOnShow = false
         var tab = OverlayTab(appModel: appModel)
         let colors = TabColor.allCases
@@ -48,13 +53,15 @@ extension OverlayTabsModel {
             tab.color = colors[tabs.count % colors.count]
         }
         tab.stampOwnerTabID()
-        if let directory = inheritedStartDirectory() {
+        if inherit, let directory = inheritedStartDirectory() {
             tab.session?.updateCurrentDirectory(directory)
         }
-        let inheritedRepoGroupID = selectedTab?.repoGroupID
+        let inheritedRepoGroupID = inherit ? selectedTab?.repoGroupID : nil
         tab.repoGroupID = inheritedRepoGroupID
 
-        let insertIndex = insertionIndexForNewTab(inheritingRepoGroupID: inheritedRepoGroupID)
+        let insertIndex = inherit
+            ? insertionIndexForNewTab(inheritingRepoGroupID: inheritedRepoGroupID)
+            : tabs.count
         tabs.insert(tab, at: insertIndex)
         Log.trace("newTab: inserted at index \(insertIndex), tabs.count=\(tabs.count), inheritedRepoGroupID=\(inheritedRepoGroupID ?? "nil")")
 

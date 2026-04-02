@@ -906,7 +906,7 @@ private struct ToolbarTabBarView: View {
                             }
 
                             Button {
-                                overlayModel.newTab()
+                                overlayModel.newTab(inherit: false)
                             } label: {
                                 Image(systemName: "plus")
                                     .font(.system(size: 12, weight: .semibold))
