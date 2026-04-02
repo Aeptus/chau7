@@ -164,11 +164,13 @@ final class RuntimeSessionManager {
             let file = extractFilePath(from: event)
             session.recordToolUse(name: event.toolName, file: file)
 
+            var toolData: [String: String] = ["tool": event.toolName]
+            if let file { toolData["file"] = file }
             session.journal.append(
                 sessionID: session.id,
                 turnID: session.currentTurnID,
                 type: RuntimeEventType.toolUse.rawValue,
-                data: ["tool": event.toolName]
+                data: toolData
             )
 
             // Emit tool_called notification

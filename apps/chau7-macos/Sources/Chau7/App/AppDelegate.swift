@@ -50,8 +50,11 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     // MARK: - App Nap Prevention
 
-    /// Activity token to prevent App Nap from throttling the terminal
+    /// Activity token to prevent App Nap from throttling the terminal.
+    /// Acquired when the app is active, released 30s after it goes to background.
     private var activityToken: NSObjectProtocol?
+    private var latencyReleaseWorkItem: DispatchWorkItem?
+    private var appNapObservers: [Any] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
@@ -73,12 +76,9 @@ private final class OverlayBlurView: NSVisualEffectView {
         unsetenv("CLAUDECODE")
 
         // CRITICAL: Prevent App Nap from throttling the terminal
-        // This eliminates the "first keystroke lag" issue
-        activityToken = ProcessInfo.processInfo.beginActivity(
-            options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
-            reason: "Terminal requires low-latency input processing"
-        )
-        Log.info("App Nap prevention enabled with latency-critical activity")
+        // This eliminates the "first keystroke lag" issue.
+        // Released 30s after the app goes to background to save power on laptops.
+        startAppNapManagement()
 
         // Start API analytics proxy if enabled
         Task { @MainActor in
@@ -272,11 +272,16 @@ private final class OverlayBlurView: NSVisualEffectView {
             Log.info("API proxy subsystem stopped")
         }
 
-        // End App Nap prevention activity
+        // End App Nap prevention
+        latencyReleaseWorkItem?.cancel()
         if let activityToken {
             ProcessInfo.processInfo.endActivity(activityToken)
             self.activityToken = nil
         }
+        for observer in appNapObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        appNapObservers.removeAll()
 
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
@@ -363,6 +368,51 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func newTab() {
         ensureActiveOverlayModel()?.newTab()
+    }
+
+    // MARK: - App Nap Management
+
+    private func startAppNapManagement() {
+        enableLowLatency()
+
+        let activateObs = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.enableLowLatency() }
+        }
+        let resignObs = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.scheduleLatencyRelease() }
+        }
+        appNapObservers = [activateObs, resignObs]
+        Log.info("App Nap management started (conditional latency-critical activity)")
+    }
+
+    private func enableLowLatency() {
+        latencyReleaseWorkItem?.cancel()
+        latencyReleaseWorkItem = nil
+        guard activityToken == nil else { return }
+        activityToken = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+            reason: "Terminal requires low-latency input processing"
+        )
+    }
+
+    private func scheduleLatencyRelease() {
+        latencyReleaseWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self, let token = activityToken else { return }
+            ProcessInfo.processInfo.endActivity(token)
+            activityToken = nil
+            Log.info("App Nap: released latency-critical activity (app backgrounded 30s)")
+        }
+        latencyReleaseWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30.0, execute: item)
     }
 
     func showSSHManager() {

@@ -127,7 +127,7 @@ Split Panes,Horizontal Split,Cmd+Opt+H — split side-by-side with draggable div
 Split Panes,Vertical Split,Cmd+Opt+V — stack panes vertically,Shipped,No
 Split Panes,Nested Splits,Arbitrary nesting depth via binary tree layout controller,Shipped,No
 Split Panes,Built-in Text Editor,"Full editor in a split pane — syntax highlighting, line numbers, bracket matching, find/replace",Shipped,Yes
-Split Panes,Repository Pane,"Full git UI in a split pane (⌘⌥B) — stage/unstage, commit (⌘Enter), branch switch/create/delete, push/pull, stash, commit history with search, merge conflict resolution, ahead/behind indicator, branch/stash hover tooltips, conventional commit chips, message persistence",Shipped,Yes
+Split Panes,Repository Pane,"Full git UI in a split pane (⌘⌥B) — session-aware: shows agent-touched files with diff stats when AI active, resets after push. Stage/unstage, commit (⌘Enter), branch, push/pull, stash, history with search, conflict resolution, ahead/behind, hover tooltips, commit chips",Shipped,Yes
 Split Panes,Click-to-Copy Document Name,"Click the file name in the editor pane header to copy it to the clipboard",Shipped,No
 Split Panes,Multi-Language Syntax,"Syntax highlighting for HTML, CSS, JavaScript, Python, and more",Shipped,No
 Split Panes,Terminal + Editor Side-by-Side,Edit code and run it in the same window — no app switching,Shipped,Yes
