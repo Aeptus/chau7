@@ -12,6 +12,7 @@ public struct TerminalPromptNotificationContext: Equatable, Sendable {
     public let commandLooksLikeResume: Bool
     public let observedAIRoundTrip: Bool
     public let sessionID: String?
+    public let providerHasAuthoritativeNotifications: Bool
 
     public init(
         previousStatus: String,
@@ -24,7 +25,8 @@ public struct TerminalPromptNotificationContext: Equatable, Sendable {
         hasRecentSystemResumePrefill: Bool,
         commandLooksLikeResume: Bool,
         observedAIRoundTrip: Bool,
-        sessionID: String?
+        sessionID: String?,
+        providerHasAuthoritativeNotifications: Bool
     ) {
         self.previousStatus = previousStatus
         self.hasOwnerTab = hasOwnerTab
@@ -37,12 +39,13 @@ public struct TerminalPromptNotificationContext: Equatable, Sendable {
         self.commandLooksLikeResume = commandLooksLikeResume
         self.observedAIRoundTrip = observedAIRoundTrip
         self.sessionID = sessionID
+        self.providerHasAuthoritativeNotifications = providerHasAuthoritativeNotifications
     }
 }
 
 public enum TerminalPromptNotificationAdapter {
     private static let supportedStatuses: Set = ["running", "stuck", "waitingForInput"]
-    private static let fallbackExcludedProviders: Set = ["claude", "codex"]
+    private static let alwaysExcludedProviders: Set = ["claude"]
 
     public static func shouldEmitWaitingInput(from context: TerminalPromptNotificationContext) -> Bool {
         guard supportedStatuses.contains(context.previousStatus) else {
@@ -57,7 +60,10 @@ public enum TerminalPromptNotificationAdapter {
         guard let providerID = normalizedProviderID(context.providerID) else {
             return false
         }
-        guard !fallbackExcludedProviders.contains(providerID) else {
+        guard !alwaysExcludedProviders.contains(providerID) else {
+            return false
+        }
+        if providerID == "codex", context.providerHasAuthoritativeNotifications {
             return false
         }
         guard !context.hasPendingPrefillInput else {

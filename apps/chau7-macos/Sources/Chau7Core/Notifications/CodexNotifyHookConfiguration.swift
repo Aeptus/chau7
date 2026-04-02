@@ -101,7 +101,9 @@ public enum CodexNotifyHookConfiguration {
     }
 
     public static func upsertNotify(in content: String, helperPath: String) -> String {
-        let desiredLine = "notify = [\"\(escapeTomlString(helperPath))\"]"
+        let desiredLine = renderNotifyLine(
+            entries: mergedNotifyEntries(in: content, helperPath: helperPath)
+        )
         let lines = content.components(separatedBy: .newlines)
         var updated: [String] = []
         var foundNotify = false
@@ -147,6 +149,10 @@ public enum CodexNotifyHookConfiguration {
         return updated.joined(separator: "\n")
     }
 
+    public static func notifyIncludesHelper(in content: String, helperPath: String) -> Bool {
+        mergedNotifyEntries(in: content, helperPath: nil).contains(helperPath)
+    }
+
     private static func quotedPythonString(_ value: String) -> String {
         let escaped = value
             .replacingOccurrences(of: "\\", with: "\\\\")
@@ -158,6 +164,58 @@ public enum CodexNotifyHookConfiguration {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private static func renderNotifyLine(entries: [String]) -> String {
+        let renderedEntries = entries.map { "\"\(escapeTomlString($0))\"" }.joined(separator: ", ")
+        return "notify = [\(renderedEntries)]"
+    }
+
+    private static func mergedNotifyEntries(in content: String, helperPath: String?) -> [String] {
+        var entries = existingNotifyEntries(in: content)
+        if let helperPath, !entries.contains(helperPath) {
+            entries.append(helperPath)
+        }
+        return entries
+    }
+
+    private static func existingNotifyEntries(in content: String) -> [String] {
+        let lines = content.components(separatedBy: .newlines)
+        var collecting = false
+        var bracketDepth = 0
+        var buffer = ""
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if !collecting, isTopLevelNotifyLine(trimmed) {
+                collecting = true
+            } else if !collecting {
+                continue
+            }
+
+            if !buffer.isEmpty {
+                buffer.append("\n")
+            }
+            buffer.append(line)
+            bracketDepth += bracketDelta(in: line)
+            if bracketDepth <= 0 {
+                break
+            }
+        }
+
+        guard !buffer.isEmpty,
+              let regex = try? NSRegularExpression(pattern: #""((?:\\.|[^"])*)""#) else {
+            return []
+        }
+        let nsBuffer = buffer as NSString
+        let range = NSRange(location: 0, length: nsBuffer.length)
+        return regex.matches(in: buffer, range: range).compactMap { match in
+            guard match.numberOfRanges > 1 else { return nil }
+            let raw = nsBuffer.substring(with: match.range(at: 1))
+            return raw
+                .replacingOccurrences(of: "\\\"", with: "\"")
+                .replacingOccurrences(of: "\\\\", with: "\\")
+        }
     }
 
     private static func isTopLevelNotifyLine(_ trimmed: String) -> Bool {

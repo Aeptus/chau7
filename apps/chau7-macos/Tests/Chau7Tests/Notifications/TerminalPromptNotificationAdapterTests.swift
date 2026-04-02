@@ -14,7 +14,8 @@ final class TerminalPromptNotificationAdapterTests: XCTestCase {
             hasRecentSystemResumePrefill: false,
             commandLooksLikeResume: false,
             observedAIRoundTrip: true,
-            sessionID: "session-1"
+            sessionID: "session-1",
+            providerHasAuthoritativeNotifications: true
         )
 
         XCTAssertFalse(TerminalPromptNotificationAdapter.shouldEmitWaitingInput(from: context))
@@ -32,13 +33,14 @@ final class TerminalPromptNotificationAdapterTests: XCTestCase {
             hasRecentSystemResumePrefill: false,
             commandLooksLikeResume: true,
             observedAIRoundTrip: true,
-            sessionID: "session-1"
+            sessionID: "session-1",
+            providerHasAuthoritativeNotifications: false
         )
 
         XCTAssertFalse(TerminalPromptNotificationAdapter.shouldEmitWaitingInput(from: context))
     }
 
-    func testDoesNotEmitForCodexFallback() {
+    func testDoesNotEmitForCodexFallbackWhenAuthoritativeHookIsAvailable() {
         let context = TerminalPromptNotificationContext(
             previousStatus: "running",
             hasOwnerTab: true,
@@ -50,10 +52,30 @@ final class TerminalPromptNotificationAdapterTests: XCTestCase {
             hasRecentSystemResumePrefill: false,
             commandLooksLikeResume: false,
             observedAIRoundTrip: true,
-            sessionID: "session-1"
+            sessionID: "session-1",
+            providerHasAuthoritativeNotifications: true
         )
 
         XCTAssertFalse(TerminalPromptNotificationAdapter.shouldEmitWaitingInput(from: context))
+    }
+
+    func testAllowsCodexFallbackWhenAuthoritativeHookIsUnavailable() {
+        let context = TerminalPromptNotificationContext(
+            previousStatus: "running",
+            hasOwnerTab: true,
+            runtimeOwnsTab: false,
+            providerID: "codex",
+            providerIsRestored: false,
+            hasPendingPrefillInput: false,
+            suppressUntilNextUserCommand: false,
+            hasRecentSystemResumePrefill: false,
+            commandLooksLikeResume: false,
+            observedAIRoundTrip: true,
+            sessionID: "session-1",
+            providerHasAuthoritativeNotifications: false
+        )
+
+        XCTAssertTrue(TerminalPromptNotificationAdapter.shouldEmitWaitingInput(from: context))
     }
 
     func testDoesNotEmitWhileSuppressedUntilNextUserCommand() {
@@ -68,7 +90,8 @@ final class TerminalPromptNotificationAdapterTests: XCTestCase {
             hasRecentSystemResumePrefill: false,
             commandLooksLikeResume: false,
             observedAIRoundTrip: true,
-            sessionID: "session-1"
+            sessionID: "session-1",
+            providerHasAuthoritativeNotifications: false
         )
 
         XCTAssertFalse(TerminalPromptNotificationAdapter.shouldEmitWaitingInput(from: context))
@@ -86,7 +109,8 @@ final class TerminalPromptNotificationAdapterTests: XCTestCase {
             hasRecentSystemResumePrefill: true,
             commandLooksLikeResume: false,
             observedAIRoundTrip: true,
-            sessionID: "session-1"
+            sessionID: "session-1",
+            providerHasAuthoritativeNotifications: false
         )
 
         XCTAssertFalse(TerminalPromptNotificationAdapter.shouldEmitWaitingInput(from: context))

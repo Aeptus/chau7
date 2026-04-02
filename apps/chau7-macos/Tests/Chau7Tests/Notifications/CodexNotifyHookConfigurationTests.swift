@@ -18,7 +18,7 @@ final class CodexNotifyHookConfigurationTests: XCTestCase {
         XCTAssertTrue(updated.contains("notify = [\"/tmp/chau7-codex-notify\"]\n[features]"))
     }
 
-    func testUpsertNotifyReplacesExistingNotifyLine() {
+    func testUpsertNotifyPreservesExistingNotifyEntries() {
         let content = """
         model = "gpt-5"
         notify = ["old-helper"]
@@ -32,8 +32,28 @@ final class CodexNotifyHookConfigurationTests: XCTestCase {
             helperPath: "/tmp/chau7-codex-notify"
         )
 
-        XCTAssertFalse(updated.contains("old-helper"))
-        XCTAssertTrue(updated.contains("notify = [\"/tmp/chau7-codex-notify\"]"))
+        XCTAssertTrue(updated.contains("old-helper"))
+        XCTAssertTrue(updated.contains("notify = [\"old-helper\", \"/tmp/chau7-codex-notify\"]"))
+    }
+
+    func testNotifyIncludesHelperDetectsInstalledHook() {
+        let content = """
+        model = "gpt-5"
+        notify = ["old-helper", "/tmp/chau7-codex-notify"]
+        """
+
+        XCTAssertTrue(
+            CodexNotifyHookConfiguration.notifyIncludesHelper(
+                in: content,
+                helperPath: "/tmp/chau7-codex-notify"
+            )
+        )
+        XCTAssertFalse(
+            CodexNotifyHookConfiguration.notifyIncludesHelper(
+                in: content,
+                helperPath: "/tmp/missing-helper"
+            )
+        )
     }
 
     func testHelperScriptIncludesAuthoritativeCodexMappings() {
