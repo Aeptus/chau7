@@ -31,13 +31,13 @@ public enum NotificationSemanticMapping {
 
     public static func kind(forRawType value: String) -> NotificationSemanticKind? {
         switch normalize(value) {
-        case "finished", "response_complete", "responsecomplete", "task_finished", "taskfinished":
+        case "finished", "response_complete", "responsecomplete", "task_finished", "taskfinished", "agent_turn_complete", "agentturncomplete":
             return .taskFinished
         case "failed", "error", "context_limit", "contextlimit", "exit_failed", "exitfailed":
             return .taskFailed
-        case "permission", "permission_request", "permissionrequest":
+        case "permission", "permission_request", "permissionrequest", "approval_requested", "approvalrequested":
             return .permissionRequired
-        case "waiting_input", "waitinginput", "idle_prompt", "idleprompt":
+        case "waiting_input", "waitinginput", "idle_prompt", "idleprompt", "user_input_requested", "userinputrequested":
             return .waitingForInput
         case "attention_required", "attentionrequired", "notification":
             return .attentionRequired

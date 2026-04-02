@@ -330,6 +330,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private var pendingPrefillInput: String?
     /// Retry counter for pending prefill flush attempts.
     private var pendingPrefillRetries = 0
+    /// The next echoed command line that should be treated as a system-injected
+    /// restore command rather than explicit user input.
+    var pendingSystemRestoreInputLine: String?
     var hasPendingResumePrefillActivity: Bool {
         pendingPrefillInput != nil || pendingPrefillRetries > 0 || isShellLoading
     }
@@ -1129,6 +1132,17 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         sendInput(text)
     }
 
+    /// Queues restore-time shell maintenance commands (scrollback replay, cd,
+    /// clear) without letting their echoed input line unlock AI attention
+    /// fallbacks that should remain suppressed until the next explicit user
+    /// command.
+    func sendOrQueueSystemRestoreInput(_ text: String) {
+        let sanitized = EscapeSequenceSanitizer.sanitize(text)
+        let trimmed = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+        pendingSystemRestoreInputLine = trimmed.isEmpty ? nil : trimmed
+        sendOrQueueInput(text)
+    }
+
     func sendKeyPress(_ keyPress: TerminalKeyPress) {
         guard let activeTerminalView else {
             enqueuePendingTerminalAction(.keyPress(keyPress))
@@ -1413,6 +1427,14 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     private static let defaultLsColors = "exfxcxdxbxegedabagacad"
 
+    private func sharedEventsLogPathForEnvironment() -> String {
+        let trimmed = appModel?.logPath.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmed.isEmpty {
+            return RuntimeIsolation.expandTilde(in: trimmed)
+        }
+        return RuntimeIsolation.pathInHome(".ai-events.log")
+    }
+
     func launchPATHValue() -> String {
         let ctoEnabled = FeatureSettings.shared.tokenOptimizationMode != .off
         let basePath = ShellLaunchEnvironment.preferredPATH()
@@ -1461,6 +1483,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         dict["TERM_PROGRAM_VERSION"] = "1.0"
         dict["TERM_SESSION_ID"] = UUID().uuidString
         dict["SHELL"] = defaultShell()
+        dict["CHAU7_SESSION_ID"] = dict["TERM_SESSION_ID"] ?? UUID().uuidString
+        dict["CHAU7_TAB_ID"] = tabIdentifier
+        dict["CHAU7_PROJECT"] = currentDirectory
+        dict["CHAU7_AI_EVENTS_LOG"] = sharedEventsLogPathForEnvironment()
 
         // Disable macOS shell session save/restore (avoids "Restored session" message and % marker)
         // Chau7 manages its own session state; macOS session restoration is designed for Terminal.app
@@ -1511,16 +1537,6 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             // Gemini CLI / Google GenAI SDK (HTTP — no WebSocket needed)
             dict["GOOGLE_GEMINI_BASE_URL"] = proxyBase
 
-            // Session ID for correlation with terminal session
-            dict["CHAU7_SESSION_ID"] = dict["TERM_SESSION_ID"] ?? UUID().uuidString
-
-            // Tab ID for task lifecycle tracking (unique per terminal tab)
-            dict["CHAU7_TAB_ID"] = tabIdentifier
-
-            // Project path for repo switch detection
-            // Note: Use cwd directly to avoid blocking main thread during shell startup.
-            // Git root detection happens asynchronously via checkGitStatus().
-            dict["CHAU7_PROJECT"] = currentDirectory
         }
 
         return dict.map { "\($0.key)=\($0.value)" }

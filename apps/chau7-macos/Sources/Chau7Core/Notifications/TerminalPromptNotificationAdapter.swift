@@ -42,7 +42,7 @@ public struct TerminalPromptNotificationContext: Equatable, Sendable {
 
 public enum TerminalPromptNotificationAdapter {
     private static let supportedStatuses: Set = ["running", "stuck", "waitingForInput"]
-    private static let fallbackExcludedProviders: Set = ["claude"]
+    private static let fallbackExcludedProviders: Set = ["claude", "codex"]
 
     public static func shouldEmitWaitingInput(from context: TerminalPromptNotificationContext) -> Bool {
         guard supportedStatuses.contains(context.previousStatus) else {

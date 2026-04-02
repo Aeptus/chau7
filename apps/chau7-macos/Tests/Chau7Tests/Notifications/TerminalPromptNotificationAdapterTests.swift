@@ -38,7 +38,7 @@ final class TerminalPromptNotificationAdapterTests: XCTestCase {
         XCTAssertFalse(TerminalPromptNotificationAdapter.shouldEmitWaitingInput(from: context))
     }
 
-    func testEmitsForNonClaudePromptFallbackAfterObservedRoundTrip() {
+    func testDoesNotEmitForCodexFallback() {
         let context = TerminalPromptNotificationContext(
             previousStatus: "running",
             hasOwnerTab: true,
@@ -53,7 +53,7 @@ final class TerminalPromptNotificationAdapterTests: XCTestCase {
             sessionID: "session-1"
         )
 
-        XCTAssertTrue(TerminalPromptNotificationAdapter.shouldEmitWaitingInput(from: context))
+        XCTAssertFalse(TerminalPromptNotificationAdapter.shouldEmitWaitingInput(from: context))
     }
 
     func testDoesNotEmitWhileSuppressedUntilNextUserCommand() {

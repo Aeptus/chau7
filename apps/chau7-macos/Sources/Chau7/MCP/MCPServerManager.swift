@@ -25,14 +25,26 @@ final class MCPServerManager {
     /// and registers the MCP server config with all known AI coding tools.
     private func installBridgeIfNeeded() {
         let bridgeName = "chau7-mcp-bridge"
-        guard let bundledURL = Bundle.main.url(forResource: bridgeName, withExtension: nil) else {
+        let bridgePath: String?
+        if let bundledURL = Bundle.main.url(forResource: bridgeName, withExtension: nil) {
+            bridgePath = installExecutableIfNeeded(
+                bundledURL: bundledURL,
+                executableName: bridgeName
+            )
+        } else {
             Log.trace("MCPServer: \(bridgeName) not found in app bundle (dev build?)")
-            return
+            bridgePath = nil
         }
 
+        let notifyHelperPath = installCodexNotifyHelperIfNeeded()
+        registerToolIntegrations(bridgePath: bridgePath, codexNotifyPath: notifyHelperPath)
+    }
+
+    @discardableResult
+    private func installExecutableIfNeeded(bundledURL: URL, executableName: String) -> String? {
         let fm = FileManager.default
         let binDir = RuntimeIsolation.urlInHome(".chau7/bin")
-        let dest = binDir.appendingPathComponent(bridgeName)
+        let dest = binDir.appendingPathComponent(executableName)
 
         do {
             if !fm.fileExists(atPath: binDir.path) {
@@ -43,32 +55,60 @@ final class MCPServerManager {
             }
             try fm.copyItem(at: bundledURL, to: dest)
             try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
-            Log.info("MCPServer: installed \(bridgeName) to \(dest.path)")
+            Log.info("MCPServer: installed \(executableName) to \(dest.path)")
+            return dest.path
         } catch {
-            Log.error("MCPServer: failed to install \(bridgeName): \(error)")
+            Log.error("MCPServer: failed to install \(executableName): \(error)")
+            return nil
         }
-
-        registerMCPWithAllTools(bridgePath: dest.path)
     }
 
     /// Registers the Chau7 MCP server with every known AI coding tool's config.
     /// Each tool has its own config format and location; we only touch the chau7
     /// entry and leave everything else intact.
-    private func registerMCPWithAllTools(bridgePath: String) {
+    private func registerToolIntegrations(bridgePath: String?, codexNotifyPath: String?) {
         let home = RuntimeIsolation.homePath()
-        let command = bridgePath
 
-        // Claude Code: ~/.claude.json (global) — project .mcp.json is committed separately
-        registerClaudeCodeGlobal(home: home, command: command)
+        if let bridgePath {
+            let command = bridgePath
+
+            // Claude Code: ~/.claude.json (global) — project .mcp.json is committed separately
+            registerClaudeCodeGlobal(home: home, command: command)
+
+            // Cursor: ~/.cursor/mcp.json
+            registerCursorGlobal(home: home, command: command)
+
+            // Windsurf: ~/.codeium/windsurf/mcp_config.json
+            registerWindsurf(home: home, command: command)
+        }
 
         // Codex (OpenAI): ~/.codex/config.toml
-        registerCodex(home: home, command: command)
+        registerCodex(home: home, command: bridgePath, notifyPath: codexNotifyPath)
+    }
 
-        // Cursor: ~/.cursor/mcp.json
-        registerCursorGlobal(home: home, command: command)
+    @discardableResult
+    private func installCodexNotifyHelperIfNeeded() -> String? {
+        let fm = FileManager.default
+        let binDir = RuntimeIsolation.urlInHome(".chau7/bin")
+        let dest = binDir.appendingPathComponent(CodexNotifyHookConfiguration.helperName)
+        let defaultEventsLogPath = RuntimeIsolation.pathInHome(".ai-events.log")
+        let desiredScript = CodexNotifyHookConfiguration.helperScript(defaultEventsLogPath: defaultEventsLogPath)
 
-        // Windsurf: ~/.codeium/windsurf/mcp_config.json
-        registerWindsurf(home: home, command: command)
+        do {
+            if !fm.fileExists(atPath: binDir.path) {
+                try fm.createDirectory(at: binDir, withIntermediateDirectories: true)
+            }
+            let existing = try? String(contentsOf: dest, encoding: .utf8)
+            if existing != desiredScript {
+                try desiredScript.write(to: dest, atomically: true, encoding: .utf8)
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
+                Log.info("MCPServer: installed Codex notify helper to \(dest.path)")
+            }
+            return dest.path
+        } catch {
+            Log.error("MCPServer: failed to install Codex notify helper: \(error)")
+            return nil
+        }
     }
 
     // MARK: - Per-Tool MCP Registration
@@ -110,8 +150,9 @@ final class MCPServerManager {
         mergeJSONMCPEntry(atPath: path, serverName: "chau7", entry: entry, mcpKey: "mcpServers")
     }
 
-    /// Codex config (~/.codex/config.toml) — TOML with [mcp_servers.chau7] section.
-    private func registerCodex(home: String, command: String) {
+    /// Codex config (~/.codex/config.toml) — TOML with [mcp_servers.chau7] section
+    /// and top-level notify hook.
+    private func registerCodex(home: String, command: String?, notifyPath: String?) {
         let path = home + "/.codex/config.toml"
         let fm = FileManager.default
         guard fm.fileExists(atPath: path) else { return }
@@ -119,58 +160,65 @@ final class MCPServerManager {
         do {
             var content = try String(contentsOfFile: path, encoding: .utf8)
 
-            // Already registered?
-            if content.contains("[mcp_servers.chau7]") {
-                // Update command path in case the binary moved
-                let lines = content.components(separatedBy: "\n")
-                var updated: [String] = []
-                var inChau7Section = false
-                var commandUpdated = false
-                for line in lines {
-                    let trimmed = line.trimmingCharacters(in: .whitespaces)
-                    if trimmed == "[mcp_servers.chau7]" {
-                        inChau7Section = true
-                        updated.append(line)
-                    } else if inChau7Section, trimmed.hasPrefix("command ") || trimmed.hasPrefix("command=") {
-                        updated.append("command = \"\(command)\"")
-                        commandUpdated = true
-                        inChau7Section = false
-                    } else {
-                        if inChau7Section, trimmed.hasPrefix("[") {
-                            // Leaving section without finding command key — insert it
-                            if !commandUpdated {
-                                updated.append("command = \"\(command)\"")
-                                commandUpdated = true
-                            }
-                            inChau7Section = false
-                        }
-                        updated.append(line)
-                    }
-                }
-                // Handle case where command was never found and section was at EOF
-                if inChau7Section, !commandUpdated {
-                    updated.append("command = \"\(command)\"")
-                }
-                content = updated.joined(separator: "\n")
-                try content.write(toFile: path, atomically: true, encoding: .utf8)
-            } else {
-                // Insert before [features] if it exists, otherwise append
-                let section = """
-                \n[mcp_servers.chau7]
-                command = "\(command)"
-                args = []
-                """
-                if let range = content.range(of: "\n[features]") {
-                    content.insert(contentsOf: section + "\n", at: range.lowerBound)
-                } else {
-                    content += section + "\n"
-                }
-                try content.write(toFile: path, atomically: true, encoding: .utf8)
+            if let command {
+                content = upsertCodexMCPSection(in: content, command: command)
             }
+
+            if let notifyPath {
+                content = CodexNotifyHookConfiguration.upsertNotify(in: content, helperPath: notifyPath)
+            }
+
+            try content.write(toFile: path, atomically: true, encoding: .utf8)
             Log.info("MCPServer: registered with Codex config at \(path)")
         } catch {
             Log.error("MCPServer: failed to register with Codex: \(error)")
         }
+    }
+
+    private func upsertCodexMCPSection(in content: String, command: String) -> String {
+        if content.contains("[mcp_servers.chau7]") {
+            let lines = content.components(separatedBy: "\n")
+            var updated: [String] = []
+            var inChau7Section = false
+            var commandUpdated = false
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed == "[mcp_servers.chau7]" {
+                    inChau7Section = true
+                    updated.append(line)
+                } else if inChau7Section, trimmed.hasPrefix("command ") || trimmed.hasPrefix("command=") {
+                    updated.append("command = \"\(command)\"")
+                    commandUpdated = true
+                    inChau7Section = false
+                } else {
+                    if inChau7Section, trimmed.hasPrefix("[") {
+                        if !commandUpdated {
+                            updated.append("command = \"\(command)\"")
+                            commandUpdated = true
+                        }
+                        inChau7Section = false
+                    }
+                    updated.append(line)
+                }
+            }
+            if inChau7Section, !commandUpdated {
+                updated.append("command = \"\(command)\"")
+            }
+            return updated.joined(separator: "\n")
+        }
+
+        let section = """
+        \n[mcp_servers.chau7]
+        command = "\(command)"
+        args = []
+        """
+        var updated = content
+        if let range = updated.range(of: "\n[features]") {
+            updated.insert(contentsOf: section + "\n", at: range.lowerBound)
+        } else {
+            updated += section + "\n"
+        }
+        return updated
     }
 
     // MARK: - JSON Config Helpers

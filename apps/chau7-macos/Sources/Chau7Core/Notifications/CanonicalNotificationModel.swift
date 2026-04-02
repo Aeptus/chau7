@@ -48,6 +48,7 @@ public struct NotificationProviderEvent: Identifiable, Equatable, Codable, Senda
     public let tabID: UUID?
     public let directory: String?
     public let timestamp: Date
+    public let reliability: AIEventReliability
     public let metadata: [String: String]
 
     public init(
@@ -62,6 +63,7 @@ public struct NotificationProviderEvent: Identifiable, Equatable, Codable, Senda
         tabID: UUID? = nil,
         directory: String? = nil,
         timestamp: Date = Date(),
+        reliability: AIEventReliability = .heuristic,
         metadata: [String: String] = [:]
     ) {
         self.id = id
@@ -75,12 +77,13 @@ public struct NotificationProviderEvent: Identifiable, Equatable, Codable, Senda
         self.tabID = tabID
         self.directory = directory
         self.timestamp = timestamp
+        self.reliability = reliability
         self.metadata = metadata
     }
 
     public func canonicalEvent(
         kind: NotificationSemanticKind,
-        reliability: AIEventReliability = .heuristic
+        reliability: AIEventReliability? = nil
     ) -> CanonicalNotificationEvent {
         CanonicalNotificationEvent(
             id: id,
@@ -95,7 +98,7 @@ public struct NotificationProviderEvent: Identifiable, Equatable, Codable, Senda
             tabID: tabID,
             directory: directory,
             timestamp: timestamp,
-            reliability: reliability,
+            reliability: reliability ?? self.reliability,
             metadata: metadata
         )
     }

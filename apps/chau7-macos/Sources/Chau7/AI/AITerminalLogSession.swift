@@ -93,16 +93,22 @@ enum AIEventLogWriter {
     private static let queue = DispatchQueue(label: "com.chau7.ai-event-log")
 
     static func appendEvent(type: String, tool: String, message: String, source: AIEventSource, logPath: String) {
+        appendEvent(
+            payload: [
+                "source": source.rawValue,
+                "type": type,
+                "tool": tool,
+                "message": message,
+                "ts": Chau7Core.DateFormatters.nowISO8601()
+            ],
+            logPath: logPath
+        )
+    }
+
+    static func appendEvent(payload: [String: Any], logPath: String) {
         let trimmed = logPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let expanded = RuntimeIsolation.expandTilde(in: trimmed)
-        let payload: [String: Any] = [
-            "source": source.rawValue,
-            "type": type,
-            "tool": tool,
-            "message": message,
-            "ts": Chau7Core.DateFormatters.nowISO8601()
-        ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return }
 
         queue.async {

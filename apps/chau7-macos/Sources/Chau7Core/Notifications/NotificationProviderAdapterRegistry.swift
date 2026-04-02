@@ -28,7 +28,9 @@ public enum NotificationProviderAdapterRegistry {
         switch event.source {
         case .claudeCode:
             return adaptClaudeCodeEvent(event)
-        case .runtime, .codex, .cursor, .windsurf, .copilot, .aider, .cline, .continueAI:
+        case .codex:
+            return adaptCodexEvent(event)
+        case .runtime, .cursor, .windsurf, .copilot, .aider, .cline, .continueAI:
             return adaptGenericAIEvent(event)
         case .historyMonitor, .eventsLog:
             return adaptFallbackAIEvent(event)
@@ -76,6 +78,22 @@ public enum NotificationProviderAdapterRegistry {
             rawType: providerEvent.rawType,
             reliability: event.reliability
         )
+    }
+
+    private static func adaptCodexEvent(_ event: AIEvent) -> Decision {
+        let providerEvent = NotificationProviderEvent(event: event)
+        let adapter = CodexNotificationAdapter()
+        switch adapter.adapt(providerEvent) {
+        case .emit(let canonical):
+            return .emit(
+                canonical.asAIEvent(source: event.source, producer: event.producer),
+                canonical: canonical
+            )
+        case .drop(let reason):
+            return .drop(reason: reason)
+        case .deferToFallback(let reason):
+            return .drop(reason: reason)
+        }
     }
 
     private static func adaptTerminalSessionEvent(_ event: AIEvent) -> Decision {
@@ -308,6 +326,32 @@ private struct ClaudeCodeNotificationAdapter: NotificationProviderAdapter {
     }
 }
 
+private struct CodexNotificationAdapter: NotificationProviderAdapter {
+    let providerID = AIEventSource.codex.rawValue
+
+    func adapt(_ event: NotificationProviderEvent) -> NotificationProviderAdapterResult {
+        let rawType = NotificationSemanticMapping.normalize(event.rawType ?? "")
+
+        switch rawType {
+        case "agent_turn_complete", "agentturncomplete":
+            return .emit(event.canonicalEvent(kind: .taskFinished, reliability: .authoritative))
+        case "approval_requested", "approvalrequested":
+            return .emit(event.canonicalEvent(kind: .permissionRequired, reliability: .authoritative))
+        case "user_input_requested", "userinputrequested":
+            return .emit(event.canonicalEvent(kind: .waitingForInput, reliability: .authoritative))
+        default:
+            let kind = NotificationSemanticMapping.kind(
+                rawType: rawType,
+                notificationType: event.notificationType
+            )
+            guard kind != .unknown else {
+                return .drop(reason: "Unsupported Codex raw event \(rawType)")
+            }
+            return .emit(event.canonicalEvent(kind: kind))
+        }
+    }
+}
+
 private extension NotificationProviderEvent {
     init(event: AIEvent) {
         let timestamp = DateFormatters.iso8601.date(from: event.ts) ?? Date()
@@ -327,6 +371,7 @@ private extension NotificationProviderEvent {
             tabID: event.tabID,
             directory: event.directory,
             timestamp: timestamp,
+            reliability: event.reliability,
             metadata: metadata
         )
     }
