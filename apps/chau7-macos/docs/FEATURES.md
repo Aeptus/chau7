@@ -553,6 +553,7 @@ Key patterns:
 
 ## Recent Runtime Safety
 
+- Devin is now treated as a first-class normalized AI notification source, so Devin events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
 - Amazon Q is now treated as a first-class normalized AI notification source, so Amazon Q events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
 - Cody is now treated as a first-class normalized AI notification source, so Cody events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
 - ChatGPT is now treated as a first-class normalized AI notification source, so ChatGPT events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.

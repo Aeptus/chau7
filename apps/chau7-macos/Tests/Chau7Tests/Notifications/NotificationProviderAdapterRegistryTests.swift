@@ -90,6 +90,28 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(canonical.kind, .taskFinished)
     }
 
+    func testDevinProviderCanonicalizesThroughGenericAdapter() {
+        let event = AIEvent(
+            source: .devin,
+            type: "finished",
+            rawType: "finished",
+            tool: "Devin",
+            message: "Done",
+            ts: "2026-04-02T00:00:00Z",
+            sessionID: "devin-session-1",
+            producer: "devin_monitor",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(adapted, canonical) = decision else {
+            return XCTFail("Expected Devin event to canonicalize")
+        }
+
+        XCTAssertEqual(adapted.type, "finished")
+        XCTAssertEqual(canonical.kind, .taskFinished)
+    }
+
     func testClaudeNotificationEventMapsToWaitingInput() {
         let event = AIEvent(
             id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
