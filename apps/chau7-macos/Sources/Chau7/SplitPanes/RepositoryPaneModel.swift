@@ -26,6 +26,8 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
     @Published var currentBranch: String?
     @Published var branches: [String] = []
     @Published var remoteBranches: [String] = []
+    @Published var branchDetails: [String: BranchDetail] = [:]
+    @Published var aheadBehind: (ahead: Int, behind: Int)?
 
     // MARK: - File Status
 
@@ -48,11 +50,42 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
 
     @Published var stashes: [StashEntry] = []
 
+    // MARK: - History Search
+
+    @Published var historySearchText = ""
+
+    var filteredCommits: [CommitEntry] {
+        guard !historySearchText.isEmpty else { return commits }
+        let query = historySearchText.lowercased()
+        return commits.filter {
+            $0.message.lowercased().contains(query)
+                || $0.author.lowercased().contains(query)
+                || $0.shortHash.lowercased().contains(query)
+        }
+    }
+
+    // MARK: - Conventional Commit Prefixes
+
+    static let commitPrefixes = ["feat", "fix", "docs", "style", "refactor", "test", "chore"]
+
+    func applyPrefix(_ prefix: String) {
+        let trimmed = commitMessage.trimmingCharacters(in: .whitespaces)
+        // Don't add if already prefixed
+        if trimmed.hasPrefix(prefix + ":") || trimmed.hasPrefix(prefix + "(") { return }
+        commitMessage = prefix + ": " + trimmed
+    }
+
+    var hasConventionalPrefix: Bool {
+        let trimmed = commitMessage.trimmingCharacters(in: .whitespaces).lowercased()
+        return Self.commitPrefixes.contains(where: { trimmed.hasPrefix($0 + ":") || trimmed.hasPrefix($0 + "(") })
+    }
+
     // MARK: - General State
 
     @Published var isLoading = false
     @Published var lastError: String?
     @Published var operationInProgress: String?
+    var lastRefreshDate: Date?
 
     /// Display name derived from directory.
     var repoName: String {
@@ -79,7 +112,32 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
 
     func load(directory: String) {
         self.directory = directory
+        // Restore persisted commit message draft
+        commitMessage = UserDefaults.standard.string(forKey: "repoPaneDraft.\(directory)") ?? ""
         refreshAll()
+    }
+
+    /// Save commit message draft (call from view onChange).
+    func persistDraft() {
+        guard let dir = directory else { return }
+        let trimmed = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: "repoPaneDraft.\(dir)")
+        } else {
+            UserDefaults.standard.set(commitMessage, forKey: "repoPaneDraft.\(dir)")
+        }
+    }
+
+    /// Clear persisted draft (call after successful commit).
+    private func clearDraft() {
+        guard let dir = directory else { return }
+        UserDefaults.standard.removeObject(forKey: "repoPaneDraft.\(dir)")
+    }
+
+    /// Returns true if enough time has passed since the last refresh to avoid hammering git.
+    func shouldAutoRefresh(debounceSeconds: TimeInterval = 2) -> Bool {
+        guard let last = lastRefreshDate else { return true }
+        return Date().timeIntervalSince(last) >= debounceSeconds
     }
 
     func refreshAll() {
@@ -94,8 +152,9 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
 
             let branch = gitRunner(["rev-parse", "--abbrev-ref", "HEAD"], dir)
             let statusOutput = gitRunner(["status", "--porcelain"], dir)
-            let branchOutput = gitRunner(["branch", "--list"], dir)
+            let branchOutput = gitRunner(["branch", "-v", "--list"], dir)
             let remoteBranchOutput = gitRunner(["branch", "-r"], dir)
+            let aheadBehindOutput = gitRunner(["rev-list", "--count", "--left-right", "@{upstream}...HEAD"], dir)
             let logOutput = gitRunner([
                 "log", "--format=%H%n%h%n%s%n%an%n%aI",
                 "-\(limit)"
@@ -103,8 +162,9 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
             let stashOutput = gitRunner(["stash", "list"], dir)
 
             let parsed = Self.parseStatus(statusOutput)
-            let parsedBranches = Self.parseBranches(branchOutput)
+            let (parsedBranches, parsedDetails) = Self.parseBranchesVerbose(branchOutput)
             let parsedRemoteBranches = Self.parseRemoteBranches(remoteBranchOutput)
+            let parsedAheadBehind = Self.parseAheadBehind(aheadBehindOutput)
             let parsedCommits = Self.parseCommitLog(logOutput)
             let parsedStashes = Self.parseStashList(stashOutput)
 
@@ -115,10 +175,13 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
                 self.untrackedFiles = parsed.untracked
                 self.conflictedFiles = parsed.conflicted
                 self.branches = parsedBranches
+                self.branchDetails = parsedDetails
                 self.remoteBranches = parsedRemoteBranches
+                self.aheadBehind = parsedAheadBehind
                 self.commits = parsedCommits
                 self.stashes = parsedStashes
                 self.isLoading = false
+                self.lastRefreshDate = Date()
             }
         }
     }
@@ -145,12 +208,16 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
         loadQueue.async { [weak self] in
             guard let self else { return }
             let branch = gitRunner(["rev-parse", "--abbrev-ref", "HEAD"], dir)
-            let local = gitRunner(["branch", "--list"], dir)
+            let local = gitRunner(["branch", "-v", "--list"], dir)
             let remote = gitRunner(["branch", "-r"], dir)
+            let ab = gitRunner(["rev-list", "--count", "--left-right", "@{upstream}...HEAD"], dir)
+            let (parsedBranches, parsedDetails) = Self.parseBranchesVerbose(local)
             DispatchQueue.main.async {
                 self.currentBranch = branch.isEmpty ? nil : branch
-                self.branches = Self.parseBranches(local)
+                self.branches = parsedBranches
+                self.branchDetails = parsedDetails
                 self.remoteBranches = Self.parseRemoteBranches(remote)
+                self.aheadBehind = Self.parseAheadBehind(ab)
             }
         }
     }
@@ -226,10 +293,9 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
         if isAmend { args.append("--amend") }
 
         runWriteOp(args: args, label: "Committing...") { [weak self] in
-            DispatchQueue.main.async {
-                self?.commitMessage = ""
-                self?.isAmend = false
-            }
+            self?.commitMessage = ""
+            self?.isAmend = false
+            self?.clearDraft()
             self?.refreshStatus()
             self?.refreshCommitLog()
         }
@@ -435,6 +501,42 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
             .filter { !$0.isEmpty }
     }
 
+    /// Parse `git branch -v --list` which includes last commit per branch.
+    /// Format: "* main      abc1234 Last commit message" or "  feature   def5678 Some work"
+    static func parseBranchesVerbose(_ output: String) -> (names: [String], details: [String: BranchDetail]) {
+        var names: [String] = []
+        var details: [String: BranchDetail] = [:]
+        for line in output.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+            let isCurrent = line.hasPrefix("*")
+            let cleaned = isCurrent ? String(trimmed.dropFirst(2)) : trimmed
+
+            // Split on whitespace: name, hash, message...
+            let parts = cleaned.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+            guard parts.count >= 2 else {
+                names.append(cleaned)
+                continue
+            }
+            let name = String(parts[0])
+            let hash = String(parts[1])
+            let message = parts.count > 2 ? String(parts[2]) : ""
+            names.append(name)
+            details[name] = BranchDetail(name: name, lastCommitHash: hash, lastCommitMessage: message)
+        }
+        return (names, details)
+    }
+
+    /// Parse `git rev-list --count --left-right @{upstream}...HEAD`
+    /// Output: "3\t5" where 3=behind, 5=ahead
+    static func parseAheadBehind(_ output: String) -> (ahead: Int, behind: Int)? {
+        let parts = output.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\t")
+        guard parts.count == 2,
+              let behind = Int(parts[0]),
+              let ahead = Int(parts[1]) else { return nil }
+        return (ahead: ahead, behind: behind)
+    }
+
     static func parseRemoteBranches(_ output: String) -> [String] {
         output.components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -476,8 +578,22 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
             .compactMap { index, line in
                 guard !line.isEmpty else { return nil }
                 // Format: stash@{0}: WIP on main: abc1234 message
-                let description = line.components(separatedBy: ": ").dropFirst().joined(separator: ": ")
-                return StashEntry(index: index, description: description.isEmpty ? line : description)
+                // Or:     stash@{0}: On develop: saving progress
+                let parts = line.components(separatedBy: ": ")
+                let description = parts.dropFirst().joined(separator: ": ")
+
+                // Extract branch from "WIP on main" or "On develop"
+                var branch: String?
+                if parts.count >= 2 {
+                    let stashType = parts[1]
+                    if stashType.hasPrefix("WIP on ") {
+                        branch = String(stashType.dropFirst("WIP on ".count))
+                    } else if stashType.hasPrefix("On ") {
+                        branch = String(stashType.dropFirst("On ".count))
+                    }
+                }
+
+                return StashEntry(index: index, description: description.isEmpty ? line : description, branch: branch)
             }
     }
 
@@ -554,4 +670,24 @@ struct StashEntry: Identifiable {
 
     let index: Int
     let description: String
+    let branch: String?
+
+    /// Tooltip text for hover.
+    var hoverText: String {
+        var text = "stash@{\(index)}"
+        if let branch { text += " on \(branch)" }
+        text += "\n\(description)"
+        return text
+    }
+}
+
+struct BranchDetail {
+    let name: String
+    let lastCommitHash: String
+    let lastCommitMessage: String
+
+    /// Tooltip text for hover.
+    var hoverText: String {
+        "\(lastCommitHash) \(lastCommitMessage)"
+    }
 }

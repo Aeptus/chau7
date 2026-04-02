@@ -201,4 +201,120 @@ final class RepositoryPaneModelTests: XCTestCase {
         model.load(directory: "/Users/me/projects/MyApp")
         XCTAssertEqual(model.repoName, "MyApp")
     }
+
+    // MARK: - Ahead/Behind Parsing
+
+    func testParseAheadBehind() {
+        let result = RepositoryPaneModel.parseAheadBehind("3\t5")
+        XCTAssertEqual(result?.ahead, 5)
+        XCTAssertEqual(result?.behind, 3)
+    }
+
+    func testParseAheadBehindZero() {
+        let result = RepositoryPaneModel.parseAheadBehind("0\t0")
+        XCTAssertEqual(result?.ahead, 0)
+        XCTAssertEqual(result?.behind, 0)
+    }
+
+    func testParseAheadBehindInvalid() {
+        XCTAssertNil(RepositoryPaneModel.parseAheadBehind(""))
+        XCTAssertNil(RepositoryPaneModel.parseAheadBehind("not-a-number"))
+    }
+
+    // MARK: - Branch Verbose Parsing
+
+    func testParseBranchesVerbose() {
+        let output = """
+        * main      abc1234 Fix login bug
+          feature   def5678 Add new feature
+        """
+        let (names, details) = RepositoryPaneModel.parseBranchesVerbose(output)
+        XCTAssertEqual(names, ["main", "feature"])
+        XCTAssertEqual(details["main"]?.lastCommitHash, "abc1234")
+        XCTAssertEqual(details["main"]?.lastCommitMessage, "Fix login bug")
+        XCTAssertEqual(details["feature"]?.lastCommitHash, "def5678")
+    }
+
+    // MARK: - Stash Branch Parsing
+
+    func testParseStashBranch() {
+        let output = "stash@{0}: WIP on main: abc1234 some work"
+        let stashes = RepositoryPaneModel.parseStashList(output)
+        XCTAssertEqual(stashes.count, 1)
+        XCTAssertEqual(stashes[0].branch, "main")
+    }
+
+    func testParseStashBranchOnPrefix() {
+        let output = "stash@{0}: On develop: saving progress"
+        let stashes = RepositoryPaneModel.parseStashList(output)
+        XCTAssertEqual(stashes[0].branch, "develop")
+    }
+
+    // MARK: - Conventional Commit Prefixes
+
+    func testApplyPrefix() {
+        let model = RepositoryPaneModel(
+            gitRunner: { _, _ in "" },
+            gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
+        )
+        model.commitMessage = "add login"
+        model.applyPrefix("feat")
+        XCTAssertEqual(model.commitMessage, "feat: add login")
+    }
+
+    func testApplyPrefixDoesNotDouble() {
+        let model = RepositoryPaneModel(
+            gitRunner: { _, _ in "" },
+            gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
+        )
+        model.commitMessage = "feat: add login"
+        model.applyPrefix("feat")
+        XCTAssertEqual(model.commitMessage, "feat: add login")
+    }
+
+    func testHasConventionalPrefix() {
+        let model = RepositoryPaneModel(
+            gitRunner: { _, _ in "" },
+            gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
+        )
+        model.commitMessage = "fix: crash on launch"
+        XCTAssertTrue(model.hasConventionalPrefix)
+        model.commitMessage = "just a message"
+        XCTAssertFalse(model.hasConventionalPrefix)
+    }
+
+    // MARK: - History Search
+
+    func testFilteredCommits() {
+        let model = RepositoryPaneModel(
+            gitRunner: { _, _ in "" },
+            gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
+        )
+        let logOutput = """
+        abc123def456
+        abc123d
+        Fix login bug
+        John Doe
+        2026-04-01T12:00:00Z
+        def789abc012
+        def789a
+        Add new feature
+        Jane Smith
+        2026-03-31T10:00:00Z
+        """
+        // Manually set commits (bypassing async)
+        model.commits = RepositoryPaneModel.parseCommitLog(logOutput)
+        XCTAssertEqual(model.filteredCommits.count, 2)
+
+        model.historySearchText = "login"
+        XCTAssertEqual(model.filteredCommits.count, 1)
+        XCTAssertEqual(model.filteredCommits[0].message, "Fix login bug")
+
+        model.historySearchText = "jane"
+        XCTAssertEqual(model.filteredCommits.count, 1)
+        XCTAssertEqual(model.filteredCommits[0].author, "Jane Smith")
+
+        model.historySearchText = ""
+        XCTAssertEqual(model.filteredCommits.count, 2)
+    }
 }

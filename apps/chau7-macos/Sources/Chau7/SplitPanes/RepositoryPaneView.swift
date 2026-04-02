@@ -21,6 +21,7 @@ struct RepositoryPaneView: View {
     @State private var newBranchName = ""
     @State private var stashMessage = ""
     @State private var showBranchPicker = false
+    @State private var showCopiedToast = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,6 +46,14 @@ struct RepositoryPaneView: View {
             }
         }
         .onTapGesture { onFocus() }
+        .onAppear {
+            if repo.shouldAutoRefresh() {
+                repo.refreshAll()
+            }
+        }
+        .onChange(of: repo.commitMessage) { _ in
+            repo.persistDraft()
+        }
     }
 
     // MARK: - Header Bar
@@ -70,6 +79,22 @@ struct RepositoryPaneView: View {
                 .buttonStyle(.plain)
                 .popover(isPresented: $showBranchPicker) {
                     branchPickerPopover
+                }
+
+                if let ab = repo.aheadBehind, ab.ahead > 0 || ab.behind > 0 {
+                    HStack(spacing: 2) {
+                        if ab.ahead > 0 {
+                            Text("↑\(ab.ahead)")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.green)
+                        }
+                        if ab.behind > 0 {
+                            Text("↓\(ab.behind)")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    .help("↑ commits ahead of remote, ↓ commits behind")
                 }
             }
 
@@ -229,6 +254,22 @@ struct RepositoryPaneView: View {
     private var commitSection: some View {
         collapsibleSection(title: "Commit", isExpanded: $commitExpanded) {
             VStack(alignment: .leading, spacing: 6) {
+                // Conventional commit prefix chips
+                if !repo.hasConventionalPrefix {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 3) {
+                            ForEach(RepositoryPaneModel.commitPrefixes, id: \.self) { prefix in
+                                Button(prefix) {
+                                    repo.applyPrefix(prefix)
+                                }
+                                .font(.system(size: 9))
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+                        }
+                    }
+                }
+
                 TextEditor(text: $repo.commitMessage)
                     .font(.system(size: 11))
                     .frame(minHeight: 40, maxHeight: 80)
@@ -268,8 +309,10 @@ struct RepositoryPaneView: View {
                     }
                     .disabled(repo.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || (repo.stagedFiles.isEmpty && !repo.isAmend))
+                    .keyboardShortcut(.return, modifiers: .command)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .help("⌘Return to commit")
                 }
             }
         }
@@ -279,13 +322,53 @@ struct RepositoryPaneView: View {
 
     private var historySection: some View {
         collapsibleSection(title: "History", count: repo.commits.count, isExpanded: $historyExpanded) {
-            VStack(alignment: .leading, spacing: 1) {
-                ForEach(repo.commits) { commit in
+            VStack(alignment: .leading, spacing: 4) {
+                // Search bar
+                HStack(spacing: 4) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                    TextField("Search commits...", text: $repo.historySearchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 10))
+                    if !repo.historySearchText.isEmpty {
+                        Button {
+                            repo.historySearchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(4)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                // Copied toast
+                if showCopiedToast {
+                    Text("Copied")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                }
+
+                ForEach(repo.filteredCommits) { commit in
                     HStack(spacing: 6) {
                         Text(commit.shortHash)
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .frame(width: 52, alignment: .leading)
+                            .onTapGesture {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(commit.hash, forType: .string)
+                                withAnimation(.easeInOut(duration: 0.15)) { showCopiedToast = true }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                    withAnimation(.easeInOut(duration: 0.3)) { showCopiedToast = false }
+                                }
+                            }
+                            .help("Click to copy full hash")
 
                         Text(commit.message)
                             .font(.system(size: 10))
@@ -308,6 +391,10 @@ struct RepositoryPaneView: View {
                         Button("Copy Message") {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(commit.message, forType: .string)
+                        }
+                        Button("Copy Full") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString("\(commit.shortHash) \(commit.message)", forType: .string)
                         }
                     }
                 }
@@ -364,6 +451,7 @@ struct RepositoryPaneView: View {
                             .foregroundStyle(.red)
                     }
                     .padding(.vertical, 1)
+                    .help(stash.hoverText)
                 }
 
                 if repo.stashes.isEmpty {
@@ -422,6 +510,7 @@ struct RepositoryPaneView: View {
                         }
                     }
                     .padding(.vertical, 1)
+                    .help(repo.branchDetails[branch]?.hoverText ?? branch)
                 }
 
                 Divider().padding(.vertical, 4)
