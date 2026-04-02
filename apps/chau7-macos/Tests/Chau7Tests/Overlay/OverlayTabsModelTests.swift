@@ -952,6 +952,27 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(restoredModel.selectedTabID, secondTabID, "explicit selected tab marker should override legacy selectedIndex")
     }
 
+    func testResolveResumeMetadataClearsClaimedCodexSessionWhenNoReplacementExists() {
+        guard let session = model.tabs[0].session else {
+            XCTFail("Expected initial session")
+            return
+        }
+
+        let claimedSessionID = "019d25d0-d0bd-7501-99ba-1f937c17b29b"
+        session.restoreAIMetadata(provider: "codex", sessionId: claimedSessionID)
+
+        let resolved = model.resolveResumeMetadata(
+            for: session,
+            directory: "/tmp/claimed-codex-session",
+            outputHint: nil,
+            claimedSessionIds: [claimedSessionID]
+        )
+
+        XCTAssertNil(resolved)
+        XCTAssertEqual(session.effectiveAIProvider, "codex")
+        XCTAssertNil(session.effectiveAISessionId)
+    }
+
     func testRestoreFallsBackToLegacySelectedIndexWhenTabIDIsMissing() {
         storeSavedTabStates([
             SavedTabState(

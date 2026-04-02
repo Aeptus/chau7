@@ -317,9 +317,10 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.28 | 2026-04-02 | Codex resume metadata now clears claimed stale explicit session IDs when no deterministic replacement exists, preventing repeated save/restore conflicts across same-repo tabs |
+| 0.5.27 | 2026-04-02 | Tab-style delivery now revalidates stale explicit tab IDs against an exact live session match before failing, so banners can still highlight the recovered tab after window/tab registration drift |
+| 0.5.26 | 2026-04-02 | Authoritative Claude notification events now keep exact runtime/session binding only, and fail closed instead of inheriting heuristic tab resolution when the owning tab is ambiguous |
 | 0.5.25 | 2026-04-02 | Amp is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
-| 0.5.26 | 2026-04-02 | Tab-style delivery now revalidates stale explicit tab IDs against an exact live session match before failing, so banners can still highlight the recovered tab after window/tab registration drift |
-| 0.5.25 | 2026-04-02 | Authoritative Claude notification events now keep exact runtime/session binding only, and fail closed instead of inheriting heuristic tab resolution when the owning tab is ambiguous |
 | 0.5.24 | 2026-04-02 | Mentat is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
 | 0.5.23 | 2026-04-02 | Goose is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
 | 0.5.22 | 2026-04-02 | Devin is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |

@@ -816,21 +816,32 @@ final class OverlayTabsModel: ObservableObject {
         let referenceDate = Self.normalizedResumeReferenceDate(session.lastOutputDate)
         let detectedApp = Self.detectAIAppName(fromOutput: outputHint)
         let resumeAppName = session.aiDisplayAppName ?? detectedApp
+        let explicitProvider = session.effectiveAIProvider
+        let explicitSessionId = session.effectiveAISessionId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasClaimedExplicitCodexSession = explicitProvider == "codex"
+            && explicitSessionId.map { claimedSessionIds.contains($0) } == true
 
         if let resolved = Self.resolveAIResumeMetadata(
             appName: resumeAppName,
             directory: directory,
             outputHint: outputHint,
-            explicitAIProvider: session.effectiveAIProvider,
-            explicitAISessionId: session.effectiveAISessionId,
+            explicitAIProvider: explicitProvider,
+            explicitAISessionId: explicitSessionId,
             referenceDate: referenceDate,
             claimedSessionIds: claimedSessionIds
         ) {
+            if explicitProvider == "codex",
+               explicitSessionId != resolved.sessionId {
+                session.restoreAIMetadata(provider: resolved.provider, sessionId: resolved.sessionId)
+                Log.info(
+                    "saveTabState: replaced Codex resume metadata sessionId=\(explicitSessionId ?? "nil") with \(resolved.sessionId)"
+                )
+            }
             return resolved
         }
 
         let inferredProvider = Self.normalizedAIProvider(from: resumeAppName)
-        guard inferredProvider == "codex" || session.effectiveAIProvider == "codex" else {
+        guard inferredProvider == "codex" || explicitProvider == "codex" else {
             return nil
         }
 
@@ -867,9 +878,18 @@ final class OverlayTabsModel: ObservableObject {
             } else {
                 Log.info(logMessage)
             }
+            if hasClaimedExplicitCodexSession {
+                Log.info(
+                    "saveTabState: clearing claimed Codex resume metadata sessionId=\(explicitSessionId ?? "nil") for dir=\(directory)"
+                )
+                session.restoreAIMetadata(provider: "codex", sessionId: nil)
+            }
             return nil
         }
 
+        if explicitSessionId != sessionId || explicitProvider != "codex" {
+            session.restoreAIMetadata(provider: "codex", sessionId: sessionId)
+        }
         Log.trace("saveTabState: recovered Codex resume metadata from observed history for dir=\(directory)")
         return (provider: "codex", sessionId: sessionId)
     }
