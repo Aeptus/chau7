@@ -369,6 +369,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     var pendingWaitingInputFallbackArmed = false
     var pendingWaitingInputFallbackSawLiveOutput = false
     var suppressWaitingInputFallbackUntilNextUserCommand = false
+    var didLogRestoreSuppressionOnce = false
     var deliveredSystemResumePrefillSinceLastUserCommand = false
     var outputLatencySampleCount = 0
     var outputLatencyTotalMs: Double = 0
@@ -944,6 +945,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         repoBranchCancellable?.cancel()
         searchUpdateWorkItem?.cancel()
 
+        // Capture telemetry buffer before sending exit — the view may detach
+        // before handleProcessTermination fires, losing the buffer snapshot.
+        finishAILogging(exitCode: nil)
+
         // Send exit to the shell (works with both backends)
         activeTerminalView?.send(txt: "exit\n")
         scheduleForcedTerminationIfNeeded()
@@ -1044,15 +1049,39 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let currentPID = existingRustTerminalView?.shellPid ?? 0
         guard currentPID == expectedPID, currentPID > 0 else { return }
 
+        // Stage 1: SIGINT — gives the process a chance to handle Ctrl+C gracefully
         Log.warn("Force-terminating shell process group for session '\(title)' (pid=\(currentPID))")
+        sendTerminationSignal(SIGINT, toShellPID: currentPID)
+
+        // Stage 2: SIGTERM after 2s — standard termination request
+        let isAISession = activeAppName != nil
+        let sigtermDelay: TimeInterval = isAISession ? 2.0 : 0.5
+        let sigterm = DispatchWorkItem { [weak self] in
+            self?.escalateToSIGTERM(expectedPID: expectedPID)
+        }
+        forcedTerminationWorkItem = sigterm
+        DispatchQueue.main.asyncAfter(deadline: .now() + sigtermDelay, execute: sigterm)
+    }
+
+    private func escalateToSIGTERM(expectedPID: pid_t) {
+        var shouldForce = false
+        terminationStateQueue.sync {
+            shouldForce = closeSessionRequested && !didHandleProcessTermination
+        }
+        guard shouldForce else { return }
+
+        let currentPID = existingRustTerminalView?.shellPid ?? 0
+        guard currentPID == expectedPID, currentPID > 0 else { return }
+
+        Log.warn("Shell process group survived SIGINT; sending SIGTERM (pid=\(currentPID))")
         sendTerminationSignal(SIGTERM, toShellPID: currentPID)
 
-        let escalationDelay: TimeInterval = activeAppName != nil ? 2.0 : 0.5
+        // Stage 3: SIGKILL after 3s more — unconditional kill
         let hardKill = DispatchWorkItem { [weak self] in
             self?.forceKillShellProcessGroupIfNeeded(expectedPID: expectedPID)
         }
         forcedTerminationWorkItem = hardKill
-        DispatchQueue.main.asyncAfter(deadline: .now() + escalationDelay, execute: hardKill)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: hardKill)
     }
 
     private func forceKillShellProcessGroupIfNeeded(expectedPID: pid_t) {
@@ -1065,7 +1094,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let currentPID = existingRustTerminalView?.shellPid ?? 0
         guard currentPID == expectedPID, currentPID > 0 else { return }
 
-        Log.error("Shell process group still alive after SIGTERM; sending SIGKILL (pid=\(currentPID))")
+        Log.error("Shell process group still alive after SIGINT+SIGTERM; sending SIGKILL (pid=\(currentPID))")
         sendTerminationSignal(SIGKILL, toShellPID: currentPID)
     }
 
