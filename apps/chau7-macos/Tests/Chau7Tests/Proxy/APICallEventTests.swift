@@ -17,7 +17,7 @@ final class APICallEventTests: XCTestCase {
         let sources: [AIEventSource] = [
             .eventsLog, .terminalSession, .historyMonitor, .app, .apiProxy,
             .unknown, .shell, .claudeCode, .codex, .gemini, .chatgpt, .cursor, .windsurf,
-            .copilot, .aider, .cline, .continueAI
+            .copilot, .aider, .cline, .cody, .continueAI
         ]
         let rawValues = sources.map { $0.rawValue }
         XCTAssertEqual(rawValues.count, Set(rawValues).count, "All event sources should have unique raw values")
