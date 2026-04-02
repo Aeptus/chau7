@@ -88,6 +88,8 @@ public struct RuntimeSessionStateMachine: Sendable {
         case (.busy, .tabClosed): return .stopped
         // awaitingApproval
         case (.awaitingApproval, .approvalResolved): return .busy
+        case (.awaitingApproval, .turnCompleted): return .ready
+        case (.awaitingApproval, .approvalNeeded): return .awaitingApproval
         case (.awaitingApproval, .interrupted): return .interrupted
         case (.awaitingApproval, .tabClosed): return .stopped
         // waitingInput
