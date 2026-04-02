@@ -247,11 +247,18 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// (from a wrong restore) but output detection identifies "Codex",
     /// the Claude session ID in `lastAISessionId` is invalid for Codex.
     func updateLastDetectedApp(_ app: String) {
+        let oldEffective = effectiveAIProvider
         lastDetectedAppName = app
         if let newProvider = AIResumeParser.normalizeProviderName(app),
            let oldProvider = AIResumeParser.normalizeProviderName(lastAIProvider ?? ""),
            newProvider != oldProvider {
             lastAISessionId = nil
+        }
+        // Trigger view update when the effective provider changes (e.g., restored
+        // as Codex but live detection now sees Claude). effectiveAIProvider is
+        // computed from non-@Published state, so SwiftUI won't notice otherwise.
+        if effectiveAIProvider != oldEffective {
+            objectWillChange.send()
         }
     }
 
