@@ -237,6 +237,12 @@ public enum NotificationTriggerCatalog {
             sortOrder: 21
         ),
         NotificationTriggerSourceInfo(
+            id: .gemini,
+            labelKey: "notifications.source.gemini",
+            labelFallback: "Gemini",
+            sortOrder: 22
+        ),
+        NotificationTriggerSourceInfo(
             id: .cursor,
             labelKey: "notifications.source.cursor",
             labelFallback: "Cursor",
@@ -326,6 +332,7 @@ public enum NotificationTriggerCatalog {
     private static let aiSources: [(source: AIEventSource, name: String, camelCase: String)] = [
         (.claudeCode, "Claude Code", "claudeCode"),
         (.codex, "Codex", "codex"),
+        (.gemini, "Gemini", "gemini"),
         (.cursor, "Cursor", "cursor"),
         (.windsurf, "Windsurf", "windsurf"),
         (.copilot, "GitHub Copilot", "copilot"),

@@ -99,7 +99,7 @@ public enum AIToolRegistry {
             resumeFormat: nil,
             logoAssetName: "gemini-logo",
             tabColorName: "blue",
-            eventSourceRawValue: nil
+            eventSourceRawValue: "gemini"
         ),
         // — ChatGPT (OpenAI) —
         AIToolDefinition(
