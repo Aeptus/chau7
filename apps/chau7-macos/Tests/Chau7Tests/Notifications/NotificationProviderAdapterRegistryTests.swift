@@ -98,6 +98,76 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(canonical.kind, .waitingForInput)
     }
 
+    func testCodexAgentTurnCompleteCanonicalizesToFinished() {
+        let event = AIEvent(
+            source: .codex,
+            type: "agent-turn-complete",
+            rawType: "agent-turn-complete",
+            tool: "Codex",
+            title: "Codex finished",
+            message: "Turn complete",
+            ts: "2026-04-02T00:00:00Z",
+            tabID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(adapted, canonical) = decision else {
+            return XCTFail("Expected Codex turn complete to emit canonical finished")
+        }
+
+        XCTAssertEqual(adapted.type, "finished")
+        XCTAssertEqual(adapted.rawType, "agent-turn-complete")
+        XCTAssertEqual(canonical.kind, .taskFinished)
+        XCTAssertEqual(adapted.reliability, .authoritative)
+    }
+
+    func testCodexApprovalRequestedCanonicalizesToPermission() {
+        let event = AIEvent(
+            source: .codex,
+            type: "approval-requested",
+            rawType: "approval-requested",
+            tool: "Codex",
+            message: "Needs approval",
+            ts: "2026-04-02T00:00:00Z",
+            tabID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"),
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(adapted, canonical) = decision else {
+            return XCTFail("Expected Codex approval event to emit canonical permission")
+        }
+
+        XCTAssertEqual(adapted.type, "permission")
+        XCTAssertEqual(canonical.kind, .permissionRequired)
+    }
+
+    func testCodexFallbackIdlePreservesFallbackReliability() {
+        let event = AIEvent(
+            source: .codex,
+            type: "idle",
+            tool: "Codex",
+            message: "Idle",
+            ts: "2026-04-02T00:00:00Z",
+            sessionID: "thread_123",
+            producer: "history_idle_monitor",
+            reliability: .fallback
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(adapted, canonical) = decision else {
+            return XCTFail("Expected Codex idle event to canonicalize")
+        }
+
+        XCTAssertEqual(adapted.type, "idle")
+        XCTAssertEqual(adapted.reliability, .fallback)
+        XCTAssertEqual(canonical.kind, .idle)
+        XCTAssertEqual(canonical.reliability, .fallback)
+    }
+
     func testUnsupportedGenericAIEventIsDropped() {
         let event = AIEvent(
             source: .runtime,

@@ -344,8 +344,13 @@ public enum AIEventParser {
         let sourceRaw = try getString("source", default: AIEventSource.eventsLog.rawValue)
         let source = AIEventSource(rawValue: sourceRaw)
         let type = try getString("type")
+        let rawType = dict["rawType"] as? String
+            ?? dict["raw_type"] as? String
         let tool = try getString("tool", default: "CLI")
+        let title = dict["title"] as? String
         let message = try getString("message", default: "")
+        let notificationType = dict["notificationType"] as? String
+            ?? dict["notification_type"] as? String
         let ts = try getString("ts", default: DateFormatters.nowISO8601())
 
         let directory = dict["directory"] as? String ?? dict["cwd"] as? String
@@ -364,15 +369,28 @@ public enum AIEventParser {
             sessionID = nil
         }
 
+        let producer = dict["producer"] as? String
+        let reliability: AIEventReliability?
+        if let rawReliability = dict["reliability"] as? String {
+            reliability = AIEventReliability(rawValue: rawReliability)
+        } else {
+            reliability = nil
+        }
+
         return AIEvent(
             source: source,
             type: type,
+            rawType: rawType,
             tool: tool,
+            title: title,
             message: message,
+            notificationType: notificationType,
             ts: ts,
             directory: directory,
             tabID: tabID,
-            sessionID: sessionID
+            sessionID: sessionID,
+            producer: producer,
+            reliability: reliability
         )
     }
 }
