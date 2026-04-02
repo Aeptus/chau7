@@ -86,8 +86,9 @@ struct SplitNodeView: View {
                 repo: repo,
                 onFocus: { onFocus(id) },
                 onClose: { onClosePane(id) },
-                onFileClicked: { path, _ in
-                    onFilePathClicked?(path, nil, nil)
+                onFileClicked: { path, dir in
+                    let absolutePath = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: dir)).path
+                    onFilePathClicked?(absolutePath, nil, nil)
                 }
             )
 
