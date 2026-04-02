@@ -6,10 +6,11 @@ import Chau7Core
 /// Reads Terminal.app preferences from ~/Library/Preferences/com.apple.Terminal.plist
 /// Reads iTerm2 preferences from ~/Library/Preferences/com.googlecode.iterm2.plist
 @MainActor
-final class TerminalMigrationWizard: ObservableObject {
-    @Published var detectedProfiles: [ImportableProfile] = []
-    @Published var importStatus: ImportStatus = .idle
-    @Published var importErrors: [String] = []
+@Observable
+final class TerminalMigrationWizard {
+    var detectedProfiles: [ImportableProfile] = []
+    var importStatus: ImportStatus = .idle
+    var importErrors: [String] = []
 
     enum ImportStatus {
         case idle, scanning, importing, complete, failed

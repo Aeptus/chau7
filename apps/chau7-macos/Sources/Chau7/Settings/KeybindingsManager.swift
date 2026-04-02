@@ -229,10 +229,11 @@ enum KeyAction: String, CaseIterable {
 }
 
 /// Manages keybindings and active bindings
-final class KeybindingsManager: ObservableObject {
+@Observable
+final class KeybindingsManager {
     static let shared = KeybindingsManager()
 
-    @Published private(set) var activeBindings: [KeyBinding] = []
+    private(set) var activeBindings: [KeyBinding] = []
     private var shortcutsSignature = ""
 
     // MARK: - Initialization

@@ -6,13 +6,14 @@ import Chau7Core
 /// Aggregates terminal usage analytics from various data sources.
 /// Queries PersistentHistoryStore for command stats and the API proxy for LLM usage.
 @MainActor
-final class TerminalAnalytics: ObservableObject {
+@Observable
+final class TerminalAnalytics {
     static let shared = TerminalAnalytics()
 
-    @Published var totalCommands = 0
-    @Published var successRate: Double = 0
-    @Published var avgDuration: TimeInterval = 0
-    @Published var topCommands: [FrequentCommand] = []
+    var totalCommands = 0
+    var successRate: Double = 0
+    var avgDuration: TimeInterval = 0
+    var topCommands: [FrequentCommand] = []
 
     var successRateString: String {
         String(format: "%.0f%%", successRate * 100)

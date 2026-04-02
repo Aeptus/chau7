@@ -8,10 +8,11 @@ import Foundation
 /// - Sidebar (if open)
 /// Can be toggled via keyboard shortcut (Cmd+Shift+M) or menu item.
 @MainActor
-final class MinimalMode: ObservableObject {
+@Observable
+final class MinimalMode {
     static let shared = MinimalMode()
 
-    @Published var isEnabled: Bool {
+    var isEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "feature.minimalMode")
             Log.info("Minimal mode: \(isEnabled ? "enabled" : "disabled")")
@@ -20,19 +21,19 @@ final class MinimalMode: ObservableObject {
     }
 
     /// Which elements are hidden in minimal mode
-    @Published var hideTabBar: Bool {
+    var hideTabBar: Bool {
         didSet { UserDefaults.standard.set(hideTabBar, forKey: "minimal.hideTabBar") }
     }
 
-    @Published var hideTitleBar: Bool {
+    var hideTitleBar: Bool {
         didSet { UserDefaults.standard.set(hideTitleBar, forKey: "minimal.hideTitleBar") }
     }
 
-    @Published var hideStatusBar: Bool {
+    var hideStatusBar: Bool {
         didSet { UserDefaults.standard.set(hideStatusBar, forKey: "minimal.hideStatusBar") }
     }
 
-    @Published var hideSidebar: Bool {
+    var hideSidebar: Bool {
         didSet { UserDefaults.standard.set(hideSidebar, forKey: "minimal.hideSidebar") }
     }
 

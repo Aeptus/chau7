@@ -2,7 +2,7 @@ import SwiftUI
 import Chau7Core
 
 struct SSHProfilesSettingsView: View {
-    @ObservedObject private var manager = SharedSSHProfileManager.shared
+    private var manager = SharedSSHProfileManager.shared
     @ObservedObject private var sshManager = SSHConnectionManager.shared
     @State private var showImportConfirmation = false
     @State private var selectedEntry: SSHConfigEntry?

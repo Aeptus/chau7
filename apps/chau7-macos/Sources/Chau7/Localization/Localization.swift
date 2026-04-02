@@ -80,13 +80,14 @@ enum AppLanguage: String, CaseIterable, Identifiable, Codable {
 
 // MARK: - Localization Manager
 
-final class LocalizationManager: ObservableObject {
+@Observable
+final class LocalizationManager {
     static let shared = LocalizationManager()
 
     /// Incremented on every language change to force SwiftUI view updates
-    @Published private(set) var refreshToken = 0
+    private(set) var refreshToken = 0
 
-    @Published var currentLanguage: AppLanguage {
+    var currentLanguage: AppLanguage {
         didSet {
             UserDefaults.standard.set(currentLanguage.rawValue, forKey: "appLanguage")
             updateBundle()
@@ -194,7 +195,7 @@ extension LocalizationManager {
 
 /// View modifier that applies correct layout direction based on current language
 struct LocalizedLayoutModifier: ViewModifier {
-    @ObservedObject private var localization = LocalizationManager.shared
+    private var localization = LocalizationManager.shared
 
     func body(content: Content) -> some View {
         content
@@ -204,7 +205,7 @@ struct LocalizedLayoutModifier: ViewModifier {
 
 /// View modifier that forces re-render when language changes
 struct LocalizedViewModifier: ViewModifier {
-    @ObservedObject private var localization = LocalizationManager.shared
+    private var localization = LocalizationManager.shared
 
     func body(content: Content) -> some View {
         content

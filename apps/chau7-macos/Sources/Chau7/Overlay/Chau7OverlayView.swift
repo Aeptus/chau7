@@ -2403,7 +2403,7 @@ struct RenameOverlayView: View {
 
 struct ClipboardHistoryOverlayView: View {
     @ObservedObject var model: OverlayTabsModel
-    @ObservedObject private var clipboardManager = ClipboardHistoryManager.shared
+    var clipboardManager = ClipboardHistoryManager.shared
 
     var body: some View {
         DraggableOverlay(id: "clipboard", workspace: model.overlayWorkspaceIdentifier, maxWidth: OverlayLayout.commandPanelMaxWidth) {
@@ -2520,7 +2520,7 @@ struct ClipboardItemRow: View {
 
 struct BookmarkListOverlayView: View {
     @ObservedObject var model: OverlayTabsModel
-    @ObservedObject private var bookmarkManager = BookmarkManager.shared
+    var bookmarkManager = BookmarkManager.shared
     @State private var newBookmarkLabel = ""
 
     var body: some View {
@@ -2644,7 +2644,7 @@ struct BookmarkRow: View {
 
 struct SnippetManagerOverlayView: View {
     @ObservedObject var model: OverlayTabsModel
-    @ObservedObject private var manager = SnippetManager.shared
+    var manager = SnippetManager.shared
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var query = ""
     @State private var draft = SnippetDraft()

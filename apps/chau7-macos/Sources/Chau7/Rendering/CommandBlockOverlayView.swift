@@ -10,7 +10,7 @@ import Chau7Core
 /// - Blue for currently running
 /// Supports hover tooltips, click-to-scroll, and visual collapse/expand.
 struct CommandBlockOverlayView: View {
-    @ObservedObject var manager: CommandBlockManager
+    var manager: CommandBlockManager
     let tabID: String
     let visibleRowRange: Range<Int>
     let rowHeight: CGFloat

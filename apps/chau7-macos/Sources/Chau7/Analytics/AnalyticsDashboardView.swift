@@ -6,7 +6,7 @@ import Chau7Core
 /// Dashboard view showing terminal usage analytics.
 /// Displays command frequency, timing, error rates, and AI API usage.
 struct AnalyticsDashboardView: View {
-    @ObservedObject var analytics = TerminalAnalytics.shared
+    var analytics = TerminalAnalytics.shared
 
     var body: some View {
         ScrollView {

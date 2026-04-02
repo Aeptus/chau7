@@ -262,11 +262,12 @@ struct SnippetInsertion {
 /// Manages code snippets with support for global, profile, and repository scopes.
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   Background file operations dispatch to main via DispatchQueue.main.async.
-final class SnippetManager: ObservableObject {
+@Observable
+final class SnippetManager {
     static let shared = SnippetManager()
 
-    @Published private(set) var entries: [SnippetEntry] = []
-    @Published private(set) var activeRepoRoot: String?
+    private(set) var entries: [SnippetEntry] = []
+    private(set) var activeRepoRoot: String?
 
     /// Background queue for file I/O operations
     private let queue = DispatchQueue(label: "com.chau7.snippets", qos: .utility)

@@ -6,14 +6,15 @@ import Chau7Core
 /// Monitors Claude Code events and provides real-time updates.
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   Background callbacks dispatch to main via DispatchQueue.main.async.
-final class ClaudeCodeMonitor: ObservableObject {
+@Observable
+final class ClaudeCodeMonitor {
     static let shared = ClaudeCodeMonitor()
 
     // MARK: - Published State
 
-    @Published private(set) var recentEvents: [ClaudeCodeEvent] = []
-    @Published private(set) var activeSessions: [String: ClaudeSessionInfo] = [:]
-    @Published private(set) var isMonitoring = false
+    private(set) var recentEvents: [ClaudeCodeEvent] = []
+    private(set) var activeSessions: [String: ClaudeSessionInfo] = [:]
+    private(set) var isMonitoring = false
 
     // MARK: - Session Info
 

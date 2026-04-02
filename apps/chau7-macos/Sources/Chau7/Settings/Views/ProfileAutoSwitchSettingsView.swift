@@ -3,7 +3,7 @@ import Chau7Core
 
 /// Settings view for configuring automatic profile switching rules.
 struct ProfileAutoSwitchSettingsView: View {
-    @ObservedObject var switcher: ProfileAutoSwitcher
+    var switcher: ProfileAutoSwitcher
     @ObservedObject var settings: FeatureSettings
 
     @State private var showingEditor = false

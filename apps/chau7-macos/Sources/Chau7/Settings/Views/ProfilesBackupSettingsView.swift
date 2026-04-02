@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 struct ProfilesBackupSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
-    @StateObject private var switcher = ProfileAutoSwitcher()
+    @State private var switcher = ProfileAutoSwitcher()
     @State private var showImportSheet = false
     @State private var importError: String?
 

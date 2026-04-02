@@ -4,10 +4,11 @@ import AppKit
 // MARK: - F16: Clipboard History Manager
 
 /// Manages clipboard history with automatic polling and duplicate detection
-final class ClipboardHistoryManager: ObservableObject {
+@Observable
+final class ClipboardHistoryManager {
     static let shared = ClipboardHistoryManager()
 
-    @Published private(set) var items: [ClipboardItem] = []
+    private(set) var items: [ClipboardItem] = []
 
     /// Synchronization lock for thread-safe access to lastChangeCount
     private let lock = NSLock()
