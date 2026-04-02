@@ -5,7 +5,7 @@ import Chau7Core
 /// Provides controls for enabling/disabling config file loading,
 /// viewing the config path, creating defaults, and reloading.
 struct ConfigFileSettingsView: View {
-    @ObservedObject private var watcher = ConfigFileWatcher.shared
+    @Bindable private var watcher = ConfigFileWatcher.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

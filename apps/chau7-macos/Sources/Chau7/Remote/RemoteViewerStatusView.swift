@@ -5,7 +5,7 @@ import SwiftUI
 /// approve/deny buttons for pending viewers, disconnect per viewer,
 /// share link display with copy button, and start/stop sharing toggle.
 struct RemoteViewerStatusView: View {
-    @ObservedObject private var viewerMode = RemoteViewerMode.shared
+    private var viewerMode = RemoteViewerMode.shared
     @State private var showPopover = false
     @State private var copiedLink = false
 

@@ -6,23 +6,24 @@ import Foundation
 /// Polls `RuntimeSessionManager` every 2 seconds to aggregate session data,
 /// detect cross-agent file conflicts, and build a merged event timeline.
 /// Scoped to a single repo group (git root path).
-final class AgentDashboardModel: ObservableObject, Identifiable {
+@Observable
+final class AgentDashboardModel: Identifiable {
     let id = UUID()
     let repoGroupID: String
 
     // MARK: - Published State
 
-    @Published private(set) var agentCards: [AgentCardData] = []
-    @Published private(set) var conflicts: [DashboardConflict] = []
-    @Published private(set) var timeline: [TimelineEntry] = []
-    @Published private(set) var totalTokens = 0
-    @Published private(set) var overallStatus: OverallStatus = .idle
+    private(set) var agentCards: [AgentCardData] = []
+    private(set) var conflicts: [DashboardConflict] = []
+    private(set) var timeline: [TimelineEntry] = []
+    private(set) var totalTokens = 0
+    private(set) var overallStatus: OverallStatus = .idle
 
     // MARK: - Internal Tracking
 
-    private var fileTrackers: [String: SessionFilesTracker] = [:]
-    private var journalCursors: [String: UInt64] = [:]
-    private var refreshTimer: DispatchSourceTimer?
+    @ObservationIgnored private var fileTrackers: [String: SessionFilesTracker] = [:]
+    @ObservationIgnored private var journalCursors: [String: UInt64] = [:]
+    @ObservationIgnored private var refreshTimer: DispatchSourceTimer?
 
     var repoName: String {
         URL(fileURLWithPath: repoGroupID).lastPathComponent

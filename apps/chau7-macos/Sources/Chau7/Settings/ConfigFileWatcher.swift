@@ -8,21 +8,22 @@ import Chau7Core
 ///
 /// Per-repo config overrides global config.
 @MainActor
-final class ConfigFileWatcher: ObservableObject {
+@Observable
+final class ConfigFileWatcher {
     static let shared = ConfigFileWatcher()
 
-    @Published var isEnabled: Bool {
+    var isEnabled: Bool {
         didSet { UserDefaults.standard.set(isEnabled, forKey: "feature.configFile") }
     }
 
-    @Published var globalConfig: Chau7ConfigFile?
-    @Published var repoConfig: Chau7ConfigFile?
-    @Published var repoConfigDirectory: String?
-    @Published var lastLoadTime: Date?
-    @Published var lastError: String?
+    var globalConfig: Chau7ConfigFile?
+    var repoConfig: Chau7ConfigFile?
+    var repoConfigDirectory: String?
+    var lastLoadTime: Date?
+    var lastError: String?
 
-    private var fileMonitorSource: DispatchSourceFileSystemObject?
-    private var fileDescriptor: Int32 = -1
+    @ObservationIgnored private var fileMonitorSource: DispatchSourceFileSystemObject?
+    @ObservationIgnored private var fileDescriptor: Int32 = -1
 
     private var globalConfigPath: String {
         RuntimeIsolation.pathInHome(".chau7/config.toml")
