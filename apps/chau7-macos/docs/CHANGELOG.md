@@ -318,6 +318,7 @@ Initial development release
 | Version | Date | Highlights |
 |---------|------|------------|
 | 0.5.25 | 2026-04-02 | Amp is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
+| 0.5.25 | 2026-04-02 | Authoritative Claude notification events now keep exact runtime/session binding only, and fail closed instead of inheriting heuristic tab resolution when the owning tab is ambiguous |
 | 0.5.24 | 2026-04-02 | Mentat is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
 | 0.5.23 | 2026-04-02 | Goose is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
 | 0.5.22 | 2026-04-02 | Devin is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |

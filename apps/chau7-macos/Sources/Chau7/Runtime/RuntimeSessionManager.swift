@@ -123,6 +123,19 @@ final class RuntimeSessionManager {
         return sessions[runtimeSessionID] ?? recentlyStopped[runtimeSessionID]?.session
     }
 
+    func exactClaudeTabID(sessionID: String, cwd: String?) -> UUID? {
+        guard let normalized = normalizeClaudeSessionID(sessionID) else { return nil }
+
+        if let boundSession = sessionForClaudeSessionID(normalized) {
+            let normalizedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if normalizedCwd == nil || normalizedCwd?.isEmpty == true || boundSession.config.directory == normalizedCwd {
+                return boundSession.tabID
+            }
+        }
+
+        return resolveClaudeTabBySessionID(normalized, cwd: cwd ?? "")
+    }
+
     func allSessions(includeStopped: Bool = false) -> [RuntimeSession] {
         lock.lock()
         defer { lock.unlock() }

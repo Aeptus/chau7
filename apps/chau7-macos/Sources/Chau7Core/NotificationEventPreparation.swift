@@ -37,6 +37,13 @@ public enum NotificationEventPreparation {
             return .proceed(PreparedEvent(event: event, resolutionMethod: "explicit_tab"))
         }
 
+        if NotificationDeliverySemantics.requiresAuthoritativeRouting(event) {
+            return .proceed(PreparedEvent(
+                event: event,
+                resolutionMethod: "awaiting_authoritative_resolution"
+            ))
+        }
+
         guard let tabResolver else {
             return .proceed(PreparedEvent(event: event, resolutionMethod: "unresolved"))
         }

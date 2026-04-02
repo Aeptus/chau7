@@ -25,26 +25,27 @@ final class NotificationEventPreparationTests: XCTestCase {
         XCTAssertEqual(decision, .drop(reason: "Trigger claude_code.finished disabled"))
     }
 
-    func testPrepareResolvesTabForEnabledTrigger() {
+    func testPrepareResolvesTabForEnabledFallbackTrigger() {
         let expectedTabID = UUID()
         let event = AIEvent(
-            source: .claudeCode,
+            source: .historyMonitor,
             type: "finished",
-            tool: "Claude",
+            tool: "Codex",
             message: "done",
             ts: "2026-04-01T00:00:00Z",
             directory: "/tmp/chau7",
-            sessionID: "claude-session-1"
+            sessionID: "session-1",
+            reliability: .fallback
         )
 
         let decision = NotificationEventPreparation.prepare(event, triggerState: NotificationTriggerState()) { target in
             XCTAssertEqual(
                 target,
                 TabTarget(
-                    tool: "Claude",
+                    tool: "Codex",
                     directory: "/tmp/chau7",
                     tabID: nil,
-                    sessionID: "claude-session-1"
+                    sessionID: "session-1"
                 )
             )
             return expectedTabID
@@ -55,6 +56,33 @@ final class NotificationEventPreparationTests: XCTestCase {
             XCTAssertEqual(prepared.resolutionMethod, "resolved_via_tab_resolver")
         } else {
             XCTFail("Expected enabled event to proceed")
+        }
+    }
+
+    func testPrepareLeavesAuthoritativeClaudeEventUnresolvedUntilExactBindingExists() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "finished",
+            tool: "Claude",
+            message: "done",
+            ts: "2026-04-01T00:00:00Z",
+            directory: "/tmp/chau7",
+            sessionID: "claude-session-1",
+            reliability: .authoritative
+        )
+
+        var resolverCallCount = 0
+        let decision = NotificationEventPreparation.prepare(event, triggerState: NotificationTriggerState()) { _ in
+            resolverCallCount += 1
+            return UUID()
+        }
+
+        XCTAssertEqual(resolverCallCount, 0)
+        if case .proceed(let prepared) = decision {
+            XCTAssertNil(prepared.event.tabID)
+            XCTAssertEqual(prepared.resolutionMethod, "awaiting_authoritative_resolution")
+        } else {
+            XCTFail("Expected authoritative Claude event to proceed unresolved")
         }
     }
 

@@ -150,5 +150,42 @@ final class AppModelEventRoutingTests: XCTestCase {
 
         wait(for: [expectationDone], timeout: 1.0)
     }
+
+    func testAuthoritativeClaudeNotificationDoesNotUseGenericTabResolver() {
+        let model = AppModel()
+        var resolverCallCount = 0
+
+        model.tabIDResolver = { _ in
+            resolverCallCount += 1
+            return UUID()
+        }
+
+        let notification = ClaudeCodeEvent(
+            type: .notification,
+            hook: "Notification",
+            sessionId: "claude-session-3",
+            transcriptPath: "/tmp/transcript.jsonl",
+            toolName: "Write",
+            title: "Claude needs your input",
+            message: "Claude is waiting for your input",
+            notificationType: "idle_prompt",
+            cwd: "/tmp/chau7",
+            timestamp: Date()
+        )
+
+        model.handleClaudeCodeMonitorEvent(notification)
+
+        let expectationDone = expectation(description: "authoritative claude event stays unresolved without exact runtime binding")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            let emitted = model.recentEvents.last
+            XCTAssertEqual(resolverCallCount, 0)
+            XCTAssertEqual(emitted?.type, "notification")
+            XCTAssertNil(emitted?.tabID)
+            XCTAssertEqual(emitted?.sessionID, "claude-session-3")
+            expectationDone.fulfill()
+        }
+
+        wait(for: [expectationDone], timeout: 1.0)
+    }
 }
 #endif
