@@ -145,6 +145,42 @@ final class RuntimeSessionManagerTests: XCTestCase {
         XCTAssertEqual(notificationEvents.first?.data?["message"], "Heads up")
     }
 
+    func testAmbiguousClaudeSessionsInSameDirectoryDoNotBindNewSessionByGuessing() {
+        let manager = RuntimeSessionManager.shared
+        let cwd = "/tmp/runtime-ambiguous-\(UUID().uuidString)"
+
+        let first = manager.createSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: cwd, provider: "claude")
+        )
+        XCTAssertNotNil(first.startTurn(prompt: "first prompt"))
+
+        let second = manager.createSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: cwd, provider: "claude")
+        )
+        XCTAssertNotNil(second.startTurn(prompt: "second prompt"))
+
+        manager.handleClaudeEvent(
+            ClaudeCodeEvent(
+                type: .notification,
+                hook: "Notification",
+                sessionId: "claude-session-ambiguous",
+                transcriptPath: "",
+                toolName: "",
+                message: "Needs attention",
+                cwd: cwd,
+                timestamp: Date()
+            )
+        )
+
+        XCTAssertNil(manager.sessionForClaudeSessionID("claude-session-ambiguous"))
+        XCTAssertTrue(notificationEvents(in: first).isEmpty)
+        XCTAssertTrue(notificationEvents(in: second).isEmpty)
+    }
+
     func testUserPromptStartsTurnForAdoptedClaudeSession() {
         let manager = RuntimeSessionManager.shared
         let cwd = "/tmp/runtime-adopted-turn-\(UUID().uuidString)"
@@ -179,6 +215,13 @@ final class RuntimeSessionManagerTests: XCTestCase {
             .events(after: 0, limit: 100)
             .events
             .filter { $0.type == RuntimeEventType.toolUse.rawValue }
+    }
+
+    private func notificationEvents(in session: RuntimeSession) -> [RuntimeEvent] {
+        session.journal
+            .events(after: 0, limit: 100)
+            .events
+            .filter { $0.type == RuntimeEventType.notification.rawValue }
     }
 }
 #endif

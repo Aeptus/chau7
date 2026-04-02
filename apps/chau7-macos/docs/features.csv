@@ -272,6 +272,7 @@ Networking,Configurable Proxy Endpoints,Set custom proxy host and port for API i
 Remote,iPhone Approval Context,Remote approvals and notifications include repo/branch directory recent command and MCP source notes,Shipped,Yes
 Runtime,Shell Backend Argv Escaping,Generic shell backend now shell-escapes each JSON-RPC argument to preserve literal argv boundaries,Shipped,Yes
 Runtime,Claude Session Identity Routing,Runtime Claude events now bind to exact session IDs and preserve multiple same-directory agent tabs without cwd collisions,Shipped,Yes
+Runtime,Claude Ambiguity Fail-Closed,Claude runtime adoption now uses exact tab session metadata first and refuses ambiguous same-repo bindings instead of guessing by cwd,Shipped,Yes
 Remote,Encrypted Relay Control Frames,Remote relay control frames now require encryption after handshake and push POSTs normalize websocket relay URLs to HTTP(S),Shipped,Yes
 Persistence,Stale Window State Cleanup,Termination clears persisted tab/window state and backup files when every overlay window has been hidden or closed,Shipped,Yes
 Notifications,Disabled Single-Action Rules,Notification pipeline now checks action enabled state before using the native showNotification fast path,Shipped,Yes
