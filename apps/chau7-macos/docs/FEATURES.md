@@ -553,6 +553,7 @@ Key patterns:
 
 ## Recent Runtime Safety
 
+- Amp is now treated as a first-class normalized AI notification source, so Amp events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
 - Mentat is now treated as a first-class normalized AI notification source, so Mentat events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
 - Goose is now treated as a first-class normalized AI notification source, so Goose events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
 - Devin is now treated as a first-class normalized AI notification source, so Devin events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.

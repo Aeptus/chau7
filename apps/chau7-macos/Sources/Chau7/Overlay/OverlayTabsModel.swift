@@ -561,6 +561,17 @@ final class OverlayTabsModel: ObservableObject {
         // Repo grouping: subscribe to mode changes and initial auto-group
         setupRepoGrouping()
 
+        // Coalesce restored groups so same-repo tabs are contiguous.
+        // setupRepoGrouping only coalesces in .auto mode, but restored tabs
+        // may have repoGroupIDs in any mode.
+        if restoredPayload != nil {
+            var seen = Set<String>()
+            for tab in tabs {
+                guard let gid = tab.repoGroupID, seen.insert(gid).inserted else { continue }
+                coalesceGroup(repoGroupID: gid)
+            }
+        }
+
         // Start tab bar watchdog immediately (model-owned lifecycle)
         // This ensures the watchdog runs regardless of view lifecycle events
         DispatchQueue.main.async { [weak self] in

@@ -62,6 +62,7 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
     public static let devin = AIEventSource(rawValue: "devin")
     public static let goose = AIEventSource(rawValue: "goose")
     public static let mentat = AIEventSource(rawValue: "mentat")
+    public static let amp = AIEventSource(rawValue: "amp")
     public static let continueAI = AIEventSource(rawValue: "continue_ai")
 
     public static func forProvider(_ provider: String?) -> AIEventSource? {
