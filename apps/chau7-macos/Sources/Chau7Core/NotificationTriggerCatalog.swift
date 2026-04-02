@@ -297,16 +297,22 @@ public enum NotificationTriggerCatalog {
             sortOrder: 29
         ),
         NotificationTriggerSourceInfo(
+            id: .goose,
+            labelKey: "notifications.source.goose",
+            labelFallback: "Goose",
+            sortOrder: 30
+        ),
+        NotificationTriggerSourceInfo(
             id: .continueAI,
             labelKey: "notifications.source.continueAI",
             labelFallback: "Continue",
-            sortOrder: 30
+            sortOrder: 31
         ),
         NotificationTriggerSourceInfo(
             id: .runtime,
             labelKey: "notifications.source.runtime",
             labelFallback: "Runtime Agent",
-            sortOrder: 31
+            sortOrder: 32
         ),
         // App source
         NotificationTriggerSourceInfo(
@@ -366,6 +372,7 @@ public enum NotificationTriggerCatalog {
         (.cody, "Cody", "cody"),
         (.amazonQ, "Amazon Q", "amazonQ"),
         (.devin, "Devin", "devin"),
+        (.goose, "Goose", "goose"),
         (.continueAI, "Continue", "continueAI"),
         (.runtime, "Runtime Agent", "runtime")
     ]

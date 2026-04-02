@@ -112,6 +112,28 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(canonical.kind, .taskFinished)
     }
 
+    func testGooseProviderCanonicalizesThroughGenericAdapter() {
+        let event = AIEvent(
+            source: .goose,
+            type: "finished",
+            rawType: "finished",
+            tool: "Goose",
+            message: "Done",
+            ts: "2026-04-02T00:00:00Z",
+            sessionID: "goose-session-1",
+            producer: "goose_monitor",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(adapted, canonical) = decision else {
+            return XCTFail("Expected Goose event to canonicalize")
+        }
+
+        XCTAssertEqual(adapted.type, "finished")
+        XCTAssertEqual(canonical.kind, .taskFinished)
+    }
+
     func testClaudeNotificationEventMapsToWaitingInput() {
         let event = AIEvent(
             id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,

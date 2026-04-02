@@ -294,4 +294,5 @@ Notifications,Codex Hook Preservation,"Codex notify hook installation preserves 
 Notifications,Codex Tab Identity Correction,"Codex notify-hook events now export the owning overlay tab UUID, and authoritative stale explicit tab IDs are corrected via exact session binding before notification delivery",Shipped,Yes
 Notifications,Amazon Q Normalized Source,"Amazon Q now has a dedicated normalized AI event source with first-class trigger catalog, settings grouping, and timeline/source labels",Shipped,Yes
 Notifications,Devin Normalized Source,"Devin now has a dedicated normalized AI event source with first-class trigger catalog, settings grouping, and timeline/source labels",Shipped,Yes
+Notifications,Goose Normalized Source,"Goose now has a dedicated normalized AI event source with first-class trigger catalog, settings grouping, and timeline/source labels",Shipped,Yes
 Debug,Technology Licenses & Acknowledgments,"In-app help page documenting monorepo layout, languages, Rust crates, bundled binaries, third-party dependencies, system frameworks, and notice files",Shipped,No
