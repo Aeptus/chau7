@@ -89,6 +89,8 @@ extension TerminalSessionModel {
         lastLoggedAt: inout Date?
     ) {
         guard elapsedMs >= thresholdMs else { return }
+        // Skip first few measurements — startup/first-paint is always slow
+        guard samples.count >= 3 else { return }
         let now = Date()
         if let last = lastLoggedAt, now.timeIntervalSince(last) < latencyLogCooldownSeconds {
             return
