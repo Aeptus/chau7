@@ -1,3 +1,4 @@
+import Chau7Core
 import Foundation
 
 /// Observable model for the Repository Pane — provides full git operations.
@@ -20,6 +21,59 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
     // MARK: - Configuration
 
     @Published var directory: String?
+
+    /// Tab UUID — set by SplitPaneController for RuntimeSession lookup.
+    var tabID: UUID?
+
+    // MARK: - Session Mode
+
+    /// Whether the pane is in session-aware mode (agent active/recent).
+    @Published var isSessionMode = false
+    /// Manual override to force full git mode.
+    @Published var forceGitMode = false
+    /// Files the agent touched across all turns (accumulated from journal).
+    @Published var sessionTouchedFiles: Set<String> = []
+    /// Per-file diff stats: additions and deletions.
+    @Published var diffStats: [String: DiffStat] = [:]
+    /// Turn summary for display.
+    @Published var turnSummary: TurnSummaryInfo?
+
+    /// Tracks files across turns by reading the EventJournal.
+    private let sessionTracker = SessionFilesTracker()
+
+    // MARK: - Session File Partitioning
+
+    var sessionStagedFiles: [FileStatus] {
+        stagedFiles.filter { sessionTouchedFiles.contains($0.path) }
+    }
+
+    var sessionUnstagedFiles: [FileStatus] {
+        unstagedFiles.filter { sessionTouchedFiles.contains($0.path) }
+    }
+
+    var sessionUntrackedFiles: [String] {
+        untrackedFiles.filter { sessionTouchedFiles.contains($0) }
+    }
+
+    var otherStagedFiles: [FileStatus] {
+        stagedFiles.filter { !sessionTouchedFiles.contains($0.path) }
+    }
+
+    var otherUnstagedFiles: [FileStatus] {
+        unstagedFiles.filter { !sessionTouchedFiles.contains($0.path) }
+    }
+
+    var otherUntrackedFiles: [String] {
+        untrackedFiles.filter { !sessionTouchedFiles.contains($0) }
+    }
+
+    var sessionChangeCount: Int {
+        sessionStagedFiles.count + sessionUnstagedFiles.count + sessionUntrackedFiles.count
+    }
+
+    var otherChangeCount: Int {
+        otherStagedFiles.count + otherUnstagedFiles.count + otherUntrackedFiles.count
+    }
 
     // MARK: - Branch State
 
@@ -161,12 +215,34 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
             ], dir)
             let stashOutput = gitRunner(["stash", "list"], dir)
 
+            // Diff stats for per-file +N -M display
+            let numstatUnstaged = gitRunner(["diff", "--numstat"], dir)
+            let numstatStaged = gitRunner(["diff", "--cached", "--numstat"], dir)
+
             let parsed = Self.parseStatus(statusOutput)
             let (parsedBranches, parsedDetails) = Self.parseBranchesVerbose(branchOutput)
             let parsedRemoteBranches = Self.parseRemoteBranches(remoteBranchOutput)
             let parsedAheadBehind = Self.parseAheadBehind(aheadBehindOutput)
             let parsedCommits = Self.parseCommitLog(logOutput)
             let parsedStashes = Self.parseStashList(stashOutput)
+            let parsedDiffStats = Self.parseDiffNumstat(numstatUnstaged, numstatStaged)
+
+            // Session tracking: check for RuntimeSession on this tab
+            let tabID = tabID
+            var sessionFiles: Set<String> = []
+            var summary: TurnSummaryInfo?
+            var hasSession = false
+
+            if let tabID {
+                let session = RuntimeSessionManager.shared.sessionForTab(tabID)
+                if let session {
+                    hasSession = true
+                    sessionTracker.gitRoot = dir
+                    sessionTracker.update(from: session.journal)
+                    sessionFiles = sessionTracker.touchedFiles
+                    summary = Self.buildTurnSummary(from: session)
+                }
+            }
 
             DispatchQueue.main.async {
                 self.currentBranch = branch.isEmpty ? nil : branch
@@ -180,6 +256,10 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
                 self.aheadBehind = parsedAheadBehind
                 self.commits = parsedCommits
                 self.stashes = parsedStashes
+                self.diffStats = parsedDiffStats
+                self.sessionTouchedFiles = sessionFiles
+                self.turnSummary = summary
+                self.isSessionMode = hasSession && !self.forceGitMode
                 self.isLoading = false
                 self.lastRefreshDate = Date()
             }
@@ -253,6 +333,84 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
                 self.stashes = stashes
             }
         }
+    }
+
+    // MARK: - Session Operations
+
+    /// Stage only files the agent session touched.
+    func stageSessionChanges() {
+        let files = sessionUnstagedFiles.map(\.path) + sessionUntrackedFiles
+        guard !files.isEmpty else { return }
+        var args = ["add", "--"]
+        args.append(contentsOf: files)
+        runWriteOp(args: args, label: nil) { [weak self] in
+            self?.refreshStatus()
+        }
+    }
+
+    /// Send a prompt to the agent asking for a commit message.
+    func askAgentForCommitMessage() {
+        guard let tabID else { return }
+        let prompt = "/commit\n"
+        _ = TerminalControlService.shared.sendInput(
+            tabID: tabID.uuidString,
+            input: prompt
+        )
+    }
+
+    /// Reset session tracking — call after push ships the work.
+    func resetSessionTracking() {
+        sessionTracker.reset()
+        sessionTouchedFiles = []
+        turnSummary = nil
+    }
+
+    /// Build turn summary from a RuntimeSession.
+    private static func buildTurnSummary(from session: RuntimeSession) -> TurnSummaryInfo {
+        let stats = session.currentTurnStats
+        var toolsUsed: [String: Int] = [:]
+        for (name, tally) in stats.toolTallies {
+            toolsUsed[name] = tally.count
+        }
+        let duration: TimeInterval?
+        if let started = session.lastTurnSubmittedAt {
+            duration = Date().timeIntervalSince(started)
+        } else {
+            duration = nil
+        }
+        return TurnSummaryInfo(
+            turnCount: session.turnCount,
+            toolsUsed: toolsUsed,
+            totalTokens: stats.totalTokens,
+            inputTokens: stats.inputTokens,
+            outputTokens: stats.outputTokens,
+            exitReason: session.lastExitReason,
+            backendName: session.backend.name,
+            sessionState: session.state,
+            duration: duration
+        )
+    }
+
+    // MARK: - Diff Stats Parsing
+
+    /// Parse `git diff --numstat` output. Combines unstaged and staged stats.
+    static func parseDiffNumstat(_ unstaged: String, _ staged: String) -> [String: DiffStat] {
+        var stats: [String: DiffStat] = [:]
+        for line in (unstaged + "\n" + staged).components(separatedBy: "\n") {
+            let parts = line.split(separator: "\t")
+            guard parts.count >= 3 else { continue }
+            guard let additions = Int(parts[0]), let deletions = Int(parts[1]) else { continue }
+            let path = String(parts[2])
+            if let existing = stats[path] {
+                stats[path] = DiffStat(
+                    additions: existing.additions + additions,
+                    deletions: existing.deletions + deletions
+                )
+            } else {
+                stats[path] = DiffStat(additions: additions, deletions: deletions)
+            }
+        }
+        return stats
     }
 
     // MARK: - Write Operations: Staging
@@ -331,6 +489,7 @@ final class RepositoryPaneModel: ObservableObject, Identifiable {
     func push() {
         runWriteOp(args: ["push"], label: "Pushing...") { [weak self] in
             self?.refreshCommitLog()
+            self?.resetSessionTracking()
         }
     }
 
@@ -692,5 +851,40 @@ struct BranchDetail {
     /// Tooltip text for hover.
     var hoverText: String {
         "\(lastCommitHash) \(lastCommitMessage)"
+    }
+}
+
+struct DiffStat {
+    let additions: Int
+    let deletions: Int
+}
+
+struct TurnSummaryInfo {
+    let turnCount: Int
+    let toolsUsed: [String: Int]
+    let totalTokens: Int
+    let inputTokens: Int
+    let outputTokens: Int
+    let exitReason: TurnExitReason?
+    let backendName: String
+    let sessionState: RuntimeSessionStateMachine.State
+    let duration: TimeInterval?
+
+    var formattedTokens: String {
+        if totalTokens > 1000 {
+            return String(format: "%.1fk", Double(totalTokens) / 1000)
+        }
+        return "\(totalTokens)"
+    }
+
+    var formattedDuration: String? {
+        guard let d = duration, d > 0 else { return nil }
+        if d < 60 { return String(format: "%.0fs", d) }
+        let mins = Int(d) / 60
+        let secs = Int(d) % 60
+        if d < 3600 { return "\(mins)m \(secs)s" }
+        let hours = mins / 60
+        let remMins = mins % 60
+        return "\(hours)h \(remMins)m"
     }
 }

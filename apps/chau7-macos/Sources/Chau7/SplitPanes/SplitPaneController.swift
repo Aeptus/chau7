@@ -928,7 +928,14 @@ final class SplitPaneController: ObservableObject {
 
     /// The owning tab's UUID, propagated to new terminal sessions so events
     /// carry a deterministic tabID for the TabResolver fast-path.
-    var ownerTabID: UUID?
+    var ownerTabID: UUID? {
+        didSet {
+            // Stamp tabID on existing repo panes (e.g. after restore)
+            if let repo = root.findFirstRepositoryPane() {
+                repo.tabID = ownerTabID
+            }
+        }
+    }
 
     /// Applies tab-level configuration to current and future terminal sessions.
     /// Used to keep split-created sessions aligned with the parent tab's callbacks.
@@ -1127,6 +1134,7 @@ final class SplitPaneController: ObservableObject {
     /// Splits the focused pane with a repository pane
     func splitWithRepositoryPane(direction: SplitDirection, directory: String) {
         let repo = RepositoryPaneModel()
+        repo.tabID = ownerTabID
         repo.load(directory: directory)
         let newID = UUID()
         let newNode = SplitNode.repositoryPane(id: newID, repo: repo)

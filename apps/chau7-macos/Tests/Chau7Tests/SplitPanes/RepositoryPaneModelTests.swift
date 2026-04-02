@@ -317,4 +317,85 @@ final class RepositoryPaneModelTests: XCTestCase {
         model.historySearchText = ""
         XCTAssertEqual(model.filteredCommits.count, 2)
     }
+
+    // MARK: - Diff Stats Parsing
+
+    func testParseDiffNumstat() {
+        let unstaged = "12\t3\tsrc/main.swift\n5\t0\tREADME.md"
+        let staged = "2\t1\tsrc/main.swift"
+        let stats = RepositoryPaneModel.parseDiffNumstat(unstaged, staged)
+        XCTAssertEqual(stats["src/main.swift"]?.additions, 14) // 12 + 2
+        XCTAssertEqual(stats["src/main.swift"]?.deletions, 4) // 3 + 1
+        XCTAssertEqual(stats["README.md"]?.additions, 5)
+        XCTAssertEqual(stats["README.md"]?.deletions, 0)
+    }
+
+    func testParseDiffNumstatEmpty() {
+        let stats = RepositoryPaneModel.parseDiffNumstat("", "")
+        XCTAssertTrue(stats.isEmpty)
+    }
+
+    // MARK: - Session File Partitioning
+
+    func testSessionFilePartitioning() {
+        let model = RepositoryPaneModel(
+            gitRunner: { _, _ in "" },
+            gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
+        )
+        // Simulate git status
+        model.stagedFiles = [
+            FileStatus(path: "src/main.swift", changeType: .modified, indexStatus: "M", workTreeStatus: " "),
+            FileStatus(path: "package.json", changeType: .modified, indexStatus: "M", workTreeStatus: " ")
+        ]
+        model.unstagedFiles = [
+            FileStatus(path: "tests/test.swift", changeType: .modified, indexStatus: " ", workTreeStatus: "M")
+        ]
+        // Simulate agent touched files
+        model.sessionTouchedFiles = ["src/main.swift", "tests/test.swift"]
+
+        XCTAssertEqual(model.sessionStagedFiles.count, 1)
+        XCTAssertEqual(model.sessionStagedFiles[0].path, "src/main.swift")
+        XCTAssertEqual(model.sessionUnstagedFiles.count, 1)
+        XCTAssertEqual(model.sessionUnstagedFiles[0].path, "tests/test.swift")
+        XCTAssertEqual(model.otherStagedFiles.count, 1)
+        XCTAssertEqual(model.otherStagedFiles[0].path, "package.json")
+        XCTAssertEqual(model.sessionChangeCount, 2)
+        XCTAssertEqual(model.otherChangeCount, 1)
+    }
+
+    // MARK: - Turn Summary
+
+    func testTurnSummaryFormatting() {
+        let summary = TurnSummaryInfo(
+            turnCount: 3,
+            toolsUsed: ["Edit": 2, "Write": 1],
+            totalTokens: 45200,
+            inputTokens: 33000,
+            outputTokens: 12200,
+            exitReason: nil,
+            backendName: "claude",
+            sessionState: .ready,
+            duration: 154
+        )
+        XCTAssertEqual(summary.formattedTokens, "45.2k")
+        XCTAssertEqual(summary.formattedDuration, "2m 34s")
+    }
+
+    func testPushResetsSessionTracking() {
+        let model = RepositoryPaneModel(
+            gitRunner: { _, _ in "" },
+            gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
+        )
+        model.sessionTouchedFiles = ["a.swift", "b.swift"]
+        model.turnSummary = TurnSummaryInfo(
+            turnCount: 1, toolsUsed: [:], totalTokens: 0,
+            inputTokens: 0, outputTokens: 0, exitReason: nil,
+            backendName: "claude", sessionState: .ready, duration: nil
+        )
+
+        model.resetSessionTracking()
+
+        XCTAssertTrue(model.sessionTouchedFiles.isEmpty)
+        XCTAssertNil(model.turnSummary)
+    }
 }

@@ -1,3 +1,4 @@
+import Chau7Core
 import SwiftUI
 
 /// Full git operations pane — status, stage, commit, branches, stash, history.
@@ -31,6 +32,20 @@ struct RepositoryPaneView: View {
 
             if repo.isLoading, repo.commits.isEmpty {
                 loadingView
+            } else if repo.isSessionMode {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        errorBanner
+                        progressBanner
+                        sessionChangesSection
+                        commitSection
+                        turnSummarySection
+                        if repo.otherChangeCount > 0 {
+                            otherChangesSection
+                        }
+                    }
+                    .padding(10)
+                }
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
@@ -102,12 +117,37 @@ struct RepositoryPaneView: View {
                 }
             }
 
-            Text(repo.repoName)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            if repo.isSessionMode, let summary = repo.turnSummary {
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(sessionStateColor(summary.sessionState))
+                        .frame(width: 6, height: 6)
+                    Text(summary.backendName.capitalized)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text(repo.repoName)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
 
             Spacer()
+
+            // Session/Git mode toggle
+            if repo.turnSummary != nil {
+                Button {
+                    repo.forceGitMode.toggle()
+                    repo.isSessionMode = !repo.forceGitMode
+                } label: {
+                    Text(repo.isSessionMode ? "Git" : "Session")
+                        .font(.system(size: 9))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.blue)
+                .help(repo.isSessionMode ? "Switch to full git view" : "Switch to session view")
+            }
 
             Button {
                 repo.refreshAll()
@@ -253,6 +293,201 @@ struct RepositoryPaneView: View {
         repo.stagedFiles.count + repo.unstagedFiles.count + repo.untrackedFiles.count + repo.conflictedFiles.count
     }
 
+    // MARK: - Session Changes Section
+
+    @State private var sessionChangesExpanded = true
+    @State private var otherChangesExpanded = false
+    @State private var turnSummaryExpanded = false
+
+    private var sessionChangesSection: some View {
+        collapsibleSection(title: "Session Changes", count: repo.sessionChangeCount, isExpanded: $sessionChangesExpanded) {
+            VStack(alignment: .leading, spacing: 2) {
+                if !repo.sessionStagedFiles.isEmpty {
+                    sectionLabel("STAGED", color: .green)
+                    ForEach(repo.sessionStagedFiles) { file in
+                        sessionFileRow(file, staged: true)
+                    }
+                }
+
+                if !repo.sessionUnstagedFiles.isEmpty {
+                    sectionLabel("MODIFIED", color: .orange)
+                    ForEach(repo.sessionUnstagedFiles) { file in
+                        sessionFileRow(file, staged: false)
+                    }
+                }
+
+                if !repo.sessionUntrackedFiles.isEmpty {
+                    sectionLabel("NEW", color: .green)
+                    ForEach(repo.sessionUntrackedFiles, id: \.self) { file in
+                        untrackedRow(file)
+                    }
+                }
+
+                if repo.sessionChangeCount > 0 {
+                    Button("Stage All Session Changes") {
+                        repo.stageSessionChanges()
+                    }
+                    .font(.system(size: 10))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.blue)
+                    .padding(.top, 4)
+                }
+
+                if repo.sessionChangeCount == 0 {
+                    Text("No changes from this session")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .italic()
+                }
+            }
+        }
+    }
+
+    private var otherChangesSection: some View {
+        collapsibleSection(title: "Other Changes", count: repo.otherChangeCount, isExpanded: $otherChangesExpanded) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(repo.otherStagedFiles) { file in
+                    fileRow(file, staged: true)
+                }
+                ForEach(repo.otherUnstagedFiles) { file in
+                    fileRow(file, staged: false)
+                }
+                ForEach(repo.otherUntrackedFiles, id: \.self) { file in
+                    untrackedRow(file)
+                }
+            }
+            .opacity(0.7)
+        }
+    }
+
+    // MARK: - Turn Summary Section
+
+    private var turnSummarySection: some View {
+        collapsibleSection(title: "Turn Summary", isExpanded: $turnSummaryExpanded) {
+            if let summary = repo.turnSummary {
+                VStack(alignment: .leading, spacing: 4) {
+                    // Tools used
+                    if !summary.toolsUsed.isEmpty {
+                        HStack(spacing: 4) {
+                            Text("Tools:")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                            Text(summary.toolsUsed.map { "\($0.key)(\($0.value))" }.joined(separator: " "))
+                                .font(.system(size: 9, design: .monospaced))
+                        }
+                    }
+
+                    // Tokens
+                    HStack(spacing: 8) {
+                        Text("Tokens:")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        Text("\(formatTokenCount(summary.inputTokens)) in")
+                            .font(.system(size: 9, design: .monospaced))
+                        Text("\(formatTokenCount(summary.outputTokens)) out")
+                            .font(.system(size: 9, design: .monospaced))
+                    }
+
+                    // Duration + exit
+                    HStack(spacing: 8) {
+                        if let duration = summary.formattedDuration {
+                            Text("Duration: \(duration)")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                        if let exit = summary.exitReason {
+                            Text("Exit: \(exit.rawValue)")
+                                .font(.system(size: 10))
+                                .foregroundStyle(exit == .success ? .green : .orange)
+                        }
+                    }
+
+                    // Turn count
+                    Text("Turns: \(summary.turnCount)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Session File Row (enhanced with diff stats)
+
+    private func sessionFileRow(_ file: FileStatus, staged: Bool) -> some View {
+        HStack(spacing: 6) {
+            Button {
+                if staged {
+                    repo.unstageFile(file.path)
+                } else {
+                    repo.stageFile(file.path)
+                }
+            } label: {
+                Image(systemName: staged ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 11))
+                    .foregroundStyle(staged ? .green : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            Image(systemName: file.changeType.icon)
+                .font(.system(size: 9))
+                .foregroundStyle(colorForType(file.changeType))
+                .frame(width: 12)
+
+            Text(file.path)
+                .font(.system(size: 10))
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Spacer()
+
+            // Diff stats
+            if let stat = repo.diffStats[file.path] {
+                HStack(spacing: 2) {
+                    if stat.additions > 0 {
+                        Text("+\(stat.additions)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.green)
+                    }
+                    if stat.deletions > 0 {
+                        Text("-\(stat.deletions)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+
+            Text(file.changeType.rawValue)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 1)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            if let dir = repo.directory {
+                onFileClicked?(file.path, dir)
+            }
+        }
+    }
+
+    private func formatTokenCount(_ count: Int) -> String {
+        if count > 1000 {
+            return String(format: "%.1fk", Double(count) / 1000)
+        }
+        return "\(count)"
+    }
+
+    private func sessionStateColor(_ state: RuntimeSessionStateMachine.State) -> Color {
+        switch state {
+        case .ready: return .green
+        case .busy: return .orange
+        case .awaitingApproval, .waitingInput: return .yellow
+        case .interrupted: return .orange
+        case .failed: return .red
+        case .stopped: return .gray
+        case .starting: return .blue
+        }
+    }
+
     // MARK: - Commit Section
 
     private var commitSection: some View {
@@ -300,6 +535,18 @@ struct RepositoryPaneView: View {
                     Toggle("Amend", isOn: $repo.isAmend)
                         .toggleStyle(.checkbox)
                         .font(.system(size: 10))
+
+                    if repo.isSessionMode {
+                        Button {
+                            repo.askAgentForCommitMessage()
+                        } label: {
+                            Label("Ask Agent", systemImage: "bubble.left.and.text.bubble.right")
+                                .font(.system(size: 9))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .help("Ask the AI agent to suggest a commit message")
+                    }
 
                     Spacer()
 

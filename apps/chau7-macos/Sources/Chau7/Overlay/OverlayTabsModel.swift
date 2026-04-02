@@ -434,6 +434,7 @@ final class OverlayTabsModel: ObservableObject {
     var lastWatchdogReason = ""
     /// Timer for watchdog that checks tab bar health
     var tabBarWatchdogTimer: DispatchSourceTimer?
+    var consecutiveHealthyChecks = 0
     /// Counter to limit consecutive watchdog refresh attempts
     var watchdogRefreshAttempts = 0
     /// Minimum acceptable tab bar width per tab (for visibility detection)
@@ -505,6 +506,7 @@ final class OverlayTabsModel: ObservableObject {
     var ctoFlagObserver: NSObjectProtocol?
     var renderSuspensionObserver: NSObjectProtocol?
     var suspensionDebounceItem: DispatchWorkItem?
+    var ctoFlagDebounceItem: DispatchWorkItem?
     var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
 
     weak var overlayWindow: NSWindow?
@@ -599,7 +601,13 @@ final class OverlayTabsModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.objectWillChange.send()
+            guard let self else { return }
+            ctoFlagDebounceItem?.cancel()
+            let item = DispatchWorkItem { [weak self] in
+                self?.objectWillChange.send()
+            }
+            self.ctoFlagDebounceItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: item)
         }
 
         self.renderSuspensionObserver = NotificationCenter.default.addObserver(
@@ -1641,19 +1649,29 @@ final class OverlayTabsModel: ObservableObject {
     /// Starts the tab bar watchdog timer.
     /// The watchdog periodically checks if the view is rendering all tabs.
     func startTabBarWatchdog() {
-        // Prevent duplicate timers
-        guard tabBarWatchdogTimer == nil else {
-            Log.info("TabBar watchdog: already running, skipping start")
-            return
-        }
+        guard tabBarWatchdogTimer == nil else { return }
+        consecutiveHealthyChecks = 0
+        scheduleWatchdog(interval: 3.0)
+        Log.info("TabBar watchdog: started")
+    }
+
+    /// Reschedule the watchdog at a new interval.
+    private func scheduleWatchdog(interval: TimeInterval) {
+        tabBarWatchdogTimer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 3.0, repeating: 3.0)
+        timer.schedule(deadline: .now() + interval, repeating: interval, leeway: .seconds(1))
         timer.setEventHandler { [weak self] in
             self?.checkTabBarHealth()
         }
         timer.resume()
         tabBarWatchdogTimer = timer
-        Log.info("TabBar watchdog: started")
+    }
+
+    /// Reset watchdog to fast interval (call on tab add/remove/switch).
+    func resetWatchdogToFastInterval() {
+        guard tabBarWatchdogTimer != nil else { return }
+        consecutiveHealthyChecks = 0
+        scheduleWatchdog(interval: 3.0)
     }
 
     /// Stops the tab bar watchdog timer.
@@ -1843,6 +1861,11 @@ final class OverlayTabsModel: ObservableObject {
             emitWatchdogSummaryIfNeeded(now: now)
         } else {
             watchdogRefreshAttempts = 0
+            consecutiveHealthyChecks += 1
+            // Slow down when everything is healthy
+            if consecutiveHealthyChecks >= 3 {
+                scheduleWatchdog(interval: 10.0)
+            }
         }
     }
 
