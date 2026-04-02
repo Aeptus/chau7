@@ -17,7 +17,7 @@ final class APICallEventTests: XCTestCase {
         let sources: [AIEventSource] = [
             .eventsLog, .terminalSession, .historyMonitor, .app, .apiProxy,
             .unknown, .shell, .claudeCode, .codex, .gemini, .chatgpt, .cursor, .windsurf,
-            .copilot, .aider, .cline, .cody, .amazonQ, .devin, .goose, .mentat, .continueAI
+            .copilot, .aider, .cline, .cody, .amazonQ, .devin, .goose, .mentat, .amp, .continueAI
         ]
         let rawValues = sources.map { $0.rawValue }
         XCTAssertEqual(rawValues.count, Set(rawValues).count, "All event sources should have unique raw values")
@@ -219,6 +219,7 @@ final class AIEventSourceExtendedTests: XCTestCase {
         XCTAssertEqual(AIEventSource.forProvider("Devin"), .devin)
         XCTAssertEqual(AIEventSource.forProvider("goose"), .goose)
         XCTAssertEqual(AIEventSource.forProvider("mentat"), .mentat)
+        XCTAssertEqual(AIEventSource.forProvider("amp"), .amp)
         XCTAssertEqual(AIEventSource.forProvider("Aider"), .aider)
         XCTAssertEqual(AIEventSource.forProvider("continue"), .continueAI)
         XCTAssertNil(AIEventSource.forProvider("nonexistent-tool"))

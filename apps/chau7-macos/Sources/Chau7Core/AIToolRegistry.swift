@@ -244,7 +244,7 @@ public enum AIToolRegistry {
             resumeFormat: nil,
             logoAssetName: nil,
             tabColorName: nil,
-            eventSourceRawValue: nil
+            eventSourceRawValue: "amp"
         )
     ]
 

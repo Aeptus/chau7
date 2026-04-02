@@ -296,4 +296,5 @@ Notifications,Amazon Q Normalized Source,"Amazon Q now has a dedicated normalize
 Notifications,Devin Normalized Source,"Devin now has a dedicated normalized AI event source with first-class trigger catalog, settings grouping, and timeline/source labels",Shipped,Yes
 Notifications,Goose Normalized Source,"Goose now has a dedicated normalized AI event source with first-class trigger catalog, settings grouping, and timeline/source labels",Shipped,Yes
 Notifications,Mentat Normalized Source,"Mentat now has a dedicated normalized AI event source with first-class trigger catalog, settings grouping, and timeline/source labels",Shipped,Yes
+Notifications,Amp Normalized Source,"Amp now has a dedicated normalized AI event source with first-class trigger catalog, settings grouping, and timeline/source labels",Shipped,Yes
 Debug,Technology Licenses & Acknowledgments,"In-app help page documenting monorepo layout, languages, Rust crates, bundled binaries, third-party dependencies, system frameworks, and notice files",Shipped,No
