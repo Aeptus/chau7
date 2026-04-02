@@ -2562,7 +2562,9 @@ final class OverlayTabsModel: ObservableObject {
     func applyAutoGroupingToAllTabs() {
         repoGroupCancellables.removeAll()
         for i in tabs.indices {
-            tabs[i].repoGroupID = tabs[i].session?.gitRootPath
+            // Preserve restored repoGroupID when gitRootPath is still nil
+            // (git detection is async and may not have completed yet)
+            tabs[i].repoGroupID = tabs[i].session?.gitRootPath ?? tabs[i].repoGroupID
             if let session = tabs[i].session {
                 observeGitRootForAutoGrouping(tabID: tabs[i].id, session: session)
             }
