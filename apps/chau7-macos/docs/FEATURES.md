@@ -564,6 +564,7 @@ Key patterns:
 - Codex notify hook installation now preserves pre-existing user `notify` commands instead of clobbering them, so Chau7 can subscribe to authoritative Codex turn events without breaking local workflows.
 - Authoritative Codex notify-hook events now keep opaque thread IDs intact for routing, instead of dropping them through the shorter resume-session validator.
 - Codex prompt-return fallback now stays enabled until Chau7 confirms its notify hook is actually installed, preventing silent loss of `waiting_input` when the authoritative path is unavailable.
+- Authoritative Claude notification events now keep exact runtime/session binding only and fail closed when the owning tab is ambiguous, so same-repo Claude sessions no longer inherit heuristic tab resolution during ingress.
 - Codex notify-hook events now export the owning overlay tab UUID instead of the terminal-session UUID, and authoritative stale explicit `tabID` values are corrected via exact session binding before notification delivery, so completed Codex turns target the live tab instead of failing against orphaned IDs.
 - Shell JSON-RPC sessions now preserve argv boundaries when launching the generic shell backend, so quoted user arguments stay literal instead of being reinterpreted by the shell.
 - Claude runtime sessions now keep separate bindings for same-directory agent tabs, so tool events, approval prompts, and finished notifications stay attached to the correct tab after another session opens in the same repo.

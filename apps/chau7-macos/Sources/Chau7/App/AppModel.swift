@@ -1072,7 +1072,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         // when sessionForClaudeSessionID looks it up.
         claudeCodeEvents.trimToLast(50)
 
-        let runtimeTabID = RuntimeSessionManager.shared.sessionForClaudeSessionID(event.sessionId)?.tabID
+        let directory = event.cwd.isEmpty ? nil : event.cwd
+        let runtimeTabID = resolveAuthoritativeClaudeTabID(sessionID: event.sessionId, directory: directory)
         let aiEvent = AIEvent(
             source: .claudeCode,
             type: event.type.rawValue,
@@ -1082,13 +1083,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             message: event.message,
             notificationType: event.notificationType,
             ts: DateFormatters.iso8601.string(from: event.timestamp),
-            directory: event.cwd.isEmpty ? nil : event.cwd,
-            tabID: runtimeTabID ?? resolveTabID(
-                toolName: "Claude",
-                directory: event.cwd.isEmpty ? nil : event.cwd,
-                tabID: nil,
-                sessionID: event.sessionId.isEmpty ? nil : event.sessionId
-            ),
+            directory: directory,
+            tabID: runtimeTabID,
             sessionID: event.sessionId.isEmpty ? nil : event.sessionId,
             producer: "claude_code_monitor",
             reliability: .authoritative
@@ -1111,15 +1107,23 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         Log.info("Claude Code session idle: \(session.projectName) (\(session.id.prefix(8)))")
         cancelPendingClaudeWaitingInputFallback(sessionID: session.id)
         syncClaudeCodeSessions()
-        recordEvent(
-            source: .claudeCode, type: "idle", tool: "Claude",
+        let directory = session.cwd.isEmpty ? nil : session.cwd
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "idle",
+            tool: "Claude",
             message: "Waiting for input in \(session.projectName)",
-            notify: true,
-            directory: session.cwd.isEmpty ? nil : session.cwd,
+            ts: DateFormatters.nowISO8601(),
+            directory: directory,
+            tabID: resolveAuthoritativeClaudeTabID(sessionID: session.id, directory: directory),
             sessionID: session.id,
             producer: "claude_code_idle",
             reliability: .authoritative
         )
+        Log.info("Recorded event: type=idle tool=Claude message=\"\(event.message)\"")
+        DispatchQueue.main.async { [weak self] in
+            self?.publishUnifiedEvent(event, notify: true)
+        }
     }
 
     func handleClaudeCodeResponseComplete(_ event: ClaudeCodeEvent) {
@@ -1138,13 +1142,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             pendingClaudeWaitingInputFallbacks.removeValue(forKey: sessionID)
 
             let directory = event.cwd.isEmpty ? nil : event.cwd
-            let runtimeTabID = RuntimeSessionManager.shared.sessionForClaudeSessionID(sessionID)?.tabID
-            let tabID = runtimeTabID ?? resolveTabID(
-                toolName: "Claude",
-                directory: directory,
-                tabID: nil,
-                sessionID: sessionID
-            )
+            let tabID = resolveAuthoritativeClaudeTabID(sessionID: sessionID, directory: directory)
             let location = event.projectName == "Unknown" ? "Claude" : event.projectName
             let fallbackEvent = AIEvent(
                 source: .claudeCode,
@@ -1174,6 +1172,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         let trimmed = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         pendingClaudeWaitingInputFallbacks.removeValue(forKey: trimmed)?.cancel()
+    }
+
+    private func resolveAuthoritativeClaudeTabID(sessionID: String, directory: String?) -> UUID? {
+        RuntimeSessionManager.shared.exactClaudeTabID(sessionID: sessionID, cwd: directory)
     }
 
     private var pendingSyncWork: DispatchWorkItem?
