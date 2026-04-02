@@ -62,12 +62,23 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertEqual(state.phase, .scanning)
     }
 
-    func testHandleOutputMatchOverridesRestored() {
+    func testHandleOutputMatchConfirmsRestored() {
         var state = AIDetectionState()
         state.handleRestore(appName: "Codex")
-        state.handleOutputMatch(appName: "Claude")
-        XCTAssertEqual(state.currentApp, "Claude")
+        // Same provider confirms live detection
+        state.handleOutputMatch(appName: "Codex")
+        XCTAssertEqual(state.currentApp, "Codex")
         XCTAssertFalse(state.isRestored)
+    }
+
+    func testHandleOutputMatchRejectsDifferentProviderWhenRestored() {
+        var state = AIDetectionState()
+        state.handleRestore(appName: "Codex")
+        // Different provider is rejected (prevents hijacking from output content)
+        let changed = state.handleOutputMatch(appName: "Claude")
+        XCTAssertFalse(changed)
+        XCTAssertTrue(state.isRestored)
+        XCTAssertEqual(state.currentApp, "Codex")
     }
 
     func testHandleOutputMatchRejectsDifferentProviderWhenToolAlreadyKnown() {
@@ -189,8 +200,8 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertEqual(state.currentApp, "Claude")
         XCTAssertTrue(state.isRestored)
         XCTAssertEqual(state.phase, .restored)
-        // Restored sessions don't set lastDetectedApp
-        XCTAssertNil(state.lastDetectedApp)
+        // Restored sessions set lastDetectedApp to prevent output hijacking
+        XCTAssertEqual(state.lastDetectedApp, "Claude")
     }
 
     func testPromptReturnFromRestoredKeepsDimmedLogo() {
@@ -206,19 +217,29 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertEqual(state.phase, .restored)
     }
 
-    func testRestoredSessionCanBeOverriddenByOutputAfterPromptReturn() {
+    func testRestoredSessionRejectsOtherProviderOutputAfterPromptReturn() {
         var state = AIDetectionState()
         state.handleRestore(appName: "Codex")
         state.handlePromptReturn()
-        // Still restored with nil currentApp — output scanning should work
         XCTAssertTrue(state.isRestored)
         XCTAssertNil(state.currentApp)
 
-        // Live detection overrides the restored session
-        state.handleOutputMatch(appName: "Claude")
+        // Different provider via output is rejected (prevents hijacking)
+        XCTAssertFalse(state.handleOutputMatch(appName: "Claude"))
+        XCTAssertTrue(state.isRestored)
+        XCTAssertNil(state.currentApp)
+
+        // Same provider confirms live detection
+        state.handleOutputMatch(appName: "Codex")
+        XCTAssertFalse(state.isRestored)
+        XCTAssertEqual(state.currentApp, "Codex")
+        XCTAssertEqual(state.phase, .detected)
+
+        // Command-level detection CAN switch providers (high confidence)
+        state.handleRestore(appName: "Codex")
+        state.handleCommand(appName: "Claude")
         XCTAssertFalse(state.isRestored)
         XCTAssertEqual(state.currentApp, "Claude")
-        XCTAssertEqual(state.phase, .detected)
     }
 
     // MARK: - Exit
@@ -344,10 +365,15 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertTrue(state.isRestored)
         XCTAssertEqual(state.currentApp, "Codex")
 
-        // 7. Live detection overrides restore
-        state.handleOutputMatch(appName: "Aider")
+        // 7. Output match for a different provider is rejected (prevents hijacking)
+        XCTAssertFalse(state.handleOutputMatch(appName: "Aider"))
+        XCTAssertTrue(state.isRestored)
+        XCTAssertEqual(state.currentApp, "Codex")
+
+        // 8. Output match for the same provider confirms live detection
+        state.handleOutputMatch(appName: "Codex")
         XCTAssertFalse(state.isRestored)
-        XCTAssertEqual(state.currentApp, "Aider")
+        XCTAssertEqual(state.currentApp, "Codex")
     }
 
     func testCooldownThenRedetectionWithInjectableClock() {
