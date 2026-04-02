@@ -279,6 +279,12 @@ public enum NotificationTriggerCatalog {
             sortOrder: 26
         ),
         NotificationTriggerSourceInfo(
+            id: .cody,
+            labelKey: "notifications.source.cody",
+            labelFallback: "Cody",
+            sortOrder: 27
+        ),
+        NotificationTriggerSourceInfo(
             id: .continueAI,
             labelKey: "notifications.source.continueAI",
             labelFallback: "Continue",
@@ -345,6 +351,7 @@ public enum NotificationTriggerCatalog {
         (.copilot, "GitHub Copilot", "copilot"),
         (.aider, "Aider", "aider"),
         (.cline, "Cline", "cline"),
+        (.cody, "Cody", "cody"),
         (.continueAI, "Continue", "continueAI"),
         (.runtime, "Runtime Agent", "runtime")
     ]

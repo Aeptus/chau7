@@ -745,6 +745,7 @@ final class CommandCenterViewModel: ObservableObject {
         case .copilot: return "Copilot"
         case .aider: return "Aider"
         case .cline: return "Cline"
+        case .cody: return "Cody"
         case .continueAI: return "Continue"
         case .apiProxy: return "API Proxy"
         case .terminalSession: return "Terminal"

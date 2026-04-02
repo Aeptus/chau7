@@ -553,6 +553,7 @@ Key patterns:
 
 ## Recent Runtime Safety
 
+- Cody is now treated as a first-class normalized AI notification source, so Cody events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
 - ChatGPT is now treated as a first-class normalized AI notification source, so ChatGPT events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
 - Gemini is now treated as a first-class normalized AI notification source, so Gemini events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
 - Codex notify hook installation now preserves pre-existing user `notify` commands instead of clobbering them, so Chau7 can subscribe to authoritative Codex turn events without breaking local workflows.
