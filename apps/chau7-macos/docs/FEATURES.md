@@ -561,6 +561,7 @@ Key patterns:
 - Claude runtime adoption now uses exact tab session metadata first and refuses ambiguous same-repo bindings, so notification events fail closed instead of lighting the wrong Claude tab.
 - Pre-release DMG packaging now defaults to an Apple Silicon artifact with a styled drag-to-install layout, optional universal helpers, and a single bundled copy of the local proxy binary.
 - Restore-time shell maintenance commands now stay tagged as system input so waiting-input suppression survives startup, notification actions report real cross-window success, and bug reports default to the dedicated issues.chau7.sh intake endpoint.
+- The issue-intake relay now serves a lightweight landing page on issues.chau7.sh for browser visits while still accepting app-submitted bug reports at the root POST endpoint.
 - Remote control relay traffic now rejects cleartext control frames after the encrypted session is established, and remote push registration/notify calls normalize websocket relay URLs back to HTTP(S) endpoints before POSTing.
 - On termination, Chau7 clears persisted tab/window state and backup files when every overlay window has been hidden or closed, preventing stale windows from resurrecting on next launch.
 - Notification pipeline optimizations now respect disabled single-action rules instead of promoting them to native default notifications.
