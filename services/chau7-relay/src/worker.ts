@@ -3,6 +3,31 @@ import { isRelaySecretConfigured } from "./auth.js";
 
 export { SessionDO };
 
+const LANDING_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chau7 Issue Relay</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 480px; margin: 80px auto; padding: 0 20px; color: #e0e0e0; background: #1a1a1a; }
+  h1 { font-size: 1.3em; }
+  p { line-height: 1.6; color: #999; }
+  a { color: #6ba3f7; }
+  code { background: #2a2a2a; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+</style>
+</head>
+<body>
+<h1>Chau7 Issue Relay</h1>
+<p>You found the place where <a href="https://chau7.sh">Chau7</a> bug reports land. The app sends them here, we forward them to a private repo, and that's the whole story.</p>
+<p>If you're a human with a browser — hi, but there's genuinely nothing for you here. If you're a JSON payload with a title and a body — step right in.</p>
+<p style="font-size: 0.85em; color: #666; margin-top: -8px;">(When we say "a body" we mean the technical kind. Please do not bring an actual body here. That would be very, very odd and honestly we are not equipped for that.)</p>
+<!-- If you just want to move your body, time for some French Touch: https://www.youtube.com/watch?v=FQlAEiCb8m0 -->
+<p><a href="https://chau7.sh">chau7.sh</a></p>
+</body>
+</html>`;
+
+
 interface Env {
   SESSION: DurableObjectNamespace;
   RELAY_SECRET?: string;
@@ -76,6 +101,33 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
+
+    // Root: issue submission (POST) or landing page (GET)
+    // This is the primary endpoint for issues.chau7.sh
+    if (parts.length === 0 || (parts.length === 1 && parts[0] === "issue")) {
+      if (request.method === "GET") {
+        return new Response(LANDING_HTML, {
+          status: 200,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Max-Age": "86400",
+          },
+        });
+      }
+      if (request.method === "POST") {
+        return handleIssueCreate(request, env);
+      }
+      return new Response("Method Not Allowed", { status: 405 });
+    }
+
     if (parts.length < 2) {
       return new Response("Not Found", { status: 404 });
     }
@@ -111,24 +163,6 @@ export default {
       return stub.fetch(request);
     }
 
-    // POST /issue — create a GitHub issue via server-side PAT.
-    // No auth required (public endpoint), rate-limited by IP.
-    if (action === "issue") {
-      if (request.method === "OPTIONS") {
-        return new Response(null, {
-          status: 204,
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-            "Access-Control-Max-Age": "86400",
-          },
-        });
-      }
-      if (request.method === "POST") {
-        return handleIssueCreate(request, env);
-      }
-    }
 
     return new Response("Not Found", { status: 404 });
   }

@@ -275,6 +275,7 @@ Runtime,Claude Session Identity Routing,Runtime Claude events now bind to exact 
 Runtime,Claude Ambiguity Fail-Closed,Claude runtime adoption now uses exact tab session metadata first and refuses ambiguous same-repo bindings instead of guessing by cwd,Shipped,Yes
 Packaging,Styled Pre-release DMG,"Pre-release DMG builds now default to an Apple Silicon artifact with a styled drag-to-install layout, optional universal helpers, and a single bundled proxy copy",Shipped,Yes
 Notifications,Restore Input Suppression,"Restore-time shell maintenance commands stay tagged as system input so waiting-input suppression survives startup, and notification action delegates now return real cross-window success",Shipped,Yes
+Remote,Issue Intake Landing Page,"issues.chau7.sh now serves a lightweight landing page for browsers while still accepting app-submitted bug reports at the root POST endpoint",Shipped,Yes
 Remote,Encrypted Relay Control Frames,Remote relay control frames now require encryption after handshake and push POSTs normalize websocket relay URLs to HTTP(S),Shipped,Yes
 Persistence,Stale Window State Cleanup,Termination clears persisted tab/window state and backup files when every overlay window has been hidden or closed,Shipped,Yes
 Notifications,Disabled Single-Action Rules,Notification pipeline now checks action enabled state before using the native showNotification fast path,Shipped,Yes
