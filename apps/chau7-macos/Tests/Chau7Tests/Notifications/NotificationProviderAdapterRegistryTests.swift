@@ -134,6 +134,28 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(canonical.kind, .taskFinished)
     }
 
+    func testMentatProviderCanonicalizesThroughGenericAdapter() {
+        let event = AIEvent(
+            source: .mentat,
+            type: "finished",
+            rawType: "finished",
+            tool: "Mentat",
+            message: "Done",
+            ts: "2026-04-02T00:00:00Z",
+            sessionID: "mentat-session-1",
+            producer: "mentat_monitor",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(adapted, canonical) = decision else {
+            return XCTFail("Expected Mentat event to canonicalize")
+        }
+
+        XCTAssertEqual(adapted.type, "finished")
+        XCTAssertEqual(canonical.kind, .taskFinished)
+    }
+
     func testClaudeNotificationEventMapsToWaitingInput() {
         let event = AIEvent(
             id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
