@@ -1447,6 +1447,13 @@ struct Chau7OverlayView: View {
                 }
             }
 
+            // Agent dashboard overlay — shown when a repo group tag is clicked
+            if let groupID = overlayModel.activeDashboardGroupID {
+                AgentDashboardView(model: overlayModel.dashboardModel(for: groupID))
+                    .transition(.opacity)
+                    .zIndex(2)
+            }
+
             if overlayModel.hasActiveOverlay {
                 Color.black.opacity(0.001)
                     .ignoresSafeArea()

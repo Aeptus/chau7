@@ -397,7 +397,25 @@ final class OverlayTabsModel {
     }
 
     var selectedTabID: UUID {
-        didSet { onSelectedTabIDChanged?() }
+        didSet {
+            if activeDashboardGroupID != nil { activeDashboardGroupID = nil }
+            onSelectedTabIDChanged?()
+        }
+    }
+
+    /// When set, the content area shows the agent dashboard for this repo group.
+    var activeDashboardGroupID: String?
+    private var dashboardModels: [String: AgentDashboardModel] = [:]
+
+    func dashboardModel(for repoGroupID: String) -> AgentDashboardModel {
+        if let existing = dashboardModels[repoGroupID] { return existing }
+        let model = AgentDashboardModel(repoGroupID: repoGroupID)
+        model.onSwitchToTab = { [weak self] tabID in
+            self?.activeDashboardGroupID = nil
+            self?.selectTab(id: tabID)
+        }
+        dashboardModels[repoGroupID] = model
+        return model
     }
 
     var isSearchVisible = false
@@ -820,8 +838,8 @@ final class OverlayTabsModel {
         let referenceDate = Self.normalizedResumeReferenceDate(session.lastOutputDate)
         let detectedApp = Self.detectAIAppName(fromOutput: outputHint)
         let resumeAppName = session.aiDisplayAppName ?? detectedApp
-        let explicitProvider = session.effectiveAIProvider
-        let explicitSessionId = session.effectiveAISessionId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let explicitProvider = Self.explicitResumeProvider(for: session)
+        let explicitSessionId = Self.explicitResumeSessionId(for: session)
         let hasClaimedExplicitCodexSession = explicitProvider == "codex"
             && explicitSessionId.map { claimedSessionIds.contains($0) } == true
 
@@ -896,6 +914,14 @@ final class OverlayTabsModel {
         }
         Log.trace("saveTabState: recovered Codex resume metadata from observed history for dir=\(directory)")
         return (provider: "codex", sessionId: sessionId)
+    }
+
+    private static func explicitResumeProvider(for session: TerminalSessionModel) -> String? {
+        normalizedAIProvider(from: session.lastAIProvider)
+    }
+
+    private static func explicitResumeSessionId(for session: TerminalSessionModel) -> String? {
+        normalizeAISessionId(session.lastAISessionId)
     }
 
     /// Build a resume command for an AI session running in the given directory.
@@ -2665,34 +2691,15 @@ final class OverlayTabsModel {
         tabs[idx].repoGroupID = nil
     }
 
-    /// Toggle the agent dashboard tab for a repo group.
-    /// If one exists, focus it. If not, create a new dashboard tab.
+    /// Toggle the agent dashboard overlay for a repo group.
+    /// Click group tag → show dashboard. Click again or click any tab → dismiss.
     func toggleDashboard(for repoGroupID: String) {
-        // Check if a dashboard for this repo already exists
-        if let existing = tabs.first(where: { $0.isDashboard && $0.repoGroupID == repoGroupID }) {
-            selectTab(id: existing.id)
-            return
+        if activeDashboardGroupID == repoGroupID {
+            activeDashboardGroupID = nil
+        } else {
+            _ = dashboardModel(for: repoGroupID)
+            activeDashboardGroupID = repoGroupID
         }
-
-        // Create a new dashboard tab
-        let dashboard = AgentDashboardModel(repoGroupID: repoGroupID)
-        dashboard.onSwitchToTab = { [weak self] tabID in
-            self?.selectTab(id: tabID)
-        }
-        let controller = SplitPaneController(appModel: appModel)
-        let dashboardID = UUID()
-        controller.root = .dashboard(id: dashboardID, dashboard: dashboard)
-        controller.focusedPaneID = dashboardID
-
-        var tab = OverlayTab(appModel: appModel, splitController: controller)
-        tab.customTitle = "Overview"
-        tab.repoGroupID = repoGroupID
-        tab.stampOwnerTabID()
-
-        // Insert near the repo group
-        let insertIdx = tabs.firstIndex(where: { $0.repoGroupID == repoGroupID }) ?? tabs.endIndex
-        tabs.insert(tab, at: insertIdx)
-        selectTab(id: tab.id)
     }
 
     func groupAllSameRepo(asTab tabID: UUID) {
