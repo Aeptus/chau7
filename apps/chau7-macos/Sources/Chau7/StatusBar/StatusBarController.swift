@@ -815,6 +815,7 @@ struct UnifiedTimelineEntry: Identifiable {
 
 // MARK: - Status Bar Panel View
 
+@MainActor
 struct StatusBarPanelView: View {
     @Bindable var viewModel: CommandCenterViewModel
 
@@ -1011,6 +1012,7 @@ struct StatusBarPanelView: View {
 
 // MARK: - Hero Zone
 
+@MainActor
 private struct HeroZoneView: View {
     var viewModel: CommandCenterViewModel
 
