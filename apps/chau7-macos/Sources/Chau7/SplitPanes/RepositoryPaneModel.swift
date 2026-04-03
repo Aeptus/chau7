@@ -151,7 +151,7 @@ final class RepositoryPaneModel: Identifiable {
 
     /// Display name derived from directory.
     var repoName: String {
-        guard let dir = directory else { return "Repository" }
+        guard let dir = directory else { return L("tab.repository", "Repository") }
         return URL(fileURLWithPath: dir).lastPathComponent
     }
 

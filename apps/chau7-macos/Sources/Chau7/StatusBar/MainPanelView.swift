@@ -37,7 +37,7 @@ enum StreamSelection: Hashable, Identifiable {
         case .terminal(let k):
             let name = AIToolRegistry.allTools.first { $0.resumeProviderKey == k }?.displayName ?? k.capitalized
             return "\(name) TTY"
-        case .verbose: return "Verbose"
+        case .verbose: return L("statusbar.verbose", "Verbose")
         }
     }
 

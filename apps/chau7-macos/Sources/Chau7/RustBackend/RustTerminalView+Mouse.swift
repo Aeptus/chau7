@@ -839,11 +839,11 @@ extension RustTerminalView {
         let canAutoFillFromPasswords = NSApp.target(forAction: insertFromPasswordsSelector, to: nil, from: self) != nil
 
         // -- Edit group (standard clipboard operations) --
-        let copyItem = NSMenuItem(title: "Copy", action: #selector(contextCopy), keyEquivalent: "")
+        let copyItem = NSMenuItem(title: L("terminal.context.copy", "Copy"), action: #selector(contextCopy), keyEquivalent: "")
         copyItem.target = self
         copyItem.isEnabled = canCopy
 
-        let pasteItem = NSMenuItem(title: "Paste", action: #selector(contextPaste), keyEquivalent: "")
+        let pasteItem = NSMenuItem(title: L("terminal.context.paste", "Paste"), action: #selector(contextPaste), keyEquivalent: "")
         pasteItem.target = self
         pasteItem.isEnabled = canPaste
 
@@ -855,7 +855,7 @@ extension RustTerminalView {
         pasteEscapedItem.target = self
         pasteEscapedItem.isEnabled = canPaste
 
-        let selectAllItem = NSMenuItem(title: "Select All", action: #selector(contextSelectAll), keyEquivalent: "")
+        let selectAllItem = NSMenuItem(title: L("terminal.context.selectAll", "Select All"), action: #selector(contextSelectAll), keyEquivalent: "")
         selectAllItem.target = self
 
         // -- Autofill --
@@ -868,10 +868,10 @@ extension RustTerminalView {
         autoFillItem.isEnabled = canAutoFillFromPasswords
 
         // -- Terminal operations --
-        let clearScreenItem = NSMenuItem(title: "Clear Screen", action: #selector(contextClearScreen), keyEquivalent: "")
+        let clearScreenItem = NSMenuItem(title: L("terminal.context.clearScreen", "Clear Screen"), action: #selector(contextClearScreen), keyEquivalent: "")
         clearScreenItem.target = self
 
-        let clearScrollbackItem = NSMenuItem(title: "Clear Scrollback", action: #selector(contextClearScrollback), keyEquivalent: "")
+        let clearScrollbackItem = NSMenuItem(title: L("terminal.context.clearScrollback", "Clear Scrollback"), action: #selector(contextClearScrollback), keyEquivalent: "")
         clearScrollbackItem.target = self
 
         // Build menu in conventional order:

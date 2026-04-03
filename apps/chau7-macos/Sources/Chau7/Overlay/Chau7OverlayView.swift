@@ -381,14 +381,14 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         menuActions.removeAll() // release previous closure targets
         let menu = NSMenu()
 
-        let renameItem = NSMenuItem(title: "Rename Tab...", action: #selector(contextRenameTab(_:)), keyEquivalent: "")
+        let renameItem = NSMenuItem(title: L("context.renameTab", "Rename Tab..."), action: #selector(contextRenameTab(_:)), keyEquivalent: "")
         renameItem.target = self
         renameItem.representedObject = tab.id
         menu.addItem(renameItem)
 
         menu.addItem(.separator())
 
-        let idleItem = NSMenuItem(title: "Move to Idle Tabs", action: #selector(contextMoveToIdle(_:)), keyEquivalent: "")
+        let idleItem = NSMenuItem(title: L("context.moveToIdle", "Move to Idle Tabs"), action: #selector(contextMoveToIdle(_:)), keyEquivalent: "")
         idleItem.target = self
         idleItem.representedObject = tab.id
         menu.addItem(idleItem)
@@ -399,7 +399,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         windowSubmenu.autoenablesItems = false
         let tabID = tab.id
         Log.info("Context menu: otherWindowTitles=\(model.otherWindowTitles.count), onMoveTab=\(model.onMoveTabToWindow != nil), tab=\(tab.displayTitle)")
-        windowSubmenu.addItem(menuItem(title: "New Window") { [weak self] in
+        windowSubmenu.addItem(menuItem(title: L("context.newWindow", "New Window")) { [weak self] in
             Log.info("Move to New Window clicked for tab \(tabID)")
             self?.tabsModel?.onMoveTabToWindow?(tabID, -1)
         })
@@ -412,7 +412,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
                 })
             }
         }
-        let windowMenuItem = NSMenuItem(title: "Move to Window", action: nil, keyEquivalent: "")
+        let windowMenuItem = NSMenuItem(title: L("context.moveToWindow", "Move to Window"), action: nil, keyEquivalent: "")
         windowMenuItem.submenu = windowSubmenu
         menu.addItem(windowMenuItem)
 
@@ -424,7 +424,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
                 let groupSize = model.tabs.filter { $0.repoGroupID == groupID }.count
                 // Only show group actions when there are 2+ tabs in the group
                 if groupSize > 1 {
-                    let ungroupItem = NSMenuItem(title: "Remove from Repo Group", action: #selector(contextRemoveFromGroup(_:)), keyEquivalent: "")
+                    let ungroupItem = NSMenuItem(title: L("context.removeFromGroup", "Remove from Repo Group"), action: #selector(contextRemoveFromGroup(_:)), keyEquivalent: "")
                     ungroupItem.target = self
                     ungroupItem.representedObject = tab.id
                     menu.addItem(ungroupItem)
@@ -432,7 +432,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
                     // "Move Group to Window" submenu
                     let groupWindowSubmenu = NSMenu()
                     groupWindowSubmenu.autoenablesItems = false
-                    groupWindowSubmenu.addItem(menuItem(title: "New Window") { [weak self] in
+                    groupWindowSubmenu.addItem(menuItem(title: L("context.newWindow", "New Window")) { [weak self] in
                         self?.tabsModel?.onMoveGroupToWindow?(groupID, -1)
                     })
                     if !model.otherWindowTitles.isEmpty {
@@ -444,18 +444,18 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
                             })
                         }
                     }
-                    let groupWindowMenuItem = NSMenuItem(title: "Move Group to Window", action: nil, keyEquivalent: "")
+                    let groupWindowMenuItem = NSMenuItem(title: L("context.moveGroupToWindow", "Move Group to Window"), action: nil, keyEquivalent: "")
                     groupWindowMenuItem.submenu = groupWindowSubmenu
                     menu.addItem(groupWindowMenuItem)
                 }
             }
             if tab.repoGroupID == nil, tab.session?.gitRootPath != nil {
-                let groupItem = NSMenuItem(title: "Add to Repo Group", action: #selector(contextAddToGroup(_:)), keyEquivalent: "")
+                let groupItem = NSMenuItem(title: L("context.addToGroup", "Add to Repo Group"), action: #selector(contextAddToGroup(_:)), keyEquivalent: "")
                 groupItem.target = self
                 groupItem.representedObject = tab.id
                 menu.addItem(groupItem)
 
-                let groupAllItem = NSMenuItem(title: "Group All Same Repo", action: #selector(contextGroupAllSameRepo(_:)), keyEquivalent: "")
+                let groupAllItem = NSMenuItem(title: L("context.groupAllSameRepo", "Group All Same Repo"), action: #selector(contextGroupAllSameRepo(_:)), keyEquivalent: "")
                 groupAllItem.target = self
                 groupAllItem.representedObject = tab.id
                 menu.addItem(groupAllItem)
@@ -464,7 +464,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
 
         menu.addItem(.separator())
 
-        let closeItem = NSMenuItem(title: "Close Tab", action: #selector(contextCloseTab(_:)), keyEquivalent: "")
+        let closeItem = NSMenuItem(title: L("context.closeTab", "Close Tab"), action: #selector(contextCloseTab(_:)), keyEquivalent: "")
         closeItem.target = self
         closeItem.representedObject = tab.id
         menu.addItem(closeItem)
@@ -481,7 +481,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         // Move Group to Window submenu
         let windowSubmenu = NSMenu()
         windowSubmenu.autoenablesItems = false
-        windowSubmenu.addItem(menuItem(title: "New Window") { [weak self] in
+        windowSubmenu.addItem(menuItem(title: L("context.newWindow", "New Window")) { [weak self] in
             self?.tabsModel?.onMoveGroupToWindow?(repoGroupID, -1)
         })
         if !model.otherWindowTitles.isEmpty {
@@ -493,14 +493,14 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
                 })
             }
         }
-        let moveItem = NSMenuItem(title: "Move \"\(repoName)\" to Window", action: nil, keyEquivalent: "")
+        let moveItem = NSMenuItem(title: String(format: L("context.moveRepoToWindow", "Move \"%@\" to Window"), repoName), action: nil, keyEquivalent: "")
         moveItem.submenu = windowSubmenu
         menu.addItem(moveItem)
 
         menu.addItem(.separator())
 
         // Ungroup
-        menu.addItem(menuItem(title: "Remove from Repo Group") { [weak self] in
+        menu.addItem(menuItem(title: L("context.removeFromGroup", "Remove from Repo Group")) { [weak self] in
             guard let model = self?.tabsModel else { return }
             let groupTabs = model.tabs.filter { $0.repoGroupID == repoGroupID }
             for tab in groupTabs {
@@ -512,7 +512,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
 
         // Close group
         let groupCount = model.tabs.filter { $0.repoGroupID == repoGroupID }.count
-        menu.addItem(menuItem(title: "Close Group (\(groupCount) tabs)") { [weak self] in
+        menu.addItem(menuItem(title: String(format: L("context.closeGroup", "Close Group (%d tabs)"), groupCount)) { [weak self] in
             guard let model = self?.tabsModel else { return }
             let groupTabs = model.tabs.filter { $0.repoGroupID == repoGroupID }
             for tab in groupTabs {

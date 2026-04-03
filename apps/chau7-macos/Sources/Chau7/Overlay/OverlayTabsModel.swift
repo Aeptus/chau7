@@ -173,9 +173,9 @@ struct OverlayTab: Identifiable, Equatable {
         }
         // If no terminals exist, show "Editor" instead of "Shell"
         if splitController.root.allTerminalIDs.isEmpty {
-            return "Editor"
+            return L("tab.editor", "Editor")
         }
-        return "Shell"
+        return L("tab.shell", "Shell")
     }
 
     /// Returns the effective tab color - auto color if enabled and detected, otherwise manual color

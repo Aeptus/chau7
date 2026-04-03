@@ -115,7 +115,7 @@ struct AboutSettingsView: View {
         case let (nil, build?):
             return build
         default:
-            return "Development Build"
+            return L("about.developmentBuild", "Development Build")
         }
     }
 
@@ -123,7 +123,7 @@ struct AboutSettingsView: View {
         guard let execURL = Bundle.main.executableURL,
               let attrs = try? FileManager.default.attributesOfItem(atPath: execURL.path),
               let date = attrs[.modificationDate] as? Date else {
-            return "Unknown"
+            return L("about.unknown", "Unknown")
         }
         let fmt = DateFormatter()
         fmt.dateStyle = .medium
@@ -133,11 +133,11 @@ struct AboutSettingsView: View {
 
     private var machineArchitecture: String {
         #if arch(arm64)
-        return "Apple Silicon (arm64)"
+        return L("about.arch.arm64", "Apple Silicon (arm64)")
         #elseif arch(x86_64)
-        return "Intel (x86_64)"
+        return L("about.arch.x86_64", "Intel (x86_64)")
         #else
-        return "Unknown"
+        return L("about.unknown", "Unknown")
         #endif
     }
 }

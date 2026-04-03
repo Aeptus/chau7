@@ -225,7 +225,7 @@ struct MCPSettingsView: View {
                     .onSubmit {
                         addCommand(to: commands, from: newCommand)
                     }
-                Button("Add") {
+                Button(L("mcp.add", "Add")) {
                     addCommand(to: commands, from: newCommand)
                 }
                 .disabled(newCommand.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)

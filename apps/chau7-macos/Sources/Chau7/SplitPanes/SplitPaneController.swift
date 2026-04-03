@@ -532,7 +532,7 @@ final class TextEditorModel: Identifiable {
         if let path = filePath {
             return (path as NSString).lastPathComponent
         }
-        return "Untitled"
+        return L("tab.untitled", "Untitled")
     }
 
     /// Load content from a file
@@ -660,7 +660,7 @@ final class FilePreviewModel: Identifiable {
         if let path = filePath {
             return (path as NSString).lastPathComponent
         }
-        return "No File"
+        return L("tab.noFile", "No File")
     }
 
     var fileExtension: String {
@@ -789,7 +789,7 @@ final class DiffViewerModel: Identifiable {
         if let path = filePath {
             return (path as NSString).lastPathComponent
         }
-        return "No File"
+        return L("tab.noFile", "No File")
     }
 
     @discardableResult

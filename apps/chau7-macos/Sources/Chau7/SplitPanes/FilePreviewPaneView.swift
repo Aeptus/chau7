@@ -36,7 +36,7 @@ struct FilePreviewPaneView: View {
                     .truncationMode(.middle)
 
                 if preview.isImageFile {
-                    Text("IMAGE")
+                    Text(L("pane.image", "IMAGE"))
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 4)

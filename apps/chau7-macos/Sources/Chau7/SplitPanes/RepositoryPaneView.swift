@@ -379,7 +379,7 @@ struct RepositoryPaneView: View {
 
                     // Tokens
                     HStack(spacing: 8) {
-                        Text("Tokens:")
+                        Text(L("repo.tokens", "Tokens:"))
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                         Text("\(formatTokenCount(summary.inputTokens)) in")
@@ -391,19 +391,19 @@ struct RepositoryPaneView: View {
                     // Duration + exit
                     HStack(spacing: 8) {
                         if let duration = summary.formattedDuration {
-                            Text("Duration: \(duration)")
+                            Text(String(format: L("repo.duration", "Duration: %@"), duration))
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                         }
                         if let exit = summary.exitReason {
-                            Text("Exit: \(exit.rawValue)")
+                            Text(String(format: L("repo.exit", "Exit: %@"), exit.rawValue))
                                 .font(.system(size: 10))
                                 .foregroundStyle(exit == .success ? .green : .orange)
                         }
                     }
 
                     // Turn count
-                    Text("Turns: \(summary.turnCount)")
+                    Text(String(format: L("repo.turnCount", "Turns: %d"), summary.turnCount))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }

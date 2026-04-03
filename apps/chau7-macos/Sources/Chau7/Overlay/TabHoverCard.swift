@@ -305,7 +305,7 @@ private struct TabHoverCardContent: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 16)
 
-                    Text("Processes")
+                    Text(L("hovercard.processes", "Processes"))
                         .font(.custom("Avenir Next", size: 12).weight(.medium))
                         .foregroundStyle(.primary)
 
@@ -351,7 +351,7 @@ private struct TabHoverCardContent: View {
                 if snapshot.children.count > 5 {
                     HStack(spacing: 8) {
                         Spacer().frame(width: 16)
-                        Text("+\(snapshot.children.count - 5) more")
+                        Text(String(format: L("hovercard.moreProcesses", "+%d more"), snapshot.children.count - 5))
                             .font(.custom("Avenir Next", size: 11).weight(.medium))
                             .foregroundStyle(.secondary)
                     }
@@ -375,18 +375,18 @@ private struct TabHoverCardContent: View {
                     .foregroundStyle(isActive ? .yellow : .secondary)
                     .frame(width: 16)
 
-                Text("Token Optimization")
+                Text(L("hovercard.tokenOptimization", "Token Optimization"))
                     .font(.custom("Avenir Next", size: 12).weight(.medium))
                     .foregroundStyle(.primary)
 
                 Spacer()
 
                 if hasOverride {
-                    Text(isActive ? "Forced On" : "Forced Off")
+                    Text(isActive ? L("hovercard.forcedOn", "Forced On") : L("hovercard.forcedOff", "Forced Off"))
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(isActive ? .yellow : .red)
                 } else {
-                    Text(isActive ? "Active" : "Off")
+                    Text(isActive ? L("hovercard.active", "Active") : L("hovercard.off", "Off"))
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(isActive ? .green : .secondary)
                 }
@@ -415,13 +415,13 @@ private struct TabHoverCardContent: View {
                     .foregroundStyle(.orange)
                     .frame(width: 16)
 
-                Text("Broadcast")
+                Text(L("hovercard.broadcast", "Broadcast"))
                     .font(.custom("Avenir Next", size: 12).weight(.medium))
                     .foregroundStyle(.primary)
 
                 Spacer()
 
-                Text("Included")
+                Text(L("hovercard.included", "Included"))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.orange)
             }
@@ -439,13 +439,13 @@ private struct TabHoverCardContent: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 16)
 
-                Text("Rendering")
+                Text(L("hovercard.rendering", "Rendering"))
                     .font(.custom("Avenir Next", size: 12).weight(.medium))
                     .foregroundStyle(.primary)
 
                 Spacer()
 
-                Text("Suspended")
+                Text(L("hovercard.suspended", "Suspended"))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
@@ -471,7 +471,7 @@ private struct TabHoverCardContent: View {
                         .frame(width: 16)
                 }
 
-                Text("Notification")
+                Text(L("hovercard.notification", "Notification"))
                     .font(.custom("Avenir Next", size: 12).weight(.medium))
                     .foregroundStyle(.primary)
 
@@ -489,13 +489,13 @@ private struct TabHoverCardContent: View {
             style.titleColor == .red ||
             style.iconColor == .red ||
             style.borderColor == .red {
-            return ("Error", .red)
+            return (L("hovercard.notification.error", "Error"), .red)
         }
 
         if style.icon == TabNotificationStyle.success.icon ||
             style.titleColor == .green ||
             style.iconColor == .green {
-            return ("Success", .green)
+            return (L("hovercard.notification.success", "Success"), .green)
         }
 
         if style.icon == TabNotificationStyle.attention.icon ||
@@ -504,7 +504,7 @@ private struct TabHoverCardContent: View {
             style.borderWidth > 0 ||
             style.titleColor == .yellow ||
             style.iconColor == .yellow {
-            return ("Attention", .yellow)
+            return (L("hovercard.notification.attention", "Attention"), .yellow)
         }
 
         if style.icon == TabNotificationStyle.waiting.icon ||
@@ -628,7 +628,7 @@ private struct TabHoverCardContent: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.orange)
                         .frame(width: 16)
-                    Text("File Conflicts (\(conflicts.count))")
+                    Text(String(format: L("hovercard.fileConflicts", "File Conflicts (%d)"), conflicts.count))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.orange)
                 }
@@ -640,7 +640,7 @@ private struct TabHoverCardContent: View {
                         .padding(.leading, 24)
                 }
                 if conflicts.count > 3 {
-                    Text("+\(conflicts.count - 3) more")
+                    Text(String(format: L("hovercard.moreConflicts", "+%d more"), conflicts.count - 3))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .padding(.leading, 24)

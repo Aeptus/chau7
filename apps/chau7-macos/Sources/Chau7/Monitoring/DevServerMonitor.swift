@@ -326,9 +326,9 @@ final class DevServerMonitor {
         }
 
         if normalizedCommand == "node" {
-            return "Node Server"
+            return L("devServer.node", "Node Server")
         }
 
-        return "Dev Server"
+        return L("devServer.generic", "Dev Server")
     }
 }

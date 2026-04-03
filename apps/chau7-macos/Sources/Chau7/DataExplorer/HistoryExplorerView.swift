@@ -29,9 +29,9 @@ struct HistoryExplorerView: View {
             if records.isEmpty {
                 VStack {
                     Spacer()
-                    Text(searchText.isEmpty ? "No command history yet" : "No matching commands")
+                    Text(searchText.isEmpty ? L("explorer.history.noHistory", "No command history yet") : L("explorer.history.noMatches", "No matching commands"))
                         .foregroundStyle(.secondary)
-                    Text("Commands will appear here as you use the terminal")
+                    Text(L("explorer.history.hint", "Commands will appear here as you use the terminal"))
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
                     Spacer()

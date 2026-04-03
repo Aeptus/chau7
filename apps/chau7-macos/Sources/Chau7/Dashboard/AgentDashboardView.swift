@@ -286,7 +286,7 @@ struct AgentDashboardView: View {
                 Button {
                     showCommitField.toggle()
                 } label: {
-                    Label("Commit All", systemImage: "checkmark.circle")
+                    Label(L("dashboard.commitAll", "Commit All"), systemImage: "checkmark.circle")
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.bordered)
@@ -296,7 +296,7 @@ struct AgentDashboardView: View {
                 Button {
                     model.stopAllAgents()
                 } label: {
-                    Label("Stop All", systemImage: "stop.circle")
+                    Label(L("dashboard.stopAll", "Stop All"), systemImage: "stop.circle")
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.bordered)
@@ -308,7 +308,7 @@ struct AgentDashboardView: View {
                 Button {
                     model.showStartAgentSheet = true
                 } label: {
-                    Label("Start Agent", systemImage: "plus.circle")
+                    Label(L("dashboard.startAgent", "Start Agent"), systemImage: "plus.circle")
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.borderedProminent)
@@ -319,7 +319,7 @@ struct AgentDashboardView: View {
 
             if showCommitField {
                 HStack(spacing: 6) {
-                    TextField("Commit message", text: $model.commitMessage)
+                    TextField(L("dashboard.commitMessage", "Commit message"), text: $model.commitMessage)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 10))
 
@@ -350,7 +350,7 @@ struct AgentDashboardView: View {
             }
 
             if model.commitSuccess {
-                Text("Committed successfully")
+                Text(L("dashboard.committedSuccessfully", "Committed successfully"))
                     .font(.system(size: 9))
                     .foregroundStyle(.green)
                     .padding(.horizontal, 12)
@@ -394,10 +394,10 @@ struct AgentDashboardView: View {
 
     private func statusLabel(_ status: OverallStatus) -> String {
         switch status {
-        case .idle: return "No agents active"
-        case .active: return "Agents working"
-        case .hasConflicts: return "File conflicts detected"
-        case .hasApprovals: return "Approvals pending"
+        case .idle: return L("dashboard.status.idle", "No agents active")
+        case .active: return L("dashboard.status.active", "Agents working")
+        case .hasConflicts: return L("dashboard.status.conflicts", "File conflicts detected")
+        case .hasApprovals: return L("dashboard.status.approvals", "Approvals pending")
         }
     }
 
@@ -446,15 +446,15 @@ private struct StartAgentSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Start Agent")
+            Text(L("dashboard.startAgent", "Start Agent"))
                 .font(.system(size: 15, weight: .semibold))
 
-            Text("Launch a new AI agent in \(model.repoName)")
+            Text(String(format: L("dashboard.launchAgent", "Launch a new AI agent in %@"), model.repoName))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 
             // Backend picker
-            Picker("Backend", selection: $backend) {
+            Picker(L("dashboard.backend", "Backend"), selection: $backend) {
                 Text("Claude").tag("claude")
                 Text("Codex").tag("codex")
             }
@@ -462,29 +462,29 @@ private struct StartAgentSheet: View {
 
             // Model
             TextField(
-                backend == "claude" ? "Model (e.g. opus, sonnet)" : "Model (e.g. o3, o4-mini)",
+                backend == "claude" ? L("dashboard.modelPlaceholder.claude", "Model (e.g. opus, sonnet)") : L("dashboard.modelPlaceholder.codex", "Model (e.g. o3, o4-mini)"),
                 text: $agentModel
             )
             .textFieldStyle(.roundedBorder)
             .font(.system(size: 11))
 
             // Prompt
-            TextField("Initial prompt (optional)", text: $prompt)
+            TextField(L("dashboard.promptPlaceholder", "Initial prompt (optional)"), text: $prompt)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 11))
 
             // Auto-approve
-            Toggle("Auto-approve tool use", isOn: $autoApprove)
+            Toggle(L("dashboard.autoApprove", "Auto-approve tool use"), isOn: $autoApprove)
                 .font(.system(size: 11))
 
             HStack {
                 Spacer()
-                Button("Cancel") {
+                Button(L("action.cancel", "Cancel")) {
                     model.showStartAgentSheet = false
                 }
                 .keyboardShortcut(.cancelAction)
 
-                Button("Launch") {
+                Button(L("dashboard.launch", "Launch")) {
                     model.startAgent(
                         backend: backend,
                         model: agentModel.isEmpty ? nil : agentModel,

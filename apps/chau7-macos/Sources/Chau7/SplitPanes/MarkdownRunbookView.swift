@@ -52,7 +52,7 @@ struct MarkdownRunbookView: View {
                 Button {
                     onRunBlock(code)
                 } label: {
-                    Label("Run", systemImage: "play.fill")
+                    Label(L("pane.run", "Run"), systemImage: "play.fill")
                         .font(.system(size: 11))
                 }
                 .buttonStyle(.bordered)
