@@ -10,7 +10,7 @@ final class RemoteInteractivePromptTests: XCTestCase {
             toolName: "Claude",
             projectName: "Chau7",
             branchName: "main",
-            currentDirectory: ".",
+            currentDirectory: "/tmp/test-project",
             prompt: "Do you want to proceed?",
             detail: "Will run a protected command",
             options: [
@@ -26,6 +26,6 @@ final class RemoteInteractivePromptTests: XCTestCase {
         XCTAssertEqual(decoded, prompt)
         XCTAssertEqual(decoded.projectName, "Chau7")
         XCTAssertEqual(decoded.branchName, "main")
-        XCTAssertEqual(decoded.currentDirectory, ".")
+        XCTAssertEqual(decoded.currentDirectory, "/tmp/test-project")
     }
 }

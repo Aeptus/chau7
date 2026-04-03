@@ -3,6 +3,8 @@
 .build/
 build/
 .claude/
+.seogeo-reports/
+.geo-results/
 .swiftpm/
 /.playwright-mcp/
 /*.png
