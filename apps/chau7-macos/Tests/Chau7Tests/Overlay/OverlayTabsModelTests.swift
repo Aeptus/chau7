@@ -980,8 +980,38 @@ final class OverlayTabsModelTests: XCTestCase {
         )
 
         XCTAssertNil(resolved)
-        XCTAssertEqual(session.effectiveAIProvider, "codex")
+        XCTAssertNil(session.effectiveAIProvider)
         XCTAssertNil(session.effectiveAISessionId)
+    }
+
+    func testResolveResumeMetadataIgnoresTelemetryOnlyCodexProvider() {
+        guard let session = model.tabs[0].session else {
+            XCTFail("Expected initial session")
+            return
+        }
+
+        TelemetryRecorder.shared.runStarted(
+            tabID: session.tabIdentifier,
+            provider: "codex",
+            cwd: "/tmp/aetower"
+        )
+        defer {
+            TelemetryRecorder.shared.runEnded(tabID: session.tabIdentifier, exitStatus: 0)
+        }
+
+        XCTAssertEqual(session.effectiveAIProvider, "codex")
+        XCTAssertNil(session.lastAIProvider)
+        XCTAssertNil(session.lastAISessionId)
+
+        let resolved = model.resolveResumeMetadata(
+            for: session,
+            directory: "/tmp/aetower",
+            outputHint: nil
+        )
+
+        XCTAssertNil(resolved)
+        XCTAssertNil(session.lastAIProvider)
+        XCTAssertNil(session.lastAISessionId)
     }
 
     func testRestoreFallsBackToLegacySelectedIndexWhenTabIDIsMissing() {
