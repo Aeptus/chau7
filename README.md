@@ -1,6 +1,24 @@
-# Chau7 Monorepo
+# Chau7
 
-This repository hosts the macOS app, iOS app, relay service, and remote agent.
+The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for developers who ship with AI.
+
+Chau7 is a terminal emulator designed to manage parallel AI agent sessions — Claude Code, Codex, Cursor, and more — with first-class support for notifications, telemetry, tab grouping by repository, and a built-in MCP server for programmatic control.
+
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
+
+## Screenshots
+
+> TODO: Add 2-3 screenshots before publication (tab bar with grouped repos, AI session in action, debug console)
+
+## FAQ
+
+**Why AGPL?** Chau7 is free software. If you modify it and offer it as a service, you must share your changes. If you just use it on your own machine, AGPL imposes no obligations beyond the GPL.
+
+**Does the API proxy send my data anywhere?** No. The proxy runs locally on your machine. It intercepts AI API calls for analytics only — API keys pass through to the original provider and are never stored or transmitted elsewhere. See [SECURITY.md](SECURITY.md).
+
+**What AI tools does it support?** Claude Code, Codex, Cursor, Windsurf, Copilot, Aider, Cline, Continue, Goose, Devin, Mentat, Amazon Q, Amp, and any tool that runs in a terminal. Detection is automatic.
+
+## Monorepo
 
 ## Rule #1: Document Decisions Near the Code
 

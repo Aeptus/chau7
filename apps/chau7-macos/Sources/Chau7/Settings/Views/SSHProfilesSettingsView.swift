@@ -133,7 +133,7 @@ struct SSHProfilesSettingsView: View {
             }
             .disabled(manager.configEntries.isEmpty)
             .accessibilityLabel(L("Import all SSH config entries", "Import all SSH config entries"))
-            .alert("Import All Entries?", isPresented: $showImportConfirmation) {
+            .alert(L("alert.importSSH.title", "Import All Entries?"), isPresented: $showImportConfirmation) {
                 Button(L("Import", "Import"), role: .none) {
                     let connections = manager.importAllEntries()
                     for connection in connections {

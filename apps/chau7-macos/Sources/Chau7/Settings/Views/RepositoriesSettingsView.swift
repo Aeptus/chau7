@@ -17,9 +17,9 @@ struct RepositoriesSettingsView: View {
             if repos.isEmpty {
                 VStack {
                     Spacer()
-                    Text("No repositories discovered yet")
+                    Text(L("repos.noRepos", "No repositories discovered yet"))
                         .foregroundStyle(.secondary)
-                    Text("Open a terminal in a git repository to get started")
+                    Text(L("repos.noRepos.help", "Open a terminal in a git repository to get started"))
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
                     Spacer()
@@ -70,7 +70,7 @@ struct RepositoriesSettingsView: View {
                     } else {
                         VStack {
                             Spacer()
-                            Text("Select a repository to edit")
+                            Text(L("repos.selectToEdit", "Select a repository to edit"))
                                 .foregroundStyle(.secondary)
                             Spacer()
                         }

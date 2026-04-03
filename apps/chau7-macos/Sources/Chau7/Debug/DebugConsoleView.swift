@@ -2331,7 +2331,7 @@ final class DebugConsoleController {
                 backing: .buffered,
                 defer: false
             )
-            newWindow.title = "Chau7 Debug Console"
+            newWindow.title = L("window.debugConsole", "Chau7 Debug Console")
             newWindow.contentView = hostingView
             newWindow.center()
             newWindow.isReleasedWhenClosed = false

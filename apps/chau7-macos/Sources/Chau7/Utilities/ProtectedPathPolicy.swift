@@ -31,8 +31,8 @@ enum ProtectedPathPolicy {
         guard FeatureSettings.shared.allowProtectedFolderAccess else { return }
 
         let panel = NSOpenPanel()
-        panel.title = "Grant Protected Folder Access"
-        panel.message = "Select folders like Downloads/Desktop/Documents for background repo detection."
+        panel.title = L("dialog.protectedAccess.title", "Grant Protected Folder Access")
+        panel.message = L("dialog.protectedAccess.message", "Select folders like Downloads/Desktop/Documents for background repo detection.")
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true

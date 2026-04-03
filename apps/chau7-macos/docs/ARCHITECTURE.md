@@ -325,6 +325,20 @@ extension View {
 └─────────────────────────────────────────────────────────┘
 ```
 
+## Design Trade-offs
+
+### Singletons
+
+Chau7 uses ~50 singletons (`.shared`) for app-lifetime services: settings, stores, monitors, managers. This is a deliberate trade-off for a desktop app where the process lifetime equals the app lifetime. DI containers add complexity without benefit when there's exactly one instance of each service, created at launch, destroyed at quit. Tests use `@testable import` to access internals directly.
+
+### Notification Pipeline in Chau7Core
+
+The 11-file notification subsystem (`CanonicalNotificationEvent`, `NotificationIngress`, provider adapters, etc.) lives in Chau7Core despite having no external consumers. This is intentional: the full notification pipeline — ingress, semantic mapping, trigger evaluation, style planning — is covered by unit tests that don't import AppKit. Moving it to the app target would make it untestable without the full UI stack.
+
+### FeatureSettings (132 properties)
+
+One property per feature flag with explicit `didSet` UserDefaults persistence. This is large by design — every flag is independently toggleable, persisted, exportable, and resettable. A macro-based approach would reduce boilerplate but add a build-time dependency and make debugging harder (you can't breakpoint inside a macro expansion).
+
 ## Future Considerations
 
 1. **Plugin Architecture**: Allow third-party extensions

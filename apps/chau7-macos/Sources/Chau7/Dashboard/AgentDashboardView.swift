@@ -6,11 +6,13 @@ import SwiftUI
 /// Displays agent cards with status, files, tokens, and conflicts.
 /// Polls every 2 seconds via the model. Lives inside a non-terminal tab.
 struct AgentDashboardView: View {
-    var model: AgentDashboardModel
+    @Bindable var model: AgentDashboardModel
 
     var body: some View {
         VStack(spacing: 0) {
             dashboardHeader
+            Divider()
+            batchActionBar
             Divider()
 
             if model.agentCards.isEmpty {
@@ -31,6 +33,9 @@ struct AgentDashboardView: View {
         .background(Color(nsColor: .controlBackgroundColor))
         .onAppear { model.startPolling() }
         .onDisappear { model.stopPolling() }
+        .sheet(isPresented: $model.showStartAgentSheet) {
+            StartAgentSheet(model: model)
+        }
     }
 
     // MARK: - Header
@@ -165,6 +170,20 @@ struct AgentDashboardView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.red)
 
+                if !card.touchedFiles.isEmpty {
+                    Button {
+                        model.commitAgent(
+                            sessionID: card.sessionID,
+                            message: "\(card.backendName): changes from turn \(card.turnCount)"
+                        )
+                    } label: {
+                        Text("Commit")
+                            .font(.system(size: 9))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.green)
+                }
+
                 Button {
                     model.switchToTab(tabID: card.tabID)
                 } label: {
@@ -257,6 +276,89 @@ struct AgentDashboardView: View {
         }
     }
 
+    // MARK: - Batch Action Bar
+
+    @State private var showCommitField = false
+
+    private var batchActionBar: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Button {
+                    showCommitField.toggle()
+                } label: {
+                    Label("Commit All", systemImage: "checkmark.circle")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(model.agentCards.isEmpty || model.isCommitting)
+
+                Button {
+                    model.stopAllAgents()
+                } label: {
+                    Label("Stop All", systemImage: "stop.circle")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(model.agentCards.isEmpty)
+
+                Spacer()
+
+                Button {
+                    model.showStartAgentSheet = true
+                } label: {
+                    Label("Start Agent", systemImage: "plus.circle")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+
+            if showCommitField {
+                HStack(spacing: 6) {
+                    TextField("Commit message", text: $model.commitMessage)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 10))
+
+                    Button {
+                        model.commitAllAgents()
+                    } label: {
+                        if model.isCommitting {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Text("Commit")
+                                .font(.system(size: 10))
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(model.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isCommitting)
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
+            }
+
+            if let error = model.commitError {
+                Text(error)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+            }
+
+            if model.commitSuccess {
+                Text("Committed successfully")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.green)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private func statPill(_ text: String, color: Color) -> some View {
@@ -331,4 +433,71 @@ struct AgentDashboardView: View {
         f.dateFormat = "HH:mm:ss"
         return f
     }()
+}
+
+// MARK: - Start Agent Sheet
+
+private struct StartAgentSheet: View {
+    @Bindable var model: AgentDashboardModel
+    @State private var backend = "claude"
+    @State private var agentModel = ""
+    @State private var prompt = ""
+    @State private var autoApprove = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Start Agent")
+                .font(.system(size: 15, weight: .semibold))
+
+            Text("Launch a new AI agent in \(model.repoName)")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+            // Backend picker
+            Picker("Backend", selection: $backend) {
+                Text("Claude").tag("claude")
+                Text("Codex").tag("codex")
+            }
+            .pickerStyle(.segmented)
+
+            // Model
+            TextField(
+                backend == "claude" ? "Model (e.g. opus, sonnet)" : "Model (e.g. o3, o4-mini)",
+                text: $agentModel
+            )
+            .textFieldStyle(.roundedBorder)
+            .font(.system(size: 11))
+
+            // Prompt
+            TextField("Initial prompt (optional)", text: $prompt)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11))
+
+            // Auto-approve
+            Toggle("Auto-approve tool use", isOn: $autoApprove)
+                .font(.system(size: 11))
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    model.showStartAgentSheet = false
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Launch") {
+                    model.startAgent(
+                        backend: backend,
+                        model: agentModel.isEmpty ? nil : agentModel,
+                        prompt: prompt.isEmpty ? nil : prompt,
+                        autoApprove: autoApprove
+                    )
+                    model.showStartAgentSheet = false
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+    }
 }

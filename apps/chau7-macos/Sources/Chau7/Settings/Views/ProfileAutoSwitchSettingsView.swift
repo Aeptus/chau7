@@ -82,7 +82,7 @@ struct ProfileAutoSwitchSettingsView: View {
                 }
             )
         }
-        .alert("Delete Rule?", isPresented: $showingDeleteAlert) {
+        .alert(L("alert.deleteRule.title", "Delete Rule?"), isPresented: $showingDeleteAlert) {
             Button(L("Delete", "Delete"), role: .destructive) {
                 if let rule = ruleToDelete {
                     switcher.deleteRule(id: rule.id)

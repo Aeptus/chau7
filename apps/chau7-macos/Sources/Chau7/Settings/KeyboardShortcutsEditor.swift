@@ -368,7 +368,7 @@ final class KeyboardShortcutsWindowController {
             defer: false
         )
         window.isReleasedWhenClosed = false
-        window.title = "Keyboard Shortcuts"
+        window.title = L("window.keyboardShortcuts", "Keyboard Shortcuts")
         window.contentView = hostingView
         window.center()
         window.makeKeyAndOrderFront(nil)

@@ -873,11 +873,11 @@ final class TerminalControlService {
     /// Show a modal approval dialog for tab creation. Must be called on main thread.
     private func requestApproval(message: String) -> Bool {
         let alert = NSAlert()
-        alert.messageText = "MCP Tab Request"
+        alert.messageText = L("mcp.approval.tabRequest.title", "MCP Tab Request")
         alert.informativeText = message
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Allow")
-        alert.addButton(withTitle: "Deny")
+        alert.addButton(withTitle: L("mcp.approval.allow", "Allow"))
+        alert.addButton(withTitle: L("mcp.approval.deny", "Deny"))
         return alert.runModal() == .alertFirstButtonReturn
     }
 
@@ -912,14 +912,14 @@ final class TerminalControlService {
 
         // Show local alert with three options
         let alert = NSAlert()
-        alert.messageText = "MCP Command Approval"
-        alert.informativeText = "An MCP client wants to execute:\n\n\(command)\n\n\(sourceInfo)"
+        alert.messageText = L("mcp.approval.commandTitle", "MCP Command Approval")
+        alert.informativeText = String(format: L("mcp.approval.commandMessage", "An MCP client wants to execute:\n\n%@\n\n%@"), command, sourceInfo)
         alert.alertStyle = .warning
 
         // Buttons: Deny (default, safest), Allow Once, Always Allow
-        alert.addButton(withTitle: "Deny")
-        alert.addButton(withTitle: "Allow Once")
-        alert.addButton(withTitle: "Always Allow")
+        alert.addButton(withTitle: L("mcp.approval.deny", "Deny"))
+        alert.addButton(withTitle: L("mcp.approval.allowOnce", "Allow Once"))
+        alert.addButton(withTitle: L("mcp.approval.alwaysAllow", "Always Allow"))
 
         // Register a handler so iOS response can dismiss the alert
         var iosResult: MCPApprovalResult?

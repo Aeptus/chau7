@@ -208,15 +208,122 @@ final class AgentDashboardModel: Identifiable {
         return events.last(where: { $0.type == RuntimeEventType.toolUse.rawValue })?.data["tool"]
     }
 
+    // MARK: - Batch Operations State
+
+    var isCommitting = false
+    var commitError: String?
+    var commitSuccess = false
+    var commitMessage = "chore: agent batch commit"
+    var showStartAgentSheet = false
+
     // MARK: - Actions
 
     func stopAgent(sessionID: String) {
         _ = RuntimeSessionManager.shared.stopSession(id: sessionID)
     }
 
+    func stopAllAgents() {
+        for card in agentCards {
+            stopAgent(sessionID: card.sessionID)
+        }
+    }
+
+    /// Commit all agent-touched files in the repo.
+    func commitAllAgents() {
+        let message = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else {
+            commitError = "Commit message cannot be empty."
+            return
+        }
+
+        // Collect all files from all trackers
+        var allFiles: Set<String> = []
+        for tracker in fileTrackers.values {
+            allFiles.formUnion(tracker.touchedFiles)
+        }
+        guard !allFiles.isEmpty else {
+            commitError = "No files touched by agents."
+            return
+        }
+
+        isCommitting = true
+        commitError = nil
+        commitSuccess = false
+
+        let dir = repoGroupID
+        let files = allFiles.sorted()
+        let msg = message
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            // Stage
+            var stageArgs = ["add", "--"]
+            stageArgs.append(contentsOf: files)
+            let stageResult = GitDiffTracker.runGitWithStatus(args: stageArgs, in: dir)
+            guard stageResult.succeeded else {
+                DispatchQueue.main.async {
+                    self?.isCommitting = false
+                    self?.commitError = "Stage failed: \(stageResult.stderr)"
+                }
+                return
+            }
+
+            // Commit
+            let commitResult = GitDiffTracker.runGitWithStatus(args: ["commit", "-m", msg], in: dir)
+            DispatchQueue.main.async {
+                self?.isCommitting = false
+                if commitResult.succeeded {
+                    self?.commitSuccess = true
+                    self?.commitMessage = "chore: agent batch commit"
+                    // Clear trackers — work is shipped
+                    self?.fileTrackers.values.forEach { $0.reset() }
+                } else {
+                    self?.commitError = "Commit failed: \(commitResult.stderr)"
+                }
+            }
+        }
+    }
+
+    /// Commit only one agent's touched files.
+    func commitAgent(sessionID: String, message: String) {
+        guard let tracker = fileTrackers[sessionID] else { return }
+        let files = tracker.touchedFiles.sorted()
+        guard !files.isEmpty else { return }
+
+        let dir = repoGroupID
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var args = ["add", "--"]
+            args.append(contentsOf: files)
+            let stageResult = GitDiffTracker.runGitWithStatus(args: args, in: dir)
+            guard stageResult.succeeded else { return }
+
+            let commitResult = GitDiffTracker.runGitWithStatus(args: ["commit", "-m", message], in: dir)
+            if commitResult.succeeded {
+                DispatchQueue.main.async {
+                    self?.fileTrackers[sessionID]?.reset()
+                }
+            }
+        }
+    }
+
+    /// Spawn a new agent in this repo.
+    func startAgent(backend: String, model: String?, prompt: String?, autoApprove: Bool) {
+        var args: [String: Any] = [
+            "backend": backend,
+            "directory": repoGroupID
+        ]
+        if let model, !model.isEmpty { args["model"] = model }
+        if let prompt, !prompt.isEmpty { args["initial_prompt"] = prompt }
+        if autoApprove { args["auto_approve"] = true }
+
+        // Use RuntimeControlService which handles validation, PATH check, and retry
+        _ = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: args
+        )
+        // The new session will appear in the next 2s poll refresh
+    }
+
     /// Switch to the tab hosting this agent.
-    /// This needs to be wired through the view's callback since
-    /// the model doesn't have access to OverlayTabsModel.
     var onSwitchToTab: ((UUID) -> Void)?
 
     func switchToTab(tabID: UUID) {
