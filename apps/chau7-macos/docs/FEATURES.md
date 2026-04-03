@@ -343,7 +343,8 @@ Registration only occurs if the AI tool's config directory exists — no files a
 
 - Full VoiceOver support.
 - Respects High Contrast and Reduced Motion system preferences.
-- 4 languages: English, French, Arabic, Hebrew — with proper RTL layout.
+- 4 languages: English, French, Arabic, Hebrew — with proper RTL layout across all windows.
+- RTL layout direction propagated at every NSHostingView boundary — overlay, settings, command palette, data explorer, help docs, bug report, splash, and all auxiliary windows.
 - Runtime language switching without restart.
 
 ## SSH, Profiles & Remote

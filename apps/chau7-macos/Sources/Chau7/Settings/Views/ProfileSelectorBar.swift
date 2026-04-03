@@ -185,7 +185,6 @@ struct CreateProfileSheet: View {
         }
         .padding(20)
         .frame(width: 400)
-        .localized()
         .onAppear {
             if !defaultName.isEmpty {
                 profileName = defaultName

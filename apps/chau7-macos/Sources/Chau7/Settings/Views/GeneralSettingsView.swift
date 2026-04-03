@@ -106,7 +106,6 @@ struct GeneralSettingsView: View {
                 }
             ], alignment: .trailing)
         }
-        .localized()
         .alert(L("settings.general.reset.confirm.title", "Reset All Settings?"), isPresented: $showResetConfirmation) {
             Button(L("button.cancel", "Cancel"), role: .cancel) {}
             Button(L("button.reset", "Reset"), role: .destructive) {
