@@ -48,10 +48,24 @@ services/
 
 ## Build
 
+The fast way (knit the sock, wear the sock):
+
 ```bash
 cd apps/chau7-macos
-swift build
-swift test
+./Scripts/knit           # build release + launch
+./Scripts/knit debug     # build debug + launch (for when you want to see what went wrong)
+./Scripts/knit --no-run  # build only (commitment issues, we get it)
+```
+
+`knit` hot-swaps the binary into your existing app bundle. No full rebuild, no re-signing dance. If no bundle exists yet, it falls back to the full `build-and-run.sh` ceremony.
+
+The slow way (for when you want to feel in control):
+
+```bash
+cd apps/chau7-macos
+swift build              # compile
+swift test               # verify you didn't break anything
+./Scripts/build-app.sh   # create a proper .app bundle with notifications and everything
 ```
 
 Requirements: macOS 14+, Xcode 26+. The Rust terminal backend and Go proxy are pre-built in the repo. If you want to rebuild them: Rust toolchain for `rust/chau7_terminal`, Go 1.22+ for `chau7-proxy`.
