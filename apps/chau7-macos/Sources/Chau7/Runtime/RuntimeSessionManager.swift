@@ -125,20 +125,21 @@ final class RuntimeSessionManager {
 
     func exactClaudeTabID(sessionID: String, cwd: String?) -> UUID? {
         guard let normalized = normalizeClaudeSessionID(sessionID) else { return nil }
-
-        if let boundSession = sessionForClaudeSessionID(normalized) {
-            let normalizedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if normalizedCwd == nil
-                || normalizedCwd?.isEmpty == true
-                || DirectoryPathMatcher.bidirectionalPrefixRank(
-                    targetPath: normalizedCwd ?? "",
-                    candidatePath: boundSession.config.directory
-                ) != nil {
-                return boundSession.tabID
+        let tabs = {
+            if Thread.isMainThread {
+                return listAITabs()
             }
-        }
-
-        return resolveClaudeTabBySessionID(normalized, cwd: cwd ?? "")
+            return DispatchQueue.main.sync { listAITabs() }
+        }()
+        return Self.resolveAuthoritativeClaudeTabID(
+            sessionID: normalized,
+            cwd: cwd,
+            boundSession: sessionForClaudeSessionID(normalized),
+            tabs: tabs,
+            strictResolver: { [weak self] sessionID, cwd in
+                self?.resolveClaudeTabByStrictSession(sessionID, cwd: cwd)
+            }
+        )
     }
 
     func allSessions(includeStopped: Bool = false) -> [RuntimeSession] {
@@ -567,11 +568,58 @@ final class RuntimeSessionManager {
         return matches.first?.tabID
     }
 
+    private func resolveClaudeTabByStrictSession(_ sessionID: String, cwd: String?) -> UUID? {
+        {
+            if Thread.isMainThread {
+                return _resolveClaudeTabByStrictSession(sessionID, cwd: cwd)
+            }
+            return DispatchQueue.main.sync { _resolveClaudeTabByStrictSession(sessionID, cwd: cwd) }
+        }()
+    }
+
+    private func _resolveClaudeTabByStrictSession(_ sessionID: String, cwd: String?) -> UUID? {
+        let normalizedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = TabTarget(
+            tool: "Claude",
+            directory: normalizedCwd?.isEmpty == false ? normalizedCwd : nil,
+            tabID: nil,
+            sessionID: sessionID
+        )
+        let tabs = TerminalControlService.shared.allTabs
+        return TabResolver.resolveStrictSession(target, in: tabs)?.id
+    }
+
     struct AITabSummary {
         let tabID: UUID
         let cwd: String
         let provider: String?
         let sessionID: String?
+    }
+
+    static func resolveAuthoritativeClaudeTabID(
+        sessionID: String,
+        cwd: String?,
+        boundSession: RuntimeSession?,
+        tabs: [AITabSummary],
+        strictResolver: (_ sessionID: String, _ cwd: String?) -> UUID?
+    ) -> UUID? {
+        if let boundSession {
+            let normalizedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if normalizedCwd == nil
+                || normalizedCwd?.isEmpty == true
+                || DirectoryPathMatcher.bidirectionalPrefixRank(
+                    targetPath: normalizedCwd ?? "",
+                    candidatePath: boundSession.config.directory
+                ) != nil {
+                return boundSession.tabID
+            }
+        }
+
+        if let resolved = resolveClaudeTabID(sessionID: sessionID, cwd: cwd ?? "", tabs: tabs) {
+            return resolved
+        }
+
+        return strictResolver(sessionID, cwd)
     }
 
     static func resolveClaudeTabID(sessionID: String, cwd: String, tabs: [AITabSummary]) -> UUID? {
