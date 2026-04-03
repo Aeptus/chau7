@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: services/chau7-remote/go.mod
 
@@ -59,7 +59,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: apps/chau7-macos/chau7-proxy/go.mod
 
