@@ -1545,3 +1545,198 @@
 "cto.runtime.refresh" = "Actualiser";
 "cto.runtime.reset" = "Réinitialiser";
 "cto.runtime.trackedSessions" = "Suivies";
+
+// MARK: - Alerts
+"alert.quit.title" = "Quitter Chau7 ?";
+"alert.quit.message" = "%d processus en cours seront arrêtés : %@";
+"alert.quit.confirm" = "Quitter";
+"alert.urlCommand.title" = "Exécuter la commande depuis l'URL ?";
+"alert.urlCommand.message" = "Une URL demande d'exécuter :\n\n%@\n\nSource : %@";
+"alert.urlCommand.confirm" = "Exécuter";
+"alert.deleteRule.title" = "Supprimer la règle ?";
+"alert.importSSH.title" = "Importer toutes les entrées ?";
+"alert.bugReport.saved" = "Rapport enregistré";
+"alert.bugReport.savedMessage" = "Enregistré dans %@";
+"alert.bugReport.showInFinder" = "Afficher dans le Finder";
+
+// MARK: - MCP Approval
+"mcp.approval.tabRequest.title" = "Demande d'onglet MCP";
+"mcp.approval.allow" = "Autoriser";
+"mcp.approval.deny" = "Refuser";
+"mcp.approval.commandTitle" = "Approbation de commande MCP";
+"mcp.approval.commandMessage" = "Un client MCP souhaite exécuter :\n\n%@\n\n%@";
+"mcp.approval.allowOnce" = "Autoriser une fois";
+"mcp.approval.alwaysAllow" = "Toujours autoriser";
+
+// MARK: - Menu Titles
+"menu.find" = "Rechercher";
+"menu.panes" = "Panneaux";
+"menu.selectTab" = "Sélectionner l'onglet";
+"menu.showChangedFiles" = "Afficher les fichiers modifiés";
+"menu.moveToWindow" = "Déplacer vers la fenêtre";
+
+// MARK: - Window & Panel Titles
+"window.debugConsole" = "Console de débogage Chau7";
+"window.dataExplorer" = "Explorateur de données";
+"window.keyboardShortcuts" = "Raccourcis clavier";
+"panel.changedFiles.title" = "Fichiers modifiés (%d)";
+
+// MARK: - File Dialogs
+"dialog.exportSettings.title" = "Exporter les réglages Chau7";
+"dialog.exportHistory.title" = "Exporter l'historique des commandes";
+"dialog.importHistory.title" = "Importer l'historique des commandes";
+"dialog.protectedAccess.title" = "Accorder l'accès aux dossiers protégés";
+"dialog.protectedAccess.message" = "Sélectionnez des dossiers comme Téléchargements/Bureau/Documents pour la détection de dépôts en arrière-plan.";
+
+// MARK: - Changed Files Panel
+"panel.changedFiles.filter" = "Filtrer les fichiers...";
+"panel.changedFiles.openDiff" = "Ouvrir le diff";
+"panel.changedFiles.previewFile" = "Aperçu du fichier";
+"panel.changedFiles.copyPath" = "Copier le chemin";
+"panel.changedFiles.copyAllPaths" = "Copier tous les chemins";
+"panel.changedFiles.copyAll" = "Tout copier";
+"panel.changedFiles.fileCount" = "%d fichier(s)";
+
+// MARK: - Placeholders
+"placeholder.searchCommands" = "Rechercher des commandes...";
+"placeholder.searchCommits" = "Rechercher des commits...";
+"placeholder.stashMessage" = "Message de remisage (optionnel)";
+"placeholder.newBranchName" = "Nom de la nouvelle branche";
+"placeholder.profileName" = "Nom du profil";
+"placeholder.key" = "Clé";
+"placeholder.value" = "Valeur";
+"placeholder.command" = "commande";
+"placeholder.repoDescription" = "À quoi sert ce dépôt ?";
+"placeholder.repoLabels" = "backend, rust, api (séparés par des virgules)";
+"placeholder.commitMessage" = "Message de commit...";
+
+// MARK: - Repository Pane
+"repo.loading" = "Chargement du dépôt...";
+"repo.workingTreeClean" = "Arborescence de travail propre";
+"repo.noSessionChanges" = "Aucune modification dans cette session";
+"repo.aheadBehind.help" = "↑ commits en avance, ↓ commits en retard";
+"repo.switchToGit" = "Git";
+"repo.switchToSession" = "Session";
+"repo.switchToGit.help" = "Passer à la vue git complète";
+"repo.switchToSession.help" = "Passer à la vue session";
+"repo.section.conflicts" = "CONFLITS";
+"repo.section.staged" = "INDEXÉS";
+"repo.section.modified" = "MODIFIÉS";
+"repo.section.untracked" = "NON SUIVIS";
+"repo.section.new" = "NOUVEAUX";
+"repo.stageAll" = "Tout indexer";
+"repo.unstageAll" = "Tout désindexer";
+"repo.stageAllSession" = "Indexer toutes les modifications de session";
+"repo.amend" = "Corriger";
+"repo.askAgent" = "Demander à l'agent";
+"repo.askAgent.help" = "Demander à l'agent IA de suggérer un message de commit";
+"repo.commit" = "Valider";
+"repo.commitStaged" = "Valider (%d indexés)";
+"repo.commit.help" = "⌘Retour pour valider";
+"repo.copied" = "Copié";
+"repo.copyHash" = "Copier le hash";
+"repo.copyMessage" = "Copier le message";
+"repo.copyFull" = "Copier tout";
+"repo.loadMore" = "Charger plus";
+"repo.noStashes" = "Aucun remisage";
+"repo.save" = "Enregistrer";
+"repo.pop" = "Restaurer";
+"repo.drop" = "Supprimer";
+"repo.createBranch" = "Créer";
+"repo.switchBranch" = "Basculer";
+"repo.deleteBranch" = "Supprimer";
+"repo.push" = "Pousser";
+"repo.pull" = "Tirer";
+"repo.switchBranchTitle" = "Changer de branche";
+"repo.ours" = "Le nôtre";
+"repo.theirs" = "Le leur";
+"repo.tools" = "Outils :";
+"repo.hash.help" = "Cliquer pour copier le hash complet";
+"repo.section.changes" = "Modifications";
+"repo.section.sessionChanges" = "Modifications de session";
+"repo.section.otherChanges" = "Autres modifications";
+"repo.section.turnSummary" = "Résumé du tour";
+"repo.section.history" = "Historique";
+"repo.section.stash" = "Remisage";
+"repo.section.branches" = "Branches";
+
+// MARK: - MCP Settings
+"mcp.settings.newProfile" = "Nouveau profil MCP";
+"mcp.settings.editProfile" = "Modifier le profil MCP";
+"mcp.settings.trigger" = "Déclencheur";
+"mcp.settings.type" = "Type";
+"mcp.settings.permissionMode" = "Mode de permission";
+"mcp.settings.allowedCommands" = "Commandes autorisées";
+"mcp.settings.blockedCommands" = "Commandes bloquées";
+"mcp.settings.enabled" = "Activé";
+"mcp.settings.priority" = "Priorité : %d";
+"mcp.mode.allowAll.help" = "Toutes les commandes s'exécutent sauf celles de la liste bloquée.";
+"mcp.mode.allowlist.help" = "Seules les commandes de la liste autorisée s'exécutent. Les autres sont refusées.";
+"mcp.mode.askUnlisted.help" = "Les commandes absentes des deux listes demanderont une approbation.";
+"mcp.mode.auditOnly.help" = "Toutes les commandes s'exécutent mais celles non listées sont journalisées.";
+
+// MARK: - Repository Settings
+"repos.noRepos" = "Aucun dépôt découvert";
+"repos.noRepos.help" = "Ouvrez un terminal dans un dépôt git pour commencer";
+"repos.selectToEdit" = "Sélectionnez un dépôt à modifier";
+"repos.description" = "Description";
+"repos.labels" = "Étiquettes";
+"repos.favoriteFiles" = "Fichiers favoris";
+"repos.favoriteFiles.help" = "Chemins relatifs, un par ligne";
+
+// MARK: - Data Explorer
+"explorer.sessions.noSessions" = "Aucune session IA enregistrée";
+"explorer.sessions.cmds" = "%d cmds";
+"explorer.sessions.runs" = "%d exécutions";
+"explorer.runs.noRuns" = "Aucune exécution IA enregistrée";
+"explorer.runs.count" = "%d exécutions";
+"explorer.runs.withTokens" = "%d avec données de tokens";
+"explorer.runs.selectRun" = "Sélectionnez une exécution pour voir les détails";
+"explorer.runs.toolCalls" = "Appels d'outils";
+"explorer.runs.noToolCalls" = "Aucun appel d'outil enregistré pour cette exécution";
+"explorer.history.totalRecords" = "%d enregistrements au total";
+
+// MARK: - Dashboard
+"dashboard.noAgents" = "Aucun agent actif dans ce dépôt";
+"dashboard.noAgents.help" = "Démarrez un agent IA dans un onglet avec ce dépôt pour le voir ici.";
+"dashboard.turns" = "Tours : %d";
+"dashboard.lastTool" = "Dernier : %@";
+"dashboard.awaitingApproval" = "En attente d'approbation";
+"dashboard.stop" = "Arrêter";
+"dashboard.tab" = "Onglet";
+"dashboard.conflicts" = "Conflits";
+"dashboard.timeline" = "Chronologie";
+"dashboard.noEvents" = "Aucun événement";
+
+// MARK: - Splash & Welcome
+"splash.welcome" = "Bienvenue dans Chau7";
+"splash.getStarted" = "Commencer";
+"splash.tip.tabs.title" = "Des onglets riches en contexte";
+"splash.tip.tabs.body" = "Chaque onglet suit sa session IA, son dépôt et son historique de commandes. Nommez-les (double-clic) et groupez-les par dépôt (clic droit) pour gérer vos agents en parallèle.";
+"splash.tip.panel.title" = "Le panneau latéral est votre compagnon";
+"splash.tip.panel.body" = "L'icône de la barre de menus ouvre un centre de commande avec l'activité IA en direct, les notifications et les actions rapides. Gardez-le à portée quand vous utilisez plusieurs agents.";
+"splash.tip.shortcuts.title" = "Des raccourcis, encore des raccourcis";
+"splash.tip.shortcuts.body" = "Cmd+T nouvel onglet  ·  Cmd+W fermer  ·  Cmd+Shift+] / [ basculer\nCmd+Shift+D explorateur de données  ·  Cmd+K palette de commandes";
+
+// MARK: - Overlay & Tabs
+"overlay.shellInitializing" = "Initialisation du shell…";
+"overlay.renameTab" = "Renommer l'onglet...";
+"overlay.moveToIdle" = "Déplacer vers les onglets inactifs";
+"overlay.closeTab" = "Fermer l'onglet";
+"overlay.mcpControlled.help" = "Onglet contrôlé par MCP";
+"overlay.unpin" = "Désépingler";
+"overlay.pin" = "Épingler";
+"overlay.idleTabs.help" = "Onglets inactifs (%d)";
+"overlay.closeAllIdle" = "Fermer tous les inactifs";
+
+// MARK: - Split Panes
+"pane.showSource" = "Afficher la source";
+"pane.showRunbook" = "Afficher le runbook";
+"pane.runAll" = "Tout exécuter";
+
+// MARK: - Status Bar
+"statusbar.monitoringActive" = "Surveillance active";
+"statusbar.monitoringPaused" = "Surveillance en pause";
+
+// MARK: - Notifications
+"notifications.rateLimited" = "Débit limité";

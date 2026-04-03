@@ -80,7 +80,7 @@ struct ProfilesBackupSettingsView: View {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "chau7-settings.json"
-        panel.title = "Export Chau7 Settings"
+        panel.title = L("dialog.exportSettings.title", "Export Chau7 Settings")
 
         if panel.runModal() == .OK, let url = panel.url {
             do {

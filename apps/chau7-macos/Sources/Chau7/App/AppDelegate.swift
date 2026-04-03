@@ -243,11 +243,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         let unique = Array(Set(runningProcessNames)).sorted()
         let processList = unique.joined(separator: ", ")
         let alert = NSAlert()
-        alert.messageText = "Quit Chau7?"
-        alert.informativeText = "\(unique.count) running process\(unique.count == 1 ? "" : "es") will be terminated: \(processList)"
+        alert.messageText = L("alert.quit.title", "Quit Chau7?")
+        alert.informativeText = String(format: L("alert.quit.message", "%d running process(es) will be terminated: %@"), unique.count, processList)
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Quit")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L("alert.quit.confirm", "Quit"))
+        alert.addButton(withTitle: L("action.cancel", "Cancel"))
         return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
@@ -1307,11 +1307,11 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     private func confirmAndRun(command: String, source: String) {
         let alert = NSAlert()
-        alert.messageText = "Run command from URL?"
-        alert.informativeText = "A URL is requesting to run:\n\n\(command.prefix(500))\n\nSource: \(source)"
+        alert.messageText = L("alert.urlCommand.title", "Run command from URL?")
+        alert.informativeText = String(format: L("alert.urlCommand.message", "A URL is requesting to run:\n\n%@\n\nSource: %@"), String(command.prefix(500)), source)
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Run")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L("alert.urlCommand.confirm", "Run"))
+        alert.addButton(withTitle: L("action.cancel", "Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         openNewTabWithCommand(command)
     }

@@ -211,7 +211,7 @@ struct HistorySettingsView: View {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType.json]
         panel.nameFieldStringValue = "chau7-history.json"
-        panel.title = "Export Command History"
+        panel.title = L("dialog.exportHistory.title", "Export Command History")
 
         if panel.runModal() == .OK, let url = panel.url {
             do {
@@ -229,7 +229,7 @@ struct HistorySettingsView: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [UTType.json]
         panel.allowsMultipleSelection = false
-        panel.title = "Import Command History"
+        panel.title = L("dialog.importHistory.title", "Import Command History")
 
         if panel.runModal() == .OK, let url = panel.url {
             do {

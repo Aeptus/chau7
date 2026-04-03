@@ -178,7 +178,7 @@ struct Chau7App: App {
             }
 
             CommandGroup(replacing: .textEditing) {
-                Menu("Find") {
+                Menu(L("menu.find", "Find")) {
                     Button(L("Find...", "Find...")) {
                         appDelegate.toggleSearch()
                     }
@@ -279,7 +279,7 @@ struct Chau7App: App {
 
                 // MARK: - Panes
 
-                Menu("Panes") {
+                Menu(L("menu.panes", "Panes")) {
                     Button(L("Split Horizontally", "Split Horizontally")) {
                         appDelegate.splitHorizontally()
                     }
@@ -344,7 +344,7 @@ struct Chau7App: App {
 
                 Divider()
 
-                Button("Show Changed Files") {
+                Button(L("menu.showChangedFiles", "Show Changed Files")) {
                     appDelegate.showChangedFiles()
                 }
                 .keyboardShortcut("g", modifiers: [.command, .option])
@@ -384,7 +384,7 @@ struct Chau7App: App {
 
                 Divider()
 
-                Menu("Select Tab") {
+                Menu(L("menu.selectTab", "Select Tab")) {
                     // Tabs 1-9 with keyboard shortcuts
                     ForEach(Array(overlayModel.tabs.prefix(9).enumerated()), id: \.element.id) { index, tab in
                         let name = tab.customTitle ?? tab.displaySession?.activeAppName ?? "Tab \(index + 1)"

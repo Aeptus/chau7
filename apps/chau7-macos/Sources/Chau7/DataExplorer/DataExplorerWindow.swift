@@ -24,7 +24,7 @@ final class DataExplorerWindow {
             backing: .buffered,
             defer: false
         )
-        window.title = "Data Explorer"
+        window.title = L("window.dataExplorer", "Data Explorer")
         window.contentView = hostingView
         window.minSize = NSSize(width: 600, height: 400)
         window.center()

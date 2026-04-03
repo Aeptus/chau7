@@ -305,6 +305,15 @@ Unload:
 launchctl unload -w ~/Library/LaunchAgents/com.chau7.plist
 ```
 
+## Security & Privacy
+
+- **API Proxy**: The optional TLS proxy (`chau7-proxy`) runs locally on your machine for AI API analytics. API keys pass through to the original provider and are never stored or transmitted elsewhere. The proxy is opt-in and can be disabled in Settings.
+- **MCP Server**: The Unix socket API is bound to `~/.chau7/mcp.sock` with `0600` permissions (owner-only access).
+- **Bug Reports**: Submitted via a Cloudflare Worker relay to a private GitHub repo. No data is sent without explicit user action. All diagnostic sections are opt-in. See the in-app privacy page for full GDPR sub-processor disclosure.
+- **Terminal Data**: Scrollback, command history, and telemetry stay on your machine in `~/.chau7/` and `~/Library/Application Support/Chau7/`.
+
+For vulnerability reports, see [SECURITY.md](../../SECURITY.md).
+
 ## Troubleshooting
 
 - Notifications do not appear: run the app bundle (`./Scripts/build-app.sh`), and verify notifications are allowed in System Settings.

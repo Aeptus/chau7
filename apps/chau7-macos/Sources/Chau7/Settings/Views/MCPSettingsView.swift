@@ -71,19 +71,19 @@ struct MCPSettingsView: View {
 
             switch settings.mcpPermissionMode {
             case .allowAll:
-                Text("All commands run immediately except those in the blocked list.")
+                Text(L("mcp.mode.allowAll.help", "All commands run immediately except those in the blocked list."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .allowlist:
-                Text("Only commands in the allowed list run. Unlisted commands are denied.")
+                Text(L("mcp.mode.allowlist.help", "Only commands in the allowed list run. Unlisted commands are denied."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .askUnlisted:
-                Text("Commands not in either list will prompt for approval.")
+                Text(L("mcp.mode.askUnlisted.help", "Commands not in either list will prompt for approval."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .auditOnly:
-                Text("All commands run but unlisted ones are logged for audit review.")
+                Text(L("mcp.mode.auditOnly.help", "All commands run but unlisted ones are logged for audit review."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -270,21 +270,21 @@ private struct MCPProfileEditorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(profile == nil ? "New MCP Profile" : "Edit MCP Profile")
+            Text(profile == nil ? L("mcp.settings.newProfile", "New MCP Profile") : L("mcp.settings.editProfile", "Edit MCP Profile"))
                 .font(.headline)
 
-            TextField("Profile Name", text: $name)
+            TextField(L("placeholder.profileName", "Profile Name"), text: $name)
                 .textFieldStyle(.roundedBorder)
 
-            Toggle("Enabled", isOn: $isEnabled)
+            Toggle(L("mcp.settings.enabled", "Enabled"), isOn: $isEnabled)
 
-            Stepper("Priority: \(priority)", value: $priority, in: 0 ... 100)
+            Stepper(String(format: L("mcp.settings.priority", "Priority: %d"), priority), value: $priority, in: 0 ... 100)
 
             Divider()
 
             // Trigger
-            Text("Trigger").font(.subheadline.weight(.medium))
-            Picker("Type", selection: $triggerTypeIndex) {
+            Text(L("mcp.settings.trigger", "Trigger")).font(.subheadline.weight(.medium))
+            Picker(L("mcp.settings.type", "Type"), selection: $triggerTypeIndex) {
                 ForEach(0 ..< triggerTypes.count, id: \.self) { i in
                     Text(triggerTypes[i]).tag(i)
                 }
@@ -293,10 +293,10 @@ private struct MCPProfileEditorView: View {
 
             if triggerTypeIndex == 4 {
                 HStack {
-                    TextField("Key", text: $triggerEnvKey)
+                    TextField(L("placeholder.key", "Key"), text: $triggerEnvKey)
                         .textFieldStyle(.roundedBorder)
                     Text("=")
-                    TextField("Value", text: $triggerValue)
+                    TextField(L("placeholder.value", "Value"), text: $triggerValue)
                         .textFieldStyle(.roundedBorder)
                 }
             } else {
@@ -308,7 +308,7 @@ private struct MCPProfileEditorView: View {
             Divider()
 
             // Permission mode
-            Text("Permission Mode").font(.subheadline.weight(.medium))
+            Text(L("mcp.settings.permissionMode", "Permission Mode")).font(.subheadline.weight(.medium))
             Picker("", selection: $permissionMode) {
                 ForEach(MCPPermissionMode.allCases, id: \.self) { mode in
                     Text(mode.displayName).tag(mode)
@@ -318,17 +318,17 @@ private struct MCPProfileEditorView: View {
 
             // Command lists
             if permissionMode != .allowAll {
-                profileCommandList(title: "Allowed Commands", commands: $allowedCommands, newCommand: $newAllowed)
+                profileCommandList(title: L("mcp.settings.allowedCommands", "Allowed Commands"), commands: $allowedCommands, newCommand: $newAllowed)
             }
-            profileCommandList(title: "Blocked Commands", commands: $blockedCommands, newCommand: $newBlocked)
+            profileCommandList(title: L("mcp.settings.blockedCommands", "Blocked Commands"), commands: $blockedCommands, newCommand: $newBlocked)
 
             Divider()
 
             HStack {
                 Spacer()
-                Button("Cancel") { onCancel() }
+                Button(L("action.cancel", "Cancel")) { onCancel() }
                     .keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
+                Button(L("action.save", "Save")) { save() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || triggerValue.trimmingCharacters(in: .whitespaces).isEmpty)
             }
@@ -426,11 +426,11 @@ private struct MCPProfileEditorView: View {
                 }
             }
             HStack(spacing: 4) {
-                TextField("command", text: newCommand)
+                TextField(L("placeholder.command", "command"), text: newCommand)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.caption, design: .monospaced))
                     .onSubmit { addCmd(to: commands, from: newCommand) }
-                Button("Add") { addCmd(to: commands, from: newCommand) }
+                Button(L("action.add", "Add")) { addCmd(to: commands, from: newCommand) }
                     .font(.caption)
                     .disabled(newCommand.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
             }

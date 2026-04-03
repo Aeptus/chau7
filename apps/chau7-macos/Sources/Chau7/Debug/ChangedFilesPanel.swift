@@ -20,7 +20,7 @@ enum ChangedFilesPanel {
             backing: .buffered,
             defer: false
         )
-        p.title = "Changed Files (\(files.count))"
+        p.title = String(format: L("panel.changedFiles.title", "Changed Files (%d)"), files.count)
         p.contentViewController = hosting
         p.isFloatingPanel = true
         p.becomesKeyOnlyIfNeeded = true
@@ -45,7 +45,7 @@ private struct ChangedFilesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Search field
-            TextField("Filter files...", text: $searchText)
+            TextField(L("panel.changedFiles.filter", "Filter files..."), text: $searchText)
                 .textFieldStyle(.roundedBorder)
                 .padding(8)
 
@@ -69,14 +69,14 @@ private struct ChangedFilesView: View {
                     }
                 }
                 .contextMenu {
-                    Button("Open Diff") {
+                    Button(L("panel.changedFiles.openDiff", "Open Diff")) {
                         guard let dir = directory else { return }
                         if let appDelegate = NSApp.delegate as? AppDelegate,
                            let model = appDelegate.activeOverlayModel {
                             model.openDiffViewerInCurrentTab(filePath: file, directory: dir)
                         }
                     }
-                    Button("Preview File") {
+                    Button(L("panel.changedFiles.previewFile", "Preview File")) {
                         guard let dir = directory else { return }
                         let fullPath = (dir as NSString).appendingPathComponent(file)
                         if let appDelegate = NSApp.delegate as? AppDelegate,
@@ -85,11 +85,11 @@ private struct ChangedFilesView: View {
                         }
                     }
                     Divider()
-                    Button("Copy Path") {
+                    Button(L("panel.changedFiles.copyPath", "Copy Path")) {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(file, forType: .string)
                     }
-                    Button("Copy All Paths") {
+                    Button(L("panel.changedFiles.copyAllPaths", "Copy All Paths")) {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(files.joined(separator: "\n"), forType: .string)
                     }
@@ -105,7 +105,7 @@ private struct ChangedFilesView: View {
                     .foregroundStyle(.secondary)
                     .font(.caption)
                 Spacer()
-                Button("Copy All") {
+                Button(L("panel.changedFiles.copyAll", "Copy All")) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(files.joined(separator: "\n"), forType: .string)
                 }

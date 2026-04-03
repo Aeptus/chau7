@@ -1543,3 +1543,198 @@
 "cto.runtime.refresh" = "Refresh";
 "cto.runtime.reset" = "Reset";
 "cto.runtime.trackedSessions" = "Tracked";
+
+// MARK: - Alerts
+"alert.quit.title" = "Quit Chau7?";
+"alert.quit.message" = "%d running process(es) will be terminated: %@";
+"alert.quit.confirm" = "Quit";
+"alert.urlCommand.title" = "Run command from URL?";
+"alert.urlCommand.message" = "A URL is requesting to run:\n\n%@\n\nSource: %@";
+"alert.urlCommand.confirm" = "Run";
+"alert.deleteRule.title" = "Delete Rule?";
+"alert.importSSH.title" = "Import All Entries?";
+"alert.bugReport.saved" = "Report Saved";
+"alert.bugReport.savedMessage" = "Saved to %@";
+"alert.bugReport.showInFinder" = "Show in Finder";
+
+// MARK: - MCP Approval
+"mcp.approval.tabRequest.title" = "MCP Tab Request";
+"mcp.approval.allow" = "Allow";
+"mcp.approval.deny" = "Deny";
+"mcp.approval.commandTitle" = "MCP Command Approval";
+"mcp.approval.commandMessage" = "An MCP client wants to execute:\n\n%@\n\n%@";
+"mcp.approval.allowOnce" = "Allow Once";
+"mcp.approval.alwaysAllow" = "Always Allow";
+
+// MARK: - Menu Titles
+"menu.find" = "Find";
+"menu.panes" = "Panes";
+"menu.selectTab" = "Select Tab";
+"menu.showChangedFiles" = "Show Changed Files";
+"menu.moveToWindow" = "Move to Window";
+
+// MARK: - Window & Panel Titles
+"window.debugConsole" = "Chau7 Debug Console";
+"window.dataExplorer" = "Data Explorer";
+"window.keyboardShortcuts" = "Keyboard Shortcuts";
+"panel.changedFiles.title" = "Changed Files (%d)";
+
+// MARK: - File Dialogs
+"dialog.exportSettings.title" = "Export Chau7 Settings";
+"dialog.exportHistory.title" = "Export Command History";
+"dialog.importHistory.title" = "Import Command History";
+"dialog.protectedAccess.title" = "Grant Protected Folder Access";
+"dialog.protectedAccess.message" = "Select folders like Downloads/Desktop/Documents for background repo detection.";
+
+// MARK: - Changed Files Panel
+"panel.changedFiles.filter" = "Filter files...";
+"panel.changedFiles.openDiff" = "Open Diff";
+"panel.changedFiles.previewFile" = "Preview File";
+"panel.changedFiles.copyPath" = "Copy Path";
+"panel.changedFiles.copyAllPaths" = "Copy All Paths";
+"panel.changedFiles.copyAll" = "Copy All";
+"panel.changedFiles.fileCount" = "%d file(s)";
+
+// MARK: - Placeholders
+"placeholder.searchCommands" = "Search commands...";
+"placeholder.searchCommits" = "Search commits...";
+"placeholder.stashMessage" = "Stash message (optional)";
+"placeholder.newBranchName" = "New branch name";
+"placeholder.profileName" = "Profile Name";
+"placeholder.key" = "Key";
+"placeholder.value" = "Value";
+"placeholder.command" = "command";
+"placeholder.repoDescription" = "What is this repo for?";
+"placeholder.repoLabels" = "backend, rust, api (comma-separated)";
+"placeholder.commitMessage" = "Commit message...";
+
+// MARK: - Repository Pane
+"repo.loading" = "Loading repository...";
+"repo.workingTreeClean" = "Working tree clean";
+"repo.noSessionChanges" = "No changes from this session";
+"repo.aheadBehind.help" = "↑ commits ahead of remote, ↓ commits behind";
+"repo.switchToGit" = "Git";
+"repo.switchToSession" = "Session";
+"repo.switchToGit.help" = "Switch to full git view";
+"repo.switchToSession.help" = "Switch to session view";
+"repo.section.conflicts" = "CONFLICTS";
+"repo.section.staged" = "STAGED";
+"repo.section.modified" = "MODIFIED";
+"repo.section.untracked" = "UNTRACKED";
+"repo.section.new" = "NEW";
+"repo.stageAll" = "Stage All";
+"repo.unstageAll" = "Unstage All";
+"repo.stageAllSession" = "Stage All Session Changes";
+"repo.amend" = "Amend";
+"repo.askAgent" = "Ask Agent";
+"repo.askAgent.help" = "Ask the AI agent to suggest a commit message";
+"repo.commit" = "Commit";
+"repo.commitStaged" = "Commit (%d staged)";
+"repo.commit.help" = "⌘Return to commit";
+"repo.copied" = "Copied";
+"repo.copyHash" = "Copy Hash";
+"repo.copyMessage" = "Copy Message";
+"repo.copyFull" = "Copy Full";
+"repo.loadMore" = "Load More";
+"repo.noStashes" = "No stashes";
+"repo.save" = "Save";
+"repo.pop" = "Pop";
+"repo.drop" = "Drop";
+"repo.createBranch" = "Create";
+"repo.switchBranch" = "Switch";
+"repo.deleteBranch" = "Delete";
+"repo.push" = "Push";
+"repo.pull" = "Pull";
+"repo.switchBranchTitle" = "Switch Branch";
+"repo.ours" = "Ours";
+"repo.theirs" = "Theirs";
+"repo.tools" = "Tools:";
+"repo.hash.help" = "Click to copy full hash";
+"repo.section.changes" = "Changes";
+"repo.section.sessionChanges" = "Session Changes";
+"repo.section.otherChanges" = "Other Changes";
+"repo.section.turnSummary" = "Turn Summary";
+"repo.section.history" = "History";
+"repo.section.stash" = "Stash";
+"repo.section.branches" = "Branches";
+
+// MARK: - MCP Settings
+"mcp.settings.newProfile" = "New MCP Profile";
+"mcp.settings.editProfile" = "Edit MCP Profile";
+"mcp.settings.trigger" = "Trigger";
+"mcp.settings.type" = "Type";
+"mcp.settings.permissionMode" = "Permission Mode";
+"mcp.settings.allowedCommands" = "Allowed Commands";
+"mcp.settings.blockedCommands" = "Blocked Commands";
+"mcp.settings.enabled" = "Enabled";
+"mcp.settings.priority" = "Priority: %d";
+"mcp.mode.allowAll.help" = "All commands run immediately except those in the blocked list.";
+"mcp.mode.allowlist.help" = "Only commands in the allowed list run. Unlisted commands are denied.";
+"mcp.mode.askUnlisted.help" = "Commands not in either list will prompt for approval.";
+"mcp.mode.auditOnly.help" = "All commands run but unlisted ones are logged for audit review.";
+
+// MARK: - Repository Settings
+"repos.noRepos" = "No repositories discovered yet";
+"repos.noRepos.help" = "Open a terminal in a git repository to get started";
+"repos.selectToEdit" = "Select a repository to edit";
+"repos.description" = "Description";
+"repos.labels" = "Labels";
+"repos.favoriteFiles" = "Favorite Files";
+"repos.favoriteFiles.help" = "Relative paths, one per line";
+
+// MARK: - Data Explorer
+"explorer.sessions.noSessions" = "No AI sessions recorded yet";
+"explorer.sessions.cmds" = "%d cmds";
+"explorer.sessions.runs" = "%d runs";
+"explorer.runs.noRuns" = "No AI runs recorded yet";
+"explorer.runs.count" = "%d runs";
+"explorer.runs.withTokens" = "%d with token data";
+"explorer.runs.selectRun" = "Select a run to view details";
+"explorer.runs.toolCalls" = "Tool Calls";
+"explorer.runs.noToolCalls" = "No tool calls recorded for this run";
+"explorer.history.totalRecords" = "%d total records";
+
+// MARK: - Dashboard
+"dashboard.noAgents" = "No agents running in this repo";
+"dashboard.noAgents.help" = "Start an AI agent in a tab with this repository to see it here.";
+"dashboard.turns" = "Turns: %d";
+"dashboard.lastTool" = "Last: %@";
+"dashboard.awaitingApproval" = "Awaiting approval";
+"dashboard.stop" = "Stop";
+"dashboard.tab" = "Tab";
+"dashboard.conflicts" = "Conflicts";
+"dashboard.timeline" = "Timeline";
+"dashboard.noEvents" = "No events yet";
+
+// MARK: - Splash & Welcome
+"splash.welcome" = "Welcome to Chau7";
+"splash.getStarted" = "Get Started";
+"splash.tip.tabs.title" = "Tabs are context-full";
+"splash.tip.tabs.body" = "Each tab tracks its AI session, repo, and command history. Name them (double-click) and group by repo (right-click) to manage parallel agents at a glance.";
+"splash.tip.panel.title" = "Side panel is your companion";
+"splash.tip.panel.body" = "The menu bar icon opens a command center with live AI activity, notifications, and quick actions. Keep it handy when running multiple agents.";
+"splash.tip.shortcuts.title" = "Shortcuts, shortcuts, shortcuts";
+"splash.tip.shortcuts.body" = "Cmd+T new tab  ·  Cmd+W close  ·  Cmd+Shift+] / [ switch\nCmd+Shift+D data explorer  ·  Cmd+K command palette";
+
+// MARK: - Overlay & Tabs
+"overlay.shellInitializing" = "Shell initializing…";
+"overlay.renameTab" = "Rename Tab...";
+"overlay.moveToIdle" = "Move to Idle Tabs";
+"overlay.closeTab" = "Close Tab";
+"overlay.mcpControlled.help" = "MCP-controlled tab";
+"overlay.unpin" = "Unpin";
+"overlay.pin" = "Pin";
+"overlay.idleTabs.help" = "Idle tabs (%d)";
+"overlay.closeAllIdle" = "Close All Idle";
+
+// MARK: - Split Panes
+"pane.showSource" = "Show Source";
+"pane.showRunbook" = "Show Runbook";
+"pane.runAll" = "Run All";
+
+// MARK: - Status Bar
+"statusbar.monitoringActive" = "Monitoring active";
+"statusbar.monitoringPaused" = "Monitoring paused";
+
+// MARK: - Notifications
+"notifications.rateLimited" = "Rate limited";

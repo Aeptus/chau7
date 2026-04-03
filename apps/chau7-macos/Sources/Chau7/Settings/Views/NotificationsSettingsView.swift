@@ -1894,7 +1894,7 @@ private struct NotificationHistoryEntryRow: View {
                 Image(systemName: "gauge.with.dots.needle.100percent")
                     .font(.caption2)
                     .foregroundColor(.orange)
-                    .help("Rate limited")
+                    .help(L("notifications.rateLimited", "Rate limited"))
             } else {
                 Image(systemName: "bell.fill")
                     .font(.caption2)
