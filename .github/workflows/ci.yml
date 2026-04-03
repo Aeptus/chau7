@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift:
+    name: Swift (macOS)
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: apps/chau7-macos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+  go-remote:
+    name: Go (chau7-remote)
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: services/chau7-remote
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/chau7-remote/go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+  go-proxy:
+    name: Go (chau7-proxy)
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: apps/chau7-macos/chau7-proxy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/chau7-macos/chau7-proxy/go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+  relay:
+    name: Relay (Node.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/chau7-relay
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
