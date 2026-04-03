@@ -404,7 +404,7 @@ final class OverlayTabsModel {
     var searchQuery = ""
     var searchResults: [String] = []
     var searchMatchCount = 0
-    var isCaseSensitive = false // Issue #23 fix
+    var isCaseSensitive = false
     var isRegexSearch = false
     var isSemanticSearch = false
     var searchError: String?
@@ -521,7 +521,6 @@ final class OverlayTabsModel {
     @ObservationIgnored var lastArchivedTabStateAt: Date = .distantPast
     /// CTO notification observer tokens (stored for cleanup in deinit)
     @ObservationIgnored var ctoModeObserver: NSObjectProtocol?
-    @ObservationIgnored var ctoFlagObserver: NSObjectProtocol?
     @ObservationIgnored var renderSuspensionObserver: NSObjectProtocol?
     @ObservationIgnored var suspensionDebounceItem: DispatchWorkItem?
     @ObservationIgnored var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
@@ -628,17 +627,6 @@ final class OverlayTabsModel {
             }
         }
 
-        // CTO: refresh tab bar when a session's flag state changes (e.g. AI detected)
-        // With @Observable, property-level mutations auto-trigger observation,
-        // so no manual objectWillChange or debounce is needed.
-        self.ctoFlagObserver = NotificationCenter.default.addObserver(
-            forName: .ctoFlagRecalculated,
-            object: nil,
-            queue: .main
-        ) { _ in
-            // No-op: @Observable tracks property-level changes automatically
-        }
-
         self.renderSuspensionObserver = NotificationCenter.default.addObserver(
             forName: .terminalSessionRenderSuspensionStateChanged,
             object: nil,
@@ -669,7 +657,6 @@ final class OverlayTabsModel {
         Log.warn("OverlayTabsModel deinit — tabs=\(tabs.count) pid=\(ProcessInfo.processInfo.processIdentifier)")
         stopTabBarWatchdog()
         if let ctoModeObserver { NotificationCenter.default.removeObserver(ctoModeObserver) }
-        if let ctoFlagObserver { NotificationCenter.default.removeObserver(ctoFlagObserver) }
         if let renderSuspensionObserver { NotificationCenter.default.removeObserver(renderSuspensionObserver) }
     }
 
@@ -2013,7 +2000,7 @@ final class OverlayTabsModel {
             searchMatchCount = 0
             searchError = nil
             isSemanticSearch = false
-            // Only clear search for current tab, not all tabs (Issue #7 fix)
+            // Only clear search for the current tab, not all tabs
             selectedTab?.session?.clearSearch()
             focusSelected()
         }
@@ -2036,7 +2023,7 @@ final class OverlayTabsModel {
                 maxPreviewLines: 12
             )
         } else {
-            // Pass case sensitivity setting (Issue #23 fix)
+            // Pass case sensitivity setting to the search engine
             result = session.updateSearch(
                 query: searchQuery,
                 maxMatches: 400,
@@ -2053,12 +2040,12 @@ final class OverlayTabsModel {
     func nextMatch() {
         selectedTab?.session?.nextMatch()
         // Note: Don't call refreshSearch() here - it recomputes all matches
-        // which is wasteful when just moving to the next match (Issue #12 fix)
+        // which is wasteful when just moving to the next match
     }
 
     func previousMatch() {
         selectedTab?.session?.previousMatch()
-        // Note: Don't call refreshSearch() here (Issue #12 fix)
+        // Note: Don't call refreshSearch() here -- just move the highlight index
     }
 
     func beginRenameSelected() {

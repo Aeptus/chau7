@@ -638,7 +638,7 @@ struct SettingsDetectionRow: View {
 extension Binding {
     /// Creates a binding to a nested property of a writable value.
     /// Eliminates the verbose `Binding(get:{ obj.prop }, set:{ var c = obj; c.prop = $0; obj = c })` pattern
-    /// that arises from struct properties nested inside @Published.
+    /// that arises from struct properties nested inside @Observable state.
     func nested<T>(_ keyPath: WritableKeyPath<Value, T>) -> Binding<T> {
         Binding<T>(
             get: { self.wrappedValue[keyPath: keyPath] },

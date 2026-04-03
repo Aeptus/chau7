@@ -8,7 +8,7 @@ import simd
 
 /// SIMD-accelerated parser for terminal escape sequences.
 /// Processes 16-32 bytes at a time using ARM NEON / Intel SSE/AVX instructions.
-public enum SIMDTerminalParser {
+enum SIMDTerminalParser {
 
     // Special byte values we're scanning for
     private static let ESC: UInt8 = 0x1B // Escape
@@ -21,21 +21,21 @@ public enum SIMDTerminalParser {
     private static let OSC_START: UInt8 = 0x5D // ']' (OSC introducer after ESC)
 
     /// Result of scanning a buffer for special characters.
-    public struct ScanResult {
+    struct ScanResult {
         /// Positions of escape sequence starts (ESC bytes)
-        public var escapePositions: [Int] = []
+        var escapePositions: [Int] = []
         /// Positions of newlines (LF)
-        public var newlinePositions: [Int] = []
+        var newlinePositions: [Int] = []
         /// Positions of carriage returns (CR)
-        public var carriageReturnPositions: [Int] = []
+        var carriageReturnPositions: [Int] = []
         /// Positions of tabs
-        public var tabPositions: [Int] = []
+        var tabPositions: [Int] = []
         /// Positions of bells
-        public var bellPositions: [Int] = []
+        var bellPositions: [Int] = []
         /// Whether buffer contains only printable ASCII (fast path possible)
-        public var isPureASCII = true
+        var isPureASCII = true
         /// Whether buffer contains any escape sequences
-        public var hasEscapeSequences: Bool {
+        var hasEscapeSequences: Bool {
             !escapePositions.isEmpty
         }
     }
@@ -44,7 +44,7 @@ public enum SIMDTerminalParser {
     // - Parameter buffer: Raw bytes from PTY
     // - Returns: Positions of all special characters found
 
-    public static func scan(_ buffer: UnsafeBufferPointer<UInt8>) -> ScanResult {
+    static func scan(_ buffer: UnsafeBufferPointer<UInt8>) -> ScanResult {
         var result = ScanResult()
         let count = buffer.count
 
@@ -134,7 +134,7 @@ public enum SIMDTerminalParser {
     // Fast path check: returns true if buffer contains no special characters.
     // Uses SIMD for rapid bulk checking.
 
-    public static func isPrintableASCII(_ buffer: UnsafeBufferPointer<UInt8>) -> Bool {
+    static func isPrintableASCII(_ buffer: UnsafeBufferPointer<UInt8>) -> Bool {
         let count = buffer.count
         guard count > 0 else { return true }
 
@@ -171,7 +171,7 @@ public enum SIMDTerminalParser {
     // CSI format: ESC [ <params> <final byte>
     // Final byte is in range 0x40-0x7E
 
-    public static func findCSIEnd(_ buffer: UnsafeBufferPointer<UInt8>, startingAt start: Int) -> Int? {
+    static func findCSIEnd(_ buffer: UnsafeBufferPointer<UInt8>, startingAt start: Int) -> Int? {
         guard start + 2 < buffer.count else { return nil }
         guard buffer[start] == ESC, buffer[start + 1] == CSI_START else { return nil }
 
@@ -192,7 +192,7 @@ public enum SIMDTerminalParser {
     // Finds the end of an OSC sequence starting at the given position.
     // OSC format: ESC ] <params> (BEL | ESC \)
 
-    public static func findOSCEnd(_ buffer: UnsafeBufferPointer<UInt8>, startingAt start: Int) -> Int? {
+    static func findOSCEnd(_ buffer: UnsafeBufferPointer<UInt8>, startingAt start: Int) -> Int? {
         guard start + 2 < buffer.count else { return nil }
         guard buffer[start] == ESC, buffer[start + 1] == OSC_START else { return nil }
 
@@ -211,7 +211,7 @@ public enum SIMDTerminalParser {
     }
 
     /// Parses all escape sequences in the buffer.
-    public static func parseEscapeSequences(_ buffer: UnsafeBufferPointer<UInt8>) -> [EscapeSequence] {
+    static func parseEscapeSequences(_ buffer: UnsafeBufferPointer<UInt8>) -> [EscapeSequence] {
         let scanResult = scan(buffer)
         var sequences: [EscapeSequence] = []
         sequences.reserveCapacity(scanResult.escapePositions.count)
@@ -256,20 +256,20 @@ public enum SIMDTerminalParser {
 
     // MARK: - Escape Sequence Types
 
-    public struct EscapeSequence {
-        public enum SequenceType {
+    struct EscapeSequence {
+        enum SequenceType {
             case csi // Control Sequence Introducer (ESC [)
             case osc // Operating System Command (ESC ])
             case simple // Simple escape (ESC + char)
             case unknown
         }
 
-        public let type: SequenceType
-        public let range: Range<Int>
-        public let rawBytes: [UInt8]
+        let type: SequenceType
+        let range: Range<Int>
+        let rawBytes: [UInt8]
 
         /// Parses CSI parameters (semicolon-separated numbers)
-        public var csiParameters: [Int]? {
+        var csiParameters: [Int]? {
             guard type == .csi, rawBytes.count > 2 else { return nil }
 
             // Skip ESC [ and final byte
@@ -280,7 +280,7 @@ public enum SIMDTerminalParser {
         }
 
         /// Gets the CSI final byte (command character)
-        public var csiFinalByte: UInt8? {
+        var csiFinalByte: UInt8? {
             guard type == .csi, !rawBytes.isEmpty else { return nil }
             return rawBytes.last
         }
@@ -321,7 +321,7 @@ public enum SIMDTerminalParser {
 
 // MARK: - Convenience Extensions
 
-public extension SIMDTerminalParser {
+extension SIMDTerminalParser {
     /// Scans an array of bytes.
     static func scan(_ bytes: [UInt8]) -> ScanResult {
         bytes.withUnsafeBufferPointer { scan($0) }

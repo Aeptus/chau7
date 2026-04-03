@@ -8,18 +8,18 @@ import Chau7Core
 /// The proxy runs as a subprocess, communicating back via Unix socket IPC.
 @MainActor
 @Observable
-public final class ProxyManager {
+final class ProxyManager {
 
     // MARK: - Singleton
 
-    public static let shared = ProxyManager()
+    static let shared = ProxyManager()
 
     // MARK: - Observable State
 
-    public private(set) var isRunning = false
-    public private(set) var lastError: String?
-    public private(set) var port = 18080
-    public private(set) var tlsPort = 18081
+    private(set) var isRunning = false
+    private(set) var lastError: String?
+    private(set) var port = AppConstants.Network.defaultProxyPort
+    private(set) var tlsPort = AppConstants.Network.defaultProxyPort + 1
 
     // MARK: - Private Properties
 
@@ -126,7 +126,7 @@ public final class ProxyManager {
     // MARK: - Public Interface
 
     /// Starts the proxy server if API analytics is enabled
-    public func startIfEnabled() {
+    func startIfEnabled() {
         let settings = FeatureSettings.shared
         guard settings.isAPIAnalyticsEnabled else {
             logger.info("API analytics disabled, not starting proxy")
@@ -136,8 +136,13 @@ public final class ProxyManager {
         start(port: settings.apiAnalyticsPort)
     }
 
+    /// Starts the proxy server on the default proxy port.
+    func start() {
+        start(port: AppConstants.Network.defaultProxyPort)
+    }
+
     /// Starts the proxy server on the specified port
-    public func start(port: Int = 18080) {
+    func start(port: Int) {
         guard !isRunning else {
             logger.info("Proxy already running")
             return
@@ -251,7 +256,7 @@ public final class ProxyManager {
     }
 
     /// Stops the proxy server
-    public func stop() {
+    func stop() {
         guard isRunning, let process = process else {
             logger.info("Proxy not running")
             return
@@ -268,7 +273,7 @@ public final class ProxyManager {
     }
 
     /// Restarts the proxy server
-    public func restart() {
+    func restart() {
         stop()
 
         // Wait a moment before restarting
@@ -278,7 +283,7 @@ public final class ProxyManager {
     }
 
     /// Checks if the proxy is healthy by hitting the health endpoint
-    public func checkHealth() async -> Bool {
+    func checkHealth() async -> Bool {
         guard isRunning else { return false }
 
         guard let url = apiURL(path: "/health") else {
@@ -308,7 +313,7 @@ public final class ProxyManager {
     }
 
     /// Gets current proxy statistics
-    public func getStats() async -> APICallStats? {
+    func getStats() async -> APICallStats? {
         guard isRunning else { return nil }
 
         guard let url = apiURL(path: "/stats") else {
@@ -345,7 +350,7 @@ public final class ProxyManager {
     // MARK: - Task Management
 
     /// Gets the current task candidate for a tab
-    public func getTaskCandidate(tabId: String) async -> TaskCandidate? {
+    func getTaskCandidate(tabId: String) async -> TaskCandidate? {
         guard isRunning else { return nil }
 
         guard let url = apiURL(path: "/task/candidate", queryItems: [URLQueryItem(name: "tab_id", value: tabId)]) else {
@@ -407,7 +412,7 @@ public final class ProxyManager {
     }
 
     /// Gets the current active task for a tab
-    public func getCurrentTask(tabId: String) async -> TrackedTask? {
+    func getCurrentTask(tabId: String) async -> TrackedTask? {
         guard isRunning else { return nil }
 
         guard let url = apiURL(path: "/task/current", queryItems: [URLQueryItem(name: "tab_id", value: tabId)]) else {
@@ -489,7 +494,7 @@ public final class ProxyManager {
     }
 
     /// Starts a new task manually
-    public func startTask(tabId: String, taskName: String?, candidateId: String? = nil) async -> TrackedTask? {
+    func startTask(tabId: String, taskName: String?, candidateId: String? = nil) async -> TrackedTask? {
         guard isRunning else { return nil }
 
         guard let url = apiURL(path: "/task/start") else {
@@ -564,7 +569,7 @@ public final class ProxyManager {
     }
 
     /// Dismisses a pending task candidate
-    public func dismissCandidate(tabId: String, candidateId: String) async -> Bool {
+    func dismissCandidate(tabId: String, candidateId: String) async -> Bool {
         guard isRunning else { return false }
 
         guard let url = apiURL(path: "/task/dismiss") else {
@@ -612,7 +617,7 @@ public final class ProxyManager {
     }
 
     /// Assesses a task as success or failure
-    public func assessTask(taskId: String, approved: Bool, note: String? = nil) async -> Bool {
+    func assessTask(taskId: String, approved: Bool, note: String? = nil) async -> Bool {
         guard isRunning else { return false }
 
         guard let url = apiURL(path: "/task/assess") else {

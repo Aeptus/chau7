@@ -78,7 +78,7 @@ Chau7 is a macOS terminal companion app designed for AI CLI tools. It provides t
 
 ### 4. Terminal Layer
 
-**Files**: `TerminalSessionModel.swift`, `TerminalView.swift`, `AnsiParser.swift`
+**Files**: `TerminalSessionModel.swift`, `RustTerminalView.swift`, `AnsiParser.swift`
 
 ```
 ┌─────────────────────────────────────────────────────────┐

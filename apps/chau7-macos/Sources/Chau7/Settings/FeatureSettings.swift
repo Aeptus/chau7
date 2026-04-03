@@ -2641,7 +2641,7 @@ final class FeatureSettings {
 
         // API Analytics (default: disabled)
         self.isAPIAnalyticsEnabled = defaults.object(forKey: Keys.apiAnalyticsEnabled) as? Bool ?? false
-        self.apiAnalyticsPort = defaults.object(forKey: Keys.apiAnalyticsPort) as? Int ?? 18080
+        self.apiAnalyticsPort = defaults.object(forKey: Keys.apiAnalyticsPort) as? Int ?? AppConstants.Network.defaultProxyPort
         self.apiAnalyticsLogPrompts = defaults.object(forKey: Keys.apiAnalyticsLogPrompts) as? Bool ?? false
         self.apiAnalyticsIncludeOpenAI = defaults.object(forKey: Keys.apiAnalyticsIncludeOpenAI) as? Bool ?? true
 

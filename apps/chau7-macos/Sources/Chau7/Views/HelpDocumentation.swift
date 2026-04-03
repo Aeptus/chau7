@@ -107,9 +107,8 @@ enum HelpContent {
 
     Licensing note:
 
-    - The imported fork preserves the MIT notice text that accompanied the forked subtree.
-    - RTK upstream currently publishes inconsistent license metadata.
-    - Chau7 therefore keeps both local notice files until upstream license history is clarified.
+    - The imported fork is dual-licensed under Apache 2.0 OR MIT, at your option.
+    - Both license texts are preserved locally for full attribution.
 
     ## System Frameworks
 

@@ -4,7 +4,7 @@ import Chau7Core
 // MARK: - Claude Code Monitor
 
 /// Monitors Claude Code events and provides real-time updates.
-/// - Note: Thread Safety - @Published properties must be modified on main thread.
+/// - Note: Thread Safety - @Observable properties must be modified on main thread.
 ///   Background callbacks dispatch to main via DispatchQueue.main.async.
 @Observable
 final class ClaudeCodeMonitor {

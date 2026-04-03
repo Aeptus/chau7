@@ -3,7 +3,7 @@
 // MARK: - General
 "app.name" = "Chau7";
 "app.tagline" = "AI CLI Terminal Companion";
-"app.copyright" = "Copyright © 2024-2025. All rights reserved.";
+"app.copyright" = "Copyright © 2024-2026 Aeptus. Licensed under AGPL 3.0.";
 
 // MARK: - Common Actions
 "action.ok" = "OK";

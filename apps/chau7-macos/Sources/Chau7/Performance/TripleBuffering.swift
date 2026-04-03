@@ -12,12 +12,12 @@ import Atomics
 /// - Buffer 2: Currently being displayed (display buffer)
 ///
 /// Atomic buffer swaps ensure lock-free operation.
-public final class TripleBufferedTerminal {
+final class TripleBufferedTerminal {
 
     // MARK: - Types
 
     /// Single terminal buffer containing all cell data
-    public final class TerminalBuffer {
+    final class TerminalBuffer {
         let cells: UnsafeMutableBufferPointer<TerminalCell>
         let rows: Int
         let cols: Int
@@ -113,12 +113,12 @@ public final class TripleBufferedTerminal {
     private let swapCount: ManagedAtomic<UInt64>
     private let frameCount: ManagedAtomic<UInt64>
 
-    public let rows: Int
-    public let cols: Int
+    let rows: Int
+    let cols: Int
 
     // MARK: - Initialization
 
-    public init(rows: Int, cols: Int) {
+    init(rows: Int, cols: Int) {
         self.rows = rows
         self.cols = cols
 
@@ -139,13 +139,13 @@ public final class TripleBufferedTerminal {
 
     /// Gets the current update buffer for writing.
     /// Call `commitUpdate()` when done writing.
-    public var updateBuffer: TerminalBuffer {
+    var updateBuffer: TerminalBuffer {
         buffers[updateIndex.load(ordering: .acquiring)]
     }
 
     /// Commits the current update buffer and swaps it with the render buffer.
     /// The old render buffer becomes available for the next update.
-    public func commitUpdate() {
+    func commitUpdate() {
         let current = updateIndex.load(ordering: .relaxed)
         let render = renderIndex.load(ordering: .relaxed)
 
@@ -166,12 +166,12 @@ public final class TripleBufferedTerminal {
 
     /// Gets the current render buffer for reading.
     /// This buffer contains the latest committed state.
-    public var renderBuffer: TerminalBuffer {
+    var renderBuffer: TerminalBuffer {
         buffers[renderIndex.load(ordering: .acquiring)]
     }
 
     /// Swaps render buffer to display after GPU submission.
-    public func presentFrame() {
+    func presentFrame() {
         let render = renderIndex.load(ordering: .relaxed)
         let display = displayIndex.load(ordering: .relaxed)
 
@@ -183,39 +183,39 @@ public final class TripleBufferedTerminal {
     }
 
     /// Gets dirty rows that need re-rendering
-    public var dirtyRows: IndexSet {
+    var dirtyRows: IndexSet {
         renderBuffer.dirtyRows
     }
 
     /// Whether a full refresh is needed
-    public var needsFullRefresh: Bool {
+    var needsFullRefresh: Bool {
         renderBuffer.fullRefreshNeeded
     }
 
     // MARK: - Convenience Methods
 
     /// Updates a cell in the update buffer
-    public func setCell(row: Int, col: Int, _ cell: TerminalCell) {
+    func setCell(row: Int, col: Int, _ cell: TerminalCell) {
         updateBuffer[row, col] = cell
     }
 
     /// Gets a cell from the render buffer
-    public func getCell(row: Int, col: Int) -> TerminalCell {
+    func getCell(row: Int, col: Int) -> TerminalCell {
         renderBuffer[row, col]
     }
 
     /// Marks a row as dirty in the update buffer
-    public func markDirty(row: Int) {
+    func markDirty(row: Int) {
         updateBuffer.markDirty(row: row)
     }
 
     /// Marks all rows as dirty (full refresh)
-    public func markFullRefresh() {
+    func markFullRefresh() {
         updateBuffer.fullRefreshNeeded = true
     }
 
     /// Clears all buffers to default state
-    public func clear() {
+    func clear() {
         for buffer in buffers {
             let defaultCell = TerminalCell()
             for i in 0 ..< buffer.cells.count {
@@ -227,14 +227,14 @@ public final class TripleBufferedTerminal {
 
     // MARK: - Statistics
 
-    public struct Statistics {
-        public let bufferSwaps: UInt64
-        public let framesPresented: UInt64
-        public let dirtyRowCount: Int
-        public let needsFullRefresh: Bool
+    struct Statistics {
+        let bufferSwaps: UInt64
+        let framesPresented: UInt64
+        let dirtyRowCount: Int
+        let needsFullRefresh: Bool
     }
 
-    public var statistics: Statistics {
+    var statistics: Statistics {
         Statistics(
             bufferSwaps: swapCount.load(ordering: .relaxed),
             framesPresented: frameCount.load(ordering: .relaxed),
@@ -247,18 +247,18 @@ public final class TripleBufferedTerminal {
 // MARK: - Dirty Region Tracker
 
 /// Tracks dirty regions at sub-row granularity for minimal GPU uploads.
-public struct DirtyRegionTracker {
+struct DirtyRegionTracker {
     /// Minimum unit of dirtiness (in cells)
-    public let cellsPerChunk: Int
+    let cellsPerChunk: Int
 
     /// Dirty chunks per row
     private var dirtyChunks: [[Bool]]
 
-    public let rows: Int
-    public let cols: Int
-    public let chunksPerRow: Int
+    let rows: Int
+    let cols: Int
+    let chunksPerRow: Int
 
-    public init(rows: Int, cols: Int, cellsPerChunk: Int = 16) {
+    init(rows: Int, cols: Int, cellsPerChunk: Int = 16) {
         self.rows = rows
         self.cols = cols
         self.cellsPerChunk = cellsPerChunk
@@ -268,14 +268,14 @@ public struct DirtyRegionTracker {
     }
 
     /// Marks a cell as dirty
-    public mutating func markDirty(row: Int, col: Int) {
+    mutating func markDirty(row: Int, col: Int) {
         guard row >= 0, row < rows, col >= 0, col < cols else { return }
         let chunk = col / cellsPerChunk
         dirtyChunks[row][chunk] = true
     }
 
     /// Marks a range of cells as dirty
-    public mutating func markDirty(row: Int, cols range: Range<Int>) {
+    mutating func markDirty(row: Int, cols range: Range<Int>) {
         guard row >= 0, row < rows else { return }
         let startChunk = max(0, range.lowerBound / cellsPerChunk)
         let endChunk = min(chunksPerRow - 1, (range.upperBound - 1) / cellsPerChunk)
@@ -285,7 +285,7 @@ public struct DirtyRegionTracker {
     }
 
     /// Marks an entire row as dirty
-    public mutating func markDirtyRow(_ row: Int) {
+    mutating func markDirtyRow(_ row: Int) {
         guard row >= 0, row < rows else { return }
         for chunk in 0 ..< chunksPerRow {
             dirtyChunks[row][chunk] = true
@@ -293,7 +293,7 @@ public struct DirtyRegionTracker {
     }
 
     /// Gets dirty ranges for a row
-    public func dirtyRanges(forRow row: Int) -> [Range<Int>] {
+    func dirtyRanges(forRow row: Int) -> [Range<Int>] {
         guard row >= 0, row < rows else { return [] }
 
         var ranges: [Range<Int>] = []
@@ -318,14 +318,14 @@ public struct DirtyRegionTracker {
     }
 
     /// Returns all dirty row indices
-    public var dirtyRowIndices: [Int] {
+    var dirtyRowIndices: [Int] {
         (0 ..< rows).filter { row in
             dirtyChunks[row].contains(true)
         }
     }
 
     /// Clears all dirty flags
-    public mutating func clear() {
+    mutating func clear() {
         for row in 0 ..< rows {
             for chunk in 0 ..< chunksPerRow {
                 dirtyChunks[row][chunk] = false
@@ -334,7 +334,7 @@ public struct DirtyRegionTracker {
     }
 
     /// Total number of dirty chunks
-    public var dirtyChunkCount: Int {
+    var dirtyChunkCount: Int {
         dirtyChunks.reduce(0) { $0 + $1.filter { $0 }.count }
     }
 }

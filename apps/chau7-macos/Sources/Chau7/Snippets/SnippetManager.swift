@@ -260,7 +260,7 @@ struct SnippetInsertion {
 }
 
 /// Manages code snippets with support for global, profile, and repository scopes.
-/// - Note: Thread Safety - @Published properties must be modified on main thread.
+/// - Note: Thread Safety - @Observable properties must be modified on main thread.
 ///   Background file operations dispatch to main via DispatchQueue.main.async.
 @Observable
 final class SnippetManager {

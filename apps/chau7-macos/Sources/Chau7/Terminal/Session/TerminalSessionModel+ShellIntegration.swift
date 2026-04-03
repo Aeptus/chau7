@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 import Chau7Core
 
-// MARK: - Shell Integration (Issue #8 fix)
+// MARK: - Shell Integration (OSC 133 sequences, command detection, AI tool detection)
 
 // Extracted from TerminalSessionModel.swift
 // Contains: OSC 133 handling, command detection, AI tool detection,

@@ -150,11 +150,9 @@ public struct AIDetectionState: Sendable {
         case .scanning:
             // IMPORTANT: When lastDetectedApp is set, output-based matching can only
             // RE-CONFIRM the same tool — never switch to a different one. Without this
-            // guard, strings like "openai.com" appearing in code output hijack a Claude
-            // session to ChatGPT. This was originally fixed in commit 12a6df5 (Mar 8 2026)
-            // inside TerminalSessionModel, lost during the AIDetectionState extraction
-            // (commit 6669010, Mar 10), and restored here. Only command-level detection
-            // (handleCommand) can switch to a different tool.
+            // guard, strings like "openai.com" appearing in code output would hijack a
+            // Claude session to ChatGPT. Only command-level detection (handleCommand)
+            // is allowed to switch to a different tool.
             if let last = lastDetectedApp, appName != last { return false }
             return setDetected(appName, now: now)
         case .redetecting:

@@ -17,6 +17,8 @@ public enum SubprocessRunner {
         do {
             try process.run()
         } catch {
+            // swiftlint:disable:next no_print_statements
+            print("SubprocessRunner: failed to launch \(executablePath): \(error.localizedDescription)")
             return nil
         }
 

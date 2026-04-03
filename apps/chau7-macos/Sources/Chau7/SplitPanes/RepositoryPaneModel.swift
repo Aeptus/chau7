@@ -8,7 +8,7 @@ import Foundation
 /// thread. Errors surface inline via `lastError`.
 ///
 /// Follows the same pattern as `DiffViewerModel`: injectable runner,
-/// background execution, `@Published` state, token-based cancellation.
+/// background execution, `@Observable` state, token-based cancellation.
 @Observable
 final class RepositoryPaneModel: Identifiable {
     let id = UUID()

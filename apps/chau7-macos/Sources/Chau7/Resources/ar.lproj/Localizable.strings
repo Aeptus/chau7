@@ -3,7 +3,7 @@
 // MARK: - General
 "app.name" = "Chau7";
 "app.tagline" = "رفيق طرفية الذكاء الاصطناعي";
-"app.copyright" = "حقوق الطبع والنشر © 2024-2025. جميع الحقوق محفوظة.";
+"app.copyright" = "حقوق الطبع والنشر © 2024-2026 Aeptus. رخصة AGPL 3.0.";
 
 // MARK: - Common Actions
 "action.ok" = "موافق";

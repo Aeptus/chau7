@@ -54,15 +54,15 @@ struct AboutSettingsView: View {
             SettingsSectionHeader(L("settings.about.links", "Links"), icon: "link")
 
             HStack(spacing: 16) {
-                Link(destination: URL(string: "https://github.com/anthropics/chau7")!) {
+                Link(destination: URL(string: "https://github.com/aeptus/chau7")!) {
                     Label(L("GitHub", "GitHub"), systemImage: "chevron.left.forwardslash.chevron.right")
                 }
 
-                Link(destination: URL(string: "https://github.com/anthropics/chau7/issues")!) {
+                Link(destination: URL(string: "https://github.com/aeptus/chau7/issues")!) {
                     Label(L("settings.about.reportIssue", "Report Issue"), systemImage: "exclamationmark.bubble")
                 }
 
-                Link(destination: URL(string: "https://github.com/anthropics/chau7/blob/main/README.md")!) {
+                Link(destination: URL(string: "https://github.com/aeptus/chau7/blob/main/README.md")!) {
                     Label(L("settings.about.documentation", "Documentation"), systemImage: "book")
                 }
             }
@@ -100,7 +100,7 @@ struct AboutSettingsView: View {
                 }
             ])
 
-            SettingsDescription(text: L("settings.about.copyright", "Copyright © 2024-2025. All rights reserved."))
+            SettingsDescription(text: L("settings.about.copyright", "Copyright © 2024-2026 Aeptus. Licensed under AGPL 3.0."))
         }
     }
 
