@@ -13,7 +13,7 @@ concurrency:
 jobs:
   swift:
     name: Swift (macOS)
-    runs-on: macos-14
+    runs-on: macos-15
     defaults:
       run:
         working-directory: apps/chau7-macos
@@ -31,7 +31,7 @@ jobs:
 
   go-remote:
     name: Go (chau7-remote)
-    runs-on: macos-14
+    runs-on: macos-15
     defaults:
       run:
         working-directory: services/chau7-remote
@@ -51,7 +51,7 @@ jobs:
 
   go-proxy:
     name: Go (chau7-proxy)
-    runs-on: macos-14
+    runs-on: macos-15
     defaults:
       run:
         working-directory: apps/chau7-macos/chau7-proxy
