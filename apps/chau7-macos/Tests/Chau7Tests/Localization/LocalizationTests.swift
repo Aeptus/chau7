@@ -102,7 +102,6 @@ final class LocalizationTests: XCTestCase {
     /// This test mainly ensures no typos in .stringsdict key names.
     func testStringsdictKeysAreUsedInCode() {
         let baseDict = loadStringsdictKeys(locale: "en")
-        let baseStrings = Set(loadStrings(locale: "en").keys)
         guard !baseDict.isEmpty else { return }
 
         // .stringsdict keys override .strings — they don't need a .strings entry.
