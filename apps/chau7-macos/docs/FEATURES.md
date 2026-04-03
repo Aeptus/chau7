@@ -590,6 +590,9 @@ Key patterns:
 
 ## Recent Telemetry Integrity
 
+- Public documentation now has a canonical ownership map, stale duplicate onboarding docs were collapsed, and planning/assessment artifacts were removed from the repository's public surface.
+- Staged doc checks now reject absolute filesystem links, stale repository URLs, and TODO markers in the public root README before a commit lands.
+
 - Transcript-derived AI run metrics now store canonical token fields for input, cached input, output, and reasoning output instead of overloading a single input/output pair.
 - Claude transcript extraction now slices runs by start time and deduplicates repeated assistant usage blocks so fragmented message payloads do not multiply token totals.
 - Codex rollout extraction now reads run-local token deltas, including cached input and reasoning output fields, instead of reusing lifetime cumulative totals across multiple runs.

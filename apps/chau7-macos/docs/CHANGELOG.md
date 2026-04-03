@@ -328,6 +328,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.29 | 2026-04-03 | Public docs now have a canonical ownership map, stale onboarding duplicates and planning artifacts were removed, and staged doc checks reject absolute filesystem links, stale repo URLs, and TODO markers in the public README |
 | 0.5.28 | 2026-04-02 | Codex resume metadata now clears claimed stale explicit session IDs when no deterministic replacement exists, preventing repeated save/restore conflicts across same-repo tabs |
 | 0.5.27 | 2026-04-02 | Tab-style delivery now revalidates stale explicit tab IDs against an exact live session match before failing, so banners can still highlight the recovered tab after window/tab registration drift |
 | 0.5.26 | 2026-04-02 | Authoritative Claude notification events now keep exact runtime/session binding only, and fail closed instead of inheriting heuristic tab resolution when the owning tab is ambiguous |
