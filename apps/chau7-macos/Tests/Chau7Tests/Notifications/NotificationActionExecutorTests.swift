@@ -9,6 +9,7 @@ final class NotificationActionExecutorTests: XCTestCase {
         var focusResult = false
         var styleResult: UUID?
         var styleCallResults: [UUID?] = []
+        var styledTabIDs: [UUID] = []
         var existingTabs: Set<UUID> = []
         var badgeResult = false
         var snippetResult = false
@@ -20,6 +21,7 @@ final class NotificationActionExecutorTests: XCTestCase {
         }
 
         func styleTab(tabID: UUID, preset: String, config: [String: String]) -> UUID? {
+            styledTabIDs.append(tabID)
             if !styleCallResults.isEmpty {
                 return styleCallResults.removeFirst()
             }
@@ -120,6 +122,7 @@ final class NotificationActionExecutorTests: XCTestCase {
             delegate.resolveTarget,
             TabTarget(tool: "Codex", directory: "/tmp/chau7", tabID: nil, sessionID: "thread_123")
         )
+        XCTAssertEqual(delegate.styledTabIDs, [recoveredTabID])
     }
 
     func testResolveAutoClearTabIDRecoversMissingTabViaExactSessionLookup() {
