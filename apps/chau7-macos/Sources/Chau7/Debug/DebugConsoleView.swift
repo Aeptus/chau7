@@ -1880,6 +1880,32 @@ struct DebugConsoleView: View {
                                     }
                                 }
                             }
+
+                            // Per-repo event timeline
+                            let repoEvents = appModel.eventsByRepo[entry.path] ?? []
+                            if !repoEvents.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    ForEach(repoEvents.suffix(5).reversed(), id: \.id) { event in
+                                        HStack(spacing: 6) {
+                                            Text(event.type)
+                                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                                .foregroundStyle(eventColor(event.type))
+                                            Text(event.tool)
+                                                .font(.system(size: 9))
+                                                .foregroundStyle(.secondary)
+                                            Text(String(event.message.prefix(60)))
+                                                .font(.system(size: 9))
+                                                .foregroundStyle(.tertiary)
+                                                .lineLimit(1)
+                                            Spacer()
+                                            Text(event.ts.suffix(8))
+                                                .font(.system(size: 8, design: .monospaced))
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                    }
+                                }
+                                .padding(.top, 2)
+                            }
                         }
                         .padding(.vertical, 2)
                         Divider()
@@ -1893,6 +1919,16 @@ struct DebugConsoleView: View {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .abbreviated
         return f.localizedString(for: date, relativeTo: Date())
+    }
+
+    private func eventColor(_ type: String) -> Color {
+        switch type {
+        case "finished": return .green
+        case "failed", "error": return .red
+        case "permission": return .orange
+        case "waiting_input", "idle": return .yellow
+        default: return .secondary
+        }
     }
 
     private func repoFormatTokens(_ count: Int) -> String {
