@@ -716,6 +716,17 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(session.effectiveAISessionId, "abc123")
     }
 
+    func testRestoreAIMetadataDoesNotMarkProviderAsLiveDetected() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.restoreAIMetadata(provider: "codex", sessionId: nil)
+
+        XCTAssertNil(session.lastDetectedAppName)
+        XCTAssertEqual(session.activeAppName, "Codex")
+        XCTAssertEqual(session.effectiveAIProvider, "codex")
+    }
+
     func testPrefillInputWaitsForReadySessionState() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)

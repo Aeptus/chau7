@@ -827,12 +827,17 @@ extension TerminalSessionModel {
             activeAppName
                 ?? lastDetectedAppName
                 ?? Self.displayName(fromProvider: lastAIProvider)
+        let allowRestoredProviderOverride = shouldAllowRestoredProviderOverride(
+            matchedAppName: matchedApp,
+            authoritativeAppName: authoritativeAppName
+        )
 
         // State machine filters: redetecting rejects different tools, and
         // output-only detection is not allowed to flip an established provider.
         guard aiDetection.handleOutputMatch(
             appName: matchedApp,
-            authoritativeAppName: authoritativeAppName
+            authoritativeAppName: authoritativeAppName,
+            allowRestoredProviderOverride: allowRestoredProviderOverride
         ),
             let app = aiDetection.currentApp else { return }
 
@@ -1180,7 +1185,7 @@ extension TerminalSessionModel {
             aiDetection.handleRestore(appName: name)
         }
         activeAppName = restoredDisplayName
-        lastDetectedAppName = restoredDisplayName
+        lastDetectedAppName = nil
         lastAIProvider = normalizedProvider
         suppressWaitingInputFallbackUntilNextUserCommand = restoredDisplayName != nil
         pendingWaitingInputFallbackArmed = false
@@ -1198,6 +1203,27 @@ extension TerminalSessionModel {
         }
 
         lastAISessionId = nil
+    }
+
+    private func shouldAllowRestoredProviderOverride(
+        matchedAppName: String?,
+        authoritativeAppName: String?
+    ) -> Bool {
+        guard aiDetection.isRestored,
+              let matchedProvider = AIResumeParser.normalizeProviderName(matchedAppName ?? ""),
+              let restoredProvider = AIResumeParser.normalizeProviderName(authoritativeAppName ?? "")
+        else {
+            return false
+        }
+
+        guard matchedProvider != restoredProvider else {
+            return false
+        }
+
+        // Only allow live output to reclaim a restored tab when the restored
+        // metadata no longer has a concrete session anchor. This fixes stale
+        // provider badges without reintroducing arbitrary output hijacking.
+        return effectiveAISessionId == nil
     }
 
     private func isExitCommand(_ commandLine: String) -> Bool {

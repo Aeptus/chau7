@@ -886,7 +886,7 @@ final class OverlayTabsModel {
                 Log.info(
                     "saveTabState: clearing claimed Codex resume metadata sessionId=\(explicitSessionId ?? "nil") for dir=\(directory)"
                 )
-                session.restoreAIMetadata(provider: "codex", sessionId: nil)
+                session.restoreAIMetadata(provider: nil, sessionId: nil)
             }
             return nil
         }
@@ -987,6 +987,11 @@ final class OverlayTabsModel {
         let canonicalDirectory = normalizedSessionDirectory(directory)
         let explicitProvider = normalizedAIProvider(from: explicitAIProvider)
         let explicitSessionId = normalizeAISessionId(explicitAISessionId)
+        let liveProviderHint = aiResumeProviderCandidates(
+            appName: appName,
+            outputHint: outputHint,
+            explicitProvider: nil
+        ).first
 
         if let explicitProvider {
             if let resolved = resolvedAIResumeMetadata(
@@ -1003,7 +1008,9 @@ final class OverlayTabsModel {
             // can be found in that provider/directory, avoid guessing another provider.
             // This keeps restore metadata deterministic and prevents cross-tab bleed-through.
             if explicitSessionId == nil {
-                return nil
+                if liveProviderHint == nil || liveProviderHint == explicitProvider {
+                    return nil
+                }
             }
         }
 

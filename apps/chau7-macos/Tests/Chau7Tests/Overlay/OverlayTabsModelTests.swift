@@ -52,6 +52,7 @@ final class OverlayTabsModelTests: XCTestCase {
         // Clear any saved tab state so restoreSavedTabs returns nil
         // and the model starts with a single fresh tab.
         removePersistedWindowStateArtifacts()
+        OverlayTabsModel.sessionFinders = [:]
         appModel = AppModel()
         model = OverlayTabsModel(appModel: appModel, restoreState: false)
     }
@@ -59,6 +60,7 @@ final class OverlayTabsModelTests: XCTestCase {
     override func tearDown() {
         model = nil
         appModel = nil
+        OverlayTabsModel.sessionFinders = [:]
         removePersistedWindowStateArtifacts()
         super.tearDown()
     }
@@ -98,6 +100,24 @@ final class OverlayTabsModelTests: XCTestCase {
         let windows = try XCTUnwrap(OverlayTabsModel.decodeBackupWindowStates(from: data))
         XCTAssertEqual(windows.count, 2)
         XCTAssertEqual(windows[1].first?.customTitle, "Window 2")
+    }
+
+    func testResolveAIResumeMetadataAllowsLiveProviderHintToOverrideStaleCodexRestore() {
+        OverlayTabsModel.registerSessionFinder(forProviderKey: "claude") { directory, _, _ in
+            directory == "/tmp/aetower" ? "claude-session-1" : nil
+        }
+        OverlayTabsModel.registerSessionFinder(forProviderKey: "codex") { _, _, _ in nil }
+
+        let resolved = OverlayTabsModel.resolveAIResumeMetadata(
+            appName: "Claude",
+            directory: "/tmp/aetower",
+            outputHint: "claude code",
+            explicitAIProvider: "codex",
+            explicitAISessionId: nil
+        )
+
+        XCTAssertEqual(resolved?.provider, "claude")
+        XCTAssertEqual(resolved?.sessionId, "claude-session-1")
     }
 
     func testClearPersistedWindowStateRemovesSavedStateAndBackups() {

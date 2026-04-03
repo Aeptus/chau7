@@ -252,79 +252,79 @@ public enum NotificationTriggerCatalog {
             id: .cursor,
             labelKey: "notifications.source.cursor",
             labelFallback: "Cursor",
-            sortOrder: 22
+            sortOrder: 24
         ),
         NotificationTriggerSourceInfo(
             id: .windsurf,
             labelKey: "notifications.source.windsurf",
             labelFallback: "Windsurf",
-            sortOrder: 23
+            sortOrder: 25
         ),
         NotificationTriggerSourceInfo(
             id: .copilot,
             labelKey: "notifications.source.copilot",
             labelFallback: "GitHub Copilot",
-            sortOrder: 24
+            sortOrder: 26
         ),
         NotificationTriggerSourceInfo(
             id: .aider,
             labelKey: "notifications.source.aider",
             labelFallback: "Aider",
-            sortOrder: 25
+            sortOrder: 27
         ),
         NotificationTriggerSourceInfo(
             id: .cline,
             labelKey: "notifications.source.cline",
             labelFallback: "Cline",
-            sortOrder: 26
+            sortOrder: 28
         ),
         NotificationTriggerSourceInfo(
             id: .cody,
             labelKey: "notifications.source.cody",
             labelFallback: "Cody",
-            sortOrder: 27
+            sortOrder: 29
         ),
         NotificationTriggerSourceInfo(
             id: .amazonQ,
             labelKey: "notifications.source.amazonQ",
             labelFallback: "Amazon Q",
-            sortOrder: 28
+            sortOrder: 30
         ),
         NotificationTriggerSourceInfo(
             id: .devin,
             labelKey: "notifications.source.devin",
             labelFallback: "Devin",
-            sortOrder: 29
+            sortOrder: 31
         ),
         NotificationTriggerSourceInfo(
             id: .goose,
             labelKey: "notifications.source.goose",
             labelFallback: "Goose",
-            sortOrder: 30
+            sortOrder: 32
         ),
         NotificationTriggerSourceInfo(
             id: .mentat,
             labelKey: "notifications.source.mentat",
             labelFallback: "Mentat",
-            sortOrder: 31
+            sortOrder: 33
         ),
         NotificationTriggerSourceInfo(
             id: .amp,
             labelKey: "notifications.source.amp",
             labelFallback: "Amp",
-            sortOrder: 32
+            sortOrder: 34
         ),
         NotificationTriggerSourceInfo(
             id: .continueAI,
             labelKey: "notifications.source.continueAI",
             labelFallback: "Continue",
-            sortOrder: 33
+            sortOrder: 35
         ),
         NotificationTriggerSourceInfo(
             id: .runtime,
             labelKey: "notifications.source.runtime",
             labelFallback: "Runtime Agent",
-            sortOrder: 34
+            sortOrder: 36
         ),
         // App source
         NotificationTriggerSourceInfo(
