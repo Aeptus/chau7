@@ -228,6 +228,30 @@ final class RuntimeSessionManagerTests: XCTestCase {
         XCTAssertEqual(resolved, providerlessTabID)
     }
 
+    func testResolveClaudeTabIDFallsBackToStrictSessionMatchWhenTabSummaryMissesSession() {
+        let sessionID = "claude-session-strict"
+        let resolvedTabID = UUID()
+        let target = TabTarget(
+            tool: "Claude",
+            directory: "/tmp/project/subdir",
+            tabID: nil,
+            sessionID: sessionID
+        )
+
+        let resolved = RuntimeSessionManager.resolveAuthoritativeClaudeTabID(
+            sessionID: sessionID,
+            cwd: "/tmp/project/subdir",
+            boundSession: nil,
+            tabs: [],
+            strictResolver: { incomingTarget in
+                XCTAssertEqual(incomingTarget, target)
+                return resolvedTabID
+            }
+        )
+
+        XCTAssertEqual(resolved, resolvedTabID)
+    }
+
     func testUserPromptStartsTurnForAdoptedClaudeSession() {
         let manager = RuntimeSessionManager.shared
         let cwd = "/tmp/runtime-adopted-turn-\(UUID().uuidString)"
