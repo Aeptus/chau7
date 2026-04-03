@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: swift
+    directory: /apps/chau7-macos
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /services/chau7-relay
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: gomod
+    directory: /services/chau7-remote
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: gomod
+    directory: /apps/chau7-macos/chau7-proxy
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
