@@ -490,7 +490,7 @@
 "snippets.edit" = "Modifier l'extrait";
 "snippets.title.label" = "Titre";
 "snippets.body.label" = "Contenu";
-"snippets.tags.label" = "Tags";
+"snippets.tags.label" = "Étiquettes";
 "snippets.tags.placeholder" = "Tags séparés par des virgules";
 "snippets.source.label" = "Source";
 "snippets.available.tokens" = "Tokens disponibles";
@@ -686,7 +686,7 @@
 "statusBar.allSettings" = "Tous les paramètres";
 "statusBar.quit" = "Quitter";
 "statusBar.quit.confirm" = "Quitter Chau7 ?";
-"statusBar.go" = "Go";
+"statusBar.go" = "Aller";
 "statusBar.allClear" = "Tout est clair";
 "statusBar.doubleTapToToggle" = "Double-cliquez pour activer/désactiver";
 "statusBar.session.singular" = "1 session";
@@ -1034,10 +1034,10 @@
 // -----------------------------------------------------------------------------
 
 // Section Snippets
-"settings.productivity.snippets" = "Snippets";
+"settings.productivity.snippets" = "Extraits";
 "settings.productivity.snippets.description" = "Modèles de texte rapides avec expansion optionnelle";
 "settings.productivity.snippets.manage" = "Gérer les snippets...";
-"settings.productivity.snippets.count" = "%d snippets";
+"settings.productivity.snippets.count" = "%d extraits";
 "settings.productivity.repositorySnippets" = "Snippets du dépôt";
 "settings.productivity.repositorySnippets.help" = "Charger les snippets du dépôt git courant (.chau7/snippets.json)";
 "settings.productivity.protectedFolders" = "Autoriser les dossiers protégés";
@@ -1443,7 +1443,7 @@
 // Task States
 "task.state.none" = "Aucune tâche active";
 "task.state.candidate" = "Tâche candidate";
-"task.state.active" = "Active";
+"task.state.active" = "Actif";
 "task.state.completed" = "Terminée";
 "task.state.abandoned" = "Abandonnée";
 
@@ -1462,7 +1462,7 @@
 "task.info.name" = "Nom de la tâche";
 "task.info.duration" = "Durée";
 "task.info.api_calls" = "Appels API";
-"task.info.tokens" = "Tokens";
+"task.info.tokens" = "Jetons";
 "task.info.cost" = "Coût";
 "task.info.tokens_saved" = "Tokens économisés";
 

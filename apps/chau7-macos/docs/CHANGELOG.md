@@ -72,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **RTL Layout Direction at All Hosting Sites**: `.localized()` now applied at every `NSHostingView`/`NSHostingController` boundary (13 sites), propagating layout direction to all SwiftUI views. Previously only 4 settings views had it. Removed redundant inner `.localized()` from settings child views that now inherit from their hosting root.
+- **Complete i18n Translation Coverage**: Filled all pre-existing translation gaps — French cognates reviewed (6 keys updated: snippets, tags, tokens), Arabic statusBar namespace fully translated (38 keys: session states, timeline events, tool names), Hebrew statusBar namespace fully translated (33 keys). All 4 locales now have zero English-identical values except for legitimate cognates and brand names.
 
 ### Fixed
 - **Claude Strict Live-Tab Fallback**: When runtime-owned Claude session bindings are missing or stale, authoritative Claude events now fall back to a strict live-session resolver instead of dropping immediately. This recovers exact permission and waiting-input routing from current tab session metadata without reopening heuristic cross-tab matches.

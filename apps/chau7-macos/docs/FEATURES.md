@@ -346,6 +346,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - 4 languages: English, French, Arabic, Hebrew — with proper RTL layout across all windows.
 - RTL layout direction propagated at every NSHostingView boundary — overlay, settings, command palette, data explorer, help docs, bug report, splash, and all auxiliary windows.
 - Runtime language switching without restart.
+- Full translation coverage: all UI strings localized with zero untranslated gaps across en, fr, ar, he.
 
 ## SSH, Profiles & Remote
 

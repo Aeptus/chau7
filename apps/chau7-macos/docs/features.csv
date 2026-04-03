@@ -214,6 +214,7 @@ Accessibility,VoiceOver Support,Full macOS accessibility integration,Shipped,No
 Accessibility,High Contrast & Reduced Motion,Respects system accessibility preferences,Shipped,No
 Accessibility,4 Languages,"English, French, Arabic, Hebrew — with proper RTL layout across all windows",Shipped,No
 Accessibility,RTL Layout Propagation,"Layout direction set at every NSHostingView boundary — all 13 hosting sites flip for Arabic/Hebrew",Shipped,Yes
+Accessibility,Full Translation Coverage,"Zero untranslated strings across en, fr, ar, he — all UI elements localized including context menus, hover cards, and dashboards",Shipped,Yes
 Accessibility,Runtime Language Switching,Change language without restarting the app,Shipped,No
 Scripting,JSON-RPC API,"Unix socket API for external automation — control tabs, run commands, query history, manage snippets",Shipped,Yes
 Scripting,Settings API,Query and modify settings programmatically from any language,Shipped,No
