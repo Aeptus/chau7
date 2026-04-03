@@ -1,5 +1,7 @@
 # Chau7
 
+Chau7 started as a personal project and, honestly, an experiment. The repository and codebase still need significant refactoring and cleanup. We're actively working through that.
+
 The AI-native terminal for macOS. Named after a sock. We're not even sorry.
 
 Chau7 detects your AI agents, optimizes their context tokens, tracks what they cost you, and gives you 30+ MCP tools to control everything from another terminal. GPU-accelerated Metal rendering. Not Electron. Not a wrapper.
