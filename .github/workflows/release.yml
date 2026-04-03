@@ -18,6 +18,10 @@ jobs:
       - name: Swift version
         run: swift --version
 
+      - name: Build release binary
+        working-directory: apps/chau7-macos
+        run: swift build -c release
+
       - name: Build app bundle
         working-directory: apps/chau7-macos
         run: ./Scripts/build-app.sh
