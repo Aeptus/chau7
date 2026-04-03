@@ -12,12 +12,11 @@ Guidelines for AI agents working on the Chau7 codebase.
 Chau7/
 ├── apps/
 │   ├── chau7-macos/      # SwiftUI + AppKit macOS app (SwiftPM)
-│   └── chau7-ios/        # Native iOS app
+│   └── chau7-ios/        # Native iOS app + remote UX docs
 ├── services/
 │   ├── chau7-relay/      # Cloudflare relay (Workers + Durable Objects)
-│   └── chau7-remote/     # Go relay client for macOS
-└── docs/
-    └── remote-control/  # Remote control spec
+│   └── chau7-remote/     # Go relay client for macOS + protocol docs
+└── docs/                 # Shared top-level docs only when truly cross-cutting
 ```
 
 ## Testing Requirements

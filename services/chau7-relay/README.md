@@ -18,4 +18,4 @@ npm run deploy
 ## Cloudflare
 Set the Cloudflare build root to `services/chau7-relay`.
 
-See `docs/remote-control/SPEC-Remote-Control.md` for protocol details.
+See `../chau7-remote/docs/PROTOCOL.md` for protocol details.

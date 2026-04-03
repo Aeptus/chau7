@@ -62,9 +62,8 @@ Chau7/
 │   └── chau7-ios/                 # Native iOS companion app
 ├── services/
 │   ├── chau7-relay/               # Cloudflare relay service
-│   └── chau7-remote/              # Go remote agent
-└── docs/
-    └── remote-control/            # Remote control specs
+│   └── chau7-remote/              # Go remote agent + protocol docs
+└── docs/                          # Shared top-level docs only when cross-cutting
 ```
 
 ### Key Components

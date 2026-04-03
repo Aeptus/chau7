@@ -10,7 +10,10 @@ This directory hosts the native iOS companion app for Chau7.
 - Live Activity / Dynamic Island status for the most relevant remote AI task.
 
 ## Specs
-See `docs/remote-control/SPEC-Remote-Control.md` for protocol and UX details.
+See:
+
+- `docs/REMOTE-UX.md` for product and Live Activity behavior
+- `../../services/chau7-remote/docs/PROTOCOL.md` for the transport and payload contract
 
 ## Build
 Open `apps/chau7-ios/Chau7RemoteApp/Chau7RemoteApp.xcodeproj` in Xcode.

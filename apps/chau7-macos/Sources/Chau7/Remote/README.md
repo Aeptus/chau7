@@ -20,3 +20,8 @@ Remote terminal control and viewing via IPC.
 
 - **Uses:** Logging, Settings, Overlay
 - **Used by:** Overlay, Settings/Views
+
+## Related Docs
+
+- `../../../services/chau7-remote/docs/PROTOCOL.md`
+- `../../../apps/chau7-ios/docs/REMOTE-UX.md`

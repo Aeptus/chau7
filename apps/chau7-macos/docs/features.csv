@@ -307,3 +307,4 @@ Notifications,Goose Normalized Source,"Goose now has a dedicated normalized AI e
 Notifications,Mentat Normalized Source,"Mentat now has a dedicated normalized AI event source with first-class trigger catalog, settings grouping, and timeline/source labels",Shipped,Yes
 Notifications,Amp Normalized Source,"Amp now has a dedicated normalized AI event source with first-class trigger catalog, settings grouping, and timeline/source labels",Shipped,Yes
 Debug,Technology Licenses & Acknowledgments,"In-app help page documenting monorepo layout, languages, Rust crates, bundled binaries, third-party dependencies, system frameworks, and notice files",Shipped,No
+Documentation,Remote Docs Colocation,"Moved the remote protocol spec next to services/chau7-remote and split iOS-specific remote UX notes into apps/chau7-ios/docs, removing the orphaned top-level remote-control docs folder",Shipped,No

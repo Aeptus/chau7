@@ -537,8 +537,8 @@ Chau7/
 │   └── chau7-ios/               # Native iOS companion
 ├── services/
 │   ├── chau7-relay/             # Cloudflare Workers relay
-│   └── chau7-remote/            # Go remote agent
-└── docs/
+│   └── chau7-remote/            # Go remote agent + protocol docs
+└── docs/                        # Shared top-level docs only
 ```
 
 Key patterns:

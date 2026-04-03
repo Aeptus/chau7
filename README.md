@@ -44,7 +44,8 @@ services/
 - [iOS app](apps/chau7-ios/README.md)
 - [Relay service](services/chau7-relay/README.md)
 - [Remote agent](services/chau7-remote/README.md)
-- [Remote control spec](docs/remote-control/SPEC-Remote-Control.md)
+- [Remote protocol](services/chau7-remote/docs/PROTOCOL.md)
+- [Remote iOS UX](apps/chau7-ios/docs/REMOTE-UX.md)
 
 ## Build
 

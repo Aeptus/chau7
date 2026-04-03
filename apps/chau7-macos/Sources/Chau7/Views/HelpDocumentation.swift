@@ -34,7 +34,8 @@ enum HelpContent {
     apps/chau7-ios          iOS companion app
     services/chau7-relay    Cloudflare relay
     services/chau7-remote   Go remote agent
-    docs/remote-control     protocol and UX spec
+    services/chau7-remote/docs  remote protocol
+    apps/chau7-ios/docs         remote iOS UX
     ```
 
     ## Languages and Platforms
@@ -83,7 +84,8 @@ enum HelpContent {
     - `apps/chau7-ios`
     - `services/chau7-relay`
     - `services/chau7-remote`
-    - `docs/remote-control`
+    - `services/chau7-remote/docs`
+    - `apps/chau7-ios/docs`
 
     ## Direct Third-Party Dependencies
 
