@@ -5,6 +5,7 @@ build/
 .claude/
 .seogeo-reports/
 .geo-results/
+docs/reports/
 .swiftpm/
 /.playwright-mcp/
 /*.png
