@@ -391,8 +391,8 @@
 "about.macos" = "macOS";
 "about.architecture" = "المعمارية";
 "about.shell" = "الصدفة";
-"about.arch.apple" = "Apple Silicon (arm64)";
-"about.arch.intel" = "Intel (x86_64)";
+"about.arch.apple" = "Apple Silicon ‏(arm64)";
+"about.arch.intel" = "Intel ‏(x86_64)";
 "about.arch.unknown" = "غير معروف";
 
 "about.links" = "الروابط";
@@ -1710,7 +1710,7 @@
 // ============================================================
 // Missing keys added from L() calls in Swift source
 // ============================================================
-"about.arch.arm64" = "Apple Silicon (arm64)";
+"about.arch.arm64" = "Apple Silicon ‏(arm64)";
 "about.credits" = "محاكي طرفية حديث مصمم للتطوير بمساعدة الذكاء الاصطناعي.\\n\\n        الميزات:\\n        - اكتشاف AI CLI (Claude وCodex وGemini)\\n        - لوحة الأوامر\\n        - مدير اتصالات SSH\\n        - صور مضمنة\\n        - تقسيم اللوحات\\n        - مقاطع نصية والمزيد\\n\\n        مبني باستخدام SwiftUI وRust.\\n\\n        حقوق النشر \\\\u{00a9} 2024-2026 Aeptus";
 "about.developmentBuild" = "إصدار تطوير";
 "about.unknown" = "غير معروف";
@@ -2025,7 +2025,7 @@
 "graphics.hint.sixel" = "اختبر Sixel: convert image.png sixel:- (يتطلب ImageMagick)";
 "graphics.protocol.iterm2" = "iTerm2 (imgcat)";
 "graphics.protocol.iterm2.detail" = "ESC ] 1337 ; File = ... BEL";
-"graphics.protocol.kitty" = "Kitty Graphics";
+"graphics.protocol.kitty" = "رسوميات Kitty";
 "graphics.protocol.kitty.detail" = "APC G ... ST";
 "graphics.protocol.sixel" = "Sixel";
 "graphics.protocol.sixel.detail" = "DCS P ... ST";

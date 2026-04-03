@@ -350,6 +350,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Runtime language switching without restart.
 - Full translation coverage: all UI strings localized with zero untranslated gaps across en, fr, ar, he — including NSMenuItem context menus, hover cards, and agent dashboard.
 - Final shipped-key sweep completed for English, French, Arabic, and Hebrew bundles — settings search copy, dashboard strings, alert text, snippets examples, and long-form help topics now ship localized with parity and format-specifier checks passing.
+- Final locale polish leaves only intentional shared identities in English across fr/ar/he, such as product names, browser names, protocol literals, file paths, and raw placeholder-only values.
 
 ## SSH, Profiles & Remote
 

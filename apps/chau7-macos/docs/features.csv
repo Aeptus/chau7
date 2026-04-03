@@ -216,6 +216,7 @@ Accessibility,4 Languages,"English, French, Arabic, Hebrew — with proper RTL l
 Accessibility,RTL Layout Propagation,"Layout direction set at every NSHostingView boundary — all 13 hosting sites flip for Arabic/Hebrew",Shipped,Yes
 Accessibility,Full Translation Coverage,"Zero untranslated strings across en/fr/ar/he — all UI elements localized: SwiftUI views, NSMenuItem context menus, hover cards, agent dashboard, terminal right-click, and all auxiliary windows",Shipped,Yes
 Localization,Final Shipped-Key Coverage Sweep,"English, French, Arabic, and Hebrew bundles now include the remaining shipped UI keys added by the latest L() migration, including settings search/help copy, dashboard text, alerts, snippets examples, and long-form help topics",Shipped,No
+Localization,Intentional Identity-Only Remainder,"After the final locale polish pass, the remaining identical strings across fr ar he are limited to intentional identities such as product names, browser names, file paths, protocol literals, and placeholder-only formats",Shipped,No
 Accessibility,Runtime Language Switching,Change language without restarting the app,Shipped,No
 Scripting,JSON-RPC API,"Unix socket API for external automation — control tabs, run commands, query history, manage snippets",Shipped,Yes
 Scripting,Settings API,Query and modify settings programmatically from any language,Shipped,No

@@ -1345,7 +1345,7 @@
 "settings.notifications.unavailable.hint" = "הפעל את האפליקציה מחבילת האפליקציה כדי להפעיל התראות מערכת.";
 "settings.notifications.systemSettings" = "הגדרות מערכת";
 "settings.notifications.triggerCategory.core" = "ליבה";
-"settings.notifications.triggerCategory.shell" = "Shell";
+"settings.notifications.triggerCategory.shell" = "מעטפת";
 "settings.notifications.triggerCategory.aiApps" = "יישומי AI לקוד";
 "settings.notifications.triggerCategory.app" = "אפליקציה";
 "settings.notifications.actionCategory.basic" = "בסיסי";
@@ -1967,7 +1967,7 @@
 "dangerousGuard.confirm.title" = "זוהתה פקודה מסוכנת";
 
 "dashboard.autoApprove" = "אשר אוטומטית שימוש בכלים";
-"dashboard.backend" = "Backend";
+"dashboard.backend" = "מנוע";
 "dashboard.commitAll" = "בצע Commit להכול";
 "dashboard.commitMessage" = "הודעת Commit";
 "dashboard.committedSuccessfully" = "ה-Commit בוצע בהצלחה";
@@ -2027,7 +2027,7 @@
 "graphics.protocol.iterm2.detail" = "ESC ] 1337 ; File = ... BEL";
 "graphics.protocol.kitty" = "גרפיקת Kitty";
 "graphics.protocol.kitty.detail" = "APC G ... ST";
-"graphics.protocol.sixel" = "Sixel";
+"graphics.protocol.sixel" = "גרפיקת Sixel";
 "graphics.protocol.sixel.detail" = "DCS P ... ST";
 "graphics.protocols.title" = "מידע על פרוטוקולים";
 "graphics.status.alwaysEnabled" = "תמיד מופעל";
@@ -2036,7 +2036,7 @@
 "help.topic.aiIntegration.content" = "# שילוב AI CLI\\n\\n            Chau7 מזהה אוטומטית כשאתה משתמש בכלי AI CLI ומספק תכונות משופרות.\\n\\n            ## כלי AI CLI נתמכים\\n\\n            - **Claude Code** (Anthropic)\\n            - **Codex** (OpenAI)\\n            - **Gemini** (Google)\\n            - **ChatGPT** (OpenAI)\\n            - **GitHub Copilot**\\n\\n            ## ערכת נושא אוטומטית ללשוניות\\n\\n            כאשר מזוהה כלי AI CLI, צבע הלשונית משתנה אוטומטית כדי להתאים לכלי:\\n            - Claude: סגול\\n            - Codex: ירוק\\n            - Gemini: כחול\\n            - ChatGPT: טורקיז\\n            - Copilot: כתום\\n\\n            ניתן להפעיל או להשבית בהגדרות → שילוב AI.\\n\\n            ## כללי זיהוי מותאמים אישית\\n\\n            הוסף כללי זיהוי משלך בהגדרות → שילוב AI → כללי זיהוי מותאמים אישית.\\n\\n            הזן תבנית פקודה ואת צבע הלשונית שישמש כאשר התבנית מזוהה.";
 "help.topic.aiIntegration.title" = "שילוב AI";
 "help.topic.commandPalette.content" = "# Command Palette\\n\\n            ה-Command Palette מספק גישה מהירה לכל פקודות Chau7 בלי צורך לזכור קיצורי מקלדת.\\n\\n            ## פתיחת ה-Command Palette\\n\\n            לחץ על **⇧⌘P** כדי לפתוח את ה-Command Palette.\\n\\n            ## שימוש ב-Command Palette\\n\\n            1. התחל להקליד כדי לסנן פקודות\\n            2. השתמש בחיצים **↑** ו-**↓** כדי לנווט\\n            3. לחץ על **Enter** כדי להפעיל את הפקודה שנבחרה\\n            4. לחץ על **Escape** כדי לסגור\\n\\n            ## פקודות זמינות\\n\\n            ה-Command Palette כולל פקודות עבור:\\n            - פעולות קובץ (לשונית חדשה, סגירת לשונית, ייצוא)\\n            - פעולות עריכה (העתקה, הדבקה, חיפוש)\\n            - הגדרות תצוגה (זום, ניקוי מסך)\\n            - ניהול לשוניות (ניווט, שינוי שם, העברה)\\n            - ניהול חלונות (הגדרות, מסוף ניפוי שגיאות)\\n            - עזרה (תיעוד, אודות)";
-"help.topic.commandPalette.title" = "Command Palette";
+"help.topic.commandPalette.title" = "לוח פקודות";
 "help.topic.gettingStarted.content" = "# ברוכים הבאים ל-Chau7\\n\\n            Chau7 הוא אמולטור מסוף מודרני שתוכנן לפיתוח בסיוע AI. הוא מספק מערך תכונות עשיר לשיפור זרימת העבודה שלך בשורת הפקודה.\\n\\n            ## התחלה מהירה\\n\\n            1. **צור לשונית חדשה**: לחץ על **⌘T** או על כפתור ה-+\\n            2. **סגור לשונית**: לחץ על **⌘W** או על ה-X בלשונית\\n            3. **עבור בין לשוניות**: לחץ על **⌘1-9** או לחץ על הלשונית\\n            4. **פתח הגדרות**: לחץ על **⌘,**\\n\\n            ## תכונות עיקריות\\n\\n            - **זיהוי AI CLI**: מזהה אוטומטית את Claude, Codex, Gemini וכלי AI CLI נוספים\\n            - **Command Palette**: לחץ על **⇧⌘P** כדי לגשת לכל הפקודות\\n            - **מנהל SSH**: נהל את חיבורי ה-SSH שלך בקלות\\n            - **פיצול פאנלים**: עבוד עם כמה מסופים זה לצד זה\\n            - **קטעים**: שמור והשתמש מחדש בפקודות נפוצות";
 "help.topic.gettingStarted.title" = "תחילת העבודה";
 
@@ -2174,7 +2174,7 @@
 "settings.about.notBundled" = "לא כלול בחבילה";
 "settings.about.reportIssue" = "דווח על בעיה";
 "settings.about.revealInFinder" = "הצג ב-Finder";
-"settings.about.shell" = "Shell";
+"settings.about.shell" = "מעטפת";
 "settings.about.systemInformation" = "מידע מערכת";
 "settings.about.tagline" = "מלווה טרמינל ל-AI CLI";
 "settings.about.unknown" = "לא ידוע";
@@ -2581,7 +2581,7 @@
 "settings.remote.enable" = "הפעל שליטה מרחוק";
 "settings.remote.enable.help" = "אפשר שליטה ב-Chau7 מתוך אפליקציית iOS";
 "settings.remote.pairing" = "צימוד";
-"settings.remote.relay" = "Relay";
+"settings.remote.relay" = "ממסר";
 "settings.remote.relayUrl" = "כתובת Relay";
 "settings.remote.relayUrl.help" = "כתובת בסיס ל-WebSocket relay";
 "settings.remote.revoke" = "בטל";
@@ -2697,7 +2697,7 @@
 "settings.search.search.description" = "חיפוש מודע-פקודות";
 "settings.search.search.title" = "חיפוש סמנטי";
 "settings.search.shell.description" = "בחר איזה shell להשתמש";
-"settings.search.shell.title" = "Shell";
+"settings.search.shell.title" = "מעטפת";
 "settings.search.shellThresholds.description" = "הגדר ספי זיהוי לאירועי shell";
 "settings.search.shellThresholds.title" = "ספי אירועי Shell";
 "settings.search.shortcutHelperHint.description" = "הצג רמז לעוזר הקיצורים בטרמינל";
@@ -2730,7 +2730,7 @@
 "settings.search.urlHandler.title" = "מטפל ב-URL";
 "settings.searchResultDetail" = "– %@";
 "settings.searchResults" = "נמצאו %d הגדרות תואמות עבור \"%@\"";
-"settings.shell" = "Shell";
+"settings.shell" = "מעטפת";
 "settings.shell.description" = "Shell, סמן ופעמון";
 "settings.shell.resetToDefaults" = "אפס Shell לברירות מחדל";
 "settings.snippetsTools" = "קטעים וכלים";

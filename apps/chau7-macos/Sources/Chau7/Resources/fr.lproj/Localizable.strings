@@ -6,7 +6,7 @@
 "app.copyright" = "Copyright © 2024-2026 Aeptus. Licence AGPL 3.0.";
 
 // MARK: - Common Actions
-"action.ok" = "OK";
+"action.ok" = "D'accord";
 "action.cancel" = "Annuler";
 "action.save" = "Enregistrer";
 "action.delete" = "Supprimer";
@@ -93,7 +93,7 @@
 "general.status.active" = "Actif";
 "general.status.paused" = "En pause";
 
-"general.actions" = "Actions";
+"general.actions" = "Opérations";
 "general.show.overlay" = "Afficher l'overlay";
 "general.reset.positions" = "Réinitialiser les positions";
 "general.debug.console" = "Console de débogage";
@@ -138,7 +138,7 @@
 "appearance.window" = "Fenêtre";
 "appearance.titlebar.style" = "Style de la barre de titre";
 "appearance.titlebar.native" = "Natif";
-"appearance.titlebar.minimal" = "Minimal";
+"appearance.titlebar.minimal" = "Minimaliste";
 "appearance.titlebar.hidden" = "Masqué";
 "appearance.titlebar.help" = "Apparence de la barre de titre";
 "appearance.vibrancy" = "Effet de vibrance";
@@ -322,7 +322,7 @@
 "ai.auto.theme" = "Couleurs d'onglets automatiques";
 "ai.auto.theme.help" = "Colorer automatiquement les onglets selon le CLI IA détecté";
 
-"ai.notifications" = "Notifications";
+"ai.notifications" = "Notifications IA";
 "ai.notifications.status" = "État";
 "ai.notifications.request" = "Demander la permission";
 "ai.notifications.system" = "Réglages système";
@@ -400,7 +400,7 @@
 "about.links" = "Liens";
 "about.github" = "GitHub";
 "about.report.issue" = "Signaler un problème";
-"about.documentation" = "Documentation";
+"about.documentation" = "Aide";
 
 "about.log" = "Journal de l'application";
 "about.log.path" = "Chemin du journal";
@@ -492,7 +492,7 @@
 "snippets.body.label" = "Contenu";
 "snippets.tags.label" = "Étiquettes";
 "snippets.tags.placeholder" = "Tags séparés par des virgules";
-"snippets.source.label" = "Source";
+"snippets.source.label" = "Origine";
 "snippets.available.tokens" = "Tokens disponibles";
 
 "snippets.import" = "Importer";
@@ -689,8 +689,8 @@
 "statusBar.go" = "Aller";
 "statusBar.allClear" = "Tout est clair";
 "statusBar.doubleTapToToggle" = "Double-cliquez pour activer/désactiver";
-"statusBar.session.singular" = "1 session";
-"statusBar.session.plural" = "%d sessions";
+"statusBar.session.singular" = "1 session active";
+"statusBar.session.plural" = "%d sessions actives";
 "statusBar.attention.singular" = "1 session nécessite une attention";
 "statusBar.attention.plural" = "%d sessions nécessitent une attention";
 "statusBar.session.starting" = "Démarrage";
@@ -708,7 +708,7 @@
 "statusBar.timeline.permissionRequest" = "Nécessite une autorisation";
 "statusBar.timeline.responseComplete" = "Réponse terminée";
 "statusBar.timeline.sessionEnded" = "Session terminée";
-"statusBar.timeline.notification" = "Notification";
+"statusBar.timeline.notification" = "Alerte";
 "statusBar.timeline.event" = "Événement";
 "statusBar.timeline.toolCalled" = "Exécution de l'outil";
 "statusBar.timeline.sessionIdle" = "Session inactive";
@@ -1437,7 +1437,7 @@
 "task.candidate.detected" = "Nouvelle tâche détectée";
 "task.candidate.confirm" = "Confirmer";
 "task.candidate.dismiss" = "Ignorer";
-"task.candidate.grace_remaining" = "%ds";
+"task.candidate.grace_remaining" = "%d s";
 "task.candidate.auto_confirm" = "Confirmation auto dans %d secondes";
 
 // Task States
@@ -1495,9 +1495,9 @@
 "debug.perfLast60s" = "60 s";
 "debug.perfEmpty" = "Aucun événement de performance enregistré.";
 "debug.perfFeature" = "Fonction";
-"debug.perfTotal" = "Total";
+"debug.perfTotal" = "Cumul";
 "debug.perfAvg" = "Moy.";
-"debug.perfMax" = "Max";
+"debug.perfMax" = "Max.";
 "debug.perfCount" = "Nb";
 "debug.perfBytes" = "Octets";
 "debug.perfRecent" = "Événements récents";
@@ -1658,7 +1658,7 @@
 "repo.section.turnSummary" = "Résumé du tour";
 "repo.section.history" = "Historique";
 "repo.section.stash" = "Remisage";
-"repo.section.branches" = "Branches";
+"repo.section.branches" = "Branches Git";
 
 // MARK: - MCP Settings
 "mcp.settings.newProfile" = "Nouveau profil MCP";
@@ -2001,7 +2001,7 @@
 "dangerousGuard.confirm.title" = "Commande dangereuse détectée";
 
 "dashboard.autoApprove" = "Approuver automatiquement l’utilisation des outils";
-"dashboard.backend" = "Backend";
+"dashboard.backend" = "Moteur";
 "dashboard.commitAll" = "Tout valider";
 "dashboard.commitMessage" = "Message de commit";
 "dashboard.committedSuccessfully" = "Validation réussie";
@@ -2119,7 +2119,7 @@
 "hovercard.included" = "Inclus";
 "hovercard.moreConflicts" = "+%d de plus";
 "hovercard.moreProcesses" = "+%d de plus";
-"hovercard.notification" = "Notification";
+"hovercard.notification" = "Alerte";
 "hovercard.notification.attention" = "Attention requise";
 "hovercard.notification.error" = "Erreur";
 "hovercard.notification.success" = "Succès";
@@ -2823,7 +2823,7 @@
 "settings.terminal.smartScroll.help" = "Préserver la position de défilement lorsque de nouvelles sorties arrivent alors que vous êtes remonté";
 "settings.terminal.startupCommand" = "Commande de démarrage";
 "settings.terminal.startupCommand.help" = "Commande à exécuter automatiquement au démarrage d'une nouvelle session terminal";
-"settings.terminal.style" = "Style";
+"settings.terminal.style" = "Style du curseur";
 "settings.terminal.style.help" = "Choisir la forme du curseur affiché dans le terminal";
 "settings.terminal.suspendBackgroundRendering" = "Suspendre le rendu en arrière-plan";
 "settings.terminal.suspendDelay" = "Délai de suspension (secondes)";
