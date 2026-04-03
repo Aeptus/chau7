@@ -1,29 +1,29 @@
 # Code of Conduct
 
-## Our Pledge
+We named our terminal after a sock. The bar for taking ourselves seriously is already underground. But being kind to each other? That bar stays high.
 
-We are committed to making participation in this project a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, nationality, personal appearance, race, religion, or sexual identity and orientation.
+## The Short Version
 
-## Our Standards
+Be respectful. Assume good intent. Disagree about code, not people. If someone's contribution needs work, say what needs to change and why. Skip the commentary on the person.
 
-Examples of behavior that contributes to a positive environment:
+## What We Expect
 
-- Being respectful of differing viewpoints and experiences
-- Gracefully accepting constructive criticism
-- Focusing on what is best for the community
-- Showing empathy towards other community members
+- Respectful disagreement. Two people can look at the same code and see different things. That's fine.
+- Constructive feedback. "This approach has a race condition because X" is useful. "This is bad" is not.
+- Patience with newcomers. Everyone was new once. Answer questions like you'd want yours answered.
+- Focus on the work. Personal attacks, harassment, and discrimination have no place here. Zero tolerance.
 
-Examples of unacceptable behavior:
+## What We Don't Tolerate
 
-- Trolling, insulting/derogatory comments, and personal or political attacks
-- Public or private harassment
-- Publishing others' private information without explicit permission
-- Other conduct which could reasonably be considered inappropriate
+- Trolling, insults, derogatory comments, personal attacks.
+- Harassment, public or private.
+- Publishing someone's private information without consent.
+- Conduct that would make a reasonable person uncomfortable in a professional setting.
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project team at conduct@chau7.sh. All complaints will be reviewed and investigated promptly and fairly.
+Report issues to conduct@chau7.sh. Reports are reviewed confidentially and taken seriously.
 
 ## Attribution
 
-This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
+Adapted from the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) v2.1.

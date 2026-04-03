@@ -1,22 +1,21 @@
 # Contributing to Chau7
 
-Thanks for your interest in contributing to Chau7! Here's how to get involved.
+So you want to contribute to a terminal named after a sock. Excellent judgment.
 
 ## Reporting Bugs
 
-- Use the in-app bug reporter (Option+Cmd+I) for the fastest path — it captures diagnostic context automatically.
-- Or open an issue at [github.com/aeptus/chau7](https://github.com/aeptus/chau7/issues).
-- Include: what you did, what you expected, what happened, and your macOS version.
+The fastest path: use the in-app bug reporter (Option+Cmd+I). It captures diagnostic context automatically and submits to our private intake. You choose what data to include. [Privacy details](SECURITY.md).
 
-## Development Setup
+Or just open an issue here. Include: what you did, what you expected, what happened, and your macOS version. Screenshots help. Logs help more.
+
+## Setting Up
 
 ```bash
-# Clone
 git clone https://github.com/aeptus/chau7.git
-cd chau7
+cd chau7/apps/chau7-macos
 
-# Install pre-commit hooks
-cd apps/chau7-macos && ./Scripts/install-hooks
+# Install pre-commit hooks (format + lint + build gate)
+./Scripts/install-hooks
 
 # Build
 swift build
@@ -24,51 +23,49 @@ swift build
 # Test
 swift test
 
-# Run
-swift run
+# Run (for proper notifications, build the app bundle)
+./Scripts/build-app.sh
 ```
 
-Requirements: macOS 14+, Xcode 26+, Rust toolchain (for terminal backend), Go 1.22+ (for proxy).
+You'll need macOS 14+, Xcode 26+. The Rust terminal backend and Go proxy ship pre-built. If you want to rebuild them: Rust toolchain for `rust/chau7_terminal`, Go 1.22+ for `chau7-proxy`.
 
 ## Code Style
 
-- **Swift**: SwiftFormat + SwiftLint enforce style automatically via pre-commit hooks.
-- **Rust**: `cargo fmt` + `cargo clippy`.
-- **Go**: `gofmt` + `go vet`.
+SwiftFormat and SwiftLint enforce style via pre-commit hooks. Rust uses `cargo fmt` + `cargo clippy`. Go uses `gofmt` + `go vet`. Don't fight the formatters. If a rule feels wrong, open an issue about the rule, not a PR that ignores it.
 
-Don't fight the formatter. If a rule feels wrong, open an issue to discuss changing the rule.
+## Pull Requests
 
-## Pull Request Process
-
-1. Fork the repo and create a branch from `main`.
-2. Make your changes. Keep commits focused — one logical change per commit.
-3. Run the local CI: `./Scripts/ci-local` (runs format, lint, build, and tests for all targets).
-4. Open a PR. Describe what you changed and why.
-5. A maintainer will review and may request changes.
+1. Fork and branch from `main`.
+2. Make your changes. One logical change per commit.
+3. Run `./Scripts/ci-local` before pushing. It runs everything the CI will run.
+4. Open a PR. Say what you changed and why.
+5. We'll review it. We might ask questions. That's not rejection, that's conversation.
 
 ## Architecture
 
-- **Rule #1**: Document decisions near the code. Each subdirectory has a README explaining its contents.
-- **Chau7Core** is the testable library (no UI dependencies). **Chau7** is the macOS app.
-- Terminal rendering is handled by a Rust backend via FFI (`rust/chau7_terminal/`).
-- The API proxy (`chau7-proxy/`) is a Go binary. The relay (`services/chau7-relay/`) is a Cloudflare Worker.
+Chau7 follows Rule #1: document decisions near the code. Every subdirectory has a README. The full picture is in [`docs/ARCHITECTURE.md`](apps/chau7-macos/docs/ARCHITECTURE.md).
 
-See `docs/ARCHITECTURE.md` for the full picture.
+Quick orientation:
+- **Chau7Core**: Pure Swift library, no UI. All testable logic lives here.
+- **Chau7**: The macOS app. SwiftUI views, AppKit integration, Metal rendering.
+- **rust/chau7_terminal**: Rust terminal emulator, accessed via FFI.
+- **chau7-proxy**: Go TLS proxy for API analytics.
+- **services/chau7-relay**: Cloudflare Worker for the bug report relay and remote control.
 
 ## What We're Looking For
 
-- Bug fixes with tests.
-- Performance improvements with benchmarks.
-- New AI tool integrations (see `Sources/Chau7Core/AIToolRegistry.swift`).
-- Localization contributions (currently: English, French, Arabic, Hebrew).
-- Documentation improvements.
+- Bug fixes. Especially with tests.
+- Performance improvements. Especially with measurements.
+- New AI tool integrations. Add a definition to `AIToolRegistry.swift` and you're done.
+- Localization. We have English, French, Arabic, and Hebrew. More is welcome.
+- Documentation fixes. Typos, stale references, unclear explanations.
 
 ## What We're Not Looking For (Yet)
 
-- Major architectural refactors without prior discussion.
-- Features that add significant complexity for niche use cases.
-- Changes that break the pre-commit CI.
+- Major refactors without discussion first. Open an issue, talk about it.
+- Features that add complexity for edge cases. We'd rather ship less that works well.
+- Changes that break the CI. If the hooks fail, fix before pushing.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [AGPL 3.0](LICENSE).
+By contributing, your work is licensed under the [AGPL 3.0](LICENSE). Same terms as the rest of the project.
