@@ -18,7 +18,7 @@ jobs:
       run:
         working-directory: apps/chau7-macos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Swift version
         run: swift --version
@@ -36,10 +36,10 @@ jobs:
       run:
         working-directory: services/chau7-remote
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: services/chau7-remote/go.mod
 
@@ -56,10 +56,10 @@ jobs:
       run:
         working-directory: apps/chau7-macos/chau7-proxy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: apps/chau7-macos/chau7-proxy/go.mod
 
@@ -76,7 +76,7 @@ jobs:
       run:
         working-directory: services/chau7-relay
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node
         uses: actions/setup-node@v4
