@@ -717,7 +717,7 @@ final class TerminalSessionModel {
 
     // Shell Integration methods moved to TerminalSessionModel+ShellIntegration.swift
 
-    // MARK: - Idle Timer (Issue #5 fix)
+    // MARK: - Idle Timer
 
     private func startIdleTimer() {
         stopIdleTimer() // Ensure no duplicate timers
@@ -951,7 +951,7 @@ final class TerminalSessionModel {
         Log.trace("Cleared terminal on launch.")
     }
 
-    // MARK: - Session Control (Issue #5, #15 fixes)
+    // MARK: - Session Control (close, invalidate idle timer, clean up resources)
 
     /// Closes the session by sending exit command and cleaning up resources.
     func closeSession() {
@@ -1143,7 +1143,7 @@ final class TerminalSessionModel {
         activeTerminalView?.getSelectedText()
     }
 
-    // MARK: - Paste (Issue #10 fix - delegate to terminal view)
+    // MARK: - Paste (delegates to the terminal view for proper first-responder handling)
 
     func paste() {
         guard let view = rustTerminalView else { return }
@@ -1315,7 +1315,7 @@ final class TerminalSessionModel {
         activeTerminalView?.insertSnippet(insertion)
     }
 
-    // MARK: - Zoom (Issue #11 fix - only update @Published, let SwiftUI sync)
+    // MARK: - Zoom (update observable state; SwiftUI drives the terminal resize)
 
     func zoomIn() {
         updateFontSize(fontSize + 1)

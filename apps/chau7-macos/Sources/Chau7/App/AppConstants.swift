@@ -101,6 +101,13 @@ enum AppConstants {
         static let maxSplitRatio: CGFloat = 0.9
     }
 
+    // MARK: - Networking
+
+    enum Network {
+        /// Default port for the API analytics proxy
+        static let defaultProxyPort = 18080
+    }
+
     // MARK: - Event Retention
 
     enum Retention {

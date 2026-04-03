@@ -7,29 +7,29 @@ import Chau7Core
 /// which then broadcasts the event via NotificationCenter.
 @MainActor
 @Observable
-public final class ProxyIPCServer {
+final class ProxyIPCServer {
 
     // MARK: - Singleton
 
-    public static let shared = ProxyIPCServer()
+    static let shared = ProxyIPCServer()
 
     // MARK: - Observable State
 
-    public private(set) var isListening = false
-    public private(set) var recentEvents: [APICallEvent] = []
+    private(set) var isListening = false
+    private(set) var recentEvents: [APICallEvent] = []
 
     /// Task lifecycle state
-    public private(set) var pendingCandidates: [String: TaskCandidate] = [:] { // tabId -> candidate
+    private(set) var pendingCandidates: [String: TaskCandidate] = [:] { // tabId -> candidate
         didSet { onPendingCandidatesChange?(pendingCandidates) }
     }
 
-    public private(set) var activeTasks: [String: TrackedTask] = [:] { // tabId -> task
+    private(set) var activeTasks: [String: TrackedTask] = [:] { // tabId -> task
         didSet { onActiveTasksChange?(activeTasks) }
     }
 
     /// Callbacks for cross-class subscribers (replaces Combine $property.sink)
-    @ObservationIgnored public var onPendingCandidatesChange: (([String: TaskCandidate]) -> Void)?
-    @ObservationIgnored public var onActiveTasksChange: (([String: TrackedTask]) -> Void)?
+    @ObservationIgnored var onPendingCandidatesChange: (([String: TaskCandidate]) -> Void)?
+    @ObservationIgnored var onActiveTasksChange: (([String: TrackedTask]) -> Void)?
 
     // MARK: - Private Properties
 
@@ -77,7 +77,7 @@ public final class ProxyIPCServer {
     // MARK: - Public Interface
 
     /// Starts listening on the Unix socket
-    public func start() {
+    func start() {
         guard !isListening else {
             logger.info("IPC server already listening")
             return
@@ -155,7 +155,7 @@ public final class ProxyIPCServer {
     }
 
     /// Stops the IPC server
-    public func stop() {
+    func stop() {
         logger.info("Stopping IPC server")
 
         // Cancel handlers own close(fd) — don't double-close here.
@@ -181,7 +181,7 @@ public final class ProxyIPCServer {
     }
 
     /// Clear all recent events
-    public func clearEvents() {
+    func clearEvents() {
         recentEvents.removeAll()
     }
 

@@ -14,7 +14,7 @@ final class TerminalHighlightView: NSView {
 
     weak var session: TerminalSessionModel?
 
-    // Cached visible matches to avoid recomputation on every draw (Issue #14 fix)
+    // Cached visible matches to avoid recomputation on every draw call
     private var cachedVisibleMatches: [TerminalSessionModel.SearchMatch] = []
     private var cachedYDisp: Int = -1
     private var cachedRows: Int = -1
@@ -56,7 +56,7 @@ final class TerminalHighlightView: NSView {
         let cellHeight = rustView.renderCellSize.height
         let yDisp = rustView.renderTopVisibleRow
 
-        // Update cache if needed (Issue #14 fix - performance optimization)
+        // Update cache when scroll position or match count changes
         let allMatches = session.searchMatches
         if cachedYDisp != yDisp || cachedRows != rows || cachedMatchCount != allMatches.count {
             updateVisibleMatchesCache(

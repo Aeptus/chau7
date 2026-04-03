@@ -9,6 +9,7 @@ final class NotificationActionExecutorTests: XCTestCase {
         var focusResult = false
         var styleResult: UUID?
         var styleCallResults: [UUID?] = []
+        var existingTabs: Set<UUID> = []
         var badgeResult = false
         var snippetResult = false
         var resolvedExactTabID: UUID?
@@ -23,6 +24,10 @@ final class NotificationActionExecutorTests: XCTestCase {
                 return styleCallResults.removeFirst()
             }
             styleResult
+        }
+
+        func tabExists(tabID: UUID) -> Bool {
+            existingTabs.contains(tabID)
         }
 
         func badgeTab(tabID: UUID, text: String, color: String) -> Bool {
@@ -91,6 +96,7 @@ final class NotificationActionExecutorTests: XCTestCase {
         let recoveredTabID = UUID()
         delegate.styleCallResults = [nil, recoveredTabID]
         delegate.resolvedExactTabID = recoveredTabID
+        delegate.existingTabs = [recoveredTabID]
         executor.delegate = delegate
 
         let report = executor.execute(
@@ -114,6 +120,55 @@ final class NotificationActionExecutorTests: XCTestCase {
             delegate.resolveTarget,
             TabTarget(tool: "Codex", directory: "/tmp/chau7", tabID: nil, sessionID: "thread_123")
         )
+    }
+
+    func testResolveAutoClearTabIDRecoversMissingTabViaExactSessionLookup() {
+        let staleTabID = UUID()
+        let recoveredTabID = UUID()
+        let event = AIEvent(
+            source: .codex,
+            type: "finished",
+            tool: "Codex",
+            message: "done",
+            ts: "2026-04-03T09:00:00Z",
+            directory: "/tmp/chau7",
+            tabID: staleTabID,
+            sessionID: "thread_999",
+            reliability: .authoritative
+        )
+
+        let resolved = NotificationActionExecutor.resolveAutoClearTabID(
+            originalTabID: staleTabID,
+            event: event,
+            tabExists: { $0 == recoveredTabID },
+            resolveExactTab: { _ in recoveredTabID }
+        )
+
+        XCTAssertEqual(resolved, recoveredTabID)
+    }
+
+    func testResolveAutoClearTabIDReturnsNilWhenTabDisappearsAndCannotBeRecovered() {
+        let staleTabID = UUID()
+        let event = AIEvent(
+            source: .codex,
+            type: "finished",
+            tool: "Codex",
+            message: "done",
+            ts: "2026-04-03T09:00:00Z",
+            directory: "/tmp/chau7",
+            tabID: staleTabID,
+            sessionID: "thread_999",
+            reliability: .authoritative
+        )
+
+        let resolved = NotificationActionExecutor.resolveAutoClearTabID(
+            originalTabID: staleTabID,
+            event: event,
+            tabExists: { _ in false },
+            resolveExactTab: { _ in nil }
+        )
+
+        XCTAssertNil(resolved)
     }
 
     func testBadgeActionReportsFailureWhenDelegateCannotResolveExplicitTab() {

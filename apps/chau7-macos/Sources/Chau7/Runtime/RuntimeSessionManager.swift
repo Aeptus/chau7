@@ -128,7 +128,12 @@ final class RuntimeSessionManager {
 
         if let boundSession = sessionForClaudeSessionID(normalized) {
             let normalizedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if normalizedCwd == nil || normalizedCwd?.isEmpty == true || boundSession.config.directory == normalizedCwd {
+            if normalizedCwd == nil
+                || normalizedCwd?.isEmpty == true
+                || DirectoryPathMatcher.bidirectionalPrefixRank(
+                    targetPath: normalizedCwd ?? "",
+                    candidatePath: boundSession.config.directory
+                ) != nil {
                 return boundSession.tabID
             }
         }
@@ -523,22 +528,19 @@ final class RuntimeSessionManager {
     }
 
     private func _resolveClaudeTabBySessionID(_ sessionID: String, cwd: String) -> UUID? {
-        let matches = listClaudeTabs().filter { summary in
-            guard summary.sessionID == sessionID else { return false }
-            if cwd.isEmpty { return true }
-            return summary.cwd == cwd
+        let tabs = listAITabs()
+        if let resolved = Self.resolveClaudeTabID(sessionID: sessionID, cwd: cwd, tabs: tabs) {
+            return resolved
         }
 
-        guard matches.count == 1 else {
-            if !matches.isEmpty {
-                let tabIDs = matches.map(\.tabID.uuidString).joined(separator: ", ")
-                Log.warn(
-                    "RuntimeSessionManager: ambiguous Claude tab resolution for session=\(sessionID) cwd=\(cwd) matches=[\(tabIDs)]"
-                )
-            }
-            return nil
-        }
-        return matches.first?.tabID
+        let matches = tabs.filter { $0.sessionID == sessionID }
+        guard !matches.isEmpty else { return nil }
+
+        let tabIDs = matches.map(\.tabID.uuidString).joined(separator: ", ")
+        Log.warn(
+            "RuntimeSessionManager: ambiguous Claude tab resolution for session=\(sessionID) cwd=\(cwd) matches=[\(tabIDs)]"
+        )
+        return nil
     }
 
     private func resolveUniqueClaudeTabByCwd(_ cwd: String) -> UUID? {
@@ -552,7 +554,7 @@ final class RuntimeSessionManager {
     }
 
     private func _resolveUniqueClaudeTabByCwd(_ cwd: String) -> UUID? {
-        let matches = listClaudeTabs().filter { $0.cwd == cwd }
+        let matches = listAITabs().filter { $0.provider == "claude" && $0.cwd == cwd }
         guard matches.count == 1 else {
             if !matches.isEmpty {
                 let tabIDs = matches.map(\.tabID.uuidString).joined(separator: ", ")
@@ -565,13 +567,45 @@ final class RuntimeSessionManager {
         return matches.first?.tabID
     }
 
-    private struct ClaudeTabSummary {
+    struct AITabSummary {
         let tabID: UUID
         let cwd: String
+        let provider: String?
         let sessionID: String?
     }
 
-    private func listClaudeTabs() -> [ClaudeTabSummary] {
+    static func resolveClaudeTabID(sessionID: String, cwd: String, tabs: [AITabSummary]) -> UUID? {
+        let matchingTabs = tabs.filter { $0.sessionID == sessionID }
+        guard !matchingTabs.isEmpty else { return nil }
+
+        let preferredTabs = matchingTabs.filter { $0.provider == "claude" }
+        let candidateTabs = preferredTabs.isEmpty ? matchingTabs : preferredTabs
+
+        if candidateTabs.count == 1 {
+            return candidateTabs[0].tabID
+        }
+
+        let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedCwd.isEmpty else { return nil }
+
+        let rankedTabs = candidateTabs.compactMap { summary -> (tabID: UUID, rank: Int)? in
+            guard let rank = DirectoryPathMatcher.bidirectionalPrefixRank(
+                targetPath: trimmedCwd,
+                candidatePath: summary.cwd
+            ) else {
+                return nil
+            }
+            return (summary.tabID, rank)
+        }
+
+        guard !rankedTabs.isEmpty else { return nil }
+        let bestRank = rankedTabs.map(\.rank).min() ?? 0
+        let bestMatches = rankedTabs.filter { $0.rank == bestRank }
+        guard bestMatches.count == 1 else { return nil }
+        return bestMatches[0].tabID
+    }
+
+    private func listAITabs() -> [AITabSummary] {
         let controlService = TerminalControlService.shared
         let tabsJSON = controlService.listTabs()
         guard let data = tabsJSON.data(using: .utf8),
@@ -586,12 +620,12 @@ final class RuntimeSessionManager {
             let provider = AIResumeParser.normalizeProviderName(
                 (tab["ai_provider"] as? String) ?? (tab["active_app"] as? String) ?? ""
             )
-            guard provider == "claude" else { return nil }
             let sessionID = (tab["ai_session_id"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return ClaudeTabSummary(
+            return AITabSummary(
                 tabID: uuid,
                 cwd: (tab["cwd"] as? String) ?? "",
+                provider: provider,
                 sessionID: sessionID?.isEmpty == false ? sessionID : nil
             )
         }

@@ -115,7 +115,7 @@ final class GitDiffTracker {
         }
 
         let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: deadline)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 15, execute: deadline)
 
         let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
         let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
@@ -147,7 +147,7 @@ final class GitDiffTracker {
 
         // Kill if git takes longer than 5 seconds (large repos)
         let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: deadline)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5, execute: deadline)
 
         // Read stdout BEFORE waitUntilExit to avoid deadlock when the pipe
         // buffer fills (git blocks on write, we block on wait → both stuck).

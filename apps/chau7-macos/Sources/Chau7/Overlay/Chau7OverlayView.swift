@@ -860,6 +860,9 @@ private struct ToolbarTabBarView: View {
                                         tabCount: groupTabs.count
                                     )
                                     .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        overlayModel.toggleDashboard(for: groupID)
+                                    }
                                     .background(
                                         GeometryReader { proxy in
                                             Color.clear
@@ -2209,7 +2212,7 @@ struct SearchOverlayView: View {
                             String(format: L("search.matches.found", "%d matches found"), model.searchMatchCount)
                         )
 
-                    // Case sensitivity toggle (Issue #23 fix)
+                    // Case sensitivity toggle
                     Toggle(isOn: $model.isCaseSensitive) {
                         Text(L("Aa", "Aa"))
                             .font(.custom("Avenir Next", size: 11).weight(.semibold))
@@ -2357,7 +2360,7 @@ struct RenameOverlayView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(minWidth: OverlayLayout.commandListMinWidth)
                         .focused($isFocused)
-                        // Issue #18 fix: Allow Enter key to confirm rename
+                        // Allow Enter key to confirm rename
                         .onSubmit {
                             model.commitRename()
                         }

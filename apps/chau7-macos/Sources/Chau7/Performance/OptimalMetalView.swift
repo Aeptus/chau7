@@ -8,12 +8,12 @@ import QuartzCore
 
 /// High-performance Metal view with optimal display settings.
 /// Configures CAMetalLayer for minimal input-to-display latency.
-public final class OptimalMetalView: MTKView {
+final class OptimalMetalView: MTKView {
 
     // MARK: - Configuration Options
 
     /// Display timing mode
-    public enum TimingMode {
+    enum TimingMode {
         /// Sync to display refresh (VSync on)
         case vsync
         /// Render as fast as possible (VSync off, may tear)
@@ -23,7 +23,7 @@ public final class OptimalMetalView: MTKView {
     }
 
     /// Frame pacing strategy
-    public enum FramePacing {
+    enum FramePacing {
         /// Let the system decide (displaySyncEnabled = true)
         case system
         /// Manual frame pacing with CVDisplayLink
@@ -40,20 +40,20 @@ public final class OptimalMetalView: MTKView {
     private var framePacing: FramePacing = .system
 
     /// Measured time between frames (for adaptive pacing)
-    public private(set) var frameTime: Double = 0
+    private(set) var frameTime: Double = 0
     private var lastFrameTimestamp: CFAbsoluteTime = 0
 
     /// Statistics
-    public private(set) var droppedFrames: UInt64 = 0
-    public private(set) var totalFrames: UInt64 = 0
+    private(set) var droppedFrames: UInt64 = 0
+    private(set) var totalFrames: UInt64 = 0
 
     // MARK: - Initialization
 
     /// When true, all mouse events pass through to the view underneath.
     /// Used so the terminal view underneath handles input while Metal handles display.
-    public var isEventPassthrough = false
+    var isEventPassthrough = false
 
-    public init(frame: CGRect, device: MTLDevice) {
+    init(frame: CGRect, device: MTLDevice) {
         super.init(frame: frame, device: device)
         configureForLowLatency()
     }
@@ -65,7 +65,7 @@ public final class OptimalMetalView: MTKView {
 
     // MARK: - Event Passthrough
 
-    override public func hitTest(_ point: NSPoint) -> NSView? {
+    override func hitTest(_ point: NSPoint) -> NSView? {
         if isEventPassthrough { return nil }
         return super.hitTest(point)
     }
@@ -140,7 +140,7 @@ public final class OptimalMetalView: MTKView {
     // MARK: - Timing Mode
 
     /// Sets the display timing mode
-    public func setTimingMode(_ mode: TimingMode) {
+    func setTimingMode(_ mode: TimingMode) {
         guard let metalLayer = layer as? CAMetalLayer else { return }
         timingMode = mode
 
@@ -156,7 +156,7 @@ public final class OptimalMetalView: MTKView {
     }
 
     /// Sets the frame pacing strategy
-    public func setFramePacing(_ pacing: FramePacing) {
+    func setFramePacing(_ pacing: FramePacing) {
         framePacing = pacing
 
         switch pacing {
@@ -226,14 +226,14 @@ public final class OptimalMetalView: MTKView {
     }
 
     /// Sets the callback invoked on each display link tick
-    public func setFrameCallback(_ callback: @escaping () -> Void) {
+    func setFrameCallback(_ callback: @escaping () -> Void) {
         frameCallback = callback
     }
 
     // MARK: - Rendering
 
     /// Requests an immediate frame render (bypass display sync)
-    public func renderImmediately() {
+    func renderImmediately() {
         guard let metalLayer = layer as? CAMetalLayer else { return }
 
         // Temporarily disable sync for immediate render
@@ -246,7 +246,7 @@ public final class OptimalMetalView: MTKView {
     }
 
     /// Gets the next drawable with timeout (non-blocking option)
-    public func nextDrawable(timeout: TimeInterval = 1.0) -> CAMetalDrawable? {
+    func nextDrawable(timeout: TimeInterval = 1.0) -> CAMetalDrawable? {
         guard let metalLayer = layer as? CAMetalLayer else { return nil }
 
         // Use allowsNextDrawableTimeout for non-blocking
@@ -267,7 +267,7 @@ public final class OptimalMetalView: MTKView {
     // MARK: - Adaptive Frame Rate
 
     /// Calculates optimal frame rate based on display capabilities
-    public var optimalFrameRate: Int {
+    var optimalFrameRate: Int {
         guard let screen = window?.screen ?? NSScreen.main else {
             return 60
         }
@@ -287,14 +287,14 @@ public final class OptimalMetalView: MTKView {
 
     // MARK: - Statistics
 
-    public struct FrameStatistics {
-        public let totalFrames: UInt64
-        public let droppedFrames: UInt64
-        public let averageFrameTime: Double
-        public let frameDropRate: Double
+    struct FrameStatistics {
+        let totalFrames: UInt64
+        let droppedFrames: UInt64
+        let averageFrameTime: Double
+        let frameDropRate: Double
     }
 
-    public var statistics: FrameStatistics {
+    var statistics: FrameStatistics {
         let dropRate = totalFrames > 0 ? Double(droppedFrames) / Double(totalFrames) : 0
         return FrameStatistics(
             totalFrames: totalFrames,
@@ -304,7 +304,7 @@ public final class OptimalMetalView: MTKView {
         )
     }
 
-    public func resetStatistics() {
+    func resetStatistics() {
         totalFrames = 0
         droppedFrames = 0
         frameTime = 0
@@ -333,7 +333,7 @@ extension NSScreen {
 // MARK: - Layer-Backed Configuration
 
 /// Extension for configuring any NSView with Metal layer for terminal rendering
-public extension NSView {
+extension NSView {
     /// Configures this view to use an optimal CAMetalLayer
     @discardableResult
     func configureMetalLayer(device: MTLDevice) -> CAMetalLayer? {

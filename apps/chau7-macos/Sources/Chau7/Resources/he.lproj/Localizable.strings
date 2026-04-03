@@ -3,7 +3,7 @@
 // MARK: - General
 "app.name" = "Chau7";
 "app.tagline" = "רעיון מסוף CLI לבינה מלאכותית";
-"app.copyright" = "זכויות יוצרים © 2024-2025. כל הזכויות שמורות.";
+"app.copyright" = "זכויות יוצרים © 2024-2026 Aeptus. רישיון AGPL 3.0.";
 
 // MARK: - Common Actions
 "action.ok" = "אישור";

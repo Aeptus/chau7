@@ -500,7 +500,7 @@ private final class RustTerminalFFI {
     private typealias PollFn = @convention(c) (OpaquePointer?, UInt32) -> Bool
     private typealias SetColorsFn = @convention(c) (OpaquePointer?, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UnsafePointer<UInt8>?) -> Void
     private typealias ClearScrollbackFn = @convention(c) (OpaquePointer?) -> Void
-    // Issue #3 fix: FFI types for raw output retrieval
+    // FFI types for raw output retrieval from the Rust terminal
     // Returns *mut u8 (mutable pointer) for proper memory ownership transfer
     private typealias GetLastOutputFn = @convention(c) (OpaquePointer?, UnsafeMutablePointer<Int>?) -> UnsafeMutablePointer<UInt8>?
     private typealias FreeOutputFn = @convention(c) (UnsafeMutablePointer<UInt8>?, Int) -> Void
@@ -575,7 +575,7 @@ private final class RustTerminalFFI {
         let poll: PollFn
         let setColors: SetColorsFn? // Optional - older libraries may not have this
         let clearScrollback: ClearScrollbackFn? // Optional - older libraries may not have this
-        // Issue #3 fix: raw output retrieval functions
+        // Raw output retrieval functions (for shell integration and output detection)
         let getLastOutput: GetLastOutputFn? // Optional - older libraries may not have this
         let freeOutput: FreeOutputFn? // Optional - older libraries may not have this
         let injectOutput: InjectOutputFn? // Optional - inject UI-only output
@@ -765,7 +765,7 @@ private final class RustTerminalFFI {
             Log.info("RustTerminalFFI: clearScrollback symbol not found (optional)")
         }
 
-        // Selection management symbols (Issue #1 fix)
+        // Selection management symbols (start, update, select-all via Rust FFI)
         let selectionStartSym = loadSymbol("chau7_terminal_selection_start")
         if selectionStartSym == nil {
             Log.info("RustTerminalFFI: selectionStart symbol not found (optional)")
@@ -781,7 +781,7 @@ private final class RustTerminalFFI {
             Log.info("RustTerminalFFI: selectionAll symbol not found (optional)")
         }
 
-        // Issue #3 fix: raw output retrieval symbols
+        // Raw output retrieval symbols (getLastOutput / freeOutput)
         let getLastOutputSym = loadSymbol("chau7_terminal_get_last_output")
         if getLastOutputSym == nil {
             Log.info("RustTerminalFFI: getLastOutput symbol not found (optional)")
@@ -1319,7 +1319,7 @@ private final class RustTerminalFFI {
         Self.functions?.selectionClear(terminal)
     }
 
-    /// Start a new selection at the given position (Issue #1 fix)
+    /// Start a new selection at the given position using Rust's native selection API
     /// - Parameters:
     ///   - col: Column position (0-indexed)
     ///   - row: Row position (can be negative for scrollback)
@@ -1333,7 +1333,7 @@ private final class RustTerminalFFI {
         startFn(terminal, col, row, selectionType)
     }
 
-    /// Update the current selection to extend to the given position (Issue #1 fix)
+    /// Update the current selection to extend to the given position
     func updateSelection(col: Int32, row: Int32) {
         guard let updateFn = Self.functions?.selectionUpdate else {
             Log.trace("RustTerminalFFI[\(instanceId)]: updateSelection - Function not available")
@@ -1343,7 +1343,7 @@ private final class RustTerminalFFI {
         updateFn(terminal, col, row)
     }
 
-    /// Select all content (screen + scrollback) (Issue #1 fix)
+    /// Select all content (screen + scrollback) via Rust's native selection API
     func selectAll() {
         guard let selectAllFn = Self.functions?.selectionAll else {
             Log.trace("RustTerminalFFI[\(instanceId)]: selectAll - Function not available")
@@ -1447,7 +1447,7 @@ private final class RustTerminalFFI {
         return displayOffsetFn(terminal)
     }
 
-    /// Get raw output bytes from the last poll (Issue #3 fix)
+    /// Get raw output bytes from the last poll
     /// Returns nil if no output or function not available
     func getLastOutput() -> Data? {
         guard let getLastOutputFn = Self.functions?.getLastOutput,
@@ -2814,7 +2814,7 @@ final class RustTerminalView: NSView {
 
         // ALWAYS poll the Rust terminal to drain PTY buffer, even when suspended.
         // This prevents the PTY reader thread from blocking when the buffer fills up.
-        // (Issue #4 fix: suspended state was blocking PTY by not draining)
+        // (Without this, suspended state blocks the PTY by not draining its buffer)
         //
         // Selection preservation: Rust manages selection state internally. If poll()
         // processes output that scrolls the terminal, Rust may clear its selection.
@@ -2889,7 +2889,7 @@ final class RustTerminalView: NSView {
 
         // Retrieve raw output bytes from the last poll and forward to onOutput callback.
         // This enables shell integration, logging, and output detectors to receive data.
-        // (Issue #3 fix: onOutput callback was never called)
+        // (Ensures onOutput callback fires so shell integration and detectors receive data)
         if var outputData = rust.getLastOutput(), !outputData.isEmpty {
             // Cancel the shell-startup-slow timer on first PTY output
             if startupBytesLogged == 0 {
@@ -3013,7 +3013,7 @@ final class RustTerminalView: NSView {
         }
     }
 
-    // MARK: - Grid Synchronization (Optimized for Issue #7)
+    // MARK: - Grid Synchronization (Optimized with dirty-row tracking and rate limiting)
 
     /// Sync Rust terminal grid to the native renderer.
     /// Uses dirty row detection and rate limiting to minimize CPU usage during high-output scenarios.
@@ -3867,7 +3867,7 @@ final class RustTerminalView: NSView {
         return false
     }
 
-    // MARK: - Terminal Escape Sequence Generation (Issue #2 Fix)
+    // MARK: - Terminal Escape Sequence Generation
 
     /// Generates the appropriate terminal escape sequence for a key event.
     /// Returns nil if the key should be handled via regular character input.
@@ -5648,7 +5648,7 @@ final class RustTerminalView: NSView {
 
     @objc private func contextSelectAll(_ sender: Any?) {
         Log.trace("RustTerminalView[\(viewId)]: contextSelectAll")
-        // Issue #1 fix: Use Rust's native selection
+        // Use Rust's native selection so getSelection() returns correct text
         // This ensures getSelection() returns the correct text after select-all
         rustTerminal?.selectAll()
         needsGridSync = true

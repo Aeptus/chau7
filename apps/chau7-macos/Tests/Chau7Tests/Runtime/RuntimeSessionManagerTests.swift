@@ -181,6 +181,53 @@ final class RuntimeSessionManagerTests: XCTestCase {
         XCTAssertTrue(notificationEvents(in: second).isEmpty)
     }
 
+    func testResolveClaudeTabIDAllowsNestedDirectoryMatch() {
+        let sessionID = "claude-session-nested"
+        let exactTabID = UUID()
+        let unrelatedTabID = UUID()
+
+        let resolved = RuntimeSessionManager.resolveClaudeTabID(
+            sessionID: sessionID,
+            cwd: "/tmp/project/subdir",
+            tabs: [
+                RuntimeSessionManager.AITabSummary(
+                    tabID: exactTabID,
+                    cwd: "/tmp/project",
+                    provider: "claude",
+                    sessionID: sessionID
+                ),
+                RuntimeSessionManager.AITabSummary(
+                    tabID: unrelatedTabID,
+                    cwd: "/tmp/other",
+                    provider: "claude",
+                    sessionID: "someone-else"
+                )
+            ]
+        )
+
+        XCTAssertEqual(resolved, exactTabID)
+    }
+
+    func testResolveClaudeTabIDFallsBackToUniqueSessionWhenProviderMetadataMissing() {
+        let sessionID = "claude-session-providerless"
+        let providerlessTabID = UUID()
+
+        let resolved = RuntimeSessionManager.resolveClaudeTabID(
+            sessionID: sessionID,
+            cwd: "/tmp/project",
+            tabs: [
+                RuntimeSessionManager.AITabSummary(
+                    tabID: providerlessTabID,
+                    cwd: "/tmp/project",
+                    provider: nil,
+                    sessionID: sessionID
+                )
+            ]
+        )
+
+        XCTAssertEqual(resolved, providerlessTabID)
+    }
+
     func testUserPromptStartsTurnForAdoptedClaudeSession() {
         let manager = RuntimeSessionManager.shared
         let cwd = "/tmp/runtime-adopted-turn-\(UUID().uuidString)"

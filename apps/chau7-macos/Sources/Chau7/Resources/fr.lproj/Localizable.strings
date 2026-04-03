@@ -3,7 +3,7 @@
 // MARK: - General
 "app.name" = "Chau7";
 "app.tagline" = "Compagnon Terminal pour CLI IA";
-"app.copyright" = "Copyright © 2024-2025. Tous droits réservés.";
+"app.copyright" = "Copyright © 2024-2026 Aeptus. Licence AGPL 3.0.";
 
 // MARK: - Common Actions
 "action.ok" = "OK";

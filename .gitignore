@@ -1,4 +1,5 @@
 .DS_Store
+*.dmg
 .build/
 build/
 .claude/

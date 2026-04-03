@@ -267,7 +267,7 @@ struct IssueReportingPrivacyView: View {
 
             Text(L(
                 "privacy.rights.contact",
-                "To exercise any of these rights, open an issue at github.com/anthropics/chau7 or email the address listed on that repository."
+                "To exercise any of these rights, open an issue at github.com/aeptus/chau7 or email the address listed on that repository."
             ))
             .font(.system(size: 11))
             .foregroundStyle(.secondary)

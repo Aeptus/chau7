@@ -255,7 +255,7 @@ public enum ConfigFileParser {
 
     /// Serialize a config file back to TOML-like format
     public static func serialize(_ config: Chau7ConfigFile) -> String {
-        var lines: [String] = ["# Chau7 Configuration", "# https://github.com/your/chau7", ""]
+        var lines: [String] = ["# Chau7 Configuration", "# https://github.com/aeptus/chau7", ""]
 
         if let g = config.general {
             lines.append("[general]")

@@ -218,7 +218,7 @@ extension TerminalSessionModel {
     }
 
     /// Computes search matches from pre-captured buffer data (thread-safe).
-    /// Supports case-sensitive and case-insensitive search (Issue #23).
+    /// Supports both case-sensitive and case-insensitive search.
     /// Memory-optimized: uses Substring to avoid copies, case-insensitive option instead of lowercased()
     private func computeSearchMatches(
         query: String,

@@ -602,7 +602,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         Built with SwiftUI and Rust.
 
-        Copyright \u{00a9} 2024-2025
+        Copyright \u{00a9} 2024-2026 Aeptus
         """)
 
         let attributedCredits = NSMutableAttributedString(string: credits)
@@ -879,10 +879,17 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func openRepositoryPane() {
         guard let model = ensureActiveOverlayModel(),
-              let tab = model.tabs.first(where: { $0.id == model.selectedTabID }),
-              let session = tab.session else { return }
+              let tab = model.tabs.first(where: { $0.id == model.selectedTabID }) else { return }
 
-        let dir = session.gitRootPath ?? session.currentDirectory
+        // Dashboard tabs have no session — use repoGroupID instead
+        let dir: String
+        if let session = tab.session {
+            dir = session.gitRootPath ?? session.currentDirectory
+        } else if let repoGroupID = tab.repoGroupID {
+            dir = repoGroupID
+        } else {
+            return
+        }
         model.toggleRepositoryPaneInCurrentTab(directory: dir)
     }
 

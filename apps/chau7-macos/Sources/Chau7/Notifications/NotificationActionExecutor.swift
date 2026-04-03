@@ -8,6 +8,7 @@ import Chau7Core
 @MainActor protocol NotificationActionDelegate: AnyObject {
     func focusTab(tabID: UUID) -> Bool
     @discardableResult func styleTab(tabID: UUID, preset: String, config: [String: String]) -> UUID?
+    func tabExists(tabID: UUID) -> Bool
     func badgeTab(tabID: UUID, text: String, color: String) -> Bool
     func insertSnippet(id: String, tabID: UUID, autoExecute: Bool) -> Bool
     func flashMenuBar(duration: Int, animate: Bool)
@@ -360,13 +361,71 @@ final class NotificationActionExecutor {
             let workItem = DispatchWorkItem { [weak self] in
                 self?.pendingStyleClears.removeValue(forKey: resolvedTabID)
                 self?.lastAppliedPreset.removeValue(forKey: resolvedTabID)
-                _ = self?.delegate?.styleTab(tabID: resolvedTabID, preset: "clear", config: [:])
+                guard let self,
+                      let autoClearTabID = resolveAutoClearTabID(originalTabID: resolvedTabID, event: ctx.event)
+                else {
+                    Log.debug(
+                        "Action styleTab: skipped auto-clear for missing tab \(resolvedTabID) event=\(ctx.event.id.uuidString)"
+                    )
+                    return
+                }
+                _ = delegate?.styleTab(tabID: autoClearTabID, preset: "clear", config: [:])
             }
             pendingStyleClears[resolvedTabID] = workItem
             DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(autoClearSeconds), execute: workItem)
         }
         report.recordSuccess(.styleTab)
         return report
+    }
+
+    private func resolveAutoClearTabID(originalTabID: UUID, event: AIEvent) -> UUID? {
+        let resolved = Self.resolveAutoClearTabID(
+            originalTabID: originalTabID,
+            event: event,
+            tabExists: { [weak delegate] tabID in
+                delegate?.tabExists(tabID: tabID) == true
+            },
+            resolveExactTab: { [weak delegate] target in
+                delegate?.resolveExactTab(target: target)
+            }
+        )
+
+        if let resolved, resolved != originalTabID, let sessionID = event.sessionID {
+            Log.info(
+                "Action styleTab: recovered auto-clear target \(originalTabID) via exact session \(sessionID) -> \(resolved)"
+            )
+        }
+        return resolved
+    }
+
+    static func resolveAutoClearTabID(
+        originalTabID: UUID,
+        event: AIEvent,
+        tabExists: (UUID) -> Bool,
+        resolveExactTab: (TabTarget) -> UUID?
+    ) -> UUID? {
+        if tabExists(originalTabID) {
+            return originalTabID
+        }
+
+        guard let sessionID = event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sessionID.isEmpty else {
+            return nil
+        }
+
+        let exactTarget = TabTarget(
+            tool: event.tool,
+            directory: event.directory,
+            tabID: nil,
+            sessionID: sessionID
+        )
+
+        guard let recoveredTabID = resolveExactTab(exactTarget),
+              tabExists(recoveredTabID) else {
+            return nil
+        }
+
+        return recoveredTabID
     }
 
     private func resolveLiveStyleTabID(
@@ -1237,6 +1296,10 @@ final class NotificationActionAdapter: NotificationActionDelegate {
 
     func badgeTab(tabID: UUID, text: String, color: String) -> Bool {
         return TerminalControlService.shared.badgeTabAcrossWindows(tabID: tabID, text: text, color: color)
+    }
+
+    func tabExists(tabID: UUID) -> Bool {
+        TerminalControlService.shared.tabExistsAcrossWindows(tabID: tabID)
     }
 
     func insertSnippet(id: String, tabID: UUID, autoExecute: Bool) -> Bool {

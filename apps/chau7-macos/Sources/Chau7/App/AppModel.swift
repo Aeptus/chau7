@@ -309,10 +309,10 @@ final class AppModel {
     @ObservationIgnored private var cleanupTimer: DispatchSourceTimer?
     @ObservationIgnored private var appEventEmitter: AppEventEmitter?
     @ObservationIgnored private var pendingClaudeWaitingInputFallbacks: [String: DispatchWorkItem] = [:]
-    @ObservationIgnored private let maxLogLines = 300
-    @ObservationIgnored private let maxHistoryEntries = 200
-    @ObservationIgnored private let maxTerminalLines = 250
-    @ObservationIgnored private let terminalPrefillLines = 200
+    @ObservationIgnored private let maxLogLines = AppConstants.Limits.maxLogLines
+    @ObservationIgnored private let maxHistoryEntries = AppConstants.Limits.maxHistoryEntries
+    @ObservationIgnored private let maxTerminalLines = AppConstants.Limits.maxTerminalLines
+    @ObservationIgnored private let terminalPrefillLines = AppConstants.Limits.terminalPrefillLines
     @ObservationIgnored private let maxEntryAgeSeconds: TimeInterval = 7 * 24 * 60 * 60 // 7 days
     @ObservationIgnored var claudeWaitingInputFallbackDelay: TimeInterval = 0.75
     @ObservationIgnored private var notificationSettingsSnapshot: NotificationSettingsSnapshot?

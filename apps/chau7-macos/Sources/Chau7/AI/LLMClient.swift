@@ -4,6 +4,7 @@ import Chau7Core
 /// HTTP client for sending requests to LLM providers (OpenAI, Anthropic, Ollama, Custom).
 /// Handles provider-specific request/response formats and authentication.
 final class LLMClient {
+    private static let anthropicAPIVersion = "2023-06-01"
     private let session: URLSession
 
     init(session: URLSession = .shared) {
@@ -90,7 +91,7 @@ final class LLMClient {
         let headers: [String: String] = [
             "Content-Type": "application/json",
             "x-api-key": config.apiKey,
-            "anthropic-version": "2023-06-01"
+            "anthropic-version": Self.anthropicAPIVersion
         ]
         return (data, headers)
     }

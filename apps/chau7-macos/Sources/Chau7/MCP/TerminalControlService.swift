@@ -79,6 +79,10 @@ final class TerminalControlService {
         return nil
     }
 
+    func tabExistsAcrossWindows(tabID: UUID) -> Bool {
+        allTabs.contains { $0.id == tabID }
+    }
+
     @discardableResult
     func focusTabAcrossWindows(tabID: UUID) -> Bool {
         for (_, model) in allModels {

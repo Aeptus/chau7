@@ -33,7 +33,7 @@ extension simd_float4x4 {
 /// - Cursor rendering (block, underline, bar) with blink support
 /// - Text decorations (underline, strikethrough) in fragment shader
 /// - Retina/HiDPI scaling
-public final class MetalTerminalRenderer: NSObject {
+final class MetalTerminalRenderer: NSObject {
 
     // MARK: - Types
 
@@ -173,7 +173,7 @@ public final class MetalTerminalRenderer: NSObject {
 
     // MARK: - Initialization
 
-    public init?(device: MTLDevice? = nil) {
+    init?(device: MTLDevice? = nil) {
         guard let metalDevice = device ?? MTLCreateSystemDefaultDevice() else {
             Log.error("MetalRenderer: Failed to create Metal device")
             return nil
@@ -294,7 +294,7 @@ public final class MetalTerminalRenderer: NSObject {
     /// Configures fonts and rebuilds the base glyph atlas for ASCII.
     /// Accepts an NSFont directly to avoid issues with private system font names
     /// (e.g. ".SFMono-Regular") that CTFontCreateWithName may not resolve correctly.
-    public func setFont(nsFont: NSFont, scaleFactor: CGFloat = 1.0) {
+    func setFont(nsFont: NSFont, scaleFactor: CGFloat = 1.0) {
         fontSize = nsFont.pointSize
         self.scaleFactor = scaleFactor
 
@@ -725,7 +725,7 @@ public final class MetalTerminalRenderer: NSObject {
     // MARK: - Rendering
 
     /// Renders terminal cells to the given drawable.
-    public func render(
+    func render(
         cells: UnsafeBufferPointer<TerminalCell>,
         rows: Int,
         cols: Int,
@@ -943,15 +943,15 @@ public final class MetalTerminalRenderer: NSObject {
 // MARK: - Terminal Cell Type
 
 /// Represents a single terminal cell for GPU rendering
-public struct TerminalCell {
-    public var character: UInt32
-    public var foregroundColor: SIMD4<Float>
-    public var backgroundColor: SIMD4<Float>
+struct TerminalCell {
+    var character: UInt32
+    var foregroundColor: SIMD4<Float>
+    var backgroundColor: SIMD4<Float>
     /// Bold=1, italic=2, underline=4, strikethrough=8, blink=16
     /// Cursor bits (set by renderer): cursor_present=32, cursor_style in bits 6-7
-    public var flags: UInt32
+    var flags: UInt32
 
-    public init(
+    init(
         character: UInt32 = 0x20,
         foreground: SIMD4<Float> = SIMD4(1, 1, 1, 1),
         background: SIMD4<Float> = SIMD4(0, 0, 0, 1),
