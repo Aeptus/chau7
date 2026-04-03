@@ -1,0 +1,1 @@
+apps/chau7-macos/docs/CHANGELOG.md
