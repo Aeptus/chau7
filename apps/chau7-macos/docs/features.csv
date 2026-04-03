@@ -212,7 +212,8 @@ Migration,Guided First-Run Setup,Walk through initial configuration on first lau
 Migration,Power User Tips,Contextual tips surface as you use the app,Shipped,No
 Accessibility,VoiceOver Support,Full macOS accessibility integration,Shipped,No
 Accessibility,High Contrast & Reduced Motion,Respects system accessibility preferences,Shipped,No
-Accessibility,4 Languages,"English, French, Arabic, Hebrew — with proper RTL layout",Shipped,No
+Accessibility,4 Languages,"English, French, Arabic, Hebrew — with proper RTL layout across all windows",Shipped,No
+Accessibility,RTL Layout Propagation,"Layout direction set at every NSHostingView boundary — all 13 hosting sites flip for Arabic/Hebrew",Shipped,Yes
 Accessibility,Runtime Language Switching,Change language without restarting the app,Shipped,No
 Scripting,JSON-RPC API,"Unix socket API for external automation — control tabs, run commands, query history, manage snippets",Shipped,Yes
 Scripting,Settings API,Query and modify settings programmatically from any language,Shipped,No

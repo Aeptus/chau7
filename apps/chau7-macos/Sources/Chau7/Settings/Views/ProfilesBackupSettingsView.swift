@@ -64,7 +64,6 @@ struct ProfilesBackupSettingsView: View {
                     .padding(.top, 4)
             }
         }
-        .localized()
         .fileImporter(
             isPresented: $showImportSheet,
             allowedContentTypes: [.json],

@@ -413,7 +413,6 @@ struct SettingsRootView: View {
             }
         }
         .frame(minWidth: 860, minHeight: 650)
-        .localized()
         .onChange(of: searchQuery) {
             // Auto-select first matching section when searching
             if !searchQuery.isEmpty, let firstMatch = filteredSections.first {
