@@ -3,6 +3,8 @@
 The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for developers who ship with AI.
 
 > See also: [features.csv](features.csv) for the machine-readable feature inventory.
+>
+> Canonical docs live in [../../../docs/README.md](../../../docs/README.md).
 
 ## Table of Contents
 
@@ -528,9 +530,9 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 Chau7/
 ├── apps/
 │   ├── chau7-macos/
-│   │   ├── Sources/Chau7/       # 158 Swift files, 32 directories
-│   │   ├── Sources/Chau7Core/   # 26 pure-function files (testable)
-│   │   ├── Tests/               # 701 unit tests
+│   │   ├── Sources/Chau7/       # app code (SwiftUI, AppKit, runtime, notifications, telemetry)
+│   │   ├── Sources/Chau7Core/   # pure logic and shared testable components
+│   │   ├── Tests/               # unit and integration coverage
 │   │   ├── rust/                # Rust terminal backend (chau7_terminal, chau7_parse)
 │   │   ├── chau7-proxy/         # Go TLS/WSS API proxy
 │   │   └── Package.swift

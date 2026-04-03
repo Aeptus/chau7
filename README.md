@@ -2,12 +2,10 @@
 
 The AI-native terminal for macOS. Named after a sock. We're not even sorry.
 
-Chau7 detects your AI agents, optimizes their context tokens, tracks what they cost you, and gives you 20 MCP tools to control everything from another terminal. GPU-accelerated Metal rendering. Not Electron. Not a wrapper.
+Chau7 detects your AI agents, optimizes their context tokens, tracks what they cost you, and gives you 30+ MCP tools to control everything from another terminal. GPU-accelerated Metal rendering. Not Electron. Not a wrapper.
 
 [![CI](https://github.com/aeptus/chau7/actions/workflows/ci.yml/badge.svg)](https://github.com/aeptus/chau7/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
-
-> TODO: Screenshots. A terminal emulator without screenshots is like a sock without a foot.
 
 ## What it does
 
@@ -46,6 +44,7 @@ services/
 - [Remote agent](services/chau7-remote/README.md)
 - [Remote protocol](services/chau7-remote/docs/PROTOCOL.md)
 - [Remote iOS UX](apps/chau7-ios/docs/REMOTE-UX.md)
+- [Documentation map](docs/README.md)
 
 ## Build
 
@@ -82,7 +81,7 @@ brew install lefthook
 
 ## Rule #1
 
-Document decisions near the code. Every subdirectory has a README explaining its contents. When someone reads a file, the *why* should be reachable without leaving the directory. If you're looking for architecture docs, see [`docs/ARCHITECTURE.md`](apps/chau7-macos/docs/ARCHITECTURE.md).
+Document decisions near the code. Every subdirectory has a README explaining its contents. When someone reads a file, the *why* should be reachable without leaving the directory. If you're looking for the canonical doc entry points, see the [documentation map](docs/README.md).
 
 ## Contributing
 

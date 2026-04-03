@@ -19,7 +19,7 @@ Here's everything security-relevant, with no hand-waving:
 
 **API Proxy** (`chau7-proxy`): A local Go binary that intercepts AI API calls over TLS for analytics. Your API keys pass through to the original provider (Anthropic, OpenAI, etc.). Keys are never stored, never logged, never transmitted anywhere else. The proxy is opt-in and runs on `localhost:18080`. You can disable it in Settings.
 
-**MCP Server**: 20 tools exposed over a Unix socket at `~/.chau7/mcp.sock`, permissions `0600` (owner-only). Any process running as your user can connect. The tools can read terminal output, send input, manage tabs, and query history. This is powerful by design.
+**MCP Server**: 30+ tools exposed over a Unix socket at `~/.chau7/mcp.sock`, permissions `0600` (owner-only). Any process running as your user can connect. The tools can read terminal output, send input, manage tabs, and query history. This is powerful by design.
 
 **Bug Reports**: Submitted via Cloudflare Worker relay to a private GitHub repo. No data leaves your machine until you hit Submit. All diagnostic sections are off by default. The in-app privacy page lists every third-party involved. [We mean it.](apps/chau7-macos/Sources/Chau7/Logging/IssueReportingPrivacyView.swift)
 

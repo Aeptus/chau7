@@ -9,7 +9,7 @@ Chau7 is a macOS menu bar helper and floating terminal overlay built for AI-assi
 - Multi-tab terminal overlay with rename, colors, last-command badges, and git branch indicator.
 - Command palette, search overlay (regex + case sensitivity), snippets, clipboard history, bookmarks, and broadcast input.
 - AI CLI detection with auto tab theming and custom detection rules.
-- Claude Code event monitoring with permission and response-complete alerts.
+- Multi-agent event monitoring, notifications, and runtime integration for modern AI CLIs.
 - SSH connection manager with jump hosts and import from `~/.ssh/config`.
 
 For a complete feature inventory, see `docs/FEATURES.md`:
@@ -24,8 +24,8 @@ For a complete feature inventory, see `docs/FEATURES.md`:
 
 ## Requirements
 
-- macOS 13+ (Ventura)
-- Xcode 15+ or Swift 5.9+ to build
+- macOS 14+
+- Xcode 26+ to build
 - Network access the first time to fetch Swift Package Manager dependencies
 
 ## Local CI
@@ -39,6 +39,8 @@ Repo-root verification lives outside the app-specific build helpers:
 
 Use those for local verification. Keep `./Scripts/build-app.sh`, `./Scripts/build-and-run.sh`, and
 `./Scripts/order66` for packaging and launch workflows.
+
+For repo-wide doc ownership and canonical entry points, see [../../docs/README.md](../../docs/README.md).
 
 ## Install (build + run)
 

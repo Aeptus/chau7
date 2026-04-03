@@ -12,10 +12,13 @@ Or just open an issue here. Include: what you did, what you expected, what happe
 
 ```bash
 git clone https://github.com/aeptus/chau7.git
-cd chau7/apps/chau7-macos
+cd chau7
 
 # Install pre-commit hooks (format + lint + build gate)
 ./Scripts/install-hooks
+
+# Enter the macOS app directory
+cd apps/chau7-macos
 
 # Build
 swift build
@@ -37,13 +40,13 @@ SwiftFormat and SwiftLint enforce style via pre-commit hooks. Rust uses `cargo f
 
 1. Fork and branch from `main`.
 2. Make your changes. One logical change per commit.
-3. Run `./Scripts/ci-local` before pushing. It runs everything the CI will run.
+3. Run `./Scripts/ci-local` from repo root before pushing. It runs everything the CI will run.
 4. Open a PR. Say what you changed and why.
 5. We'll review it. We might ask questions. That's not rejection, that's conversation.
 
 ## Architecture
 
-Chau7 follows Rule #1: document decisions near the code. Every subdirectory has a README. The full picture is in [`docs/ARCHITECTURE.md`](apps/chau7-macos/docs/ARCHITECTURE.md).
+Chau7 follows Rule #1: document decisions near the code. Every subdirectory has a README. The canonical doc entry points are listed in [docs/README.md](docs/README.md).
 
 Quick orientation:
 - **Chau7Core**: Pure Swift library, no UI. All testable logic lives here.

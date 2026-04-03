@@ -2,6 +2,8 @@
 
 This document describes the architecture of the Chau7 terminal application.
 
+Canonical documentation ownership is listed in [../../../docs/README.md](../../../docs/README.md).
+
 ## Overview
 
 Chau7 is a macOS terminal companion app designed for AI CLI tools. It provides terminal emulation, AI detection, notifications, and productivity features.
@@ -254,18 +256,16 @@ extension View {
 
 ## File Organization
 
-### Source Files by Category
+### Source Areas by Category
 
-| Category | Files | Lines |
-|----------|-------|-------|
-| UI Views | 15 | ~5,000 |
-| Settings Views | 10 | ~3,500 |
-| Models | 8 | ~4,000 |
-| Managers | 6 | ~1,500 |
-| Terminal | 10 | ~3,500 |
-| Utilities | 12 | ~2,500 |
-| Core Library | 4 | ~800 |
-| **Total** | **72** | **~22,400** |
+| Category | What Lives There |
+|----------|------------------|
+| UI Views | Overlay, settings, dashboards, and supporting SwiftUI/AppKit surfaces |
+| Models | App, tab, session, repository, and runtime state |
+| Managers | Notifications, monitoring, telemetry, MCP, and service orchestration |
+| Terminal | PTY session handling, rendering integration, shell/event tracking |
+| Utilities | Shared helpers, parsing, logging, and platform glue |
+| Core Library | Pure Swift logic in `Chau7Core` |
 
 ### Naming Conventions
 
@@ -303,24 +303,24 @@ extension View {
 │                     Test Suites                          │
 ├─────────────────────────────────────────────────────────┤
 │  ┌─────────────────────────────────────────────────┐    │
-│  │              Unit Tests (140)                    │    │
-│  │  - CommandDetectionTests (51)                   │    │
-│  │  - ShellEscapingTests (27)                      │    │
-│  │  - ColorParsingTests (28)                       │    │
-│  │  - SnippetParsingTests (20)                     │    │
+│  │               Unit Tests                         │    │
+│  │  - Core parsing and detection                   │    │
+│  │  - Notification semantics and routing           │    │
+│  │  - Telemetry, history, and runtime helpers      │    │
 │  └─────────────────────────────────────────────────┘    │
 │                                                          │
 │  ┌─────────────────────────────────────────────────┐    │
-│  │           Integration Tests (planned)            │    │
+│  │            Integration Coverage                  │    │
 │  │  - Terminal session lifecycle                   │    │
 │  │  - Settings persistence                         │    │
+│  │  - Multi-system notification/event behavior     │    │
 │  └─────────────────────────────────────────────────┘    │
 │                                                          │
 │  ┌─────────────────────────────────────────────────┐    │
-│  │              UI Tests (planned)                  │    │
+│  │              UI / Manual Flows                  │    │
 │  │  - Settings flow                                │    │
 │  │  - SSH connection flow                          │    │
-│  │  - Tab management                               │    │
+│  │  - Tab and window management                    │    │
 │  └─────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -342,7 +342,7 @@ One property per feature flag with explicit `didSet` UserDefaults persistence. T
 ## Future Considerations
 
 1. **Plugin Architecture**: Allow third-party extensions
-2. **Multiple Windows**: Support multiple overlay windows
+2. **Richer Plugin Boundaries**: Cleaner extension points for future automation and integrations
 3. **Theme Marketplace**: User-created color schemes
 4. **Cloud Sync**: iCloud settings synchronization
 5. **Terminal Multiplexer**: tmux-like functionality

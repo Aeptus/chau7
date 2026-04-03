@@ -3,7 +3,7 @@
 This document captures the product-level remote-control scope for the iOS companion app.
 
 The transport and payload contract live in
-[services/chau7-remote/docs/PROTOCOL.md](/Users/christophehenner/Downloads/Repositories/Chau7/services/chau7-remote/docs/PROTOCOL.md).
+[../../../services/chau7-remote/docs/PROTOCOL.md](../../../services/chau7-remote/docs/PROTOCOL.md).
 
 ## Scope (v1)
 
