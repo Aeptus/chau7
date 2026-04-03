@@ -4,6 +4,7 @@ The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for develo
 
 Chau7 is a terminal emulator designed to manage parallel AI agent sessions — Claude Code, Codex, Cursor, and more — with first-class support for notifications, telemetry, tab grouping by repository, and a built-in MCP server for programmatic control.
 
+[![CI](https://github.com/aeptus/chau7/actions/workflows/ci.yml/badge.svg)](https://github.com/aeptus/chau7/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
 ## Screenshots
