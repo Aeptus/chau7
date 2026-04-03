@@ -342,7 +342,13 @@ final class NotificationActionExecutor {
         // Key timers by resolved tab ID so different tabs running the same tool don't collide
         guard let resolvedTabID else {
             let note = "styleTab failed for explicit tabID \(tabID.uuidString)"
-            Log.warn("Action styleTab: Explicit tabID not found across windows for event \(ctx.event.id.uuidString)")
+            if delegate?.tabExists(tabID: tabID) == false {
+                Log.info(
+                    "Action styleTab: skipped missing explicit tabID \(tabID) for event \(ctx.event.id.uuidString)"
+                )
+            } else {
+                Log.warn("Action styleTab: Explicit tabID not found across windows for event \(ctx.event.id.uuidString)")
+            }
             report.recordFailure(note)
             return report
         }
@@ -434,7 +440,8 @@ final class NotificationActionExecutor {
         preset: String,
         config: [String: String]
     ) -> UUID? {
-        if let resolved = delegate?.styleTab(tabID: explicitTabID, preset: preset, config: config) {
+        if delegate?.tabExists(tabID: explicitTabID) != false,
+           let resolved = delegate?.styleTab(tabID: explicitTabID, preset: preset, config: config) {
             return resolved
         }
 
