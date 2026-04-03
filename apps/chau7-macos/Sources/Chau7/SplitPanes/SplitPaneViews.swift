@@ -330,7 +330,7 @@ struct TextEditorPaneView: View {
                             .font(.system(size: 11))
                     }
                     .buttonStyle(.plain)
-                    .help(isMarkdownMode ? "Show Source" : "Show Runbook")
+                    .help(isMarkdownMode ? L("pane.showSource", "Show Source") : L("pane.showRunbook", "Show Runbook"))
 
                     if isMarkdownMode, onRunCommand != nil {
                         Button {
@@ -346,7 +346,7 @@ struct TextEditorPaneView: View {
                                 }
                             }
                         } label: {
-                            Label("Run All", systemImage: "play.fill")
+                            Label(L("pane.runAll", "Run All"), systemImage: "play.fill")
                                 .font(.system(size: 10))
                         }
                         .buttonStyle(.bordered)

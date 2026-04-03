@@ -1676,7 +1676,7 @@ private struct ShellLoadingBar: View {
                 HStack(spacing: 6) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Shell initializing\u{2026}")
+                    Text(L("overlay.shellInitializing", "Shell initializing\u{2026}"))
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
@@ -1875,18 +1875,18 @@ struct UnifiedTabButton: View {
 
     @ViewBuilder
     private var tabContextMenu: some View {
-        Button("Rename Tab...") { onRename() }
+        Button(L("overlay.renameTab", "Rename Tab...")) { onRename() }
         Divider()
-        Button("Move to Idle Tabs") { onMoveToIdle() }
+        Button(L("overlay.moveToIdle", "Move to Idle Tabs")) { onMoveToIdle() }
         if !otherWindows.isEmpty {
-            Menu("Move to Window") {
+            Menu(L("menu.moveToWindow", "Move to Window")) {
                 ForEach(otherWindows) { window in
                     Button(window.title) { onMoveToWindow?(window.id) }
                 }
             }
         }
         Divider()
-        Button("Close Tab") { onClose() }
+        Button(L("overlay.closeTab", "Close Tab")) { onClose() }
     }
 
     var body: some View {
@@ -1937,7 +1937,7 @@ struct UnifiedTabButton: View {
                     Image(systemName: "face.dashed")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.purple)
-                        .help("MCP-controlled tab")
+                        .help(L("overlay.mcpControlled.help", "MCP-controlled tab"))
                 }
 
                 // F20: Command badge
@@ -2495,7 +2495,7 @@ struct ClipboardItemRow: View {
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.plain)
-                .help(item.isPinned ? "Unpin" : "Pin")
+                .help(item.isPinned ? L("overlay.unpin", "Unpin") : L("overlay.pin", "Pin"))
 
                 Button(action: onRemove) {
                     Image(systemName: "xmark")

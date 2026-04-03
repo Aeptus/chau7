@@ -13,7 +13,7 @@ import Chau7Core
 /// a deallocated view. This box is retained by Unmanaged and holds
 /// only a weak reference to the view, making the callback a safe no-op
 /// after deallocation.
-private final class DisplayLinkWeakBox {
+final class DisplayLinkWeakBox {
     weak var view: RustTerminalView?
     init(_ view: RustTerminalView) {
         self.view = view
@@ -22,7 +22,7 @@ private final class DisplayLinkWeakBox {
 
 // MARK: - Native Rust Grid Renderer
 
-private final class RustGridView: NSView {
+final class RustGridView: NSView {
     struct CursorStyle {
         enum Shape {
             case block
@@ -462,7 +462,7 @@ private final class RustGridView: NSView {
     }
 }
 
-private final class PassthroughView: NSView {
+final class PassthroughView: NSView {
     override var acceptsFirstResponder: Bool {
         false
     }
@@ -476,7 +476,7 @@ private final class PassthroughView: NSView {
 // MARK: - Rust Terminal FFI Wrapper
 
 /// Swift wrapper for the Rust terminal library loaded via dlopen
-private final class RustTerminalFFI {
+final class RustTerminalFFI {
     // Function types matching chau7_terminal.h
     private typealias CreateFn = @convention(c) (UInt16, UInt16, UnsafePointer<CChar>?) -> OpaquePointer?
     private typealias CreateWithEnvFn = @convention(c) (UInt16, UInt16, UnsafePointer<CChar>?, UnsafePointer<UnsafePointer<CChar>?>?, UnsafePointer<UnsafePointer<CChar>?>?, Int) -> OpaquePointer?
@@ -1891,7 +1891,7 @@ private final class RustTerminalFFI {
 /// C-compatible layout matching Rust's DebugState struct.
 /// This must match the Rust struct exactly in size and alignment.
 /// Note: Uses UInt8 for booleans (0=false, 1=true) for FFI safety.
-private struct RustDebugState {
+struct RustDebugState {
     let id: UInt64
     let cols: UInt16
     let rows: UInt16
@@ -1981,11 +1981,11 @@ final class RustTerminalView: NSView {
     }
 
     /// Cursor line highlight support
-    private weak var cursorLineView: TerminalCursorLineView?
-    private let inputLineTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
-    private var highlightContextLines = false
-    private var highlightInputHistory = false
-    private var isCursorLineHighlightEnabled = false
+    weak var cursorLineView: TerminalCursorLineView?
+    let inputLineTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
+    var highlightContextLines = false
+    var highlightInputHistory = false
+    var isCursorLineHighlightEnabled = false
 
     /// Provider for dangerous row tints (absolute row range → tint map).
     /// Set during view setup to avoid coupling to session model directly.
@@ -2011,15 +2011,15 @@ final class RustTerminalView: NSView {
     }
 
     /// Slow PTY drain timer for background tabs (prevents shell blocking)
-    private var backgroundDrainTimer: Timer?
+    var backgroundDrainTimer: Timer?
 
     // MARK: - Properties
 
     /// The Rust terminal core (owns PTY and state)
-    private var rustTerminal: RustTerminalFFI?
+    var rustTerminal: RustTerminalFFI?
 
     /// Native renderer for Rust grid
-    private var gridView: RustGridView!
+    var gridView: RustGridView!
 
     /// When true, Metal handles display — skip CPU syncGridToRenderer() and cursor blink.
     var isMetalRenderingActive = false {
@@ -2027,12 +2027,12 @@ final class RustTerminalView: NSView {
     }
 
     /// Overlay container for tips and inline images (non-interactive)
-    private var overlayContainer: PassthroughView!
+    var overlayContainer: PassthroughView!
 
     /// Tip overlay view (power user tip)
-    private var tipOverlayView: NSView?
+    var tipOverlayView: NSView?
 
-    private struct InlineImagePlacement {
+    struct InlineImagePlacement {
         let view: InlineImageView
         let image: InlineImage
         var size: NSSize
@@ -2040,18 +2040,18 @@ final class RustTerminalView: NSView {
         let anchorCol: Int
     }
 
-    private var inlineImages: [InlineImagePlacement] = []
-    private var lastDisplayOffset = 0
+    var inlineImages: [InlineImagePlacement] = []
+    var lastDisplayOffset = 0
 
     /// Display link for polling and rendering at vsync rate
-    private var displayLink: CVDisplayLink?
+    var displayLink: CVDisplayLink?
 
     /// Timer fallback if CVDisplayLink unavailable
-    private var pollTimer: Timer?
+    var pollTimer: Timer?
 
     /// Adaptive timer interval matching the display's native refresh rate.
     /// Returns 1/120 for ProMotion, 1/60 for standard, etc.
-    private var displayRefreshInterval: TimeInterval {
+    var displayRefreshInterval: TimeInterval {
         guard let screen = window?.screen ?? NSScreen.main else {
             return 1.0 / 60.0
         }
@@ -2064,44 +2064,44 @@ final class RustTerminalView: NSView {
     }
 
     /// Track startup bytes for debugging
-    private var startupBytesLogged = 0
-    private var recentMissingCmdClickPaths: [String: Date] = [:]
-    private let missingCmdClickWarningCooldown: TimeInterval = 5
+    var startupBytesLogged = 0
+    var recentMissingCmdClickPaths: [String: Date] = [:]
+    let missingCmdClickWarningCooldown: TimeInterval = 5
 
     /// One-shot timer that fires onShellStartupSlow if no PTY output arrives
-    private var shellStartupTimeoutWork: DispatchWorkItem?
+    var shellStartupTimeoutWork: DispatchWorkItem?
 
     /// Terminal dimensions
-    private var cols = 80
-    private var rows = 24
+    var cols = 80
+    var rows = 24
 
     /// Cell dimensions for coordinate calculations
-    private var cellWidth: CGFloat = 8.0
-    private var cellHeight: CGFloat = 16.0
+    var cellWidth: CGFloat = 8.0
+    var cellHeight: CGFloat = 16.0
 
     /// Track if we need to sync grid
-    private var needsGridSync = false
+    var needsGridSync = false
 
     /// Last grid snapshot for diffing
-    private var lastGridHash = 0
+    var lastGridHash = 0
 
     // MARK: - Grid Sync Optimization State
 
     /// Previous grid state for dirty row detection
-    private var previousGrid: [RustCellData] = []
-    private var previousGridCols = 0
-    private var previousGridRows = 0
-    private var previousCursorCol: UInt16 = 0
-    private var previousCursorRow: UInt16 = 0
+    var previousGrid: [RustCellData] = []
+    var previousGridCols = 0
+    var previousGridRows = 0
+    var previousCursorCol: UInt16 = 0
+    var previousCursorRow: UInt16 = 0
 
     /// Rate limiting for grid sync (target ~60fps max)
-    private var lastSyncTime: CFAbsoluteTime = 0
-    private static let minSyncInterval: CFAbsoluteTime = 1.0 / 120.0 // Allow up to 120fps for responsiveness
+    var lastSyncTime: CFAbsoluteTime = 0
+    static let minSyncInterval: CFAbsoluteTime = 1.0 / 120.0 // Allow up to 120fps for responsiveness
 
     /// Statistics for debugging
-    private var fullSyncCount: UInt64 = 0
-    private var partialSyncCount: UInt64 = 0
-    private var skippedSyncCount: UInt64 = 0
+    var fullSyncCount: UInt64 = 0
+    var partialSyncCount: UInt64 = 0
+    var skippedSyncCount: UInt64 = 0
 
     // MARK: - Buffer Line Cache (Performance fix for scrollback access)
 
@@ -2109,77 +2109,77 @@ final class RustTerminalView: NSView {
     /// getLineText(absoluteRow:) call. Without this cache, getBufferAsData() + split()
     /// ran for EACH row, which is O(visible_rows * total_buffer_size) — causing 90%+
     /// CPU usage and memory growth to 1+ GB with large scrollback buffers.
-    private var cachedBufferLines: [String]?
-    private var cachedBufferLinesVersion: UInt64 = 0
+    var cachedBufferLines: [String]?
+    var cachedBufferLinesVersion: UInt64 = 0
     /// Instance-scoped sync counter for cache invalidation.
     /// Unlike the static `syncCount`, this only increments when *this* tab syncs,
     /// preventing cross-tab spurious cache invalidation.
-    private var instanceSyncCount: UInt64 = 0
+    var instanceSyncCount: UInt64 = 0
 
     /// Selection state
-    private var isSelecting = false
-    private var selectionStart: (col: Int, row: Int)?
+    var isSelecting = false
+    var selectionStart: (col: Int, row: Int)?
 
     /// Mouse tracking
-    private var mouseDownLocation: NSPoint?
-    private var didDragSinceMouseDown = false
-    private static let dragThreshold: CGFloat = 1.5
+    var mouseDownLocation: NSPoint?
+    var didDragSinceMouseDown = false
+    static let dragThreshold: CGFloat = 1.5
 
     /// Auto-scroll during selection drag
-    private var autoScrollTimer: Timer?
-    private var autoScrollDirection = 0 // -1 = up, 0 = none, 1 = down
-    private var autoScrollDistance: CGFloat = 0 // Distance outside bounds (for speed scaling)
+    var autoScrollTimer: Timer?
+    var autoScrollDirection = 0 // -1 = up, 0 = none, 1 = down
+    var autoScrollDistance: CGFloat = 0 // Distance outside bounds (for speed scaling)
 
     /// Event monitors
-    private var mouseDownMonitor: Any?
-    private var mouseUpMonitor: Any?
-    private var mouseDragMonitor: Any?
-    private var mouseMoveMonitor: Any?
-    private var scrollWheelMonitor: Any?
-    private var keyDownMonitor: Any?
-    private var generalKeyMonitor: Any? // Intercepts ALL key events for Rust terminal routing
+    var mouseDownMonitor: Any?
+    var mouseUpMonitor: Any?
+    var mouseDragMonitor: Any?
+    var mouseMoveMonitor: Any?
+    var scrollWheelMonitor: Any?
+    var keyDownMonitor: Any?
+    var generalKeyMonitor: Any? // Intercepts ALL key events for Rust terminal routing
     /// Signature of the last key event handled by the general key monitor.
     /// Used to prevent duplicate handling in keyDown after monitor interception.
-    private var lastMonitorHandledKeyEventSignature: String?
-    private var isEventMonitoringEnabled = false
+    var lastMonitorHandledKeyEventSignature: String?
+    var isEventMonitoringEnabled = false
 
     /// Path detection work item (for debouncing cursor change on hover)
-    private var pathDetectionWorkItem: DispatchWorkItem?
+    var pathDetectionWorkItem: DispatchWorkItem?
 
     /// Color scheme cache
-    private var appliedColorSchemeSignature: String?
+    var appliedColorSchemeSignature: String?
 
     /// Bell configuration (enabled, sound type)
-    private var bellConfig: (enabled: Bool, sound: String)?
+    var bellConfig: (enabled: Bool, sound: String)?
 
     /// Copy-on-select tracking
-    private var lastSelectionText: String?
-    private var copyOnSelectWorkItem: DispatchWorkItem?
+    var lastSelectionText: String?
+    var copyOnSelectWorkItem: DispatchWorkItem?
 
     // MARK: - Command History Navigation State
 
     /// Event monitor for history key handling (separate from other monitors)
-    private var historyMonitor: Any?
+    var historyMonitor: Any?
     /// Last command recalled from history (to prevent key repeat spam)
-    private var lastHistoryCommand: String?
+    var lastHistoryCommand: String?
     /// Direction of last history navigation (true = up, false = down)
-    private var lastHistoryWasUp = false
+    var lastHistoryWasUp = false
 
     // MARK: - Snippet Placeholder Navigation State (F21)
 
     /// Current snippet navigation state, or nil if not in snippet mode
-    private var snippetState: RustSnippetNavigationState?
+    var snippetState: RustSnippetNavigationState?
 
     // MARK: - Lifecycle State
 
     /// Flag to prevent CVDisplayLink callbacks from accessing deallocated view
-    private var isBeingDeallocated = false
+    var isBeingDeallocated = false
     /// Weak reference box for CVDisplayLink callback safety.
     /// CVDisplayLink callbacks run on a separate thread with an unretained pointer,
     /// which can access freed memory if the view deallocates between the callback
     /// firing and the main-thread async block executing. This box holds a weak
     /// reference so the callback safely becomes a no-op after deallocation.
-    private var displayLinkBox: DisplayLinkWeakBox?
+    var displayLinkBox: DisplayLinkWeakBox?
 
     // MARK: - Local Echo State (Latency Optimization)
 
@@ -2187,25 +2187,25 @@ final class RustTerminalView: NSView {
     // This shows typed characters immediately without waiting for PTY round-trip
 
     /// Characters that have been locally echoed and await PTY confirmation
-    private var pendingLocalEcho: [UInt8] = []
+    var pendingLocalEcho: [UInt8] = []
     /// Offset into `pendingLocalEcho` for robust partial matching.
     /// Matches can only consume from this offset to avoid O(n) queue churn and
     /// corruption when output contains control/escape bytes before echoed text.
-    private var pendingLocalEchoOffset = 0
+    var pendingLocalEchoOffset = 0
 
     /// Bound used to periodically compact/clear pending local-echo state.
-    private static let maxPendingLocalEcho = 100
+    static let maxPendingLocalEcho = 100
 
     /// Track pending backspaces to suppress PTY's backspace response
-    private var pendingLocalBackspaces = 0
+    var pendingLocalBackspaces = 0
 
     /// Local echo overlay cells keyed by grid index
-    private var localEchoOverlay: [Int: RustCellData] = [:]
-    private var localEchoCursor: (row: Int, col: Int)?
+    var localEchoOverlay: [Int: RustCellData] = [:]
+    var localEchoCursor: (row: Int, col: Int)?
 
     /// Local echo requires a renderer that can apply predicted output.
     /// The native Rust grid renderer provides a lightweight overlay for this.
-    private let supportsLocalEcho = true
+    let supportsLocalEcho = true
 
     /// Heuristic-based echo detection: disabled when password prompts or raw mode detected.
     /// The Rust terminal owns the PTY, so we rely on heuristics:
@@ -2213,7 +2213,7 @@ final class RustTerminalView: NSView {
     /// - Shell prompt patterns ($ # %) re-enable echo
     /// - Timeout recovery re-enables echo after 5 seconds
     /// This approach handles 95%+ of real-world cases without direct termios access.
-    private var isPtyEchoLikelyEnabled = true
+    var isPtyEchoLikelyEnabled = true
 
     /// Returns true when the PTY echo is likely disabled (password prompt detected).
     /// Exposes the heuristic echo state for history filtering.
@@ -2227,20 +2227,50 @@ final class RustTerminalView: NSView {
     }
 
     /// Timestamp when echo was last disabled (for timeout recovery)
-    private var echoDisabledTime: CFAbsoluteTime = 0
+    var echoDisabledTime: CFAbsoluteTime = 0
+
+    // MARK: - Input State (stored properties for extension files)
+
+    /// Application cursor mode (DECCKM) - when enabled, arrow keys send SS3 sequences instead of CSI
+    /// This is typically set by programs like vim, less, tmux via escape sequence ESC[?1h
+    var applicationCursorMode = false
+
+    /// True while keyDown is routing through inputContext, so insertText knows
+    /// the call originated from a keyboard event (not Password AutoFill).
+    var handlingKeyDown = false
+
+    /// IME marked text state — tracks pending dead key / composition text.
+    /// Without this, dead keys like ^ on French keyboards get stuck because
+    /// NSTextInputContext enters an inconsistent state when setMarkedText is
+    /// a no-op and hasMarkedText returns false.
+    var markedTextStorage: String?
+    var markedSelectedRange = NSRange(location: NSNotFound, length: 0)
+
+    // MARK: - Mouse Reporting State (stored properties for extension files)
+
+    /// Track last reported mouse position
+    var lastReportedMouseCell: (col: Int, row: Int)?
+
+    /// Track if button is pressed for mouse reporting
+    var mouseReportingButtonDown: MouseButton?
+
+    // MARK: - Scrollback Cache (stored property for extension files)
+
+    /// Cache to avoid redundant FFI calls
+    var appliedScrollbackLines: Int?
 
     // MARK: - Smart Scroll State
 
     // When smart scroll is enabled and user has scrolled up, new output won't auto-scroll
 
     /// Whether user is at or near the bottom of the terminal
-    private var isUserAtBottom = true
+    var isUserAtBottom = true
 
     /// Threshold for considering user "at bottom" (0.99 = within 1% of end)
-    private static let scrollBottomThreshold = 0.99
+    static let scrollBottomThreshold = 0.99
 
     /// Timeout after which we re-enable echo detection (5 seconds)
-    private static let echoDisabledTimeout: CFAbsoluteTime = 5.0
+    static let echoDisabledTimeout: CFAbsoluteTime = 5.0
 
     /// Font
     var font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular) {
@@ -2307,7 +2337,7 @@ final class RustTerminalView: NSView {
     /// Cached scrollback row count from the last grid snapshot.
     /// Updated every sync cycle in syncGridToRenderer() — lightweight access
     /// without fetching a full grid snapshot just for history size.
-    private var cachedScrollbackRows = 0
+    var cachedScrollbackRows = 0
 
     // MARK: - Static Check
 
@@ -2321,23 +2351,23 @@ final class RustTerminalView: NSView {
 
     // MARK: - Initialization
 
-    private static var viewCounter: UInt64 = 0
-    private let viewId: UInt64
+    static var viewCounter: UInt64 = 0
+    let viewId: UInt64
 
     /// Shell path to use when creating the terminal (set before first layout)
-    private var configuredShell: String?
+    var configuredShell: String?
 
     /// Environment variables to pass to the shell (set before first layout)
-    private var configuredEnvironment: [String: String]?
+    var configuredEnvironment: [String: String]?
 
     /// Whether the Rust terminal has been started
-    private var isTerminalStarted = false
+    var isTerminalStarted = false
 
     /// Ensures process termination callback is emitted only once per terminal lifecycle.
-    private var didEmitProcessTermination = false
+    var didEmitProcessTermination = false
 
     /// Last logged title (for rate-limiting OSC title change logs)
-    private var lastLoggedTitle = ""
+    var lastLoggedTitle = ""
 
     override init(frame frameRect: NSRect) {
         Self.viewCounter += 1
@@ -2376,7 +2406,7 @@ final class RustTerminalView: NSView {
     }
 
     /// Set up rendering views (deferred terminal creation)
-    private func setupViews() {
+    func setupViews() {
         Log.info("RustTerminalView[\(viewId)]: setupViews - Setting up rendering views")
 
         // Calculate initial dimensions
@@ -2607,11 +2637,11 @@ final class RustTerminalView: NSView {
         return _inputContext
     }
 
-    private var _inputContext: NSTextInputContext?
+    var _inputContext: NSTextInputContext?
 
     // MARK: - Cell Dimensions
 
-    private func updateCellDimensions() {
+    func updateCellDimensions() {
         let oldWidth = cellWidth
         let oldHeight = cellHeight
         let cs = TerminalFont.cellSize(for: font)
@@ -2628,7 +2658,7 @@ final class RustTerminalView: NSView {
     /// - Parameter point: Point in view coordinates (standard macOS: origin at bottom-left)
     /// - Returns: (column, row) in visible coordinates (row 0 is top of visible area)
     /// - Note: Use this for mouse reporting to TUI apps (vim, tmux, etc.)
-    private func pointToCell(_ point: NSPoint) -> (col: Int32, row: Int32) {
+    func pointToCell(_ point: NSPoint) -> (col: Int32, row: Int32) {
         // Standard macOS coordinates: y=0 at bottom
         // High y = top of view = row 0
         let col = Int32(max(0, min(point.x / cellWidth, CGFloat(cols - 1))))
@@ -2641,7 +2671,7 @@ final class RustTerminalView: NSView {
     /// - Returns: (column, row) in absolute grid coordinates accounting for display_offset
     /// - Note: Use this for selection operations which need absolute grid coordinates
     ///         When scrolled up by display_offset, visible row 0 corresponds to Line(-display_offset)
-    private func pointToCellAbsolute(_ point: NSPoint) -> (col: Int32, row: Int32) {
+    func pointToCellAbsolute(_ point: NSPoint) -> (col: Int32, row: Int32) {
         // First get visible cell coordinates
         let visible = pointToCell(point)
         // Get current display offset (how many lines scrolled up from bottom)
@@ -2650,1563 +2680,6 @@ final class RustTerminalView: NSView {
         // This matches how alacritty_terminal's Selection uses Line coordinates
         let absoluteRow = visible.row - Int32(displayOffset)
         return (visible.col, absoluteRow)
-    }
-
-    // MARK: - Polling Loop
-
-    private func setupPollingLoop() {
-        Log.trace("RustTerminalView[\(viewId)]: setupPollingLoop - Creating polling loop")
-
-        // Try CVDisplayLink first for vsync-aligned updates
-        var link: CVDisplayLink?
-        let result = CVDisplayLinkCreateWithActiveCGDisplays(&link)
-
-        if result == kCVReturnSuccess, let link = link {
-            Log.trace("RustTerminalView[\(viewId)]: setupPollingLoop - CVDisplayLink created successfully")
-            // Use a weak-reference box to prevent use-after-free if the view
-            // deallocates while a CVDisplayLink callback is in flight.
-            // passRetained ensures the box survives until we explicitly release
-            // it in stopPollingLoop, even if the view itself is deallocated.
-            let box = DisplayLinkWeakBox(self)
-            displayLinkBox = box
-            CVDisplayLinkSetOutputCallback(link, { _, _, _, _, _, userInfo -> CVReturn in
-                guard let userInfo = userInfo else { return kCVReturnSuccess }
-                let box = Unmanaged<DisplayLinkWeakBox>.fromOpaque(userInfo).takeUnretainedValue()
-                guard let view = box.view else { return kCVReturnSuccess }
-                DispatchQueue.main.async { [weak view] in
-                    view?.pollAndSync()
-                }
-                return kCVReturnSuccess
-            }, Unmanaged.passRetained(box).toOpaque())
-
-            CVDisplayLinkStart(link)
-            displayLink = link
-            Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using CVDisplayLink for 60fps polling")
-        } else {
-            // Fallback to timer
-            Log.warn("RustTerminalView[\(viewId)]: setupPollingLoop - CVDisplayLink failed (result=\(result)), falling back to Timer")
-            pollTimer = Timer.scheduledTimer(withTimeInterval: displayRefreshInterval, repeats: true) { [weak self] _ in
-                self?.pollAndSync()
-            }
-            Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using Timer fallback for polling")
-        }
-    }
-
-    private func stopPollingLoop() {
-        Log.trace("RustTerminalView[\(viewId)]: stopPollingLoop - Stopping polling loop")
-        if let link = displayLink {
-            Log.trace("RustTerminalView[\(viewId)]: stopPollingLoop - Stopping CVDisplayLink")
-            CVDisplayLinkStop(link)
-            displayLink = nil
-        }
-        // Release the retained DisplayLinkWeakBox. After CVDisplayLinkStop
-        // completes, no more callbacks will fire, so it's safe to release.
-        if let box = displayLinkBox {
-            Unmanaged.passUnretained(box).release()
-            displayLinkBox = nil
-        }
-        if pollTimer != nil {
-            Log.trace("RustTerminalView[\(viewId)]: stopPollingLoop - Invalidating Timer")
-            pollTimer?.invalidate()
-            pollTimer = nil
-        }
-        stopBackgroundDrain()
-    }
-
-    // MARK: - Display Link Pause/Resume (Background Tab Optimization)
-
-    /// Pause the CVDisplayLink and start a slow background drain timer.
-    /// Background tabs only need to drain the PTY buffer to prevent the shell from
-    /// blocking — they don't need 60fps rendering. A 500ms timer is sufficient.
-    private func pauseDisplayLink() {
-        // Cancel startup timeout — background tabs shouldn't trigger false positives
-        shellStartupTimeoutWork?.cancel()
-        shellStartupTimeoutWork = nil
-
-        if let link = displayLink, CVDisplayLinkIsRunning(link) {
-            CVDisplayLinkStop(link)
-            Log.info("RustTerminalView[\(viewId)]: pauseDisplayLink - CVDisplayLink paused (tab suspended)")
-        }
-        pollTimer?.invalidate()
-        pollTimer = nil
-
-        startBackgroundDrain()
-    }
-
-    /// Resume the CVDisplayLink and stop the slow background drain.
-    /// Called when a tab becomes active again. Forces an immediate full sync
-    /// so the user sees current content without waiting for the next vsync.
-    private func resumeDisplayLink() {
-        stopBackgroundDrain()
-
-        if let link = displayLink, !CVDisplayLinkIsRunning(link) {
-            CVDisplayLinkStart(link)
-            Log.info("RustTerminalView[\(viewId)]: resumeDisplayLink - CVDisplayLink resumed (tab active)")
-        } else if displayLink == nil, pollTimer == nil {
-            // If display link was nil (never created or destroyed), don't recreate — just use timer
-            pollTimer = Timer.scheduledTimer(withTimeInterval: displayRefreshInterval, repeats: true) { [weak self] _ in
-                self?.pollAndSync()
-            }
-        }
-
-        // Force an immediate sync so the user sees fresh content
-        needsGridSync = true
-        pollAndSync()
-    }
-
-    /// Start slow-rate PTY drain for background tabs (500ms interval).
-    /// This prevents the shell process from blocking on a full PTY buffer
-    /// while using negligible CPU.
-    private func startBackgroundDrain() {
-        guard backgroundDrainTimer == nil else { return }
-        backgroundDrainTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.backgroundDrain()
-        }
-    }
-
-    private func stopBackgroundDrain() {
-        backgroundDrainTimer?.invalidate()
-        backgroundDrainTimer = nil
-    }
-
-    /// Minimal PTY drain for background tabs — no rendering, no UI sync.
-    /// Only polls the Rust terminal to drain its buffer and checks for
-    /// critical events (process exit, title changes, bell).
-    private func backgroundDrain() {
-        guard !isBeingDeallocated else { return }
-        guard let rust = rustTerminal else { return }
-
-        _ = rust.poll(timeout: 0)
-
-        // Still check for critical events even when suspended
-        if rust.checkBell() { handleBell() }
-        if let exitCode = rust.getPendingExitCode() {
-            emitProcessTerminatedOnce(exitCode: exitCode, reason: "exit-code")
-        }
-        if rust.isPtyClosed() {
-            emitProcessTerminatedOnce(exitCode: nil, reason: "pty-closed")
-        }
-        if let title = rust.getPendingTitle() {
-            DispatchQueue.main.async { [weak self] in
-                self?.onTitleChanged?(title)
-            }
-        }
-    }
-
-    /// Poll Rust terminal and sync to renderer if needed
-    private static var pollAndSyncCounter: UInt64 = 0
-    private static var lastPollAndSyncLogTime: CFAbsoluteTime = 0
-    private static var syncCount: UInt64 = 0
-
-    private func emitProcessTerminatedOnce(exitCode: Int32?, reason: String) {
-        guard !didEmitProcessTermination else { return }
-        didEmitProcessTermination = true
-        Log.info("RustTerminalView[\(viewId)]: Process terminated (\(reason), exitCode=\(String(describing: exitCode)))")
-        DispatchQueue.main.async { [weak self] in
-            self?.onProcessTerminated?(exitCode)
-        }
-    }
-
-    private func pollAndSync() {
-        // Safety: Check if view is being deallocated (CVDisplayLink callback protection)
-        guard !isBeingDeallocated else { return }
-        guard let rust = rustTerminal else { return }
-
-        // ALWAYS poll the Rust terminal to drain PTY buffer, even when suspended.
-        // This prevents the PTY reader thread from blocking when the buffer fills up.
-        // (Without this, suspended state blocks the PTY by not draining its buffer)
-        //
-        // Selection preservation: Rust manages selection state internally. If poll()
-        // processes output that scrolls the terminal, Rust may clear its selection.
-        // During an active drag (isSelecting == true), the next mouseDragged event
-        // re-establishes the selection via rust.updateSelection(). However, if the
-        // user holds the mouse still during scrolling, no drag events fire and the
-        // selection stays cleared until the next mouse movement. The 60fps
-        // CVDisplayLink render loop minimizes visible flicker in the common case.
-        // If flicker becomes noticeable, a Rust FFI flag
-        // (preserve_selection_during_scroll) would be the proper fix.
-        let changed = rust.poll(timeout: 0)
-
-        // Check for bell events from Rust terminal and trigger audio/visual feedback
-        if rust.checkBell() {
-            handleBell()
-        }
-
-        // Check for terminal title changes (OSC 0/1/2)
-        if let title = rust.getPendingTitle() {
-            // Rate-limit: only log when the title actually changes (spinner animations
-            // like ⠂/⠐/✳ trigger ~1 update/sec, producing 10K+ log entries/day)
-            if title != lastLoggedTitle {
-                Log.trace("RustTerminalView[\(viewId)]: Terminal title changed to \"\(title)\"")
-                lastLoggedTitle = title
-            }
-            DispatchQueue.main.async { [weak self] in
-                self?.onTitleChanged?(title)
-            }
-        }
-
-        // Check for clipboard events (OSC 52)
-        if let clipboardText = rust.getPendingClipboard() {
-            Log.info("RustTerminalView[\(viewId)]: OSC 52 clipboard store: \(clipboardText.count) chars")
-            DispatchQueue.main.async {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(clipboardText, forType: .string)
-            }
-        }
-        if rust.hasClipboardRequest() {
-            Log.info("RustTerminalView[\(viewId)]: OSC 52 clipboard load request")
-            let clipboardContent = NSPasteboard.general.string(forType: .string) ?? ""
-            rust.respondClipboard(text: clipboardContent)
-        }
-
-        // Check for OSC 133 shell integration events
-        let shellEvents = rust.getPendingShellIntegrationEvents()
-        if !shellEvents.isEmpty {
-            DispatchQueue.main.async { [weak self] in
-                for event in shellEvents {
-                    self?.onShellIntegrationEvent?(event)
-                }
-            }
-        }
-
-        // Check for child process exit
-        if let exitCode = rust.getPendingExitCode() {
-            emitProcessTerminatedOnce(exitCode: exitCode, reason: "exit-code")
-        }
-
-        // Check for PTY closed (without exit code - e.g., connection lost)
-        if rust.isPtyClosed() {
-            emitProcessTerminatedOnce(exitCode: nil, reason: "pty-closed")
-        }
-
-        // Update application cursor mode (DECCKM) from terminal state
-        // This affects how arrow keys are encoded (CSI vs SS3 sequences)
-        let cursorMode = rust.isApplicationCursorMode()
-        if cursorMode != applicationCursorMode {
-            applicationCursorMode = cursorMode
-            Log.trace("RustTerminalView[\(viewId)]: Application cursor mode changed to \(cursorMode)")
-        }
-
-        // Retrieve raw output bytes from the last poll and forward to onOutput callback.
-        // This enables shell integration, logging, and output detectors to receive data.
-        // (Ensures onOutput callback fires so shell integration and detectors receive data)
-        if var outputData = rust.getLastOutput(), !outputData.isEmpty {
-            // Cancel the shell-startup-slow timer on first PTY output
-            if startupBytesLogged == 0 {
-                shellStartupTimeoutWork?.cancel()
-                shellStartupTimeoutWork = nil
-            }
-
-            // Keep raw PTY startup previews out of the main log unless trace is enabled.
-            if startupBytesLogged < 2048 {
-                let bytesToLog = min(outputData.count, 2048 - startupBytesLogged)
-                let preview = outputData.prefix(bytesToLog)
-                let printable = preview.map { b -> Character in
-                    if b >= 32, b < 127 { return Character(UnicodeScalar(b)) }
-                    else if b == 10 { return "↵" }
-                    else if b == 13 { return "←" }
-                    else if b == 27 { return "⎋" }
-                    else { return "·" }
-                }
-                Log.trace("RustTerminalView[\(viewId)]: PTY startup output (\(outputData.count) bytes): \(String(printable))")
-                startupBytesLogged += bytesToLog
-            }
-
-            let extraction = extractInlineImages(from: outputData)
-            outputData = extraction.0
-            if !extraction.1.isEmpty {
-                renderInlineImages(extraction.1)
-            }
-
-            // Phase 4: Check for Rust-intercepted image sequences (Sixel, Kitty).
-            // iTerm2 images are still handled by the Swift extractInlineImages path above,
-            // since the raw bytes pass through last_output before the Rust interceptor.
-            // Sixel/Kitty images only come through this Rust path.
-            if let images = rust.getPendingImages() {
-                for img in images {
-                    let protocolName = img.protocol == 0 ? "iTerm2" : img.protocol == 1 ? "Sixel" : "Kitty"
-                    Log.info("RustTerminalView[\(viewId)]: Received \(protocolName) image (\(img.data.count) bytes) at row=\(img.anchorRow), col=\(img.anchorCol)")
-                    // TODO: Sixel decoding → RGBA → InlineImageView (Phase 4 future)
-                    // TODO: Kitty protocol state management (Phase 4 future)
-                    // For now, images are intercepted and logged. The infrastructure is in place
-                    // for Sixel/Kitty rendering when decoders are added.
-                }
-            }
-
-            // Parse OSC 7 (current working directory) before processing
-            // OSC 7 format: ESC ] 7 ; file://hostname/path BEL
-            parseOSC7(from: outputData)
-
-            // Smart Scroll: Save state before feeding data to the renderer
-            // If user had scrolled up and smart scroll is enabled, we'll restore their position
-            let smartScrollEnabled = FeatureSettings.shared.isSmartScrollEnabled
-            let wasAtBottom = isUserAtBottom
-            let savedScrollPosition = scrollPosition
-
-            // Smart Scroll: Restore position if user wasn't at bottom
-            restoreSmartScrollIfNeeded(smartScrollEnabled: smartScrollEnabled, wasAtBottom: wasAtBottom, savedPosition: savedScrollPosition)
-
-            // LOCAL ECHO SUPPRESSION: Filter out characters we already displayed locally
-            // This prevents "double echo" when PTY confirms what we predicted
-            outputData = processOutputForLocalEcho(outputData)
-
-            if !outputData.isEmpty {
-                onOutput?(outputData)
-            }
-        }
-
-        // Skip UI updates when suspended, but we've already drained the PTY above
-        guard notifyUpdateChanges else { return }
-
-        if changed || needsGridSync {
-            Self.syncCount += 1
-            instanceSyncCount += 1
-            needsGridSync = false
-            // When Metal is active, skip the CPU sync — Metal reads the grid
-            // directly via its gridProvider closure. This avoids ~70% CPU waste
-            // from invisible RustGridView.draw() and cell array copies.
-            if !isMetalRenderingActive {
-                syncGridToRenderer()
-            }
-            onBufferChanged?()
-        }
-
-        // Update dangerous row tints every frame (cheap lookup, scrolls in-sync with grid)
-        if !isMetalRenderingActive {
-            updateDangerousRowTints()
-        }
-
-        // Metal has its own cursor blink timer (RustMetalDisplayCoordinator.handleBlinkTick)
-        if !isMetalRenderingActive {
-            gridView?.tickCursorBlink(now: CFAbsoluteTimeGetCurrent())
-        }
-
-        // Rate-limited status logging
-        Self.pollAndSyncCounter += 1
-        let now = CFAbsoluteTimeGetCurrent()
-        if now - Self.lastPollAndSyncLogTime > 10.0 { // Log every 10 seconds
-            Log.trace("RustTerminalView[\(viewId)]: pollAndSync - Status: \(Self.pollAndSyncCounter) polls, \(Self.syncCount) syncs")
-            Self.lastPollAndSyncLogTime = now
-        }
-    }
-
-    // MARK: - Metal GPU Rendering Support
-
-    /// Creates a grid provider closure for the RustMetalDisplayCoordinator.
-    /// Returns nil if the Rust terminal is not available (library not loaded).
-    /// The closure captures the FFI instance and provides grid snapshot + cursor + free.
-    func makeGridProvider() -> RustGridProvider? {
-        guard let rust = rustTerminal else {
-            Log.warn("RustTerminalView[\(viewId)]: makeGridProvider - No Rust terminal available")
-            return nil
-        }
-
-        return { [weak rust] in
-            guard let rust = rust else { return nil }
-            guard let (grid, freeGrid) = rust.getGrid() else { return nil }
-
-            let cursor = rust.cursorPosition
-            let cursorVisible = grid.pointee.cursor_visible != 0
-            // grid is UnsafeMutablePointer<RustGridSnapshot>, cast to raw for the generic provider
-            let rawPtr = UnsafeMutableRawPointer(grid)
-            return (grid: rawPtr, cursor: cursor, cursorVisible: cursorVisible, free: freeGrid)
-        }
-    }
-
-    // MARK: - Grid Synchronization (Optimized with dirty-row tracking and rate limiting)
-
-    /// Sync Rust terminal grid to the native renderer.
-    /// Uses dirty row detection and rate limiting to minimize CPU usage during high-output scenarios.
-    ///
-    /// Optimizations implemented:
-    /// 1. Rate limiting - Skip syncs that happen too close together (allows up to 120fps)
-    /// 2. Unchanged grid detection - Skip entirely if grid and cursor haven't changed
-    /// 3. Dirty row tracking - Only rebuild escape sequences for rows that actually changed
-    /// 4. Partial sync - When fewer than half the rows changed, update only those rows
-    /// 5. Efficient comparison - Cell-by-cell comparison with early exit per row
-    private func syncGridToRenderer() {
-        guard let rust = rustTerminal else {
-            Log.trace("RustTerminalView[\(viewId)]: syncGridToRenderer - No Rust terminal")
-            return
-        }
-
-        // Rate limiting: Skip if we synced very recently (allows up to 120fps for responsiveness)
-        let now = CFAbsoluteTimeGetCurrent()
-        if now - lastSyncTime < Self.minSyncInterval {
-            skippedSyncCount += 1
-            return
-        }
-
-        guard let (grid, freeGrid) = rust.getGrid() else {
-            Log.trace("RustTerminalView[\(viewId)]: syncGridToRenderer - getGrid returned nil")
-            return
-        }
-        defer { freeGrid() }
-
-        let snapshot = grid.pointee
-        guard let cells = snapshot.cells else {
-            Log.trace("RustTerminalView[\(viewId)]: syncGridToRenderer - Grid has no cells")
-            return
-        }
-
-        let gridCols = Int(snapshot.cols)
-        let gridRows = Int(snapshot.rows)
-        let totalCells = gridCols * gridRows
-        let cursor = rust.cursorPosition
-        let cursorVisible = snapshot.cursor_visible != 0
-
-        // Cache scrollback size for renderTopVisibleRow (lightweight access)
-        cachedScrollbackRows = Int(snapshot.scrollback_rows)
-
-        // Update CPU renderer cursor visibility (DECTCEM)
-        gridView?.cursorVisible = cursorVisible
-
-        // Fast path: Check if grid dimensions changed (requires full rebuild)
-        let dimensionsChanged = gridCols != previousGridCols || gridRows != previousGridRows
-
-        // Determine which rows have changed by comparing with previous grid
-        var dirtyRows: Set<Int> = []
-        let canCompare = !dimensionsChanged && previousGrid.count == totalCells
-        var cursorMoved = false
-
-        if canCompare {
-            // Compare cell-by-cell to find dirty rows (with early exit per row)
-            for row in 0 ..< gridRows {
-                let rowStart = row * gridCols
-                var rowDirty = false
-                for col in 0 ..< gridCols {
-                    let idx = rowStart + col
-                    let newCell = cells[idx]
-                    let oldCell = previousGrid[idx]
-
-                    if !cellsEqual(newCell, oldCell) {
-                        rowDirty = true
-                        break // Row is dirty, no need to check more cells in this row
-                    }
-                }
-                if rowDirty {
-                    dirtyRows.insert(row)
-                }
-            }
-
-            // Also check if cursor moved
-            cursorMoved = cursor.col != previousCursorCol || cursor.row != previousCursorRow
-
-            // If nothing changed at all, skip the sync entirely
-            if dirtyRows.isEmpty, !cursorMoved {
-                skippedSyncCount += 1
-                return
-            }
-        }
-
-        // Update timestamp for rate limiting
-        lastSyncTime = now
-
-        // Update previous state for next comparison
-        previousGridCols = gridCols
-        previousGridRows = gridRows
-        previousCursorCol = cursor.col
-        previousCursorRow = cursor.row
-
-        if canCompare, dirtyRows.isEmpty, cursorMoved {
-            gridView?.updateCursor(cursor)
-        } else {
-            // Copy current grid for future comparison using efficient buffer copy
-            previousGrid.removeAll(keepingCapacity: true)
-            previousGrid.reserveCapacity(totalCells)
-            let cellBuffer = UnsafeBufferPointer(start: cells, count: totalCells)
-            previousGrid.append(contentsOf: cellBuffer)
-
-            // Determine sync strategy: partial sync if less than half the rows changed
-            let usePartialSync = canCompare && !dirtyRows.isEmpty && dirtyRows.count < gridRows / 2
-
-            if usePartialSync {
-                partialSyncCount += 1
-                Log.trace("RustTerminalView[\(viewId)]: syncGridToRenderer - Partial sync for \(dirtyRows.count)/\(gridRows) dirty rows")
-                gridView?.updateGrid(cells: cells, cols: gridCols, rows: gridRows, cursor: cursor, dirtyRows: dirtyRows)
-            } else {
-                fullSyncCount += 1
-                Log.trace("RustTerminalView[\(viewId)]: syncGridToRenderer - Full sync for \(gridCols)x\(gridRows) grid (dims changed: \(dimensionsChanged), dirty: \(dirtyRows.count))")
-                gridView?.updateGrid(cells: cells, cols: gridCols, rows: gridRows, cursor: cursor, dirtyRows: nil)
-            }
-        }
-
-        // Periodic stats logging (every 1000 syncs)
-        if (fullSyncCount + partialSyncCount).isMultiple(of: 1000) {
-            Log.trace("RustTerminalView[\(viewId)]: syncStats - full:\(fullSyncCount) partial:\(partialSyncCount) skipped:\(skippedSyncCount)")
-        }
-
-        if pendingLocalEcho.isEmpty, pendingLocalBackspaces == 0 {
-            clearLocalEchoOverlay()
-        }
-
-        updateInlineImagePositions()
-    }
-
-    /// Updates the grid view's row tints from the danger tints provider.
-    /// Runs every display-link frame — the provider returns cached data so this is cheap.
-    private func updateDangerousRowTints() {
-        guard let provider = dangerousRowTintsProvider else {
-            if !(gridView?.rowTints.isEmpty ?? true) {
-                gridView?.rowTints = [:]
-            }
-            return
-        }
-        let yDisp = renderTopVisibleRow
-        let gridRows = rows
-        guard gridRows > 0 else { return }
-        let tints = provider(yDisp, yDisp + gridRows - 1)
-        var viewportTints: [Int: NSColor] = [:]
-        for (absRow, color) in tints {
-            let vr = absRow - yDisp
-            if vr >= 0, vr < gridRows {
-                viewportTints[vr] = color
-            }
-        }
-        gridView?.rowTints = viewportTints
-    }
-
-    /// Compare two cells for equality (inlined for performance)
-    @inline(__always)
-    private func cellsEqual(_ a: RustCellData, _ b: RustCellData) -> Bool {
-        return a.character == b.character &&
-            a.fg_r == b.fg_r && a.fg_g == b.fg_g && a.fg_b == b.fg_b &&
-            a.bg_r == b.bg_r && a.bg_g == b.bg_g && a.bg_b == b.bg_b &&
-            a.flags == b.flags && a.link_id == b.link_id
-    }
-
-    /// Reset grid sync state (call on resize or other major changes)
-    private func resetGridSyncState() {
-        previousGrid.removeAll()
-        previousGridCols = 0
-        previousGridRows = 0
-        previousCursorCol = 0
-        previousCursorRow = 0
-        needsGridSync = true
-        clearLocalEchoOverlay()
-    }
-
-    private func clearLocalEchoOverlay() {
-        localEchoOverlay.removeAll()
-        localEchoCursor = nil
-        gridView?.clearOverlay()
-        clearLocalEchoState()
-    }
-
-    private func clearLocalEchoState() {
-        pendingLocalEcho.removeAll()
-        pendingLocalEchoOffset = 0
-        pendingLocalBackspaces = 0
-    }
-
-    private func removeLastPendingLocalEchoChar() {
-        guard !pendingLocalEcho.isEmpty else { return }
-        pendingLocalEcho.removeLast()
-        if pendingLocalEchoOffset > pendingLocalEcho.count {
-            pendingLocalEchoOffset = pendingLocalEcho.count
-        }
-    }
-
-    private func compactConsumedLocalEchoIfNeeded() {
-        guard pendingLocalEchoOffset > 0 else { return }
-        if pendingLocalEchoOffset >= pendingLocalEcho.count {
-            pendingLocalEcho.removeAll()
-            pendingLocalEchoOffset = 0
-            return
-        }
-        if pendingLocalEchoOffset > 64 {
-            pendingLocalEcho.removeFirst(pendingLocalEchoOffset)
-            pendingLocalEchoOffset = 0
-        }
-    }
-
-    private func baseCellForLocalEcho(row: Int, col: Int) -> RustCellData {
-        let idx = row * cols + col
-        if idx >= 0, idx < previousGrid.count {
-            return previousGrid[idx]
-        }
-        return RustCellData(character: 0, fg_r: 255, fg_g: 255, fg_b: 255, bg_r: 0, bg_g: 0, bg_b: 0, flags: 0, _pad: 0, link_id: 0)
-    }
-
-    private func updateLocalEchoOverlay() {
-        if localEchoOverlay.isEmpty {
-            gridView?.clearOverlay()
-        } else {
-            gridView?.setOverlayCells(localEchoOverlay)
-        }
-    }
-
-    private func advanceLocalEchoCursor(_ cursor: inout (row: Int, col: Int)) {
-        cursor.col += 1
-        if cursor.col >= cols {
-            cursor.col = 0
-            cursor.row = min(rows - 1, cursor.row + 1)
-        }
-    }
-
-    private func retreatLocalEchoCursor(_ cursor: inout (row: Int, col: Int)) {
-        if cursor.col > 0 {
-            cursor.col -= 1
-        } else if cursor.row > 0 {
-            cursor.row -= 1
-            cursor.col = max(0, cols - 1)
-        }
-    }
-
-    private func hideTipOverlay() {
-        tipOverlayView?.removeFromSuperview()
-        tipOverlayView = nil
-    }
-
-    private func updateTipOverlayPosition() {
-        guard let tip = tipOverlayView else { return }
-        let size = tip.frame.size
-        let renderBounds = overlayContainer?.bounds ?? bounds
-        let origin = NSPoint(x: (renderBounds.width - size.width) / 2, y: renderBounds.height - size.height - 20)
-        tip.frame.origin = origin
-    }
-
-    func showTipOverlay(message: String) {
-        guard tipOverlayView == nil else { return }
-        let container = PassthroughView(frame: .zero)
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
-        container.layer?.cornerRadius = 8
-        container.layer?.borderWidth = 1
-        container.layer?.borderColor = NSColor.separatorColor.cgColor
-
-        let label = NSTextField(labelWithString: message)
-        label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        label.textColor = NSColor.labelColor
-        label.lineBreakMode = .byWordWrapping
-        label.maximumNumberOfLines = 3
-        label.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(label)
-
-        let padding: CGFloat = 10
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: padding),
-            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -padding),
-            label.topAnchor.constraint(equalTo: container.topAnchor, constant: padding),
-            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -padding)
-        ])
-
-        overlayContainer.addSubview(container)
-        tipOverlayView = container
-
-        let renderBounds = overlayContainer?.bounds ?? bounds
-        let maxWidth = min(renderBounds.width * 0.75, 460)
-        let maxLabelWidth = maxWidth - (padding * 2)
-        let labelRect = label.attributedStringValue.boundingRect(
-            with: NSSize(width: maxLabelWidth, height: 200),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        )
-        let labelSize = NSSize(width: ceil(labelRect.width), height: ceil(labelRect.height))
-        let containerSize = NSSize(width: maxWidth, height: labelSize.height + (padding * 2))
-        let origin = NSPoint(x: (renderBounds.width - containerSize.width) / 2, y: renderBounds.height - containerSize.height - 20)
-        container.frame = NSRect(origin: origin, size: containerSize)
-    }
-
-    private func extractInlineImages(from data: Data) -> (Data, [InlineImage]) {
-        guard InlineImageHandler.shared.isEnabled else { return (data, []) }
-        guard let text = String(data: data, encoding: .utf8) else { return (data, []) }
-
-        let marker = "\u{1b}]1337;File="
-        var output = String()
-        output.reserveCapacity(text.count)
-        var images: [InlineImage] = []
-
-        var idx = text.startIndex
-        while idx < text.endIndex {
-            if text[idx...].hasPrefix(marker) {
-                var end = idx
-                var foundTerminator = false
-                var scan = idx
-                while scan < text.endIndex {
-                    let ch = text[scan]
-                    if ch == "\u{07}" {
-                        end = scan
-                        foundTerminator = true
-                        scan = text.index(after: scan)
-                        break
-                    }
-                    if ch == "\u{1b}" {
-                        let next = text.index(after: scan)
-                        if next < text.endIndex, text[next] == "\\" {
-                            end = scan
-                            foundTerminator = true
-                            scan = text.index(after: next)
-                            break
-                        }
-                    }
-                    scan = text.index(after: scan)
-                }
-
-                if foundTerminator {
-                    let seq = String(text[idx ..< end])
-                    if let image = InlineImageHandler.shared.parseImageSequence(seq) {
-                        images.append(image)
-                    }
-                    idx = scan
-                    continue
-                }
-            }
-
-            output.append(text[idx])
-            idx = text.index(after: idx)
-        }
-
-        return (Data(output.utf8), images)
-    }
-
-    private func renderInlineImages(_ images: [InlineImage]) {
-        guard let rust = rustTerminal else { return }
-        guard InlineImageHandler.shared.isEnabled else { return }
-        let cellSize = NSSize(width: cellWidth, height: cellHeight)
-        let maxCells = (width: cols, height: rows)
-        let cursor = rust.cursorPosition
-        let displayOffset = Int(rust.displayOffset)
-        let anchorRow = Int(cursor.row) - displayOffset
-        let anchorCol = Int(cursor.col)
-
-        for image in images where image.args.inline {
-            guard let scaled = InlineImageHandler.shared.renderImage(image, cellSize: cellSize, maxCells: maxCells) else {
-                continue
-            }
-            let inline = InlineImage(image: scaled, args: image.args)
-            let view = InlineImageView(image: inline, frame: .zero)
-            overlayContainer.addSubview(view)
-            var placement = InlineImagePlacement(view: view, image: image, size: scaled.size, anchorRow: anchorRow, anchorCol: anchorCol)
-            positionInlineImage(&placement, displayOffset: displayOffset)
-            inlineImages.append(placement)
-        }
-    }
-
-    private func rescaleInlineImages() {
-        guard InlineImageHandler.shared.isEnabled else { return }
-        let cellSize = NSSize(width: cellWidth, height: cellHeight)
-        let maxCells = (width: cols, height: rows)
-        for index in inlineImages.indices {
-            let original = inlineImages[index].image
-            if let scaled = InlineImageHandler.shared.renderImage(original, cellSize: cellSize, maxCells: maxCells) {
-                inlineImages[index].size = scaled.size
-                inlineImages[index].view.setImage(scaled)
-            }
-        }
-        updateInlineImagePositions()
-    }
-
-    private func updateInlineImagePositions() {
-        guard let rust = rustTerminal else { return }
-        let displayOffset = Int(rust.displayOffset)
-        if displayOffset == lastDisplayOffset, !inlineImages.isEmpty {
-            // Still update positions on resize/layout.
-        }
-        lastDisplayOffset = displayOffset
-
-        for index in inlineImages.indices {
-            var placement = inlineImages[index]
-            positionInlineImage(&placement, displayOffset: displayOffset)
-            inlineImages[index] = placement
-        }
-    }
-
-    private func positionInlineImage(_ placement: inout InlineImagePlacement, displayOffset: Int) {
-        let visibleRow = placement.anchorRow + displayOffset
-        guard visibleRow >= 0, visibleRow < rows else {
-            placement.view.isHidden = true
-            return
-        }
-        placement.view.isHidden = false
-        let x = CGFloat(placement.anchorCol) * cellWidth
-        let renderHeight = overlayContainer?.bounds.height ?? (gridView?.bounds.height ?? bounds.height)
-        let topY = renderHeight - CGFloat(visibleRow) * cellHeight
-        let y = topY - placement.size.height
-        placement.view.frame = CGRect(x: x, y: y, width: placement.size.width, height: placement.size.height)
-    }
-
-    // MARK: - OSC 7 Directory Parsing
-
-    /// Parse OSC 7 (current working directory) from raw PTY output.
-    /// OSC 7 format: ESC ] 7 ; file://hostname/path BEL (0x07) or ESC \ (ST)
-    private func parseOSC7(from data: Data) {
-        // Look for OSC 7 sequence: ESC (0x1b) ] (0x5d) 7 ; ...
-        // Terminated by BEL (0x07) or ESC \
-        let bytes = Array(data)
-        var i = 0
-
-        while i < bytes.count - 5 { // Need at least ESC ] 7 ; x BEL
-            // Look for ESC ]
-            if bytes[i] == 0x1B, i + 1 < bytes.count, bytes[i + 1] == 0x5D {
-                // Found ESC ], check for '7;'
-                if i + 3 < bytes.count, bytes[i + 2] == 0x37, bytes[i + 3] == 0x3B {
-                    // Found OSC 7 ; - extract the URL
-                    let start = i + 4 // After "ESC ] 7 ;"
-
-                    // Find terminator: BEL (0x07) or ESC \ (0x1b 0x5c)
-                    var end = start
-                    while end < bytes.count {
-                        if bytes[end] == 0x07 {
-                            break // BEL terminator
-                        }
-                        if bytes[end] == 0x1B, end + 1 < bytes.count, bytes[end + 1] == 0x5C {
-                            break // ST (ESC \) terminator
-                        }
-                        end += 1
-                    }
-
-                    if end < bytes.count, end > start {
-                        // Extract the URL string
-                        let urlBytes = Array(bytes[start ..< end])
-                        if let urlString = String(bytes: urlBytes, encoding: .utf8) {
-                            processOSC7URL(urlString)
-                        }
-                    }
-                }
-            }
-            i += 1
-        }
-    }
-
-    /// Process the URL from OSC 7 and extract the directory path.
-    /// URL format: file://hostname/path
-    private func processOSC7URL(_ urlString: String) {
-        // Parse the file:// URL
-        if let url = URL(string: urlString) {
-            let path = url.path
-            if !path.isEmpty, path != currentDirectory {
-                Log.info("RustTerminalView[\(viewId)]: OSC 7 directory update: \(path)")
-                currentDirectory = path
-                DispatchQueue.main.async { [weak self] in
-                    self?.onDirectoryChanged?(path)
-                }
-            }
-        } else if urlString.hasPrefix("file://") {
-            // Fallback: manual parsing for malformed URLs
-            let pathStart = urlString.index(urlString.startIndex, offsetBy: 7)
-            var path = String(urlString[pathStart...])
-            // Remove hostname if present (format: file://hostname/path)
-            if let slashIndex = path.firstIndex(of: "/") {
-                path = String(path[slashIndex...])
-            }
-            // URL decode
-            path = path.removingPercentEncoding ?? path
-            if !path.isEmpty, path != currentDirectory {
-                Log.info("RustTerminalView[\(viewId)]: OSC 7 directory update (fallback): \(path)")
-                currentDirectory = path
-                DispatchQueue.main.async { [weak self] in
-                    self?.onDirectoryChanged?(path)
-                }
-            }
-        }
-    }
-
-    // MARK: - Local Echo (Latency Optimization)
-
-    /// Process PTY output to suppress characters we already locally echoed
-    /// Returns the filtered data with echoed characters removed
-    private func processOutputForLocalEcho(_ data: Data) -> Data {
-        // Fast path: no pending echo, return as-is
-        guard !pendingLocalEcho.isEmpty || pendingLocalBackspaces > 0 else {
-            // Check for echo-disabling patterns in output (password prompts, etc.)
-            detectEchoMode(in: data)
-            return data
-        }
-
-        var filtered: [UInt8] = []
-        filtered.reserveCapacity(data.count)
-
-        var i = data.startIndex
-        while i < data.endIndex {
-            let byte = data[i]
-
-            // Check for PTY backspace/delete confirmations (e.g. DEL, BS, or BS space BS)
-            if pendingLocalBackspaces > 0 {
-                let remaining = data.endIndex - i
-                if byte == 0x08 && remaining >= 3 && data[i + 1] == 0x20 &&
-                    (data[i + 2] == 0x08 || data[i + 2] == 0x7F) {
-                    // Suppress backspace sequence we already displayed: "\b \b" or "\b \x7f"
-                    pendingLocalBackspaces -= 1
-                    removeLastPendingLocalEchoChar()
-                    i += 3
-                    continue
-                }
-
-                if byte == 0x08 || byte == 0x7F {
-                    // Suppress single-byte backspace/delete echo
-                    pendingLocalBackspaces -= 1
-                    removeLastPendingLocalEchoChar()
-                    i += 1
-                    continue
-                }
-            }
-
-            // Check for local echo character match
-            if pendingLocalEchoOffset < pendingLocalEcho.count, byte == pendingLocalEcho[pendingLocalEchoOffset] {
-                // This byte matches our local echo queue - suppress it
-                pendingLocalEchoOffset += 1
-                i += 1
-                continue
-            }
-
-            // Include this byte in output
-            filtered.append(byte)
-            i += 1
-        }
-
-        compactConsumedLocalEchoIfNeeded()
-
-        // Clear stale pending state (timeout protection)
-        // If we have too much pending prediction state, something is out of sync
-        if (pendingLocalEcho.count - pendingLocalEchoOffset) > Self.maxPendingLocalEcho || pendingLocalBackspaces > Self.maxPendingLocalEcho {
-            Log.trace("RustTerminalView[\(viewId)]: Local echo buffer overflow, clearing")
-            clearLocalEchoState()
-            clearLocalEchoOverlay()
-        }
-
-        // Check for echo-disabling patterns in the filtered output
-        detectEchoMode(in: Data(filtered))
-
-        if pendingLocalEcho.isEmpty, pendingLocalBackspaces == 0 {
-            clearLocalEchoOverlay()
-        }
-
-        if filtered.isEmpty {
-            // All bytes were suppressed
-            return Data()
-        }
-
-        return Data(filtered)
-    }
-
-    /// Detect patterns that indicate echo should be disabled (password prompts, raw mode)
-    private func detectEchoMode(in data: Data) {
-        // Check for timeout recovery: re-enable echo after timeout
-        let now = CFAbsoluteTimeGetCurrent()
-        if !isPtyEchoLikelyEnabled, now - echoDisabledTime > Self.echoDisabledTimeout {
-            isPtyEchoLikelyEnabled = true
-            Log.trace("RustTerminalView[\(viewId)]: Echo re-enabled after timeout")
-        }
-
-        // Look for common password prompt patterns that indicate echo is off
-        // These heuristics work since we can't query termios directly
-        guard let text = String(data: data, encoding: .utf8) else { return }
-
-        let lowercased = text.lowercased()
-
-        // Password prompt patterns (echo disabled)
-        let passwordPatterns = [
-            "password:",
-            "password for",
-            "passphrase:",
-            "passphrase for",
-            "enter passphrase",
-            "sudo password",
-            "pin:",
-            "secret:",
-            "[sudo]"
-        ]
-
-        for pattern in passwordPatterns {
-            if lowercased.contains(pattern) {
-                isPtyEchoLikelyEnabled = false
-                echoDisabledTime = now
-                clearLocalEchoState()
-                clearLocalEchoOverlay()
-                Log.trace("RustTerminalView[\(viewId)]: Echo disabled (detected password prompt)")
-                return
-            }
-        }
-
-        // If we see a shell prompt ($ # %) after being disabled, re-enable echo
-        // This indicates we're back at a normal prompt
-        if !isPtyEchoLikelyEnabled {
-            let promptPatterns = ["$ ", "# ", "% ", "> "]
-            for pattern in promptPatterns {
-                if text.hasSuffix(pattern) || text.contains(pattern + "\n") {
-                    isPtyEchoLikelyEnabled = true
-                    Log.trace("RustTerminalView[\(viewId)]: Echo re-enabled (detected shell prompt)")
-                    return
-                }
-            }
-        }
-    }
-
-    /// Apply local echo for user input (display immediately before PTY round-trip)
-    /// This reduces perceived latency by showing typed characters instantly
-    private func applyLocalEcho(for bytes: [UInt8]) {
-        // Check if local echo is enabled in settings
-        guard supportsLocalEcho else { return }
-        guard FeatureSettings.shared.isLocalEchoEnabled else {
-            if !pendingLocalEcho.isEmpty || pendingLocalEchoOffset > 0 || pendingLocalBackspaces > 0 {
-                clearLocalEchoState()
-                clearLocalEchoOverlay()
-            }
-            return
-        }
-
-        // Check if PTY echo is likely enabled (not in password mode, etc.)
-        guard isPtyEchoLikelyEnabled else {
-            if !pendingLocalEcho.isEmpty || pendingLocalEchoOffset > 0 || pendingLocalBackspaces > 0 {
-                clearLocalEchoState()
-                clearLocalEchoOverlay()
-            }
-            return
-        }
-
-        let token = FeatureProfiler.shared.begin(.localEcho, bytes: bytes.count)
-        defer { FeatureProfiler.shared.end(token) }
-
-        if cols <= 0 || rows <= 0 { return }
-        var cursor = localEchoCursor ?? {
-            if let rust = rustTerminal {
-                return (row: Int(rust.cursorPosition.row), col: Int(rust.cursorPosition.col))
-            }
-            return (row: 0, col: 0)
-        }()
-        cursor.row = max(0, min(rows - 1, cursor.row))
-        cursor.col = max(0, min(cols - 1, cursor.col))
-
-        for byte in bytes {
-            // Only local echo printable ASCII (0x20-0x7E)
-            if byte >= 0x20 && byte <= 0x7E {
-                pendingLocalEcho.append(byte)
-                let idx = cursor.row * cols + cursor.col
-                var cell = baseCellForLocalEcho(row: cursor.row, col: cursor.col)
-                cell.character = UInt32(byte)
-                localEchoOverlay[idx] = cell
-                advanceLocalEchoCursor(&cursor)
-            } else if byte == 0x7F || byte == 0x08 {
-                // Backspace/Delete: Undo the last local echo visually
-                // Track the backspace so we suppress PTY's backspace response too
-                pendingLocalBackspaces += 1
-                retreatLocalEchoCursor(&cursor)
-                let idx = cursor.row * cols + cursor.col
-                localEchoOverlay.removeValue(forKey: idx)
-                removeLastPendingLocalEchoChar()
-                if !pendingLocalEcho.isEmpty, pendingLocalEchoOffset > pendingLocalEcho.count {
-                    pendingLocalEchoOffset = pendingLocalEcho.count
-                }
-            } else if byte == 0x03 || byte == 0x15 {
-                // Ctrl+C (0x03) or Ctrl+U (0x15): Clear local echo buffer
-                // These typically abort/clear the current line
-                clearLocalEchoState()
-                clearLocalEchoOverlay()
-                localEchoCursor = nil
-                return
-            } else if byte == 0x0A || byte == 0x0D {
-                clearLocalEchoOverlay()
-                clearLocalEchoState()
-                localEchoCursor = nil
-                return
-            }
-        }
-
-        compactConsumedLocalEchoIfNeeded()
-
-        localEchoCursor = cursor
-        updateLocalEchoOverlay()
-    }
-
-    /// Apply local echo for text input
-    private func applyLocalEchoForText(_ text: String) {
-        let bytes = Array(text.utf8)
-        applyLocalEcho(for: bytes)
-    }
-
-    // MARK: - Input Handling
-
-    /// Application cursor mode (DECCKM) - when enabled, arrow keys send SS3 sequences instead of CSI
-    /// This is typically set by programs like vim, less, tmux via escape sequence ESC[?1h
-    private var applicationCursorMode = false
-
-    /// True while keyDown is routing through inputContext, so insertText knows
-    /// the call originated from a keyboard event (not Password AutoFill).
-    private var handlingKeyDown = false
-
-    /// IME marked text state — tracks pending dead key / composition text.
-    /// Without this, dead keys like ^ on French keyboards get stuck because
-    /// NSTextInputContext enters an inconsistent state when setMarkedText is
-    /// a no-op and hasMarkedText returns false.
-    private var markedTextStorage: String?
-    private var markedSelectedRange = NSRange(location: NSNotFound, length: 0)
-
-    func shouldSuppressRawTextFallback(afterInputContextHandled handled: Bool) -> Bool {
-        handled || markedTextStorage != nil
-    }
-
-    private func makeInputEventSignature(_ event: NSEvent) -> String {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let characters = event.characters ?? ""
-        let charactersIgnoringModifiers = event.charactersIgnoringModifiers ?? ""
-        return "\(event.timestamp)|\(event.keyCode)|\(characters)|\(charactersIgnoringModifiers)|\(flags.rawValue)"
-    }
-
-    private func markGeneralKeyEventHandled(_ event: NSEvent) {
-        let signature = makeInputEventSignature(event)
-        lastMonitorHandledKeyEventSignature = signature
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            guard let self else { return }
-            if lastMonitorHandledKeyEventSignature == signature {
-                lastMonitorHandledKeyEventSignature = nil
-            }
-        }
-    }
-
-    private func isEventHandledByGeneralMonitor(_ event: NSEvent) -> Bool {
-        guard let signature = lastMonitorHandledKeyEventSignature else { return false }
-        return signature == makeInputEventSignature(event)
-    }
-
-    override func keyDown(with event: NSEvent) {
-        guard let rust = rustTerminal else {
-            Log.trace("RustTerminalView[\(viewId)]: keyDown - No Rust terminal")
-            return
-        }
-        if isEventHandledByGeneralMonitor(event) {
-            Log.trace("RustTerminalView[\(viewId)]: keyDown - Skipping event already handled by general monitor")
-            return
-        }
-        // Command key combinations are handled by app commands (copy/paste/menus), not terminal input
-        if event.modifierFlags.contains(.command) {
-            return
-        }
-        hideTipOverlay()
-
-        let keyCode = event.keyCode
-        let modifiers = event.modifierFlags
-
-        // Generate terminal escape sequence for this key event
-        if let sequence = generateTerminalSequence(keyCode: keyCode, modifiers: modifiers, event: event) {
-            let hexPreview = sequence.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
-            Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending escape sequence: [\(hexPreview)] (keyCode=\(keyCode))")
-            if sequence == [0x7F] || sequence == [0x08], let text = String(bytes: sequence, encoding: .utf8) {
-                applyLocalEchoForText(text)
-            }
-            if let text = String(bytes: sequence, encoding: .utf8) {
-                onInput?(text)
-            }
-            rust.sendBytes(sequence)
-            return
-        }
-
-        // Route regular text input through NSTextInputContext so that
-        // Password AutoFill and IME can deliver text via insertText.
-        _ = routeTextInputThroughInputContext(event, logContext: "keyDown", keyCode: keyCode)
-    }
-
-    /// Handle key event from event monitor - routes to Rust terminal
-    /// Returns true if the event was handled, false otherwise
-    private func handleTerminalKeyEvent(_ event: NSEvent) -> Bool {
-        guard let rust = rustTerminal else {
-            return false // No Rust terminal, let event propagate
-        }
-        hideTipOverlay()
-
-        let keyCode = event.keyCode
-        let modifiers = event.modifierFlags
-
-        // Command key combinations are handled by the app menu, not terminal
-        if modifiers.contains(.command) {
-            return false
-        }
-
-        // Generate terminal escape sequence for this key event
-        if let sequence = generateTerminalSequence(keyCode: keyCode, modifiers: modifiers, event: event) {
-            let hexPreview = sequence.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
-            Log.trace("RustTerminalView[\(viewId)]: handleTerminalKeyEvent - Sending escape sequence: [\(hexPreview)] (keyCode=\(keyCode))")
-            if sequence == [0x7F] || sequence == [0x08], let text = String(bytes: sequence, encoding: .utf8) {
-                applyLocalEchoForText(text)
-            }
-            if let text = String(bytes: sequence, encoding: .utf8) {
-                onInput?(text)
-            }
-            rust.sendBytes(sequence)
-            return true
-        }
-
-        return routeTextInputThroughInputContext(event, logContext: "handleTerminalKeyEvent", keyCode: keyCode)
-    }
-
-    private func routeTextInputThroughInputContext(_ event: NSEvent, logContext: String, keyCode: UInt16) -> Bool {
-        handlingKeyDown = true
-        let inputContextHandled = inputContext?.handleEvent(event) ?? false
-        handlingKeyDown = false
-
-        if shouldSuppressRawTextFallback(afterInputContextHandled: inputContextHandled) {
-            if !inputContextHandled, let markedTextStorage, !markedTextStorage.isEmpty {
-                let escaped = markedTextStorage.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-                Log.trace(
-                    "RustTerminalView[\(viewId)]: \(logContext) - Preserving marked text composition: '\(escaped)' (keyCode=\(keyCode))"
-                )
-            }
-            return true
-        }
-
-        return sendFallbackTextInput(event, logContext: logContext, keyCode: keyCode)
-    }
-
-    private func sendFallbackTextInput(_ event: NSEvent, logContext: String, keyCode: UInt16) -> Bool {
-        if let chars = event.characters, !chars.isEmpty {
-            let escaped = chars.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-            Log.trace("RustTerminalView[\(viewId)]: \(logContext) - Sending characters (fallback): '\(escaped)' (keyCode=\(keyCode))")
-            applyLocalEchoForText(chars)
-            send(txt: chars)
-            return true
-        }
-
-        if let charsNoMod = event.charactersIgnoringModifiers, !charsNoMod.isEmpty {
-            let escaped = charsNoMod.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-            Log.trace("RustTerminalView[\(viewId)]: \(logContext) - Sending chars (no mod, fallback): '\(escaped)' (keyCode=\(keyCode))")
-            applyLocalEchoForText(charsNoMod)
-            send(txt: charsNoMod)
-            return true
-        }
-
-        Log.trace("RustTerminalView[\(viewId)]: \(logContext) - No characters to send (keyCode=\(keyCode))")
-        return false
-    }
-
-    // MARK: - Terminal Escape Sequence Generation
-
-    /// Generates the appropriate terminal escape sequence for a key event.
-    /// Returns nil if the key should be handled via regular character input.
-    private func generateTerminalSequence(keyCode: UInt16, modifiers: NSEvent.ModifierFlags, event: NSEvent) -> [UInt8]? {
-        let hasControl = modifiers.contains(.control)
-        let hasOption = modifiers.contains(.option)
-        let hasShift = modifiers.contains(.shift)
-        let hasCommand = modifiers.contains(.command)
-
-        // Command key is typically handled by the app, not sent to terminal
-        if hasCommand {
-            return nil
-        }
-
-        // Check for special keys first (arrows, function keys, etc.)
-        if let specialSequence = generateSpecialKeySequence(keyCode: keyCode, modifiers: modifiers) {
-            return specialSequence
-        }
-
-        // Handle Ctrl+letter combinations
-        if hasControl, let char = event.charactersIgnoringModifiers?.lowercased().first {
-            if let controlCode = controlCharacter(for: char) {
-                // Option+Ctrl sends ESC prefix + control code
-                if hasOption {
-                    return [0x1B, controlCode]
-                }
-                return [controlCode]
-            }
-        }
-
-        if OptionModifiedTextRouting.shouldTreatAsLiteralText(
-            characters: event.characters,
-            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
-            hasOption: hasOption,
-            hasControl: hasControl,
-            hasCommand: hasCommand
-        ) {
-            // Let NSTextInputContext deliver the rendered character for
-            // international layouts that use Option to produce punctuation.
-            return nil
-        }
-
-        // Handle Option/Alt+letter (sends ESC prefix for meta key)
-        if hasOption, !hasControl {
-            if let char = event.charactersIgnoringModifiers?.first {
-                // Send ESC + character for Alt+key (meta key behavior)
-                var bytes: [UInt8] = [0x1B]
-                if hasShift {
-                    // Shift+Alt sends uppercase
-                    bytes.append(contentsOf: String(char).uppercased().utf8)
-                } else {
-                    bytes.append(contentsOf: String(char).utf8)
-                }
-                return bytes
-            }
-        }
-
-        return nil
-    }
-
-    /// Generates escape sequences for special keys (arrows, function keys, etc.)
-    private func generateSpecialKeySequence(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> [UInt8]? {
-        let hasControl = modifiers.contains(.control)
-        let hasOption = modifiers.contains(.option)
-        let hasShift = modifiers.contains(.shift)
-
-        // Calculate xterm modifier parameter
-        // 1 = none, 2 = shift, 3 = alt, 4 = shift+alt, 5 = ctrl, 6 = shift+ctrl, 7 = alt+ctrl, 8 = shift+alt+ctrl
-        var modParam = 1
-        if hasShift { modParam += 1 }
-        if hasOption { modParam += 2 }
-        if hasControl { modParam += 4 }
-        let hasModifiers = modParam > 1
-
-        switch Int(keyCode) {
-        // Arrow keys
-        case kVK_UpArrow:
-            return arrowKeySequence("A", modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_DownArrow:
-            return arrowKeySequence("B", modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_RightArrow:
-            return arrowKeySequence("C", modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_LeftArrow:
-            return arrowKeySequence("D", modParam: modParam, hasModifiers: hasModifiers)
-        // Navigation keys
-        case kVK_Home:
-            return hasModifiers ? csiSequenceWithMod("1", modParam: modParam, terminator: "H") : csiSequence("H")
-        case kVK_End:
-            return hasModifiers ? csiSequenceWithMod("1", modParam: modParam, terminator: "F") : csiSequence("F")
-        case kVK_PageUp:
-            return hasModifiers ? csiSequenceWithMod("5", modParam: modParam, terminator: "~") : csiSequence("5~")
-        case kVK_PageDown:
-            return hasModifiers ? csiSequenceWithMod("6", modParam: modParam, terminator: "~") : csiSequence("6~")
-        // Editing keys
-        case kVK_ForwardDelete:
-            return hasModifiers ? csiSequenceWithMod("3", modParam: modParam, terminator: "~") : csiSequence("3~")
-        case kVK_Help: // Insert key on some keyboards
-            return hasModifiers ? csiSequenceWithMod("2", modParam: modParam, terminator: "~") : csiSequence("2~")
-        // Function keys F1-F12
-        case kVK_F1:
-            return functionKeySequence(1, modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_F2:
-            return functionKeySequence(2, modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_F3:
-            return functionKeySequence(3, modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_F4:
-            return functionKeySequence(4, modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_F5:
-            return functionKeySequence(5, modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_F6:
-            return functionKeySequence(6, modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_F7:
-            return functionKeySequence(7, modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_F8:
-            return functionKeySequence(8, modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_F9:
-            return functionKeySequence(9, modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_F10:
-            return functionKeySequence(10, modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_F11:
-            return functionKeySequence(11, modParam: modParam, hasModifiers: hasModifiers)
-        case kVK_F12:
-            return functionKeySequence(12, modParam: modParam, hasModifiers: hasModifiers)
-        // Special character keys
-        case kVK_Escape:
-            return [0x1B]
-        case kVK_Tab:
-            if hasShift {
-                return csiSequence("Z") // Shift+Tab sends CSI Z (backtab)
-            }
-            return [0x09] // Regular tab
-        case kVK_Return:
-            return [0x0D] // Carriage return
-        case kVK_Delete: // Backspace key
-            if hasControl {
-                return [0x08] // Ctrl+Backspace sends BS
-            }
-            return [0x7F] // Regular backspace sends DEL
-        default:
-            return nil
-        }
-    }
-
-    /// Generates arrow key sequences, respecting application cursor mode (DECCKM)
-    private func arrowKeySequence(_ direction: Character, modParam: Int, hasModifiers: Bool) -> [UInt8] {
-        if hasModifiers {
-            // With modifiers: ESC [ 1 ; <mod> <direction>
-            return Array("\u{1b}[1;\(modParam)\(direction)".utf8)
-        } else if applicationCursorMode {
-            // Application cursor mode: ESC O <direction> (SS3 sequence)
-            return Array("\u{1b}O\(direction)".utf8)
-        } else {
-            // Normal mode: ESC [ <direction>
-            return Array("\u{1b}[\(direction)".utf8)
-        }
-    }
-
-    /// Generates a simple CSI sequence: ESC [ <content>
-    private func csiSequence(_ content: String) -> [UInt8] {
-        return Array("\u{1b}[\(content)".utf8)
-    }
-
-    /// Generates a CSI sequence with modifier: ESC [ <prefix> ; <mod> <terminator>
-    private func csiSequenceWithMod(_ prefix: String, modParam: Int, terminator: String) -> [UInt8] {
-        return Array("\u{1b}[\(prefix);\(modParam)\(terminator)".utf8)
-    }
-
-    /// Generates function key sequences (xterm-style)
-    private func functionKeySequence(_ fKey: Int, modParam: Int, hasModifiers: Bool) -> [UInt8] {
-        // F1-F4 use SS3 sequences without modifiers (legacy vt100 compatibility)
-        // F1-F4 with modifiers and F5-F12 use CSI sequences with numeric codes
-        //
-        // Without modifiers:
-        //   F1: ESC O P, F2: ESC O Q, F3: ESC O R, F4: ESC O S
-        //   F5: ESC [15~, F6: ESC [17~, F7: ESC [18~, F8: ESC [19~
-        //   F9: ESC [20~, F10: ESC [21~, F11: ESC [23~, F12: ESC [24~
-        //
-        // With modifiers:
-        //   F1: ESC [11;Pm~, etc.
-
-        if !hasModifiers, fKey <= 4 {
-            // F1-F4 without modifiers use SS3 sequences
-            let codes: [Character] = ["P", "Q", "R", "S"]
-            return Array("\u{1b}O\(codes[fKey - 1])".utf8)
-        }
-
-        // F5+ and F1-F4 with modifiers use CSI ~ sequences
-        // Map function key number to xterm numeric code
-        let xtermKeyCode: Int
-        switch fKey {
-        case 1: xtermKeyCode = 11
-        case 2: xtermKeyCode = 12
-        case 3: xtermKeyCode = 13
-        case 4: xtermKeyCode = 14
-        case 5: xtermKeyCode = 15
-        case 6: xtermKeyCode = 17 // Note: 16 is skipped
-        case 7: xtermKeyCode = 18
-        case 8: xtermKeyCode = 19
-        case 9: xtermKeyCode = 20
-        case 10: xtermKeyCode = 21
-        case 11: xtermKeyCode = 23 // Note: 22 is skipped
-        case 12: xtermKeyCode = 24
-        default: xtermKeyCode = 15 + fKey
-        }
-
-        if hasModifiers {
-            return Array("\u{1b}[\(xtermKeyCode);\(modParam)~".utf8)
-        } else {
-            return Array("\u{1b}[\(xtermKeyCode)~".utf8)
-        }
-    }
-
-    /// Converts a character to its control character equivalent (Ctrl+A = 0x01, etc.)
-    private func controlCharacter(for char: Character) -> UInt8? {
-        guard let ascii = char.asciiValue else { return nil }
-
-        // Control characters are lowercase letter's ASCII value minus 0x60
-        // Or uppercase letter's ASCII value minus 0x40
-        // a-z: 0x61-0x7A -> Ctrl codes 0x01-0x1A
-        // A-Z: 0x41-0x5A -> Ctrl codes 0x01-0x1A (same result)
-        if ascii >= 0x61, ascii <= 0x7A {
-            return ascii - 0x60
-        }
-        if ascii >= 0x41, ascii <= 0x5A {
-            return ascii - 0x40
-        }
-
-        // Special control characters
-        switch char {
-        case "[", "{":
-            return 0x1B // Ctrl+[ is ESC
-        case "\\":
-            return 0x1C // Ctrl+\ is FS
-        case "]", "}":
-            return 0x1D // Ctrl+] is GS
-        case "^", "~":
-            return 0x1E // Ctrl+^ is RS
-        case "_", "?":
-            return 0x1F // Ctrl+_ is US
-        case "@", " ":
-            return 0x00 // Ctrl+@ or Ctrl+Space is NUL
-        case "2":
-            return 0x00 // Ctrl+2 is NUL
-        case "3":
-            return 0x1B // Ctrl+3 is ESC
-        case "4":
-            return 0x1C // Ctrl+4 is FS
-        case "5":
-            return 0x1D // Ctrl+5 is GS
-        case "6":
-            return 0x1E // Ctrl+6 is RS
-        case "7":
-            return 0x1F // Ctrl+7 is US
-        case "8":
-            return 0x7F // Ctrl+8 is DEL
-        default:
-            return nil
-        }
-    }
-
-    /// Sets the application cursor mode (DECCKM).
-    /// This is typically called when the terminal receives ESC[?1h (enable) or ESC[?1l (disable)
-    func setApplicationCursorMode(_ enabled: Bool) {
-        applicationCursorMode = enabled
-        Log.trace("RustTerminalView[\(viewId)]: Application cursor mode \(enabled ? "enabled" : "disabled")")
-    }
-
-    /// Send raw bytes to the PTY
-    func send(data bytes: [UInt8]) {
-        let preview = bytes.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
-        let suffix = bytes.count > 8 ? " ...<\(bytes.count - 8) more>" : ""
-        Log.trace("RustTerminalView[\(viewId)]: send(data:) - Sending \(bytes.count) bytes: [\(preview)\(suffix)]")
-        hideTipOverlay()
-        // Smart scroll: Scroll to bottom on user input (standard terminal behavior)
-        // When the user types, they expect to see the current prompt
-        if rustTerminal?.displayOffset ?? 0 > 0 {
-            rustTerminal?.scrollTo(position: 0.0)
-            needsGridSync = true
-        }
-
-        rustTerminal?.sendBytes(bytes)
-    }
-
-    /// Send a normalized key press to the PTY using terminal-specific encoding.
-    func send(keyPress: TerminalKeyPress) {
-        do {
-            let encoded = try keyPress.encode(applicationCursorMode: applicationCursorMode)
-            let preview = encoded.bytes.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
-            let suffix = encoded.bytes.count > 8 ? " ...<\(encoded.bytes.count - 8) more>" : ""
-            Log.trace("RustTerminalView[\(viewId)]: send(keyPress:) - key=\(keyPress.key) modifiers=\(keyPress.sortedModifierNames.joined(separator: "+")) bytes=[\(preview)\(suffix)]")
-            hideTipOverlay()
-
-            if rustTerminal?.displayOffset ?? 0 > 0 {
-                rustTerminal?.scrollTo(position: 0.0)
-                needsGridSync = true
-            }
-
-            if encoded.bytes == [0x7F] || encoded.bytes == [0x08],
-               let text = String(bytes: encoded.bytes, encoding: .utf8) {
-                applyLocalEchoForText(text)
-            }
-            if let text = encoded.text ?? String(bytes: encoded.bytes, encoding: .utf8) {
-                onInput?(text)
-            }
-
-            rustTerminal?.sendBytes(encoded.bytes)
-        } catch {
-            Log.warn("RustTerminalView[\(viewId)]: send(keyPress:) failed: \(error.localizedDescription)")
-        }
-    }
-
-    /// Send text to the PTY
-    func send(txt text: String) {
-        Log.trace("RustTerminalView[\(viewId)]: send(txt:) - Sending \(text.count) chars")
-        hideTipOverlay()
-
-        // Smart scroll: Scroll to bottom on user input (standard terminal behavior)
-        // When the user types, they expect to see the current prompt
-        if rustTerminal?.displayOffset ?? 0 > 0 {
-            rustTerminal?.scrollTo(position: 0.0)
-            needsGridSync = true
-        }
-
-        rustTerminal?.sendText(text)
-        onInput?(text)
-    }
-
-    /// Inject output directly into the terminal (no PTY write).
-    /// Used for UI-only content like the power user tip header.
-    func injectOutput(_ text: String) {
-        guard let rustTerminal else {
-            Log.warn("RustTerminalView[\(viewId)]: injectOutput - No Rust terminal")
-            return
-        }
-        let data = Data(text.utf8)
-        guard !data.isEmpty else { return }
-        Log.trace("RustTerminalView[\(viewId)]: injectOutput - Injecting \(data.count) bytes")
-        rustTerminal.injectOutput(data)
-        needsGridSync = true
     }
 
     // MARK: - Public API
@@ -4293,7 +2766,7 @@ final class RustTerminalView: NSView {
         return lines[absoluteRow]
     }
 
-    private func getCachedBufferLines() -> [String] {
+    func getCachedBufferLines() -> [String] {
         let currentVersion = instanceSyncCount
         if let cached = cachedBufferLines, cachedBufferLinesVersion == currentVersion {
             return cached
@@ -4358,7 +2831,7 @@ final class RustTerminalView: NSView {
     }
 
     /// Convert hex color string to RGB components (0-255)
-    private func rgbComponents(from hex: String) -> (UInt8, UInt8, UInt8) {
+    func rgbComponents(from hex: String) -> (UInt8, UInt8, UInt8) {
         let nsColor = TerminalColorScheme.default.nsColor(for: hex)
         let rgb = nsColor.usingColorSpace(.deviceRGB) ?? nsColor
         let red = UInt8(rgb.redComponent * 255)
@@ -4387,1939 +2860,4 @@ final class RustTerminalView: NSView {
         Log.trace("RustTerminalView[\(viewId)]: applyBellSettings - enabled=\(enabled), sound=\(sound)")
     }
 
-    // MARK: - Bell
-
-    /// Handle bell event by playing sound or flashing screen based on settings
-    private func handleBell() {
-        guard let bellConfig, bellConfig.enabled else {
-            Log.trace("RustTerminalView[\(viewId)]: handleBell - Bell disabled")
-            return
-        }
-
-        Log.trace("RustTerminalView[\(viewId)]: handleBell - Triggering bell (sound=\(bellConfig.sound))")
-
-        switch bellConfig.sound {
-        case "none":
-            flashBell()
-        case "subtle":
-            if let sound = NSSound(named: NSSound.Name("Pop")) {
-                sound.play()
-            } else {
-                NSSound.beep()
-            }
-        default:
-            NSSound.beep()
-        }
-    }
-
-    /// Flash the screen for visual bell feedback
-    private func flashBell() {
-        let flash = NSView(frame: bounds)
-        flash.wantsLayer = true
-        flash.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
-        flash.alphaValue = 0.0
-        flash.autoresizingMask = [.width, .height]
-        addSubview(flash)
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.05
-            flash.animator().alphaValue = 1.0
-        } completionHandler: {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.12
-                flash.animator().alphaValue = 0.0
-            } completionHandler: {
-                flash.removeFromSuperview()
-            }
-        }
-    }
-
-    /// Configure scrollback buffer size
-    /// Cache to avoid redundant FFI calls
-    private var appliedScrollbackLines: Int?
-
-    func applyScrollbackLines(_ lines: Int) {
-        guard appliedScrollbackLines != lines else {
-            return
-        }
-        Log.trace("RustTerminalView[\(viewId)]: applyScrollbackLines - Setting scrollback to \(lines) lines")
-        rustTerminal?.setScrollbackSize(UInt32(lines))
-        appliedScrollbackLines = lines
-    }
-
-    // MARK: - Selection
-
-    /// Get selected text
-    func getSelection() -> String? {
-        let text = rustTerminal?.getSelectionText()
-        if let t = text {
-            Log.trace("RustTerminalView[\(viewId)]: getSelection - Got \(t.count) chars")
-        } else {
-            Log.trace("RustTerminalView[\(viewId)]: getSelection - No selection")
-        }
-        return text
-    }
-
-    /// Clear selection
-    func selectNone() {
-        Log.trace("RustTerminalView[\(viewId)]: selectNone")
-        rustTerminal?.clearSelection()
-        lastSelectionText = nil
-    }
-
-    /// Clear selection (alias)
-    func clearSelection() {
-        Log.trace("RustTerminalView[\(viewId)]: clearSelection")
-        selectNone()
-    }
-
-    /// Check if there's an active selection
-    var hasSelection: Bool {
-        if let text = getSelection(), !text.isEmpty {
-            return true
-        }
-        return false
-    }
-
-    /// Get selected text (alias for protocol conformance)
-    func getSelectedText() -> String? {
-        getSelection()
-    }
-
-    // MARK: - Auto-Scroll During Selection
-
-    /// Starts the auto-scroll timer for selection drag outside bounds.
-    private func startAutoScrollTimer() {
-        // Don't create multiple timers
-        guard autoScrollTimer == nil else { return }
-
-        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            performAutoScroll()
-        }
-        // Add to .common modes so the timer fires during mouse event tracking
-        RunLoop.main.add(timer, forMode: .common)
-        autoScrollTimer = timer
-        Log.trace("RustTerminalView[\(viewId)]: startAutoScrollTimer - Started auto-scroll timer (direction=\(autoScrollDirection))")
-    }
-
-    /// Stops the auto-scroll timer.
-    private func stopAutoScrollTimer() {
-        if autoScrollTimer != nil {
-            Log.trace("RustTerminalView[\(viewId)]: stopAutoScrollTimer - Stopping auto-scroll timer")
-        }
-        autoScrollTimer?.invalidate()
-        autoScrollTimer = nil
-        autoScrollDirection = 0
-    }
-
-    /// Performs one step of auto-scrolling and extends selection.
-    private func performAutoScroll() {
-        guard autoScrollDirection != 0 else { return }
-        guard isSelecting else {
-            stopAutoScrollTimer()
-            return
-        }
-
-        // Scale scroll speed by distance outside bounds (accelerate further out)
-        let speed = max(1, min(Int(autoScrollDistance / 20) + 1, 10))
-
-        // Scroll the terminal (no-op if already at the edge of scrollback)
-        if autoScrollDirection < 0 {
-            scrollUp(lines: speed)
-        } else {
-            scrollDown(lines: speed)
-        }
-
-        // Always extend selection to the edge row, even when scroll is a no-op
-        // (e.g., at the bottom of the buffer). This ensures the selection
-        // visually covers the full visible area in the drag direction.
-        guard let rust = rustTerminal else { return }
-        let edgeRow: Int
-        if autoScrollDirection < 0 {
-            edgeRow = 0
-        } else {
-            edgeRow = rows - 1
-        }
-        let displayOffset = Int(rust.displayOffset)
-        let absoluteRow = edgeRow - displayOffset
-        // Scrolling up → select from start of line (col 0)
-        // Scrolling down → select to end of line (last col)
-        let col = autoScrollDirection < 0 ? 0 : cols - 1
-        rust.updateSelection(col: Int32(col), row: Int32(absoluteRow))
-        needsGridSync = true
-    }
-
-    // MARK: - Scrolling
-
-    /// Current scroll position (0.0 = bottom, 1.0 = top of history)
-    var scrollPosition: Double {
-        let pos = rustTerminal?.scrollPosition ?? 0.0
-        Log.trace("RustTerminalView[\(viewId)]: scrollPosition = \(pos)")
-        return pos
-    }
-
-    /// Scroll to position
-    func scroll(toPosition position: Double) {
-        Log.trace("RustTerminalView[\(viewId)]: scroll(toPosition:) - position=\(position)")
-        rustTerminal?.scrollTo(position: position)
-        needsGridSync = true
-        clearLocalEchoOverlay()
-        // Smart Scroll: Track if user is at or near the bottom
-        updateIsUserAtBottom()
-        updateInlineImagePositions()
-        onScrollChanged?()
-    }
-
-    /// Scroll up by lines
-    func scrollUp(lines: Int) {
-        Log.trace("RustTerminalView[\(viewId)]: scrollUp - lines=\(lines)")
-        rustTerminal?.scrollLines(Int32(lines))
-        needsGridSync = true
-        clearLocalEchoOverlay()
-        // Smart Scroll: Track if user is at or near the bottom
-        updateIsUserAtBottom()
-        updateInlineImagePositions()
-        onScrollChanged?()
-    }
-
-    /// Scroll down by lines
-    func scrollDown(lines: Int) {
-        Log.trace("RustTerminalView[\(viewId)]: scrollDown - lines=\(lines)")
-        rustTerminal?.scrollLines(Int32(-lines))
-        needsGridSync = true
-        clearLocalEchoOverlay()
-        // Smart Scroll: Track if user is at or near the bottom
-        updateIsUserAtBottom()
-        updateInlineImagePositions()
-        onScrollChanged?()
-    }
-
-    /// Scroll to top of history
-    func scrollToTop() {
-        Log.trace("RustTerminalView[\(viewId)]: scrollToTop")
-        scroll(toPosition: 1.0)
-    }
-
-    /// Scroll to bottom (current)
-    func scrollToBottom() {
-        Log.trace("RustTerminalView[\(viewId)]: scrollToBottom")
-        scroll(toPosition: 0.0)
-    }
-
-    /// Scroll so that `absoluteRow` is at the top of the viewport.
-    func scrollToRow(absoluteRow: Int) {
-        let currentTop = renderTopVisibleRow
-        let delta = currentTop - absoluteRow // positive = scroll up into history
-        if delta > 0 {
-            scrollUp(lines: delta)
-        } else if delta < 0 {
-            scrollDown(lines: -delta)
-        }
-    }
-
-    /// Scroll to the nearest input line above the current viewport top.
-    func scrollToPreviousInputLine() {
-        let sorted = inputLineTracker.sortedRows()
-        guard !sorted.isEmpty else { return }
-        let currentTop = renderTopVisibleRow
-        // Find the last tracked row strictly above the current viewport top
-        if let idx = sorted.lastIndex(where: { $0 < currentTop }) {
-            scrollToRow(absoluteRow: sorted[idx])
-            Log.info("RustTerminalView[\(viewId)]: jumped to previous input line at row \(sorted[idx])")
-        }
-    }
-
-    /// Scroll to the nearest input line below the current viewport top.
-    func scrollToNextInputLine() {
-        let sorted = inputLineTracker.sortedRows()
-        guard !sorted.isEmpty else { return }
-        let currentTop = renderTopVisibleRow
-        // Find the first tracked row strictly below the current viewport top
-        if let idx = sorted.firstIndex(where: { $0 > currentTop }) {
-            scrollToRow(absoluteRow: sorted[idx])
-            Log.info("RustTerminalView[\(viewId)]: jumped to next input line at row \(sorted[idx])")
-        } else {
-            // No more marks below — go to bottom
-            scrollToBottom()
-        }
-    }
-
-    /// Update isUserAtBottom based on current scroll position (for Smart Scroll)
-    private func updateIsUserAtBottom() {
-        let currentPosition = scrollPosition
-        // Position 0 = bottom, 1 = top. User is "at bottom" if position is <= threshold from 0
-        isUserAtBottom = currentPosition <= (1.0 - Self.scrollBottomThreshold)
-    }
-
-    /// Restores scroll position if smart scroll is enabled and user wasn't at bottom.
-    /// This preserves the user's reading position when new output arrives.
-    private func restoreSmartScrollIfNeeded(smartScrollEnabled: Bool, wasAtBottom: Bool, savedPosition: Double) {
-        // Only restore if:
-        // 1. Smart scroll is enabled
-        // 2. User wasn't at the bottom before new data arrived
-        // 3. The scroll position actually changed (renderer auto-scrolled)
-        let currentPosition = scrollPosition
-        guard smartScrollEnabled, !wasAtBottom, currentPosition != savedPosition else { return }
-
-        // Edge case: Don't restore to position 0 when scrollback just appeared.
-        // When terminal has no scrollback, scrollPosition is forced to 0 regardless of
-        // actual view state. If savedPosition was 0 and now > 0, scrollback just appeared
-        // and user wasn't actually scrolled up - they were at the only position available.
-        if savedPosition == 0, currentPosition > 0 {
-            // Scrollback just appeared - let the auto-scroll to bottom happen
-            isUserAtBottom = currentPosition >= Self.scrollBottomThreshold
-            return
-        }
-
-        // Restore the user's previous scroll position
-        scroll(toPosition: savedPosition)
-        // Update our tracking state based on restored position
-        isUserAtBottom = savedPosition <= (1.0 - Self.scrollBottomThreshold)
-    }
-
-    // MARK: - Cursor Line Highlight
-
-    /// Attach a cursor line view for highlighting
-    func attachCursorLineView(_ view: TerminalCursorLineView) {
-        cursorLineView = view
-        updateCursorLineHighlight()
-    }
-
-    /// Configure cursor line highlight options
-    func configureCursorLineHighlight(contextLines: Bool, inputHistory: Bool) {
-        if highlightContextLines != contextLines || highlightInputHistory != inputHistory {
-            highlightContextLines = contextLines
-            highlightInputHistory = inputHistory
-            updateCursorLineHighlight()
-        }
-    }
-
-    /// Enable or disable cursor line highlighting
-    func setCursorLineHighlightEnabled(_ enabled: Bool) {
-        if isCursorLineHighlightEnabled != enabled {
-            isCursorLineHighlightEnabled = enabled
-            updateCursorLineHighlight()
-        }
-    }
-
-    /// Update cursor line highlight state
-    private func updateCursorLineHighlight() {
-        guard isCursorLineHighlightEnabled else {
-            cursorLineView?.isHidden = true
-            return
-        }
-        cursorLineView?.update(
-            with: self,
-            isFocused: hasFocus,
-            showsContextLines: highlightContextLines,
-            showsInputHistory: highlightInputHistory,
-            inputLineTracker: inputLineTracker
-        )
-        cursorLineView?.isHidden = false
-        cursorLineView?.needsDisplay = true
-    }
-
-    /// Record the current input line for history tracking.
-    func recordInputLine() {
-        guard let rust = rustTerminal else { return }
-        let cursor = rust.cursorPosition
-        let topRow = renderTopVisibleRow
-        let row = topRow + Int(cursor.row)
-        inputLineTracker.record(row: row)
-        updateCursorLineHighlight()
-    }
-
-    // MARK: - Mouse Reporting
-
-    /// Mouse mode bit flags (matching Rust implementation)
-    private enum MouseMode {
-        static let click: UInt32 = 0x01 // Mode 1000: report button press/release
-        static let drag: UInt32 = 0x02 // Mode 1002: also report motion while button down
-        static let motion: UInt32 = 0x04 // Mode 1003: report all motion
-        static let focusInOut: UInt32 = 0x08 // Mode 1004: focus in/out reporting
-        static let sgrMode: UInt32 = 0x10 // Mode 1006: use SGR encoding (was incorrectly 0x08)
-        static let anyTracking: UInt32 = 0x07 // Mask for click/drag/motion modes
-    }
-
-    /// Mouse button encoding for X10/Normal protocols
-    private enum MouseButton: UInt8 {
-        case left = 0
-        case middle = 1
-        case right = 2
-        case release = 3
-        case scrollUp = 64
-        case scrollDown = 65
-        case scrollLeft = 66
-        case scrollRight = 67
-    }
-
-    /// Check if mouse reporting is active
-    private func isMouseReportingEnabled() -> Bool {
-        guard allowMouseReporting else { return false }
-        let mode = rustTerminal?.mouseMode() ?? 0
-        return (mode & MouseMode.anyTracking) != 0
-    }
-
-    /// Check if SGR extended mouse mode is enabled
-    private func isSgrMouseMode() -> Bool {
-        let mode = rustTerminal?.mouseMode() ?? 0
-        return (mode & MouseMode.sgrMode) != 0
-    }
-
-    /// Check if motion events should be reported while button is down
-    private func shouldReportDragMotion() -> Bool {
-        let mode = rustTerminal?.mouseMode() ?? 0
-        return (mode & MouseMode.drag) != 0 || (mode & MouseMode.motion) != 0
-    }
-
-    /// Encode and send a mouse event to the PTY
-    private func sendMouseEvent(button: MouseButton, col: Int, row: Int, isRelease: Bool, modifiers: NSEvent.ModifierFlags = []) {
-        var buttonCode = button.rawValue
-        if modifiers.contains(.shift) { buttonCode += 4 }
-        if modifiers.contains(.option) { buttonCode += 8 }
-        if modifiers.contains(.control) { buttonCode += 16 }
-
-        if isSgrMouseMode() {
-            let col1 = col + 1
-            let row1 = row + 1
-            let terminator = isRelease ? "m" : "M"
-            let sequence = "\u{1b}[<\(buttonCode);\(col1);\(row1)\(terminator)"
-            Log.trace("RustTerminalView[\(viewId)]: sendMouseEvent SGR - button=\(buttonCode), col=\(col1), row=\(row1)")
-            send(txt: sequence)
-        } else {
-            let effectiveCol = min(col, 222)
-            let effectiveRow = min(row, 222)
-            let releaseButton: UInt8 = isRelease ? 3 : buttonCode
-            let buttonByte = releaseButton + 32
-            let colByte = UInt8(effectiveCol + 33)
-            let rowByte = UInt8(effectiveRow + 33)
-            send(data: [0x1B, 0x5B, 0x4D, buttonByte, colByte, rowByte])
-        }
-    }
-
-    /// Send a mouse press event
-    private func sendMousePress(button: MouseButton, at location: NSPoint, modifiers: NSEvent.ModifierFlags = []) {
-        let cell = pointToCell(location)
-        sendMouseEvent(button: button, col: Int(cell.col), row: Int(cell.row), isRelease: false, modifiers: modifiers)
-    }
-
-    /// Send a mouse release event
-    private func sendMouseRelease(button: MouseButton, at location: NSPoint, modifiers: NSEvent.ModifierFlags = []) {
-        let cell = pointToCell(location)
-        sendMouseEvent(button: button, col: Int(cell.col), row: Int(cell.row), isRelease: true, modifiers: modifiers)
-    }
-
-    /// Send a mouse motion event
-    private func sendMouseMotion(at location: NSPoint, buttonDown: MouseButton?, modifiers: NSEvent.ModifierFlags = []) {
-        let cell = pointToCell(location)
-        let cellCol = Int(cell.col)
-        let cellRow = Int(cell.row)
-        var buttonCode: UInt8 = 32
-        if let button = buttonDown { buttonCode += button.rawValue } else { buttonCode += 3 }
-        if modifiers.contains(.shift) { buttonCode += 4 }
-        if modifiers.contains(.option) { buttonCode += 8 }
-        if modifiers.contains(.control) { buttonCode += 16 }
-
-        if isSgrMouseMode() {
-            let sequence = "\u{1b}[<\(buttonCode);\(cellCol + 1);\(cellRow + 1)M"
-            send(txt: sequence)
-        } else {
-            let colByte = UInt8(min(cellCol, 222) + 33)
-            let rowByte = UInt8(min(cellRow, 222) + 33)
-            send(data: [0x1B, 0x5B, 0x4D, buttonCode + 32, colByte, rowByte])
-        }
-    }
-
-    /// Send a scroll wheel event
-    /// In X10/normal protocol: button 64 = scroll up, button 65 = scroll down
-    /// In SGR protocol: button 64/65 with M suffix (no release for scroll)
-    private func sendScrollEvent(deltaY: CGFloat, at location: NSPoint, modifiers: NSEvent.ModifierFlags = []) {
-        let cell = pointToCell(location)
-        let cellCol = Int(cell.col)
-        let cellRow = Int(cell.row)
-
-        // Button codes: 64 = scroll up, 65 = scroll down
-        // (In X10 protocol these are buttons 4 and 5 with bit 6 set)
-        var buttonCode: UInt8 = deltaY > 0 ? 64 : 65
-        if modifiers.contains(.shift) { buttonCode += 4 }
-        if modifiers.contains(.option) { buttonCode += 8 }
-        if modifiers.contains(.control) { buttonCode += 16 }
-
-        Log.trace("RustTerminalView[\(viewId)]: sendScrollEvent - deltaY=\(deltaY), button=\(buttonCode), cell=(\(cellCol), \(cellRow))")
-
-        if isSgrMouseMode() {
-            let sequence = "\u{1b}[<\(buttonCode);\(cellCol + 1);\(cellRow + 1)M"
-            send(txt: sequence)
-        } else {
-            let colByte = UInt8(min(cellCol, 222) + 33)
-            let rowByte = UInt8(min(cellRow, 222) + 33)
-            send(data: [0x1B, 0x5B, 0x4D, buttonCode + 32, colByte, rowByte])
-        }
-    }
-
-    /// Track last reported mouse position
-    private var lastReportedMouseCell: (col: Int, row: Int)?
-
-    /// Track if button is pressed for mouse reporting
-    private var mouseReportingButtonDown: MouseButton?
-
-    // MARK: - Event Monitoring
-
-    func setEventMonitoringEnabled(_ enabled: Bool) {
-        Log.trace("RustTerminalView[\(viewId)]: setEventMonitoringEnabled(\(enabled))")
-        guard isEventMonitoringEnabled != enabled else {
-            Log.trace("RustTerminalView[\(viewId)]: setEventMonitoringEnabled - Already \(enabled ? "enabled" : "disabled")")
-            return
-        }
-        isEventMonitoringEnabled = enabled
-        guard window != nil else {
-            Log.trace("RustTerminalView[\(viewId)]: setEventMonitoringEnabled - No window, deferring")
-            return
-        }
-
-        if enabled {
-            setupEventMonitors()
-        } else {
-            removeEventMonitors()
-        }
-    }
-
-    // swiftlint:disable:next cyclomatic_complexity
-    private func setupEventMonitors() {
-        Log.trace("RustTerminalView[\(viewId)]: setupEventMonitors - Installing event monitors")
-        removeEventMonitors()
-
-        let settings = FeatureSettings.shared
-        let needsMouseMove = settings.isCmdClickPathsEnabled
-
-        // Mouse down for selection start, Cmd+click paths, Option+click cursor, mouse reporting
-        mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            guard let self = self else { return event }
-            guard event.window === window else { return event }
-            let location = convert(event.locationInWindow, from: nil)
-            guard bounds.contains(location) else { return event }
-
-            // If a SwiftUI overlay is above us, don't intercept the click
-            if let hitView = event.window?.contentView?.hitTest(event.locationInWindow),
-               hitView !== self, !hitView.isDescendant(of: self) {
-                return event
-            }
-
-            let cell = pointToCell(location)
-            Log.trace("RustTerminalView[\(viewId)]: mouseDown at (\(location.x), \(location.y)) -> cell (\(cell.col), \(cell.row))")
-
-            // Mouse reporting: Forward mouse events to TUI apps (tmux, vim, htop, etc.)
-            // Control+click bypasses mouse reporting to allow context menu/selection
-            if isMouseReportingEnabled(), !event.modifierFlags.contains(.control) {
-                Log.trace("RustTerminalView[\(viewId)]: Mouse reporting - sending left press")
-                mouseReportingButtonDown = .left
-                sendMousePress(button: .left, at: location, modifiers: event.modifierFlags)
-                mouseDownLocation = location // Track for drag reporting
-                didDragSinceMouseDown = false
-                return event
-            }
-
-            // Track mouse down for click-to-position
-            mouseDownLocation = location
-            didDragSinceMouseDown = false
-            isSelecting = false
-
-            // F03: Check for Cmd+click on paths/URLs
-            if event.modifierFlags.contains(.command), FeatureSettings.shared.isCmdClickPathsEnabled {
-                if handleCmdClick(at: location) {
-                    mouseDownLocation = nil // Don't position cursor for Cmd+click
-                    return nil // Consume the event
-                }
-            }
-
-            // Option+click to position cursor (like iTerm2)
-            if event.modifierFlags.contains(.option), FeatureSettings.shared.isOptionClickCursorEnabled {
-                if handleOptionClick(at: location) {
-                    mouseDownLocation = nil // Already handled
-                    return nil // Consume the event
-                }
-            }
-
-            // Handle double-click (word selection) and triple-click (line selection)
-            let absoluteCell = pointToCellAbsolute(location)
-            if event.clickCount == 2 {
-                // Double-click: Select word at click location (Semantic selection)
-                Log.trace("RustTerminalView[\(viewId)]: Double-click at cell (\(absoluteCell.col), \(absoluteCell.row)) - selecting word")
-                rustTerminal?.startSelection(col: absoluteCell.col, row: absoluteCell.row, selectionType: 2) // Semantic
-                needsGridSync = true
-                mouseDownLocation = nil // Prevent cursor positioning and drag start
-                scheduleCopyOnSelect()
-                return event
-            } else if event.clickCount >= 3 {
-                // Triple-click: Select entire line (Lines selection)
-                Log.trace("RustTerminalView[\(viewId)]: Triple-click at row \(absoluteCell.row) - selecting line")
-                rustTerminal?.startSelection(col: 0, row: absoluteCell.row, selectionType: 3) // Lines
-                needsGridSync = true
-                mouseDownLocation = nil // Prevent cursor positioning and drag start
-                scheduleCopyOnSelect()
-                return event
-            }
-
-            // Clear any existing selection on mouse down (single click)
-            rustTerminal?.clearSelection()
-            needsGridSync = true
-
-            return event
-        }
-
-        // Mouse dragged for selection OR mouse reporting
-        mouseDragMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
-            guard let self = self else { return event }
-            guard event.window === window else { return event }
-
-            // If a SwiftUI overlay is above us, don't intercept the drag
-            if let hitView = event.window?.contentView?.hitTest(event.locationInWindow),
-               hitView !== self, !hitView.isDescendant(of: self) {
-                return event
-            }
-
-            let location = convert(event.locationInWindow, from: nil)
-
-            // Mouse reporting: Forward drag events to TUI apps (mode 1002/1003)
-            if mouseReportingButtonDown != nil {
-                let mouseModeValue = rustTerminal?.mouseMode() ?? 0
-                let isDragMode = (mouseModeValue & MouseMode.drag) != 0
-                let isMotionMode = (mouseModeValue & MouseMode.motion) != 0
-
-                if isDragMode || isMotionMode {
-                    sendMouseMotion(at: location, buttonDown: mouseReportingButtonDown, modifiers: event.modifierFlags)
-                }
-                didDragSinceMouseDown = true
-                return event // Don't do selection when mouse reporting is active
-            }
-
-            // Selection logic (only when not mouse reporting)
-            if let downLocation = mouseDownLocation {
-                let dx = abs(location.x - downLocation.x)
-                let dy = abs(location.y - downLocation.y)
-                if dx > Self.dragThreshold || dy > Self.dragThreshold {
-                    // Use absolute coordinates for selection (accounts for scrollback offset)
-                    let currentCell = pointToCellAbsolute(location)
-
-                    if !didDragSinceMouseDown {
-                        // First drag past threshold - start selection at mouse down location
-                        let startCell = pointToCellAbsolute(downLocation)
-                        Log.trace("RustTerminalView[\(viewId)]: mouseDrag - Starting selection at absolute cell (\(startCell.col), \(startCell.row))")
-                        rustTerminal?.startSelection(col: startCell.col, row: startCell.row, selectionType: 0)
-                        isSelecting = true
-                    }
-
-                    didDragSinceMouseDown = true
-
-                    // Update selection end point
-                    if isSelecting {
-                        Log.trace("RustTerminalView[\(viewId)]: mouseDrag - Updating selection to absolute cell (\(currentCell.col), \(currentCell.row))")
-                        rustTerminal?.updateSelection(col: currentCell.col, row: currentCell.row)
-                        needsGridSync = true
-                    }
-                }
-            }
-
-            // Auto-scroll when dragging near or outside view edges during selection.
-            // Use a 10px inset so the user doesn't have to leave the view entirely.
-            if didDragSinceMouseDown, isSelecting {
-                let edgeInset: CGFloat = 10
-                if location.y < edgeInset {
-                    // Near/below bottom edge - scroll down (show later content)
-                    autoScrollDirection = 1
-                    autoScrollDistance = max(0, edgeInset - location.y)
-                    startAutoScrollTimer()
-                } else if location.y > bounds.height - edgeInset {
-                    // Near/above top edge - scroll up (show earlier content)
-                    autoScrollDirection = -1
-                    autoScrollDistance = max(0, location.y - (bounds.height - edgeInset))
-                    startAutoScrollTimer()
-                } else {
-                    // Inside bounds - stop auto-scroll
-                    stopAutoScrollTimer()
-                }
-            }
-
-            return event
-        }
-
-        // Mouse up for mouse reporting, copy-on-select, AND click-to-position cursor
-        mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
-            guard let self = self else { return event }
-
-            // Capture and clear mouse tracking state
-            let downLocation = mouseDownLocation
-            let wasDrag = didDragSinceMouseDown
-            let wasSelecting = isSelecting
-            let wasMouseReporting = mouseReportingButtonDown
-
-            mouseDownLocation = nil
-            didDragSinceMouseDown = false
-            isSelecting = false
-            mouseReportingButtonDown = nil
-
-            // Stop auto-scroll timer on mouse up
-            stopAutoScrollTimer()
-
-            guard event.window === window else { return event }
-            let location = convert(event.locationInWindow, from: nil)
-
-            // Mouse reporting: Send release event to TUI apps
-            if let reportingButton = wasMouseReporting {
-                Log.trace("RustTerminalView[\(viewId)]: Mouse reporting - sending \(reportingButton) release")
-                sendMouseRelease(button: reportingButton, at: location, modifiers: event.modifierFlags)
-                return event // Don't do click-to-position or selection when mouse reporting
-            }
-
-            guard bounds.contains(location) else { return event }
-
-            Log.trace("RustTerminalView[\(viewId)]: mouseUp at (\(location.x), \(location.y)), wasSelecting=\(wasSelecting), wasDrag=\(wasDrag)")
-
-            // Click-to-position: If no drag occurred and single click, position cursor
-            if let clickLocation = downLocation, !wasDrag {
-                let isSingleClick = event.clickCount == 1
-                let noModifiers = !event.modifierFlags.contains(.shift) && !event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.option)
-                let noActiveSelection = !hasSelection
-                let clickEnabled = FeatureSettings.shared.isClickToPositionEnabled
-
-                if isSingleClick, noModifiers, noActiveSelection, clickEnabled {
-                    if handleClickToPosition(at: clickLocation) {
-                        Log.trace("RustTerminalView[\(viewId)]: Click-to-position handled")
-                        return event
-                    }
-                }
-            }
-
-            // Copy-on-select: Option key temporarily disables
-            let optionHeld = event.modifierFlags.contains(.option)
-            if wasSelecting, !optionHeld {
-                scheduleCopyOnSelect()
-            }
-
-            return event
-        }
-        // Mouse move monitor for cursor change on hover (Cmd+hover shows hand cursor for clickable paths/URLs)
-        if needsMouseMove {
-            mouseMoveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
-                guard let self = self else { return event }
-                guard event.window === window else { return event }
-                let location = convert(event.locationInWindow, from: nil)
-                guard bounds.contains(location) else { return event }
-
-                handleMouseMove(at: location, modifiers: event.modifierFlags)
-                return event
-            }
-        }
-
-        // Scroll wheel monitor — handles both mouse reporting AND scrollback navigation.
-        // Mouse reporting mode: forward scroll events to TUI apps (vim, tmux, etc.)
-        // Normal mode: navigate scrollback history (scroll up = see earlier output)
-        scrollWheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self = self else { return event }
-            guard event.window === window else { return event }
-            let location = convert(event.locationInWindow, from: nil)
-            guard bounds.contains(location) else { return event }
-
-            // Mouse reporting mode: forward scroll to the terminal program
-            if isMouseReportingEnabled() {
-                let deltaY = event.scrollingDeltaY
-                // Ignore tiny scrolls to avoid flooding the terminal
-                if abs(deltaY) > 0.5 {
-                    sendScrollEvent(deltaY: deltaY, at: location, modifiers: event.modifierFlags)
-                    return nil // Consume event when mouse reporting
-                }
-                return event
-            }
-
-            // Normal mode: scrollback navigation.
-            // RustTerminalView is a plain NSView (not NSScrollView), so scroll events
-            // would just pass through unhandled. We handle them here directly.
-            let deltaY = event.scrollingDeltaY
-            if abs(deltaY) > 0.5 {
-                let lines = max(1, Int(abs(deltaY) / 3.0))
-                if deltaY > 0 {
-                    scrollUp(lines: lines)
-                } else {
-                    scrollDown(lines: lines)
-                }
-
-                // If actively selecting, extend the selection to track the scroll.
-                // This lets users scroll-wheel to extend selection beyond the viewport.
-                if isSelecting, let rust = rustTerminal {
-                    let mouseLocation = convert(event.locationInWindow, from: nil)
-                    let cell = pointToCellAbsolute(mouseLocation)
-                    rust.updateSelection(col: cell.col, row: cell.row)
-                    needsGridSync = true
-                }
-
-                return nil // Consume the event
-            }
-            return event
-        }
-
-        // General key event monitor - intercept ALL key events when terminal is active
-        // This ensures key input goes to Rust terminal even if a subview is first responder
-        generalKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self = self else { return event }
-            guard event.window === window else { return event }
-            guard isFirstResponderInTerminal() else { return event }
-
-            // Let snippet and history monitors handle their specific keys first
-            // (they run before this and return nil to consume)
-
-            // Route to Rust terminal
-            if handleTerminalKeyEvent(event) {
-                markGeneralKeyEventHandled(event)
-                return nil // Consume event - we handled it
-            }
-            return event // Let it propagate if not handled
-        }
-
-        Log.trace("RustTerminalView[\(viewId)]: setupEventMonitors - Event monitors installed (mouseMove=\(needsMouseMove), generalKey=true)")
-    }
-
-    private func removeEventMonitors() {
-        var removedCount = 0
-        if let monitor = mouseDownMonitor {
-            NSEvent.removeMonitor(monitor)
-            mouseDownMonitor = nil
-            removedCount += 1
-        }
-        if let monitor = mouseUpMonitor {
-            NSEvent.removeMonitor(monitor)
-            mouseUpMonitor = nil
-            removedCount += 1
-        }
-        if let monitor = mouseDragMonitor {
-            NSEvent.removeMonitor(monitor)
-            mouseDragMonitor = nil
-            removedCount += 1
-        }
-        if let monitor = mouseMoveMonitor {
-            NSEvent.removeMonitor(monitor)
-            mouseMoveMonitor = nil
-            removedCount += 1
-        }
-        if let monitor = scrollWheelMonitor {
-            NSEvent.removeMonitor(monitor)
-            scrollWheelMonitor = nil
-            removedCount += 1
-        }
-        if let monitor = keyDownMonitor {
-            NSEvent.removeMonitor(monitor)
-            keyDownMonitor = nil
-            removedCount += 1
-        }
-        if let monitor = generalKeyMonitor {
-            NSEvent.removeMonitor(monitor)
-            generalKeyMonitor = nil
-            removedCount += 1
-        }
-        // Fix #4: Also remove history monitor to prevent leaks
-        if let monitor = historyMonitor {
-            NSEvent.removeMonitor(monitor)
-            historyMonitor = nil
-            removedCount += 1
-        }
-        if removedCount > 0 {
-            Log.trace("RustTerminalView[\(viewId)]: removeEventMonitors - Removed \(removedCount) monitors")
-        }
-    }
-
-    // MARK: - F03: Cmd+Click Paths/URLs
-
-    private struct ClickableLineHit {
-        let text: String
-        let clickedUTF16Index: Int
-        let gridRow: Int
-        let gridColumn: Int
-    }
-
-    private struct URLMatch {
-        let url: String
-        let range: NSRange
-    }
-
-    /// Handle Cmd+click on file paths or URLs
-    private func handleCmdClick(at point: NSPoint) -> Bool {
-        // OSC 8 hyperlink check — takes priority over text-based URL matching
-        if let rust = rustTerminal {
-            let cell = pointToCell(point)
-            let cellIndex = Int(cell.row) * cols + Int(cell.col)
-            let linkId = gridView?.linkIdAt(index: cellIndex) ?? 0
-            if linkId > 0, let urlString = rust.getLinkUrl(linkId: linkId),
-               let url = URL(string: urlString) {
-                NSWorkspace.shared.open(url)
-                Log.info("RustTerminalView[\(viewId)]: Cmd+click - opened OSC 8 hyperlink: \(urlString)")
-                return true
-            }
-        }
-
-        guard let lineHit = getClickableLineHit(at: point) else { return false }
-        let urlMatches = findURLs(in: lineHit.text)
-        let pathMatches = PathClickHandler.findPaths(in: lineHit.text)
-        Log.debug(
-            "RustTerminalView[\(viewId)]: Cmd+click - logical hit row=\(lineHit.gridRow) col=\(lineHit.gridColumn) index=\(lineHit.clickedUTF16Index) urls=\(urlMatches.count) paths=\(pathMatches.count)"
-        )
-
-        if let urlMatch = urlMatches.first(where: { NSLocationInRange(lineHit.clickedUTF16Index, $0.range) }) {
-            PathClickHandler.openURL(urlMatch.url)
-            Log.info("RustTerminalView[\(viewId)]: Cmd+click - opened URL \(urlMatch.url)")
-            return true
-        }
-
-        if let pathMatch = PathClickHandler.findPath(in: lineHit.text, atUTF16Index: lineHit.clickedUTF16Index) {
-            let resolvedPath = PathClickHandler.resolvePath(pathMatch.path, relativeTo: currentDirectory)
-            guard FileManager.default.fileExists(atPath: resolvedPath) else {
-                logMissingCmdClickPath(resolvedPath)
-                return false
-            }
-
-            if FeatureSettings.shared.cmdClickOpensInternalEditor,
-               let callback = onFilePathClicked {
-                callback(resolvedPath, pathMatch.line, pathMatch.column)
-                Log.info("RustTerminalView[\(viewId)]: Cmd+click - opening in internal editor: \(resolvedPath)")
-            } else {
-                PathClickHandler.openPath(pathMatch, relativeTo: currentDirectory)
-                Log.info("RustTerminalView[\(viewId)]: Cmd+click - opened path \(pathMatch.path)")
-            }
-            return true
-        }
-
-        if !urlMatches.isEmpty || !pathMatches.isEmpty {
-            Log.debug(
-                "RustTerminalView[\(viewId)]: Cmd+click - no clickable target under cursor despite matches on logical line"
-            )
-        }
-        return false
-    }
-
-    private func logMissingCmdClickPath(_ path: String) {
-        let now = Date()
-        recentMissingCmdClickPaths = recentMissingCmdClickPaths.filter {
-            now.timeIntervalSince($0.value) < missingCmdClickWarningCooldown
-        }
-
-        if let last = recentMissingCmdClickPaths[path],
-           now.timeIntervalSince(last) < missingCmdClickWarningCooldown {
-            Log.trace("RustTerminalView[\(viewId)]: Cmd+click - repeated missing path suppressed: \(path)")
-            return
-        }
-
-        recentMissingCmdClickPaths[path] = now
-        Log.warn("RustTerminalView[\(viewId)]: Cmd+click - file does not exist: \(path)")
-    }
-
-    // MARK: - Click-to-Position Cursor
-
-    private func handleClickToPosition(at point: NSPoint) -> Bool {
-        guard let rust = rustTerminal else { return false }
-        guard bounds.height > 0, bounds.width > 0 else { return false }
-        guard cols > 0, rows > 0 else { return false }
-
-        // Standard macOS coordinates: y=0 at bottom, row 0 at top of terminal
-        let clickedRow = max(0, min(Int((bounds.height - point.y) / cellHeight), rows - 1))
-        let clickedCol = max(0, min(Int(point.x / cellWidth), cols - 1))
-        let cursor = rust.cursorPosition
-        let rowDiff = clickedRow - Int(cursor.row)
-        let colDiff = clickedCol - Int(cursor.col)
-
-        // Limit vertical movement to nearby rows (within 5) to avoid jumping
-        // deep into scrollback when the user intended to select text.
-        guard abs(rowDiff) <= 5 else { return false }
-
-        var sequences = ""
-        if rowDiff > 0 { sequences += String(repeating: "\u{1b}[B", count: rowDiff) }
-        else if rowDiff < 0 { sequences += String(repeating: "\u{1b}[A", count: -rowDiff) }
-        if colDiff > 0 { sequences += String(repeating: "\u{1b}[C", count: colDiff) }
-        else if colDiff < 0 { sequences += String(repeating: "\u{1b}[D", count: -colDiff) }
-        if !sequences.isEmpty {
-            send(txt: sequences)
-            Log.trace("RustTerminalView[\(viewId)]: Click-to-position - moved cursor by row=\(rowDiff), col=\(colDiff)")
-            return true
-        }
-        return false
-    }
-
-    // MARK: - Option+Click Cursor Positioning
-
-    private func handleOptionClick(at point: NSPoint) -> Bool {
-        guard let rust = rustTerminal else { return false }
-        guard bounds.height > 0, bounds.width > 0 else { return false }
-        guard cols > 0, rows > 0 else { return false }
-
-        // Standard macOS coordinates: y=0 at bottom, row 0 at top of terminal
-        let clickedRow = Int((bounds.height - point.y) / cellHeight)
-        let clickedCol = Int(point.x / cellWidth)
-        let cursor = rust.cursorPosition
-        let rowDiff = clickedRow - Int(cursor.row)
-        let colDiff = clickedCol - Int(cursor.col)
-        var sequences = ""
-        if rowDiff > 0 { sequences += String(repeating: "\u{1b}[B", count: rowDiff) }
-        else if rowDiff < 0 { sequences += String(repeating: "\u{1b}[A", count: -rowDiff) }
-        if colDiff > 0 { sequences += String(repeating: "\u{1b}[C", count: colDiff) }
-        else if colDiff < 0 { sequences += String(repeating: "\u{1b}[D", count: -colDiff) }
-        if !sequences.isEmpty {
-            send(txt: sequences)
-            Log.trace("RustTerminalView[\(viewId)]: Option+click - moved cursor by row=\(rowDiff), col=\(colDiff)")
-            return true
-        }
-        return false
-    }
-
-    // MARK: - Path/URL Detection Helpers
-
-    private func getClickableLineHit(at point: NSPoint) -> ClickableLineHit? {
-        guard let rust = rustTerminal else { return nil }
-        guard bounds.height > 0, rows > 0 else { return nil }
-        let cell = pointToCell(point)
-        let screenRow = Int(cell.row)
-        let screenCol = Int(cell.col)
-
-        // Account for display offset when scrolled up.
-        // When displayOffset > 0, we're viewing scrollback. The visible row 0 corresponds
-        // to Line(-displayOffset), not Line(0). We need to convert screen coordinates
-        // to grid coordinates to get the correct line content.
-        let displayOffset = Int(rust.displayOffset)
-        let gridRow = screenRow - displayOffset
-        guard let logicalHit = rust.getLogicalLineHit(row: gridRow, column: screenCol) else {
-            return nil
-        }
-
-        return ClickableLineHit(
-            text: logicalHit.text,
-            clickedUTF16Index: logicalHit.clickedUTF16Offset,
-            gridRow: gridRow,
-            gridColumn: screenCol
-        )
-    }
-
-    private func findURLs(in text: String) -> [URLMatch] {
-        var urls: [URLMatch] = []
-        let nsText = text as NSString
-        let range = NSRange(location: 0, length: nsText.length)
-        RegexPatterns.url.enumerateMatches(in: text, options: [], range: range) { match, _, _ in
-            guard let match = match else { return }
-            urls.append(URLMatch(url: nsText.substring(with: match.range), range: match.range))
-        }
-        return urls
-    }
-
-    private func handleMouseMove(at location: NSPoint, modifiers: NSEvent.ModifierFlags) {
-        guard FeatureSettings.shared.isCmdClickPathsEnabled else { return }
-        guard modifiers.contains(.command) else {
-            NSCursor.iBeam.set()
-            return
-        }
-        guard let lineHit = getClickableLineHit(at: location) else {
-            NSCursor.iBeam.set()
-            return
-        }
-        pathDetectionWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
-            let hasClickable = findURLs(in: lineHit.text).contains {
-                NSLocationInRange(lineHit.clickedUTF16Index, $0.range)
-            } || PathClickHandler.findPath(in: lineHit.text, atUTF16Index: lineHit.clickedUTF16Index) != nil
-            DispatchQueue.main.async {
-                if hasClickable { NSCursor.pointingHand.set() }
-                else { NSCursor.iBeam.set() }
-            }
-        }
-        pathDetectionWorkItem = work
-        DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.05, execute: work)
-    }
-
-    // MARK: - Clipboard
-
-    /// Debounced copy-on-select: cancels any pending copy, waits 50ms for Rust selection
-    /// to finalize, then copies if text changed. Called from mouseUp and any future
-    /// selection-complete triggers.
-    private func scheduleCopyOnSelect() {
-        guard FeatureSettings.shared.isCopyOnSelectEnabled else { return }
-        copyOnSelectWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self,
-                  let text = getSelection(),
-                  !text.isEmpty,
-                  text != lastSelectionText else { return }
-            Log.trace("RustTerminalView[\(viewId)]: Copy-on-select - Copying \(text.count) chars")
-            copyToClipboard(text)
-            lastSelectionText = text
-        }
-        copyOnSelectWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.050, execute: work)
-    }
-
-    private func copyToClipboard(_ text: String) {
-        Log.trace("RustTerminalView[\(viewId)]: copyToClipboard - Copying \(text.count) chars")
-        let clipboard = NSPasteboard.general
-        clipboard.clearContents()
-        clipboard.setString(text, forType: .string)
-    }
-
-    /// Copy selection to clipboard
-    @objc func copy(_ sender: Any?) {
-        if let text = getSelection(), !text.isEmpty {
-            Log.info("RustTerminalView[\(viewId)]: copy - Copying selection (\(text.count) chars)")
-            copyToClipboard(text)
-        } else {
-            Log.info("RustTerminalView[\(viewId)]: copy - No selection, sending Ctrl+C (SIGINT)")
-            send(data: [0x03])
-        }
-    }
-
-    /// Paste from clipboard
-    @objc func paste(_ sender: Any?) {
-        guard let text = NSPasteboard.general.string(forType: .string) else {
-            Log.trace("RustTerminalView[\(viewId)]: paste - Nothing to paste")
-            return
-        }
-
-        Log.info("RustTerminalView[\(viewId)]: paste - Pasting \(text.count) chars")
-        pasteText(text)
-    }
-
-    private func pasteText(_ text: String) {
-        // Check for bracketed paste mode from Rust terminal
-        // This fixes bracketed paste for vim, zsh, and other programs that enable it
-        if rustTerminal?.isBracketedPasteMode() == true {
-            Log.trace("RustTerminalView[\(viewId)]: paste - Using bracketed paste mode")
-            send(txt: "\u{1b}[200~")
-            send(txt: text)
-            send(txt: "\u{1b}[201~")
-        } else {
-            send(txt: text)
-        }
-    }
-
-    // MARK: - Feed (for compatibility)
-
-    /// Feed text directly to the display (bypasses Rust terminal)
-    func feed(text: String) {
-        Log.trace("RustTerminalView[\(viewId)]: feed(text:) - Ignored (native renderer does not support direct feed)")
-    }
-
-    /// Feed bytes directly to the display (bypasses Rust terminal)
-    func feed(byteArray: [UInt8]) {
-        Log.trace("RustTerminalView[\(viewId)]: feed(byteArray:) - Ignored (native renderer does not support direct feed)")
-    }
-
-    // MARK: - Clear
-
-    /// Clear scrollback buffer
-    /// This clears the Rust terminal's scrollback history and resets rendering state
-    func clearScrollbackBuffer() {
-        Log.info("RustTerminalView[\(viewId)]: clearScrollbackBuffer")
-
-        // Clear Rust terminal's scrollback history (frees memory)
-        rustTerminal?.clearScrollback()
-
-        clearLocalEchoOverlay()
-
-        // Clear inline images
-        inlineImages.forEach { $0.view.removeFromSuperview() }
-        inlineImages.removeAll()
-
-        // Trigger a grid sync to update the display
-        needsGridSync = true
-
-        // Notify listeners that scrollback was cleared
-        onScrollbackCleared?()
-    }
-
-    // MARK: - Context Menu
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        guard event.window === window else { return nil }
-        let location = convert(event.locationInWindow, from: nil)
-        guard bounds.contains(location) else { return nil }
-
-        // Check if Shift is held - this always forces the context menu to appear
-        // This is the standard way to bypass mouse reporting in terminal apps
-        let forceMenu = event.modifierFlags.contains(.shift)
-
-        // If mouse reporting is active (and not forced by Shift), send the right-click
-        // to the PTY instead of showing the context menu. This enables proper mouse
-        // interaction in TUI apps like vim, tmux, htop.
-        if !forceMenu, isMouseReportingEnabled() {
-            Log.trace("RustTerminalView[\(viewId)]: menu(for:) - Mouse reporting active, sending right-click to PTY")
-            sendMousePress(button: .right, at: location, modifiers: event.modifierFlags)
-            // Send release too since context menu won't consume the mouse-up event
-            sendMouseRelease(button: .right, at: location, modifiers: event.modifierFlags)
-            return nil // Don't show context menu
-        }
-
-        Log.trace("RustTerminalView[\(viewId)]: menu(for:) - Building context menu at (\(location.x), \(location.y))")
-        window?.makeFirstResponder(self)
-
-        let menu = NSMenu(title: "Terminal")
-        // Prevent macOS from injecting system Services items (e.g. "Convert text to Chinese")
-        // into our context menu. The view's validRequestor(forSendType:returnType:) advertises
-        // text capabilities, which causes the Services subsystem to add unwanted entries.
-        menu.allowsContextMenuPlugIns = false
-        let canCopy = hasSelection
-        let canPaste = NSPasteboard.general.string(forType: .string) != nil
-        let insertFromPasswordsSelector = NSSelectorFromString("_handleInsertFromPasswordsCommand:")
-        let canAutoFillFromPasswords = NSApp.target(forAction: insertFromPasswordsSelector, to: nil, from: self) != nil
-
-        // -- Edit group (standard clipboard operations) --
-        let copyItem = NSMenuItem(title: "Copy", action: #selector(contextCopy), keyEquivalent: "")
-        copyItem.target = self
-        copyItem.isEnabled = canCopy
-
-        let pasteItem = NSMenuItem(title: "Paste", action: #selector(contextPaste), keyEquivalent: "")
-        pasteItem.target = self
-        pasteItem.isEnabled = canPaste
-
-        let pasteEscapedItem = NSMenuItem(
-            title: L("terminal.context.pasteEscaped", "Paste Escaped"),
-            action: #selector(contextPasteEscaped),
-            keyEquivalent: ""
-        )
-        pasteEscapedItem.target = self
-        pasteEscapedItem.isEnabled = canPaste
-
-        let selectAllItem = NSMenuItem(title: "Select All", action: #selector(contextSelectAll), keyEquivalent: "")
-        selectAllItem.target = self
-
-        // -- Autofill --
-        let autoFillItem = NSMenuItem(
-            title: L("terminal.context.autofillPasswords", "AutoFill from Passwords..."),
-            action: #selector(contextAutoFillFromPasswords),
-            keyEquivalent: ""
-        )
-        autoFillItem.target = self
-        autoFillItem.isEnabled = canAutoFillFromPasswords
-
-        // -- Terminal operations --
-        let clearScreenItem = NSMenuItem(title: "Clear Screen", action: #selector(contextClearScreen), keyEquivalent: "")
-        clearScreenItem.target = self
-
-        let clearScrollbackItem = NSMenuItem(title: "Clear Scrollback", action: #selector(contextClearScrollback), keyEquivalent: "")
-        clearScrollbackItem.target = self
-
-        // Build menu in conventional order:
-        // 1. Copy/Paste/Select All (standard Edit menu items)
-        // 2. AutoFill (system feature, separated)
-        // 3. Terminal-specific actions (Clear)
-        menu.addItem(copyItem)
-        menu.addItem(pasteItem)
-        menu.addItem(pasteEscapedItem)
-        menu.addItem(selectAllItem)
-        menu.addItem(.separator())
-        if canAutoFillFromPasswords {
-            menu.addItem(autoFillItem)
-            menu.addItem(.separator())
-        }
-        menu.addItem(clearScreenItem)
-        menu.addItem(clearScrollbackItem)
-
-        return menu
-    }
-
-    @objc private func contextCopy(_ sender: Any?) {
-        Log.trace("RustTerminalView[\(viewId)]: contextCopy")
-        copy(self)
-    }
-
-    @objc private func contextPaste(_ sender: Any?) {
-        Log.trace("RustTerminalView[\(viewId)]: contextPaste")
-        paste(self)
-    }
-
-    @objc private func contextAutoFillFromPasswords(_ sender: Any?) {
-        window?.makeFirstResponder(self)
-        let selector = NSSelectorFromString("_handleInsertFromPasswordsCommand:")
-        if NSApp.sendAction(selector, to: nil, from: self) {
-            Log.info("RustTerminalView[\(viewId)]: Invoked Password AutoFill command")
-        } else {
-            Log.warn("RustTerminalView[\(viewId)]: Password AutoFill command unavailable in responder chain")
-        }
-    }
-
-    @objc private func contextPasteEscaped(_ sender: Any?) {
-        guard let string = NSPasteboard.general.string(forType: .string) else { return }
-        let escaped = PasteEscaper.escape(string)
-        Log.trace("RustTerminalView[\(viewId)]: contextPasteEscaped - Pasting \(escaped.count) chars (escaped from \(string.count))")
-        send(txt: escaped)
-    }
-
-    @objc private func contextSelectAll(_ sender: Any?) {
-        Log.trace("RustTerminalView[\(viewId)]: contextSelectAll")
-        // Use Rust's native selection so getSelection() returns correct text
-        // This ensures getSelection() returns the correct text after select-all
-        rustTerminal?.selectAll()
-        needsGridSync = true
-    }
-
-    @objc private func contextClearScreen(_ sender: Any?) {
-        Log.trace("RustTerminalView[\(viewId)]: contextClearScreen")
-        // Send form feed (Ctrl+L) to the PTY - the shell will respond with clear screen sequences
-        // which get processed by the Rust terminal via poll()
-        send(data: [0x0C])
-        clearSelection()
-        // Ensure grid sync happens after PTY processes the clear
-        needsGridSync = true
-    }
-
-    @objc private func contextClearScrollback(_ sender: Any?) {
-        Log.trace("RustTerminalView[\(viewId)]: contextClearScrollback")
-        clearScrollbackBuffer()
-    }
-
-    // MARK: - Cursor Line Highlight
-
-    // MARK: - Snippet Placeholder Navigation (F21)
-
-    /// Insert snippet with placeholder navigation support
-    func insertSnippet(_ insertion: SnippetInsertion) {
-        Log.trace("RustTerminalView[\(viewId)]: insertSnippet - \(insertion.text.count) chars")
-        let text = insertion.text
-
-        // Send the snippet text (with bracketed paste if enabled)
-        // Use Rust terminal's bracketed paste mode state
-        if rustTerminal?.isBracketedPasteMode() == true {
-            Log.trace("RustTerminalView[\(viewId)]: insertSnippet - Using bracketed paste mode (from Rust)")
-            send(txt: "\u{1b}[200~")
-            send(txt: text)
-            send(txt: "\u{1b}[201~")
-        } else {
-            send(txt: text)
-        }
-
-        // Check if we have placeholders to navigate
-        guard !insertion.placeholders.isEmpty else {
-            Log.trace("RustTerminalView[\(viewId)]: insertSnippet - No placeholders, done")
-            snippetState = nil
-            return
-        }
-
-        // Check if text is safe for placeholder navigation (ASCII only)
-        guard !isUnsafeForPlaceholderNavigation(text) else {
-            Log.trace("RustTerminalView[\(viewId)]: insertSnippet - Text contains non-ASCII, skipping placeholder navigation")
-            snippetState = nil
-            return
-        }
-
-        // Convert SnippetPlaceholder to internal format
-        let placeholders = insertion.placeholders.map { p in
-            RustSnippetPlaceholder(index: p.index, start: p.start, length: p.length)
-        }
-
-        // Initialize snippet navigation state
-        var state = RustSnippetNavigationState(
-            placeholders: placeholders,
-            currentIndex: 0,
-            cursorOffset: text.count,
-            finalCursorOffset: insertion.finalCursorOffset
-        )
-
-        // Move cursor to first placeholder
-        Log.trace("RustTerminalView[\(viewId)]: insertSnippet - Moving to first placeholder at offset \(placeholders[0].start)")
-        moveSnippetCursor(from: &state, to: placeholders[0].start)
-        snippetState = state
-
-        // Install key monitor for Tab navigation if not already active
-        installSnippetKeyMonitor()
-    }
-
-    /// Install key monitor for snippet Tab navigation
-    private func installSnippetKeyMonitor() {
-        // Reuse the existing keyDownMonitor if we have event monitoring enabled
-        // The snippet handling will be checked in handleSnippetKeyDown
-        guard keyDownMonitor == nil, window != nil else { return }
-
-        Log.trace("RustTerminalView[\(viewId)]: installSnippetKeyMonitor - Installing snippet key monitor")
-        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self = self else { return event }
-            guard event.window === window else { return event }
-            guard isFirstResponderInTerminal() else { return event }
-
-            if handleSnippetKeyDown(event) {
-                return nil // Consume event
-            }
-            return event
-        }
-    }
-
-    /// Handle Tab key for snippet placeholder navigation
-    private func handleSnippetKeyDown(_ event: NSEvent) -> Bool {
-        guard let state = snippetState else { return false }
-
-        let isTab = event.keyCode == UInt16(kVK_Tab)
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let hasCommandModifiers = modifiers.contains(.command) || modifiers.contains(.control) || modifiers.contains(.option)
-
-        if isTab, !hasCommandModifiers {
-            let isBackward = modifiers.contains(.shift)
-            return advanceSnippetPlaceholder(state: state, backward: isBackward)
-        }
-
-        // Any other key cancels snippet navigation
-        snippetState = nil
-        return false
-    }
-
-    /// Advance to next/previous placeholder
-    private func advanceSnippetPlaceholder(state: RustSnippetNavigationState, backward: Bool) -> Bool {
-        var updated = state
-
-        if backward {
-            // Shift+Tab: Go to previous placeholder
-            if updated.currentIndex > 0 {
-                updated.currentIndex -= 1
-                let target = updated.placeholders[updated.currentIndex].start
-                Log.trace("RustTerminalView[\(viewId)]: advanceSnippetPlaceholder - Moving backward to placeholder \(updated.currentIndex)")
-                moveSnippetCursor(from: &updated, to: target)
-                snippetState = updated
-                return true
-            }
-            // At first placeholder with Shift+Tab - move to final cursor position and exit
-            Log.trace("RustTerminalView[\(viewId)]: advanceSnippetPlaceholder - At first placeholder, moving to final position")
-            moveSnippetCursor(from: &updated, to: updated.finalCursorOffset)
-            snippetState = nil
-            return true
-        }
-
-        // Tab: Go to next placeholder
-        if updated.currentIndex + 1 < updated.placeholders.count {
-            updated.currentIndex += 1
-            let target = updated.placeholders[updated.currentIndex].start
-            Log.trace("RustTerminalView[\(viewId)]: advanceSnippetPlaceholder - Moving forward to placeholder \(updated.currentIndex)")
-            moveSnippetCursor(from: &updated, to: target)
-            snippetState = updated
-            return true
-        }
-
-        // At last placeholder with Tab - move to final cursor position and exit
-        Log.trace("RustTerminalView[\(viewId)]: advanceSnippetPlaceholder - At last placeholder, moving to final position")
-        moveSnippetCursor(from: &updated, to: updated.finalCursorOffset)
-        snippetState = nil
-        return true
-    }
-
-    /// Move cursor within snippet text using escape sequences
-    private func moveSnippetCursor(from state: inout RustSnippetNavigationState, to targetOffset: Int) {
-        let delta = state.cursorOffset - targetOffset
-        if delta > 0 {
-            // Move cursor left
-            send(txt: "\u{1B}[\(delta)D")
-        } else if delta < 0 {
-            // Move cursor right
-            send(txt: "\u{1B}[\(-delta)C")
-        }
-        state.cursorOffset = targetOffset
-    }
-
-    /// Check if text contains non-ASCII characters (unsafe for cursor movement arithmetic)
-    private func isUnsafeForPlaceholderNavigation(_ text: String) -> Bool {
-        for scalar in text.unicodeScalars {
-            if !scalar.isASCII {
-                return true
-            }
-        }
-        return false
-    }
-
-}
-
-// MARK: - Command Selection
-
-extension RustTerminalView {
-
-    /// Select current command line (including wrapped lines)
-    /// Uses Lines selection type which automatically handles wrapped lines in alacritty_terminal.
-    /// Note: Full implementation would require shell integration markers for accurate prompt detection.
-    func selectCurrentCommand() {
-        Log.trace("RustTerminalView[\(viewId)]: selectCurrentCommand - Selecting cursor line")
-
-        // Get cursor position from Rust terminal
-        guard let rust = rustTerminal else {
-            Log.warn("RustTerminalView[\(viewId)]: selectCurrentCommand - No Rust terminal")
-            return
-        }
-
-        let cursor = rust.cursorPosition
-
-        // The cursor row from Rust is the Line value (0 = first visible line)
-        // Lines selection (type 3) in alacritty_terminal handles wrapped lines automatically
-        let cursorRow = Int32(cursor.row)
-
-        // Use line selection type (3) which selects entire logical lines including wrapped portions
-        rust.startSelection(col: 0, row: cursorRow, selectionType: 3) // 3 = Lines selection
-        needsGridSync = true
-
-        Log.trace("RustTerminalView[\(viewId)]: selectCurrentCommand - Selected line at row \(cursorRow)")
-    }
-
-    /// Clear command selection state
-    func clearCommandSelectionState() {
-        Log.trace("RustTerminalView[\(viewId)]: clearCommandSelectionState")
-        clearSelection()
-    }
-
-    // MARK: - Command History Navigation
-
-    /// Install history key monitor for up/down arrow navigation at prompt
-    func installHistoryKeyMonitor() {
-        guard historyMonitor == nil else {
-            Log.trace("RustTerminalView[\(viewId)]: installHistoryKeyMonitor - Already installed")
-            return
-        }
-        Log.trace("RustTerminalView[\(viewId)]: installHistoryKeyMonitor - Installing history key monitor")
-        historyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self = self else { return event }
-            guard event.window === window else { return event }
-            guard isFirstResponderInTerminal() else { return event }
-            if handleHistoryKeyDown(event) {
-                return nil // Consume event
-            }
-            return event
-        }
-    }
-
-    /// Remove history key monitor (cleanup)
-    private func removeHistoryMonitor() {
-        if let monitor = historyMonitor {
-            Log.trace("RustTerminalView[\(viewId)]: removeHistoryMonitor - Removing history monitor")
-            NSEvent.removeMonitor(monitor)
-            historyMonitor = nil
-        }
-    }
-
-    /// Handle history key events (up/down arrows at prompt)
-    private func handleHistoryKeyDown(_ event: NSEvent) -> Bool {
-        let keyCode = event.keyCode
-        let isUp = keyCode == UInt16(kVK_UpArrow)
-        let isDown = keyCode == UInt16(kVK_DownArrow)
-        guard isUp || isDown else { return false }
-
-        // Only intercept at shell prompt - let programs like vim/less handle arrows
-        guard isAtPrompt?() == true else { return false }
-
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let hasOption = modifiers.contains(.option)
-        // Don't intercept if Cmd/Ctrl/Shift are held (other shortcuts)
-        let hasCmdCtrlShift = modifiers.contains(.command) || modifiers.contains(.control) || modifiers.contains(.shift)
-        if hasCmdCtrlShift { return false }
-
-        let command: String?
-        if hasOption {
-            // Option+Arrow: Global (cross-tab) history
-            command = isUp
-                ? CommandHistoryManager.shared.previousGlobal()
-                : CommandHistoryManager.shared.nextGlobal()
-        } else {
-            // Arrow only: Per-tab history
-            command = isUp
-                ? CommandHistoryManager.shared.previousInTab(tabIdentifier)
-                : CommandHistoryManager.shared.nextInTab(tabIdentifier)
-        }
-
-        guard let cmd = command else {
-            Log.trace("RustTerminalView[\(viewId)]: handleHistoryKeyDown - No more history")
-            return true // No more history, consume anyway
-        }
-
-        // Avoid re-injecting the same command on key repeat (can spam the line)
-        if event.isARepeat, cmd == lastHistoryCommand, lastHistoryWasUp == isUp {
-            return true
-        }
-        lastHistoryCommand = cmd
-        lastHistoryWasUp = isUp
-
-        Log.trace("RustTerminalView[\(viewId)]: handleHistoryKeyDown - Inserting history: '\(cmd.prefix(30))...'")
-
-        // Clear current input line: Ctrl+A (start of line) + Ctrl+K (kill to end)
-        send(txt: "\u{01}\u{0B}")
-        if !cmd.isEmpty {
-            send(txt: cmd)
-        }
-        return true
-    }
-
-    // MARK: - Helper Methods
-
-    /// Check if this view or a descendant is first responder
-    private func isFirstResponderInTerminal() -> Bool {
-        guard let responder = window?.firstResponder as? NSView else { return false }
-        return responder === self || responder.isDescendant(of: self) || responder === gridView
-    }
-
-    // MARK: - Debug and Diagnostics
-
-    /// Get comprehensive debug state as a dictionary (avoids exposing private FFI types).
-    /// Returns nil if the terminal is not initialized.
-    func getDebugState() -> [String: Any]? {
-        guard let state = rustTerminal?.debugState() else { return nil }
-        return [
-            "id": state.id,
-            "cols": state.cols,
-            "rows": state.rows,
-            "historySize": state.historySize,
-            "displayOffset": state.displayOffset,
-            "cursorCol": state.cursorCol,
-            "cursorRow": state.cursorRow,
-            "bytesSent": state.bytesSent,
-            "bytesReceived": state.bytesReceived,
-            "uptimeMs": state.uptimeMs,
-            "gridDirty": state.gridDirty,
-            "running": state.running,
-            "hasSelection": state.hasSelection,
-            "mouseMode": state.mouseMode,
-            "bracketedPaste": state.bracketedPaste,
-            "appCursor": state.appCursor,
-            "pollCount": state.pollCount,
-            "avgPollTimeUs": state.avgPollTimeUs,
-            "maxPollTimeUs": state.maxPollTimeUs,
-            "avgGridSnapshotTimeUs": state.avgGridSnapshotTimeUs,
-            "maxGridSnapshotTimeUs": state.maxGridSnapshotTimeUs
-        ]
-    }
-
-    /// Get the full buffer text (visible + scrollback) for debugging.
-    func getFullBufferText() -> String? {
-        return rustTerminal?.fullBufferText()
-    }
-
-    /// Reset performance metrics.
-    func resetPerformanceMetrics() {
-        rustTerminal?.resetMetrics()
-        Log.info("RustTerminalView[\(viewId)]: Performance metrics reset")
-    }
-
-    /// Log comprehensive debug state to the console.
-    func dumpDebugState() {
-        Log.info("RustTerminalView[\(viewId)]: === DEBUG STATE DUMP ===")
-        Log.info("  View ID: \(viewId)")
-        Log.info("  Is Started: \(isTerminalStarted)")
-        Log.info("  Dimensions: \(cols)x\(rows)")
-        Log.info("  Cell Size: \(cellWidth)x\(cellHeight)")
-        Log.info("  Bounds: \(bounds)")
-        Log.info("  Application Cursor Mode: \(applicationCursorMode)")
-        Log.info("  Allow Mouse Reporting: \(allowMouseReporting)")
-        Log.info("  Current Directory: \(currentDirectory)")
-        Log.info("  Shell PID: \(shellPid)")
-        Log.info("  Sync Count: \(Self.syncCount)")
-
-        if let state = rustTerminal?.debugState() {
-            Log.info("  --- Rust Terminal State ---")
-            Log.info("    Terminal ID: \(state.id)")
-            Log.info("    Grid: \(state.cols)x\(state.rows)")
-            Log.info("    History: \(state.historySize) lines, offset=\(state.displayOffset)")
-            Log.info("    Cursor: (\(state.cursorCol), \(state.cursorRow))")
-            Log.info("    I/O: sent=\(state.bytesSent) bytes, received=\(state.bytesReceived) bytes")
-            Log.info("    Uptime: \(state.uptimeMs)ms")
-            Log.info("    Running: \(state.running), Grid Dirty: \(state.gridDirty)")
-            Log.info("    Has Selection: \(state.hasSelection)")
-            Log.info("    Mouse Mode: \(state.mouseMode)")
-            Log.info("    Bracketed Paste: \(state.bracketedPaste), App Cursor: \(state.appCursor)")
-            Log.info("    --- Performance Metrics ---")
-            Log.info("    Poll Count: \(state.pollCount)")
-            Log.info("    Avg Poll Time: \(state.avgPollTimeUs)µs, Max: \(state.maxPollTimeUs)µs")
-            Log.info("    Avg Snapshot Time: \(state.avgGridSnapshotTimeUs)µs, Max: \(state.maxGridSnapshotTimeUs)µs")
-        } else {
-            Log.info("  --- Rust Terminal Not Available ---")
-        }
-
-        Log.info("RustTerminalView[\(viewId)]: === END DEBUG STATE ===")
-    }
-
-    // MARK: - Stress Testing Support
-
-    /// Send a large amount of data to test throughput.
-    /// - Parameters:
-    ///   - lineCount: Number of lines to generate
-    ///   - lineLength: Characters per line
-    ///   - completion: Called when stress test completes with total bytes sent
-    func stressTest(lineCount: Int, lineLength: Int = 80, completion: @escaping (Int) -> Void) {
-        Log.info("RustTerminalView[\(viewId)]: Starting stress test: \(lineCount) lines x \(lineLength) chars")
-        resetPerformanceMetrics()
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-
-            var totalBytes = 0
-            let startTime = Date()
-
-            for i in 0 ..< lineCount {
-                let lineNum = String(format: "%06d: ", i)
-                let padding = String(repeating: "X", count: max(0, lineLength - lineNum.count - 1))
-                let line = lineNum + padding + "\n"
-                let bytes = Array(line.utf8)
-
-                DispatchQueue.main.async {
-                    self.rustTerminal?.sendBytes(bytes)
-                }
-                totalBytes += bytes.count
-
-                // Yield periodically to avoid blocking
-                if i.isMultiple(of: 1000) {
-                    Thread.sleep(forTimeInterval: 0.001)
-                }
-            }
-
-            let elapsed = Date().timeIntervalSince(startTime)
-            Log.info("RustTerminalView[\(viewId)]: Stress test complete: \(totalBytes) bytes in \(elapsed)s (\(Int(Double(totalBytes) / elapsed / 1024)) KB/s)")
-
-            DispatchQueue.main.async {
-                completion(totalBytes)
-            }
-        }
-    }
-
-    /// Run a comprehensive diagnostic test.
-    /// Tests basic functionality and reports results.
-    func runDiagnostics() -> [String: Any] {
-        Log.info("RustTerminalView[\(viewId)]: Running diagnostics...")
-
-        var results: [String: Any] = [:]
-
-        // Basic state
-        results["viewId"] = viewId
-        results["isStarted"] = isTerminalStarted
-        results["dimensions"] = "\(cols)x\(rows)"
-        results["shellPid"] = shellPid
-
-        // Check components
-        results["hasRustTerminal"] = rustTerminal != nil
-        results["hasGridView"] = gridView != nil
-
-        // Performance metrics
-        if let state = rustTerminal?.debugState() {
-            results["pollCount"] = state.pollCount
-            results["avgPollTimeUs"] = state.avgPollTimeUs
-            results["maxPollTimeUs"] = state.maxPollTimeUs
-            results["bytesReceived"] = state.bytesReceived
-            results["bytesSent"] = state.bytesSent
-            results["uptimeMs"] = state.uptimeMs
-        }
-
-        Log.info("RustTerminalView[\(viewId)]: Diagnostics complete: \(results)")
-        return results
-    }
-
-    // MARK: - Wide Character and Long Line Support
-
-    /// Validate that wide characters (CJK, emoji) are handled correctly.
-    /// Returns true if the terminal properly handles wide characters.
-    func validateWideCharacterSupport() -> Bool {
-        // Wide characters should occupy 2 cells
-        // This is handled by alacritty_terminal's unicode width calculation
-        Log.info("RustTerminalView[\(viewId)]: Wide character support is handled by alacritty_terminal")
-        return true
-    }
-
-    /// Maximum line length supported before wrapping.
-    /// alacritty_terminal handles line wrapping automatically.
-    var maxLineLength: Int {
-        return cols
-    }
-}
-
-// MARK: - Snippet Navigation State (Internal)
-
-/// Internal state for snippet placeholder navigation in RustTerminalView
-private struct RustSnippetNavigationState {
-    var placeholders: [RustSnippetPlaceholder]
-    var currentIndex: Int
-    var cursorOffset: Int
-    var finalCursorOffset: Int
-}
-
-/// Internal placeholder representation
-private struct RustSnippetPlaceholder {
-    let index: Int
-    let start: Int
-    let length: Int
-}
-
-// MARK: - NSTextInputClient
-
-extension RustTerminalView: NSTextInputClient {
-
-    func insertText(_ string: Any, replacementRange: NSRange) {
-        // Clear marked text — composition is now committed
-        markedTextStorage = nil
-        markedSelectedRange = NSRange(location: NSNotFound, length: 0)
-
-        let text: String
-        if let s = string as? String {
-            text = s
-        } else if let attr = string as? NSAttributedString {
-            text = attr.string
-        } else {
-            return
-        }
-        guard !text.isEmpty else { return }
-
-        if handlingKeyDown {
-            // Regular keyboard input routed through inputContext — send directly
-            applyLocalEchoForText(text)
-            Log.trace("RustTerminalView[\(viewId)]: insertText (keyboard) — \(text.count) chars")
-            send(txt: text)
-        } else {
-            // External injection (Password AutoFill, Services, programmatic)
-            Log.info("RustTerminalView[\(viewId)]: insertText (external, e.g. Password AutoFill) — \(text.count) chars")
-            pasteText(text)
-        }
-    }
-
-    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
-        let text: String
-        if let s = string as? String {
-            text = s
-        } else if let attr = string as? NSAttributedString {
-            text = attr.string
-        } else {
-            text = ""
-        }
-        if text.isEmpty {
-            markedTextStorage = nil
-            markedSelectedRange = NSRange(location: NSNotFound, length: 0)
-        } else {
-            markedTextStorage = text
-            markedSelectedRange = selectedRange
-        }
-    }
-
-    func unmarkText() {
-        markedTextStorage = nil
-        markedSelectedRange = NSRange(location: NSNotFound, length: 0)
-    }
-
-    func selectedRange() -> NSRange {
-        return NSRange(location: NSNotFound, length: 0)
-    }
-
-    func markedRange() -> NSRange {
-        guard let marked = markedTextStorage else {
-            return NSRange(location: NSNotFound, length: 0)
-        }
-        return NSRange(location: 0, length: marked.utf16.count)
-    }
-
-    func hasMarkedText() -> Bool {
-        return markedTextStorage != nil
-    }
-
-    func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
-        return nil
-    }
-
-    func validAttributedString(for proposedString: NSAttributedString, selectedRange: NSRange) -> NSAttributedString? {
-        return proposedString
-    }
-
-    func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
-        // Return the cursor position so popups (e.g. IME candidate window) appear nearby.
-        // caretFrame is in view-local coordinates — must convert to window coords first.
-        let viewFrame = caretFrame
-        guard let window = window else { return .zero }
-        let windowFrame = convert(viewFrame, to: nil)
-        return window.convertToScreen(windowFrame)
-    }
-
-    func characterIndex(for point: NSPoint) -> Int {
-        return NSNotFound
-    }
-
-    func validAttributesForMarkedText() -> [NSAttributedString.Key] {
-        return []
-    }
-}
-
-// MARK: - Drag & Drop (File Paths + Image Base64)
-
-extension RustTerminalView {
-    /// Register for file and image drag types. Called from setupViews().
-    func registerDragTypes() {
-        registerForDraggedTypes([.fileURL, .png, .tiff])
-    }
-
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        // Accept copy for files and images
-        if sender.draggingPasteboard.availableType(from: [.fileURL, .png, .tiff]) != nil {
-            return .copy
-        }
-        return []
-    }
-
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        let pboard = sender.draggingPasteboard
-        let optionHeld = NSEvent.modifierFlags.contains(.option)
-
-        // Case 1: File URL(s) dropped
-        if let urls = pboard.readObjects(forClasses: [NSURL.self], options: [
-            .urlReadingFileURLsOnly: true
-        ]) as? [URL], !urls.isEmpty {
-            if optionHeld, urls.count == 1, isImageFile(urls[0]) {
-                // Option+drop image file → base64 encode for AI CLIs
-                return pasteImageAsBase64(fileURL: urls[0])
-            }
-            // Default: paste file path(s) as shell-escaped text
-            let paths = urls.map { shellEscape($0.path) }
-            pasteText(paths.joined(separator: " "))
-            return true
-        }
-
-        // Case 2: Raw image data dropped (e.g., from Preview, Safari)
-        if let imageData = pboard.data(forType: .png) ?? pboard.data(forType: .tiff) {
-            return pasteImageData(imageData)
-        }
-
-        return false
-    }
-
-    // MARK: - Image Helpers
-
-    private func isImageFile(_ url: URL) -> Bool {
-        let exts: Set = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif", "svg"]
-        return exts.contains(url.pathExtension.lowercased())
-    }
-
-    private func pasteImageAsBase64(fileURL: URL) -> Bool {
-        guard let data = try? Data(contentsOf: fileURL) else { return false }
-        return pasteImageData(data, filename: fileURL.lastPathComponent)
-    }
-
-    /// Max image size for base64 drop (10MB raw → ~13MB base64)
-    private static let maxImageDropSize = 10_000_000
-
-    private func pasteImageData(_ data: Data, filename: String? = nil) -> Bool {
-        guard data.count < Self.maxImageDropSize else {
-            Log.warn("RustTerminalView[\(viewId)]: dropped image too large (\(data.count) bytes, limit \(Self.maxImageDropSize))")
-            NSSound.beep()
-            return false
-        }
-        let b64 = data.base64EncodedString()
-        let name = filename ?? "image.png"
-        // Format as a data URI that AI CLIs can consume.
-        // Claude Code expects: ![image](data:image/png;base64,...)
-        let ext = (name as NSString).pathExtension.lowercased()
-        let mime = imageMIME(for: ext)
-        let payload = "![" + name + "](data:" + mime + ";base64," + b64 + ")"
-        pasteText(payload)
-        Log.info("RustTerminalView[\(viewId)]: dropped image \(name) (\(data.count) bytes, \(b64.count) base64 chars)")
-        return true
-    }
-
-    private func imageMIME(for ext: String) -> String {
-        switch ext {
-        case "png": return "image/png"
-        case "jpg", "jpeg": return "image/jpeg"
-        case "gif": return "image/gif"
-        case "webp": return "image/webp"
-        case "svg": return "image/svg+xml"
-        case "bmp": return "image/bmp"
-        default: return "image/png"
-        }
-    }
-
-    private func shellEscape(_ path: String) -> String {
-        // Single-quote the path, escaping any single quotes within
-        return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
 }

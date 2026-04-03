@@ -81,10 +81,10 @@ struct AgentDashboardView: View {
             Image(systemName: "person.3")
                 .font(.system(size: 32))
                 .foregroundStyle(.tertiary)
-            Text("No agents running in this repo")
+            Text(L("dashboard.noAgents", "No agents running in this repo"))
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
-            Text("Start an AI agent in a tab with this repository to see it here.")
+            Text(L("dashboard.noAgents.help", "Start an AI agent in a tab with this repository to see it here."))
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -121,7 +121,7 @@ struct AgentDashboardView: View {
 
                 Spacer()
 
-                Text("Turns: \(card.turnCount)")
+                Text(String(format: L("dashboard.turns", "Turns: %d"), card.turnCount))
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
 
@@ -147,13 +147,13 @@ struct AgentDashboardView: View {
             // Last tool + approval status
             HStack {
                 if let tool = card.lastToolUsed {
-                    Text("Last: \(tool)")
+                    Text(String(format: L("dashboard.lastTool", "Last: %@"), tool))
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                 }
 
                 if card.pendingApproval != nil {
-                    Label("Awaiting approval", systemImage: "clock.badge.questionmark")
+                    Label(L("dashboard.awaitingApproval", "Awaiting approval"), systemImage: "clock.badge.questionmark")
                         .font(.system(size: 10))
                         .foregroundStyle(.orange)
                 }
@@ -164,7 +164,7 @@ struct AgentDashboardView: View {
                 Button {
                     model.stopAgent(sessionID: card.sessionID)
                 } label: {
-                    Text("Stop")
+                    Text(L("dashboard.stop", "Stop"))
                         .font(.system(size: 9))
                 }
                 .buttonStyle(.plain)
@@ -177,7 +177,7 @@ struct AgentDashboardView: View {
                             message: "\(card.backendName): changes from turn \(card.turnCount)"
                         )
                     } label: {
-                        Text("Commit")
+                        Text(L("repo.commit", "Commit"))
                             .font(.system(size: 9))
                     }
                     .buttonStyle(.plain)
@@ -187,7 +187,7 @@ struct AgentDashboardView: View {
                 Button {
                     model.switchToTab(tabID: card.tabID)
                 } label: {
-                    Label("Tab", systemImage: "arrow.right.square")
+                    Label(L("dashboard.tab", "Tab"), systemImage: "arrow.right.square")
                         .font(.system(size: 9))
                 }
                 .buttonStyle(.plain)
@@ -207,7 +207,7 @@ struct AgentDashboardView: View {
 
     private var conflictSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("Conflicts", systemImage: "exclamationmark.triangle.fill")
+            Label(L("dashboard.conflicts", "Conflicts"), systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.orange)
 
@@ -239,12 +239,12 @@ struct AgentDashboardView: View {
 
     private var timelineSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Timeline")
+            Text(L("dashboard.timeline", "Timeline"))
                 .font(.system(size: 12, weight: .semibold))
                 .padding(.bottom, 4)
 
             if model.timeline.isEmpty {
-                Text("No events yet")
+                Text(L("dashboard.noEvents", "No events yet"))
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
                     .italic()

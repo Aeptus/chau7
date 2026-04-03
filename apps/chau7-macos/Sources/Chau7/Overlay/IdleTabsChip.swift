@@ -26,7 +26,7 @@ struct IdleTabsChip: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
-        .help("Idle tabs (\(tabs.count))")
+        .help(String(format: L("overlay.idleTabs.help", "Idle tabs (%d)"), tabs.count))
         .popover(isPresented: $isExpanded, arrowEdge: .bottom) {
             idleTabsList
         }
@@ -50,7 +50,7 @@ struct IdleTabsChip: View {
                 }
                 isExpanded = false
             } label: {
-                Label("Close All Idle", systemImage: "xmark.circle")
+                Label(L("overlay.closeAllIdle", "Close All Idle"), systemImage: "xmark.circle")
                     .font(.system(size: 11))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())

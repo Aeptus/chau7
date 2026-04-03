@@ -13,7 +13,7 @@ struct RunsExplorerView: View {
                 if runs.isEmpty {
                     VStack {
                         Spacer()
-                        Text("No AI runs recorded yet")
+                        Text(L("explorer.runs.noRuns", "No AI runs recorded yet"))
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
@@ -21,13 +21,13 @@ struct RunsExplorerView: View {
                 } else {
                     // Summary bar
                     HStack {
-                        Text("\(runs.count) runs")
+                        Text(String(format: L("explorer.runs.count", "%d runs"), runs.count))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                         Spacer()
                         let withTokens = runs.filter { $0.tokenUsage.hasAnyTokens }.count
                         if withTokens > 0 {
-                            Text("\(withTokens) with token data")
+                            Text(String(format: L("explorer.runs.withTokens", "%d with token data"), withTokens))
                                 .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
                         }
@@ -52,7 +52,7 @@ struct RunsExplorerView: View {
             } else {
                 VStack {
                     Spacer()
-                    Text("Select a run to view details")
+                    Text(L("explorer.runs.selectRun", "Select a run to view details"))
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
@@ -187,7 +187,7 @@ private struct RunDetailView: View {
                 // Tool call breakdown
                 if !toolSummary.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Tool Calls")
+                        Text(L("explorer.runs.toolCalls", "Tool Calls"))
                             .font(.system(size: 13, weight: .semibold))
 
                         let maxCount = toolSummary.first?.count ?? 1
@@ -215,7 +215,7 @@ private struct RunDetailView: View {
                 } else {
                     VStack {
                         Spacer()
-                        Text("No tool calls recorded for this run")
+                        Text(L("explorer.runs.noToolCalls", "No tool calls recorded for this run"))
                             .foregroundStyle(.secondary)
                         Spacer()
                     }

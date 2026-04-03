@@ -81,7 +81,7 @@ struct MenuBarPanelView: View {
             Circle()
                 .fill(model.isMonitoring ? Color.green : Color.gray)
                 .frame(width: 8, height: 8)
-                .help(model.isMonitoring ? "Monitoring active" : "Monitoring paused")
+                .help(model.isMonitoring ? L("statusbar.monitoringActive", "Monitoring active") : L("statusbar.monitoringPaused", "Monitoring paused"))
 
             Spacer()
 

@@ -34,16 +34,16 @@ struct BugReportDialogView: View {
             actionBar
         }
         .frame(minWidth: 540, minHeight: 520)
-        .alert("Report Saved", isPresented: $showSavedAlert) {
-            Button("Show in Finder") {
+        .alert(L("alert.bugReport.saved", "Report Saved"), isPresented: $showSavedAlert) {
+            Button(L("alert.bugReport.showInFinder", "Show in Finder")) {
                 if let path = savedPath {
                     let url = URL(fileURLWithPath: path).deletingLastPathComponent()
                     NSWorkspace.shared.open(url)
                 }
             }
-            Button("OK", role: .cancel) {}
+            Button(L("action.ok", "OK"), role: .cancel) {}
         } message: {
-            Text("Saved to \(savedPath ?? "reports folder")")
+            Text(String(format: L("alert.bugReport.savedMessage", "Saved to %@"), savedPath ?? "reports folder"))
         }
     }
 

@@ -12,11 +12,11 @@ struct HistoryExplorerView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("Search commands...", text: $searchText)
+                TextField(L("placeholder.searchCommands", "Search commands..."), text: $searchText)
                     .textFieldStyle(.plain)
                     .onSubmit { reload() }
                 Spacer()
-                Text("\(totalCount) total records")
+                Text(String(format: L("explorer.history.totalRecords", "%d total records"), totalCount))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }

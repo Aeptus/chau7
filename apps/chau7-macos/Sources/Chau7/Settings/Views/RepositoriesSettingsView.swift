@@ -109,27 +109,27 @@ struct RepositoriesSettingsView: View {
 
                 // Description
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Description")
+                    Text(L("repos.description", "Description"))
                         .font(.system(size: 12, weight: .medium))
-                    TextField("What is this repo for?", text: $editDescription)
+                    TextField(L("placeholder.repoDescription", "What is this repo for?"), text: $editDescription)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit { saveMetadata(for: repo.path) }
                 }
 
                 // Labels
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Labels")
+                    Text(L("repos.labels", "Labels"))
                         .font(.system(size: 12, weight: .medium))
-                    TextField("backend, rust, api (comma-separated)", text: $editLabels)
+                    TextField(L("placeholder.repoLabels", "backend, rust, api (comma-separated)"), text: $editLabels)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit { saveMetadata(for: repo.path) }
                 }
 
                 // Favorite files
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Favorite Files")
+                    Text(L("repos.favoriteFiles", "Favorite Files"))
                         .font(.system(size: 12, weight: .medium))
-                    Text("Relative paths, one per line")
+                    Text(L("repos.favoriteFiles.help", "Relative paths, one per line"))
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                     TextEditor(text: $editFavorites)
@@ -141,7 +141,7 @@ struct RepositoriesSettingsView: View {
                 // Save button
                 HStack {
                     Spacer()
-                    Button("Save") {
+                    Button(L("action.save", "Save")) {
                         saveMetadata(for: repo.path)
                     }
                     .keyboardShortcut(.return, modifiers: .command)
