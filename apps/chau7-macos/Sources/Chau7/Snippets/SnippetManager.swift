@@ -668,13 +668,8 @@ final class SnippetManager {
         text = text.replacingOccurrences(of: "${cwd}", with: currentDirectory)
         text = text.replacingOccurrences(of: "${home}", with: RuntimeIsolation.homePath())
 
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        text = text.replacingOccurrences(of: "${date}", with: dateFormatter.string(from: Date()))
-
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "HH:mm:ss"
-        text = text.replacingOccurrences(of: "${time}", with: timeFormatter.string(from: Date()))
+        text = text.replacingOccurrences(of: "${date}", with: LocalizedFormatters.formatShortDate(Date()))
+        text = text.replacingOccurrences(of: "${time}", with: LocalizedFormatters.formatShortTime(Date()))
 
         if text.contains("${clip}") {
             let clip = NSPasteboard.general.string(forType: .string) ?? ""

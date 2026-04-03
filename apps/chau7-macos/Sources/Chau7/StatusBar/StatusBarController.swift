@@ -1240,11 +1240,9 @@ private struct LiveSessionCard: View {
 private struct TimelineRow: View {
     let entry: UnifiedTimelineEntry
 
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss"
-        return f
-    }()
+    private static var timeFormatter: DateFormatter {
+        LocalizedFormatters.mediumTime
+    }
 
     var body: some View {
         HStack(spacing: 8) {

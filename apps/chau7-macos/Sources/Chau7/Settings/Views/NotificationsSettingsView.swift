@@ -1878,9 +1878,7 @@ private struct NotificationHistoryEntryRow: View {
     let entry: NotificationHistory.Entry
 
     private var timeString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: entry.timestamp)
+        LocalizedFormatters.mediumTime.string(from: entry.timestamp)
     }
 
     var body: some View {

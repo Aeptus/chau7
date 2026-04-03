@@ -428,11 +428,9 @@ struct AgentDashboardView: View {
         return "\(count)"
     }
 
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss"
-        return f
-    }()
+    private static var timeFormatter: DateFormatter {
+        LocalizedFormatters.mediumTime
+    }
 }
 
 // MARK: - Start Agent Sheet

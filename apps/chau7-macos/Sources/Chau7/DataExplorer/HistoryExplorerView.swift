@@ -124,8 +124,6 @@ private struct HistoryRecordRow: View {
     }
 
     private func formatDate(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss"
-        return f.string(from: date)
+        LocalizedFormatters.mediumTime.string(from: date)
     }
 }
