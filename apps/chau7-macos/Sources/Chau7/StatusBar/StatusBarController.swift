@@ -50,7 +50,7 @@ final class StatusBarController: NSObject {
         popover?.behavior = .applicationDefined
         popover?.animates = true
         popover?.contentViewController = NSHostingController(
-            rootView: StatusBarPanelView(viewModel: panelViewModel)
+            rootView: StatusBarPanelView(viewModel: panelViewModel).localized()
         )
 
         // Monitor for clicks outside to close popover (global events = clicks in other apps)

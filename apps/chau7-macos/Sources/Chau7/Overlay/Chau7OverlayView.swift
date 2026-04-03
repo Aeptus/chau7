@@ -968,6 +968,7 @@ private struct ToolbarTabBarView: View {
         }
         .padding(.trailing, 8)
         .frame(minWidth: 180)
+        .localizedLayout()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(ToolbarBackgroundView())
         // Report actual rendered size for visibility-based recovery
