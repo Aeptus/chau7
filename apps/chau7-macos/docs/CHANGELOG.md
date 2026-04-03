@@ -328,6 +328,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.30 | 2026-04-03 | Localization bundles now include the missing shipped UI strings that were still being requested from Swift source, reducing fallback-to-key behavior across English, Arabic, French, and Hebrew |
 | 0.5.29 | 2026-04-03 | Public docs now have a canonical ownership map, stale onboarding duplicates and planning artifacts were removed, and staged doc checks reject absolute filesystem links, stale repo URLs, and TODO markers in the public README |
 | 0.5.28 | 2026-04-02 | Codex resume metadata now clears claimed stale explicit session IDs when no deterministic replacement exists, preventing repeated save/restore conflicts across same-repo tabs |
 | 0.5.27 | 2026-04-02 | Tab-style delivery now revalidates stale explicit tab IDs against an exact live session match before failing, so banners can still highlight the recovered tab after window/tab registration drift |

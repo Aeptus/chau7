@@ -310,3 +310,4 @@ Debug,Technology Licenses & Acknowledgments,"In-app help page documenting monore
 Documentation,Remote Docs Colocation,"Moved the remote protocol spec next to services/chau7-remote and split iOS-specific remote UX notes into apps/chau7-ios/docs, removing the orphaned top-level remote-control docs folder",Shipped,No
 Documentation,Canonical Public Doc Ownership,"Root docs now define canonical public entry points, collapse stale duplicate onboarding guidance, and remove planning/assessment artifacts from the public repository",Shipped,No
 Documentation,Staged Doc Hygiene Checks,"Staged doc validation now rejects absolute filesystem links, stale repository URLs, stale moved-doc link targets, and TODO markers in the public root README",Shipped,No
+Localization,Missing Shipped UI Keys,"English, Arabic, French, and Hebrew localization bundles now include the missing shipped UI string keys that were still being requested from Swift source",Shipped,No

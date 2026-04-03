@@ -590,6 +590,7 @@ Key patterns:
 
 ## Recent Telemetry Integrity
 
+- English, Arabic, French, and Hebrew localization bundles now include the previously missing shipped UI string keys that were still being requested from Swift source.
 - Public documentation now has a canonical ownership map, stale duplicate onboarding docs were collapsed, and planning/assessment artifacts were removed from the repository's public surface.
 - Staged doc checks now reject absolute filesystem links, stale repository URLs, and TODO markers in the public root README before a commit lands.
 
