@@ -1156,7 +1156,7 @@ final class HelpWindowController {
 
     func show(topicID: String? = nil) {
         let view = HelpWindowView(initialTopicID: topicID)
-        let hostingView = NSHostingView(rootView: view)
+        let hostingView = NSHostingView(rootView: view.localized())
 
         if let existing = window {
             existing.contentView = hostingView

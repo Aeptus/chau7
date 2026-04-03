@@ -359,7 +359,7 @@ final class KeyboardShortcutsWindowController {
         }
 
         let view = KeyboardShortcutsEditorView()
-        let hostingView = NSHostingView(rootView: view)
+        let hostingView = NSHostingView(rootView: view.localized())
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 600),

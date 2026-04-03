@@ -648,7 +648,7 @@ final class CommandPaletteController {
             }
         )
 
-        let hostingView = NSHostingView(rootView: AnyView(view))
+        let hostingView = NSHostingView(rootView: AnyView(view.localized()))
         self.hostingView = hostingView
 
         // Calculate size

@@ -12,7 +12,7 @@ enum ChangedFilesPanel {
         panel?.close()
 
         let view = ChangedFilesView(files: files, directory: directory)
-        let hosting = NSHostingController(rootView: view)
+        let hosting = NSHostingController(rootView: view.localized())
 
         let p = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: min(CGFloat(files.count * 24 + 80), 500)),
