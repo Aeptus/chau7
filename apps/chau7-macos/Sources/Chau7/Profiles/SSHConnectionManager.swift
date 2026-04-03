@@ -846,7 +846,7 @@ final class SSHConnectionWindowController {
             self?.connect(to: connection)
         }
 
-        let hostingView = NSHostingView(rootView: view)
+        let hostingView = NSHostingView(rootView: view.localized())
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 500),

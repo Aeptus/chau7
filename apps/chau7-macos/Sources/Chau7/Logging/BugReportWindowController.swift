@@ -45,7 +45,7 @@ final class BugReportWindowController: NSObject, NSWindowDelegate {
             self?.window = nil
         }
 
-        let hostingView = NSHostingView(rootView: view)
+        let hostingView = NSHostingView(rootView: view.localized())
 
         let newWindow = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 640, height: 720),

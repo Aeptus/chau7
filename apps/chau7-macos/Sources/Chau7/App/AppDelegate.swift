@@ -333,7 +333,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         // Create the settings view with its own state
         let settingsView = SettingsWindowView(model: model, overlayModel: overlayModel)
-        let hostingView = NSHostingView(rootView: settingsView)
+        let hostingView = NSHostingView(rootView: settingsView.localized())
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 860, height: 680),
@@ -1632,7 +1632,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         )
 
         let overlay = Chau7OverlayView(overlayModel: tabsModel, appModel: model)
-        let hostingView = NSHostingView(rootView: overlay)
+        let hostingView = NSHostingView(rootView: overlay.localized())
 
         let blur = OverlayBlurView()
         blur.material = .hudWindow

@@ -10,13 +10,13 @@ final class DataExplorerWindow {
 
     func show() {
         if let existing = window {
-            existing.contentView = NSHostingView(rootView: DataExplorerView())
+            existing.contentView = NSHostingView(rootView: DataExplorerView().localized())
             existing.makeKeyAndOrderFront(nil)
             return
         }
 
         let view = DataExplorerView()
-        let hostingView = NSHostingView(rootView: view)
+        let hostingView = NSHostingView(rootView: view.localized())
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),

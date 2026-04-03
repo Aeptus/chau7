@@ -1310,7 +1310,7 @@ final class SnippetsSettingsWindowController: NSObject {
     static let shared = SnippetsSettingsWindowController()
 
     private var window: NSWindow?
-    private var hostingView: NSHostingView<SnippetsSettingsView>?
+    private var hostingView: NSView?
 
     override private init() {
         super.init()
@@ -1326,7 +1326,7 @@ final class SnippetsSettingsWindowController: NSObject {
 
         // Create the view and hosting view
         let view = SnippetsSettingsView()
-        let hosting = NSHostingView(rootView: view)
+        let hosting = NSHostingView(rootView: view.localized())
         hostingView = hosting
 
         // Create window

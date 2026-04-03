@@ -182,7 +182,7 @@ final class SplashWindowController {
     }
 
     private func showWindow(content: some View, width: CGFloat, height: CGFloat) {
-        let hostingView = NSHostingView(rootView: content)
+        let hostingView = NSHostingView(rootView: content.localized())
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
