@@ -10,7 +10,7 @@ struct SessionsExplorerView: View {
             if repoGroups.isEmpty {
                 VStack {
                     Spacer()
-                    Text("No AI sessions recorded yet")
+                    Text(L("explorer.sessions.noSessions", "No AI sessions recorded yet"))
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
@@ -107,7 +107,7 @@ private struct RepoGroupRow: View {
                 Spacer()
 
                 if group.totalCommands > 0 {
-                    Text("\(group.totalCommands) cmds")
+                    Text(String(format: L("explorer.sessions.cmds", "%d cmds"), group.totalCommands))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                     // Success rate badge
@@ -117,7 +117,7 @@ private struct RepoGroupRow: View {
                         .foregroundStyle(rate > 0.9 ? .green : rate > 0.7 ? .yellow : .red)
                 }
 
-                Text("\(group.runCount) runs")
+                Text(String(format: L("explorer.sessions.runs", "%d runs"), group.runCount))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
 

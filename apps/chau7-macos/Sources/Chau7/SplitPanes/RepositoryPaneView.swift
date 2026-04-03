@@ -113,7 +113,7 @@ struct RepositoryPaneView: View {
                                 .foregroundStyle(.orange)
                         }
                     }
-                    .help("↑ commits ahead of remote, ↓ commits behind")
+                    .help(L("repo.aheadBehind.help", "↑ commits ahead of remote, ↓ commits behind"))
                 }
             }
 
@@ -141,12 +141,12 @@ struct RepositoryPaneView: View {
                     repo.forceGitMode.toggle()
                     repo.isSessionMode = !repo.forceGitMode
                 } label: {
-                    Text(repo.isSessionMode ? "Git" : "Session")
+                    Text(repo.isSessionMode ? L("repo.switchToGit", "Git") : L("repo.switchToSession", "Session"))
                         .font(.system(size: 9))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.blue)
-                .help(repo.isSessionMode ? "Switch to full git view" : "Switch to session view")
+                .help(repo.isSessionMode ? L("repo.switchToGit.help", "Switch to full git view") : L("repo.switchToSession.help", "Switch to session view"))
             }
 
             Button {
@@ -180,7 +180,7 @@ struct RepositoryPaneView: View {
             Spacer()
             ProgressView()
                 .controlSize(.small)
-            Text("Loading repository...")
+            Text(L("repo.loading", "Loading repository..."))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             Spacer()
@@ -232,31 +232,31 @@ struct RepositoryPaneView: View {
     // MARK: - Changes Section
 
     private var changesSection: some View {
-        collapsibleSection(title: "Changes", count: changeCount, isExpanded: $changesExpanded) {
+        collapsibleSection(title: L("repo.section.changes", "Changes"), count: changeCount, isExpanded: $changesExpanded) {
             VStack(alignment: .leading, spacing: 2) {
                 if !repo.conflictedFiles.isEmpty {
-                    sectionLabel("CONFLICTS", color: .red)
+                    sectionLabel(L("repo.section.conflicts", "CONFLICTS"), color: .red)
                     ForEach(repo.conflictedFiles, id: \.self) { file in
                         conflictRow(file)
                     }
                 }
 
                 if !repo.stagedFiles.isEmpty {
-                    sectionLabel("STAGED", color: .green)
+                    sectionLabel(L("repo.section.staged", "STAGED"), color: .green)
                     ForEach(repo.stagedFiles) { file in
                         fileRow(file, staged: true)
                     }
                 }
 
                 if !repo.unstagedFiles.isEmpty {
-                    sectionLabel("MODIFIED", color: .orange)
+                    sectionLabel(L("repo.section.modified", "MODIFIED"), color: .orange)
                     ForEach(repo.unstagedFiles) { file in
                         fileRow(file, staged: false)
                     }
                 }
 
                 if !repo.untrackedFiles.isEmpty {
-                    sectionLabel("UNTRACKED", color: .secondary)
+                    sectionLabel(L("repo.section.untracked", "UNTRACKED"), color: .secondary)
                     ForEach(repo.untrackedFiles, id: \.self) { file in
                         untrackedRow(file)
                     }
@@ -264,13 +264,13 @@ struct RepositoryPaneView: View {
 
                 if changeCount > 0 {
                     HStack(spacing: 8) {
-                        Button("Stage All") { repo.stageAll() }
+                        Button(L("repo.stageAll", "Stage All")) { repo.stageAll() }
                             .font(.system(size: 10))
                             .buttonStyle(.plain)
                             .foregroundStyle(.blue)
 
                         if !repo.stagedFiles.isEmpty {
-                            Button("Unstage All") { repo.unstageAll() }
+                            Button(L("repo.unstageAll", "Unstage All")) { repo.unstageAll() }
                                 .font(.system(size: 10))
                                 .buttonStyle(.plain)
                                 .foregroundStyle(.blue)
@@ -280,7 +280,7 @@ struct RepositoryPaneView: View {
                 }
 
                 if changeCount == 0 {
-                    Text("Working tree clean")
+                    Text(L("repo.workingTreeClean", "Working tree clean"))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .italic()
@@ -300,31 +300,31 @@ struct RepositoryPaneView: View {
     @State private var turnSummaryExpanded = false
 
     private var sessionChangesSection: some View {
-        collapsibleSection(title: "Session Changes", count: repo.sessionChangeCount, isExpanded: $sessionChangesExpanded) {
+        collapsibleSection(title: L("repo.section.sessionChanges", "Session Changes"), count: repo.sessionChangeCount, isExpanded: $sessionChangesExpanded) {
             VStack(alignment: .leading, spacing: 2) {
                 if !repo.sessionStagedFiles.isEmpty {
-                    sectionLabel("STAGED", color: .green)
+                    sectionLabel(L("repo.section.staged", "STAGED"), color: .green)
                     ForEach(repo.sessionStagedFiles) { file in
                         sessionFileRow(file, staged: true)
                     }
                 }
 
                 if !repo.sessionUnstagedFiles.isEmpty {
-                    sectionLabel("MODIFIED", color: .orange)
+                    sectionLabel(L("repo.section.modified", "MODIFIED"), color: .orange)
                     ForEach(repo.sessionUnstagedFiles) { file in
                         sessionFileRow(file, staged: false)
                     }
                 }
 
                 if !repo.sessionUntrackedFiles.isEmpty {
-                    sectionLabel("NEW", color: .green)
+                    sectionLabel(L("repo.section.new", "NEW"), color: .green)
                     ForEach(repo.sessionUntrackedFiles, id: \.self) { file in
                         untrackedRow(file)
                     }
                 }
 
                 if repo.sessionChangeCount > 0 {
-                    Button("Stage All Session Changes") {
+                    Button(L("repo.stageAllSession", "Stage All Session Changes")) {
                         repo.stageSessionChanges()
                     }
                     .font(.system(size: 10))
@@ -334,7 +334,7 @@ struct RepositoryPaneView: View {
                 }
 
                 if repo.sessionChangeCount == 0 {
-                    Text("No changes from this session")
+                    Text(L("repo.noSessionChanges", "No changes from this session"))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .italic()
@@ -344,7 +344,7 @@ struct RepositoryPaneView: View {
     }
 
     private var otherChangesSection: some View {
-        collapsibleSection(title: "Other Changes", count: repo.otherChangeCount, isExpanded: $otherChangesExpanded) {
+        collapsibleSection(title: L("repo.section.otherChanges", "Other Changes"), count: repo.otherChangeCount, isExpanded: $otherChangesExpanded) {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(repo.otherStagedFiles) { file in
                     fileRow(file, staged: true)
@@ -363,13 +363,13 @@ struct RepositoryPaneView: View {
     // MARK: - Turn Summary Section
 
     private var turnSummarySection: some View {
-        collapsibleSection(title: "Turn Summary", isExpanded: $turnSummaryExpanded) {
+        collapsibleSection(title: L("repo.section.turnSummary", "Turn Summary"), isExpanded: $turnSummaryExpanded) {
             if let summary = repo.turnSummary {
                 VStack(alignment: .leading, spacing: 4) {
                     // Tools used
                     if !summary.toolsUsed.isEmpty {
                         HStack(spacing: 4) {
-                            Text("Tools:")
+                            Text(L("repo.tools", "Tools:"))
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                             Text(summary.toolsUsed.map { "\($0.key)(\($0.value))" }.joined(separator: " "))
@@ -522,7 +522,7 @@ struct RepositoryPaneView: View {
                     )
                     .overlay(alignment: .topLeading) {
                         if repo.commitMessage.isEmpty {
-                            Text("Commit message...")
+                            Text(L("placeholder.commitMessage", "Commit message..."))
                                 .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
                                 .padding(.horizontal, 8)
@@ -532,7 +532,7 @@ struct RepositoryPaneView: View {
                     }
 
                 HStack {
-                    Toggle("Amend", isOn: $repo.isAmend)
+                    Toggle(L("repo.amend", "Amend"), isOn: $repo.isAmend)
                         .toggleStyle(.checkbox)
                         .font(.system(size: 10))
 
@@ -540,12 +540,12 @@ struct RepositoryPaneView: View {
                         Button {
                             repo.askAgentForCommitMessage()
                         } label: {
-                            Label("Ask Agent", systemImage: "bubble.left.and.text.bubble.right")
+                            Label(L("repo.askAgent", "Ask Agent"), systemImage: "bubble.left.and.text.bubble.right")
                                 .font(.system(size: 9))
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
-                        .help("Ask the AI agent to suggest a commit message")
+                        .help(L("repo.askAgent.help", "Ask the AI agent to suggest a commit message"))
                     }
 
                     Spacer()
@@ -554,8 +554,8 @@ struct RepositoryPaneView: View {
                         repo.commit()
                     } label: {
                         Text(repo.stagedFiles.isEmpty
-                            ? "Commit"
-                            : "Commit (\(repo.stagedFiles.count) staged)")
+                            ? L("repo.commit", "Commit")
+                            : String(format: L("repo.commitStaged", "Commit (%d staged)"), repo.stagedFiles.count))
                             .font(.system(size: 10, weight: .medium))
                     }
                     .disabled(repo.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -563,7 +563,7 @@ struct RepositoryPaneView: View {
                     .keyboardShortcut(.return, modifiers: .command)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .help("⌘Return to commit")
+                    .help(L("repo.commit.help", "⌘Return to commit"))
                 }
             }
         }
@@ -572,14 +572,14 @@ struct RepositoryPaneView: View {
     // MARK: - History Section
 
     private var historySection: some View {
-        collapsibleSection(title: "History", count: repo.commits.count, isExpanded: $historyExpanded) {
+        collapsibleSection(title: L("repo.section.history", "History"), count: repo.commits.count, isExpanded: $historyExpanded) {
             VStack(alignment: .leading, spacing: 4) {
                 // Search bar
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 9))
                         .foregroundStyle(.tertiary)
-                    TextField("Search commits...", text: $repo.historySearchText)
+                    TextField(L("placeholder.searchCommits", "Search commits..."), text: $repo.historySearchText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 10))
                     if !repo.historySearchText.isEmpty {
@@ -599,7 +599,7 @@ struct RepositoryPaneView: View {
 
                 // Copied toast
                 if showCopiedToast {
-                    Text("Copied")
+                    Text(L("repo.copied", "Copied"))
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.secondary)
                         .transition(.opacity)
@@ -619,7 +619,7 @@ struct RepositoryPaneView: View {
                                     withAnimation(.easeInOut(duration: 0.3)) { showCopiedToast = false }
                                 }
                             }
-                            .help("Click to copy full hash")
+                            .help(L("repo.hash.help", "Click to copy full hash"))
 
                         Text(commit.message)
                             .font(.system(size: 10))
@@ -635,22 +635,22 @@ struct RepositoryPaneView: View {
                     .padding(.horizontal, 4)
                     .contentShape(Rectangle())
                     .contextMenu {
-                        Button("Copy Hash") {
+                        Button(L("repo.copyHash", "Copy Hash")) {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(commit.hash, forType: .string)
                         }
-                        Button("Copy Message") {
+                        Button(L("repo.copyMessage", "Copy Message")) {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(commit.message, forType: .string)
                         }
-                        Button("Copy Full") {
+                        Button(L("repo.copyFull", "Copy Full")) {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString("\(commit.shortHash) \(commit.message)", forType: .string)
                         }
                     }
                 }
 
-                Button("Load More") {
+                Button(L("repo.loadMore", "Load More")) {
                     repo.loadMoreCommits()
                 }
                 .font(.system(size: 10))
@@ -664,14 +664,14 @@ struct RepositoryPaneView: View {
     // MARK: - Stash Section
 
     private var stashSection: some View {
-        collapsibleSection(title: "Stash", count: repo.stashes.count, isExpanded: $stashExpanded) {
+        collapsibleSection(title: L("repo.section.stash", "Stash"), count: repo.stashes.count, isExpanded: $stashExpanded) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
-                    TextField("Stash message (optional)", text: $stashMessage)
+                    TextField(L("placeholder.stashMessage", "Stash message (optional)"), text: $stashMessage)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 10))
 
-                    Button("Save") {
+                    Button(L("repo.save", "Save")) {
                         repo.stashSave(message: stashMessage.isEmpty ? nil : stashMessage)
                         stashMessage = ""
                     }
@@ -691,12 +691,12 @@ struct RepositoryPaneView: View {
 
                         Spacer()
 
-                        Button("Pop") { repo.stashPop(index: stash.index) }
+                        Button(L("repo.pop", "Pop")) { repo.stashPop(index: stash.index) }
                             .font(.system(size: 9))
                             .buttonStyle(.plain)
                             .foregroundStyle(.blue)
 
-                        Button("Drop") { repo.stashDrop(index: stash.index) }
+                        Button(L("repo.drop", "Drop")) { repo.stashDrop(index: stash.index) }
                             .font(.system(size: 9))
                             .buttonStyle(.plain)
                             .foregroundStyle(.red)
@@ -706,7 +706,7 @@ struct RepositoryPaneView: View {
                 }
 
                 if repo.stashes.isEmpty {
-                    Text("No stashes")
+                    Text(L("repo.noStashes", "No stashes"))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .italic()
@@ -718,15 +718,15 @@ struct RepositoryPaneView: View {
     // MARK: - Branches Section
 
     private var branchesSection: some View {
-        collapsibleSection(title: "Branches", count: repo.branches.count, isExpanded: $branchesExpanded) {
+        collapsibleSection(title: L("repo.section.branches", "Branches"), count: repo.branches.count, isExpanded: $branchesExpanded) {
             VStack(alignment: .leading, spacing: 4) {
                 // Create branch
                 HStack(spacing: 4) {
-                    TextField("New branch name", text: $newBranchName)
+                    TextField(L("placeholder.newBranchName", "New branch name"), text: $newBranchName)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 10))
 
-                    Button("Create") {
+                    Button(L("repo.createBranch", "Create")) {
                         repo.createBranch(newBranchName)
                         newBranchName = ""
                     }
@@ -749,12 +749,12 @@ struct RepositoryPaneView: View {
                         Spacer()
 
                         if branch != repo.currentBranch {
-                            Button("Switch") { repo.switchBranch(branch) }
+                            Button(L("repo.switchBranch", "Switch")) { repo.switchBranch(branch) }
                                 .font(.system(size: 9))
                                 .buttonStyle(.plain)
                                 .foregroundStyle(.blue)
 
-                            Button("Delete") { repo.deleteBranch(branch) }
+                            Button(L("repo.deleteBranch", "Delete")) { repo.deleteBranch(branch) }
                                 .font(.system(size: 9))
                                 .buttonStyle(.plain)
                                 .foregroundStyle(.red)
@@ -771,7 +771,7 @@ struct RepositoryPaneView: View {
                     Button {
                         repo.push()
                     } label: {
-                        Label("Push", systemImage: "arrow.up")
+                        Label(L("repo.push", "Push"), systemImage: "arrow.up")
                             .font(.system(size: 10))
                     }
                     .buttonStyle(.bordered)
@@ -780,7 +780,7 @@ struct RepositoryPaneView: View {
                     Button {
                         repo.pull()
                     } label: {
-                        Label("Pull", systemImage: "arrow.down")
+                        Label(L("repo.pull", "Pull"), systemImage: "arrow.down")
                             .font(.system(size: 10))
                     }
                     .buttonStyle(.bordered)
@@ -794,7 +794,7 @@ struct RepositoryPaneView: View {
 
     private var branchPickerPopover: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Switch Branch")
+            Text(L("repo.switchBranchTitle", "Switch Branch"))
                 .font(.system(size: 11, weight: .semibold))
                 .padding(.bottom, 4)
 
@@ -905,12 +905,12 @@ struct RepositoryPaneView: View {
 
             Spacer()
 
-            Button("Ours") { repo.acceptOurs(file: path) }
+            Button(L("repo.ours", "Ours")) { repo.acceptOurs(file: path) }
                 .font(.system(size: 9))
                 .buttonStyle(.plain)
                 .foregroundStyle(.blue)
 
-            Button("Theirs") { repo.acceptTheirs(file: path) }
+            Button(L("repo.theirs", "Theirs")) { repo.acceptTheirs(file: path) }
                 .font(.system(size: 9))
                 .buttonStyle(.plain)
                 .foregroundStyle(.orange)

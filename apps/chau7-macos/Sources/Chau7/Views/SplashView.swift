@@ -34,23 +34,25 @@ struct SplashView: View {
 struct WelcomeView: View {
     let onGetStarted: () -> Void
 
-    private let tips: [(icon: String, title: String, body: String)] = [
-        (
-            "rectangle.stack.fill",
-            "Tabs are context-full",
-            "Each tab tracks its AI session, repo, and command history. Name them (double-click) and group by repo (right-click) to manage parallel agents at a glance."
-        ),
-        (
-            "bell.badge.fill",
-            "Side panel is your companion",
-            "The menu bar icon opens a command center with live AI activity, notifications, and quick actions. Keep it handy when running multiple agents."
-        ),
-        (
-            "keyboard.fill",
-            "Shortcuts, shortcuts, shortcuts",
-            "Cmd+T new tab  ·  Cmd+W close  ·  Cmd+Shift+] / [ switch\nCmd+Shift+D data explorer  ·  Cmd+K command palette"
-        )
-    ]
+    private var tips: [(icon: String, title: String, body: String)] {
+        [
+            (
+                "rectangle.stack.fill",
+                L("splash.tip.tabs.title", "Tabs are context-full"),
+                L("splash.tip.tabs.body", "Each tab tracks its AI session, repo, and command history. Name them (double-click) and group by repo (right-click) to manage parallel agents at a glance.")
+            ),
+            (
+                "bell.badge.fill",
+                L("splash.tip.panel.title", "Side panel is your companion"),
+                L("splash.tip.panel.body", "The menu bar icon opens a command center with live AI activity, notifications, and quick actions. Keep it handy when running multiple agents.")
+            ),
+            (
+                "keyboard.fill",
+                L("splash.tip.shortcuts.title", "Shortcuts, shortcuts, shortcuts"),
+                L("splash.tip.shortcuts.body", "Cmd+T new tab  ·  Cmd+W close  ·  Cmd+Shift+] / [ switch\nCmd+Shift+D data explorer  ·  Cmd+K command palette")
+            )
+        ]
+    }
 
     var body: some View {
         ZStack {
@@ -66,7 +68,7 @@ struct WelcomeView: View {
                         .cornerRadius(14)
                         .shadow(color: .white.opacity(0.1), radius: 12)
 
-                    Text("Welcome to Chau7")
+                    Text(L("splash.welcome", "Welcome to Chau7"))
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundColor(.white)
                 }
@@ -100,7 +102,7 @@ struct WelcomeView: View {
 
                 // Get Started button
                 Button(action: onGetStarted) {
-                    Text("Get Started")
+                    Text(L("splash.getStarted", "Get Started"))
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.black)
                         .frame(width: 140, height: 36)
