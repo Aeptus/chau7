@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Quit alert: "N running process(es) will be terminated: ..." -->
+    <key>alert.quit.message</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@processes@ will be terminated: %2$@</string>
+        <key>processes</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d running process</string>
+            <key>other</key>
+            <string>%d running processes</string>
+        </dict>
+    </dict>
+
+    <!-- Changed files panel: "N file(s)" -->
+    <key>panel.changedFiles.fileCount</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@files@</string>
+        <key>files</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d file</string>
+            <key>other</key>
+            <string>%d files</string>
+        </dict>
+    </dict>
+
+    <!-- Status bar: "N sessions" -->
+    <key>statusBar.session.plural</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@sessions@</string>
+        <key>sessions</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>1 session</string>
+            <key>other</key>
+            <string>%d sessions</string>
+        </dict>
+    </dict>
+
+    <!-- Status bar: "N sessions need attention" -->
+    <key>statusBar.attention.plural</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@sessions@</string>
+        <key>sessions</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>1 session needs attention</string>
+            <key>other</key>
+            <string>%d sessions need attention</string>
+        </dict>
+    </dict>
+
+    <!-- Explorer: "N runs" -->
+    <key>explorer.sessions.runs</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@runs@</string>
+        <key>runs</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>1 run</string>
+            <key>other</key>
+            <string>%d runs</string>
+        </dict>
+    </dict>
+
+    <!-- Explorer: "N runs" (detail) -->
+    <key>explorer.runs.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@runs@</string>
+        <key>runs</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>1 run</string>
+            <key>other</key>
+            <string>%d runs</string>
+        </dict>
+    </dict>
+
+    <!-- Snippets count -->
+    <key>snippets.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@snippets@</string>
+        <key>snippets</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d snippet</string>
+            <key>other</key>
+            <string>%d snippets</string>
+        </dict>
+    </dict>
+
+    <!-- Close group: "N tabs" -->
+    <key>context.closeGroup</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>Close Group (%#@tabs@)</string>
+        <key>tabs</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d tab</string>
+            <key>other</key>
+            <string>%d tabs</string>
+        </dict>
+    </dict>
+
+    <!-- Commit staged: "N staged" -->
+    <key>repo.commitStaged</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>Commit (%#@staged@)</string>
+        <key>staged</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d staged</string>
+            <key>other</key>
+            <string>%d staged</string>
+        </dict>
+    </dict>
+</dict>
+</plist>

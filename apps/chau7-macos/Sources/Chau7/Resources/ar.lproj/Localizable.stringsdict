@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>alert.quit.message</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@processes@ سيتم إنهاؤها: %2$@</string>
+        <key>processes</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا توجد عمليات قيد التشغيل</string>
+            <key>one</key>
+            <string>عملية واحدة قيد التشغيل</string>
+            <key>two</key>
+            <string>عمليتان قيد التشغيل</string>
+            <key>few</key>
+            <string>%d عم��يات قيد التشغيل</string>
+            <key>many</key>
+            <string>%d عملية قيد التشغيل</string>
+            <key>other</key>
+            <string>%d عملية قيد التشغيل</string>
+        </dict>
+    </dict>
+
+    <key>panel.changedFiles.fileCount</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@files@</string>
+        <key>files</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا ملفات</string>
+            <key>one</key>
+            <string>ملف واحد</string>
+            <key>two</key>
+            <string>ملفان</string>
+            <key>few</key>
+            <string>%d ملفات</string>
+            <key>many</key>
+            <string>%d ملفًا</string>
+            <key>other</key>
+            <string>%d ملف</string>
+        </dict>
+    </dict>
+
+    <key>statusBar.session.plural</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@sessions@</string>
+        <key>sessions</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا جلسات</string>
+            <key>one</key>
+            <string>جلسة واحدة</string>
+            <key>two</key>
+            <string>جلستان</string>
+            <key>few</key>
+            <string>%d جلسات</string>
+            <key>many</key>
+            <string>%d جلسة</string>
+            <key>other</key>
+            <string>%d جلسة</string>
+        </dict>
+    </dict>
+
+    <key>statusBar.attention.plural</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@sessions@</string>
+        <key>sessions</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا جلسات تحتاج اهتمامًا</string>
+            <key>one</key>
+            <string>جلسة واحدة تحتاج اهتمامًا</string>
+            <key>two</key>
+            <string>جلستان تحتاجان اهتمامًا</string>
+            <key>few</key>
+            <string>%d جلسات تحتاج اهتمامًا</string>
+            <key>many</key>
+            <string>%d جلسة تحتاج اهتمامًا</string>
+            <key>other</key>
+            <string>%d جلسة تحتاج اهتمامًا</string>
+        </dict>
+    </dict>
+
+    <key>explorer.sessions.runs</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@runs@</string>
+        <key>runs</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا تشغيلات</string>
+            <key>one</key>
+            <string>تشغيل واحد</string>
+            <key>two</key>
+            <string>تشغيلان</string>
+            <key>few</key>
+            <string>%d تشغيلات</string>
+            <key>many</key>
+            <string>%d تشغيلًا</string>
+            <key>other</key>
+            <string>%d تشغيل</string>
+        </dict>
+    </dict>
+
+    <key>explorer.runs.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@runs@</string>
+        <key>runs</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا تشغيلات</string>
+            <key>one</key>
+            <string>تشغيل واحد</string>
+            <key>two</key>
+            <string>تشغيلان</string>
+            <key>few</key>
+            <string>%d تشغيلات</string>
+            <key>many</key>
+            <string>%d تشغيلًا</string>
+            <key>other</key>
+            <string>%d تشغيل</string>
+        </dict>
+    </dict>
+
+    <key>snippets.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@snippets@</string>
+        <key>snippets</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا مقتطفات</string>
+            <key>one</key>
+            <string>مقتطف واحد</string>
+            <key>two</key>
+            <string>مقتطفان</string>
+            <key>few</key>
+            <string>%d مقتطفات</string>
+            <key>many</key>
+            <string>%d مقتطفًا</string>
+            <key>other</key>
+            <string>%d مقتطف</string>
+        </dict>
+    </dict>
+
+    <key>context.closeGroup</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>إغلاق المجموعة (%#@tabs@)</string>
+        <key>tabs</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا علامات تبويب</string>
+            <key>one</key>
+            <string>علامة تبويب واحدة</string>
+            <key>two</key>
+            <string>علامتا تبويب</string>
+            <key>few</key>
+            <string>%d علامات تبويب</string>
+            <key>many</key>
+            <string>%d علامة تبويب</string>
+            <key>other</key>
+            <string>%d علامة تبويب</string>
+        </dict>
+    </dict>
+
+    <key>repo.commitStaged</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>إيداع (%#@staged@)</string>
+        <key>staged</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d مُفهرَس</string>
+            <key>other</key>
+            <string>%d مُفهرَسة</string>
+        </dict>
+    </dict>
+</dict>
+</plist>

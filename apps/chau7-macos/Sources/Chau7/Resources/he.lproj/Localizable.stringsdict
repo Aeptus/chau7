@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>alert.quit.message</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@processes@ יסתיימו: %2$@</string>
+        <key>processes</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>תהליך פעיל אחד</string>
+            <key>two</key>
+            <string>%d תהליכים פעילים</string>
+            <key>other</key>
+            <string>%d תהליכים פעילים</string>
+        </dict>
+    </dict>
+
+    <key>panel.changedFiles.fileCount</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@files@</string>
+        <key>files</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>קובץ אחד</string>
+            <key>two</key>
+            <string>%d קבצים</string>
+            <key>other</key>
+            <string>%d קבצים</string>
+        </dict>
+    </dict>
+
+    <key>statusBar.session.plural</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@sessions@</string>
+        <key>sessions</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>הפעלה אחת</string>
+            <key>two</key>
+            <string>%d הפעלות</string>
+            <key>other</key>
+            <string>%d הפעלות</string>
+        </dict>
+    </dict>
+
+    <key>statusBar.attention.plural</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@sessions@</string>
+        <key>sessions</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>הפעלה אחת דורשת תשומת לב</string>
+            <key>two</key>
+            <string>%d הפעלות דורשות תשומת לב</string>
+            <key>other</key>
+            <string>%d הפעלות דורשות תשומת לב</string>
+        </dict>
+    </dict>
+
+    <key>explorer.sessions.runs</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@runs@</string>
+        <key>runs</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>הרצה אחת</string>
+            <key>two</key>
+            <string>%d הרצות</string>
+            <key>other</key>
+            <string>%d הרצות</string>
+        </dict>
+    </dict>
+
+    <key>explorer.runs.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@runs@</string>
+        <key>runs</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>הרצה אחת</string>
+            <key>two</key>
+            <string>%d הרצות</string>
+            <key>other</key>
+            <string>%d הרצות</string>
+        </dict>
+    </dict>
+
+    <key>snippets.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@snippets@</string>
+        <key>snippets</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>קטע קו�� אחד</string>
+            <key>two</key>
+            <string>%d קטעי קוד</string>
+            <key>other</key>
+            <string>%d קטעי קוד</string>
+        </dict>
+    </dict>
+
+    <key>context.closeGroup</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>סגירת קבוצה (%#@tabs@)</string>
+        <key>tabs</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>לשונית אחת</string>
+            <key>two</key>
+            <string>%d לשוניות</string>
+            <key>other</key>
+            <string>%d לשוניות</string>
+        </dict>
+    </dict>
+
+    <key>repo.commitStaged</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>קומיט (%#@staged@)</string>
+        <key>staged</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d מוכן</string>
+            <key>two</key>
+            <string>%d מוכנים</string>
+            <key>other</key>
+            <string>%d מוכנים</string>
+        </dict>
+    </dict>
+</dict>
+</plist>
