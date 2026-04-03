@@ -349,6 +349,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - RTL layout direction propagated at every NSHostingView boundary — overlay, settings, command palette, data explorer, help docs, bug report, splash, and all auxiliary windows.
 - Runtime language switching without restart.
 - Full translation coverage: all UI strings localized with zero untranslated gaps across en, fr, ar, he — including NSMenuItem context menus, hover cards, and agent dashboard.
+- Final shipped-key sweep completed for English, French, Arabic, and Hebrew bundles — settings search copy, dashboard strings, alert text, snippets examples, and long-form help topics now ship localized with parity and format-specifier checks passing.
 
 ## SSH, Profiles & Remote
 
