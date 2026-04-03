@@ -81,6 +81,22 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertEqual(state.currentApp, "Codex")
     }
 
+    func testHandleOutputMatchCanOverrideDifferentProviderWhenRestoredOverrideAllowed() {
+        var state = AIDetectionState()
+        state.handleRestore(appName: "Codex")
+
+        let changed = state.handleOutputMatch(
+            appName: "Claude",
+            authoritativeAppName: "Codex",
+            allowRestoredProviderOverride: true
+        )
+
+        XCTAssertTrue(changed)
+        XCTAssertEqual(state.currentApp, "Claude")
+        XCTAssertEqual(state.phase, .detected)
+        XCTAssertFalse(state.isRestored)
+    }
+
     func testHandleOutputMatchRejectsDifferentProviderWhenToolAlreadyKnown() {
         var state = AIDetectionState()
         state.handleRestore(appName: "Codex")
@@ -240,6 +256,23 @@ final class AIDetectionStateTests: XCTestCase {
         state.handleCommand(appName: "Claude")
         XCTAssertFalse(state.isRestored)
         XCTAssertEqual(state.currentApp, "Claude")
+    }
+
+    func testRestoredSessionAllowsOtherProviderOutputAfterPromptReturnWhenOverrideAllowed() {
+        var state = AIDetectionState()
+        state.handleRestore(appName: "Codex")
+        state.handlePromptReturn()
+
+        XCTAssertTrue(
+            state.handleOutputMatch(
+                appName: "Claude",
+                authoritativeAppName: "Codex",
+                allowRestoredProviderOverride: true
+            )
+        )
+        XCTAssertEqual(state.currentApp, "Claude")
+        XCTAssertFalse(state.isRestored)
+        XCTAssertEqual(state.phase, .detected)
     }
 
     // MARK: - Exit

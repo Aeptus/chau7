@@ -279,10 +279,7 @@ final class NotificationTriggerCatalogTests: XCTestCase {
 
     func testSourcesSortedBySortOrder() {
         let orders = NotificationTriggerCatalog.sources.map(\.sortOrder)
-        // Check non-decreasing order (stable sort — ties are allowed)
-        for i in 1 ..< orders.count {
-            XCTAssertLessThanOrEqual(orders[i - 1], orders[i], "sources not sorted at index \(i): \(orders[i - 1]) > \(orders[i])")
-        }
+        XCTAssertEqual(orders, orders.sorted(), "sources array is not in ascending sortOrder")
     }
 
     func testSourcesHaveLabels() {

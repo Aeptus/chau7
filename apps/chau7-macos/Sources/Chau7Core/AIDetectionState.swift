@@ -136,14 +136,17 @@ public struct AIDetectionState: Sendable {
     public mutating func handleOutputMatch(
         appName: String?,
         authoritativeAppName: String? = nil,
+        allowRestoredProviderOverride: Bool = false,
         now: Date = Date()
     ) -> Bool {
         guard let appName else { return false }
-        guard Self.shouldAcceptOutputMatch(
-            matchedAppName: appName,
-            authoritativeAppName: authoritativeAppName
-        ) else {
-            return false
+        if !(allowRestoredProviderOverride && phase == .restored) {
+            guard Self.shouldAcceptOutputMatch(
+                matchedAppName: appName,
+                authoritativeAppName: authoritativeAppName
+            ) else {
+                return false
+            }
         }
 
         switch phase {
@@ -160,6 +163,9 @@ public struct AIDetectionState: Sendable {
             guard appName == lastDetectedApp else { return false }
             return setDetected(appName, now: now)
         case .restored:
+            if allowRestoredProviderOverride {
+                return setDetected(appName, now: now)
+            }
             // Live detection overrides restoration, but only if it matches the
             // restored provider (or no provider was restored yet). Without this
             // guard, strings like "openai codex" in Claude's output hijack the
