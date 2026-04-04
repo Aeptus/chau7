@@ -42,6 +42,10 @@ final class RuntimeSession: @unchecked Sendable {
     private var _wasInterrupted = false
     private var _lastExitReason: TurnExitReason?
     private var _lastTurnSubmittedAt: Date?
+    private var _lastPrompt: String?
+    private var _lastCompletedTurnID: String?
+    private var _currentResultSchema: JSONValue?
+    private var _turnResults: [String: RuntimeTurnResult] = [:]
     private var approvalTimeoutWork: DispatchWorkItem?
 
     // MARK: - Lock-Acquiring Accessors
@@ -100,6 +104,28 @@ final class RuntimeSession: @unchecked Sendable {
         return _lastTurnSubmittedAt
     }
 
+    var lastCompletedTurnID: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastCompletedTurnID
+    }
+
+    var lastPrompt: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastPrompt
+    }
+
+    func turnResult(id turnID: String? = nil) -> RuntimeTurnResult? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let turnID {
+            return _turnResults[turnID]
+        }
+        guard let latestTurnID = _lastCompletedTurnID else { return nil }
+        return _turnResults[latestTurnID]
+    }
+
     // MARK: - Init
 
     init(
@@ -151,7 +177,7 @@ final class RuntimeSession: @unchecked Sendable {
     ///
     /// Performs the guard, transition, and state reset atomically under a single
     /// lock acquisition to prevent TOCTOU races.
-    func startTurn(prompt: String) -> String? {
+    func startTurn(prompt: String, resultSchema: JSONValue? = nil) -> String? {
         lock.lock()
         guard stateMachine.canAcceptTurn else {
             let s = stateMachine.state
@@ -170,6 +196,8 @@ final class RuntimeSession: @unchecked Sendable {
         let turnID = "t_\(_turnCount)"
         _currentTurnID = turnID
         _lastTurnSubmittedAt = Date()
+        _lastPrompt = prompt
+        _currentResultSchema = resultSchema ?? config.resultSchema
         _currentTurnStats = TurnStats()
         _lastDeniedApproval = false
         _wasInterrupted = false
@@ -208,6 +236,7 @@ final class RuntimeSession: @unchecked Sendable {
         let denied = _lastDeniedApproval
         let interrupted = _wasInterrupted
         let sessionState = stateMachine.state
+        let resultSchema = _currentResultSchema
         lock.unlock()
 
         let exitReason = ExitClassifier.classify(
@@ -228,6 +257,17 @@ final class RuntimeSession: @unchecked Sendable {
             data: data
         )
 
+        if let turnID,
+           let result = StructuredResultExtractor.capture(
+               sessionID: id,
+               turnID: turnID,
+               summary: summary,
+               output: terminalOutput,
+               schema: resultSchema
+           ) {
+            storeTurnResult(result)
+        }
+
         let transitioned = transition(.turnCompleted)
         if !transitioned {
             let currentState = state
@@ -240,6 +280,8 @@ final class RuntimeSession: @unchecked Sendable {
 
         lock.lock()
         _currentTurnID = nil
+        _currentResultSchema = nil
+        _lastCompletedTurnID = turnID
         _lastExitReason = exitReason
         lock.unlock()
 
@@ -251,6 +293,7 @@ final class RuntimeSession: @unchecked Sendable {
         lock.lock()
         let turnID = _currentTurnID
         _currentTurnID = nil
+        _currentResultSchema = nil
         lock.unlock()
 
         journal.append(
@@ -401,6 +444,8 @@ final class RuntimeSession: @unchecked Sendable {
         let turn = _currentTurnID
         let turns = _turnCount
         let approval = _pendingApproval
+        let completedTurnID = _lastCompletedTurnID
+        let latestTurnResult = completedTurnID.flatMap { _turnResults[$0] }
         lock.unlock()
 
         var result: [String: Any] = [
@@ -428,8 +473,36 @@ final class RuntimeSession: @unchecked Sendable {
         if !config.taskMetadata.isEmpty {
             result["task_metadata"] = config.taskMetadata
         }
+        if let resultSchema = config.resultSchema {
+            result["result_schema"] = resultSchema.foundationValue
+        }
+        var policySummary: [String: Any] = [
+            "allow_child_delegation": config.policy.allowChildDelegation,
+            "max_delegation_depth": config.policy.maxDelegationDepth,
+            "allowed_tools": config.policy.allowedTools,
+            "blocked_tools": config.policy.blockedTools
+        ]
+        if let allowNetwork = config.policy.allowNetwork {
+            policySummary["allow_network"] = allowNetwork
+        }
+        if let allowFileWrites = config.policy.allowFileWrites {
+            policySummary["allow_file_writes"] = allowFileWrites
+        }
+        if let maxTurns = config.policy.maxTurns {
+            policySummary["max_turns"] = maxTurns
+        }
+        if let maxDurationMs = config.policy.maxDurationMs {
+            policySummary["max_duration_ms"] = maxDurationMs
+        }
+        result["policy"] = policySummary
         if let turn {
             result["current_turn_id"] = turn
+        }
+        if let completedTurnID {
+            result["last_completed_turn_id"] = completedTurnID
+        }
+        if let latestTurnResult {
+            result["latest_turn_result"] = turnResultDictionary(latestTurnResult)
         }
         if let approval {
             result["pending_approval"] = [
@@ -439,6 +512,53 @@ final class RuntimeSession: @unchecked Sendable {
             ]
         }
         return result
+    }
+
+    private func storeTurnResult(_ result: RuntimeTurnResult) {
+        lock.lock()
+        _turnResults[result.turnID] = result
+        lock.unlock()
+
+        var data: [String: String] = [
+            "status": result.status.rawValue,
+            "source": result.source
+        ]
+        if !result.validationErrors.isEmpty {
+            data["validation_errors"] = result.validationErrors.joined(separator: " | ")
+        }
+        if let value = result.value {
+            if let serialized = try? JSONSerialization.data(withJSONObject: value.foundationValue, options: [.sortedKeys]),
+               let text = String(data: serialized, encoding: .utf8) {
+                data["value"] = text
+            }
+        }
+        journal.append(
+            sessionID: id,
+            turnID: result.turnID,
+            type: RuntimeEventType.turnResult.rawValue,
+            data: data
+        )
+    }
+
+    private func turnResultDictionary(_ result: RuntimeTurnResult) -> [String: Any] {
+        var dictionary: [String: Any] = [
+            "session_id": result.sessionID,
+            "turn_id": result.turnID,
+            "status": result.status.rawValue,
+            "source": result.source,
+            "captured_at": DateFormatters.iso8601.string(from: result.capturedAt),
+            "validation_errors": result.validationErrors
+        ]
+        if let schema = result.schema {
+            dictionary["schema"] = schema.foundationValue
+        }
+        if let value = result.value {
+            dictionary["value"] = value.foundationValue
+        }
+        if let rawText = result.rawText {
+            dictionary["raw_text"] = rawText
+        }
+        return dictionary
     }
 }
 

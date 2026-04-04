@@ -124,6 +124,72 @@ final class RuntimeControlServiceTests: XCTestCase {
         XCTAssertEqual(session.config.taskMetadata["review_scope"], "commits")
     }
 
+    func testRuntimeTurnResultReturnsCapturedStructuredPayload() throws {
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": "shell",
+                "directory": "/tmp/runtime-result-\(UUID().uuidString)",
+                "result_schema": [
+                    "type": "object",
+                    "required": ["summary", "findings"],
+                    "properties": [
+                        "summary": ["type": "string"],
+                        "findings": [
+                            "type": "array",
+                            "items": [
+                                "type": "object",
+                                "required": ["severity", "message"],
+                                "properties": [
+                                    "severity": ["type": "string"],
+                                    "message": ["type": "string"]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let sessionID = try XCTUnwrap(json["session_id"] as? String)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+
+        let sendResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_turn_send",
+            arguments: [
+                "session_id": sessionID,
+                "prompt": "review the change"
+            ]
+        )
+        let sendJSON = try XCTUnwrap(parseJSONObject(sendResponse))
+        let turnID = try XCTUnwrap(sendJSON["turn_id"] as? String)
+
+        _ = session.completeTurn(
+            summary: """
+            ```json
+            {"summary":"Looks good overall","findings":[{"severity":"medium","message":"Missing regression test"}]}
+            ```
+            """,
+            terminalOutput: nil
+        )
+
+        let resultResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_turn_result",
+            arguments: [
+                "session_id": sessionID,
+                "turn_id": turnID
+            ]
+        )
+
+        let resultJSON = try XCTUnwrap(parseJSONObject(resultResponse))
+        XCTAssertEqual(resultJSON["status"] as? String, "available")
+        let value = try XCTUnwrap(resultJSON["value"] as? [String: Any])
+        XCTAssertEqual(value["summary"] as? String, "Looks good overall")
+        let findings = try XCTUnwrap(value["findings"] as? [[String: Any]])
+        XCTAssertEqual(findings.first?["severity"] as? String, "medium")
+    }
+
     private func parseJSONObject(_ text: String) -> [String: Any]? {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {

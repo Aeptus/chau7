@@ -10,6 +10,13 @@ final class RuntimeControlService {
 
     private let controlService = TerminalControlService.shared
     private let sessionManager = RuntimeSessionManager.shared
+    private let telemetryStore = TelemetryStore.shared
+    private let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
+    }()
 
     // MARK: - Backend Registry
 
@@ -44,6 +51,8 @@ final class RuntimeControlService {
             return sendTurn(arguments)
         case "runtime_turn_status":
             return turnStatus(arguments)
+        case "runtime_turn_result":
+            return turnResult(arguments)
         case "runtime_events_poll":
             return pollEvents(arguments)
         case "runtime_approval_respond":
@@ -69,6 +78,7 @@ final class RuntimeControlService {
         let parentSessionID = sanitizeOptionalString(args["parent_session_id"] as? String)
         let parentRunID = sanitizeOptionalString(args["parent_run_id"] as? String)
         let taskMetadata = sanitizeStringDict(args["task_metadata"]) ?? [:]
+        let resultSchema = args["result_schema"].flatMap(JSONValue.from(any:))
         let delegationDepth = max(0, args["delegation_depth"] as? Int ?? 0)
 
         if let purpose {
@@ -129,6 +139,7 @@ final class RuntimeControlService {
             parentSessionID: parentSessionID,
             parentRunID: parentRunID,
             taskMetadata: taskMetadata,
+            resultSchema: resultSchema,
             delegationDepth: delegationDepth
         )
 
@@ -282,21 +293,22 @@ final class RuntimeControlService {
             return jsonError("prompt is required")
         }
         let context = args["context"] as? String
+        let resultSchema = args["result_schema"].flatMap(JSONValue.from(any:))
 
         guard let session = sessionManager.session(id: sessionID) else {
             return jsonError("Session not found: \(sessionID)")
         }
 
-        return sendTurnInternal(session: session, prompt: prompt, context: context)
+        return sendTurnInternal(session: session, prompt: prompt, context: context, resultSchema: resultSchema)
     }
 
-    private func sendTurnInternal(session: RuntimeSession, prompt: String, context: String?) -> String {
+    private func sendTurnInternal(session: RuntimeSession, prompt: String, context: String?, resultSchema: JSONValue? = nil) -> String {
         guard session.canAcceptTurn else {
             Log.info("MCP runtime_turn_send: rejected for session \(session.id), state=\(session.state.rawValue)")
             return jsonError("Session \(session.id) is not ready (state: \(session.state.rawValue)). Wait for ready state.")
         }
 
-        guard let turnID = session.startTurn(prompt: prompt) else {
+        guard let turnID = session.startTurn(prompt: prompt, resultSchema: resultSchema) else {
             Log.error("MCP runtime_turn_send: startTurn failed for session \(session.id)")
             return jsonError("Failed to start turn in session \(session.id)")
         }
@@ -306,12 +318,16 @@ final class RuntimeControlService {
         let sendResult = controlService.sendInput(tabID: session.tabID.uuidString, input: input)
         Log.info("MCP runtime_turn_send: session=\(session.id) turn=\(turnID) inputLen=\(input.count) sendResult=\(sendResult.prefix(100))")
 
-        return encodeAny([
+        var response: [String: Any] = [
             "turn_id": turnID,
             "status": "accepted",
             "session_state": session.state.rawValue,
             "cursor": session.journal.latestCursor
-        ])
+        ]
+        if let effectiveSchema = resultSchema ?? session.config.resultSchema {
+            response["result_schema"] = effectiveSchema.foundationValue
+        }
+        return encodeAny(response)
     }
 
     private func turnStatus(_ args: [String: Any]) -> String {
@@ -330,8 +346,19 @@ final class RuntimeControlService {
         if let turnID = session.currentTurnID {
             result["current_turn_id"] = turnID
         }
+        if let completedTurnID = session.lastCompletedTurnID {
+            result["last_completed_turn_id"] = completedTurnID
+        }
         if let exitReason = session.lastExitReason {
             result["last_exit_reason"] = exitReason.rawValue
+        }
+        if let turnID = args["turn_id"] as? String,
+           let turnResult = session.turnResult(id: turnID),
+           let encodedTurnResult = jsonObject(turnResult) {
+            result["turn_result"] = encodedTurnResult
+        } else if let turnResult = session.turnResult(),
+                  let encodedTurnResult = jsonObject(turnResult) {
+            result["latest_turn_result"] = encodedTurnResult
         }
         if let approval = session.pendingApproval {
             result["pending_approval"] = [
@@ -344,6 +371,26 @@ final class RuntimeControlService {
             result["active_run"] = activeRun
         }
         return encodeAny(result)
+    }
+
+    private func turnResult(_ args: [String: Any]) -> String {
+        guard let sessionID = args["session_id"] as? String else {
+            return jsonError("session_id is required")
+        }
+        let turnID = sanitizeOptionalString(args["turn_id"] as? String)
+
+        guard let session = sessionManager.session(id: sessionID) else {
+            return jsonError("Session not found: \(sessionID)")
+        }
+
+        if let result = session.turnResult(id: turnID) {
+            return encode(result)
+        }
+
+        guard turnID == nil, let fallback = fallbackTurnResult(for: session) else {
+            return jsonError("Turn result not found for session \(sessionID)\(turnID.map { " turn \($0)" } ?? "")")
+        }
+        return encode(fallback)
     }
 
     // MARK: - Event Polling
@@ -523,6 +570,38 @@ final class RuntimeControlService {
             return nil
         }
         return trimmed
+    }
+
+    private func fallbackTurnResult(for session: RuntimeSession) -> RuntimeTurnResult? {
+        guard let run = telemetryStore.latestRunForTab(session.tabID.uuidString, provider: session.backend.name) else {
+            return nil
+        }
+        let turns = telemetryStore.getTurns(runID: run.id)
+        guard let lastAssistantTurn = turns.last(where: { $0.role == .assistant }),
+              let content = lastAssistantTurn.content else {
+            return nil
+        }
+
+        return StructuredResultExtractor.capture(
+            sessionID: session.id,
+            turnID: session.lastCompletedTurnID ?? "telemetry_latest",
+            summary: content,
+            output: nil,
+            schema: session.config.resultSchema
+        )
+    }
+
+    private func encode(_ value: some Encodable) -> String {
+        guard let data = try? encoder.encode(value),
+              let string = String(data: data, encoding: .utf8) else {
+            return jsonError("Internal error: response encoding failed")
+        }
+        return string
+    }
+
+    private func jsonObject(_ value: some Encodable) -> Any? {
+        guard let data = try? encoder.encode(value) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
     }
 
     private func encodeAny(_ value: Any) -> String {

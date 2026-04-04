@@ -895,6 +895,28 @@ final class TelemetryStore {
         }
     }
 
+    func latestRunForTab(_ tabID: String, provider: String? = nil) -> TelemetryRun? {
+        queue.sync {
+            guard let db else { return nil }
+            var sql = "SELECT * FROM runs WHERE tab_id = ?"
+            var vals = [tabID]
+            if let provider {
+                sql += " AND provider = ?"
+                vals.append(provider)
+            }
+            sql += " ORDER BY started_at DESC LIMIT 1"
+
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+            defer { sqlite3_finalize(stmt) }
+            for (index, value) in vals.enumerated() {
+                bindText(stmt, Int32(index + 1), value)
+            }
+            guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+            return parseRun(stmt)
+        }
+    }
+
     func listSessions(repoPath: String? = nil) -> [[String: Any]] {
         queue.sync {
             guard let db else { return [] }

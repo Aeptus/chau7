@@ -44,8 +44,12 @@ public struct SessionConfig: Codable, Sendable {
     public let parentRunID: String?
     /// Arbitrary task-scoped metadata attached to this session.
     public let taskMetadata: [String: String]
+    /// Optional schema used to extract a structured result from completed turns.
+    public let resultSchema: JSONValue?
     /// Delegation nesting depth. Zero means top-level.
     public let delegationDepth: Int
+    /// Session-scoped delegation policy.
+    public let policy: RuntimeDelegationPolicy
 
     public init(
         directory: String,
@@ -59,7 +63,9 @@ public struct SessionConfig: Codable, Sendable {
         parentSessionID: String? = nil,
         parentRunID: String? = nil,
         taskMetadata: [String: String] = [:],
-        delegationDepth: Int = 0
+        resultSchema: JSONValue? = nil,
+        delegationDepth: Int = 0,
+        policy: RuntimeDelegationPolicy = RuntimeDelegationPolicy()
     ) {
         self.directory = directory
         self.provider = provider
@@ -72,6 +78,21 @@ public struct SessionConfig: Codable, Sendable {
         self.parentSessionID = parentSessionID
         self.parentRunID = parentRunID
         self.taskMetadata = taskMetadata
+        self.resultSchema = resultSchema
         self.delegationDepth = delegationDepth
+        self.policy = policy
+    }
+
+    public var delegatedTask: DelegatedTaskDescriptor? {
+        guard purpose != nil || parentSessionID != nil || parentRunID != nil || !taskMetadata.isEmpty || resultSchema != nil else {
+            return nil
+        }
+        return DelegatedTaskDescriptor(
+            purpose: purpose,
+            parentSessionID: parentSessionID,
+            parentRunID: parentRunID,
+            metadata: taskMetadata,
+            resultSchema: resultSchema
+        )
     }
 }

@@ -26,6 +26,7 @@ final class AgentDashboardModel: Identifiable {
     @ObservationIgnored private var journalCursors: [String: UInt64] = [:]
     @ObservationIgnored private var refreshTimer: DispatchSourceTimer?
     @ObservationIgnored private var sessionCosts: [String: Double] = [:] // sessionID -> accumulated cost
+    @ObservationIgnored private let costLock = NSLock()
     @ObservationIgnored private var apiCallObserver: Any?
 
     var repoName: String {
@@ -63,10 +64,12 @@ final class AgentDashboardModel: Identifiable {
         apiCallObserver = NotificationCenter.default.addObserver(
             forName: .apiCallRecorded,
             object: nil,
-            queue: .main
+            queue: nil
         ) { [weak self] notification in
-            guard let event = notification.userInfo?["event"] as? APICallEvent else { return }
-            self?.sessionCosts[event.sessionId, default: 0] += event.costUSD
+            guard let self = self, let event = notification.userInfo?["event"] as? APICallEvent else { return }
+            costLock.lock()
+            sessionCosts[event.sessionId, default: 0] += event.costUSD
+            costLock.unlock()
         }
     }
 
@@ -104,8 +107,10 @@ final class AgentDashboardModel: Identifiable {
             // Extract last tool from journal
             let lastTool = extractLastTool(from: session.journal)
 
-            // Cost accumulated from proxy IPC notifications
+            // Cost accumulated from proxy IPC notifications (lock for thread safety)
+            costLock.lock()
             let sessionCost = sessionCosts[session.id] ?? 0
+            costLock.unlock()
 
             cards.append(AgentCardData(
                 sessionID: session.id,

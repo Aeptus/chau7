@@ -23,10 +23,23 @@ func (p ModelPricing) CalculateCost(inputTokens, outputTokens int) float64 {
 	return inputCost + outputCost
 }
 
-// CalculateFullCost computes cost including cache and reasoning tokens
+// CalculateFullCost computes cost including cache and reasoning tokens.
+//
+// IMPORTANT: OpenAI's completion_tokens already includes reasoning tokens as a
+// subset. To avoid double-billing, we subtract reasoning from output before
+// computing output cost, then bill reasoning separately (at the same rate for
+// most models, but this allows future differentiation).
 func (p ModelPricing) CalculateFullCost(input, output, cacheCreation, cacheRead, reasoning int) float64 {
 	cost := (float64(input) / 1e6) * p.InputPerMillion
-	cost += (float64(output) / 1e6) * p.OutputPerMillion
+
+	// Subtract reasoning from output to avoid double-counting when the provider
+	// includes reasoning in completion_tokens (OpenAI). For providers that don't
+	// report reasoning (reasoning=0), this is a no-op.
+	nonReasoningOutput := output - reasoning
+	if nonReasoningOutput < 0 {
+		nonReasoningOutput = 0
+	}
+	cost += (float64(nonReasoningOutput) / 1e6) * p.OutputPerMillion
 
 	// Cache creation: 1.25x input rate for Anthropic (default), or explicit rate
 	if cacheCreation > 0 {
@@ -46,7 +59,7 @@ func (p ModelPricing) CalculateFullCost(input, output, cacheCreation, cacheRead,
 		cost += (float64(cacheRead) / 1e6) * rate
 	}
 
-	// Reasoning: same as output rate unless explicitly set
+	// Reasoning tokens billed at output rate unless explicitly set
 	if reasoning > 0 {
 		rate := p.ReasoningOutputPerMillion
 		if rate == 0 {

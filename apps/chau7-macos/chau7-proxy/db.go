@@ -73,9 +73,11 @@ func (d *Database) InsertAPICall(record *APICallRecord) error {
 	_, err := d.db.Exec(`
 		INSERT INTO api_calls (
 			session_id, provider, model, endpoint,
-			input_tokens, output_tokens, latency_ms, ttft_ms, status_code,
+			input_tokens, output_tokens,
+			cache_creation_input_tokens, cache_read_input_tokens, reasoning_output_tokens,
+			latency_ms, ttft_ms, status_code,
 			cost_usd, timestamp, error_message
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		record.SessionID,
 		string(record.Provider),
@@ -83,6 +85,9 @@ func (d *Database) InsertAPICall(record *APICallRecord) error {
 		record.Endpoint,
 		record.InputTokens,
 		record.OutputTokens,
+		record.CacheCreationInputTokens,
+		record.CacheReadInputTokens,
+		record.ReasoningOutputTokens,
 		record.LatencyMs,
 		record.TTFTMs,
 		record.StatusCode,
@@ -306,6 +311,7 @@ func runMigrations(db *sql.DB) error {
 	defer rows.Close()
 
 	hasTaskID := false
+	hasCacheTokens := false
 	for rows.Next() {
 		var cid int
 		var name, ctype string
@@ -314,14 +320,15 @@ func runMigrations(db *sql.DB) error {
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
 			continue
 		}
-		if name == "task_id" {
+		switch name {
+		case "task_id":
 			hasTaskID = true
-			break
+		case "cache_creation_input_tokens":
+			hasCacheTokens = true
 		}
 	}
 
 	if !hasTaskID {
-		// Add new columns to api_calls
 		migrations := []string{
 			"ALTER TABLE api_calls ADD COLUMN task_id TEXT",
 			"ALTER TABLE api_calls ADD COLUMN tab_id TEXT",
@@ -332,14 +339,15 @@ func runMigrations(db *sql.DB) error {
 		}
 	}
 
-	// Cache + reasoning token columns
-	cacheTokenMigrations := []string{
-		"ALTER TABLE api_calls ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0",
-		"ALTER TABLE api_calls ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0",
-		"ALTER TABLE api_calls ADD COLUMN reasoning_output_tokens INTEGER DEFAULT 0",
-	}
-	for _, m := range cacheTokenMigrations {
-		db.Exec(m) // Ignore errors for columns that may already exist
+	if !hasCacheTokens {
+		cacheTokenMigrations := []string{
+			"ALTER TABLE api_calls ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0",
+			"ALTER TABLE api_calls ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0",
+			"ALTER TABLE api_calls ADD COLUMN reasoning_output_tokens INTEGER DEFAULT 0",
+		}
+		for _, m := range cacheTokenMigrations {
+			db.Exec(m) // Ignore errors for columns that may already exist
+		}
 	}
 
 	// v1.2 migrations: Add baseline fields to api_calls
@@ -538,9 +546,11 @@ func (d *Database) InsertAPICallWithTask(record *APICallRecord, taskID, tabID, p
 	result, err := d.db.Exec(`
 		INSERT INTO api_calls (
 			session_id, provider, model, endpoint,
-			input_tokens, output_tokens, latency_ms, ttft_ms, status_code,
+			input_tokens, output_tokens,
+			cache_creation_input_tokens, cache_read_input_tokens, reasoning_output_tokens,
+			latency_ms, ttft_ms, status_code,
 			cost_usd, timestamp, error_message, task_id, tab_id, project_path
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		record.SessionID,
 		string(record.Provider),
@@ -548,6 +558,9 @@ func (d *Database) InsertAPICallWithTask(record *APICallRecord, taskID, tabID, p
 		record.Endpoint,
 		record.InputTokens,
 		record.OutputTokens,
+		record.CacheCreationInputTokens,
+		record.CacheReadInputTokens,
+		record.ReasoningOutputTokens,
 		record.LatencyMs,
 		record.TTFTMs,
 		record.StatusCode,

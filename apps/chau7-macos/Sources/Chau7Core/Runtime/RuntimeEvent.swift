@@ -48,6 +48,7 @@ public struct RuntimeEventType: RawRepresentable, Equatable, Hashable, Sendable 
     public static let turnStarted = RuntimeEventType(rawValue: "turn_started")
     public static let turnCompleted = RuntimeEventType(rawValue: "turn_completed")
     public static let turnFailed = RuntimeEventType(rawValue: "turn_failed")
+    public static let turnResult = RuntimeEventType(rawValue: "turn_result")
 
     // Agent activity
     public static let agentResponding = RuntimeEventType(rawValue: "agent_responding")
@@ -67,4 +68,5 @@ public struct RuntimeEventType: RawRepresentable, Equatable, Hashable, Sendable 
     public static let tokenThreshold = RuntimeEventType(rawValue: "token_threshold")
     public static let costThreshold = RuntimeEventType(rawValue: "cost_threshold")
     public static let exitClassified = RuntimeEventType(rawValue: "exit_classified")
+    public static let policyBlocked = RuntimeEventType(rawValue: "policy_blocked")
 }

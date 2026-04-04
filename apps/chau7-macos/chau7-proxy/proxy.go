@@ -165,9 +165,13 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				provider, r.URL.Path, isStreaming, len(respBody))
 		}
 		if respMeta.InputTokens == 0 && respMeta.OutputTokens == 0 {
-			// Estimate tokens from body sizes (~4 chars per token)
+			// Estimate tokens from body sizes (~4 chars per token).
+			// For streaming, apply 0.6x to account for SSE framing overhead.
 			estimatedInput := len(bodyBytes) / 4
 			estimatedOutput := len(respBody) / 4
+			if isStreaming && estimatedOutput > 0 {
+				estimatedOutput = estimatedOutput * 6 / 10
+			}
 			if estimatedInput > 0 || estimatedOutput > 0 {
 				log.Printf("[WARN] %s %s: no tokens extracted, using estimate in:~%d out:~%d (streaming=%v, reqLen=%d, respLen=%d)",
 					provider, r.URL.Path, estimatedInput, estimatedOutput, isStreaming, len(bodyBytes), len(respBody))

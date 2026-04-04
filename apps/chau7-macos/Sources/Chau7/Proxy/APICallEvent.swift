@@ -177,6 +177,9 @@ public struct APICallStats: Equatable, Sendable {
     public let callCount: Int
     public let totalInputTokens: Int
     public let totalOutputTokens: Int
+    public let totalCacheCreationTokens: Int
+    public let totalCacheReadTokens: Int
+    public let totalReasoningTokens: Int
     public let totalCost: Double
     public let averageLatencyMs: Double
 
@@ -184,16 +187,27 @@ public struct APICallStats: Equatable, Sendable {
         totalInputTokens + totalOutputTokens
     }
 
+    /// All tokens including cache and reasoning.
+    public var totalAllTokens: Int {
+        totalInputTokens + totalOutputTokens + totalCacheCreationTokens + totalCacheReadTokens + totalReasoningTokens
+    }
+
     public init(
         callCount: Int = 0,
         totalInputTokens: Int = 0,
         totalOutputTokens: Int = 0,
+        totalCacheCreationTokens: Int = 0,
+        totalCacheReadTokens: Int = 0,
+        totalReasoningTokens: Int = 0,
         totalCost: Double = 0,
         averageLatencyMs: Double = 0
     ) {
         self.callCount = callCount
         self.totalInputTokens = totalInputTokens
         self.totalOutputTokens = totalOutputTokens
+        self.totalCacheCreationTokens = totalCacheCreationTokens
+        self.totalCacheReadTokens = totalCacheReadTokens
+        self.totalReasoningTokens = totalReasoningTokens
         self.totalCost = totalCost
         self.averageLatencyMs = averageLatencyMs
     }
@@ -204,6 +218,9 @@ public struct APICallStats: Equatable, Sendable {
 
         let totalInput = events.reduce(0) { $0 + $1.inputTokens }
         let totalOutput = events.reduce(0) { $0 + $1.outputTokens }
+        let totalCacheCreation = events.reduce(0) { $0 + $1.cacheCreationInputTokens }
+        let totalCacheRead = events.reduce(0) { $0 + $1.cacheReadInputTokens }
+        let totalReasoning = events.reduce(0) { $0 + $1.reasoningOutputTokens }
         let totalCost = events.reduce(0) { $0 + $1.costUSD }
         let avgLatency = Double(events.reduce(0) { $0 + $1.latencyMs }) / Double(events.count)
 
@@ -211,6 +228,9 @@ public struct APICallStats: Equatable, Sendable {
             callCount: events.count,
             totalInputTokens: totalInput,
             totalOutputTokens: totalOutput,
+            totalCacheCreationTokens: totalCacheCreation,
+            totalCacheReadTokens: totalCacheRead,
+            totalReasoningTokens: totalReasoning,
             totalCost: totalCost,
             averageLatencyMs: avgLatency
         )

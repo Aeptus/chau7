@@ -415,6 +415,7 @@ final class MCPSession {
                         "parent_session_id": ["type": "string", "description": "Runtime session ID that delegated this child session."],
                         "parent_run_id": ["type": "string", "description": "Telemetry run ID that delegated this child session."],
                         "task_metadata": ["type": "object", "description": "Arbitrary string metadata persisted onto delegated telemetry runs."],
+                        "result_schema": ["type": "object", "description": "Optional JSON-schema-like object used to extract a structured final result from completed turns."],
                         "delegation_depth": ["type": "integer", "description": "Delegation nesting depth. Zero means top-level."]
                     ]
                 ]
@@ -461,7 +462,8 @@ final class MCPSession {
                     "properties": [
                         "session_id": ["type": "string", "description": "Runtime session ID"],
                         "prompt": ["type": "string", "description": "The prompt to send to the agent"],
-                        "context": ["type": "string", "description": "Optional context prepended to the prompt"]
+                        "context": ["type": "string", "description": "Optional context prepended to the prompt"],
+                        "result_schema": ["type": "object", "description": "Optional turn-specific JSON-schema-like object used to extract a structured result."]
                     ],
                     "required": ["session_id", "prompt"]
                 ]
@@ -469,6 +471,18 @@ final class MCPSession {
             [
                 "name": "runtime_turn_status",
                 "description": "Check the current turn state of a session.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "session_id": ["type": "string", "description": "Runtime session ID"],
+                        "turn_id": ["type": "string", "description": "Optional specific turn ID"]
+                    ],
+                    "required": ["session_id"]
+                ]
+            ],
+            [
+                "name": "runtime_turn_result",
+                "description": "Fetch the latest structured result captured for a session, or a specific turn result when turn_id is provided.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
