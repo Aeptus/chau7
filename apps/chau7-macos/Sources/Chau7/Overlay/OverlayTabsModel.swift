@@ -900,11 +900,17 @@ final class OverlayTabsModel {
             } else {
                 Log.info(logMessage)
             }
+            if let explicitSessionId,
+               explicitProvider == "codex" {
+                Log.info(
+                    "saveTabState: preserving explicit Codex resume metadata sessionId=\(explicitSessionId) for dir=\(directory) despite unresolved replacement"
+                )
+                return (provider: "codex", sessionId: explicitSessionId)
+            }
             if hasClaimedExplicitCodexSession {
                 Log.info(
-                    "saveTabState: clearing claimed Codex resume metadata sessionId=\(explicitSessionId ?? "nil") for dir=\(directory)"
+                    "saveTabState: retaining claimed Codex resume metadata sessionId=\(explicitSessionId ?? "nil") for dir=\(directory)"
                 )
-                session.restoreAIMetadata(provider: nil, sessionId: nil)
             }
             return nil
         }
