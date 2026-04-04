@@ -416,7 +416,11 @@ final class MCPSession {
                         "parent_run_id": ["type": "string", "description": "Telemetry run ID that delegated this child session."],
                         "task_metadata": ["type": "object", "description": "Arbitrary string metadata persisted onto delegated telemetry runs."],
                         "result_schema": ["type": "object", "description": "Optional JSON-schema-like object used to extract a structured final result from completed turns."],
-                        "delegation_depth": ["type": "integer", "description": "Delegation nesting depth. Zero means top-level."]
+                        "delegation_depth": ["type": "integer", "description": "Delegation nesting depth. Zero means top-level."],
+                        "policy": [
+                            "type": "object",
+                            "description": "Optional delegated-session policy. Enforced limits include max_turns, max_duration_ms, child delegation, depth, and tool allow/block lists. Network/filesystem flags are advisory until paired with backend sandboxing."
+                        ]
                     ]
                 ]
             ],
@@ -455,6 +459,44 @@ final class MCPSession {
                 ]
             ],
             [
+                "name": "runtime_session_children",
+                "description": "List child runtime sessions delegated from a parent session.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "session_id": ["type": "string", "description": "Parent runtime session ID"],
+                        "include_stopped": ["type": "boolean", "description": "Include recently stopped child sessions"],
+                        "recursive": ["type": "boolean", "description": "Include all descendants, not just direct children"]
+                    ],
+                    "required": ["session_id"]
+                ]
+            ],
+            [
+                "name": "runtime_session_cancel_children",
+                "description": "Stop all active descendant sessions delegated from a parent session.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "session_id": ["type": "string", "description": "Parent runtime session ID"],
+                        "close_tabs": ["type": "boolean", "description": "Also close child tabs after stopping them"],
+                        "force": ["type": "boolean", "description": "Send Ctrl+C to busy child sessions before stopping"]
+                    ],
+                    "required": ["session_id"]
+                ]
+            ],
+            [
+                "name": "runtime_session_retry",
+                "description": "Create a fresh session using the configuration of an existing runtime session.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "session_id": ["type": "string", "description": "Runtime session ID to clone"],
+                        "prompt": ["type": "string", "description": "Optional prompt override; defaults to the last submitted prompt when available"]
+                    ],
+                    "required": ["session_id"]
+                ]
+            ],
+            [
                 "name": "runtime_turn_send",
                 "description": "Send a prompt to an agent session. Session must be in 'ready' state. Use runtime_turn_status or runtime_events_poll to check readiness first. Returns error with current state if not ready.",
                 "inputSchema": [
@@ -488,6 +530,19 @@ final class MCPSession {
                     "properties": [
                         "session_id": ["type": "string", "description": "Runtime session ID"],
                         "turn_id": ["type": "string", "description": "Optional specific turn ID"]
+                    ],
+                    "required": ["session_id"]
+                ]
+            ],
+            [
+                "name": "runtime_turn_wait",
+                "description": "Block until the current turn or a specific turn finishes, then return the latest turn status.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "session_id": ["type": "string", "description": "Runtime session ID"],
+                        "turn_id": ["type": "string", "description": "Optional specific turn ID"],
+                        "timeout_ms": ["type": "integer", "description": "Maximum time to wait before returning a timed_out=true response"]
                     ],
                     "required": ["session_id"]
                 ]

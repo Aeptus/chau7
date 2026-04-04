@@ -152,6 +152,30 @@ final class RuntimeSessionManager {
         return result
     }
 
+    func childSessions(parentSessionID: String, includeStopped: Bool = false) -> [RuntimeSession] {
+        let sessions = allSessions(includeStopped: includeStopped)
+        return sessions.filter { $0.config.parentSessionID == parentSessionID }
+    }
+
+    func descendantSessions(rootSessionID: String, includeStopped: Bool = false) -> [RuntimeSession] {
+        let sessions = allSessions(includeStopped: includeStopped)
+        var byParent: [String: [RuntimeSession]] = [:]
+        for session in sessions {
+            if let parentSessionID = session.config.parentSessionID {
+                byParent[parentSessionID, default: []].append(session)
+            }
+        }
+
+        var result: [RuntimeSession] = []
+        var queue = byParent[rootSessionID] ?? []
+        while !queue.isEmpty {
+            let session = queue.removeFirst()
+            result.append(session)
+            queue.append(contentsOf: byParent[session.id] ?? [])
+        }
+        return result
+    }
+
     /// Check if a tab is managed by the runtime.
     func isRuntimeManaged(_ tabID: UUID) -> Bool {
         lock.lock()
@@ -218,7 +242,15 @@ final class RuntimeSessionManager {
                 || session.state == .awaitingApproval
             if canHandlePermission {
                 let ownsUserFacingNotifications = session.backend.name.lowercased() == "claude"
-                if session.autoApprove {
+                if let policyError = session.config.policy.validateTool(event.toolName) {
+                    _ = TerminalControlService.shared.sendInput(
+                        tabID: session.tabID.uuidString, input: "n\n"
+                    )
+                    session.recordPolicyBlock(tool: event.toolName, reason: policyError)
+                    if !ownsUserFacingNotifications {
+                        emitNotification(session: session, type: "policy_blocked", message: policyError)
+                    }
+                } else if session.autoApprove {
                     // Layer 2: auto-respond to permission requests that bypass Layer 1
                     // (Layer 1 is the CLI flag like --full-auto / --dangerously-skip-permissions)
                     _ = TerminalControlService.shared.sendInput(

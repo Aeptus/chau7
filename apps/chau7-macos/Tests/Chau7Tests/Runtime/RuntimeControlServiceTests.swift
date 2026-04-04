@@ -190,9 +190,81 @@ final class RuntimeControlServiceTests: XCTestCase {
         XCTAssertEqual(findings.first?["severity"] as? String, "medium")
     }
 
+    func testRuntimeSessionCreateRejectsChildWhenParentPolicyDisallowsDelegation() throws {
+        let parentResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": "shell",
+                "directory": "/tmp/runtime-parent-\(UUID().uuidString)",
+                "policy": [
+                    "allow_child_delegation": false,
+                    "max_delegation_depth": 0
+                ]
+            ]
+        )
+        let parentJSON = try XCTUnwrap(parseJSONObject(parentResponse))
+        let parentSessionID = try XCTUnwrap(parentJSON["session_id"] as? String)
+
+        let childResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": "shell",
+                "directory": "/tmp/runtime-child-\(UUID().uuidString)",
+                "parent_session_id": parentSessionID,
+                "delegation_depth": 1
+            ]
+        )
+
+        let childJSON = try XCTUnwrap(parseJSONObject(childResponse))
+        XCTAssertEqual(childJSON["error"] as? String, "Session policy disallows child delegation.")
+    }
+
+    func testRuntimeSessionChildrenListsDescendants() throws {
+        let parentResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": "shell",
+                "directory": "/tmp/runtime-tree-\(UUID().uuidString)"
+            ]
+        )
+        let parentJSON = try XCTUnwrap(parseJSONObject(parentResponse))
+        let parentSessionID = try XCTUnwrap(parentJSON["session_id"] as? String)
+
+        let childResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": "shell",
+                "directory": "/tmp/runtime-tree-child-\(UUID().uuidString)",
+                "parent_session_id": parentSessionID,
+                "delegation_depth": 1
+            ]
+        )
+        let childJSON = try XCTUnwrap(parseJSONObject(childResponse))
+        let childSessionID = try XCTUnwrap(childJSON["session_id"] as? String)
+
+        let descendantsResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_children",
+            arguments: [
+                "session_id": parentSessionID,
+                "recursive": true
+            ]
+        )
+
+        let descendants = try XCTUnwrap(parseJSONArray(descendantsResponse))
+        XCTAssertTrue(descendants.contains { ($0["session_id"] as? String) == childSessionID })
+    }
+
     private func parseJSONObject(_ text: String) -> [String: Any]? {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return json
+    }
+
+    private func parseJSONArray(_ text: String) -> [[String: Any]]? {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             return nil
         }
         return json

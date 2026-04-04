@@ -337,6 +337,23 @@ final class RuntimeSession: @unchecked Sendable {
         lock.unlock()
     }
 
+    func recordPolicyBlock(tool: String, reason: String) {
+        lock.lock()
+        _lastDeniedApproval = true
+        let turnID = _currentTurnID
+        lock.unlock()
+
+        journal.append(
+            sessionID: id,
+            turnID: turnID,
+            type: RuntimeEventType.policyBlocked.rawValue,
+            data: [
+                "tool": tool,
+                "reason": reason
+            ]
+        )
+    }
+
     // MARK: - Approval Management
 
     /// Record that an approval is needed. Transitions to `.awaitingApproval`.

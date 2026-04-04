@@ -47,12 +47,20 @@ final class RuntimeControlService {
             return getSession(arguments)
         case "runtime_session_stop":
             return stopSession(arguments)
+        case "runtime_session_children":
+            return listChildSessions(arguments)
+        case "runtime_session_cancel_children":
+            return cancelChildSessions(arguments)
+        case "runtime_session_retry":
+            return retrySession(arguments)
         case "runtime_turn_send":
             return sendTurn(arguments)
         case "runtime_turn_status":
             return turnStatus(arguments)
         case "runtime_turn_result":
             return turnResult(arguments)
+        case "runtime_turn_wait":
+            return waitForTurn(arguments)
         case "runtime_events_poll":
             return pollEvents(arguments)
         case "runtime_approval_respond":
@@ -80,6 +88,19 @@ final class RuntimeControlService {
         let taskMetadata = sanitizeStringDict(args["task_metadata"]) ?? [:]
         let resultSchema = args["result_schema"].flatMap(JSONValue.from(any:))
         let delegationDepth = max(0, args["delegation_depth"] as? Int ?? 0)
+        let policy = parsePolicy(args["policy"]) ?? RuntimeDelegationPolicy()
+
+        if let policyError = policy.validateStart(turnCount: 1, elapsedMs: 0, delegationDepth: delegationDepth) {
+            return jsonError(policyError)
+        }
+        if let parentSessionID {
+            guard let parentSession = sessionManager.session(id: parentSessionID) else {
+                return jsonError("Parent session not found: \(parentSessionID)")
+            }
+            if let policyError = parentSession.config.policy.validateChildCreation(childDelegationDepth: delegationDepth) {
+                return jsonError(policyError)
+            }
+        }
 
         if let purpose {
             env["CHAU7_SESSION_PURPOSE"] = purpose
@@ -91,10 +112,24 @@ final class RuntimeControlService {
             env["CHAU7_PARENT_RUN_ID"] = parentRunID
         }
         env["CHAU7_DELEGATION_DEPTH"] = "\(delegationDepth)"
+        env["CHAU7_ALLOW_CHILD_DELEGATION"] = policy.allowChildDelegation ? "1" : "0"
+        env["CHAU7_MAX_DELEGATION_DEPTH"] = "\(policy.maxDelegationDepth)"
+        if let maxTurns = policy.maxTurns {
+            env["CHAU7_MAX_TURNS"] = "\(maxTurns)"
+        }
+        if let maxDurationMs = policy.maxDurationMs {
+            env["CHAU7_MAX_DURATION_MS"] = "\(maxDurationMs)"
+        }
+        if let allowNetwork = policy.allowNetwork {
+            env["CHAU7_ALLOW_NETWORK"] = allowNetwork ? "1" : "0"
+        }
+        if let allowFileWrites = policy.allowFileWrites {
+            env["CHAU7_ALLOW_FILE_WRITES"] = allowFileWrites ? "1" : "0"
+        }
 
         Log
             .info(
-                "MCP runtime_session_create: backend=\(backendName) model=\(model ?? "(none)") dir=\(directory) autoApprove=\(autoApprove) resume=\(resumeID ?? "(none)") backendArgs=\(backendArgs) hasInitialPrompt=\(initialPrompt != nil) attachTab=\(attachTabID ?? "(none)") purpose=\(purpose ?? "(none)") parentSession=\(parentSessionID ?? "(none)") parentRun=\(parentRunID ?? "(none)") depth=\(delegationDepth)"
+                "MCP runtime_session_create: backend=\(backendName) model=\(model ?? "(none)") dir=\(directory) autoApprove=\(autoApprove) resume=\(resumeID ?? "(none)") backendArgs=\(backendArgs) hasInitialPrompt=\(initialPrompt != nil) attachTab=\(attachTabID ?? "(none)") purpose=\(purpose ?? "(none)") parentSession=\(parentSessionID ?? "(none)") parentRun=\(parentRunID ?? "(none)") depth=\(delegationDepth) policy[maxTurns=\(policy.maxTurns.map(String.init) ?? "-"), maxDurationMs=\(policy.maxDurationMs.map(String.init) ?? "-"), allowChildDelegation=\(policy.allowChildDelegation)]"
             )
 
         // Resolve backend via registry
@@ -140,7 +175,8 @@ final class RuntimeControlService {
             parentRunID: parentRunID,
             taskMetadata: taskMetadata,
             resultSchema: resultSchema,
-            delegationDepth: delegationDepth
+            delegationDepth: delegationDepth,
+            policy: policy
         )
 
         // Create or attach to tab
@@ -283,6 +319,92 @@ final class RuntimeControlService {
         return encodeAny(["ok": stopped, "session_id": sessionID, "final_state": session.state.rawValue])
     }
 
+    private func listChildSessions(_ args: [String: Any]) -> String {
+        guard let sessionID = args["session_id"] as? String else {
+            return jsonError("session_id is required")
+        }
+        let includeStopped = args["include_stopped"] as? Bool ?? false
+        let recursive = args["recursive"] as? Bool ?? false
+
+        let sessions = recursive
+            ? sessionManager.descendantSessions(rootSessionID: sessionID, includeStopped: includeStopped)
+            : sessionManager.childSessions(parentSessionID: sessionID, includeStopped: includeStopped)
+        return encodeAny(sessions.map(sessionSummary))
+    }
+
+    private func cancelChildSessions(_ args: [String: Any]) -> String {
+        guard let sessionID = args["session_id"] as? String else {
+            return jsonError("session_id is required")
+        }
+        let closeTabs = args["close_tabs"] as? Bool ?? false
+        let force = args["force"] as? Bool ?? false
+        let children = sessionManager.descendantSessions(rootSessionID: sessionID, includeStopped: false)
+
+        var stoppedIDs: [String] = []
+        for child in children {
+            if force || child.state == .busy || child.state == .awaitingApproval {
+                _ = controlService.sendInput(tabID: child.tabID.uuidString, input: "\u{3}")
+            }
+            if sessionManager.stopSession(id: child.id) {
+                stoppedIDs.append(child.id)
+                if closeTabs {
+                    _ = controlService.closeTab(tabID: child.tabID.uuidString, force: true)
+                }
+            }
+        }
+
+        return encodeAny([
+            "ok": true,
+            "session_id": sessionID,
+            "stopped_session_ids": stoppedIDs,
+            "count": stoppedIDs.count
+        ])
+    }
+
+    private func retrySession(_ args: [String: Any]) -> String {
+        guard let sessionID = args["session_id"] as? String else {
+            return jsonError("session_id is required")
+        }
+        guard let sourceSession = sessionManager.session(id: sessionID) else {
+            return jsonError("Session not found: \(sessionID)")
+        }
+
+        var retryArgs: [String: Any] = [
+            "backend": sourceSession.backend.name,
+            "directory": sourceSession.config.directory,
+            "env": sourceSession.config.environment,
+            "backend_args": sourceSession.config.args,
+            "auto_approve": sourceSession.autoApprove,
+            "delegation_depth": sourceSession.config.delegationDepth,
+            "policy": policyDictionary(sourceSession.config.policy)
+        ]
+        if let model = sourceSession.config.model {
+            retryArgs["model"] = model
+        }
+        if let resumeSessionID = sourceSession.config.resumeSessionID {
+            retryArgs["resume_session_id"] = resumeSessionID
+        }
+        if let purpose = sourceSession.config.purpose {
+            retryArgs["purpose"] = purpose
+        }
+        if let parentSessionID = sourceSession.config.parentSessionID {
+            retryArgs["parent_session_id"] = parentSessionID
+        }
+        if let parentRunID = sourceSession.config.parentRunID {
+            retryArgs["parent_run_id"] = parentRunID
+        }
+        if !sourceSession.config.taskMetadata.isEmpty {
+            retryArgs["task_metadata"] = sourceSession.config.taskMetadata
+        }
+        if let resultSchema = sourceSession.config.resultSchema {
+            retryArgs["result_schema"] = resultSchema.foundationValue
+        }
+        if let prompt = sanitizeOptionalString(args["prompt"] as? String) ?? sourceSession.lastPrompt {
+            retryArgs["initial_prompt"] = prompt
+        }
+        return createSession(retryArgs)
+    }
+
     // MARK: - Turn Management
 
     private func sendTurn(_ args: [String: Any]) -> String {
@@ -303,6 +425,15 @@ final class RuntimeControlService {
     }
 
     private func sendTurnInternal(session: RuntimeSession, prompt: String, context: String?, resultSchema: JSONValue? = nil) -> String {
+        let elapsedMs = Int(Date().timeIntervalSince(session.createdAt) * 1000)
+        if let policyError = session.config.policy.validateStart(
+            turnCount: session.turnCount + 1,
+            elapsedMs: elapsedMs,
+            delegationDepth: session.config.delegationDepth
+        ) {
+            session.recordPolicyBlock(tool: "turn_submission", reason: policyError)
+            return jsonError(policyError)
+        }
         guard session.canAcceptTurn else {
             Log.info("MCP runtime_turn_send: rejected for session \(session.id), state=\(session.state.rawValue)")
             return jsonError("Session \(session.id) is not ready (state: \(session.state.rawValue)). Wait for ready state.")
@@ -391,6 +522,43 @@ final class RuntimeControlService {
             return jsonError("Turn result not found for session \(sessionID)\(turnID.map { " turn \($0)" } ?? "")")
         }
         return encode(fallback)
+    }
+
+    private func waitForTurn(_ args: [String: Any]) -> String {
+        guard let sessionID = args["session_id"] as? String else {
+            return jsonError("session_id is required")
+        }
+        guard let session = sessionManager.session(id: sessionID) else {
+            return jsonError("Session not found: \(sessionID)")
+        }
+
+        let requestedTurnID = sanitizeOptionalString(args["turn_id"] as? String)
+        let defaultTimeoutMs = 30000
+        let maxTimeoutMs = 3_600_000
+        let timeoutMs = min(max(args["timeout_ms"] as? Int ?? defaultTimeoutMs, 100), maxTimeoutMs)
+        let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
+        let statusArgs = statusArguments(sessionID: sessionID, turnID: requestedTurnID)
+
+        while Date() < deadline {
+            if turnIsFinished(session: session, requestedTurnID: requestedTurnID) {
+                var response = turnStatus(statusArgs)
+                if var object = parseJSONObject(response) {
+                    object["timed_out"] = false
+                    object["waited_ms"] = timeoutMs - max(Int(deadline.timeIntervalSinceNow * 1000), 0)
+                    response = encodeAny(object)
+                }
+                return response
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+
+        var response = turnStatus(statusArgs)
+        if var object = parseJSONObject(response) {
+            object["timed_out"] = true
+            object["waited_ms"] = timeoutMs
+            response = encodeAny(object)
+        }
+        return response
     }
 
     // MARK: - Event Polling
@@ -570,6 +738,71 @@ final class RuntimeControlService {
             return nil
         }
         return trimmed
+    }
+
+    private func parsePolicy(_ value: Any?) -> RuntimeDelegationPolicy? {
+        guard let policyObject = value as? [String: Any] else { return nil }
+        return RuntimeDelegationPolicy(
+            maxTurns: policyObject["max_turns"] as? Int,
+            maxDurationMs: policyObject["max_duration_ms"] as? Int,
+            allowChildDelegation: policyObject["allow_child_delegation"] as? Bool ?? true,
+            maxDelegationDepth: policyObject["max_delegation_depth"] as? Int ?? 4,
+            allowedTools: policyObject["allowed_tools"] as? [String] ?? [],
+            blockedTools: policyObject["blocked_tools"] as? [String] ?? [],
+            allowNetwork: policyObject["allow_network"] as? Bool,
+            allowFileWrites: policyObject["allow_file_writes"] as? Bool
+        )
+    }
+
+    private func policyDictionary(_ policy: RuntimeDelegationPolicy) -> [String: Any] {
+        var result: [String: Any] = [
+            "allow_child_delegation": policy.allowChildDelegation,
+            "max_delegation_depth": policy.maxDelegationDepth,
+            "allowed_tools": policy.allowedTools,
+            "blocked_tools": policy.blockedTools
+        ]
+        if let maxTurns = policy.maxTurns {
+            result["max_turns"] = maxTurns
+        }
+        if let maxDurationMs = policy.maxDurationMs {
+            result["max_duration_ms"] = maxDurationMs
+        }
+        if let allowNetwork = policy.allowNetwork {
+            result["allow_network"] = allowNetwork
+        }
+        if let allowFileWrites = policy.allowFileWrites {
+            result["allow_file_writes"] = allowFileWrites
+        }
+        return result
+    }
+
+    private func turnIsFinished(session: RuntimeSession, requestedTurnID: String?) -> Bool {
+        if let requestedTurnID {
+            if session.turnResult(id: requestedTurnID) != nil {
+                return true
+            }
+            if session.lastCompletedTurnID == requestedTurnID {
+                return true
+            }
+            return session.currentTurnID != requestedTurnID && session.state != .busy && session.state != .awaitingApproval
+        }
+        return session.state != .busy && session.state != .awaitingApproval
+    }
+
+    private func statusArguments(sessionID: String, turnID: String?) -> [String: Any] {
+        var arguments: [String: Any] = ["session_id": sessionID]
+        if let turnID {
+            arguments["turn_id"] = turnID
+        }
+        return arguments
+    }
+
+    private func parseJSONObject(_ text: String) -> [String: Any]? {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return json
     }
 
     private func fallbackTurnResult(for session: RuntimeSession) -> RuntimeTurnResult? {
