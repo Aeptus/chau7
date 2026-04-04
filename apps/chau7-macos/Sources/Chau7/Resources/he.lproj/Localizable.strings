@@ -3032,3 +3032,21 @@
 // MARK: - Notification Overrides
 "notifications.overrideCount" = "%d דריסות";
 "notifications.overriddenRatio" = "%d/%d נדרסו";
+
+// MARK: - Relative Time (Short)
+"time.minutes.short" = "%d ד׳";
+"time.hours.short" = "%d ש׳";
+"time.days.short" = "%d י׳";
+
+// MARK: - Hover Card
+"hovercard.turns" = "%d תורות";
+
+// MARK: - Repository Tokens
+"repo.tokensIn" = "%@ נכנסים";
+"repo.tokensOut" = "%@ יוצאים";
+
+// MARK: - Accessibility
+"a11y.openUrl" = "פתח %@";
+
+// MARK: - Pane
+"pane.copied" = "הועתק";

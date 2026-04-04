@@ -3032,3 +3032,21 @@
 // MARK: - Notification Overrides
 "notifications.overrideCount" = "%d تجاوزات";
 "notifications.overriddenRatio" = "%d/%d متجاوزة";
+
+// MARK: - Relative Time (Short)
+"time.minutes.short" = "%d د";
+"time.hours.short" = "%d س";
+"time.days.short" = "%d ي";
+
+// MARK: - Hover Card
+"hovercard.turns" = "%d أدوار";
+
+// MARK: - Repository Tokens
+"repo.tokensIn" = "%@ واردة";
+"repo.tokensOut" = "%@ صادرة";
+
+// MARK: - Accessibility
+"a11y.openUrl" = "فتح %@";
+
+// MARK: - Pane
+"pane.copied" = "تم النسخ";

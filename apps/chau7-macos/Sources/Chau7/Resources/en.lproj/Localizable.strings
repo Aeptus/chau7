@@ -3064,3 +3064,21 @@
 // MARK: - Notification Overrides
 "notifications.overrideCount" = "%d overrides";
 "notifications.overriddenRatio" = "%d/%d overridden";
+
+// MARK: - Relative Time (Short)
+"time.minutes.short" = "%dm ago";
+"time.hours.short" = "%dh ago";
+"time.days.short" = "%dd ago";
+
+// MARK: - Hover Card
+"hovercard.turns" = "%d turns";
+
+// MARK: - Repository Tokens
+"repo.tokensIn" = "%@ in";
+"repo.tokensOut" = "%@ out";
+
+// MARK: - Accessibility
+"a11y.openUrl" = "Open %@";
+
+// MARK: - Pane
+"pane.copied" = "Copied";

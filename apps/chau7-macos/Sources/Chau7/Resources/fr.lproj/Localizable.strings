@@ -1773,8 +1773,8 @@
 "alert.closeLastTab.newTab" = "Nouvel onglet";
 "alert.closeLastTab.title" = "C'est le dernier onglet";
 "alert.closeOtherTabs.confirm.message" = "Voulez-vous vraiment fermer tous les autres onglets ?";
-"alert.closeOtherTabs.confirm.title" = "Close \\(totalToClose) tabs?";
-"alert.closeOtherTabs.title" = "Close \\(totalToClose) tabs?";
+"alert.closeOtherTabs.confirm.title" = "Fermer \\(totalToClose) onglets ?";
+"alert.closeOtherTabs.title" = "Fermer \\(totalToClose) onglets ?";
 "alert.closeTab.confirm.title" = "Fermer cet onglet ?";
 "alert.closeTab.dontAskAgain" = "Ne plus demander";
 "alert.closeTab.runningProcess.title" = "Fermer l'onglet avec un processus actif ?";
@@ -3066,3 +3066,21 @@
 // MARK: - Notification Overrides
 "notifications.overrideCount" = "%d remplacements";
 "notifications.overriddenRatio" = "%d/%d remplacés";
+
+// MARK: - Relative Time (Short)
+"time.minutes.short" = "%d min";
+"time.hours.short" = "%d h";
+"time.days.short" = "%d j";
+
+// MARK: - Hover Card
+"hovercard.turns" = "%d tours";
+
+// MARK: - Repository Tokens
+"repo.tokensIn" = "%@ entrants";
+"repo.tokensOut" = "%@ sortants";
+
+// MARK: - Accessibility
+"a11y.openUrl" = "Ouvrir %@";
+
+// MARK: - Pane
+"pane.copied" = "Copié";
