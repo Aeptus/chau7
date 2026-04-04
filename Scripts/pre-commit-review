@@ -13,6 +13,7 @@ DEFAULT_GATE = "advisory"
 DEFAULT_TIMEOUT_MS = 45_000
 DEFAULT_BACKEND = "codex"
 SOCKET_PATH = Path.home() / "Library/Application Support/Chau7/scripting.sock"
+DEFAULT_CONFIG_NAME = ".chau7/pre-commit-review.conf"
 
 REVIEWABLE_EXTENSIONS = {
     ".c", ".cc", ".cpp", ".cs", ".go", ".h", ".hpp", ".java", ".js", ".json",
@@ -26,19 +27,19 @@ REVIEWABLE_FILENAMES = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a delegated Chau7 pre-commit code review over staged changes.")
-    parser.add_argument("--gate", default=os.environ.get("CHAU7_PRE_COMMIT_REVIEW_GATE", DEFAULT_GATE))
+    parser.add_argument("--gate")
     parser.add_argument(
         "--timeout-ms",
         type=int,
-        default=int(os.environ.get("CHAU7_PRE_COMMIT_REVIEW_TIMEOUT_MS", str(DEFAULT_TIMEOUT_MS))),
     )
-    parser.add_argument("--model", default=os.environ.get("CHAU7_PRE_COMMIT_REVIEW_MODEL"))
-    parser.add_argument("--backend", default=os.environ.get("CHAU7_PRE_COMMIT_REVIEW_BACKEND", DEFAULT_BACKEND))
+    parser.add_argument("--model")
+    parser.add_argument("--backend")
     parser.add_argument(
         "--enabled",
-        default=os.environ.get("CHAU7_PRE_COMMIT_REVIEW_ENABLED", "1"),
+        default=None,
         help="Set to 0/false/off to disable the review without removing the hook.",
     )
+    parser.add_argument("--config")
     return parser.parse_args()
 
 
@@ -49,6 +50,75 @@ def repo_root() -> Path:
         stderr=subprocess.DEVNULL,
     )
     return Path(output.strip())
+
+
+def default_config(root: Path) -> dict[str, str]:
+    return {
+        "enabled": "1",
+        "gate": DEFAULT_GATE,
+        "timeout_ms": str(DEFAULT_TIMEOUT_MS),
+        "model": "",
+        "backend": DEFAULT_BACKEND,
+        "config_path": str(root / DEFAULT_CONFIG_NAME),
+    }
+
+
+def strip_quotes(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def load_config_file(path: Path) -> dict[str, str]:
+    result: dict[str, str] = {}
+    if not path.exists():
+        return result
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        normalized_key = key.strip().lower()
+        if normalized_key not in {"enabled", "gate", "timeout_ms", "model", "backend"}:
+            continue
+        result[normalized_key] = strip_quotes(value)
+    return result
+
+
+def resolve_config(root: Path, args: argparse.Namespace) -> dict[str, str]:
+    config = default_config(root)
+
+    config_path = args.config or os.environ.get("CHAU7_PRE_COMMIT_REVIEW_CONFIG") or config["config_path"]
+    config["config_path"] = config_path
+    config.update(load_config_file(Path(config_path)))
+
+    env_map = {
+        "enabled": os.environ.get("CHAU7_PRE_COMMIT_REVIEW_ENABLED"),
+        "gate": os.environ.get("CHAU7_PRE_COMMIT_REVIEW_GATE"),
+        "timeout_ms": os.environ.get("CHAU7_PRE_COMMIT_REVIEW_TIMEOUT_MS"),
+        "model": os.environ.get("CHAU7_PRE_COMMIT_REVIEW_MODEL"),
+        "backend": os.environ.get("CHAU7_PRE_COMMIT_REVIEW_BACKEND"),
+    }
+    for key, value in env_map.items():
+        if value is not None:
+            config[key] = value
+
+    if args.enabled is not None:
+        config["enabled"] = args.enabled
+    if args.gate is not None:
+        config["gate"] = args.gate
+    if args.timeout_ms is not None:
+        config["timeout_ms"] = str(args.timeout_ms)
+    if args.model is not None:
+        config["model"] = args.model
+    if args.backend is not None:
+        config["backend"] = args.backend
+
+    return config
 
 
 def staged_files(root: Path) -> list[str]:
@@ -137,14 +207,24 @@ def has_blocking_findings(gate: str, findings: list[dict[str, Any]]) -> bool:
 
 def main() -> int:
     args = parse_args()
-    if str(args.enabled).strip().lower() in {"0", "false", "off", "no"}:
-        return 0
 
     try:
         root = repo_root()
     except subprocess.CalledProcessError:
         print_skip("not inside a git repository; skipping")
         return 0
+
+    config = resolve_config(root, args)
+    if str(config["enabled"]).strip().lower() in {"0", "false", "off", "no"}:
+        return 0
+
+    try:
+        timeout_ms = int(config["timeout_ms"])
+    except ValueError:
+        timeout_ms = DEFAULT_TIMEOUT_MS
+    gate = config["gate"]
+    backend = config["backend"] or DEFAULT_BACKEND
+    model = config["model"] or None
 
     reviewable_files = [path for path in staged_files(root) if is_reviewable(path)]
     if not reviewable_files:
@@ -159,11 +239,11 @@ def main() -> int:
             "start_review",
             {
                 "directory": str(root),
-                "backend": args.backend,
+                "backend": backend,
                 "mode": "staged_diff",
                 "staged_files": reviewable_files,
                 "staged_diff": diff,
-                "model": args.model,
+                "model": model,
             },
         )
     except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
@@ -179,9 +259,9 @@ def main() -> int:
         print_skip("review session did not return a session_id; skipping")
         return 0
 
-    wait_response = socket_call("wait_review", {"session_id": session_id, "timeout_ms": args.timeout_ms})
+    wait_response = socket_call("wait_review", {"session_id": session_id, "timeout_ms": timeout_ms})
     if wait_response.get("timed_out") is True:
-        print_skip(f"review timed out after {args.timeout_ms}ms; skipping")
+        print_skip(f"review timed out after {timeout_ms}ms; skipping")
         return 0
 
     result_response = socket_call("get_review_result", {"session_id": session_id})
@@ -221,7 +301,7 @@ def main() -> int:
             for item in rendered:
                 print(f"- {item}", file=sys.stderr)
 
-    if has_blocking_findings(args.gate, findings):
+    if has_blocking_findings(gate, findings):
         print("pre-commit review blocked the commit.", file=sys.stderr)
         return 1
     return 0
