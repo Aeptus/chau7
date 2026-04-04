@@ -1,3 +1,8 @@
+/// ActivityKit attributes for Live Activities and Dynamic Island.
+///
+/// Each activity tracks a single remote tab, displaying the current tool,
+/// project, headline, and approval state. Updated when the Mac sends
+/// `RemoteActivityState` frames over the relay.
 import ActivityKit
 import Foundation
 import Chau7Core

@@ -1,3 +1,11 @@
+/// Chau7 Remote — iOS companion app for controlling macOS Chau7 sessions.
+///
+/// Connects to a paired Mac over an encrypted WebSocket relay, providing:
+/// - Live terminal output viewing (text and experimental grid renderer)
+/// - Approval/deny workflow for AI agent tool use requests
+/// - Interactive prompt selection for Claude/Codex sessions
+/// - Live Activities and Dynamic Island integration
+/// - APNs push notifications for offline approval requests
 import SwiftUI
 import UserNotifications
 import os

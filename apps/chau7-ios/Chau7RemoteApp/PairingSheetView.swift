@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// Modal sheet for entering the pairing JSON payload from the macOS app.
+/// The payload contains the relay URL, device ID, Mac public key, and pairing code.
 struct PairingSheetView: View {
     var client: RemoteClient
     @Environment(\.dismiss) private var dismiss

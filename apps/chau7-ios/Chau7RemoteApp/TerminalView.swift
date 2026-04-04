@@ -1,6 +1,9 @@
 import Chau7Core
 import SwiftUI
 
+/// Main terminal tab: connection status bar, tab selector, output display,
+/// keyboard shortcut bar (esc, tab, ^C, ^D, arrows), and text input field.
+/// Supports two rendering modes: plain text (default) and experimental grid renderer.
 struct TerminalView: View {
     var client: RemoteClient
     @Binding var isPairingPresented: Bool

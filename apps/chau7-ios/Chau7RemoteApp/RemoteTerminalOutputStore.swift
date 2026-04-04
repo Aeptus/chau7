@@ -1,6 +1,11 @@
 import Foundation
 import Chau7Core
 
+/// Per-tab UTF-8 output accumulator with flush threshold and snapshot support.
+///
+/// Buffers incoming terminal output per tab ID. Flushes when pending data
+/// exceeds 50 KB or after a 250 ms debounce. Snapshots replace the entire
+/// tab output atomically (used when switching tabs or receiving grid state).
 struct RemoteTerminalOutputStore {
     private var committedByTabID: [UInt32: String] = [:]
     private var pendingByTabID = RemotePendingOutputBuffer<String>()

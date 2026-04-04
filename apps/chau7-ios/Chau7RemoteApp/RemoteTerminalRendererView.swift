@@ -2,6 +2,10 @@ import CoreText
 import SwiftUI
 import UIKit
 
+/// Dual-path terminal renderer: text-based UITextView (default) or experimental
+/// grid canvas with per-cell color, bold/italic/underline, cursor, and scrollback.
+/// The canvas batches background fills by color run and caches UIColor/text
+/// attributes to avoid per-cell allocations.
 struct RemoteTerminalRendererView: View {
     let client: RemoteClient
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault

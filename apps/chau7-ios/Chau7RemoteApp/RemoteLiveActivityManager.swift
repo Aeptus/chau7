@@ -1,3 +1,8 @@
+/// Manages ActivityKit Live Activities for the Dynamic Island and Lock Screen.
+///
+/// Creates, updates, and dismisses activities based on `RemoteActivityState`
+/// frames from the Mac. Completed activities dismiss after 8 seconds,
+/// failed activities after 20 seconds.
 import ActivityKit
 import Foundation
 import os

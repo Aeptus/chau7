@@ -1,6 +1,9 @@
 import SwiftUI
 import Chau7Core
 
+/// Approval workflow tab: interactive prompts, pending approval requests,
+/// and decision history. Pending requests show command context (tool, directory,
+/// recent command). Destructive interactive prompts require confirmation.
 struct ApprovalsView: View {
     var client: RemoteClient
     @State private var hapticTrigger = false

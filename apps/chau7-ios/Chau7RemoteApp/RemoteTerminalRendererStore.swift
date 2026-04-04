@@ -1,3 +1,9 @@
+/// Manages per-tab Rust terminal playback instances for the experimental grid renderer.
+///
+/// Maintains a `RemoteRustTerminalPlayback` per tab, replaying incoming bytes
+/// through the Rust terminal emulator to produce `RemoteTerminalRenderState`
+/// for the canvas view. Caches grid snapshots from the server for quick tab
+/// switching. Caps replay buffers at 400 KB per tab.
 import Chau7Core
 import Foundation
 import Observation

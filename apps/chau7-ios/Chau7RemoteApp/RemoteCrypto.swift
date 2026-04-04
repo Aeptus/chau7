@@ -1,3 +1,8 @@
+/// Encrypted session state for the relay connection.
+///
+/// Uses ChaChaPoly (ChaCha20-Poly1305 AEAD) with keys derived from a Curve25519
+/// shared secret via HKDF-SHA256. Nonces are constructed from a 4-byte prefix
+/// (derived from the shared secret) plus an 8-byte sequence number.
 import Foundation
 import CryptoKit
 import Chau7Core

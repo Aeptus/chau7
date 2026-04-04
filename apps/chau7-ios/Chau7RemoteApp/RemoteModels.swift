@@ -1,3 +1,9 @@
+/// Data models for the remote control protocol.
+///
+/// Covers pairing (PairingInfo, TrustedPairingIdentity), handshake payloads
+/// (Hello, PairRequest/Accept/Reject, SessionReady), tab state, approval
+/// requests/responses, interactive prompts, and Live Activity state.
+/// All types are Codable for JSON serialization over the encrypted relay.
 import CryptoKit
 import Chau7Core
 import Foundation

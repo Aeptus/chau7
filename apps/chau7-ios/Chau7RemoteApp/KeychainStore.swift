@@ -1,3 +1,8 @@
+/// Thin wrapper around Security.framework Keychain Services.
+///
+/// Stores pairing keys, trusted identities, and relay credentials with
+/// `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` protection class
+/// so data survives lock/unlock but never leaves the device.
 import Foundation
 import Security
 

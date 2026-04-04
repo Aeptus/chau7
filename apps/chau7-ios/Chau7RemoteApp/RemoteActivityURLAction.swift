@@ -1,5 +1,12 @@
 import Foundation
 
+/// Deep link actions from Live Activity buttons and notifications.
+///
+/// URL scheme: `chau7remote://`
+/// - `open?tab_id=N` — open app, optionally switch to tab
+/// - `switch?tab_id=N` — switch to a specific tab
+/// - `approve?request_id=X&tab_id=N` — approve a pending request
+/// - `deny?request_id=X&tab_id=N` — deny a pending request
 enum RemoteActivityURLAction: Equatable {
     case open(tabID: UInt32?)
     case switchTab(tabID: UInt32)

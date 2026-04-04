@@ -1,5 +1,6 @@
 import Foundation
 
+/// Exponential backoff for WebSocket reconnection: 2, 4, 8, 16, 32 seconds (5 attempts max).
 struct RemoteReconnectBackoff {
     static let maxAttempts = 5
 

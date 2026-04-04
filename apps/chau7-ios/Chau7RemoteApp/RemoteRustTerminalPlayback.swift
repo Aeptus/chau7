@@ -1,3 +1,9 @@
+/// Bridge to the Rust terminal emulator for grid-based rendering.
+///
+/// Wraps `Chau7Core`'s Rust FFI terminal, injecting output byte chunks
+/// and extracting cell grids (character, foreground/background color, flags)
+/// for rendering in `RemoteTerminalCanvasView`. Cell flags map to ANSI
+/// text attributes: bold, italic, underline, strikethrough, inverse, dim, hidden.
 import CoreText
 import Chau7Core
 import Foundation
