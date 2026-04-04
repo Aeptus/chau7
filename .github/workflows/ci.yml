@@ -29,6 +29,29 @@ jobs:
       - name: Test
         run: swift test
 
+  rust:
+    name: Rust (terminal + workspace)
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/chau7-macos/rust
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --all-features
+
   go-remote:
     name: Go (chau7-remote)
     runs-on: macos-15
@@ -81,7 +104,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install
         run: npm ci
