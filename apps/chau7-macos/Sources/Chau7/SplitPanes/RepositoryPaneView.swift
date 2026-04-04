@@ -382,9 +382,9 @@ struct RepositoryPaneView: View {
                         Text(L("repo.tokens", "Tokens:"))
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
-                        Text("\(formatTokenCount(summary.inputTokens)) in")
+                        Text(String(format: L("repo.tokensIn", "%@ in"), formatTokenCount(summary.inputTokens)))
                             .font(.system(size: 9, design: .monospaced))
-                        Text("\(formatTokenCount(summary.outputTokens)) out")
+                        Text(String(format: L("repo.tokensOut", "%@ out"), formatTokenCount(summary.outputTokens)))
                             .font(.system(size: 9, design: .monospaced))
                     }
 

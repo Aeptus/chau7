@@ -252,7 +252,7 @@ private struct TabHoverCardContent: View {
                             .foregroundStyle(.blue)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Open \(url)")
+                    .accessibilityLabel(String(format: L("a11y.openUrl", "Open %@"), url))
                 }
             }
         }
@@ -552,12 +552,12 @@ private struct TabHoverCardContent: View {
                             .foregroundStyle(.secondary)
                     }
                     if let cost = run.costUSD, cost > 0 {
-                        Text(String(format: "$%.2f", cost))
+                        Text(LocalizedFormatters.formatCurrency(cost))
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.orange)
                     }
                     if run.turnCount > 0 {
-                        Text("\(run.turnCount) turns")
+                        Text(String(format: L("hovercard.turns", "%d turns"), run.turnCount))
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     }
@@ -611,7 +611,7 @@ private struct TabHoverCardContent: View {
         var parts: [String] = []
         if stats.totalRuns > 0 { parts.append("\(stats.totalRuns) runs") }
         if stats.totalTokens > 0 { parts.append(formatTokens(stats.totalTokens)) }
-        if stats.totalCost > 0 { parts.append(String(format: "$%.2f", stats.totalCost)) }
+        if stats.totalCost > 0 { parts.append(LocalizedFormatters.formatCurrency(stats.totalCost)) }
         if stats.totalCommands > 0 { parts.append("\(stats.totalCommands) cmds") }
         return parts
     }

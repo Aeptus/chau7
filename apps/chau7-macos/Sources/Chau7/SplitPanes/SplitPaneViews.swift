@@ -282,7 +282,7 @@ struct TextEditorPaneView: View {
                     .help(L("Copy file name", "Copy file name"))
 
                 if showCopiedToast {
-                    Text("Copied")
+                    Text(L("pane.copied", "Copied"))
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.secondary)
                         .transition(.opacity)
