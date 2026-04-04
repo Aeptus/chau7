@@ -241,7 +241,7 @@ struct StreamView: View {
     var model: AppModel
     var settings = FeatureSettings.shared
 
-    private static let timeFormatter = Formatters.mediumTime
+    private static let timeFormatter = LocalizedFormatters.mediumTime
 
     var body: some View {
         switch selection {

@@ -76,7 +76,7 @@ struct HistoryEntryRow: View {
                 Text(
                     String(
                         format: L("history.entry.timestamp", "%@ - %@"),
-                        Formatters.shortTime.string(from: Date(timeIntervalSince1970: entry.timestamp)),
+                        LocalizedFormatters.shortTime.string(from: Date(timeIntervalSince1970: entry.timestamp)),
                         String(entry.sessionId.prefix(8))
                     )
                 )
