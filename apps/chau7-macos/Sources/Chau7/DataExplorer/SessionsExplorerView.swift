@@ -128,7 +128,7 @@ private struct RepoGroupRow: View {
                 }
 
                 if group.totalCost > 0 {
-                    Text(String(format: "$%.2f", group.totalCost))
+                    Text(LocalizedFormatters.formatCurrency(group.totalCost))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.orange)
                 }

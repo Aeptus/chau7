@@ -51,10 +51,7 @@ public struct TrackedTask: Identifiable, Codable, Equatable, Sendable {
     }
 
     public var formattedCost: String {
-        if totalCostUSD < 0.01 {
-            return String(format: "$%.4f", totalCostUSD)
-        }
-        return String(format: "$%.2f", totalCostUSD)
+        LocalizedFormatters.formatCostPrecise(totalCostUSD)
     }
 
     public var formattedDuration: String {

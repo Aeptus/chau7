@@ -479,10 +479,8 @@ struct DebugConsoleView: View {
     }
 
     private func formatCost(_ cost: Double) -> String {
-        if cost >= 1.0 { return String(format: "$%.2f", cost) }
-        if cost >= 0.01 { return String(format: "$%.3f", cost) }
-        if cost > 0 { return String(format: "$%.4f", cost) }
-        return "--"
+        if cost <= 0 { return "--" }
+        return LocalizedFormatters.formatCostPrecise(cost)
     }
 
     // MARK: - CTO Per-Tab Breakdown
@@ -2017,7 +2015,7 @@ struct DebugConsoleView: View {
                         .foregroundStyle(.blue)
                 }
                 if entry.stats.totalCost > 0 {
-                    Text(String(format: "$%.2f", entry.stats.totalCost))
+                    Text(LocalizedFormatters.formatCurrency(entry.stats.totalCost))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.orange)
                 }
@@ -2176,7 +2174,7 @@ struct DebugConsoleView: View {
                                         .foregroundStyle(.blue)
                                 }
                                 if entry.stats.totalCost > 0 {
-                                    Text(String(format: "$%.2f", entry.stats.totalCost))
+                                    Text(LocalizedFormatters.formatCurrency(entry.stats.totalCost))
                                         .font(.system(size: 10, design: .monospaced))
                                         .foregroundStyle(.orange)
                                 }
