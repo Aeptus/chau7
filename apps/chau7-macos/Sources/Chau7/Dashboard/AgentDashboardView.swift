@@ -36,6 +36,9 @@ struct AgentDashboardView: View {
         .sheet(isPresented: $model.showStartAgentSheet) {
             StartAgentSheet(model: model)
         }
+        .sheet(isPresented: $model.showReviewSheet) {
+            StartReviewSheet(model: model)
+        }
     }
 
     // MARK: - Header
@@ -118,6 +121,18 @@ struct AgentDashboardView: View {
 
                 Text(card.backendName.capitalized)
                     .font(.system(size: 12, weight: .semibold))
+
+                if let purpose = card.purpose {
+                    statPill(purpose.replacingOccurrences(of: "_", with: " "), color: .blue)
+                }
+
+                if let parentSessionID = card.parentSessionID {
+                    statPill("child of \(parentSessionID)", color: .secondary)
+                }
+
+                if card.childCount > 0 {
+                    statPill("\(card.childCount) child", color: .secondary)
+                }
 
                 Text("(\(card.state.rawValue))")
                     .font(.system(size: 10))
@@ -203,6 +218,18 @@ struct AgentDashboardView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.blue)
+            }
+
+            if let latestResultStatus = card.latestResultStatus {
+                HStack(spacing: 6) {
+                    Image(systemName: latestResultStatus == .available ? "checkmark.seal" : "exclamationmark.triangle")
+                        .font(.system(size: 10))
+                        .foregroundStyle(latestResultStatus == .available ? .green : .orange)
+                    Text(card.latestResultSummary ?? latestResultStatus.rawValue.capitalized)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
         }
         .padding(10)
@@ -324,6 +351,15 @@ struct AgentDashboardView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
+
+                Button {
+                    model.showReviewSheet = true
+                } label: {
+                    Label("Review Commits", systemImage: "doc.text.magnifyingglass")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -364,6 +400,14 @@ struct AgentDashboardView: View {
                 Text(L("dashboard.committedSuccessfully", "Committed successfully"))
                     .font(.system(size: 9))
                     .foregroundStyle(.green)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+            }
+
+            if let reviewError = model.reviewError {
+                Text(reviewError)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.red)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 4)
             }
@@ -526,5 +570,79 @@ private struct StartAgentSheet: View {
         }
         .padding(20)
         .frame(width: 380)
+    }
+}
+
+private struct StartReviewSheet: View {
+    @Bindable var model: AgentDashboardModel
+    @State private var selectedParentSessionID = ""
+    @State private var baseCommit = "HEAD~1"
+    @State private var headCommit = "HEAD"
+    @State private var agentModel = ""
+    @State private var extraInstructions = ""
+    @State private var autoApprove = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Review Commits")
+                .font(.system(size: 15, weight: .semibold))
+
+            Text("Launch a delegated Codex review for a commit range in \(model.repoName).")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+            Picker("Parent Session", selection: $selectedParentSessionID) {
+                Text("Top-level").tag("")
+                ForEach(model.agentCards) { card in
+                    Text("\(card.backendName.capitalized) \(card.sessionID)").tag(card.sessionID)
+                }
+            }
+
+            TextField("Base commit", text: $baseCommit)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11))
+
+            TextField("Head commit", text: $headCommit)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11))
+
+            TextField("Model (optional)", text: $agentModel)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11))
+
+            TextField("Extra review instructions (optional)", text: $extraInstructions, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(3, reservesSpace: true)
+                .font(.system(size: 11))
+
+            Toggle("Auto-approve tool use", isOn: $autoApprove)
+                .font(.system(size: 11))
+
+            HStack {
+                Spacer()
+                Button(L("action.cancel", "Cancel")) {
+                    model.showReviewSheet = false
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Launch Review") {
+                    model.startCodeReview(
+                        baseCommit: baseCommit,
+                        headCommit: headCommit,
+                        parentSessionID: selectedParentSessionID.isEmpty ? nil : selectedParentSessionID,
+                        model: agentModel.isEmpty ? nil : agentModel,
+                        extraInstructions: extraInstructions.isEmpty ? nil : extraInstructions,
+                        autoApprove: autoApprove
+                    )
+                    if model.reviewError == nil {
+                        model.showReviewSheet = false
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
     }
 }

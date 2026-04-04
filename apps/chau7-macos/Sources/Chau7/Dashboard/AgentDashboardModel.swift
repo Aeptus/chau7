@@ -87,6 +87,13 @@ final class AgentDashboardModel: Identifiable {
     private func refresh() {
         let sessions = RuntimeSessionManager.shared.allSessions(includeStopped: false)
         let matching = sessions.filter { sessionMatchesRepo($0) }
+        let childCounts = Dictionary(
+            grouping: matching.compactMap { session -> (String, String)? in
+                guard let parentSessionID = session.config.parentSessionID else { return nil }
+                return (parentSessionID, session.id)
+            },
+            by: \.0
+        ).mapValues(\.count)
 
         // Build agent cards
         var cards: [AgentCardData] = []
@@ -116,6 +123,9 @@ final class AgentDashboardModel: Identifiable {
                 sessionID: session.id,
                 tabID: session.tabID,
                 backendName: session.backend.name,
+                purpose: session.config.purpose,
+                parentSessionID: session.config.parentSessionID,
+                delegationDepth: session.config.delegationDepth,
                 state: session.state,
                 turnCount: session.turnCount,
                 inputTokens: stats.inputTokens,
@@ -125,6 +135,8 @@ final class AgentDashboardModel: Identifiable {
                 touchedFiles: tracker.touchedFiles,
                 pendingApproval: session.pendingApproval,
                 lastToolUsed: lastTool,
+                latestResult: session.turnResult(),
+                childCount: childCounts[session.id] ?? 0,
                 createdAt: session.createdAt,
                 costUSD: sessionCost
             ))
@@ -161,7 +173,15 @@ final class AgentDashboardModel: Identifiable {
         journalCursors = journalCursors.filter { activeIDs.contains($0.key) }
 
         DispatchQueue.main.async { [weak self] in
-            self?.agentCards = cards
+            self?.agentCards = cards.sorted { lhs, rhs in
+                if lhs.delegationDepth != rhs.delegationDepth {
+                    return lhs.delegationDepth < rhs.delegationDepth
+                }
+                if lhs.parentSessionID != rhs.parentSessionID {
+                    return (lhs.parentSessionID ?? "") < (rhs.parentSessionID ?? "")
+                }
+                return lhs.createdAt < rhs.createdAt
+            }
             self?.conflicts = detectedConflicts
             self?.timeline = timelineEntries
             self?.totalTokens = allTokens
@@ -245,6 +265,8 @@ final class AgentDashboardModel: Identifiable {
     var commitSuccess = false
     var commitMessage = "chore: agent batch commit"
     var showStartAgentSheet = false
+    var showReviewSheet = false
+    var reviewError: String?
 
     // MARK: - Actions
 
@@ -353,6 +375,65 @@ final class AgentDashboardModel: Identifiable {
         // The new session will appear in the next 2s poll refresh
     }
 
+    func startCodeReview(
+        baseCommit: String,
+        headCommit: String,
+        parentSessionID: String?,
+        model: String?,
+        extraInstructions: String?,
+        autoApprove: Bool
+    ) {
+        let base = baseCommit.trimmingCharacters(in: .whitespacesAndNewlines)
+        let head = headCommit.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty, !head.isEmpty else {
+            reviewError = "Base and head commits are required."
+            return
+        }
+
+        reviewError = nil
+        var args: [String: Any] = [
+            "backend": "codex",
+            "directory": repoGroupID,
+            "purpose": "code_review",
+            "task_metadata": [
+                "base_commit": base,
+                "head_commit": head
+            ],
+            "result_schema": CodeReviewTaskTemplate.resultSchema.foundationValue,
+            "initial_prompt": CodeReviewTaskTemplate.prompt(
+                baseCommit: base,
+                headCommit: head,
+                extraInstructions: extraInstructions
+            ),
+            "policy": [
+                "max_turns": 1,
+                "allow_child_delegation": false,
+                "max_delegation_depth": 0,
+                "blocked_tools": ["Write", "Edit", "NotebookEdit"],
+                "allow_file_writes": false
+            ]
+        ]
+        if let parentSessionID,
+           let parentCard = agentCards.first(where: { $0.sessionID == parentSessionID }) {
+            args["parent_session_id"] = parentSessionID
+            args["delegation_depth"] = parentCard.delegationDepth + 1
+        }
+        if let model, !model.isEmpty {
+            args["model"] = model
+        }
+        if autoApprove {
+            args["auto_approve"] = true
+        }
+
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: args
+        )
+        if let json = parseJSONObject(response), let error = json["error"] as? String {
+            reviewError = error
+        }
+    }
+
     /// Switch to the tab hosting this agent.
     var onSwitchToTab: ((UUID) -> Void)?
 
@@ -371,6 +452,9 @@ struct AgentCardData: Identifiable {
     let sessionID: String
     let tabID: UUID
     let backendName: String
+    let purpose: String?
+    let parentSessionID: String?
+    let delegationDepth: Int
     let state: RuntimeSessionStateMachine.State
     let turnCount: Int
     let inputTokens: Int
@@ -380,6 +464,8 @@ struct AgentCardData: Identifiable {
     let touchedFiles: Set<String>
     let pendingApproval: PendingApproval?
     let lastToolUsed: String?
+    let latestResult: RuntimeTurnResult?
+    let childCount: Int
     let createdAt: Date
     let costUSD: Double
 
@@ -398,6 +484,14 @@ struct AgentCardData: Identifiable {
 
     var formattedCost: String {
         LocalizedFormatters.formatCostPrecise(costUSD)
+    }
+
+    var latestResultStatus: RuntimeTurnResultStatus? {
+        latestResult?.status
+    }
+
+    var latestResultSummary: String? {
+        latestResult?.value?.objectValue?["summary"]?.stringValue
     }
 
     private func formatCount(_ count: Int) -> String {
@@ -441,4 +535,14 @@ struct TimelineEntry: Identifiable {
     let backendName: String
     let type: String
     let message: String
+}
+
+private extension AgentDashboardModel {
+    func parseJSONObject(_ text: String) -> [String: Any]? {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return json
+    }
 }
