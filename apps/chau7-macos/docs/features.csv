@@ -86,6 +86,11 @@ MCP Tools — Tab Management,tab_submit_prompt,Submit the current interactive pr
 MCP Tools — Tab Management,tab_close,Close a tab with optional force flag — checks for running processes before closing,Shipped,Yes
 MCP Tools — Tab Management,tab_output,"Get terminal output (max 10000 lines, 512KB cap). source=pty_log returns full ANSI-stripped AI session. wait_for_stable_ms polls buffer.",Shipped,Yes
 MCP Tools — Tab Management,tab_set_cto,"Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files and records decision",Shipped,Yes
+MCP Tools — Tab Management,tab_rename,Set a custom title for a tab — pass empty string to clear,Shipped,Yes
+MCP Tools — Repository,repo_get_metadata,"Get metadata for a repository including description, labels, favorite files, and frequent commands",Shipped,Yes
+MCP Tools — Repository,repo_set_metadata,"Set metadata for a repository (description, labels, favorite files) — only provided fields are updated",Shipped,Yes
+MCP Tools — Repository,repo_frequent_commands,"Get frequently used commands for a repository, sorted by frecency",Shipped,Yes
+MCP Tools — Repository,repo_get_events,"Get recent AI tool events (finished, permission, tool_called, etc.) scoped to a given repo",Shipped,Yes
 MCP Tools — Telemetry,run_get,Get a single telemetry run by ID (active or from store),Shipped,Yes
 MCP Tools — Telemetry,run_list,"List telemetry runs with filters: session_id, repo_path, provider, parent_run_id, date range, tags, limit/offset",Shipped,Yes
 MCP Tools — Telemetry,run_tool_calls,Get all tool calls for a telemetry run — see exactly what an AI agent did,Shipped,Yes

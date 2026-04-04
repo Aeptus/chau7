@@ -81,7 +81,18 @@ Chau7 recognizes AI CLIs the moment they launch — no configuration required:
 - **Gemini** (gemini, gemini-cli)
 - **ChatGPT** (chatgpt, gpt, openai)
 - **GitHub Copilot** (copilot, gh copilot)
-- **Aider**, **Cursor**, and custom-defined tools
+- **Aider** (aider)
+- **Cursor** (cursor)
+- **Windsurf** (windsurf)
+- **Cline** (cline)
+- **Cody** (cody, sourcegraph)
+- **Amazon Q** (amazon-q, q)
+- **Devin** (devin)
+- **Continue** (continue)
+- **Goose** (goose)
+- **Mentat** (mentat)
+- **Amp** (amp)
+- Custom-defined tools with display name, tab color, and logo.
 
 Detection methods:
 - Command line tokenization with wrapper skipping (env, sudo, npx, bunx, pnpm). Command detection gates output scanning to prevent false positives.
@@ -125,10 +136,26 @@ Detection methods:
 
 ### Context Token Optimization (CTO)
 
-- Monitor and optimize LLM API token usage in real time.
+Built-in token optimizer (`chau7_optim`, forked from [RTK](https://github.com/rtk-ai/rtk)) that rewrites CLI output to minimize LLM context consumption. ~40% token savings on average.
+
 - Per-tab or global CTO mode with flag files that AI tools read.
 - Runtime monitor: decision counts, mode changes, deferred operations, health assessment.
 - MCP-controllable via `tab_set_cto`.
+- Ultra-compact mode for maximum savings.
+- Token savings tracking with daily/weekly/monthly graphs.
+
+Supported commands (46 parsers):
+
+| Category | Commands |
+| --- | --- |
+| Version control | `git` (status, diff, log, show, blame, stash, etc.), `gh` (pr, issue, run, repo) |
+| Build tools | `cargo`, `go`, `swift`, `npm`, `pnpm`, `pip` |
+| Test frameworks | `pytest`, `vitest`, `playwright` |
+| Linters/formatters | `golangci-lint`, `ruff`, `prettier`, `tsc`, `eslint`/`biome` |
+| File operations | `find`, `ls`, `tree`, `grep`, `wc`, `diff`, `read` |
+| Data tools | `jq`, `curl`, `wget` |
+| DevOps | `prisma`, `next` (Next.js), `docker`, `kubectl` |
+| System | `env`, `tee`, `log` |
 
 ### History Storage
 
@@ -168,7 +195,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 
 ## MCP Tools
 
-### Tab Management (10 tools)
+### Tab Management (11 tools)
 
 | Tool | Description |
 | --- | --- |
@@ -182,6 +209,16 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `tab_close` | Close a tab with optional force flag — checks for running processes |
 | `tab_output` | Get recent terminal output (last N lines, max 10000) with 512KB cap. `source='pty_log'` returns ANSI-stripped PTY log (full AI session). `wait_for_stable_ms` polls buffer until stable. |
 | `tab_set_cto` | Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files |
+| `tab_rename` | Set a custom title for a tab — pass empty string to clear |
+
+### Repository (4 tools)
+
+| Tool | Description |
+| --- | --- |
+| `repo_get_metadata` | Get metadata for a repository including description, labels, favorite files, and frequent commands |
+| `repo_set_metadata` | Set metadata for a repository (description, labels, favorite files) — only provided fields are updated |
+| `repo_frequent_commands` | Get frequently used commands for a repository, sorted by frecency |
+| `repo_get_events` | Get recent AI tool events (finished, permission, tool_called, etc.) scoped to a given repo |
 
 ### Telemetry (8 tools)
 
@@ -397,7 +434,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 
 ### Debugging
 
-- Debug console (`Cmd+Shift+D`) — State, Contexts, Events, Logs, Report tabs.
+- Debug console (`Cmd+Shift+D`) — 10 tabs: State, Token Optimizer, Events, Lag, Perf, Logs, Report, Analytics, Health, Repos.
 - Notification reliability dashboard — Debug Console health view summarizes recent completed, dropped, retried, rate-limited, and authoritative notification deliveries.
 - Data Explorer (`Cmd+Shift+D`) reloads its history and telemetry content whenever the singleton window is reopened.
 - Sessions Explorer rows use the latest run metadata for provider and repo labels.
@@ -540,7 +577,7 @@ Chau7/
 │   │   ├── Sources/Chau7/       # app code (SwiftUI, AppKit, runtime, notifications, telemetry)
 │   │   ├── Sources/Chau7Core/   # pure logic and shared testable components
 │   │   ├── Tests/               # unit and integration coverage
-│   │   ├── rust/                # Rust terminal backend (chau7_terminal, chau7_parse)
+│   │   ├── rust/                # Rust workspace (chau7_terminal, chau7_parse, chau7_optim, chau7_md)
 │   │   ├── chau7-proxy/         # Go TLS/WSS API proxy
 │   │   └── Package.swift
 │   └── chau7-ios/               # Native iOS companion
@@ -551,70 +588,10 @@ Chau7/
 ```
 
 Key patterns:
-- ObservableObject for state management.
+- `@Observable` macro for state management (Swift Observation framework).
 - Singleton managers for shared features.
 - Pure functions in Chau7Core for testability.
 - Correlation IDs for trace logging.
 - Binary tree layout for split pane nesting.
 - MCP server with thread-safe main-thread dispatch.
 
-## Recent Remote UX
-
-- iPhone approvals and approval notifications now include richer decision context from macOS remote tabs:
-  - project and branch
-  - working directory
-  - recent command context from shell integration / OSC 133-backed command tracking
-  - MCP permission-source notes when relevant
-
-## Recent Runtime Safety
-
-- Amp is now treated as a first-class normalized AI notification source, so Amp events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
-- Mentat is now treated as a first-class normalized AI notification source, so Mentat events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
-- Goose is now treated as a first-class normalized AI notification source, so Goose events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
-- Devin is now treated as a first-class normalized AI notification source, so Devin events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
-- Amazon Q is now treated as a first-class normalized AI notification source, so Amazon Q events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
-- Cody is now treated as a first-class normalized AI notification source, so Cody events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
-- ChatGPT is now treated as a first-class normalized AI notification source, so ChatGPT events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
-- Gemini is now treated as a first-class normalized AI notification source, so Gemini events flow through the same dedicated trigger, settings, and source-label path as the rest of Chau7's AI adapters.
-- Codex notify hook installation now preserves pre-existing user `notify` commands instead of clobbering them, so Chau7 can subscribe to authoritative Codex turn events without breaking local workflows.
-- Authoritative Codex notify-hook events now keep opaque thread IDs intact for routing, instead of dropping them through the shorter resume-session validator.
-- Codex prompt-return fallback now stays enabled until Chau7 confirms its notify hook is actually installed, preventing silent loss of `waiting_input` when the authoritative path is unavailable.
-- Codex resume metadata now clears claimed stale explicit session IDs when no deterministic replacement exists, so same-repo tabs stop re-saving poisoned session ownership and repeated restore conflicts.
-- Notification tab styling now revalidates stale explicit tab IDs against an exact live session match before giving up, so recovered session-bound tabs still light even after cross-window registration drift.
-- Authoritative Claude notification events now keep exact runtime/session binding only and fail closed when the owning tab is ambiguous, so same-repo Claude sessions no longer inherit heuristic tab resolution during ingress.
-- Codex notify-hook events now export the owning overlay tab UUID instead of the terminal-session UUID, and authoritative stale explicit `tabID` values are corrected via exact session binding before notification delivery, so completed Codex turns target the live tab instead of failing against orphaned IDs.
-- Shell JSON-RPC sessions now preserve argv boundaries when launching the generic shell backend, so quoted user arguments stay literal instead of being reinterpreted by the shell.
-- Claude runtime sessions now keep separate bindings for same-directory agent tabs, so tool events, approval prompts, and finished notifications stay attached to the correct tab after another session opens in the same repo.
-- Claude runtime adoption now uses exact tab session metadata first and refuses ambiguous same-repo bindings, so notification events fail closed instead of lighting the wrong Claude tab.
-- Pre-release DMG packaging now defaults to an Apple Silicon artifact with a styled drag-to-install layout, optional universal helpers, and a single bundled copy of the local proxy binary.
-- Restore-time shell maintenance commands now stay tagged as system input so waiting-input suppression survives startup, notification actions report real cross-window success, and bug reports default to the dedicated issues.chau7.sh intake endpoint.
-- The issue-intake relay now serves a lightweight landing page on issues.chau7.sh for browser visits while still accepting app-submitted bug reports at the root POST endpoint.
-- The public compare page now links directly to the hosted Chau7 DMG download, and the shared website footer copy reflects the current automated test count.
-- Arabic, French, and Hebrew localizations now include the latest acknowledgments/about stack summary and license summary copy.
-- Remote control relay traffic now rejects cleartext control frames after the encrypted session is established, and remote push registration/notify calls normalize websocket relay URLs back to HTTP(S) endpoints before POSTing.
-- On termination, Chau7 clears persisted tab/window state and backup files when every overlay window has been hidden or closed, preventing stale windows from resurrecting on next launch.
-- Notification pipeline optimizations now respect disabled single-action rules instead of promoting them to native default notifications.
-
-## Recent Telemetry Integrity
-
-- App termination now reuses a recent cached multi-window snapshot instead of re-exporting every visible tab during quit, reducing synchronous shutdown stalls and beachball risk.
-- Ambiguous same-repo Codex save-time resolution now preserves a tab's explicit session metadata instead of clearing it, so restored tabs can keep their last-known resume command.
-- English, Arabic, French, and Hebrew localization bundles now include the previously missing shipped UI string keys that were still being requested from Swift source.
-- Public documentation now has a canonical ownership map, stale duplicate onboarding docs were collapsed, and planning/assessment artifacts were removed from the repository's public surface.
-- Staged doc checks now reject absolute filesystem links, stale repository URLs, and TODO markers in the public root README before a commit lands.
-
-- Transcript-derived AI run metrics now store canonical token fields for input, cached input, output, and reasoning output instead of overloading a single input/output pair.
-- Claude transcript extraction now slices runs by start time and deduplicates repeated assistant usage blocks so fragmented message payloads do not multiply token totals.
-- Codex rollout extraction now reads run-local token deltas, including cached input and reasoning output fields, instead of reusing lifetime cumulative totals across multiple runs.
-- Implausible historical token totals are now invalidated instead of being kept as if they were trustworthy analytics.
-
-## Recent Analytics UX
-
-- The debug console analytics view now separates proxy-captured API calls from transcript-derived AI run telemetry instead of mixing them into one misleading table.
-- Run cost coverage now distinguishes priced runs from missing-cost runs, so transcript-derived Claude/Codex data no longer appears as `$0.0000` when cost is actually unavailable.
-- Proxy settings now expose an explicit OpenAI-compatible routing toggle for analytics, so OpenAI/Codex interception can be enabled or disabled intentionally.
-- The debug console can now rebuild transcript-derived run metrics in place, repairing historical Claude/Codex rows after parser or accounting fixes land.
-
-## Recent Tab Behavior
-
-- Reopen Closed Tab now restores the original overlay tab identity metadata, including the tab ID, creation timestamp, and repo grouping membership.
