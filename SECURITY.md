@@ -6,7 +6,7 @@ Chau7 is a terminal emulator. It sees everything you type and everything your to
 
 **Do not open a public issue.** Instead:
 
-1. Use the in-app bug reporter (Option+Cmd+I), which submits to a private intake repo.
+1. Use the in-app bug reporter (Option+Cmd+I). Reports are submitted via an encrypted Cloudflare Worker relay to a [private GitHub repository](https://github.com/aeptus/chau7-issue-intake) that only maintainers can access. You choose which diagnostic sections to include before anything is sent. See the [in-app privacy page](apps/chau7-macos/Sources/Chau7/Logging/IssueReportingPrivacyView.swift) and [PRIVACY.md](PRIVACY.md) for the full data flow.
 2. Or open a [private security advisory](https://github.com/aeptus/chau7/security/advisories/new) on GitHub.
 
 We acknowledge reports within 48 hours. Critical fixes ship within 7 days. We'll credit you in the release notes unless you prefer otherwise.
@@ -21,7 +21,7 @@ Here's everything security-relevant, with no hand-waving:
 
 **MCP Server**: 30+ tools exposed over a Unix socket at `~/.chau7/mcp.sock`, permissions `0600` (owner-only). Any process running as your user can connect. The tools can read terminal output, send input, manage tabs, and query history. This is powerful by design.
 
-**Bug Reports**: Submitted via Cloudflare Worker relay to a private GitHub repo. No data leaves your machine until you hit Submit. All diagnostic sections are off by default. The in-app privacy page lists every third-party involved. [We mean it.](apps/chau7-macos/Sources/Chau7/Logging/IssueReportingPrivacyView.swift)
+**Bug Reports**: Submitted via an encrypted Cloudflare Worker relay ([`services/chau7-relay/src/worker.ts`](services/chau7-relay/src/worker.ts)) to a [private GitHub repository](https://github.com/aeptus/chau7-issue-intake) that only maintainers can access. No data leaves your machine until you hit Submit. All diagnostic sections are off by default — you choose what to include. The in-app privacy page ([`IssueReportingPrivacyView.swift`](apps/chau7-macos/Sources/Chau7/Logging/IssueReportingPrivacyView.swift)) lists every third-party involved. See also [PRIVACY.md](PRIVACY.md).
 
 **Shell Integration**: OSC 7/133 escape sequences for working directory and command detection. Shell history access for frecency commands. Git status queries via `git rev-parse`.
 

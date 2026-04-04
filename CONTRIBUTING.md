@@ -4,7 +4,7 @@ So you want to contribute to a terminal named after a sock. Excellent judgment.
 
 ## Reporting Bugs
 
-The fastest path: use the in-app bug reporter (Option+Cmd+I). It captures diagnostic context automatically and submits to our private intake. You choose what data to include. [Privacy details](SECURITY.md).
+The fastest path: use the in-app bug reporter (Option+Cmd+I). It captures diagnostic context automatically and submits via an encrypted relay to a [private GitHub repository](https://github.com/aeptus/chau7-issue-intake) that only maintainers can access. You choose what data to include — all diagnostic sections are off by default. [Privacy details](PRIVACY.md). The relay is implemented in [`services/chau7-relay/src/worker.ts`](services/chau7-relay/src/worker.ts) and the in-app privacy disclosure is in [`IssueReportingPrivacyView.swift`](apps/chau7-macos/Sources/Chau7/Logging/IssueReportingPrivacyView.swift).
 
 Or just open an issue here. Include: what you did, what you expected, what happened, and your macOS version. Screenshots help. Logs help more.
 

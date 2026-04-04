@@ -100,4 +100,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). We read every PR. Yes, actually.
 
 ## License
 
-[AGPL 3.0](LICENSE). Third-party notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[AGPL 3.0](LICENSE). [Privacy](PRIVACY.md). Third-party notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
