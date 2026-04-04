@@ -4,6 +4,8 @@ pre-commit:
       run: ./Scripts/check-docs-staged
     local-ci-fast:
       run: ./Scripts/ci-local-fast
+    pre-commit-review:
+      run: ./Scripts/pre-commit-review
 
 pre-push:
   commands:
