@@ -17,6 +17,9 @@ import Chau7Core
 /// - {"method": "list_snippets"} -> all snippets
 /// - {"method": "run_snippet", "params": {"name": "..."}}
 /// - {"method": "get_status"} -> app status (version, tabs, uptime)
+/// - {"method": "start_review", "params": {...}} -> delegated review session metadata
+/// - {"method": "wait_review", "params": {"session_id": "...", "timeout_ms": 60000}}
+/// - {"method": "get_review_result", "params": {"session_id": "..."}}
 @Observable
 @MainActor
 final class ScriptingAPI {
@@ -210,6 +213,12 @@ final class ScriptingAPI {
             return await handleRunSnippet(params)
         case "get_status":
             return handleGetStatus()
+        case "start_review":
+            return await handleStartReview(params)
+        case "wait_review":
+            return handleWaitReview(params)
+        case "get_review_result":
+            return handleGetReviewResult(params)
         default:
             return ["error": "unknown method: \(method)"]
         }
@@ -355,6 +364,129 @@ final class ScriptingAPI {
         return ["ok": true, "snippet": entry.snippet.title, "body": entry.snippet.body]
     }
 
+    private func handleStartReview(_ params: [String: Any]) async -> [String: Any] {
+        guard let directory = params["directory"] as? String,
+              !directory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return ["error": "missing param: directory"]
+        }
+
+        let mode = ((params["mode"] as? String) ?? "staged_diff")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let extraInstructions = sanitizeOptionalString(params["extra_instructions"] as? String)
+        let prompt: String
+        var taskMetadata: [String: String] = ["review_mode": mode]
+
+        switch mode {
+        case "commit_range":
+            guard let baseCommit = sanitizeOptionalString(params["base_commit"] as? String),
+                  let headCommit = sanitizeOptionalString(params["head_commit"] as? String) else {
+                return ["error": "missing params for commit_range review: base_commit and head_commit are required"]
+            }
+            taskMetadata["base_commit"] = baseCommit
+            taskMetadata["head_commit"] = headCommit
+
+            var lines = [
+                "Review commits \(baseCommit)..\(headCommit).",
+                "Work read-only. Do not edit files. Do not delegate to another reviewer.",
+                "Focus on correctness, regressions, security, and missing tests.",
+                "Return concise prose findings first, then end with a fenced JSON block that matches the requested schema."
+            ]
+            if let extraInstructions {
+                lines.append("Additional instructions: \(extraInstructions)")
+            }
+            prompt = lines.joined(separator: "\n")
+        case "staged_diff":
+            guard let stagedDiff = sanitizeOptionalString(params["staged_diff"] as? String) else {
+                return ["error": "missing param: staged_diff"]
+            }
+            let stagedFiles = (params["staged_files"] as? [String] ?? [])
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if !stagedFiles.isEmpty {
+                taskMetadata["staged_files"] = stagedFiles.joined(separator: ",")
+            }
+
+            var lines = [
+                "Review the staged changes that are about to be committed.",
+                "Work read-only. Do not edit files. Do not delegate to another reviewer.",
+                "Focus on correctness, regressions, security, and missing tests.",
+                "Only evaluate the staged diff below. Do not speculate about unstaged changes."
+            ]
+            if !stagedFiles.isEmpty {
+                lines.append("Staged files:")
+                lines.append(stagedFiles.map { "- \($0)" }.joined(separator: "\n"))
+            }
+            if let extraInstructions {
+                lines.append("Additional instructions: \(extraInstructions)")
+            }
+            lines.append("Return concise prose findings first, then end with a fenced JSON block that matches the requested schema.")
+            lines.append("Staged diff:\n```diff\n\(stagedDiff)\n```")
+            prompt = lines.joined(separator: "\n")
+        default:
+            return ["error": "unsupported review mode: \(mode)"]
+        }
+
+        var arguments: [String: Any] = [
+            "backend": sanitizeOptionalString(params["backend"] as? String) ?? "codex",
+            "directory": directory,
+            "purpose": "code_review",
+            "task_metadata": taskMetadata,
+            "result_schema": CodeReviewTaskTemplate.resultSchema.foundationValue,
+            "initial_prompt": prompt,
+            "policy": CodeReviewTaskTemplate.defaultPolicy.foundationValue
+        ]
+        if let model = sanitizeOptionalString(params["model"] as? String) {
+            arguments["model"] = model
+        }
+        if let parentSessionID = sanitizeOptionalString(params["parent_session_id"] as? String) {
+            arguments["parent_session_id"] = parentSessionID
+            arguments["delegation_depth"] = max(params["delegation_depth"] as? Int ?? 1, 1)
+        }
+        if let autoApprove = params["auto_approve"] as? Bool {
+            arguments["auto_approve"] = autoApprove
+        }
+
+        return parseJSONResponse(
+            RuntimeControlService.shared.handleToolCall(
+                name: "runtime_session_create",
+                arguments: arguments
+            )
+        ) ?? ["error": "review_start_failed"]
+    }
+
+    private func handleWaitReview(_ params: [String: Any]) -> [String: Any] {
+        guard let sessionID = params["session_id"] as? String,
+              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return ["error": "missing param: session_id"]
+        }
+
+        var arguments: [String: Any] = ["session_id": sessionID]
+        if let timeoutMs = params["timeout_ms"] as? Int {
+            arguments["timeout_ms"] = timeoutMs
+        }
+        return parseJSONResponse(
+            RuntimeControlService.shared.handleToolCall(
+                name: "runtime_turn_wait",
+                arguments: arguments
+            )
+        ) ?? ["error": "review_wait_failed"]
+    }
+
+    private func handleGetReviewResult(_ params: [String: Any]) -> [String: Any] {
+        guard let sessionID = params["session_id"] as? String,
+              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return ["error": "missing param: session_id"]
+        }
+
+        return parseJSONResponse(
+            RuntimeControlService.shared.handleToolCall(
+                name: "runtime_turn_result",
+                arguments: ["session_id": sessionID]
+            )
+        ) ?? ["error": "review_result_failed"]
+    }
+
     private func handleGetStatus() -> [String: Any] {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
@@ -370,5 +502,11 @@ final class ScriptingAPI {
                 "history_count": PersistentHistoryStore.shared.totalCount()
             ] as [String: Any]
         ]
+    }
+
+    private func sanitizeOptionalString(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

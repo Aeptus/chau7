@@ -94,6 +94,28 @@ public struct RuntimeDelegationPolicy: Codable, Equatable, Sendable {
         }
         return nil
     }
+
+    public var foundationValue: [String: Any] {
+        var result: [String: Any] = [
+            "allow_child_delegation": allowChildDelegation,
+            "max_delegation_depth": maxDelegationDepth,
+            "allowed_tools": allowedTools,
+            "blocked_tools": blockedTools
+        ]
+        if let maxTurns {
+            result["max_turns"] = maxTurns
+        }
+        if let maxDurationMs {
+            result["max_duration_ms"] = maxDurationMs
+        }
+        if let allowNetwork {
+            result["allow_network"] = allowNetwork
+        }
+        if let allowFileWrites {
+            result["allow_file_writes"] = allowFileWrites
+        }
+        return result
+    }
 }
 
 public enum RuntimeTurnResultStatus: String, Codable, Sendable {

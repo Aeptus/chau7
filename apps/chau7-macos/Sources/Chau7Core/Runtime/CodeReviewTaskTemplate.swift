@@ -1,6 +1,14 @@
 import Foundation
 
 public enum CodeReviewTaskTemplate {
+    public static let defaultPolicy = RuntimeDelegationPolicy(
+        maxTurns: 1,
+        allowChildDelegation: false,
+        maxDelegationDepth: 0,
+        blockedTools: ["Write", "Edit", "NotebookEdit"],
+        allowFileWrites: false
+    )
+
     public static let resultSchema = JSONValue.object([
         "type": .string("object"),
         "required": .array([
