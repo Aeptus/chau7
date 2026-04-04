@@ -13,7 +13,7 @@ Chau7 detects your AI agents, optimizes their context tokens, tracks what they c
 
 - **AI agent detection**: Claude Code, Codex, Cursor, Windsurf, Copilot, Aider, Cline, Continue, Goose, Devin, Mentat, Amazon Q, Amp. Automatic. Zero config.
 - **Context Token Optimization**: Rewrites CLI commands to trim context windows. ~40% token savings on average.
-- **20 MCP tools**: Control tabs, query history, manage sessions, read terminal output. All local, all over a Unix socket.
+- **36 MCP tools**: Control tabs, query history, manage sessions, read terminal output, launch agents, manage repos. All local, all over a Unix socket.
 - **Notifications that actually work**: Know when your agent finishes, needs permission, or gets stuck. Per-tab, per-tool, cross-window.
 - **Tab grouping by repository**: Tabs auto-group by git root. Move groups between windows. Color-coded by provider.
 - **Telemetry**: Per-run token counts, cost tracking, tool call distribution. All local, nothing phones home.
@@ -33,19 +33,27 @@ Chau7 detects your AI agents, optimizes their context tokens, tracks what they c
 
 ```
 apps/
-  chau7-macos/      # Swift + AppKit + Metal macOS app
-  chau7-ios/        # Native iOS companion app
+  chau7-macos/              # Swift + AppKit + Metal macOS app
+    rust/                   # Rust workspace (4 crates)
+      chau7_terminal/       #   Terminal emulator FFI bindings
+      chau7_parse/          #   Parsing helpers
+      chau7_optim/          #   Context Token Optimization engine
+      chau7_md/             #   Terminal markdown renderer
+    chau7-proxy/            # Go TLS proxy for API analytics
+  chau7-ios/                # Native iOS companion app
 services/
-  chau7-relay/      # Cloudflare Workers relay
-  chau7-remote/     # Go relay client for macOS
+  chau7-relay/              # Cloudflare Workers relay
+  chau7-remote/             # Go relay client for macOS
+Scripts/                    # Repo-level CI and build orchestration
 ```
 
 - [macOS app](apps/chau7-macos/README.md)
 - [iOS app](apps/chau7-ios/README.md)
+- [Rust terminal crate](apps/chau7-macos/rust/chau7_terminal/README.md)
 - [Relay service](services/chau7-relay/README.md)
 - [Remote agent](services/chau7-remote/README.md)
 - [Remote protocol](services/chau7-remote/docs/PROTOCOL.md)
-- [Remote iOS UX](apps/chau7-ios/docs/REMOTE-UX.md)
+- [Scripts reference](Scripts/README.md)
 - [Documentation map](docs/README.md)
 
 ## Build
@@ -70,7 +78,7 @@ swift test               # verify you didn't break anything
 ./Scripts/build-app.sh   # create a proper .app bundle with notifications and everything
 ```
 
-Requirements: macOS 14+, Xcode 26+. The Rust terminal backend and Go proxy are pre-built in the repo. If you want to rebuild them: Rust toolchain for `rust/chau7_terminal`, Go 1.22+ for `chau7-proxy`.
+Requirements: macOS 14+, Xcode 26+. The Rust terminal backend and Go proxy are pre-built in the repo. If you want to rebuild them: Rust toolchain for `rust/chau7_terminal`, Go 1.25+ for `chau7-proxy`.
 
 ## Local CI
 
