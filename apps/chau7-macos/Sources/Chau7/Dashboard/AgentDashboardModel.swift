@@ -392,10 +392,7 @@ struct AgentCardData: Identifiable {
     }
 
     var formattedCost: String {
-        if costUSD < 0.01 {
-            return String(format: "$%.4f", costUSD)
-        }
-        return String(format: "$%.2f", costUSD)
+        LocalizedFormatters.formatCostPrecise(costUSD)
     }
 
     private func formatCount(_ count: Int) -> String {

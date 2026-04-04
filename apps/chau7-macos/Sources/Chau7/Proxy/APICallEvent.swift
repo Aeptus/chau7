@@ -51,10 +51,7 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
     }
 
     public var formattedCost: String {
-        if costUSD < 0.01 {
-            return String(format: "$%.4f", costUSD)
-        }
-        return String(format: "$%.2f", costUSD)
+        LocalizedFormatters.formatCostPrecise(costUSD)
     }
 
     public var formattedLatency: String {

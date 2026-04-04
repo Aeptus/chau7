@@ -340,7 +340,7 @@ struct AgentDashboardView: View {
                         if model.isCommitting {
                             ProgressView().controlSize(.mini)
                         } else {
-                            Text("Commit")
+                            Text(L("repo.commit", "Commit"))
                                 .font(.system(size: 10))
                         }
                     }
@@ -440,8 +440,7 @@ struct AgentDashboardView: View {
     }
 
     private func formatCost(_ cost: Double) -> String {
-        if cost < 0.01 { return String(format: "$%.4f", cost) }
-        return String(format: "$%.2f", cost)
+        LocalizedFormatters.formatCostPrecise(cost)
     }
 
     private func tokenBreakdown(_ card: AgentCardData) -> String {
