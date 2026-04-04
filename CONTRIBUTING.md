@@ -30,7 +30,20 @@ swift test
 ./Scripts/build-app.sh
 ```
 
-You'll need macOS 14+, Xcode 26+. The Rust terminal backend and Go proxy ship pre-built. If you want to rebuild them: Rust toolchain for `rust/chau7_terminal`, Go 1.22+ for `chau7-proxy`.
+### Environment Requirements
+
+| Tool | Version | Required For | Install |
+|------|---------|-------------|---------|
+| macOS | 14+ | Everything | — |
+| Xcode | 26+ (Swift 6+) | Swift build + test | Mac App Store |
+| SwiftFormat | latest | Pre-commit hook | `brew install swiftformat` |
+| SwiftLint | latest | Pre-commit hook | `brew install swiftlint` |
+| lefthook | any | Git hooks | `brew install lefthook` |
+| Rust | stable | Terminal backend rebuild | [rustup.rs](https://rustup.rs) |
+| Go | 1.25+ | Proxy and remote agent | `brew install go` |
+| Node.js | 22+ | Relay service | `brew install node` |
+
+The Rust terminal backend and Go proxy ship pre-built in the repo. You only need the Rust and Go toolchains if you're modifying those components. Swift, SwiftFormat, SwiftLint, and lefthook are required for all contributors.
 
 ## Code Style
 
