@@ -765,11 +765,12 @@ final class RepositoryPaneModel: Identifiable {
 
     private static func relativeDate(from date: Date) -> String {
         let seconds = Int(-date.timeIntervalSinceNow)
-        if seconds < 60 { return "just now" }
-        if seconds < 3600 { return "\(seconds / 60)m ago" }
-        if seconds < 86400 { return "\(seconds / 3600)h ago" }
-        if seconds < 604_800 { return "\(seconds / 86400)d ago" }
+        if seconds < 60 { return L("time.just.now", "Just now") }
+        if seconds < 3600 { return String(format: L("time.minutes.short", "%dm ago"), seconds / 60) }
+        if seconds < 86400 { return String(format: L("time.hours.short", "%dh ago"), seconds / 3600) }
+        if seconds < 604_800 { return String(format: L("time.days.short", "%dd ago"), seconds / 86400) }
         let formatter = DateFormatter()
+        formatter.locale = LocalizationManager.shared.currentLanguage.locale
         formatter.dateStyle = .short
         return formatter.string(from: date)
     }
