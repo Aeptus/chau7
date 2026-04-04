@@ -35,11 +35,6 @@ jobs:
         with:
           go-version-file: apps/chau7-macos/chau7-proxy/go.mod
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-
       - name: Build DMG
         working-directory: apps/chau7-macos
         run: |
