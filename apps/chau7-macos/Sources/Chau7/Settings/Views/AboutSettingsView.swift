@@ -126,6 +126,7 @@ struct AboutSettingsView: View {
             return L("about.unknown", "Unknown")
         }
         let fmt = DateFormatter()
+        fmt.locale = LocalizationManager.shared.currentLanguage.locale
         fmt.dateStyle = .medium
         fmt.timeStyle = .short
         return fmt.string(from: date)

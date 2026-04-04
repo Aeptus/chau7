@@ -6,6 +6,7 @@ import Foundation
 
 enum Formatters {
     /// Short time format (e.g., "3:45 PM")
+    @available(*, deprecated, message: "Use LocalizedFormatters instead")
     static let shortTime: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .none
@@ -14,6 +15,7 @@ enum Formatters {
     }()
 
     /// Medium time format (e.g., "3:45:30 PM")
+    @available(*, deprecated, message: "Use LocalizedFormatters instead")
     static let mediumTime: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .none

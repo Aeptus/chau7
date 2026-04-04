@@ -2596,6 +2596,7 @@ struct BookmarkRow: View {
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
+        f.locale = LocalizationManager.shared.currentLanguage.locale
         f.dateStyle = .none
         f.timeStyle = .short
         return f
