@@ -415,6 +415,19 @@ final class RuntimeSession: @unchecked Sendable {
             "created_at": DateFormatters.iso8601.string(from: createdAt),
             "cursor": journal.latestCursor
         ]
+        if let purpose = config.purpose {
+            result["purpose"] = purpose
+        }
+        if let parentSessionID = config.parentSessionID {
+            result["parent_session_id"] = parentSessionID
+        }
+        if let parentRunID = config.parentRunID {
+            result["parent_run_id"] = parentRunID
+        }
+        result["delegation_depth"] = config.delegationDepth
+        if !config.taskMetadata.isEmpty {
+            result["task_metadata"] = config.taskMetadata
+        }
         if let turn {
             result["current_turn_id"] = turn
         }

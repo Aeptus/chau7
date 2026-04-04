@@ -32,7 +32,9 @@ final class TelemetryRecorder {
         provider: String,
         cwd: String,
         repoPath: String? = nil,
-        sessionID: String? = nil
+        sessionID: String? = nil,
+        parentRunID: String? = nil,
+        metadata: [String: String] = [:]
     ) {
         // End any existing active run for this tab before starting a new one.
         // This prevents orphaned runs when a new AI session starts in the same tab
@@ -59,7 +61,9 @@ final class TelemetryRecorder {
             provider: provider,
             cwd: cwd,
             repoPath: repoPath,
-            startedAt: Date()
+            startedAt: Date(),
+            metadata: metadata,
+            parentRunID: parentRunID
         )
 
         lock.lock()

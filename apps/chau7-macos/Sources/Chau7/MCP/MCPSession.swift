@@ -131,6 +131,7 @@ final class MCPSession {
                         "session_id": ["type": "string"],
                         "repo_path": ["type": "string"],
                         "provider": ["type": "string"],
+                        "parent_run_id": ["type": "string"],
                         "after": ["type": "string", "description": "ISO 8601 datetime"],
                         "before": ["type": "string", "description": "ISO 8601 datetime"],
                         "tags": ["type": "array", "items": ["type": "string"]],
@@ -409,7 +410,12 @@ final class MCPSession {
                         "backend_args": ["type": "array", "items": ["type": "string"], "description": "Additional CLI arguments"],
                         "initial_prompt": ["type": "string", "description": "Prompt to send immediately after backend starts. Delivered with retry (up to ~4s) to handle backend startup time."],
                         "auto_approve": ["type": "boolean", "description": "Auto-approve safe tool use requests. For claude: --dangerously-skip-permissions. For codex: --full-auto."],
-                        "attach_tab_id": ["type": "string", "description": "Attach to existing tab instead of creating new one"]
+                        "attach_tab_id": ["type": "string", "description": "Attach to existing tab instead of creating new one"],
+                        "purpose": ["type": "string", "description": "Optional generic purpose label for the session, such as 'code_review'."],
+                        "parent_session_id": ["type": "string", "description": "Runtime session ID that delegated this child session."],
+                        "parent_run_id": ["type": "string", "description": "Telemetry run ID that delegated this child session."],
+                        "task_metadata": ["type": "object", "description": "Arbitrary string metadata persisted onto delegated telemetry runs."],
+                        "delegation_depth": ["type": "integer", "description": "Delegation nesting depth. Zero means top-level."]
                     ]
                 ]
             ],

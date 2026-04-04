@@ -846,12 +846,28 @@ extension TerminalSessionModel {
         updateLastDetectedApp(app)
         startAILoggingIfNeeded(toolName: app, commandLine: nil)
 
+        let runtimeSession = ownerTabID.flatMap { RuntimeSessionManager.shared.sessionForTab($0) }
+        var taskMetadata = runtimeSession?.config.taskMetadata ?? [:]
+        if let runtimeSession {
+            taskMetadata["runtime_session_id"] = runtimeSession.id
+            taskMetadata["runtime_backend"] = runtimeSession.backend.name
+            taskMetadata["delegation_depth"] = "\(runtimeSession.config.delegationDepth)"
+            if let purpose = runtimeSession.config.purpose {
+                taskMetadata["runtime_purpose"] = purpose
+            }
+            if let parentSessionID = runtimeSession.config.parentSessionID {
+                taskMetadata["parent_session_id"] = parentSessionID
+            }
+        }
+
         TelemetryRecorder.shared.runStarted(
             tabID: tabIdentifier,
             provider: AIResumeParser.normalizeProviderName(app) ?? app,
             cwd: currentDirectory,
             repoPath: gitRootPath,
-            sessionID: lastAISessionId
+            sessionID: lastAISessionId,
+            parentRunID: runtimeSession?.config.parentRunID,
+            metadata: taskMetadata
         )
 
         Log.info("AI detected from output pattern: \(app) (matched: \(matchedPattern ?? "unknown"))")

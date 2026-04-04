@@ -188,7 +188,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | Tool | Description |
 | --- | --- |
 | `run_get` | Get a single telemetry run by ID (active or from store) |
-| `run_list` | List runs with filters: session_id, repo_path, provider, date range, tags, limit/offset |
+| `run_list` | List runs with filters: session_id, repo_path, provider, parent_run_id, date range, tags, limit/offset |
 | `run_tool_calls` | Get all tool calls for a run — see exactly what an AI agent did |
 | `run_transcript` | Full conversation transcript for a run — falls back to ANSI-stripped PTY log for TUI tools, then terminal buffer |
 | `run_tag` | Set tags on a run for organization and filtering |
@@ -200,7 +200,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 
 | Tool | Description |
 | --- | --- |
-| `runtime_session_create` | Start or attach an agent session in Chau7 and return a runtime session ID |
+| `runtime_session_create` | Start or attach an agent session in Chau7 and return a runtime session ID. Supports delegated-task metadata like purpose, parent session/run IDs, task metadata, and delegation depth |
 | `runtime_session_list` | List runtime sessions, with optional inclusion of recently stopped sessions |
 | `runtime_session_get` | Get detailed state for one runtime session |
 | `runtime_session_stop` | Stop a runtime session and optionally close its tab |
@@ -221,7 +221,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 ## API Analytics & Token Tracking
 
 - **TLS/WSS proxy** — Go-based `chau7-proxy` intercepts API calls to Claude, OpenAI (Codex), Gemini, Anthropic with TLS and WebSocket support.
-- **Token counting & cost calculation** — input/output tokens per call with aggregate cost.
+- **Token counting & cost calculation** — full token breakdown per call: input, output, cache creation, cache read, and reasoning tokens. Accurate cost calculation using provider-specific cache pricing (Anthropic 0.1x/1.25x, OpenAI 0.5x). Fallback estimation when extraction fails.
 - **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
 - **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
 - **Baseline estimator** — calculate token savings from context caching.

@@ -793,6 +793,31 @@ final class TerminalControlService {
         return encodeAny(["repo_path": repoPath, "count": result.count, "events": result])
     }
 
+    func activeRunSummary(forOverlayTabID tabID: UUID) -> [String: Any]? {
+        onMain {
+            guard let tab = self.allTabs.first(where: { $0.id == tabID }),
+                  let session = tab.displaySession ?? tab.session,
+                  let run = TelemetryRecorder.shared.activeRunForTab(session.tabIdentifier) else {
+                return nil
+            }
+
+            var result: [String: Any] = [
+                "run_id": run.id,
+                "provider": run.provider,
+                "started_at": TelemetryStore.isoString(from: run.startedAt),
+                "metadata": run.metadata,
+                "duration_so_far_ms": Int(Date().timeIntervalSince(run.startedAt) * 1000)
+            ]
+            if let sessionID = run.sessionID {
+                result["session_id"] = sessionID
+            }
+            if let parentRunID = run.parentRunID {
+                result["parent_run_id"] = parentRunID
+            }
+            return result
+        }
+    }
+
     /// Find the OverlayTabsModel that owns a given tab UUID.
     private func modelForTab(_ uuid: UUID) -> OverlayTabsModel? {
         allModels.first(where: { $0.model.tabs.contains(where: { $0.id == uuid }) })?.model

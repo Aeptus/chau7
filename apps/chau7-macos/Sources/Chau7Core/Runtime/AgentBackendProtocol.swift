@@ -36,6 +36,16 @@ public struct SessionConfig: Codable, Sendable {
     public let args: [String]
     /// When true, the backend should skip its own permission prompts.
     public let autoApprove: Bool
+    /// Generic purpose label for the session (for example `code_review`).
+    public let purpose: String?
+    /// Parent runtime session that delegated this session, if any.
+    public let parentSessionID: String?
+    /// Parent telemetry run that delegated this session, if any.
+    public let parentRunID: String?
+    /// Arbitrary task-scoped metadata attached to this session.
+    public let taskMetadata: [String: String]
+    /// Delegation nesting depth. Zero means top-level.
+    public let delegationDepth: Int
 
     public init(
         directory: String,
@@ -44,7 +54,12 @@ public struct SessionConfig: Codable, Sendable {
         resumeSessionID: String? = nil,
         environment: [String: String] = [:],
         args: [String] = [],
-        autoApprove: Bool = false
+        autoApprove: Bool = false,
+        purpose: String? = nil,
+        parentSessionID: String? = nil,
+        parentRunID: String? = nil,
+        taskMetadata: [String: String] = [:],
+        delegationDepth: Int = 0
     ) {
         self.directory = directory
         self.provider = provider
@@ -53,5 +68,10 @@ public struct SessionConfig: Codable, Sendable {
         self.environment = environment
         self.args = args
         self.autoApprove = autoApprove
+        self.purpose = purpose
+        self.parentSessionID = parentSessionID
+        self.parentRunID = parentRunID
+        self.taskMetadata = taskMetadata
+        self.delegationDepth = delegationDepth
     }
 }

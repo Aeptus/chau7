@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Full Token Tracking**: Proxy now extracts cache creation, cache read, and reasoning tokens from Anthropic, OpenAI, and Gemini API responses (both streaming and non-streaming). Previously hardcoded to 0, causing dashboard to drastically underreport usage with prompt caching.
+- **Accurate Cost Calculation**: Cost now accounts for provider-specific cache pricing — Anthropic cache reads at 0.1x input rate, cache writes at 1.25x; OpenAI cached tokens at 0.5x. Previously all tokens were billed at full input rate.
+- **Token Estimation Fallback**: When metadata extraction fails on a 200 response, proxy estimates tokens from request/response body sizes (~4 chars/token) instead of silently recording 0.
+- **Dashboard Token Display**: Agent cards now show total tokens including cache, with hover tooltip showing per-type breakdown (input/output/cache write/cache read). Per-agent and total cost shown in header.
+- **IPC Cache Token Propagation**: `ProxyIPCServerData` and `APICallEvent` now carry `cacheCreationInputTokens`, `cacheReadInputTokens`, and `reasoningOutputTokens` through the full pipeline (proxy → IPC socket → Swift app → dashboard).
+
 ### Added
+- **Delegated Runtime Session Metadata**: MCP-created runtime sessions now accept generic delegation fields (`purpose`, `parent_session_id`, `parent_run_id`, `task_metadata`, `delegation_depth`) so parent agents can launch child tasks with explicit lineage instead of repo-wide heuristics.
+- **Delegated Telemetry Lineage**: Runtime-managed AI runs now persist delegation lineage and task metadata into telemetry, and MCP `run_list` can filter by `parent_run_id` to fetch exact child runs for a parent task.
 - **Locale Coverage Completion for New L() Keys**: English, French, Arabic, and Hebrew bundles now include the remaining shipped UI strings added during the recent localization sweep, including settings search/help copy, dashboard copy, alert text, snippets examples, and long-form in-app help topics. Localization parity and translation completeness are back to green with format-specifier safety checks passing.
 - **Locale Identity Cleanup Pass**: Final locale polish translated the remaining user-facing labels, alerts, and help titles that were still left in English after the bulk sweep. The remaining identical strings are now limited to intentional identities such as product names, browser names, file paths, protocol literals, and placeholder-only formats.
 - **Remote Docs Colocation**: Moved the remote protocol spec next to `services/chau7-remote` and split iOS-specific remote UX and Live Activity notes into `apps/chau7-ios/docs`, removing the old orphaned top-level `docs/remote-control` folder.

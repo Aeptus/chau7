@@ -699,6 +699,10 @@ final class TelemetryStore {
             clauses.append("provider = ?")
             values.append(v)
         }
+        if let v = filter.parentRunID {
+            clauses.append("parent_run_id = ?")
+            values.append(v)
+        }
         if let v = filter.after {
             clauses.append("started_at >= ?")
             values.append(Self.isoString(from: v))

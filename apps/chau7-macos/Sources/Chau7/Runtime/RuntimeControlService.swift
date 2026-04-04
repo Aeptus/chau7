@@ -60,15 +60,31 @@ final class RuntimeControlService {
         let directory = args["directory"] as? String ?? FileManager.default.currentDirectoryPath
         let model = args["model"] as? String
         let resumeID = args["resume_session_id"] as? String
-        let env = args["env"] as? [String: String] ?? [:]
+        var env = sanitizeStringDict(args["env"]) ?? [:]
         let backendArgs = args["backend_args"] as? [String] ?? []
         let initialPrompt = args["initial_prompt"] as? String
         let autoApprove = args["auto_approve"] as? Bool ?? false
         let attachTabID = args["attach_tab_id"] as? String
+        let purpose = sanitizeOptionalString(args["purpose"] as? String)
+        let parentSessionID = sanitizeOptionalString(args["parent_session_id"] as? String)
+        let parentRunID = sanitizeOptionalString(args["parent_run_id"] as? String)
+        let taskMetadata = sanitizeStringDict(args["task_metadata"]) ?? [:]
+        let delegationDepth = max(0, args["delegation_depth"] as? Int ?? 0)
+
+        if let purpose {
+            env["CHAU7_SESSION_PURPOSE"] = purpose
+        }
+        if let parentSessionID {
+            env["CHAU7_PARENT_SESSION_ID"] = parentSessionID
+        }
+        if let parentRunID {
+            env["CHAU7_PARENT_RUN_ID"] = parentRunID
+        }
+        env["CHAU7_DELEGATION_DEPTH"] = "\(delegationDepth)"
 
         Log
             .info(
-                "MCP runtime_session_create: backend=\(backendName) model=\(model ?? "(none)") dir=\(directory) autoApprove=\(autoApprove) resume=\(resumeID ?? "(none)") backendArgs=\(backendArgs) hasInitialPrompt=\(initialPrompt != nil) attachTab=\(attachTabID ?? "(none)")"
+                "MCP runtime_session_create: backend=\(backendName) model=\(model ?? "(none)") dir=\(directory) autoApprove=\(autoApprove) resume=\(resumeID ?? "(none)") backendArgs=\(backendArgs) hasInitialPrompt=\(initialPrompt != nil) attachTab=\(attachTabID ?? "(none)") purpose=\(purpose ?? "(none)") parentSession=\(parentSessionID ?? "(none)") parentRun=\(parentRunID ?? "(none)") depth=\(delegationDepth)"
             )
 
         // Resolve backend via registry
@@ -108,7 +124,12 @@ final class RuntimeControlService {
             resumeSessionID: resumeID,
             environment: env,
             args: backendArgs,
-            autoApprove: autoApprove
+            autoApprove: autoApprove,
+            purpose: purpose,
+            parentSessionID: parentSessionID,
+            parentRunID: parentRunID,
+            taskMetadata: taskMetadata,
+            delegationDepth: delegationDepth
         )
 
         // Create or attach to tab
@@ -160,7 +181,7 @@ final class RuntimeControlService {
         }
 
         Log.info("MCP runtime_session_create: session \(session.id) created (state=\(session.state.rawValue))")
-        return encodeAny(session.summary())
+        return encodeAny(sessionSummary(session))
     }
 
     /// Deliver initial_prompt with retry: waits for .ready state, backs off up to ~4s total.
@@ -209,7 +230,7 @@ final class RuntimeControlService {
     private func listSessions(_ args: [String: Any]) -> String {
         let includeStopped = args["include_stopped"] as? Bool ?? false
         let sessions = sessionManager.allSessions(includeStopped: includeStopped)
-        let summaries = sessions.map { $0.summary() }
+        let summaries = sessions.map { sessionSummary($0) }
         return encodeAny(summaries)
     }
 
@@ -220,7 +241,7 @@ final class RuntimeControlService {
         guard let session = sessionManager.session(id: sessionID) else {
             return jsonError("Session not found: \(sessionID)")
         }
-        return encodeAny(session.summary())
+        return encodeAny(sessionSummary(session))
     }
 
     private func stopSession(_ args: [String: Any]) -> String {
@@ -318,6 +339,9 @@ final class RuntimeControlService {
                 "tool": approval.tool,
                 "description": approval.description
             ]
+        }
+        if let activeRun = controlService.activeRunSummary(forOverlayTabID: session.tabID) {
+            result["active_run"] = activeRun
         }
         return encodeAny(result)
     }
@@ -462,6 +486,43 @@ final class RuntimeControlService {
 
     private func jsonError(_ message: String) -> String {
         "{\"error\":\"\(message.replacingOccurrences(of: "\"", with: "\\\""))\"}"
+    }
+
+    private func sessionSummary(_ session: RuntimeSession) -> [String: Any] {
+        var summary = session.summary()
+        if let activeRun = controlService.activeRunSummary(forOverlayTabID: session.tabID) {
+            summary["active_run"] = activeRun
+        }
+        return summary
+    }
+
+    private func sanitizeStringDict(_ value: Any?) -> [String: String]? {
+        guard let value else { return nil }
+        if let dict = value as? [String: String] {
+            return dict
+        }
+        guard let dict = value as? [String: Any] else { return nil }
+
+        var result: [String: String] = [:]
+        for (key, rawValue) in dict {
+            switch rawValue {
+            case let string as String:
+                result[key] = string
+            case let number as NSNumber:
+                result[key] = number.stringValue
+            default:
+                continue
+            }
+        }
+        return result
+    }
+
+    private func sanitizeOptionalString(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 
     private func encodeAny(_ value: Any) -> String {

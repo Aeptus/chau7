@@ -36,6 +36,7 @@ final class TelemetryQueryService {
             sessionID: params["session_id"] as? String,
             repoPath: params["repo_path"] as? String,
             provider: params["provider"] as? String,
+            parentRunID: params["parent_run_id"] as? String,
             after: (params["after"] as? String).flatMap { iso.date(from: $0) },
             before: (params["before"] as? String).flatMap { iso.date(from: $0) },
             tags: params["tags"] as? [String],
@@ -43,14 +44,15 @@ final class TelemetryQueryService {
             offset: params["offset"] as? Int
         )
 
-        var runs = store.listRuns(filter: filter)
+        var runs: [TelemetryRun] = store.listRuns(filter: filter)
 
         // Prepend active runs if no time filter excludes them
         if filter.after == nil || filter.after! < Date() {
-            let active = recorder.allActiveRuns.filter { run in
+            let active: [TelemetryRun] = recorder.allActiveRuns.filter { run in
                 if let sid = filter.sessionID, run.sessionID != sid { return false }
                 if let rp = filter.repoPath, run.repoPath != rp { return false }
                 if let p = filter.provider, run.provider != p { return false }
+                if let parentRunID = filter.parentRunID, run.parentRunID != parentRunID { return false }
                 return true
             }
             runs = active + runs

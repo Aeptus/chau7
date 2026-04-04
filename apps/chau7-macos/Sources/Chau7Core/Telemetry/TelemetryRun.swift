@@ -101,6 +101,7 @@ public struct TelemetryRunFilter: Sendable {
     public var sessionID: String?
     public var repoPath: String?
     public var provider: String?
+    public var parentRunID: String?
     public var after: Date?
     public var before: Date?
     public var tags: [String]?
@@ -111,6 +112,7 @@ public struct TelemetryRunFilter: Sendable {
         sessionID: String? = nil,
         repoPath: String? = nil,
         provider: String? = nil,
+        parentRunID: String? = nil,
         after: Date? = nil,
         before: Date? = nil,
         tags: [String]? = nil,
@@ -120,6 +122,7 @@ public struct TelemetryRunFilter: Sendable {
         self.sessionID = sessionID
         self.repoPath = repoPath
         self.provider = provider
+        self.parentRunID = parentRunID
         self.after = after
         self.before = before
         self.tags = tags
