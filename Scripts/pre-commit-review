@@ -12,6 +12,7 @@ from typing import Any
 DEFAULT_GATE = "advisory"
 DEFAULT_TIMEOUT_MS = 45_000
 DEFAULT_BACKEND = "codex"
+DEFAULT_MODEL = "gpt-5.3-codex"
 SOCKET_PATH = Path.home() / "Library/Application Support/Chau7/scripting.sock"
 DEFAULT_CONFIG_NAME = ".chau7/pre-commit-review.conf"
 
@@ -57,7 +58,7 @@ def default_config(root: Path) -> dict[str, str]:
         "enabled": "1",
         "gate": DEFAULT_GATE,
         "timeout_ms": str(DEFAULT_TIMEOUT_MS),
-        "model": "",
+        "model": DEFAULT_MODEL,
         "backend": DEFAULT_BACKEND,
         "config_path": str(root / DEFAULT_CONFIG_NAME),
     }

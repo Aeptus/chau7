@@ -434,7 +434,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Review automation methods: `start_review`, `wait_review`, and `get_review_result` for delegated code review sessions.
 - `start_review` supports both commit-range reviews and staged-diff reviews with explicit staged file lists.
 - Repo-local pre-commit review automation via `Scripts/pre-commit-review`, which talks to the scripting socket, launches a delegated review, waits for a structured result, and prints findings in hook-friendly terminal output.
-- Per-repo pre-commit review policy via `.chau7/pre-commit-review.conf` with gate modes (`off`, `advisory`, `high`, `any`), timeout, backend, and optional model override.
+- Per-repo pre-commit review policy via `.chau7/pre-commit-review.conf` with gate modes (`off`, `advisory`, `high`, `any`), timeout, backend, and model selection. The shipped default reviewer model is `gpt-5.3-codex`.
 
 ### Debugging
 
@@ -568,7 +568,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | CHAU7_PRE_COMMIT_REVIEW_ENABLED | Enable or disable delegated pre-commit review without editing the hook |
 | CHAU7_PRE_COMMIT_REVIEW_GATE | Override pre-commit gate mode: `off`, `advisory`, `high`, or `any` |
 | CHAU7_PRE_COMMIT_REVIEW_TIMEOUT_MS | Override the delegated review timeout in milliseconds |
-| CHAU7_PRE_COMMIT_REVIEW_MODEL | Optional model override passed to the delegated reviewer |
+| CHAU7_PRE_COMMIT_REVIEW_MODEL | Override the delegated reviewer model (defaults to `gpt-5.3-codex`) |
 | CHAU7_PRE_COMMIT_REVIEW_BACKEND | Override the delegated review backend (defaults to `codex`) |
 
 Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
