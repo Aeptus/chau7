@@ -9,11 +9,11 @@ This directory hosts the native iOS companion app for Chau7.
 - Pairing via pasted JSON payload (no camera required).
 - Live Activity / Dynamic Island status for the most relevant remote AI task.
 
-## Specs
-See:
+## Docs
 
-- `docs/REMOTE-UX.md` for product and Live Activity behavior
-- `../../services/chau7-remote/docs/PROTOCOL.md` for the transport and payload contract
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — app architecture, state management, rendering paths
+- [`docs/REMOTE-UX.md`](docs/REMOTE-UX.md) — product behavior and Live Activity spec
+- [`../../services/chau7-remote/docs/PROTOCOL.md`](../../services/chau7-remote/docs/PROTOCOL.md) — transport and payload contract
 
 ## Build
 Open `apps/chau7-ios/Chau7RemoteApp/Chau7RemoteApp.xcodeproj` in Xcode.
