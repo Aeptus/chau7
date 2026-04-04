@@ -431,6 +431,10 @@ Registration only occurs if the AI tool's config directory exists — no files a
 ### Scripting API
 
 - JSON-RPC Unix socket API — control tabs, run commands, query history, manage snippets, modify settings.
+- Review automation methods: `start_review`, `wait_review`, and `get_review_result` for delegated code review sessions.
+- `start_review` supports both commit-range reviews and staged-diff reviews with explicit staged file lists.
+- Repo-local pre-commit review automation via `Scripts/pre-commit-review`, which talks to the scripting socket, launches a delegated review, waits for a structured result, and prints findings in hook-friendly terminal output.
+- Per-repo pre-commit review policy via `.chau7/pre-commit-review.conf` with gate modes (`off`, `advisory`, `high`, `any`), timeout, backend, and optional model override.
 
 ### Debugging
 
@@ -533,6 +537,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | Profile snippets | `~/.chau7/profile-snippets.json` |
 | Repo snippets | `.chau7/snippets.json` |
 | Repo config | `.chau7/config.toml` |
+| Repo pre-commit review config | `.chau7/pre-commit-review.conf` |
 | Bug reports | `~/.chau7/reports/` |
 | State snapshots | `~/.chau7/snapshots/` |
 | LaunchAgent sample | `apps/chau7-macos/LaunchAgent/com.chau7.plist` |
@@ -559,6 +564,12 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | CHAU7_TRACE_PTY | Same as CHAU7_PTY_DUMP |
 | CHAU7_PTY_DUMP_PATH | Override PTY capture log path |
 | CHAU7_PTY_DUMP_MAX_BYTES | Max PTY capture log size before trimming (default 20MB) |
+| CHAU7_PRE_COMMIT_REVIEW_CONFIG | Override the repo pre-commit review config path |
+| CHAU7_PRE_COMMIT_REVIEW_ENABLED | Enable or disable delegated pre-commit review without editing the hook |
+| CHAU7_PRE_COMMIT_REVIEW_GATE | Override pre-commit gate mode: `off`, `advisory`, `high`, or `any` |
+| CHAU7_PRE_COMMIT_REVIEW_TIMEOUT_MS | Override the delegated review timeout in milliseconds |
+| CHAU7_PRE_COMMIT_REVIEW_MODEL | Optional model override passed to the delegated reviewer |
+| CHAU7_PRE_COMMIT_REVIEW_BACKEND | Override the delegated review backend (defaults to `codex`) |
 
 Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 
@@ -594,4 +605,3 @@ Key patterns:
 - Correlation IDs for trace logging.
 - Binary tree layout for split pane nesting.
 - MCP server with thread-safe main-thread dispatch.
-

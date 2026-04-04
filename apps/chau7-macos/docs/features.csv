@@ -101,6 +101,7 @@ MCP Tools — Telemetry,session_list,"List AI sessions with run counts — filte
 MCP Tools — Telemetry,session_current,Get currently active AI sessions across all tabs,Shipped,Yes
 MCP Tools — Runtime,runtime_session_create,"Start or attach an agent session in Chau7 and return a runtime session ID. Supports delegated-task metadata, structured result schemas, and session policy limits",Shipped,Yes
 AI Integration,Delegated Task Lineage,"Runtime-managed AI runs persist parent run/session lineage and task metadata into telemetry so parent agents can fetch exact child runs instead of inferring by repo-wide recency",Shipped,Yes
+AI Integration,Staged-Diff Delegated Review,"Code review task templates can review explicit staged patches and staged file lists, not only commit ranges, while preserving structured findings and review-safe policy defaults",Shipped,Yes
 MCP Tools — Runtime,runtime_session_list,List runtime sessions with optional inclusion of recently stopped sessions,Shipped,Yes
 MCP Tools — Runtime,runtime_session_get,Get detailed state for a single runtime session,Shipped,Yes
 MCP Tools — Runtime,runtime_session_stop,Stop a runtime session and optionally close its tab,Shipped,Yes
@@ -230,6 +231,8 @@ Localization,Final Shipped-Key Coverage Sweep,"English, French, Arabic, and Hebr
 Localization,Intentional Identity-Only Remainder,"After the final locale polish pass, the remaining identical strings across fr ar he are limited to intentional identities such as product names, browser names, file paths, protocol literals, and placeholder-only formats",Shipped,No
 Accessibility,Runtime Language Switching,Change language without restarting the app,Shipped,No
 Scripting,JSON-RPC API,"Unix socket API for external automation — control tabs, run commands, query history, manage snippets",Shipped,Yes
+Scripting,Delegated Review Scripting API,"Scripting socket exposes start_review wait_review and get_review_result for commit-range and staged-diff delegated code review",Shipped,Yes
+Scripting,Pre-Commit Delegated Review Hook,"Repo-local Scripts/pre-commit-review hook reviews staged changes through Chau7, prints structured findings in terminal-friendly output, and supports gate modes plus timeout/backend/model config via .chau7/pre-commit-review.conf",Shipped,Yes
 Scripting,Settings API,Query and modify settings programmatically from any language,Shipped,No
 Debugging,Data Explorer Refresh,Reopening the singleton Data Explorer window rebuilds its SwiftUI content so history and telemetry reload,Shipped,No
 Debugging,Session Explorer Metadata,Sessions Explorer rows derive provider and repo labels from the latest run for each session,Shipped,No
