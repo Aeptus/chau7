@@ -385,17 +385,11 @@ final class ScriptingAPI {
             }
             taskMetadata["base_commit"] = baseCommit
             taskMetadata["head_commit"] = headCommit
-
-            var lines = [
-                "Review commits \(baseCommit)..\(headCommit).",
-                "Work read-only. Do not edit files. Do not delegate to another reviewer.",
-                "Focus on correctness, regressions, security, and missing tests.",
-                "Return concise prose findings first, then end with a fenced JSON block that matches the requested schema."
-            ]
-            if let extraInstructions {
-                lines.append("Additional instructions: \(extraInstructions)")
-            }
-            prompt = lines.joined(separator: "\n")
+            prompt = CodeReviewTaskTemplate.prompt(
+                baseCommit: baseCommit,
+                headCommit: headCommit,
+                extraInstructions: extraInstructions
+            )
         case "staged_diff":
             guard let stagedDiff = sanitizeOptionalString(params["staged_diff"] as? String) else {
                 return ["error": "missing param: staged_diff"]
@@ -406,23 +400,11 @@ final class ScriptingAPI {
             if !stagedFiles.isEmpty {
                 taskMetadata["staged_files"] = stagedFiles.joined(separator: ",")
             }
-
-            var lines = [
-                "Review the staged changes that are about to be committed.",
-                "Work read-only. Do not edit files. Do not delegate to another reviewer.",
-                "Focus on correctness, regressions, security, and missing tests.",
-                "Only evaluate the staged diff below. Do not speculate about unstaged changes."
-            ]
-            if !stagedFiles.isEmpty {
-                lines.append("Staged files:")
-                lines.append(stagedFiles.map { "- \($0)" }.joined(separator: "\n"))
-            }
-            if let extraInstructions {
-                lines.append("Additional instructions: \(extraInstructions)")
-            }
-            lines.append("Return concise prose findings first, then end with a fenced JSON block that matches the requested schema.")
-            lines.append("Staged diff:\n```diff\n\(stagedDiff)\n```")
-            prompt = lines.joined(separator: "\n")
+            prompt = CodeReviewTaskTemplate.promptForStagedDiff(
+                stagedFiles: stagedFiles,
+                diff: stagedDiff,
+                extraInstructions: extraInstructions
+            )
         default:
             return ["error": "unsupported review mode: \(mode)"]
         }

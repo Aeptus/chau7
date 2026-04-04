@@ -57,16 +57,38 @@ public enum CodeReviewTaskTemplate {
     ])
 
     public static func prompt(baseCommit: String, headCommit: String, extraInstructions: String? = nil) -> String {
-        var lines = [
-            "Review commits \(baseCommit)..\(headCommit).",
-            "Work read-only. Do not edit files. Do not delegate to another reviewer.",
-            "Focus on correctness, regressions, security, and missing tests.",
-            "Return concise prose findings first, then end with a fenced JSON block that matches the requested schema."
-        ]
+        var lines = reviewPreamble()
+        lines.insert("Review commits \(baseCommit)..\(headCommit).", at: 0)
         if let extraInstructions,
            !extraInstructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             lines.append("Additional instructions: \(extraInstructions)")
         }
         return lines.joined(separator: "\n")
+    }
+
+    public static func promptForStagedDiff(stagedFiles: [String], diff: String, extraInstructions: String? = nil) -> String {
+        var lines = [
+            "Review the staged changes that are about to be committed.",
+            "Only evaluate the staged diff below. Do not speculate about unstaged changes."
+        ]
+        lines.append(contentsOf: reviewPreamble())
+        if !stagedFiles.isEmpty {
+            lines.append("Staged files:")
+            lines.append(stagedFiles.map { "- \($0)" }.joined(separator: "\n"))
+        }
+        if let extraInstructions,
+           !extraInstructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines.append("Additional instructions: \(extraInstructions)")
+        }
+        lines.append("Staged diff:\n```diff\n\(diff)\n```")
+        return lines.joined(separator: "\n")
+    }
+
+    private static func reviewPreamble() -> [String] {
+        [
+            "Work read-only. Do not edit files. Do not delegate to another reviewer.",
+            "Focus on correctness, regressions, security, and missing tests.",
+            "Return concise prose findings first, then end with a fenced JSON block that matches the requested schema."
+        ]
     }
 }
