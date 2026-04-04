@@ -47,6 +47,8 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var lastOverlayLifecycleReason = ""
     /// Centralized autosave timer — saves all windows atomically every 30s
     private var multiWindowAutoSaveTimer: DispatchSourceTimer?
+    private var lastSavedWindowStates: [[SavedTabState]] = []
+    private var lastSavedWindowStatesAt: Date?
 
     // MARK: - App Nap Prevention
 
@@ -590,19 +592,19 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func showAbout() {
         let credits = L("about.credits", """
-        A modern terminal emulator designed for AI-assisted development.
+            A modern terminal emulator designed for AI-assisted development.
 
-        Features:
-        - AI CLI Detection (Claude, Codex, Gemini)
-        - Command Palette
-        - SSH Connection Manager
-        - Inline Images
-        - Split Panes
-        - Snippets & More
+            Features:
+            - AI CLI Detection (Claude, Codex, Gemini)
+            - Command Palette
+            - SSH Connection Manager
+            - Inline Images
+            - Split Panes
+            - Snippets & More
 
-        Built with SwiftUI and Rust.
+            Built with SwiftUI and Rust.
 
-        Copyright \u{00a9} 2024-2026 Aeptus
+            Copyright \u{00a9} 2024-2026 Aeptus
         """)
 
         let attributedCredits = NSMutableAttributedString(string: credits)
@@ -920,9 +922,24 @@ private final class OverlayBlurView: NSVisualEffectView {
         multiWindowAutoSaveTimer = timer
     }
 
-    /// Save all visible windows' tab states atomically to UserDefaults and disk backups.
-    /// Window 0 → legacy key, windows 1..N → multi-window key.
-    private func saveAllWindowStates(reason: TabStateSaveReason) {
+    static let terminationStateReuseFreshness: TimeInterval = 35
+
+    func shouldReuseCachedWindowStatesForTermination(now: Date = Date()) -> Bool {
+        guard let lastSavedWindowStatesAt,
+              !lastSavedWindowStates.isEmpty else {
+            return false
+        }
+        return now.timeIntervalSince(lastSavedWindowStatesAt) <= Self.terminationStateReuseFreshness
+    }
+
+    #if DEBUG
+    func setCachedWindowStatesForTesting(_ states: [[SavedTabState]], at date: Date?) {
+        lastSavedWindowStates = states
+        lastSavedWindowStatesAt = date
+    }
+    #endif
+
+    private func collectVisibleWindowStates() -> [[SavedTabState]] {
         var allWindows: [[SavedTabState]] = []
         for host in overlayHosts {
             let isHidden = hiddenWindowNumbers.contains(host.window.windowNumber)
@@ -930,14 +947,12 @@ private final class OverlayBlurView: NSVisualEffectView {
             let states = host.model.exportTabStates()
             if !states.isEmpty { allWindows.append(states) }
         }
-        guard !allWindows.isEmpty else {
-            if reason == .termination {
-                OverlayTabsModel.clearPersistedWindowState()
-                UserDefaults.standard.synchronize()
-                Log.trace("Cleared persisted window state [\(reason.rawValue)] because no visible windows remained")
-            }
-            return
-        }
+        return allWindows
+    }
+
+    private func persistWindowStates(_ allWindows: [[SavedTabState]], reason: TabStateSaveReason) {
+        lastSavedWindowStates = allWindows
+        lastSavedWindowStatesAt = Date()
 
         // Write window 0 to legacy key
         if let firstWindowStates = allWindows.first,
@@ -960,6 +975,25 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
         OverlayTabsModel.persistWindowStateBackups(windowStates: allWindows, reason: reason)
         Log.trace("Saved \(allWindows.count) window(s) tab state [\(reason.rawValue)]")
+    }
+
+    /// Save all visible windows' tab states atomically to UserDefaults and disk backups.
+    /// Window 0 → legacy key, windows 1..N → multi-window key.
+    private func saveAllWindowStates(reason: TabStateSaveReason) {
+        let reusedTerminationSnapshot = reason == .termination && shouldReuseCachedWindowStatesForTermination()
+        let allWindows = reusedTerminationSnapshot ? lastSavedWindowStates : collectVisibleWindowStates()
+        if reusedTerminationSnapshot {
+            Log.info("Reusing cached window state snapshot for termination to avoid blocking quit")
+        }
+        guard !allWindows.isEmpty else {
+            if reason == .termination {
+                OverlayTabsModel.clearPersistedWindowState()
+                UserDefaults.standard.synchronize()
+                Log.trace("Cleared persisted window state [\(reason.rawValue)] because no visible windows remained")
+            }
+            return
+        }
+        persistWindowStates(allWindows, reason: reason)
     }
 
     // MARK: - Tab Move Between Windows
@@ -1381,17 +1415,17 @@ private final class OverlayBlurView: NSVisualEffectView {
         alert.messageText = L("alert.whatsNew.title", "What's New in Chau7")
         alert.informativeText = String(
             format: L("alert.whatsNew.message", """
-            Version %@
+                Version %@
 
-            Recent Updates:
-            - Command Palette (⇧⌘P)
-            - SSH Connection Manager
-            - Inline Image Support (imgcat)
-            - Keyboard Shortcuts Editor
-            - Built-in Help Documentation
-            - Option+Click cursor positioning
-            - Auto-focus on new tabs
-            - Improved menu bar organization
+                Recent Updates:
+                - Command Palette (⇧⌘P)
+                - SSH Connection Manager
+                - Inline Image Support (imgcat)
+                - Keyboard Shortcuts Editor
+                - Built-in Help Documentation
+                - Option+Click cursor positioning
+                - Auto-focus on new tabs
+                - Improved menu bar organization
             """),
             version
         )

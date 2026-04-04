@@ -597,6 +597,7 @@ Key patterns:
 
 ## Recent Telemetry Integrity
 
+- App termination now reuses a recent cached multi-window snapshot instead of re-exporting every visible tab during quit, reducing synchronous shutdown stalls and beachball risk.
 - Ambiguous same-repo Codex save-time resolution now preserves a tab's explicit session metadata instead of clearing it, so restored tabs can keep their last-known resume command.
 - English, Arabic, French, and Hebrew localization bundles now include the previously missing shipped UI string keys that were still being requested from Swift source.
 - Public documentation now has a canonical ownership map, stale duplicate onboarding docs were collapsed, and planning/assessment artifacts were removed from the repository's public surface.

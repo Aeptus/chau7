@@ -343,6 +343,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.32 | 2026-04-04 | App termination now reuses a recent cached multi-window snapshot instead of re-exporting every visible tab during quit, reducing synchronous shutdown stalls and beachball risk |
 | 0.5.31 | 2026-04-04 | Ambiguous same-repo Codex save-time resolution now preserves a tab's explicit session metadata instead of clearing it, so restored tabs can keep their last-known resume command |
 | 0.5.30 | 2026-04-03 | Localization bundles now include the missing shipped UI strings that were still being requested from Swift source, reducing fallback-to-key behavior across English, Arabic, French, and Hebrew |
 | 0.5.29 | 2026-04-03 | Public docs now have a canonical ownership map, stale onboarding duplicates and planning artifacts were removed, and staged doc checks reject absolute filesystem links, stale repo URLs, and TODO markers in the public README |

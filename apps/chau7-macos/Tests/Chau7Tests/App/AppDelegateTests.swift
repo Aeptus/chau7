@@ -183,5 +183,51 @@ final class AppDelegateTests: XCTestCase {
         // Should not crash when there is no key window
         delegate.closeWindow()
     }
+
+    func testTerminationStateReuseRequiresRecentCachedSnapshot() {
+        let delegate = AppDelegate()
+
+        XCTAssertFalse(delegate.shouldReuseCachedWindowStatesForTermination(now: Date()))
+    }
+
+    func testTerminationStateReuseUsesRecentCachedSnapshot() {
+        let delegate = AppDelegate()
+        delegate.setCachedWindowStatesForTesting([[
+            SavedTabState(
+                customTitle: "Cached",
+                color: TabColor.blue.rawValue,
+                directory: "/tmp/cached",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: nil
+            )
+        ]], at: Date().addingTimeInterval(-10))
+
+        XCTAssertTrue(delegate.shouldReuseCachedWindowStatesForTermination(now: Date()))
+    }
+
+    func testTerminationStateReuseRejectsStaleCachedSnapshot() {
+        let delegate = AppDelegate()
+        delegate.setCachedWindowStatesForTesting([[
+            SavedTabState(
+                customTitle: "Stale",
+                color: TabColor.green.rawValue,
+                directory: "/tmp/stale",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: nil
+            )
+        ]], at: Date().addingTimeInterval(-(AppDelegate.terminationStateReuseFreshness + 1)))
+
+        XCTAssertFalse(delegate.shouldReuseCachedWindowStatesForTermination(now: Date()))
+    }
 }
 #endif

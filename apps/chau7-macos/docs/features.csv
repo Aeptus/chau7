@@ -322,3 +322,4 @@ Telemetry,Full Cache Token Tracking,"Proxy extracts cache creation, cache read, 
 Telemetry,Cache-Aware Cost Calculation,"Cost calculation accounts for provider-specific cache pricing — Anthropic cache reads 0.1x, writes 1.25x; OpenAI cached 0.5x. Token estimation fallback when extraction fails.",Shipped,Yes
 Localization,Missing Shipped UI Keys,"English, Arabic, French, and Hebrew localization bundles now include the missing shipped UI string keys that were still being requested from Swift source",Shipped,No
 Restore,Codex Resume Metadata Preservation,"Ambiguous same-repo Codex save-time resolution now preserves a tab's explicit session metadata so restored tabs keep their last-known resume command",Shipped,Yes
+Lifecycle,Fast Quit State Save,"Termination now reuses a recent cached multi-window snapshot instead of re-exporting every visible tab during quit",Shipped,Yes
