@@ -158,20 +158,27 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		model = respMeta.Model
 	}
 
-	// Warn when metadata extraction fails on successful responses
+	// Warn and estimate when metadata extraction fails on successful responses
 	if resp.StatusCode == 200 {
 		if model == "" {
 			log.Printf("[WARN] %s %s: model not extracted (streaming=%v, bodyLen=%d)",
 				provider, r.URL.Path, isStreaming, len(respBody))
 		}
 		if respMeta.InputTokens == 0 && respMeta.OutputTokens == 0 {
-			log.Printf("[WARN] %s %s: no tokens extracted (streaming=%v, bodyLen=%d)",
-				provider, r.URL.Path, isStreaming, len(respBody))
+			// Estimate tokens from body sizes (~4 chars per token)
+			estimatedInput := len(bodyBytes) / 4
+			estimatedOutput := len(respBody) / 4
+			if estimatedInput > 0 || estimatedOutput > 0 {
+				log.Printf("[WARN] %s %s: no tokens extracted, using estimate in:~%d out:~%d (streaming=%v, reqLen=%d, respLen=%d)",
+					provider, r.URL.Path, estimatedInput, estimatedOutput, isStreaming, len(bodyBytes), len(respBody))
+				respMeta.InputTokens = estimatedInput
+				respMeta.OutputTokens = estimatedOutput
+			}
 		}
 	}
 
-	// Calculate cost
-	cost := CalculateCostForCall(provider, model, respMeta.InputTokens, respMeta.OutputTokens)
+	// Calculate cost (includes cache and reasoning token pricing)
+	cost := CalculateFullCostForCall(provider, model, respMeta)
 
 	// v1.2: Calculate baseline estimate
 	var baseline *BaselineEstimate
@@ -203,17 +210,20 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Create record
 	record := &APICallRecord{
-		SessionID:    headers.SessionID,
-		Provider:     provider,
-		Model:        model,
-		Endpoint:     r.URL.Path,
-		InputTokens:  respMeta.InputTokens,
-		OutputTokens: respMeta.OutputTokens,
-		LatencyMs:    latencyMs,
-		TTFTMs:       ttftMs,
-		StatusCode:   resp.StatusCode,
-		CostUSD:      cost,
-		Timestamp:    startTime,
+		SessionID:                headers.SessionID,
+		Provider:                 provider,
+		Model:                    model,
+		Endpoint:                 r.URL.Path,
+		InputTokens:              respMeta.InputTokens,
+		OutputTokens:             respMeta.OutputTokens,
+		CacheCreationInputTokens: respMeta.CacheCreationInputTokens,
+		CacheReadInputTokens:     respMeta.CacheReadInputTokens,
+		ReasoningOutputTokens:    respMeta.ReasoningOutputTokens,
+		LatencyMs:                latencyMs,
+		TTFTMs:                   ttftMs,
+		StatusCode:               resp.StatusCode,
+		CostUSD:                  cost,
+		Timestamp:                startTime,
 	}
 
 	// Log to database with task correlation and baseline (v1.2)
@@ -254,9 +264,16 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if baseline != nil {
 		savedInfo = fmt.Sprintf(" | saved:%d", baseline.TokensSaved)
 	}
-	log.Printf("[INFO] %s %s: %d | %s | in:%d out:%d | %dms (ttft:%dms) | $%.4f | task:%s%s",
+	cacheInfo := ""
+	if respMeta.CacheCreationInputTokens > 0 || respMeta.CacheReadInputTokens > 0 {
+		cacheInfo = fmt.Sprintf(" | cache:+%d/%d", respMeta.CacheCreationInputTokens, respMeta.CacheReadInputTokens)
+	}
+	if respMeta.ReasoningOutputTokens > 0 {
+		cacheInfo += fmt.Sprintf(" | reasoning:%d", respMeta.ReasoningOutputTokens)
+	}
+	log.Printf("[INFO] %s %s: %d | %s | in:%d out:%d | %dms (ttft:%dms) | $%.4f | task:%s%s%s",
 		r.Method, r.URL.Path, resp.StatusCode, model,
-		respMeta.InputTokens, respMeta.OutputTokens, latencyMs, ttftMs, cost, actualTaskID, savedInfo)
+		respMeta.InputTokens, respMeta.OutputTokens, latencyMs, ttftMs, cost, actualTaskID, cacheInfo, savedInfo)
 
 	_ = bytesWritten // Silence unused variable warning
 }

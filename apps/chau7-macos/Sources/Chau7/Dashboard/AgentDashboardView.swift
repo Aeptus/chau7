@@ -60,7 +60,11 @@ struct AgentDashboardView: View {
             }
 
             if model.totalTokens > 0 {
-                statPill(formatTokens(model.totalTokens), color: .secondary)
+                statPill(formatTokens(model.totalTokens) + " tok", color: .secondary)
+            }
+
+            if model.totalCost > 0 {
+                statPill(formatCost(model.totalCost), color: .secondary)
             }
 
             // Status indicator
@@ -128,6 +132,13 @@ struct AgentDashboardView: View {
                 Text(card.formattedTokens + " tok")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
+                    .help(tokenBreakdown(card))
+
+                if card.costUSD > 0 {
+                    Text(card.formattedCost)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             // Files touched
@@ -426,6 +437,25 @@ struct AgentDashboardView: View {
         if count > 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
         if count > 1000 { return String(format: "%.1fk", Double(count) / 1000) }
         return "\(count)"
+    }
+
+    private func formatCost(_ cost: Double) -> String {
+        if cost < 0.01 { return String(format: "$%.4f", cost) }
+        return String(format: "$%.2f", cost)
+    }
+
+    private func tokenBreakdown(_ card: AgentCardData) -> String {
+        var parts = [
+            "Input: \(formatTokens(card.inputTokens))",
+            "Output: \(formatTokens(card.outputTokens))"
+        ]
+        if card.cacheCreationTokens > 0 {
+            parts.append("Cache write: \(formatTokens(card.cacheCreationTokens))")
+        }
+        if card.cacheReadTokens > 0 {
+            parts.append("Cache read: \(formatTokens(card.cacheReadTokens))")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private static var timeFormatter: DateFormatter {

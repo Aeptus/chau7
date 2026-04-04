@@ -302,6 +302,9 @@ final class ProxyIPCServer {
             endpoint: data.endpoint,
             inputTokens: data.inputTokens,
             outputTokens: data.outputTokens,
+            cacheCreationInputTokens: data.cacheCreationInputTokens,
+            cacheReadInputTokens: data.cacheReadInputTokens,
+            reasoningOutputTokens: data.reasoningOutputTokens,
             latencyMs: Int(data.latencyMs),
             statusCode: data.statusCode,
             costUSD: data.costUSD,
@@ -522,6 +525,9 @@ struct ProxyIPCServerData: Decodable {
     let endpoint: String
     let inputTokens: Int
     let outputTokens: Int
+    let cacheCreationInputTokens: Int
+    let cacheReadInputTokens: Int
+    let reasoningOutputTokens: Int
     let latencyMs: Int64
     let statusCode: Int
     let costUSD: Double
@@ -532,7 +538,9 @@ struct ProxyIPCServerData: Decodable {
 
     static let empty = ProxyIPCServerData(
         sessionId: "", provider: "", model: "", endpoint: "",
-        inputTokens: 0, outputTokens: 0, latencyMs: 0, statusCode: 0,
+        inputTokens: 0, outputTokens: 0,
+        cacheCreationInputTokens: 0, cacheReadInputTokens: 0, reasoningOutputTokens: 0,
+        latencyMs: 0, statusCode: 0,
         costUSD: 0, timestamp: "", errorMessage: "", tabId: nil, projectPath: nil
     )
 
@@ -543,6 +551,9 @@ struct ProxyIPCServerData: Decodable {
         case endpoint
         case inputTokens = "input_tokens"
         case outputTokens = "output_tokens"
+        case cacheCreationInputTokens = "cache_creation_input_tokens"
+        case cacheReadInputTokens = "cache_read_input_tokens"
+        case reasoningOutputTokens = "reasoning_output_tokens"
         case latencyMs = "latency_ms"
         case statusCode = "status_code"
         case costUSD = "cost_usd"
@@ -559,6 +570,9 @@ struct ProxyIPCServerData: Decodable {
         endpoint: String,
         inputTokens: Int,
         outputTokens: Int,
+        cacheCreationInputTokens: Int = 0,
+        cacheReadInputTokens: Int = 0,
+        reasoningOutputTokens: Int = 0,
         latencyMs: Int64,
         statusCode: Int,
         costUSD: Double,
@@ -573,6 +587,9 @@ struct ProxyIPCServerData: Decodable {
         self.endpoint = endpoint
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
+        self.cacheCreationInputTokens = cacheCreationInputTokens
+        self.cacheReadInputTokens = cacheReadInputTokens
+        self.reasoningOutputTokens = reasoningOutputTokens
         self.latencyMs = latencyMs
         self.statusCode = statusCode
         self.costUSD = costUSD
@@ -590,6 +607,9 @@ struct ProxyIPCServerData: Decodable {
         self.endpoint = try container.decode(String.self, forKey: .endpoint)
         self.inputTokens = try container.decode(Int.self, forKey: .inputTokens)
         self.outputTokens = try container.decode(Int.self, forKey: .outputTokens)
+        self.cacheCreationInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheCreationInputTokens) ?? 0
+        self.cacheReadInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheReadInputTokens) ?? 0
+        self.reasoningOutputTokens = try container.decodeIfPresent(Int.self, forKey: .reasoningOutputTokens) ?? 0
         self.latencyMs = try container.decode(Int64.self, forKey: .latencyMs)
         self.statusCode = try container.decode(Int.self, forKey: .statusCode)
         self.costUSD = try container.decode(Double.self, forKey: .costUSD)

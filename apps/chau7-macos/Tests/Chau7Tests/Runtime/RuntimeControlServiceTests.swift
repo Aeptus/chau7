@@ -88,6 +88,42 @@ final class RuntimeControlServiceTests: XCTestCase {
         XCTAssertEqual(session.state, .ready)
     }
 
+    func testRuntimeSessionCreatePersistsDelegationMetadata() throws {
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": "shell",
+                "directory": "/tmp/runtime-delegation-\(UUID().uuidString)",
+                "purpose": "code_review",
+                "parent_session_id": "rs_parent123",
+                "parent_run_id": "run_parent123",
+                "delegation_depth": 1,
+                "task_metadata": [
+                    "review_scope": "commits",
+                    "audience": "main-agent"
+                ]
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let sessionID = try XCTUnwrap(json["session_id"] as? String)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+        let taskMetadata = try XCTUnwrap(json["task_metadata"] as? [String: Any])
+
+        XCTAssertEqual(json["purpose"] as? String, "code_review")
+        XCTAssertEqual(json["parent_session_id"] as? String, "rs_parent123")
+        XCTAssertEqual(json["parent_run_id"] as? String, "run_parent123")
+        XCTAssertEqual(json["delegation_depth"] as? Int, 1)
+        XCTAssertEqual(taskMetadata["review_scope"] as? String, "commits")
+        XCTAssertEqual(taskMetadata["audience"] as? String, "main-agent")
+
+        XCTAssertEqual(session.config.purpose, "code_review")
+        XCTAssertEqual(session.config.parentSessionID, "rs_parent123")
+        XCTAssertEqual(session.config.parentRunID, "run_parent123")
+        XCTAssertEqual(session.config.delegationDepth, 1)
+        XCTAssertEqual(session.config.taskMetadata["review_scope"], "commits")
+    }
+
     private func parseJSONObject(_ text: String) -> [String: Any]? {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {

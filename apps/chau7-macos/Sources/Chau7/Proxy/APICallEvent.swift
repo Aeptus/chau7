@@ -13,6 +13,9 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
     public let endpoint: String
     public let inputTokens: Int
     public let outputTokens: Int
+    public let cacheCreationInputTokens: Int
+    public let cacheReadInputTokens: Int
+    public let reasoningOutputTokens: Int
     public let latencyMs: Int
     public let statusCode: Int
     public let costUSD: Double
@@ -25,12 +28,17 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
         inputTokens + outputTokens
     }
 
+    /// Total including cache and reasoning — actual billable usage.
+    public var totalBillableTokens: Int {
+        inputTokens + cacheCreationInputTokens + cacheReadInputTokens + outputTokens + reasoningOutputTokens
+    }
+
     public var tokenUsage: TokenUsage {
         TokenUsage(
             inputTokens: inputTokens,
-            cachedInputTokens: 0,
+            cachedInputTokens: cacheCreationInputTokens + cacheReadInputTokens,
             outputTokens: outputTokens,
-            reasoningOutputTokens: 0
+            reasoningOutputTokens: reasoningOutputTokens
         )
     }
 
@@ -72,6 +80,9 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
         endpoint: String,
         inputTokens: Int,
         outputTokens: Int,
+        cacheCreationInputTokens: Int = 0,
+        cacheReadInputTokens: Int = 0,
+        reasoningOutputTokens: Int = 0,
         latencyMs: Int,
         statusCode: Int,
         costUSD: Double,
@@ -85,6 +96,9 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
         self.endpoint = endpoint
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
+        self.cacheCreationInputTokens = cacheCreationInputTokens
+        self.cacheReadInputTokens = cacheReadInputTokens
+        self.reasoningOutputTokens = reasoningOutputTokens
         self.latencyMs = latencyMs
         self.statusCode = statusCode
         self.costUSD = costUSD

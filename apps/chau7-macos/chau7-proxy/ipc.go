@@ -51,21 +51,24 @@ func (n *IPCNotifier) NotifyAPICallWithTask(record *APICallRecord, taskID, tabID
 		Origin:        "proxy",
 		Timestamp:     record.Timestamp.UTC().Format(time.RFC3339),
 		Data: IPCAPICallData{
-			SessionID:    record.SessionID,
-			Provider:     string(record.Provider),
-			Model:        record.Model,
-			Endpoint:     record.Endpoint,
-			InputTokens:  record.InputTokens,
-			OutputTokens: record.OutputTokens,
-			LatencyMs:    record.LatencyMs,
-			TTFTMs:       record.TTFTMs,
-			StatusCode:   record.StatusCode,
-			CostUSD:      record.CostUSD,
-			Timestamp:    record.Timestamp.UTC().Format(time.RFC3339),
-			ErrorMessage: record.ErrorMessage,
-			TaskID:       taskID,
-			TabID:        tabID,
-			ProjectPath:  projectPath,
+			SessionID:                record.SessionID,
+			Provider:                 string(record.Provider),
+			Model:                    record.Model,
+			Endpoint:                 record.Endpoint,
+			InputTokens:              record.InputTokens,
+			OutputTokens:             record.OutputTokens,
+			CacheCreationInputTokens: record.CacheCreationInputTokens,
+			CacheReadInputTokens:     record.CacheReadInputTokens,
+			ReasoningOutputTokens:    record.ReasoningOutputTokens,
+			LatencyMs:                record.LatencyMs,
+			TTFTMs:                   record.TTFTMs,
+			StatusCode:               record.StatusCode,
+			CostUSD:                  record.CostUSD,
+			Timestamp:                record.Timestamp.UTC().Format(time.RFC3339),
+			ErrorMessage:             record.ErrorMessage,
+			TaskID:                   taskID,
+			TabID:                    tabID,
+			ProjectPath:              projectPath,
 		},
 	}
 
@@ -276,21 +279,24 @@ type IPCEventMessage struct {
 
 // IPCAPICallData contains the data for an API call notification
 type IPCAPICallData struct {
-	SessionID    string  `json:"session_id"`
-	Provider     string  `json:"provider"`
-	Model        string  `json:"model"`
-	Endpoint     string  `json:"endpoint"`
-	InputTokens  int     `json:"input_tokens"`
-	OutputTokens int     `json:"output_tokens"`
-	LatencyMs    int64   `json:"latency_ms"`
-	TTFTMs       int64   `json:"ttft_ms"`
-	StatusCode   int     `json:"status_code"`
-	CostUSD      float64 `json:"cost_usd"`
-	Timestamp    string  `json:"timestamp"`
-	ErrorMessage string  `json:"error_message,omitempty"`
-	TaskID       string  `json:"task_id,omitempty"`
-	TabID        string  `json:"tab_id,omitempty"`
-	ProjectPath  string  `json:"project_path,omitempty"`
+	SessionID                string  `json:"session_id"`
+	Provider                 string  `json:"provider"`
+	Model                    string  `json:"model"`
+	Endpoint                 string  `json:"endpoint"`
+	InputTokens              int     `json:"input_tokens"`
+	OutputTokens             int     `json:"output_tokens"`
+	CacheCreationInputTokens int     `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int     `json:"cache_read_input_tokens"`
+	ReasoningOutputTokens    int     `json:"reasoning_output_tokens"`
+	LatencyMs                int64   `json:"latency_ms"`
+	TTFTMs                   int64   `json:"ttft_ms"`
+	StatusCode               int     `json:"status_code"`
+	CostUSD                  float64 `json:"cost_usd"`
+	Timestamp                string  `json:"timestamp"`
+	ErrorMessage             string  `json:"error_message,omitempty"`
+	TaskID                   string  `json:"task_id,omitempty"`
+	TabID                    string  `json:"tab_id,omitempty"`
+	ProjectPath              string  `json:"project_path,omitempty"`
 }
 
 // IPCTaskCandidateData contains data for a task candidate notification

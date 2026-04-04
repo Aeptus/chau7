@@ -10,18 +10,21 @@ import (
 
 // APICallRecord represents a single API call to be stored in the database
 type APICallRecord struct {
-	SessionID    string
-	Provider     Provider
-	Model        string
-	Endpoint     string
-	InputTokens  int
-	OutputTokens int
-	LatencyMs    int64
-	TTFTMs       int64 // Time-to-first-token (ms from request start to first response byte)
-	StatusCode   int
-	CostUSD      float64
-	Timestamp    time.Time
-	ErrorMessage string
+	SessionID                string
+	Provider                 Provider
+	Model                    string
+	Endpoint                 string
+	InputTokens              int
+	OutputTokens             int
+	CacheCreationInputTokens int
+	CacheReadInputTokens     int
+	ReasoningOutputTokens    int
+	LatencyMs                int64
+	TTFTMs                   int64 // Time-to-first-token (ms from request start to first response byte)
+	StatusCode               int
+	CostUSD                  float64
+	Timestamp                time.Time
+	ErrorMessage             string
 }
 
 // Database wraps SQLite operations
@@ -327,6 +330,16 @@ func runMigrations(db *sql.DB) error {
 		for _, m := range migrations {
 			db.Exec(m) // Ignore errors for columns that may already exist
 		}
+	}
+
+	// Cache + reasoning token columns
+	cacheTokenMigrations := []string{
+		"ALTER TABLE api_calls ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0",
+		"ALTER TABLE api_calls ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0",
+		"ALTER TABLE api_calls ADD COLUMN reasoning_output_tokens INTEGER DEFAULT 0",
+	}
+	for _, m := range cacheTokenMigrations {
+		db.Exec(m) // Ignore errors for columns that may already exist
 	}
 
 	// v1.2 migrations: Add baseline fields to api_calls

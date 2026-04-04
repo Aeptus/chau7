@@ -328,6 +328,15 @@ enum LocalizedFormatters {
         return f
     }
 
+    /// Currency formatter for USD amounts, localized (e.g., "$1.23" or "1,23 $US")
+    static var currency: NumberFormatter {
+        let f = NumberFormatter()
+        f.locale = LocalizationManager.shared.currentLanguage.locale
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        return f
+    }
+
     /// Integer formatter with grouping (e.g., "1,234" or "1 234")
     static var integer: NumberFormatter {
         let f = NumberFormatter()
@@ -382,5 +391,22 @@ enum LocalizedFormatters {
     /// Formats an integer with locale-appropriate grouping
     static func formatInteger(_ number: Int) -> String {
         integer.string(from: NSNumber(value: number)) ?? String(number)
+    }
+
+    /// Formats a USD cost using locale-aware currency formatting.
+    /// Falls back to `$%.2f` if the formatter fails.
+    static func formatCurrency(_ value: Double) -> String {
+        currency.string(from: NSNumber(value: value)) ?? String(format: "$%.2f", value)
+    }
+
+    /// Formats a USD cost with extra precision for small amounts.
+    /// Uses 4 decimal places for values under $0.01, 2 otherwise.
+    static func formatCostPrecise(_ value: Double) -> String {
+        let f = currency
+        if value < 0.01, value > 0 {
+            f.minimumFractionDigits = 4
+            f.maximumFractionDigits = 4
+        }
+        return f.string(from: NSNumber(value: value)) ?? String(format: "$%.2f", value)
     }
 }

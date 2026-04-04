@@ -14,10 +14,13 @@ type RequestMetadata struct {
 
 // ResponseMetadata contains metadata extracted from the response
 type ResponseMetadata struct {
-	Model        string
-	InputTokens  int
-	OutputTokens int
-	FinishReason string
+	Model                    string
+	InputTokens              int
+	OutputTokens             int
+	CacheCreationInputTokens int
+	CacheReadInputTokens     int
+	ReasoningOutputTokens    int
+	FinishReason             string
 }
 
 // ExtractRequestMetadata extracts metadata from a request body
@@ -65,8 +68,10 @@ type anthropicResponse struct {
 }
 
 type anthropicUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 }
 
 func extractAnthropicRequest(body []byte) RequestMetadata {
@@ -87,10 +92,12 @@ func extractAnthropicResponse(body []byte) ResponseMetadata {
 		return ResponseMetadata{}
 	}
 	return ResponseMetadata{
-		Model:        resp.Model,
-		InputTokens:  resp.Usage.InputTokens,
-		OutputTokens: resp.Usage.OutputTokens,
-		FinishReason: resp.StopReason,
+		Model:                    resp.Model,
+		InputTokens:              resp.Usage.InputTokens,
+		OutputTokens:             resp.Usage.OutputTokens,
+		CacheCreationInputTokens: resp.Usage.CacheCreationInputTokens,
+		CacheReadInputTokens:     resp.Usage.CacheReadInputTokens,
+		FinishReason:             resp.StopReason,
 	}
 }
 
@@ -110,8 +117,18 @@ type openAIResponse struct {
 }
 
 type openAIUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
+	PromptTokens        int                      `json:"prompt_tokens"`
+	CompletionTokens    int                      `json:"completion_tokens"`
+	PromptTokensDetails *openAIPromptDetails     `json:"prompt_tokens_details"`
+	CompletionDetails   *openAICompletionDetails `json:"completion_tokens_details"`
+}
+
+type openAIPromptDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
+type openAICompletionDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
 }
 
 type openAIChoice struct {
@@ -141,12 +158,19 @@ func extractOpenAIResponse(body []byte) ResponseMetadata {
 		finishReason = resp.Choices[0].FinishReason
 	}
 
-	return ResponseMetadata{
+	meta := ResponseMetadata{
 		Model:        resp.Model,
 		InputTokens:  resp.Usage.PromptTokens,
 		OutputTokens: resp.Usage.CompletionTokens,
 		FinishReason: finishReason,
 	}
+	if d := resp.Usage.PromptTokensDetails; d != nil {
+		meta.CacheReadInputTokens = d.CachedTokens
+	}
+	if d := resp.Usage.CompletionDetails; d != nil {
+		meta.ReasoningOutputTokens = d.ReasoningTokens
+	}
+	return meta
 }
 
 // Gemini request/response parsing
@@ -172,9 +196,10 @@ type geminiCandidate struct {
 }
 
 type geminiUsage struct {
-	PromptTokenCount     int `json:"promptTokenCount"`
-	CandidatesTokenCount int `json:"candidatesTokenCount"`
-	TotalTokenCount      int `json:"totalTokenCount"`
+	PromptTokenCount        int `json:"promptTokenCount"`
+	CandidatesTokenCount    int `json:"candidatesTokenCount"`
+	TotalTokenCount         int `json:"totalTokenCount"`
+	CachedContentTokenCount int `json:"cachedContentTokenCount"`
 }
 
 func extractGeminiRequest(body []byte) RequestMetadata {
@@ -207,10 +232,11 @@ func extractGeminiResponse(body []byte) ResponseMetadata {
 	}
 
 	return ResponseMetadata{
-		Model:        resp.ModelVersion,
-		InputTokens:  resp.UsageMetadata.PromptTokenCount,
-		OutputTokens: resp.UsageMetadata.CandidatesTokenCount,
-		FinishReason: finishReason,
+		Model:                resp.ModelVersion,
+		InputTokens:          resp.UsageMetadata.PromptTokenCount,
+		OutputTokens:         resp.UsageMetadata.CandidatesTokenCount,
+		CacheReadInputTokens: resp.UsageMetadata.CachedContentTokenCount,
+		FinishReason:         finishReason,
 	}
 }
 
@@ -259,7 +285,7 @@ func ParseStreamingChunks(provider Provider, chunks []byte) ResponseMetadata {
 		switch provider {
 		case ProviderAnthropic:
 			// Anthropic streams as typed events:
-			//   message_start → { message: { model, usage: { input_tokens } } }
+			//   message_start → { message: { model, usage: { input_tokens, cache_* } } }
 			//   content_block_delta → { delta: { text } }  (no usage)
 			//   message_delta → { usage: { output_tokens } }
 			var envelope struct {
@@ -277,6 +303,8 @@ func ParseStreamingChunks(provider Provider, chunks []byte) ResponseMetadata {
 			case "message_start":
 				result.Model = envelope.Message.Model
 				result.InputTokens = envelope.Message.Usage.InputTokens
+				result.CacheCreationInputTokens = envelope.Message.Usage.CacheCreationInputTokens
+				result.CacheReadInputTokens = envelope.Message.Usage.CacheReadInputTokens
 			case "message_delta":
 				result.OutputTokens = envelope.Usage.OutputTokens
 			}
@@ -296,6 +324,12 @@ func ParseStreamingChunks(provider Provider, chunks []byte) ResponseMetadata {
 			}
 			if chunk.Usage.CompletionTokens > 0 {
 				result.OutputTokens = chunk.Usage.CompletionTokens
+			}
+			if d := chunk.Usage.PromptTokensDetails; d != nil && d.CachedTokens > 0 {
+				result.CacheReadInputTokens = d.CachedTokens
+			}
+			if d := chunk.Usage.CompletionDetails; d != nil && d.ReasoningTokens > 0 {
+				result.ReasoningOutputTokens = d.ReasoningTokens
 			}
 			if len(chunk.Choices) > 0 && chunk.Choices[0].FinishReason != "" {
 				result.FinishReason = chunk.Choices[0].FinishReason

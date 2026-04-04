@@ -17,6 +17,7 @@ final class AgentDashboardModel: Identifiable {
     private(set) var conflicts: [DashboardConflict] = []
     private(set) var timeline: [TimelineEntry] = []
     private(set) var totalTokens = 0
+    private(set) var totalCost: Double = 0
     private(set) var overallStatus: OverallStatus = .idle
 
     // MARK: - Internal Tracking
@@ -24,6 +25,8 @@ final class AgentDashboardModel: Identifiable {
     @ObservationIgnored private var fileTrackers: [String: SessionFilesTracker] = [:]
     @ObservationIgnored private var journalCursors: [String: UInt64] = [:]
     @ObservationIgnored private var refreshTimer: DispatchSourceTimer?
+    @ObservationIgnored private var sessionCosts: [String: Double] = [:] // sessionID -> accumulated cost
+    @ObservationIgnored private var apiCallObserver: Any?
 
     var repoName: String {
         URL(fileURLWithPath: repoGroupID).lastPathComponent
@@ -55,11 +58,25 @@ final class AgentDashboardModel: Identifiable {
         }
         timer.resume()
         refreshTimer = timer
+
+        // Observe proxy API call events to accumulate cost per session
+        apiCallObserver = NotificationCenter.default.addObserver(
+            forName: .apiCallRecorded,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let event = notification.userInfo?["event"] as? APICallEvent else { return }
+            self?.sessionCosts[event.sessionId, default: 0] += event.costUSD
+        }
     }
 
     func stopPolling() {
         refreshTimer?.cancel()
         refreshTimer = nil
+        if let observer = apiCallObserver {
+            NotificationCenter.default.removeObserver(observer)
+            apiCallObserver = nil
+        }
     }
 
     // MARK: - Refresh
@@ -71,12 +88,12 @@ final class AgentDashboardModel: Identifiable {
         // Build agent cards
         var cards: [AgentCardData] = []
         var allTokens = 0
+        var allCost: Double = 0
         var hasApprovals = false
         var hasActive = false
 
         for session in matching {
             let stats = session.currentTurnStats
-            let tokens = stats.totalTokens
 
             // Update file tracker for this session
             let tracker = fileTrackers[session.id] ?? SessionFilesTracker()
@@ -87,6 +104,9 @@ final class AgentDashboardModel: Identifiable {
             // Extract last tool from journal
             let lastTool = extractLastTool(from: session.journal)
 
+            // Cost accumulated from proxy IPC notifications
+            let sessionCost = sessionCosts[session.id] ?? 0
+
             cards.append(AgentCardData(
                 sessionID: session.id,
                 tabID: session.tabID,
@@ -95,13 +115,17 @@ final class AgentDashboardModel: Identifiable {
                 turnCount: session.turnCount,
                 inputTokens: stats.inputTokens,
                 outputTokens: stats.outputTokens,
+                cacheCreationTokens: stats.cacheCreationTokens,
+                cacheReadTokens: stats.cacheReadTokens,
                 touchedFiles: tracker.touchedFiles,
                 pendingApproval: session.pendingApproval,
                 lastToolUsed: lastTool,
-                createdAt: session.createdAt
+                createdAt: session.createdAt,
+                costUSD: sessionCost
             ))
 
-            allTokens += tokens
+            allTokens += stats.inputTokens + stats.outputTokens + stats.cacheCreationTokens + stats.cacheReadTokens
+            allCost += sessionCost
             if session.state == .awaitingApproval { hasApprovals = true }
             if session.state == .busy { hasActive = true }
         }
@@ -136,6 +160,7 @@ final class AgentDashboardModel: Identifiable {
             self?.conflicts = detectedConflicts
             self?.timeline = timelineEntries
             self?.totalTokens = allTokens
+            self?.totalCost = allCost
             self?.overallStatus = status
         }
     }
@@ -345,20 +370,38 @@ struct AgentCardData: Identifiable {
     let turnCount: Int
     let inputTokens: Int
     let outputTokens: Int
+    let cacheCreationTokens: Int
+    let cacheReadTokens: Int
     let touchedFiles: Set<String>
     let pendingApproval: PendingApproval?
     let lastToolUsed: String?
     let createdAt: Date
+    let costUSD: Double
 
     var totalTokens: Int {
         inputTokens + outputTokens
     }
 
+    /// All tokens including cache — actual usage footprint.
+    var totalAllTokens: Int {
+        inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens
+    }
+
     var formattedTokens: String {
-        if totalTokens > 1000 {
-            return String(format: "%.1fk", Double(totalTokens) / 1000)
+        formatCount(totalAllTokens)
+    }
+
+    var formattedCost: String {
+        if costUSD < 0.01 {
+            return String(format: "$%.4f", costUSD)
         }
-        return "\(totalTokens)"
+        return String(format: "$%.2f", costUSD)
+    }
+
+    private func formatCount(_ count: Int) -> String {
+        if count > 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
+        if count > 1000 { return String(format: "%.1fk", Double(count) / 1000) }
+        return "\(count)"
     }
 }
 
