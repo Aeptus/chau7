@@ -1,3 +1,15 @@
+/**
+ * SessionDO — Durable Object managing a single paired device session.
+ *
+ * Responsibilities:
+ *   - WebSocket relay: bridges macOS ↔ iOS connections (one socket per role)
+ *   - Push registration: stores APNs tokens per paired iOS device
+ *   - Push notifications: sends APNs alerts when iOS is offline and macOS triggers a notify
+ *   - Rate limiting: sliding window per IP for issue report endpoints
+ *
+ * State is persisted in Durable Object storage (survives Worker restarts).
+ */
+
 interface PushRegistration {
   pairedDeviceId: string;
   deviceName?: string;

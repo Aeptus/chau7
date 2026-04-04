@@ -1,3 +1,15 @@
+/**
+ * Chau7 Relay — Cloudflare Worker entry point.
+ *
+ * Routes:
+ *   GET  /              Landing page (HTML)
+ *   POST / or /issue    Create a GitHub issue via the private intake repo
+ *   WS   /connect/:id   WebSocket relay between macOS and iOS clients
+ *   POST /push/:topic/:deviceId  Forward push notification to a paired device
+ *
+ * Authentication: HMAC-SHA256 bearer tokens with 5-minute window.
+ * Rate limiting: 5 issue reports per hour per IP, enforced via Durable Objects.
+ */
 import { SessionDO } from "./session";
 import { isRelaySecretConfigured } from "./auth.js";
 
@@ -38,6 +50,10 @@ interface Env {
   GITHUB_ISSUE_REPO?: string; // e.g. "owner/repo"
 }
 
+/**
+ * Verify an HMAC-SHA256 token. Format: "{unix_timestamp}.{base64url_signature}".
+ * Payload signed: "{deviceId}:{role}:{timestamp}". Tokens expire after 300 seconds.
+ */
 async function verifyToken(
   token: string,
   deviceId: string,
@@ -173,6 +189,11 @@ export default {
 const ISSUE_RATE_MAX = 5;
 const ISSUE_RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
+/**
+ * Forward a bug report to the private GitHub intake repo.
+ * Validates body (title ≤256, body ≤65535), enforces rate limits via Durable Object,
+ * and creates a GitHub issue using a fine-grained PAT.
+ */
 async function handleIssueCreate(
   request: Request,
   env: Env
