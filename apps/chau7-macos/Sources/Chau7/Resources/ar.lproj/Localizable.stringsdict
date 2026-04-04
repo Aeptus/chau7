@@ -212,8 +212,16 @@
             <string>NSStringPluralRuleType</string>
             <key>NSStringFormatValueTypeKey</key>
             <string>d</string>
+            <key>zero</key>
+            <string>لا مُفهرَسة</string>
             <key>one</key>
             <string>%d مُفهرَس</string>
+            <key>two</key>
+            <string>مُفهرَسان</string>
+            <key>few</key>
+            <string>%d مُفهرَسة</string>
+            <key>many</key>
+            <string>%d مُفهرَسًا</string>
             <key>other</key>
             <string>%d مُفهرَسة</string>
         </dict>
@@ -241,6 +249,790 @@
             <string>%d تجاوزًا</string>
             <key>other</key>
             <string>%d تجاوز</string>
+        </dict>
+    </dict>
+
+    <!-- Time relative -->
+    <key>time.seconds.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>منذ لا ثوانٍ</string>
+            <key>one</key>
+            <string>منذ ثانية واحدة</string>
+            <key>two</key>
+            <string>منذ ثانيتين</string>
+            <key>few</key>
+            <string>منذ %d ثوانٍ</string>
+            <key>many</key>
+            <string>منذ %d ثانية</string>
+            <key>other</key>
+            <string>منذ %d ثانية</string>
+        </dict>
+    </dict>
+
+    <key>time.minutes.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>منذ لا دقائق</string>
+            <key>one</key>
+            <string>منذ دقيقة واحدة</string>
+            <key>two</key>
+            <string>منذ دقيقتين</string>
+            <key>few</key>
+            <string>منذ %d دقائق</string>
+            <key>many</key>
+            <string>منذ %d دقيقة</string>
+            <key>other</key>
+            <string>منذ %d دقيقة</string>
+        </dict>
+    </dict>
+
+    <key>time.hours.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>منذ لا ساعات</string>
+            <key>one</key>
+            <string>منذ ساعة واحدة</string>
+            <key>two</key>
+            <string>منذ ساعتين</string>
+            <key>few</key>
+            <string>منذ %d ساعات</string>
+            <key>many</key>
+            <string>منذ %d ساعة</string>
+            <key>other</key>
+            <string>منذ %d ساعة</string>
+        </dict>
+    </dict>
+
+    <key>time.days.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>منذ لا أيام</string>
+            <key>one</key>
+            <string>منذ يوم واحد</string>
+            <key>two</key>
+            <string>منذ يومين</string>
+            <key>few</key>
+            <string>منذ %d أيام</string>
+            <key>many</key>
+            <string>منذ %d يومًا</string>
+            <key>other</key>
+            <string>منذ %d يوم</string>
+        </dict>
+    </dict>
+
+    <key>time.weeks.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>منذ لا أسابيع</string>
+            <key>one</key>
+            <string>منذ أسبوع واحد</string>
+            <key>two</key>
+            <string>منذ أسبوعين</string>
+            <key>few</key>
+            <string>منذ %d أسابيع</string>
+            <key>many</key>
+            <string>منذ %d أسبوعًا</string>
+            <key>other</key>
+            <string>منذ %d أسبوع</string>
+        </dict>
+    </dict>
+
+    <key>time.months.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>منذ لا أشهر</string>
+            <key>one</key>
+            <string>منذ شهر واحد</string>
+            <key>two</key>
+            <string>منذ شهرين</string>
+            <key>few</key>
+            <string>منذ %d أشهر</string>
+            <key>many</key>
+            <string>منذ %d شهرًا</string>
+            <key>other</key>
+            <string>منذ %d شهر</string>
+        </dict>
+    </dict>
+
+    <!-- Units -->
+    <key>unit.lines</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا سطور</string>
+            <key>one</key>
+            <string>سطر واحد</string>
+            <key>two</key>
+            <string>سطران</string>
+            <key>few</key>
+            <string>%d سطور</string>
+            <key>many</key>
+            <string>%d سطرًا</string>
+            <key>other</key>
+            <string>%d سطر</string>
+        </dict>
+    </dict>
+
+    <key>unit.items</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا عناصر</string>
+            <key>one</key>
+            <string>عنصر واحد</string>
+            <key>two</key>
+            <string>عنصران</string>
+            <key>few</key>
+            <string>%d عناصر</string>
+            <key>many</key>
+            <string>%d عنصرًا</string>
+            <key>other</key>
+            <string>%d عنصر</string>
+        </dict>
+    </dict>
+
+    <!-- Commands/Search -->
+    <key>command.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا أوامر</string>
+            <key>one</key>
+            <string>أمر واحد</string>
+            <key>two</key>
+            <string>أمران</string>
+            <key>few</key>
+            <string>%d أوامر</string>
+            <key>many</key>
+            <string>%d أمرًا</string>
+            <key>other</key>
+            <string>%d أمر</string>
+        </dict>
+    </dict>
+
+    <key>command.count.available</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا أوامر متاحة</string>
+            <key>one</key>
+            <string>أمر واحد متاح</string>
+            <key>two</key>
+            <string>أمران متاحان</string>
+            <key>few</key>
+            <string>%d أوامر متاحة</string>
+            <key>many</key>
+            <string>%d أمرًا متاحًا</string>
+            <key>other</key>
+            <string>%d أمر متاح</string>
+        </dict>
+    </dict>
+
+    <key>search.matches</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا نتائج</string>
+            <key>one</key>
+            <string>نتيجة واحدة</string>
+            <key>two</key>
+            <string>نتيجتان</string>
+            <key>few</key>
+            <string>%d نتائج</string>
+            <key>many</key>
+            <string>%d نتيجة</string>
+            <key>other</key>
+            <string>%d نتيجة</string>
+        </dict>
+    </dict>
+
+    <key>search.matches.found</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا نتائج</string>
+            <key>one</key>
+            <string>نتيجة واحدة</string>
+            <key>two</key>
+            <string>نتيجتان</string>
+            <key>few</key>
+            <string>%d نتائج</string>
+            <key>many</key>
+            <string>%d نتيجة</string>
+            <key>other</key>
+            <string>%d نتيجة</string>
+        </dict>
+    </dict>
+
+    <!-- Tasks -->
+    <key>task.calls</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا استدعاءات</string>
+            <key>one</key>
+            <string>استدعاء واحد</string>
+            <key>two</key>
+            <string>استدعاءان</string>
+            <key>few</key>
+            <string>%d استدعاءات</string>
+            <key>many</key>
+            <string>%d استدعاءً</string>
+            <key>other</key>
+            <string>%d استدعاء</string>
+        </dict>
+    </dict>
+
+    <key>task.tokens</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا رموز</string>
+            <key>one</key>
+            <string>رمز واحد</string>
+            <key>two</key>
+            <string>رمزان</string>
+            <key>few</key>
+            <string>%d رموز</string>
+            <key>many</key>
+            <string>%d رمزًا</string>
+            <key>other</key>
+            <string>%d رمز</string>
+        </dict>
+    </dict>
+
+    <key>task.candidate.auto_confirm</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>تأكيد تلقائي الآن</string>
+            <key>one</key>
+            <string>تأكيد تلقائي خلال ثانية واحدة</string>
+            <key>two</key>
+            <string>تأكيد تلقائي خلال ثانيتين</string>
+            <key>few</key>
+            <string>تأكيد تلقائي خلال %d ثوانٍ</string>
+            <key>many</key>
+            <string>تأكيد تلقائي خلال %d ثانية</string>
+            <key>other</key>
+            <string>تأكيد تلقائي خلال %d ثانية</string>
+        </dict>
+    </dict>
+
+    <!-- Snippets -->
+    <key>productivity.snippets.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا مقتطفات متاحة</string>
+            <key>one</key>
+            <string>مقتطف واحد متاح</string>
+            <key>two</key>
+            <string>مقتطفان متاحان</string>
+            <key>few</key>
+            <string>%d مقتطفات متاحة</string>
+            <key>many</key>
+            <string>%d مقتطفًا متاحًا</string>
+            <key>other</key>
+            <string>%d مقتطف متاح</string>
+        </dict>
+    </dict>
+
+    <key>settings.productivity.snippets.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا مقتطفات</string>
+            <key>one</key>
+            <string>مقتطف واحد</string>
+            <key>two</key>
+            <string>مقتطفان</string>
+            <key>few</key>
+            <string>%d مقتطفات</string>
+            <key>many</key>
+            <string>%d مقتطفًا</string>
+            <key>other</key>
+            <string>%d مقتطف</string>
+        </dict>
+    </dict>
+
+    <key>snippets.import.success</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لم يتم استيراد مقتطفات</string>
+            <key>one</key>
+            <string>تم استيراد مقتطف واحد</string>
+            <key>two</key>
+            <string>تم استيراد مقتطفين</string>
+            <key>few</key>
+            <string>تم استيراد %d مقتطفات</string>
+            <key>many</key>
+            <string>تم استيراد %d مقتطفًا</string>
+            <key>other</key>
+            <string>تم استيراد %d مقتطف</string>
+        </dict>
+    </dict>
+
+    <key>snippets.export.success</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لم يتم تصدير مقتطفات</string>
+            <key>one</key>
+            <string>تم تصدير مقتطف واحد</string>
+            <key>two</key>
+            <string>تم تصدير مقتطفين</string>
+            <key>few</key>
+            <string>تم تصدير %d مقتطفات</string>
+            <key>many</key>
+            <string>تم تصدير %d مقتطفًا</string>
+            <key>other</key>
+            <string>تم تصدير %d مقتطف</string>
+        </dict>
+    </dict>
+
+    <!-- Explorer -->
+    <key>explorer.sessions.cmds</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا أوامر</string>
+            <key>one</key>
+            <string>أمر واحد</string>
+            <key>two</key>
+            <string>أمران</string>
+            <key>few</key>
+            <string>%d أوامر</string>
+            <key>many</key>
+            <string>%d أمرًا</string>
+            <key>other</key>
+            <string>%d أمر</string>
+        </dict>
+    </dict>
+
+    <key>explorer.runs.withTokens</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا بيانات رموز</string>
+            <key>one</key>
+            <string>واحد مع بيانات رموز</string>
+            <key>two</key>
+            <string>اثنان مع بيانات رموز</string>
+            <key>few</key>
+            <string>%d مع بيانات رموز</string>
+            <key>many</key>
+            <string>%d مع بيانات رموز</string>
+            <key>other</key>
+            <string>%d مع بيانات رموز</string>
+        </dict>
+    </dict>
+
+    <key>explorer.history.totalRecords</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا سجلات</string>
+            <key>one</key>
+            <string>سجل واحد</string>
+            <key>two</key>
+            <string>سجلان</string>
+            <key>few</key>
+            <string>%d سجلات</string>
+            <key>many</key>
+            <string>%d سجلًا</string>
+            <key>other</key>
+            <string>%d سجل</string>
+        </dict>
+    </dict>
+
+    <!-- Migration -->
+    <key>migration.foundProfiles</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لم يتم العثور على ملفات تعريف</string>
+            <key>one</key>
+            <string>تم العثور على ملف تعريف واحد</string>
+            <key>two</key>
+            <string>تم العثور على ملفي تعريف</string>
+            <key>few</key>
+            <string>تم العثور على %d ملفات تعريف</string>
+            <key>many</key>
+            <string>تم العثور على %d ملف تعريف</string>
+            <key>other</key>
+            <string>تم العثور على %d ملف تعريف</string>
+        </dict>
+    </dict>
+
+    <key>migration.importButton</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا ملفات تعريف للاستيراد</string>
+            <key>one</key>
+            <string>استيراد ملف تعريف واحد</string>
+            <key>two</key>
+            <string>استيراد ملفي تعريف</string>
+            <key>few</key>
+            <string>استيراد %d ملفات تعريف</string>
+            <key>many</key>
+            <string>استيراد %d ملف تعريف</string>
+            <key>other</key>
+            <string>استيراد %d ملف تعريف</string>
+        </dict>
+    </dict>
+
+    <key>migration.importing</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا ملفات تعريف للاستيراد...</string>
+            <key>one</key>
+            <string>جارٍ استيراد ملف تعريف واحد...</string>
+            <key>two</key>
+            <string>جارٍ استيراد ملفي تعريف...</string>
+            <key>few</key>
+            <string>جارٍ استيراد %d ملفات تعريف...</string>
+            <key>many</key>
+            <string>جارٍ استيراد %d ملف تعريف...</string>
+            <key>other</key>
+            <string>جارٍ استيراد %d ملف تعريف...</string>
+        </dict>
+    </dict>
+
+    <key>migration.selectedCount</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا محددة</string>
+            <key>one</key>
+            <string>واحد محدد</string>
+            <key>two</key>
+            <string>اثنان محددان</string>
+            <key>few</key>
+            <string>%d محددة</string>
+            <key>many</key>
+            <string>%d محددة</string>
+            <key>other</key>
+            <string>%d محددة</string>
+        </dict>
+    </dict>
+
+    <!-- Hovercard/Other -->
+    <key>hovercard.moreConflicts</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا مزيد</string>
+            <key>one</key>
+            <string>+%d أخرى</string>
+            <key>two</key>
+            <string>+%d أخريان</string>
+            <key>few</key>
+            <string>+%d أخرى</string>
+            <key>many</key>
+            <string>+%d أخرى</string>
+            <key>other</key>
+            <string>+%d أخرى</string>
+        </dict>
+    </dict>
+
+    <key>hovercard.moreProcesses</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا مزيد</string>
+            <key>one</key>
+            <string>+%d أخرى</string>
+            <key>two</key>
+            <string>+%d أخريان</string>
+            <key>few</key>
+            <string>+%d أخرى</string>
+            <key>many</key>
+            <string>+%d أخرى</string>
+            <key>other</key>
+            <string>+%d أخرى</string>
+        </dict>
+    </dict>
+
+    <key>hovercard.turns</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا أدوار</string>
+            <key>one</key>
+            <string>دور واحد</string>
+            <key>two</key>
+            <string>دوران</string>
+            <key>few</key>
+            <string>%d أدوار</string>
+            <key>many</key>
+            <string>%d دورًا</string>
+            <key>other</key>
+            <string>%d دور</string>
+        </dict>
+    </dict>
+
+    <key>ssh.importAll.confirm</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا مضيفات SSH للاستيراد.</string>
+            <key>one</key>
+            <string>سيتم استيراد مضيف SSH واحد إلى Chau7.</string>
+            <key>two</key>
+            <string>سيتم استيراد مضيفي SSH إلى Chau7.</string>
+            <key>few</key>
+            <string>سيتم استيراد %d مضيفات SSH إلى Chau7.</string>
+            <key>many</key>
+            <string>سيتم استيراد %d مضيف SSH إلى Chau7.</string>
+            <key>other</key>
+            <string>سيتم استيراد %d مضيف SSH إلى Chau7.</string>
+        </dict>
+    </dict>
+
+    <!-- Settings search -->
+    <key>settings.searchResults</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@ لـ "%2$@"</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا إعدادات مطابقة</string>
+            <key>one</key>
+            <string>تم العثور على إعداد واحد مطابق</string>
+            <key>two</key>
+            <string>تم العثور على إعدادين مطابقين</string>
+            <key>few</key>
+            <string>تم العثور على %d إعدادات مطابقة</string>
+            <key>many</key>
+            <string>تم العثور على %d إعدادًا مطابقًا</string>
+            <key>other</key>
+            <string>تم العثور على %d إعداد مطابق</string>
         </dict>
     </dict>
 </dict>

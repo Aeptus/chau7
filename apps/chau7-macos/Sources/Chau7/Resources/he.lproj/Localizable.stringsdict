@@ -191,5 +191,603 @@
             <string>%d דריסות</string>
         </dict>
     </dict>
+
+    <!-- Time relative -->
+    <key>time.seconds.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>לפני שנייה אחת</string>
+            <key>two</key>
+            <string>לפני %d שניות</string>
+            <key>other</key>
+            <string>לפני %d שניות</string>
+        </dict>
+    </dict>
+
+    <key>time.minutes.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>לפני דקה אחת</string>
+            <key>two</key>
+            <string>לפני %d דקות</string>
+            <key>other</key>
+            <string>לפני %d דקות</string>
+        </dict>
+    </dict>
+
+    <key>time.hours.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>לפני שעה אחת</string>
+            <key>two</key>
+            <string>לפני %d שעות</string>
+            <key>other</key>
+            <string>לפני %d שעות</string>
+        </dict>
+    </dict>
+
+    <key>time.days.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>לפני יום אחד</string>
+            <key>two</key>
+            <string>לפני יומיים</string>
+            <key>other</key>
+            <string>לפני %d ימים</string>
+        </dict>
+    </dict>
+
+    <key>time.weeks.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>לפני שבוע אחד</string>
+            <key>two</key>
+            <string>לפני שבועיים</string>
+            <key>other</key>
+            <string>לפני %d שבועות</string>
+        </dict>
+    </dict>
+
+    <key>time.months.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>לפני חודש אחד</string>
+            <key>two</key>
+            <string>לפני חודשיים</string>
+            <key>other</key>
+            <string>לפני %d חודשים</string>
+        </dict>
+    </dict>
+
+    <!-- Units -->
+    <key>unit.lines</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>שורה אחת</string>
+            <key>two</key>
+            <string>%d שורות</string>
+            <key>other</key>
+            <string>%d שורות</string>
+        </dict>
+    </dict>
+
+    <key>unit.items</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>פריט אחד</string>
+            <key>two</key>
+            <string>%d פריטים</string>
+            <key>other</key>
+            <string>%d פריטים</string>
+        </dict>
+    </dict>
+
+    <!-- Commands/Search -->
+    <key>command.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>פקודה אחת</string>
+            <key>two</key>
+            <string>%d פקודות</string>
+            <key>other</key>
+            <string>%d פקודות</string>
+        </dict>
+    </dict>
+
+    <key>command.count.available</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>פקודה אחת זמינה</string>
+            <key>two</key>
+            <string>%d פקודות זמינות</string>
+            <key>other</key>
+            <string>%d פקודות זמינות</string>
+        </dict>
+    </dict>
+
+    <key>search.matches</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>תוצאה אחת</string>
+            <key>two</key>
+            <string>%d תוצאות</string>
+            <key>other</key>
+            <string>%d תוצאות</string>
+        </dict>
+    </dict>
+
+    <key>search.matches.found</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>נמצאה תוצאה אחת</string>
+            <key>two</key>
+            <string>נמצאו %d תוצאות</string>
+            <key>other</key>
+            <string>נמצאו %d תוצאות</string>
+        </dict>
+    </dict>
+
+    <!-- Tasks -->
+    <key>task.calls</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>קריאה אחת</string>
+            <key>two</key>
+            <string>%d קריאות</string>
+            <key>other</key>
+            <string>%d קריאות</string>
+        </dict>
+    </dict>
+
+    <key>task.tokens</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>טוקן אחד</string>
+            <key>two</key>
+            <string>%d טוקנים</string>
+            <key>other</key>
+            <string>%d טוקנים</string>
+        </dict>
+    </dict>
+
+    <key>task.candidate.auto_confirm</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>אישור אוטומטי בעוד שנייה אחת</string>
+            <key>two</key>
+            <string>אישור אוטומטי בעוד %d שניות</string>
+            <key>other</key>
+            <string>אישור אוטומטי בעוד %d שניות</string>
+        </dict>
+    </dict>
+
+    <!-- Snippets -->
+    <key>productivity.snippets.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>קטע קוד אחד זמין</string>
+            <key>two</key>
+            <string>%d קטעי קוד זמינים</string>
+            <key>other</key>
+            <string>%d קטעי קוד זמינים</string>
+        </dict>
+    </dict>
+
+    <key>settings.productivity.snippets.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>קטע קוד אחד</string>
+            <key>two</key>
+            <string>%d קטעי קוד</string>
+            <key>other</key>
+            <string>%d קטעי קוד</string>
+        </dict>
+    </dict>
+
+    <key>snippets.import.success</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>יובא קטע קוד אחד</string>
+            <key>two</key>
+            <string>יובאו %d קטעי קוד</string>
+            <key>other</key>
+            <string>יובאו %d קטעי קוד</string>
+        </dict>
+    </dict>
+
+    <key>snippets.export.success</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>יוצא קטע קוד אחד</string>
+            <key>two</key>
+            <string>יוצאו %d קטעי קוד</string>
+            <key>other</key>
+            <string>יוצאו %d קטעי קוד</string>
+        </dict>
+    </dict>
+
+    <!-- Explorer -->
+    <key>explorer.sessions.cmds</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>פקודה אחת</string>
+            <key>two</key>
+            <string>%d פקודות</string>
+            <key>other</key>
+            <string>%d פקודות</string>
+        </dict>
+    </dict>
+
+    <key>explorer.runs.withTokens</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>אחד עם נתוני טוקנים</string>
+            <key>two</key>
+            <string>%d עם נתוני טוקנים</string>
+            <key>other</key>
+            <string>%d עם נתוני טוקנים</string>
+        </dict>
+    </dict>
+
+    <key>explorer.history.totalRecords</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>רשומה אחת</string>
+            <key>two</key>
+            <string>%d רשומות</string>
+            <key>other</key>
+            <string>%d רשומות</string>
+        </dict>
+    </dict>
+
+    <!-- Migration -->
+    <key>migration.foundProfiles</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>נמצא פרופיל אחד</string>
+            <key>two</key>
+            <string>נמצאו %d פרופילים</string>
+            <key>other</key>
+            <string>נמצאו %d פרופילים</string>
+        </dict>
+    </dict>
+
+    <key>migration.importButton</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>ייבוא פרופיל אחד</string>
+            <key>two</key>
+            <string>ייבוא %d פרופילים</string>
+            <key>other</key>
+            <string>ייבוא %d פרופילים</string>
+        </dict>
+    </dict>
+
+    <key>migration.importing</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>מייבא פרופיל אחד...</string>
+            <key>two</key>
+            <string>מייבא %d פרופילים...</string>
+            <key>other</key>
+            <string>מייבא %d פרופילים...</string>
+        </dict>
+    </dict>
+
+    <key>migration.selectedCount</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>אחד נבחר</string>
+            <key>two</key>
+            <string>%d נבחרו</string>
+            <key>other</key>
+            <string>%d נבחרו</string>
+        </dict>
+    </dict>
+
+    <!-- Hovercard/Other -->
+    <key>hovercard.moreConflicts</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>+%d נוסף</string>
+            <key>two</key>
+            <string>+%d נוספים</string>
+            <key>other</key>
+            <string>+%d נוספים</string>
+        </dict>
+    </dict>
+
+    <key>hovercard.moreProcesses</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>+%d נוסף</string>
+            <key>two</key>
+            <string>+%d נוספים</string>
+            <key>other</key>
+            <string>+%d נוספים</string>
+        </dict>
+    </dict>
+
+    <key>hovercard.turns</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>תור אחד</string>
+            <key>two</key>
+            <string>%d תורות</string>
+            <key>other</key>
+            <string>%d תורות</string>
+        </dict>
+    </dict>
+
+    <key>ssh.importAll.confirm</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>פעולה זו תייבא מארח SSH אחד ל-Chau7.</string>
+            <key>two</key>
+            <string>פעולה זו תייבא %d מארחי SSH ל-Chau7.</string>
+            <key>other</key>
+            <string>פעולה זו תייבא %d מארחי SSH ל-Chau7.</string>
+        </dict>
+    </dict>
+
+    <!-- Settings search -->
+    <key>settings.searchResults</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@ עבור "%2$@"</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>נמצאה הגדרה מתאימה אחת</string>
+            <key>two</key>
+            <string>נמצאו %d הגדרות מתאימות</string>
+            <key>other</key>
+            <string>נמצאו %d הגדרות מתאימות</string>
+        </dict>
+    </dict>
 </dict>
 </plist>
