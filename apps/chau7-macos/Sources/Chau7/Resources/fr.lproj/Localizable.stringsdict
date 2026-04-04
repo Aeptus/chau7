@@ -154,5 +154,22 @@
             <string>%d indexés</string>
         </dict>
     </dict>
+
+    <key>notifications.overrideCount</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@overrides@</string>
+        <key>overrides</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d remplacement</string>
+            <key>other</key>
+            <string>%d remplacements</string>
+        </dict>
+    </dict>
 </dict>
 </plist>

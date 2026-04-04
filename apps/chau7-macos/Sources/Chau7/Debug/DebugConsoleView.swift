@@ -1862,15 +1862,24 @@ struct DebugConsoleView: View {
         return counts.map { (type: $0.key, count: $0.value) }.sorted { $0.count > $1.count }
     }
 
+    private static let isoFractionalFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static let isoBasicFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
     private func eventsPerHour(for path: String) -> Int {
         let events = appModel.eventsByRepo[path] ?? []
         let oneHourAgo = Date().addingTimeInterval(-3600)
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let basicFormatter = ISO8601DateFormatter()
-        basicFormatter.formatOptions = [.withInternetDateTime]
         return events.filter { event in
-            guard let date = isoFormatter.date(from: event.ts) ?? basicFormatter.date(from: event.ts) else { return false }
+            guard let date = Self.isoFractionalFormatter.date(from: event.ts)
+                ?? Self.isoBasicFormatter.date(from: event.ts) else { return false }
             return date > oneHourAgo
         }.count
     }
@@ -2070,7 +2079,7 @@ struct DebugConsoleView: View {
 
                 if isExpanded {
                     VStack(alignment: .leading, spacing: 2) {
-                        ForEach(events.reversed(), id: \.id) { event in
+                        ForEach(Array(events.suffix(50).reversed()), id: \.id) { event in
                             HStack(spacing: 6) {
                                 Text(event.type)
                                     .font(.system(size: 9, weight: .medium, design: .monospaced))

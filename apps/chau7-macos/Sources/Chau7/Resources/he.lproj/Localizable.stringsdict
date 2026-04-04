@@ -172,5 +172,24 @@
             <string>%d מוכנים</string>
         </dict>
     </dict>
+
+    <key>notifications.overrideCount</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@overrides@</string>
+        <key>overrides</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>דריסה אחת</string>
+            <key>two</key>
+            <string>%d דריסות</string>
+            <key>other</key>
+            <string>%d דריסות</string>
+        </dict>
+    </dict>
 </dict>
 </plist>

@@ -3028,3 +3028,7 @@
 // MARK: - Window
 "window.overlay.title" = "Chau7 - חלון %d";
 "window.settings.title" = "הגדרות Chau7";
+
+// MARK: - Notification Overrides
+"notifications.overrideCount" = "%d דריסות";
+"notifications.overriddenRatio" = "%d/%d נדרסו";

@@ -3062,3 +3062,7 @@
 // MARK: - Window
 "window.overlay.title" = "Chau7 - Fenêtre %d";
 "window.settings.title" = "Réglages Chau7";
+
+// MARK: - Notification Overrides
+"notifications.overrideCount" = "%d remplacements";
+"notifications.overriddenRatio" = "%d/%d remplacés";

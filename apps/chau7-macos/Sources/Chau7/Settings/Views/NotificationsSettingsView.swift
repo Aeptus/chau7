@@ -292,7 +292,7 @@ private struct AINotificationCard: View {
                 Spacer()
 
                 if overrideCount > 0 {
-                    Text("\(overrideCount) override\(overrideCount == 1 ? "" : "s")")
+                    Text(String(format: L("notifications.overrideCount", "%d overrides"), overrideCount))
                         .font(.caption2)
                         .foregroundStyle(.orange)
                         .padding(.horizontal, 6)
@@ -1044,7 +1044,7 @@ private struct GroupTriggerRow: View {
 
                         // Override count badge
                         if overrideCount > 0 {
-                            Text("\(overrideCount)/\(group.sources.count) overridden")
+                            Text(String(format: L("notifications.overriddenRatio", "%d/%d overridden"), overrideCount, group.sources.count))
                                 .font(.caption2)
                                 .foregroundStyle(.orange)
                                 .padding(.horizontal, 6)

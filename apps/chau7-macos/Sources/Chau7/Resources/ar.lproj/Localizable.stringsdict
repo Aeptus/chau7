@@ -218,5 +218,30 @@
             <string>%d مُفهرَسة</string>
         </dict>
     </dict>
+
+    <key>notifications.overrideCount</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@overrides@</string>
+        <key>overrides</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>zero</key>
+            <string>لا تجاوزات</string>
+            <key>one</key>
+            <string>تجاوز واحد</string>
+            <key>two</key>
+            <string>تجاوزان</string>
+            <key>few</key>
+            <string>%d تجاوزات</string>
+            <key>many</key>
+            <string>%d تجاوزًا</string>
+            <key>other</key>
+            <string>%d تجاوز</string>
+        </dict>
+    </dict>
 </dict>
 </plist>
