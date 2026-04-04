@@ -54,6 +54,7 @@ Scripts/                    # Repo-level CI and build orchestration
 - [Remote agent](services/chau7-remote/README.md)
 - [Remote protocol](services/chau7-remote/docs/PROTOCOL.md)
 - [Scripts reference](Scripts/README.md)
+- [Feature inventory](apps/chau7-macos/docs/FEATURES.md)
 - [Documentation map](docs/README.md)
 
 ## Build

@@ -6,8 +6,8 @@ Chau7 is a terminal emulator. It sees everything you type and everything your to
 
 **Do not open a public issue.** Instead:
 
-1. Email security@chau7.sh with a description.
-2. Or use the in-app bug reporter (Option+Cmd+I), which submits to a private intake repo.
+1. Use the in-app bug reporter (Option+Cmd+I), which submits to a private intake repo.
+2. Or open a [private security advisory](https://github.com/aeptus/chau7/security/advisories/new) on GitHub.
 
 We acknowledge reports within 48 hours. Critical fixes ship within 7 days. We'll credit you in the release notes unless you prefer otherwise.
 

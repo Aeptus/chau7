@@ -20,10 +20,6 @@ Be respectful. Assume good intent. Disagree about code, not people. If someone's
 - Publishing someone's private information without consent.
 - Conduct that would make a reasonable person uncomfortable in a professional setting.
 
-## Enforcement
-
-Report issues to conduct@chau7.sh. Reports are reviewed confidentially and taken seriously.
-
 ## Attribution
 
 Adapted from the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) v2.1.
