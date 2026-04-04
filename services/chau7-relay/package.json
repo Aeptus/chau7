@@ -1,6 +1,9 @@
 {
   "name": "chau7-relay",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.js",
