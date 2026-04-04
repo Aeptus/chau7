@@ -196,16 +196,21 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `session_list` | List AI sessions with run counts — filter by repo_path, active_only |
 | `session_current` | Get currently active AI sessions across all tabs |
 
-### Runtime API (8 tools)
+### Runtime API (13 tools)
 
 | Tool | Description |
 | --- | --- |
-| `runtime_session_create` | Start or attach an agent session in Chau7 and return a runtime session ID. Supports delegated-task metadata like purpose, parent session/run IDs, task metadata, and delegation depth |
+| `runtime_session_create` | Start or attach an agent session in Chau7 and return a runtime session ID. Supports delegated-task metadata, structured result schemas, and session policy limits |
 | `runtime_session_list` | List runtime sessions, with optional inclusion of recently stopped sessions |
 | `runtime_session_get` | Get detailed state for one runtime session |
 | `runtime_session_stop` | Stop a runtime session and optionally close its tab |
-| `runtime_turn_send` | Send a formatted prompt to a runtime session, including adopted sessions discovered from existing tabs |
+| `runtime_session_children` | List direct child sessions or full descendant trees for a delegated parent session |
+| `runtime_session_cancel_children` | Stop all active descendant sessions for a delegated parent session |
+| `runtime_session_retry` | Clone an existing runtime session configuration into a fresh session, optionally resubmitting the last prompt |
+| `runtime_turn_send` | Send a formatted prompt to a runtime session, including adopted sessions discovered from existing tabs and optional turn-specific result schemas |
 | `runtime_turn_status` | Get the current turn state for a runtime session |
+| `runtime_turn_result` | Fetch the latest structured result captured for a completed turn, with telemetry fallback for transcript-derived results |
+| `runtime_turn_wait` | Wait for the current or requested turn to finish and return an updated status payload |
 | `runtime_events_poll` | Poll the runtime event stream using a cursor |
 | `runtime_approval_respond` | Approve or deny a pending runtime tool-use request |
 
