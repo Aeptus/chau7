@@ -499,7 +499,7 @@ final class RuntimeSessionManager {
                 )
             }
         } else {
-            tabID = resolveUniqueClaudeTabByCwd(event.cwd)
+            tabID = resolveUniqueUnboundClaudeTabByCwd(event.cwd)
             if tabID == nil {
                 Log.warn(
                     "RuntimeSessionManager: refusing Claude auto-adopt without exact session ID for cwd=\(event.cwd)"
@@ -566,6 +566,15 @@ final class RuntimeSessionManager {
             return nil
         }
         return matches.first?.tabID
+    }
+
+    private func resolveUniqueUnboundClaudeTabByCwd(_ cwd: String) -> UUID? {
+        guard let tabID = resolveUniqueClaudeTabByCwd(cwd) else { return nil }
+        if sessionForTab(tabID) != nil {
+            Log.warn("RuntimeSessionManager: refusing Claude auto-adopt for already managed tab \(tabID) cwd=\(cwd)")
+            return nil
+        }
+        return tabID
     }
 
     private func resolveClaudeTabByStrictSession(_ sessionID: String, cwd: String?) -> UUID? {

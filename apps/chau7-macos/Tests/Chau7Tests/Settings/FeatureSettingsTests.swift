@@ -82,6 +82,21 @@ final class FeatureSettingsTests: XCTestCase {
         XCTAssertTrue(filters.permissionRequest)
     }
 
+    func testIdleNotificationsDefaultToNoActions() {
+        XCTAssertEqual(
+            FeatureSettings.defaultTriggerActionBindings()["claude_code.idle"] ?? [],
+            []
+        )
+        XCTAssertEqual(
+            FeatureSettings.defaultTriggerActionBindings()["codex.idle"] ?? [],
+            []
+        )
+        XCTAssertEqual(
+            NotificationSettings.defaultGroupActionBindings["ai_coding.idle"] ?? [],
+            []
+        )
+    }
+
     // MARK: - Color Scheme Defaults
 
     func testDefaultColorSchemeName() {

@@ -281,6 +281,34 @@ final class RuntimeSessionManagerTests: XCTestCase {
         XCTAssertNotNil(session.currentTurnID)
     }
 
+    func testNotificationEventWithExactSessionDoesNotCreateDuplicateRuntimeSession() {
+        let manager = RuntimeSessionManager.shared
+        let cwd = "/tmp/runtime-existing-\(UUID().uuidString)"
+        let tabID = UUID()
+
+        let session = manager.createSession(
+            tabID: tabID,
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: cwd, provider: "claude")
+        )
+
+        manager.handleClaudeEvent(
+            ClaudeCodeEvent(
+                type: .notification,
+                hook: "Notification",
+                sessionId: "claude-existing-session",
+                transcriptPath: "",
+                toolName: "",
+                message: "Needs attention",
+                cwd: cwd,
+                timestamp: Date()
+            )
+        )
+
+        XCTAssertEqual(manager.allSessions().count, 1)
+        XCTAssertEqual(manager.sessionForClaudeSessionID("claude-existing-session")?.id, session.id)
+    }
+
     private func toolUseEvents(in session: RuntimeSession) -> [RuntimeEvent] {
         session.journal
             .events(after: 0, limit: 100)

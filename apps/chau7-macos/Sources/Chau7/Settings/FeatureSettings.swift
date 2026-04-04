@@ -213,9 +213,7 @@ struct NotificationSettings: Equatable {
                 "persistent": "true"
             ])
         ],
-        "ai_coding.idle": [
-            NotificationActionConfig(actionType: .showNotification, enabled: true)
-        ]
+        "ai_coding.idle": []
     ]
 
     static let `default` = NotificationSettings(
@@ -333,9 +331,7 @@ private extension FeatureSettings {
         ]
 
         // Actions for "idle" triggers (session may be waiting, but no permission-specific styling)
-        let idleActions: [NotificationActionConfig] = [
-            NotificationActionConfig(actionType: .showNotification, enabled: true, config: [:])
-        ]
+        let idleActions: [NotificationActionConfig] = []
 
         // Actions for file conflict alerts
         let conflictActions: [NotificationActionConfig] = [
@@ -2399,10 +2395,10 @@ final class FeatureSettings {
             normalizedBindings["codex.failed"] = Self.defaultTriggerActionBindings()["codex.failed"]
         }
         if normalizedBindings["claude_code.idle"] == nil {
-            normalizedBindings["claude_code.idle"] = [NotificationActionConfig(actionType: .showNotification, enabled: true)]
+            normalizedBindings["claude_code.idle"] = []
         }
         if normalizedBindings["codex.idle"] == nil {
-            normalizedBindings["codex.idle"] = [NotificationActionConfig(actionType: .showNotification, enabled: true)]
+            normalizedBindings["codex.idle"] = []
         }
 
         let loadedRateLimitConfig: NotificationRateLimiter.Config
@@ -2434,7 +2430,7 @@ final class FeatureSettings {
             normalizedGroupActionBindings["ai_coding.failed"] = NotificationSettings.defaultGroupActionBindings["ai_coding.failed"]
         }
         if normalizedGroupActionBindings["ai_coding.idle"] == nil {
-            normalizedGroupActionBindings["ai_coding.idle"] = [NotificationActionConfig(actionType: .showNotification, enabled: true)]
+            normalizedGroupActionBindings["ai_coding.idle"] = []
         }
 
         let loadedGroupConditions: [String: TriggerCondition]

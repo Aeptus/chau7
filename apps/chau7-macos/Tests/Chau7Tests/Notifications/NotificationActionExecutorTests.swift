@@ -174,6 +174,41 @@ final class NotificationActionExecutorTests: XCTestCase {
         XCTAssertNil(resolved)
     }
 
+    func testStyleActionSchedulesDeferredRetryForTransientMissingTab() {
+        let delegate = MockDelegate()
+        let executor = NotificationActionExecutor.shared
+        let tabID = UUID()
+        delegate.existingTabs = [tabID]
+        delegate.styleCallResults = [nil, tabID]
+        executor.delegate = delegate
+
+        let report = executor.execute(
+            actions: [NotificationActionConfig(actionType: .styleTab, enabled: true)],
+            for: AIEvent(
+                source: .claudeCode,
+                type: "waiting_input",
+                tool: "Claude",
+                message: "waiting",
+                ts: "2026-04-04T08:00:00Z",
+                directory: "/tmp/chau7",
+                tabID: tabID,
+                sessionID: "claude-session-1",
+                reliability: .authoritative
+            )
+        )
+
+        XCTAssertTrue(report.didStyleTab)
+        XCTAssertTrue(report.notes.contains { $0.contains("deferred retry scheduled") })
+
+        let expectation = expectation(description: "deferred style retry")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
+
+        XCTAssertEqual(delegate.styledTabIDs, [tabID, tabID])
+    }
+
     func testBadgeActionReportsFailureWhenDelegateCannotResolveExplicitTab() {
         let delegate = MockDelegate()
         let executor = NotificationActionExecutor.shared

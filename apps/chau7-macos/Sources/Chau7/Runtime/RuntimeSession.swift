@@ -230,7 +230,12 @@ final class RuntimeSession: @unchecked Sendable {
 
         let transitioned = transition(.turnCompleted)
         if !transitioned {
-            Log.warn("RuntimeSession \(id): completeTurn transition rejected, state=\(state.rawValue)")
+            let currentState = state
+            if currentState == .ready {
+                Log.debug("RuntimeSession \(id): duplicate completeTurn ignored in state=\(currentState.rawValue)")
+            } else {
+                Log.warn("RuntimeSession \(id): completeTurn transition rejected, state=\(currentState.rawValue)")
+            }
         }
 
         lock.lock()
@@ -257,7 +262,12 @@ final class RuntimeSession: @unchecked Sendable {
 
         let transitioned = transition(.turnCompleted)
         if !transitioned {
-            Log.warn("RuntimeSession \(id): failTurn transition rejected, state=\(state.rawValue)")
+            let currentState = state
+            if currentState == .ready {
+                Log.debug("RuntimeSession \(id): duplicate failTurn ignored in state=\(currentState.rawValue)")
+            } else {
+                Log.warn("RuntimeSession \(id): failTurn transition rejected, state=\(currentState.rawValue)")
+            }
         }
     }
 
@@ -302,7 +312,12 @@ final class RuntimeSession: @unchecked Sendable {
         lock.unlock()
 
         guard transition(.approvalNeeded) else {
-            Log.warn("RuntimeSession \(id): approvalNeeded rejected, clearing orphaned approval")
+            let currentState = state
+            if currentState == .ready, currentTurnID == nil {
+                Log.debug("RuntimeSession \(id): duplicate approval request ignored in state=\(currentState.rawValue)")
+            } else {
+                Log.warn("RuntimeSession \(id): approvalNeeded rejected, clearing orphaned approval")
+            }
             lock.lock()
             _pendingApproval = nil
             lock.unlock()
@@ -329,11 +344,15 @@ final class RuntimeSession: @unchecked Sendable {
             guard let self else { return }
             let currentState = state
             guard currentState == .awaitingApproval else { return }
-            Log.warn("RuntimeSession \(id): approval timed out after \(Int(Self.approvalTimeoutSeconds))s, recovering to ready")
             lock.lock()
             _pendingApproval = nil
             lock.unlock()
-            transition(.turnCompleted)
+            let transitioned = transition(.turnCompleted)
+            if transitioned {
+                Log.warn("RuntimeSession \(id): approval timed out after \(Int(Self.approvalTimeoutSeconds))s, recovering to ready")
+            } else {
+                Log.debug("RuntimeSession \(id): duplicate approval timeout ignored in state=\(state.rawValue)")
+            }
         }
         approvalTimeoutWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.approvalTimeoutSeconds, execute: work)

@@ -10,7 +10,6 @@ struct DebugConsoleView: View {
     private enum AnalyticsMode: String, CaseIterable {
         case apiCalls = "API Calls"
         case aiRuns = "AI Runs"
-        case repos = "Repos"
     }
 
     var appModel: AppModel
@@ -47,6 +46,17 @@ struct DebugConsoleView: View {
     @State private var enabledLevels: Set = ["INFO", "WARN", "ERROR", "TRACE", "DEBUG"]
     @State private var bugReportDescription = ""
     @State private var lastReportPath: String?
+    // Repos tab state
+    @State private var repoSortOrder: RepoSortOrder = .lastActive
+    @State private var repoEventFilter: Set<String> = []
+    @State private var expandedRepoPath: String?
+
+    private enum RepoSortOrder: String, CaseIterable {
+        case lastActive = "Last Active"
+        case eventCount = "Most Events"
+        case failureRate = "Failure Rate"
+        case cost = "Cost"
+    }
 
     let onClose: () -> Void
 
@@ -74,6 +84,7 @@ struct DebugConsoleView: View {
                 Text(L("Report", "Report")).tag(6)
                 Text("Analytics").tag(7)
                 Text("Health").tag(8)
+                Text("Repos").tag(9)
             }
             .pickerStyle(.segmented)
             .padding(8)
@@ -92,6 +103,7 @@ struct DebugConsoleView: View {
                 case 6: reportView
                 case 7: analyticsView
                 case 8: healthDashboardView
+                case 9: reposTabView
                 default: stateView
                 }
             }
@@ -1611,8 +1623,6 @@ struct DebugConsoleView: View {
                     proxyAnalyticsView
                 case .aiRuns:
                     runAnalyticsView
-                case .repos:
-                    repoAnalyticsView
                 }
             }
             .padding()
@@ -1810,6 +1820,309 @@ struct DebugConsoleView: View {
 
         }
     }
+
+    // MARK: - Repos Tab (First-Class)
+
+    private var sortedRepoAnalytics: [(path: String, name: String, stats: RepoStats)] {
+        let filtered = repoAnalytics
+        switch repoSortOrder {
+        case .lastActive:
+            return filtered.sorted { lhs, rhs in
+                let ld = [lhs.stats.lastCommandAt, lhs.stats.lastRunAt].compactMap { $0 }.max() ?? .distantPast
+                let rd = [rhs.stats.lastCommandAt, rhs.stats.lastRunAt].compactMap { $0 }.max() ?? .distantPast
+                return ld > rd
+            }
+        case .eventCount:
+            return filtered.sorted {
+                (appModel.eventsByRepo[$0.path]?.count ?? 0) > (appModel.eventsByRepo[$1.path]?.count ?? 0)
+            }
+        case .failureRate:
+            return filtered.sorted {
+                let lf = $0.stats.totalCommands > 0 ? Double($0.stats.failedCommands) / Double($0.stats.totalCommands) : 0
+                let rf = $1.stats.totalCommands > 0 ? Double($1.stats.failedCommands) / Double($1.stats.totalCommands) : 0
+                return lf > rf
+            }
+        case .cost:
+            return filtered.sorted { $0.stats.totalCost > $1.stats.totalCost }
+        }
+    }
+
+    private func filteredEvents(for path: String) -> [AIEvent] {
+        let events = appModel.eventsByRepo[path] ?? []
+        if repoEventFilter.isEmpty { return events }
+        return events.filter { repoEventFilter.contains($0.type) }
+    }
+
+    private func eventDistribution(for path: String) -> [(type: String, count: Int)] {
+        let events = appModel.eventsByRepo[path] ?? []
+        var counts: [String: Int] = [:]
+        for event in events {
+            counts[event.type, default: 0] += 1
+        }
+        return counts.map { (type: $0.key, count: $0.value) }.sorted { $0.count > $1.count }
+    }
+
+    private func eventsPerHour(for path: String) -> Int {
+        let events = appModel.eventsByRepo[path] ?? []
+        let oneHourAgo = Date().addingTimeInterval(-3600)
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let basicFormatter = ISO8601DateFormatter()
+        basicFormatter.formatOptions = [.withInternetDateTime]
+        return events.filter { event in
+            guard let date = isoFormatter.date(from: event.ts) ?? basicFormatter.date(from: event.ts) else { return false }
+            return date > oneHourAgo
+        }.count
+    }
+
+    private var reposTabView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                // Summary bar
+                let totalEvents = appModel.eventsByRepo.values.reduce(0) { $0 + $1.count }
+                let mostActive = repoAnalytics.max { (appModel.eventsByRepo[$0.path]?.count ?? 0) < (appModel.eventsByRepo[$1.path]?.count ?? 0) }
+                HStack(spacing: 16) {
+                    Text("\(repoAnalytics.count) repos")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("\(totalEvents) events buffered")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    if let active = mostActive, totalEvents > 0 {
+                        Text("Most active: \(active.name)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.blue)
+                    }
+                    Spacer()
+                }
+                .padding(.bottom, 4)
+
+                // Sort picker
+                HStack(spacing: 4) {
+                    Text("Sort:")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    ForEach(RepoSortOrder.allCases, id: \.self) { order in
+                        Button {
+                            repoSortOrder = order
+                        } label: {
+                            Text(order.rawValue)
+                                .font(.system(size: 10, weight: repoSortOrder == order ? .semibold : .regular))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(repoSortOrder == order ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                // Event type filter
+                HStack(spacing: 4) {
+                    Text("Filter:")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    let types = ["finished", "failed", "permission", "waiting_input", "idle"]
+                    Button {
+                        repoEventFilter = []
+                    } label: {
+                        Text("All")
+                            .font(.system(size: 10, weight: repoEventFilter.isEmpty ? .semibold : .regular))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(repoEventFilter.isEmpty ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    ForEach(types, id: \.self) { type in
+                        Button {
+                            if repoEventFilter.contains(type) {
+                                repoEventFilter.remove(type)
+                            } else {
+                                repoEventFilter.insert(type)
+                            }
+                        } label: {
+                            Text(type.replacingOccurrences(of: "_", with: " "))
+                                .font(.system(size: 10, weight: repoEventFilter.contains(type) ? .semibold : .regular))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(repoEventFilter.contains(type) ? eventColor(type).opacity(0.15) : Color.secondary.opacity(0.08))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Divider()
+
+                // Repo cards
+                if repoAnalytics.isEmpty {
+                    Text("No repositories tracked yet.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(sortedRepoAnalytics, id: \.path) { entry in
+                        repoCard(entry)
+                        Divider()
+                    }
+                }
+            }
+            .padding()
+        }
+        .onAppear { refreshAnalyticsData() }
+    }
+
+    private func repoCard(_ entry: (path: String, name: String, stats: RepoStats)) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Header: name + last active
+            HStack {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.blue)
+                Text(entry.name)
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                if let lastActive = [entry.stats.lastCommandAt, entry.stats.lastRunAt].compactMap({ $0 }).max() {
+                    Text(relativeTimeString(lastActive))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            // Stats row
+            HStack(spacing: 12) {
+                if entry.stats.totalCommands > 0 {
+                    Text("\(entry.stats.totalCommands) cmds")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    let rate = entry.stats.successRate
+                    Text(String(format: "%.0f%%", rate * 100))
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(rate > 0.9 ? .green : rate > 0.7 ? .yellow : .red)
+                }
+                if entry.stats.totalRuns > 0 {
+                    Text("\(entry.stats.totalRuns) runs")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                if entry.stats.totalTokens > 0 {
+                    Text(repoFormatTokens(entry.stats.totalTokens))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.blue)
+                }
+                if entry.stats.totalCost > 0 {
+                    Text(String(format: "$%.2f", entry.stats.totalCost))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.orange)
+                }
+                Spacer()
+                if !entry.stats.providers.isEmpty {
+                    ForEach(entry.stats.providers, id: \.self) { provider in
+                        Text(provider.capitalized)
+                            .font(.system(size: 9, weight: .medium))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.15))
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+                }
+            }
+
+            // Event distribution + velocity
+            let dist = eventDistribution(for: entry.path)
+            let velocity = eventsPerHour(for: entry.path)
+            if !dist.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(dist.prefix(5), id: \.type) { item in
+                        HStack(spacing: 2) {
+                            Circle()
+                                .fill(eventColor(item.type))
+                                .frame(width: 6, height: 6)
+                            Text("\(item.type):\(item.count)")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    if velocity > 0 {
+                        Text("\(velocity)/hr")
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.blue)
+                    }
+                }
+            }
+
+            // Drill-down toggle
+            let events = filteredEvents(for: entry.path)
+            let isExpanded = expandedRepoPath == entry.path
+            if !events.isEmpty {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        expandedRepoPath = isExpanded ? nil : entry.path
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 8))
+                        Text(isExpanded ? "Hide events" : "Show all \(events.count) events")
+                            .font(.system(size: 10))
+                    }
+                    .foregroundStyle(.blue)
+                }
+                .buttonStyle(.plain)
+
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(events.reversed(), id: \.id) { event in
+                            HStack(spacing: 6) {
+                                Text(event.type)
+                                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(eventColor(event.type))
+                                    .frame(width: 70, alignment: .leading)
+                                Text(event.tool)
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 50, alignment: .leading)
+                                Text(String(event.message.prefix(80)))
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(String(event.ts.suffix(8)))
+                                    .font(.system(size: 8, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .padding(.leading, 12)
+                    .padding(.top, 4)
+                } else {
+                    // Collapsed: show last 3 events as preview
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(events.suffix(3).reversed(), id: \.id) { event in
+                            HStack(spacing: 6) {
+                                Text(event.type)
+                                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(eventColor(event.type))
+                                Text(event.tool)
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.secondary)
+                                Text(String(event.message.prefix(60)))
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(String(event.ts.suffix(8)))
+                                    .font(.system(size: 8, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .padding(.leading, 12)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    // MARK: - Repos Analytics (Legacy, kept for reference)
 
     private var repoAnalyticsView: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -2295,7 +2608,7 @@ struct DebugConsoleView: View {
             if selectedTab == 5 {
                 loadLogs()
             }
-            if selectedTab == 7 {
+            if selectedTab == 7 || selectedTab == 9 {
                 refreshAnalyticsData()
             }
         }
