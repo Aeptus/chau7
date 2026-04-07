@@ -91,13 +91,13 @@ MCP Tools — Repository,repo_get_metadata,"Get metadata for a repository includ
 MCP Tools — Repository,repo_set_metadata,"Set metadata for a repository (description, labels, favorite files) — only provided fields are updated",Shipped,Yes
 MCP Tools — Repository,repo_frequent_commands,"Get frequently used commands for a repository, sorted by frecency",Shipped,Yes
 MCP Tools — Repository,repo_get_events,"Get recent AI tool events (finished, permission, tool_called, etc.) scoped to a given repo",Shipped,Yes
-MCP Tools — Telemetry,run_get,Get a single telemetry run by ID (active or from store),Shipped,Yes
-MCP Tools — Telemetry,run_list,"List telemetry runs with filters: session_id, repo_path, provider, parent_run_id, date range, tags, limit/offset",Shipped,Yes
+MCP Tools — Telemetry,run_get,"Get a single telemetry run by ID (active or from store), including run_state and content_state for live vs finalized data",Shipped,Yes
+MCP Tools — Telemetry,run_list,"List telemetry runs with filters: session_id, repo_path, provider, parent_run_id, date range, tags, limit/offset; active runs are deduplicated before pagination",Shipped,Yes
 MCP Tools — Telemetry,run_tool_calls,Get all tool calls for a telemetry run — see exactly what an AI agent did,Shipped,Yes
-MCP Tools — Telemetry,run_transcript,"Get conversation transcript for a run — falls back to ANSI-stripped PTY log for TUI tools, then terminal buffer",Shipped,Yes
+MCP Tools — Telemetry,run_transcript,"Get conversation transcript for a run — active Codex runs use ~/.codex/history.jsonl first, then ANSI-stripped PTY log for TUI tools, then terminal buffer",Shipped,Yes
 MCP Tools — Telemetry,run_tag,Set tags on a telemetry run for organization and filtering,Shipped,Yes
 MCP Tools — Telemetry,run_latest_for_repo,Get the most recent run for a repository — optionally filter by provider,Shipped,Yes
-MCP Tools — Telemetry,session_list,"List AI sessions with run counts — filter by repo_path, active_only",Shipped,Yes
+MCP Tools — Telemetry,session_list,"List AI sessions with run counts — filter by repo_path, active_only; includes active/completed rollups and latest_run_state",Shipped,Yes
 MCP Tools — Telemetry,session_current,Get currently active AI sessions across all tabs,Shipped,Yes
 MCP Tools — Runtime,runtime_session_create,"Start or attach an agent session in Chau7 and return a runtime session ID. Supports delegated-task metadata, structured result schemas, and session policy limits",Shipped,Yes
 AI Integration,Delegated Task Lineage,"Runtime-managed AI runs persist parent run/session lineage and task metadata into telemetry so parent agents can fetch exact child runs instead of inferring by repo-wide recency",Shipped,Yes

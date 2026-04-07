@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Telemetry Active-Run Queries**: `run_list` and `run_get` no longer duplicate active runs that were already inserted into SQLite at `runStarted`. MCP telemetry responses now consistently annotate `run_state` (`active` or `completed`) and `content_state` (`missing`, `partial`, `final`) so orchestrators can distinguish live partial data from finalized runs.
+- **Active Codex Transcript Visibility**: `run_transcript` now surfaces live Codex prompts from `~/.codex/history.jsonl` before `runEnded`, with PTY-log fallback for active sessions that do not yet have persisted turns. Active Codex runs no longer appear as empty shells while the session is still in progress.
+- **Session Rollup Clarity**: `session_list` now includes `active_run_count`, `completed_run_count`, `latest_run_id`, and `latest_run_state`, making resumed session IDs with multiple historical runs easier to interpret.
+- **Forced Shell Termination Diagnostics**: SIGTERM/SIGKILL escalation logs now capture close-to-signal timing, PTY log state, and a process-tree snapshot with command lines so stuck shell shutdowns are actionable instead of opaque.
 - **Full Token Tracking**: Proxy now extracts cache creation, cache read, and reasoning tokens from Anthropic, OpenAI, and Gemini API responses (both streaming and non-streaming). Previously hardcoded to 0, causing dashboard to drastically underreport usage with prompt caching.
 - **Accurate Cost Calculation**: Cost now accounts for provider-specific cache pricing — Anthropic cache reads at 0.1x input rate, cache writes at 1.25x; OpenAI cached tokens at 0.5x. Previously all tokens were billed at full input rate.
 - **Token Estimation Fallback**: When metadata extraction fails on a 200 response, proxy estimates tokens from request/response body sizes (~4 chars/token) instead of silently recording 0.
@@ -15,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **IPC Cache Token Propagation**: `ProxyIPCServerData` and `APICallEvent` now carry `cacheCreationInputTokens`, `cacheReadInputTokens`, and `reasoningOutputTokens` through the full pipeline (proxy → IPC socket → Swift app → dashboard).
 
 ### Added
+- **Telemetry Query Projection Helpers**: Added shared projection helpers for live-history Codex parsing, active/stored run deduplication, and telemetry content-state evaluation, with regression coverage for duplicate active runs and active transcript parsing.
 - **Scripting Review Automation API**: The local scripting socket now exposes `start_review`, `wait_review`, and `get_review_result` so external tools can launch delegated code reviews, wait on completion, and fetch structured findings without speaking MCP directly.
 - **Pre-Commit Delegated Code Review**: Added `Scripts/pre-commit-review` plus a `lefthook` pre-commit entry that reviews staged diffs through Chau7 when the scripting socket is available, prints structured findings in hook-friendly output, and can skip open when Chau7 is unavailable.
 - **Repo-Level Pre-Commit Review Policy**: Repositories can now ship `.chau7/pre-commit-review.conf` to set the delegated review gate mode (`off`, `advisory`, `high`, `any`), timeout, backend, and optional model override, with environment-variable overrides for CI and local workflows.
