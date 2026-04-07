@@ -1,6 +1,6 @@
 # Chau7 Features
 
-The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for developers who ship with AI.
+See your coding agents, know what they cost, steer them from the outside. A macOS terminal built for people running AI across models.
 
 > See also: [features.csv](features.csv) for the machine-readable feature inventory.
 >
@@ -8,12 +8,12 @@ The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for develo
 
 ## Table of Contents
 
-- [Terminal Core](#terminal-core)
-- [Performance](#performance)
 - [AI Detection & Integration](#ai-detection--integration)
+- [API Analytics & Token Tracking](#api-analytics--token-tracking)
 - [MCP Server](#mcp-server)
 - [MCP Tools](#mcp-tools)
-- [API Analytics & Token Tracking](#api-analytics--token-tracking)
+- [Terminal Core](#terminal-core)
+- [Performance](#performance)
 - [Tabs, Panes & Windows](#tabs-panes--windows)
 - [Productivity](#productivity)
 - [Appearance & Theming](#appearance--theming)
@@ -24,51 +24,10 @@ The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for develo
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [File Locations](#file-locations)
 - [Environment Variables](#environment-variables)
+- [Migration](#migration)
+- [Architecture](#architecture)
 
 ---
-
-## Terminal Core
-
-- **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
-- Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
-- International Option-key punctuation input preserved for programming characters like brackets and braces.
-- Kitty keyboard protocol (full progressive enhancement).
-- Inline images: iTerm2 (ESC ] 1337), Sixel, and Kitty image protocols.
-- Configurable cursor styles (block, underline, bar) with optional blinking.
-- Large configurable scrollback buffer with GPU-accelerated scrolling.
-- Shell selection: Zsh, Bash, Fish, or custom path — Apple Silicon and Intel native.
-- Dead key and IME support with proper `NSTextInputClient` marked text handling.
-- Shell integration via OSC 7 for working directory tracking.
-- OSC 133 (FinalTerm) shell integration: prompt start (A), command start (B), output start (C), command finished with exit code (D). Parsed in Rust interceptor, feeds ShellEventDetector. When present, heuristic fallbacks are suppressed.
-- File drag-and-drop: drop files to paste shell-escaped paths; Option+drop images for base64 data URIs.
-- Markdown runbooks: open .md files in the editor pane with executable code blocks.
-- Native macOS cut/copy/paste shortcuts are preserved inside split-pane text editors before terminal-specific fallbacks run.
-- Show Changed Files (Cmd+Option+G): git diff snapshot per command shows which files were modified.
-- Idle tabs dropdown: tabs idle beyond a configurable threshold (default 10 min) are grouped into a compact chip in the tab bar.
-- Repository tab grouping: group tabs by git repo (Off/Auto/Manual). Shows inline repo-name tag chip with connecting line. Suppresses redundant repo path in tab titles.
-- Split pane file preview: read-only viewer with syntax highlighting and image support (Cmd+Opt+P).
-- Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D).
-- `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (with confirmation).
-- Default start directory and optional startup commands.
-- Copy on select, Option+click cursor positioning, paste escaping.
-
-## Performance
-
-Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
-
-| Layer | What It Does |
-| --- | --- |
-| **Metal GPU rendering** | Hardware-accelerated text via Apple Metal |
-| **IOSurface direct display** | Bypass the macOS compositor — GPU straight to display |
-| **Glyph atlas caching** | Dynamic glyph cache eliminates redundant rasterization |
-| **SIMD escape parsing** | 16–32 byte SIMD-accelerated ANSI parsing in Rust |
-| **Lock-free ring buffer** | SPSC lock-free PTY pipeline — zero contention |
-| **Triple buffering** | Atomic swap terminal state — no tearing, no blocking |
-| **Low-latency input (IOKit HID)** | Bypass NSEvent queue for sub-10ms keyboard latency |
-| **Real-time thread priority** | Mach real-time policy on render and input threads |
-| **Predictive rendering** | Pre-cache likely output to shave display latency |
-| **Dirty region tracking** | Only re-render what changed |
-| **Feature profiler** | Per-feature timing with os.signpost integration |
 
 ## AI Detection & Integration
 
@@ -101,38 +60,17 @@ Detection methods:
 
 ### AI Features
 
-- **Branded tab logos** — each agent gets its logo in the tab.
+- **Branded tab logos** — each detected agent gets its logo in the tab.
 - **Auto tab theming** — tabs adopt the brand color of the active AI agent.
 - **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.
 - **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
-- **AI event notifications** — supports finished, failed, permission, needs_validation, tool_complete, session_end, idle, and related AI events. Default AI attention policy enables only finished, failed, and permission requests, with noisier triggers available in settings.
-- **Provider adapter notification architecture** — Claude, Codex/runtime, and terminal fallback sources translate provider-specific events into one shared semantic event layer before notification settings, history, styling, and delivery run.
-- **Full-source canonical notification adapters** — shell, app, terminal-session, history-monitor, events-log, and API-proxy events now also flow through the same canonical adapter boundary. The shared notification layer no longer accepts raw pass-through event sources.
-- **Canonical provider event normalization** — provider hook names normalize through one shared mapper that preserves semantic separators, so values like `permission prompt`, `idle-prompt`, and `auth success` resolve to the same canonical trigger keys everywhere.
-- **Claude hook notification ownership** — Claude `notification` hooks own waiting-input and attention-required delivery. Raw `response_complete` remains session state, not a user-facing notification trigger.
-- **Authoritative notification routing** — runtime and hook-backed `finished`, `failed`, and `permission` events are treated as authoritative, while history-derived events act as fallback only and are suppressed if an authoritative delivery already landed for the same session or tab.
-- **Retry-before-fallback delivery** — authoritative AI events briefly retry exact tab routing before dropping into broader fallback logic, reducing missed highlights and same-repo misroutes during startup and restore churn.
-- **Claude strict live-tab fallback** — authoritative Claude events can recover exact routing from live split-session metadata when runtime session ownership is missing, instead of immediately dropping `permission` and `waiting-input` notifications.
-- **Stale style delivery suppression** — notification styling checks whether the target tab still exists before applying a preset and suppresses vanished-tab noise after exact-session recovery is exhausted.
-- **Claude nested-cwd session binding** — exact Claude session routing now tolerates repo-root vs nested-subdirectory cwd differences and providerless live tab metadata, so authoritative permission and waiting-input events keep their tab binding.
-- **Dead-tab style clear recovery** — notification style auto-clear now re-checks tab liveness and can recover the target once via exact session lookup instead of logging a stale tab failure after the real event already landed.
-- **Simplified AI notification settings** — the Notifications screen now opens with an AI-first overview for Finished, Failed, and Permission Request, with direct controls for banner, tab highlight, sound, and dock bounce. Per-tool overrides and raw trigger plumbing remain available under Advanced.
-- **Semantic AI notification controls** — the AI-first settings overview treats waiting-input and attention-required states as “needs me” attention, instead of folding them into the generic finished bucket.
-- **Notification delivery ledger** — every AI notification records its lifecycle, including coalescing, retry scheduling, trigger decisions, drop reasons, and banner/tab-style outcomes for deterministic debugging.
-- **Canonical notification ledger ingress** — provider events are canonicalized before they enter the delivery ledger and coalescing queue, so shared history and timeline surfaces show canonical semantics while still retaining raw-type notes for forensic debugging.
-- **Single ingress handoff** — the unified event stream and notification delivery now share one accepted-event handoff, so events are ingested and canonicalized once before they are both displayed and delivered.
-- **Strict notification delivery boundaries** — user-facing notification ingress flows through one shared contract, and tab-targeting actions only execute with an explicit resolved `tabID`. Tab highlight, badge, focus, snippet, and persistent-style cleanup no longer re-resolve targets late through overlay heuristics or NotificationCenter side channels.
-- **Restore-prefill suppression** — system resume prefills no longer generate prompt-return `waiting_input` notifications or tab highlights during startup. Fallback waiting-input delivery resumes only after the next real user command.
-- **Restored-session fallback lock** — restored AI tabs suppress terminal prompt fallback as soon as provider/session metadata is restored, closing the startup window where a restored tab could light up before its resume prefill was even delivered.
-- **Deterministic action outcome accounting** — notification delivery now records whether focus, style, badge, and snippet actions actually succeeded instead of assuming success once they were requested, so delivery history and logs reflect real UI outcomes.
-- **Runtime session startup** — MCP-created runtime sessions become ready immediately after launch, and `attach_tab_id` sessions start usable without a manual state repair step.
-- **MCP command filter hardening** — permission checks now recognize background separators, tabs, and newlines before deciding whether a command is allowed, blocked, or needs approval.
-- **Backend launch environment validation** — runtime backend launch strings now drop invalid environment variable names before shell interpolation.
-- **History monitor tab routing** — idle and finished history events resolve provider session metadata to recover the working directory before notification routing.
-- **Session-aware tab resolution** — notification routing prefers exact AI session ID matches before broader provider/title heuristics.
-- **File conflict events** — newly detected cross-tab file conflicts emit app events for each affected tab.
+- **AI event notifications** — finished, failed, permission, needs_validation, tool_complete, session_end, idle. Default policy: finished, failed, and permission. Noisier triggers available in settings.
+- **Multi-provider event normalization** — Claude, Codex, and terminal sources translate provider-specific events into one shared semantic layer. Authoritative events from runtime and hooks take priority over history-derived fallbacks.
+- **Session-aware notification routing** — notifications route by exact AI session ID with fallback to provider/title heuristics. Handles tab restoration, split sessions, nested working directories, and cross-tab file conflicts.
+- **AI-first notification settings** — simplified overview for Finished, Failed, and Permission Request with direct controls for banner, tab highlight, sound, and dock bounce. Waiting-input and attention-required states surface as “needs me” attention. Per-tool overrides and advanced trigger plumbing available separately.
+- **Notification delivery ledger** — lifecycle tracking for debugging: coalescing, retry scheduling, drop reasons, and real UI outcomes.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
-- **Codex session resolver** — maps Codex OpenAI capture sessions to working directories with LRU caching.
+- **Codex session resolver** — maps Codex sessions to working directories with LRU caching.
 
 ### Context Token Optimization (CTO)
 
@@ -159,8 +97,21 @@ Supported commands (46 parsers):
 
 ### History Storage
 
-- Persistent history maintenance now serializes on the DB queue, so queued async inserts cannot repopulate history after `clearAll()`.
-- Regression coverage now locks in that queued inserts are removed by a subsequent `clearAll()`.
+- Persistent SQLite-backed AI session and command history with reliable clear-all semantics.
+
+## API Analytics & Token Tracking
+
+- **TLS/WSS proxy** — Go-based `chau7-proxy` intercepts API calls to Claude, OpenAI (Codex), Gemini, Anthropic with TLS and WebSocket support.
+- **Token counting & cost calculation** — full token breakdown per call: input, output, cache creation, cache read, and reasoning tokens. Accurate cost calculation using provider-specific cache pricing (Anthropic 0.1x/1.25x, OpenAI 0.5x). Fallback estimation when extraction fails.
+- **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
+- **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
+- **Baseline estimator** — calculate token savings from context caching.
+- **Analytics dashboard** — command stats, error rates, API usage, and timing.
+- **Repo-level aggregated metrics** — per-repository stats (commands, success rate, AI runs, tokens, cost, providers, top tools) in Debug Console, Data Explorer, and hover card.
+- **Repo-aware debug labels** — per-tab token and CTO rows use `provider/custom title + repo`, with split-session disambiguation when needed.
+- **Timeline visualization** — scrubber timeline showing command blocks and metrics.
+- **Provider filtering** — include or exclude specific API providers.
+- **Correlation headers** — `X-Chau7-Context-Pack`, `X-Chau7-Tab-ID`, `X-Chau7-Project` for tracing.
 
 ## MCP Server
 
@@ -224,13 +175,13 @@ Registration only occurs if the AI tool's config directory exists — no files a
 
 | Tool | Description |
 | --- | --- |
-| `run_get` | Get a single telemetry run by ID (active or from store) |
-| `run_list` | List runs with filters: session_id, repo_path, provider, parent_run_id, date range, tags, limit/offset |
+| `run_get` | Get a single telemetry run by ID (active or from store). Responses include `run_state` (`active`/`completed`) and `content_state` (`missing`/`partial`/`final`) so callers can distinguish live partial sessions from finalized runs |
+| `run_list` | List runs with filters: session_id, repo_path, provider, parent_run_id, date range, tags, limit/offset. Active runs are deduplicated against persisted rows before pagination |
 | `run_tool_calls` | Get all tool calls for a run — see exactly what an AI agent did |
-| `run_transcript` | Full conversation transcript for a run — falls back to ANSI-stripped PTY log for TUI tools, then terminal buffer |
+| `run_transcript` | Full conversation transcript for a run. Active Codex sessions fall back to live prompts from `~/.codex/history.jsonl`; TUI sessions then fall back to ANSI-stripped PTY log, then terminal buffer |
 | `run_tag` | Set tags on a run for organization and filtering |
 | `run_latest_for_repo` | Most recent run for a repository — optionally filter by provider |
-| `session_list` | List AI sessions with run counts — filter by repo_path, active_only |
+| `session_list` | List AI sessions with run counts — filter by repo_path, active_only. Responses include `active_run_count`, `completed_run_count`, `latest_run_id`, and `latest_run_state` |
 | `session_current` | Get currently active AI sessions across all tabs |
 
 ### Runtime API (13 tools)
@@ -260,19 +211,48 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `chau7://telemetry/sessions/current` | Currently active AI sessions |
 | `chau7://telemetry/runs/<run_id>` | Specific run details by ID |
 
-## API Analytics & Token Tracking
+## Terminal Core
 
-- **TLS/WSS proxy** — Go-based `chau7-proxy` intercepts API calls to Claude, OpenAI (Codex), Gemini, Anthropic with TLS and WebSocket support.
-- **Token counting & cost calculation** — full token breakdown per call: input, output, cache creation, cache read, and reasoning tokens. Accurate cost calculation using provider-specific cache pricing (Anthropic 0.1x/1.25x, OpenAI 0.5x). Fallback estimation when extraction fails.
-- **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
-- **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
-- **Baseline estimator** — calculate token savings from context caching.
-- **Analytics dashboard** — command stats, error rates, API usage, and timing.
-- **Repo-level aggregated metrics** — per-repository stats (commands, success rate, AI runs, tokens, cost, providers, top tools) in Debug Console, Data Explorer, and hover card.
-- **Repo-aware debug labels** — per-tab token and CTO rows use `provider/custom title + repo`, with split-session disambiguation when needed.
-- **Timeline visualization** — scrubber timeline showing command blocks and metrics.
-- **Provider filtering** — include or exclude specific API providers.
-- **Correlation headers** — `X-Chau7-Context-Pack`, `X-Chau7-Tab-ID`, `X-Chau7-Project` for tracing.
+- **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
+- Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
+- International Option-key punctuation input preserved for programming characters like brackets and braces.
+- Kitty keyboard protocol (full progressive enhancement).
+- Inline images: iTerm2 (ESC ] 1337), Sixel, and Kitty image protocols.
+- Configurable cursor styles (block, underline, bar) with optional blinking.
+- Large configurable scrollback buffer with GPU-accelerated scrolling.
+- Shell selection: Zsh, Bash, Fish, or custom path — Apple Silicon and Intel native.
+- Dead key and IME support with proper `NSTextInputClient` marked text handling.
+- Shell integration via OSC 7 for working directory tracking.
+- OSC 133 (FinalTerm) shell integration: prompt start (A), command start (B), output start (C), command finished with exit code (D). Parsed in Rust interceptor, feeds ShellEventDetector. When present, heuristic fallbacks are suppressed.
+- File drag-and-drop: drop files to paste shell-escaped paths; Option+drop images for base64 data URIs.
+- Markdown runbooks: open .md files in the editor pane with executable code blocks.
+- Native macOS cut/copy/paste shortcuts are preserved inside split-pane text editors before terminal-specific fallbacks run.
+- Show Changed Files (Cmd+Option+G): git diff snapshot per command shows which files were modified.
+- Idle tabs dropdown: tabs idle beyond a configurable threshold (default 10 min) are grouped into a compact chip in the tab bar.
+- Repository tab grouping: group tabs by git repo (Off/Auto/Manual). Shows inline repo-name tag chip with connecting line. Suppresses redundant repo path in tab titles.
+- Split pane file preview: read-only viewer with syntax highlighting and image support (Cmd+Opt+P).
+- Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D).
+- `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (with confirmation).
+- Default start directory and optional startup commands.
+- Copy on select, Option+click cursor positioning, paste escaping.
+
+## Performance
+
+Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
+
+| Layer | What It Does |
+| --- | --- |
+| **Metal GPU rendering** | Hardware-accelerated text via Apple Metal |
+| **IOSurface direct display** | Bypass the macOS compositor — GPU straight to display |
+| **Glyph atlas caching** | Dynamic glyph cache eliminates redundant rasterization |
+| **SIMD escape parsing** | 16–32 byte SIMD-accelerated ANSI parsing in Rust |
+| **Lock-free ring buffer** | SPSC lock-free PTY pipeline — zero contention |
+| **Triple buffering** | Atomic swap terminal state — no tearing, no blocking |
+| **Low-latency input (IOKit HID)** | Bypass NSEvent queue for sub-10ms keyboard latency |
+| **Real-time thread priority** | Mach real-time policy on render and input threads |
+| **Predictive rendering** | Pre-cache likely output to shave display latency |
+| **Dirty region tracking** | Only re-render what changed |
+| **Feature profiler** | Per-feature timing with os.signpost integration |
 
 ## Tabs, Panes & Windows
 
