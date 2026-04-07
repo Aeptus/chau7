@@ -3,7 +3,7 @@ import Foundation
 
 /// Data model for the multi-agent dashboard tab.
 ///
-/// Polls `RuntimeSessionManager` every 2 seconds to aggregate session data,
+/// Polls `RuntimeSessionManager` on an adaptive interval to aggregate session data,
 /// detect cross-agent file conflicts, and build a merged event timeline.
 /// Scoped to a single repo group (git root path).
 @Observable
@@ -19,6 +19,7 @@ final class AgentDashboardModel: Identifiable {
     private(set) var totalTokens = 0
     private(set) var totalCost: Double = 0
     private(set) var overallStatus: OverallStatus = .idle
+    private(set) var proxyHealthy = true
 
     // MARK: - Internal Tracking
 
@@ -28,6 +29,8 @@ final class AgentDashboardModel: Identifiable {
     @ObservationIgnored private var sessionCosts: [String: Double] = [:] // sessionID -> accumulated cost
     @ObservationIgnored private let costLock = NSLock()
     @ObservationIgnored private var apiCallObserver: Any?
+    @ObservationIgnored private var currentPollInterval: TimeInterval = 2
+    @ObservationIgnored private var pollCount = 0
 
     var repoName: String {
         URL(fileURLWithPath: repoGroupID).lastPathComponent
@@ -53,7 +56,7 @@ final class AgentDashboardModel: Identifiable {
         guard refreshTimer == nil else { return }
         refresh()
         let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
-        timer.schedule(deadline: .now() + 2, repeating: 2)
+        timer.schedule(deadline: .now() + currentPollInterval, repeating: currentPollInterval)
         timer.setEventHandler { [weak self] in
             self?.refresh()
         }
@@ -68,8 +71,8 @@ final class AgentDashboardModel: Identifiable {
         ) { [weak self] notification in
             guard let self = self, let event = notification.userInfo?["event"] as? APICallEvent else { return }
             costLock.lock()
+            defer { costLock.unlock() }
             sessionCosts[event.sessionId, default: 0] += event.costUSD
-            costLock.unlock()
         }
     }
 
@@ -115,9 +118,11 @@ final class AgentDashboardModel: Identifiable {
             let lastTool = extractLastTool(from: session.journal)
 
             // Cost accumulated from proxy IPC notifications (lock for thread safety)
-            costLock.lock()
-            let sessionCost = sessionCosts[session.id] ?? 0
-            costLock.unlock()
+            let sessionCost: Double = {
+                costLock.lock()
+                defer { costLock.unlock() }
+                return sessionCosts[session.id] ?? 0
+            }()
 
             cards.append(AgentCardData(
                 sessionID: session.id,
@@ -171,6 +176,31 @@ final class AgentDashboardModel: Identifiable {
         let activeIDs = Set(matching.map(\.id))
         fileTrackers = fileTrackers.filter { activeIDs.contains($0.key) }
         journalCursors = journalCursors.filter { activeIDs.contains($0.key) }
+
+        // Adaptive poll interval: fast when agents are active, slow when idle
+        let desiredInterval: TimeInterval
+        if hasActive || hasApprovals {
+            desiredInterval = 2
+        } else if !matching.isEmpty {
+            desiredInterval = 5
+        } else {
+            desiredInterval = 10
+        }
+        if desiredInterval != currentPollInterval, let timer = refreshTimer {
+            currentPollInterval = desiredInterval
+            timer.schedule(deadline: .now() + desiredInterval, repeating: desiredInterval)
+        }
+
+        // Periodic health check (every 5th poll cycle)
+        pollCount += 1
+        if pollCount.isMultiple(of: 5) {
+            Task {
+                let healthy = await ProxyManager.shared.checkHealth()
+                await MainActor.run { [weak self] in
+                    self?.proxyHealthy = healthy
+                }
+            }
+        }
 
         DispatchQueue.main.async { [weak self] in
             self?.agentCards = cards.sorted { lhs, rhs in
@@ -328,6 +358,10 @@ final class AgentDashboardModel: Identifiable {
                     self?.commitMessage = "chore: agent batch commit"
                     // Clear trackers — work is shipped
                     self?.fileTrackers.values.forEach { $0.reset() }
+                    // Auto-dismiss success message after 3 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                        self?.commitSuccess = false
+                    }
                 } else {
                     self?.commitError = "Commit failed: \(commitResult.stderr)"
                 }

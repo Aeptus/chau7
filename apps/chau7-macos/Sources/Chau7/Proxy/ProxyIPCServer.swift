@@ -16,7 +16,13 @@ final class ProxyIPCServer {
     // MARK: - Observable State
 
     private(set) var isListening = false
-    private(set) var recentEvents: [APICallEvent] = []
+    // Append-only buffer; recentEvents reverses it so newest comes first.
+    // Writes are O(1) amortized (append); reads are O(n) but rare (poll interval).
+    private var eventsBuffer: [APICallEvent] = []
+    private(set) var recentEvents: [APICallEvent] {
+        get { eventsBuffer.reversed() }
+        set { eventsBuffer = newValue.reversed() }
+    }
 
     /// Task lifecycle state
     private(set) var pendingCandidates: [String: TaskCandidate] = [:] { // tabId -> candidate
@@ -182,7 +188,7 @@ final class ProxyIPCServer {
 
     /// Clear all recent events
     func clearEvents() {
-        recentEvents.removeAll()
+        eventsBuffer.removeAll()
     }
 
     // MARK: - Private Methods
@@ -465,10 +471,10 @@ final class ProxyIPCServer {
     }
 
     private func addEvent(_ event: APICallEvent) {
-        // Add to recent events (keep bounded)
-        recentEvents.insert(event, at: 0)
-        if recentEvents.count > maxRecentEvents {
-            recentEvents.removeLast(recentEvents.count - maxRecentEvents)
+        // Append to buffer (O(1) amortized), trim oldest if over limit
+        eventsBuffer.append(event)
+        if eventsBuffer.count > maxRecentEvents {
+            eventsBuffer.removeFirst(eventsBuffer.count - maxRecentEvents)
         }
 
         // Post notification for other components
