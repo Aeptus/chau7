@@ -456,6 +456,9 @@ final class TerminalSessionModel {
     @ObservationIgnored private let terminationStateQueue = DispatchQueue(label: "com.chau7.terminal.termination")
     @ObservationIgnored private var didHandleProcessTermination = false
     @ObservationIgnored private var closeSessionRequested = false
+    @ObservationIgnored private var closeSessionRequestedAt: Date?
+    @ObservationIgnored private var sigintSentAt: Date?
+    @ObservationIgnored private var sigtermSentAt: Date?
     @ObservationIgnored private var forcedTerminationWorkItem: DispatchWorkItem?
     @ObservationIgnored let dangerousCommandTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
     @ObservationIgnored var dangerousOutputHighlightWorkItem: DispatchWorkItem?
@@ -957,6 +960,9 @@ final class TerminalSessionModel {
     func closeSession() {
         terminationStateQueue.sync {
             closeSessionRequested = true
+            closeSessionRequestedAt = Date()
+            sigintSentAt = nil
+            sigtermSentAt = nil
         }
 
         // Stop all background work
@@ -1069,6 +1075,11 @@ final class TerminalSessionModel {
         guard currentPID == expectedPID, currentPID > 0 else { return }
 
         // Stage 1: SIGINT — gives the process a chance to handle Ctrl+C gracefully
+        terminationStateQueue.sync {
+            if sigintSentAt == nil {
+                sigintSentAt = Date()
+            }
+        }
         Log.warn("Force-terminating shell process group for session '\(title)' (pid=\(currentPID))")
         sendTerminationSignal(SIGINT, toShellPID: currentPID)
 
@@ -1092,8 +1103,12 @@ final class TerminalSessionModel {
         let currentPID = existingRustTerminalView?.shellPid ?? 0
         guard currentPID == expectedPID, currentPID > 0 else { return }
 
+        terminationStateQueue.sync {
+            sigtermSentAt = Date()
+        }
         Log.warn("Shell process group survived SIGINT; sending SIGTERM (pid=\(currentPID))")
         sendTerminationSignal(SIGTERM, toShellPID: currentPID)
+        logTerminationDiagnostics(stage: "sigterm", shellPID: currentPID)
 
         // Stage 3: SIGKILL after 3s more — unconditional kill
         let hardKill = DispatchWorkItem { [weak self] in
@@ -1113,8 +1128,93 @@ final class TerminalSessionModel {
         let currentPID = existingRustTerminalView?.shellPid ?? 0
         guard currentPID == expectedPID, currentPID > 0 else { return }
 
+        logTerminationDiagnostics(stage: "sigkill", shellPID: currentPID)
         Log.error("Shell process group still alive after SIGINT+SIGTERM; sending SIGKILL (pid=\(currentPID))")
         sendTerminationSignal(SIGKILL, toShellPID: currentPID)
+    }
+
+    private func logTerminationDiagnostics(stage: String, shellPID: pid_t) {
+        let now = Date()
+        let timing = terminationStateQueue.sync {
+            (
+                closeRequestedAt: closeSessionRequestedAt,
+                sigintSentAt: sigintSentAt,
+                sigtermSentAt: sigtermSentAt
+            )
+        }
+
+        let closeMs = timing.closeRequestedAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
+        let sigintMs = timing.sigintSentAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
+        let sigtermMs = timing.sigtermSentAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
+        let processTree = terminationProcessTreeSummary(shellPID: shellPID)
+        let ptyState = [
+            "log_path=\(lastPTYLogPath ?? "nil")",
+            "session_open=\(aiLogSession != nil)"
+        ].joined(separator: ",")
+
+        Log.warn(
+            "Shell termination diagnostics stage=\(stage) title='\(title)' pid=\(shellPID) " +
+                "close_requested_ms=\(closeMs) sigint_ms=\(sigintMs) sigterm_ms=\(sigtermMs) " +
+                "pty={\(ptyState)} process_tree=\(processTree)"
+        )
+    }
+
+    private func terminationProcessTreeSummary(shellPID: pid_t) -> String {
+        guard let output = SubprocessRunner.run(
+            executablePath: "/bin/ps",
+            arguments: ["-axo", "pid=,ppid=,command="]
+        ) else {
+            return "unavailable"
+        }
+
+        struct ProcessRow {
+            let pid: pid_t
+            let parentPID: pid_t
+            let command: String
+        }
+
+        var childrenOf: [pid_t: [pid_t]] = [:]
+        var rowsByPID: [pid_t: ProcessRow] = [:]
+
+        for line in output.split(separator: "\n") {
+            let columns = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+            guard columns.count >= 3,
+                  let pid = Int32(columns[0]),
+                  let parentPID = Int32(columns[1]) else {
+                continue
+            }
+
+            let command = String(columns[2]).trimmingCharacters(in: .whitespacesAndNewlines)
+            childrenOf[parentPID, default: []].append(pid)
+            rowsByPID[pid] = ProcessRow(pid: pid, parentPID: parentPID, command: command)
+        }
+
+        var descendants: [ProcessRow] = []
+        var queue: [pid_t] = childrenOf[shellPID] ?? []
+        var index = 0
+        while index < queue.count {
+            let pid = queue[index]
+            index += 1
+            if let row = rowsByPID[pid] {
+                descendants.append(row)
+            }
+            if let children = childrenOf[pid] {
+                queue.append(contentsOf: children)
+            }
+        }
+
+        let prefix = rowsByPID[shellPID].map { "shell=\($0.pid):\($0.command)" } ?? "shell=\(shellPID)"
+        guard !descendants.isEmpty else { return "\(prefix) children=[]" }
+
+        let renderedChildren = descendants
+            .prefix(8)
+            .map { "\($0.pid)<-\($0.parentPID) \($0.command)" }
+            .joined(separator: " | ")
+        let remaining = max(0, descendants.count - 8)
+        if remaining > 0 {
+            return "\(prefix) children=[\(renderedChildren) | +\(remaining) more]"
+        }
+        return "\(prefix) children=[\(renderedChildren)]"
     }
 
     private func sendTerminationSignal(_ signal: Int32, toShellPID shellPID: pid_t) {
