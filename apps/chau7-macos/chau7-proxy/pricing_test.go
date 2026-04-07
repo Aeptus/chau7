@@ -86,7 +86,7 @@ func TestGetPricing_ExactMatch(t *testing.T) {
 		{"gpt-4o-mini", 0.15},
 		{"o1", 15.00},
 		{"gemini-1.5-pro", 1.25},
-		{"gemini-2.0-flash", 0.00},
+		{"gemini-2.0-flash", 0.10},
 	}
 
 	for _, tc := range tests {
@@ -139,14 +139,14 @@ func TestGetPricing_FallbackToProvider(t *testing.T) {
 		{
 			provider:     ProviderOpenAI,
 			model:        "gpt-5-future",
-			expectInput:  2.50, // Falls back to GPT-4o pricing
+			expectInput:  1.25, // Prefix-matches gpt-5 pricing
 			expectOutput: 10.00,
 		},
 		{
 			provider:     ProviderGemini,
 			model:        "gemini-unknown",
-			expectInput:  0.00, // Falls back to free tier
-			expectOutput: 0.00,
+			expectInput:  0.10, // Falls back to Flash pricing
+			expectOutput: 0.40,
 		},
 		{
 			provider:     Provider("unknown"),
@@ -202,7 +202,7 @@ func TestCalculateCostForCall(t *testing.T) {
 		{
 			name:         "Free Gemini",
 			provider:     ProviderGemini,
-			model:        "gemini-2.0-flash",
+			model:        "gemini-2.0-flash-exp",
 			inputTokens:  10000,
 			outputTokens: 5000,
 			minCost:      0.0,

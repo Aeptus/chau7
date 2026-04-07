@@ -106,7 +106,7 @@ Supported commands (46 parsers):
 - **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
 - **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
 - **Baseline estimator** — calculate token savings from context caching.
-- **Analytics dashboard** — command stats, error rates, API usage, and timing.
+- **Analytics dashboard** — command stats, error rates, API usage, and timing. Adaptive polling (2s active, 5s idle, 10s no agents), proxy health monitoring, timeline pagination, and per-agent cost display with cache/reasoning token breakdown.
 - **Repo-level aggregated metrics** — per-repository stats (commands, success rate, AI runs, tokens, cost, providers, top tools) in Debug Console, Data Explorer, and hover card.
 - **Repo-aware debug labels** — per-tab token and CTO rows use `provider/custom title + repo`, with split-session disambiguation when needed.
 - **Timeline visualization** — scrubber timeline showing command blocks and metrics.

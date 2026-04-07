@@ -217,32 +217,33 @@ func (n *IPCNotifier) send(msg *IPCMessage) error {
 	return n.sendBytes(data)
 }
 
-// sendBytes sends raw bytes to the Unix socket
+// sendBytes sends raw bytes to the Unix socket with a single retry on failure.
+// This handles stale sockets after the app restarts without blocking on repeated failures.
 func (n *IPCNotifier) sendBytes(data []byte) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	// Try to connect if not connected
-	if n.conn == nil {
-		conn, err := net.DialTimeout("unix", n.socketPath, 2*time.Second)
-		if err != nil {
+	msg := append(data, '\n')
+	for attempt := 0; attempt < 2; attempt++ {
+		if n.conn == nil {
+			conn, err := net.DialTimeout("unix", n.socketPath, 2*time.Second)
+			if err != nil {
+				return err
+			}
+			n.conn = conn
+		}
+
+		n.conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		if _, err := n.conn.Write(msg); err != nil {
+			n.conn.Close()
+			n.conn = nil
+			if attempt == 0 {
+				continue // retry once with a fresh connection
+			}
 			return err
 		}
-		n.conn = conn
+		return nil
 	}
-
-	// Set write deadline
-	n.conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
-
-	// Send the message
-	_, err := n.conn.Write(append(data, '\n'))
-	if err != nil {
-		// Connection might be broken, close and retry next time
-		n.conn.Close()
-		n.conn = nil
-		return err
-	}
-
 	return nil
 }
 

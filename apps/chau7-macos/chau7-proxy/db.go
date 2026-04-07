@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -296,8 +297,19 @@ func initSchema(db *sql.DB) error {
 	// Post-migration indexes (depend on columns added by runMigrations).
 	postMigrationIndexes := `
 		CREATE INDEX IF NOT EXISTS idx_api_calls_task ON api_calls(task_id);
+		CREATE INDEX IF NOT EXISTS idx_api_calls_cost_ts ON api_calls(timestamp, cost_usd);
 	`
-	_, err := db.Exec(postMigrationIndexes)
+	if _, err := db.Exec(postMigrationIndexes); err != nil {
+		return err
+	}
+
+	// Prune old data to keep the database bounded (retain 180 days).
+	if _, err := db.Exec("DELETE FROM api_calls WHERE timestamp < datetime('now', '-180 days')"); err != nil {
+		log.Printf("db: prune warning: %v", err)
+	}
+
+	// Update query planner statistics after schema changes.
+	_, err := db.Exec("ANALYZE")
 	return err
 }
 

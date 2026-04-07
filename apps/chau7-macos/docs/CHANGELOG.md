@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Pricing Table Accuracy**: Fixed wrong prices for Claude Opus 4.6 ($15→$5/$75→$25), Haiku 4.5 ($0.80→$1/$4→$5), and Gemini 2.0 Flash (free→$0.10/$0.40 paid tier). Added ~20 missing models (GPT-5.x, GPT-4.1, o3/o4-mini, Gemini 2.5). Unknown models now log a warning with the model name instead of failing silently. Gemini fallback uses Flash pricing instead of free tier.
+- **Dashboard Polling Waste**: Dashboard now polls adaptively — 2s when agents are active, 5s when idle, 10s with no agents — instead of a fixed 2s interval that wasted CPU even with zero agents running.
+- **Cost Lock Safety**: Replaced bare `costLock.lock()/unlock()` pairs with `defer` pattern to prevent lock leaks on unexpected errors.
+- **Commit Success Stale**: The "Committed successfully" banner now auto-dismisses after 3 seconds instead of persisting indefinitely.
+- **IPC Data Loss**: Proxy IPC socket now retries once on a broken connection before giving up, preventing silent data loss after app restarts.
+- **Event Buffer Performance**: Replaced O(n) `insert(at: 0)` in ProxyIPCServer's event buffer with O(1) append + reverse-on-read.
+- **DB Query Performance**: Added compound index `(timestamp, cost_usd)` for `dailyTrend()` queries. Added `ANALYZE` after migrations to update SQLite's query planner. Added automatic pruning of API call records older than 180 days.
+- **Proxy Health Monitoring**: Dashboard now calls the proxy's existing (but unused) `/health` endpoint every 5th poll cycle and shows a warning triangle in the header when unhealthy.
+- **Dashboard Sheet Sizing**: Start Agent and Review Commits sheets now use adaptive widths (min/ideal/max) instead of hardcoded pixel values that broke on small displays.
+- **Timeline Pagination**: Dashboard timeline now shows a "Show more..." button when more than 50 events exist, instead of silently truncating.
+- **Dashboard Accessibility**: Agent cards now have combined accessibility labels (backend, state, tokens). Batch action buttons have accessibility hints. Health indicator uses localized strings.
+- **Custom Pricing Documentation**: `~/.chau7/pricing.json` format is now documented with a JSON example in code comments. Malformed files now log a warning instead of being silently ignored.
 - **Telemetry Active-Run Queries**: `run_list` and `run_get` no longer duplicate active runs that were already inserted into SQLite at `runStarted`. MCP telemetry responses now consistently annotate `run_state` (`active` or `completed`) and `content_state` (`missing`, `partial`, `final`) so orchestrators can distinguish live partial data from finalized runs.
 - **Active Codex Transcript Visibility**: `run_transcript` now surfaces live Codex prompts from `~/.codex/history.jsonl` before `runEnded`, with PTY-log fallback for active sessions that do not yet have persisted turns. Active Codex runs no longer appear as empty shells while the session is still in progress.
 - **Session Rollup Clarity**: `session_list` now includes `active_run_count`, `completed_run_count`, `latest_run_id`, and `latest_run_state`, making resumed session IDs with multiple historical runs easier to interpret.

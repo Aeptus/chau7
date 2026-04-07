@@ -2,10 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// PricingTableVersion records when the built-in pricing table was last updated.
+// If you see fallback warnings in logs, consider updating this table or adding
+// overrides to ~/.chau7/pricing.json.
+const PricingTableVersion = "2026-04-07"
 
 // ModelPricing contains the pricing information for a model
 type ModelPricing struct {
@@ -71,14 +77,17 @@ func (p ModelPricing) CalculateFullCost(input, output, cacheCreation, cacheRead,
 	return cost
 }
 
-// PricingTable contains pricing for known models (as of January 2025)
-// Prices are in USD per 1 million tokens
-// This should be periodically updated or loaded from a config file
+// PricingTable contains pricing for known models (updated PricingTableVersion).
+// Prices are in USD per 1 million tokens.
+// Override any entry via ~/.chau7/pricing.json (see LoadCustomPricing).
 var PricingTable = map[string]ModelPricing{
-	// Anthropic models
-	"claude-opus-4-6":            {InputPerMillion: 15.00, OutputPerMillion: 75.00},
+	// ── Anthropic ───────────────────────────────────────────────────────
+	"claude-opus-4-6":            {InputPerMillion: 5.00, OutputPerMillion: 25.00},
 	"claude-sonnet-4-6":          {InputPerMillion: 3.00, OutputPerMillion: 15.00},
-	"claude-haiku-4-5":           {InputPerMillion: 0.80, OutputPerMillion: 4.00},
+	"claude-haiku-4-5":           {InputPerMillion: 1.00, OutputPerMillion: 5.00},
+	"claude-opus-4-5":            {InputPerMillion: 5.00, OutputPerMillion: 25.00},
+	"claude-sonnet-4-5":          {InputPerMillion: 3.00, OutputPerMillion: 15.00},
+	"claude-opus-4-1":            {InputPerMillion: 15.00, OutputPerMillion: 75.00},
 	"claude-opus-4":              {InputPerMillion: 15.00, OutputPerMillion: 75.00},
 	"claude-opus-4-20250514":     {InputPerMillion: 15.00, OutputPerMillion: 75.00},
 	"claude-sonnet-4":            {InputPerMillion: 3.00, OutputPerMillion: 15.00},
@@ -94,7 +103,20 @@ var PricingTable = map[string]ModelPricing{
 	"claude-3-haiku":             {InputPerMillion: 0.25, OutputPerMillion: 1.25},
 	"claude-3-haiku-20240307":    {InputPerMillion: 0.25, OutputPerMillion: 1.25},
 
-	// OpenAI models — CacheReadPerMillion = 0.5x input (OpenAI's cached pricing)
+	// ── OpenAI ─────────────────────────────────────────────────────────
+	// CacheReadPerMillion = 0.5x input (OpenAI's cached pricing)
+	"gpt-5.4":                {InputPerMillion: 2.50, OutputPerMillion: 15.00, CacheReadPerMillion: 0.25},
+	"gpt-5.4-mini":           {InputPerMillion: 0.75, OutputPerMillion: 4.50, CacheReadPerMillion: 0.075},
+	"gpt-5.4-nano":           {InputPerMillion: 0.20, OutputPerMillion: 1.25, CacheReadPerMillion: 0.02},
+	"gpt-5.3-codex":          {InputPerMillion: 1.75, OutputPerMillion: 14.00, CacheReadPerMillion: 0.175},
+	"gpt-5.3-chat":           {InputPerMillion: 1.75, OutputPerMillion: 14.00, CacheReadPerMillion: 0.175},
+	"gpt-5.2":                {InputPerMillion: 1.75, OutputPerMillion: 14.00, CacheReadPerMillion: 0.175},
+	"gpt-5.1":                {InputPerMillion: 1.25, OutputPerMillion: 10.00, CacheReadPerMillion: 0.125},
+	"gpt-5":                  {InputPerMillion: 1.25, OutputPerMillion: 10.00, CacheReadPerMillion: 0.125},
+	"gpt-5-mini":             {InputPerMillion: 0.25, OutputPerMillion: 2.00, CacheReadPerMillion: 0.025},
+	"gpt-4.1":                {InputPerMillion: 2.00, OutputPerMillion: 8.00, CacheReadPerMillion: 0.50},
+	"gpt-4.1-mini":           {InputPerMillion: 0.40, OutputPerMillion: 1.60, CacheReadPerMillion: 0.10},
+	"gpt-4.1-nano":           {InputPerMillion: 0.10, OutputPerMillion: 0.40, CacheReadPerMillion: 0.025},
 	"gpt-4o":                 {InputPerMillion: 2.50, OutputPerMillion: 10.00, CacheReadPerMillion: 1.25},
 	"gpt-4o-2024-11-20":      {InputPerMillion: 2.50, OutputPerMillion: 10.00, CacheReadPerMillion: 1.25},
 	"gpt-4o-mini":            {InputPerMillion: 0.15, OutputPerMillion: 0.60, CacheReadPerMillion: 0.075},
@@ -103,15 +125,21 @@ var PricingTable = map[string]ModelPricing{
 	"gpt-4-turbo-preview":    {InputPerMillion: 10.00, OutputPerMillion: 30.00},
 	"gpt-4":                  {InputPerMillion: 30.00, OutputPerMillion: 60.00},
 	"gpt-3.5-turbo":          {InputPerMillion: 0.50, OutputPerMillion: 1.50},
+	"o3":                     {InputPerMillion: 2.00, OutputPerMillion: 8.00, CacheReadPerMillion: 0.50},
+	"o4-mini":                {InputPerMillion: 1.10, OutputPerMillion: 4.40, CacheReadPerMillion: 0.275},
+	"o3-mini":                {InputPerMillion: 1.10, OutputPerMillion: 4.40, CacheReadPerMillion: 0.55},
 	"o1":                     {InputPerMillion: 15.00, OutputPerMillion: 60.00, CacheReadPerMillion: 7.50},
 	"o1-2024-12-17":          {InputPerMillion: 15.00, OutputPerMillion: 60.00, CacheReadPerMillion: 7.50},
 	"o1-mini":                {InputPerMillion: 3.00, OutputPerMillion: 12.00, CacheReadPerMillion: 1.50},
 	"o1-preview":             {InputPerMillion: 15.00, OutputPerMillion: 60.00, CacheReadPerMillion: 7.50},
-	"o3-mini":                {InputPerMillion: 1.10, OutputPerMillion: 4.40, CacheReadPerMillion: 0.55},
 
-	// Google Gemini models (many are free tier)
-	"gemini-2.0-flash":        {InputPerMillion: 0.00, OutputPerMillion: 0.00}, // Free
+	// ── Google Gemini ──────────────────────────────────────────────────
+	"gemini-2.5-pro":          {InputPerMillion: 1.25, OutputPerMillion: 10.00},
+	"gemini-2.5-flash":        {InputPerMillion: 0.30, OutputPerMillion: 2.50},
+	"gemini-2.5-flash-lite":   {InputPerMillion: 0.10, OutputPerMillion: 0.40},
+	"gemini-2.0-flash":        {InputPerMillion: 0.10, OutputPerMillion: 0.40},
 	"gemini-2.0-flash-exp":    {InputPerMillion: 0.00, OutputPerMillion: 0.00}, // Free
+	"gemini-2.0-flash-lite":   {InputPerMillion: 0.075, OutputPerMillion: 0.30},
 	"gemini-1.5-pro":          {InputPerMillion: 1.25, OutputPerMillion: 5.00},
 	"gemini-1.5-pro-latest":   {InputPerMillion: 1.25, OutputPerMillion: 5.00},
 	"gemini-1.5-flash":        {InputPerMillion: 0.075, OutputPerMillion: 0.30},
@@ -120,11 +148,26 @@ var PricingTable = map[string]ModelPricing{
 }
 
 // CustomPricingOverrides loaded from ~/.chau7/pricing.json at startup.
-// Keys are model names, values are {input_per_million, output_per_million}.
 var CustomPricingOverrides map[string]ModelPricing
 
 // LoadCustomPricing reads user-defined pricing overrides from ~/.chau7/pricing.json.
-// The file is optional — if missing or malformed, no overrides are applied.
+// The file is optional — if missing, no overrides are applied.
+// If the file exists but is malformed, a warning is logged.
+//
+// Expected JSON format:
+//
+//	{
+//	  "my-custom-model": {
+//	    "InputPerMillion": 2.00,
+//	    "OutputPerMillion": 8.00,
+//	    "CacheCreationPerMillion": 2.50,
+//	    "CacheReadPerMillion": 1.00,
+//	    "ReasoningOutputPerMillion": 8.00
+//	  }
+//	}
+//
+// Only InputPerMillion and OutputPerMillion are required.
+// Cache and reasoning fields default to the standard multipliers when zero.
 func LoadCustomPricing() {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -133,13 +176,15 @@ func LoadCustomPricing() {
 	path := filepath.Join(home, ".chau7", "pricing.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return
+		return // file missing — normal
 	}
 	var overrides map[string]ModelPricing
 	if err := json.Unmarshal(data, &overrides); err != nil {
+		log.Printf("pricing: failed to parse %s: %v", path, err)
 		return
 	}
 	CustomPricingOverrides = overrides
+	log.Printf("pricing: loaded %d custom overrides from %s", len(overrides), path)
 }
 
 // GetPricing returns the pricing for a model, with fallback to estimated pricing.
@@ -163,14 +208,16 @@ func GetPricing(provider Provider, model string) ModelPricing {
 		}
 	}
 
-	// Fallback to provider defaults (conservative estimates)
+	// Fallback to provider defaults (conservative estimates).
+	// Log a warning so users can add the model to ~/.chau7/pricing.json.
+	log.Printf("pricing: using %s fallback for unknown model %q (table version %s)", provider, model, PricingTableVersion)
 	switch provider {
 	case ProviderAnthropic:
 		return ModelPricing{InputPerMillion: 3.00, OutputPerMillion: 15.00} // Sonnet pricing
 	case ProviderOpenAI:
 		return ModelPricing{InputPerMillion: 2.50, OutputPerMillion: 10.00} // GPT-4o pricing
 	case ProviderGemini:
-		return ModelPricing{InputPerMillion: 0.00, OutputPerMillion: 0.00} // Free tier
+		return ModelPricing{InputPerMillion: 0.10, OutputPerMillion: 0.40} // Flash pricing
 	default:
 		return ModelPricing{InputPerMillion: 3.00, OutputPerMillion: 15.00}
 	}

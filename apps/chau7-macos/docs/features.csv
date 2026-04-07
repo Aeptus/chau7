@@ -331,3 +331,7 @@ Telemetry,Cache-Aware Cost Calculation,"Cost calculation accounts for provider-s
 Localization,Missing Shipped UI Keys,"English, Arabic, French, and Hebrew localization bundles now include the missing shipped UI string keys that were still being requested from Swift source",Shipped,No
 Restore,Codex Resume Metadata Preservation,"Ambiguous same-repo Codex save-time resolution now preserves a tab's explicit session metadata so restored tabs keep their last-known resume command",Shipped,Yes
 Lifecycle,Fast Quit State Save,"Termination now reuses a recent cached multi-window snapshot instead of re-exporting every visible tab during quit",Shipped,Yes
+API Analytics,Adaptive Dashboard Polling,"Dashboard polls adaptively — 2s active, 5s idle, 10s no agents — with proxy health monitoring and timeline pagination",Shipped,Yes
+API Analytics,Updated Pricing Table,"~20 new models (GPT-5.x, GPT-4.1, o3/o4-mini, Gemini 2.5), corrected Opus 4.6/Haiku 4.5 prices, fallback warning logging, documented pricing.json schema",Shipped,Yes
+API Analytics,DB Performance & Pruning,"Compound cost index, automatic 180-day data pruning, ANALYZE after migrations",Shipped,No
+Networking,IPC Socket Retry,Proxy IPC socket retries once on broken connection before giving up,Shipped,No
