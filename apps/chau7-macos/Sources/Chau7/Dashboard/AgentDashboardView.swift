@@ -4,9 +4,10 @@ import SwiftUI
 /// Multi-agent dashboard view — shows all AI agents working in a repo.
 ///
 /// Displays agent cards with status, files, tokens, and conflicts.
-/// Polls every 2 seconds via the model. Lives inside a non-terminal tab.
+/// Polls adaptively (2s active, 5s idle, 10s no agents). Lives inside a non-terminal tab.
 struct AgentDashboardView: View {
     @Bindable var model: AgentDashboardModel
+    @State private var timelineLimit = 50
 
     var body: some View {
         VStack(spacing: 0) {
@@ -68,6 +69,14 @@ struct AgentDashboardView: View {
 
             if model.totalCost > 0 {
                 statPill(formatCost(model.totalCost), color: .secondary)
+            }
+
+            // Proxy health warning
+            if !model.proxyHealthy {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                    .help(L("dashboard.proxyUnhealthy", "Proxy not responding"))
             }
 
             // Status indicator
@@ -239,6 +248,8 @@ struct AgentDashboardView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(card.pendingApproval != nil ? Color.orange.opacity(0.4) : Color.clear, lineWidth: 1)
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(card.backendName) agent, \(card.state.rawValue), \(card.formattedTokens) tokens")
     }
 
     // MARK: - Conflicts
@@ -287,7 +298,7 @@ struct AgentDashboardView: View {
                     .foregroundStyle(.tertiary)
                     .italic()
             } else {
-                ForEach(model.timeline.prefix(50)) { entry in
+                ForEach(model.timeline.prefix(timelineLimit)) { entry in
                     HStack(spacing: 6) {
                         Text(Self.timeFormatter.string(from: entry.timestamp))
                             .font(.system(size: 9, design: .monospaced))
@@ -309,6 +320,15 @@ struct AgentDashboardView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
+                }
+                if model.timeline.count > timelineLimit {
+                    let remaining = model.timeline.count - timelineLimit
+                    Button("Show \(min(50, remaining)) more...") {
+                        timelineLimit += 50
+                    }
+                    .font(.system(size: 10))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
                 }
             }
         }
@@ -340,6 +360,7 @@ struct AgentDashboardView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(model.agentCards.isEmpty)
+                .accessibilityHint(L("dashboard.stopAllHint", "Stops all running agents in this repository"))
 
                 Spacer()
 
@@ -569,7 +590,7 @@ private struct StartAgentSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 380)
+        .frame(minWidth: 340, idealWidth: 380, maxWidth: 500)
     }
 }
 
@@ -643,6 +664,6 @@ private struct StartReviewSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 420)
+        .frame(minWidth: 380, idealWidth: 420, maxWidth: 540)
     }
 }
