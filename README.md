@@ -1,23 +1,17 @@
 # Chau7
 
-Chau7 started as a personal project and, honestly, an experiment. The repository and codebase still need significant refactoring and cleanup. We're actively working through that.
-
-The AI-native terminal for macOS. Named after a sock. We're not even sorry.
-
-Chau7 detects your AI agents, optimizes their context tokens, tracks what they cost you, and gives you 30+ MCP tools to control everything from another terminal. GPU-accelerated Metal rendering. Not Electron. Not a wrapper.
+Your coding agents are running. All of them. Across models, across windows, sometimes at 3 AM. Chau7 is the macOS terminal that notices they exist, tracks what they cost, and lets you steer from the outside. Named after a sock. We're not even sorry.
 
 [![CI](https://github.com/aeptus/chau7/actions/workflows/ci.yml/badge.svg)](https://github.com/aeptus/chau7/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
 ## What it does
 
-- **AI agent detection**: Claude Code, Codex, Cursor, Windsurf, Copilot, Aider, Cline, Continue, Goose, Devin, Mentat, Amazon Q, Amp. Automatic. Zero config.
-- **Context Token Optimization**: Rewrites CLI commands to trim context windows. ~40% token savings on average.
-- **36 MCP tools**: Control tabs, query history, manage sessions, read terminal output, launch agents, manage repos. All local, all over a Unix socket.
-- **Notifications that actually work**: Know when your agent finishes, needs permission, or gets stuck. Per-tab, per-tool, cross-window.
-- **Tab grouping by repository**: Tabs auto-group by git root. Move groups between windows. Color-coded by provider.
-- **Telemetry**: Per-run token counts, cost tracking, tool call distribution. All local, nothing phones home.
-- **Metal GPU rendering**: Rust terminal backend via FFI, triple-buffered, VSync-synced. Your scrollback is fast.
+- **See every agent.** Detects 13+ AI tools automatically: Claude Code, Codex, Cursor, Windsurf, Copilot, Aider, Cline, Continue, Goose, Devin, Mentat, Amazon Q, Amp. Knows when they finish, fail, or need approval. Zero config.
+- **Know what it costs.** Per-run token counts, cost tracking, tool call distribution. Across providers, across models. All in one place.
+- **Steer from the outside.** 36 MCP tools over a local Unix socket. Read terminal output, send input, approve tool use, launch agents, stop them. Control from another terminal, a script, or your phone.
+- **Trust it.** Everything stays on your machine. No analytics, no heartbeats, no "anonymous" usage data. API keys forwarded by the local proxy, never stored. [Full privacy details](PRIVACY.md).
+- **The terminal underneath.** Rust backend via FFI. Metal GPU rendering, triple-buffered, VSync-synced. Context Token Optimization cuts ~40% off agent token usage. Tabs auto-group by git repo. Not Electron. Not a wrapper.
 
 ## FAQ
 
