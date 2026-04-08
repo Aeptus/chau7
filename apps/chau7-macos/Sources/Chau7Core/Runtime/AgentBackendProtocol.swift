@@ -1,5 +1,10 @@
 import Foundation
 
+public enum AgentLaunchReadinessStrategy: String, Codable, Sendable {
+    case immediate
+    case interactiveAgent
+}
+
 /// Describes how to launch and interact with a specific AI CLI agent.
 ///
 /// Each backend knows how to construct the launch command, format prompt input
@@ -18,6 +23,15 @@ public protocol AgentBackend: Sendable {
     /// Provider key for session resume (e.g. Claude's `--resume` flag).
     /// Nil if the backend doesn't support resume.
     var resumeProviderKey: String? { get }
+
+    /// Strategy used to determine when a launched session can receive turns.
+    var launchReadinessStrategy: AgentLaunchReadinessStrategy { get }
+}
+
+public extension AgentBackend {
+    var launchReadinessStrategy: AgentLaunchReadinessStrategy {
+        .immediate
+    }
 }
 
 /// Configuration for creating a runtime session.

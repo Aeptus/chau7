@@ -50,6 +50,10 @@ struct ClaudeCodeBackend: AgentBackend {
         "claude"
     }
 
+    var launchReadinessStrategy: AgentLaunchReadinessStrategy {
+        .interactiveAgent
+    }
+
     // MARK: - State Mapping
 
     /// Maps Claude Code monitor session states to runtime triggers.

@@ -44,4 +44,8 @@ struct CodexBackend: AgentBackend {
     var resumeProviderKey: String? {
         "codex"
     }
+
+    var launchReadinessStrategy: AgentLaunchReadinessStrategy {
+        .interactiveAgent
+    }
 }
