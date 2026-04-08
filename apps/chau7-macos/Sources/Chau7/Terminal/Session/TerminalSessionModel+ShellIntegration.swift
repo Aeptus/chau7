@@ -51,6 +51,49 @@ extension TerminalSessionModel {
         }
     }
 
+    func dangerousCommandCheckForDirectUserInput(_ text: String) -> DangerousCommandGuard.CheckResult? {
+        let sanitizedText = sanitizeInputForBuffer(text)
+        guard !sanitizedText.isEmpty else { return nil }
+        guard sanitizedText.contains("\n") || sanitizedText.contains("\r") else { return nil }
+
+        let pendingCommand = inputBuffer + sanitizedText
+        let shellPID = existingRustTerminalView?.shellPid ?? 0
+        let extraProtectedPIDs: Set<Int32> = shellPID > 0 ? [shellPID] : []
+        let observedProcesses = processGroup?.children.map(\.name) ?? []
+        let selfProtectionContext = FeatureSettings.shared.dangerousCommandSelfProtectionContext(
+            extraProtectedPIDs: extraProtectedPIDs,
+            observedProcessNames: observedProcesses
+        )
+
+        return MainActor.assumeIsolated {
+            DangerousCommandGuard.shared.check(
+                commandLine: pendingCommand,
+                directory: currentDirectory,
+                selfProtectionContext: selfProtectionContext
+            )
+        }
+    }
+
+    func shouldAcceptDirectUserInput(_ text: String) -> Bool {
+        guard let result = dangerousCommandCheckForDirectUserInput(text) else { return true }
+
+        switch result {
+        case .safe, .allowed:
+            return true
+        case .needsConfirmation(let command, let matchedPattern):
+            return MainActor.assumeIsolated {
+                DangerousCommandGuard.shared.showConfirmation(command: command, matchedPattern: matchedPattern)
+            }
+        case .blocked(let reason):
+            let sanitizedText = sanitizeInputForBuffer(text)
+            let pendingCommand = (inputBuffer + sanitizedText).trimmingCharacters(in: .whitespacesAndNewlines)
+            MainActor.assumeIsolated {
+                DangerousCommandGuard.shared.showBlockedAlert(command: pendingCommand, reason: reason)
+            }
+            return false
+        }
+    }
+
     func handleOutput(_ data: Data) {
         if shellStartupSlow { shellStartupSlow = false }
 

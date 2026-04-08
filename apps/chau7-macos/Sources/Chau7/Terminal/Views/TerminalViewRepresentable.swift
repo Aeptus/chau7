@@ -273,6 +273,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.onInput = { [weak model] text in
             model?.handleInput(text)
         }
+        view.shouldAcceptUserText = { [weak model] text in
+            model?.shouldAcceptDirectUserInput(text) ?? true
+        }
         view.onOutput = { [weak model] data in
             model?.handleOutput(data)
         }

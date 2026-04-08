@@ -4,8 +4,8 @@ import Chau7Core
 /// Three-tier command permission result.
 enum MCPCommandVerdict {
     case allowed
-    case blocked(command: String)
-    case needsApproval(command: String)
+    case blocked(command: String, reason: String)
+    case needsApproval(command: String, reason: String)
 }
 
 /// The resolved set of MCP permissions to apply for a given command.
@@ -77,11 +77,15 @@ enum MCPCommandFilter {
     /// Returns both the verdict and the resolved permissions (needed by enforceVerdict).
     static func check(_ command: String, context: MCPTabContext?) -> (verdict: MCPCommandVerdict, permissions: ResolvedPermissions) {
         let permissions = resolvePermissions(for: context)
-        return check(command, permissions: permissions)
+        return check(command, permissions: permissions, context: context)
     }
 
     /// Core check logic against a specific set of permissions.
     private static func check(_ command: String, permissions: ResolvedPermissions) -> (verdict: MCPCommandVerdict, permissions: ResolvedPermissions) {
+        if let verdict = selfProtectionVerdict(for: command, tabContext: nil) {
+            return (verdict, permissions)
+        }
+
         let baseCommands = extractBaseCommands(command)
 
         for base in baseCommands {
@@ -89,7 +93,7 @@ enum MCPCommandFilter {
 
             // Check blocked first — blocked always wins
             if permissions.blockedCommands.contains(normalized) {
-                return (.blocked(command: base), permissions)
+                return (.blocked(command: base, reason: "blocked by MCP permissions"), permissions)
             }
 
             // Explicit allowlist entries always pass.
@@ -101,9 +105,9 @@ enum MCPCommandFilter {
             case .allowAll:
                 continue
             case .allowlist:
-                return (.blocked(command: base), permissions)
+                return (.blocked(command: base, reason: "not present in the MCP allowlist"), permissions)
             case .askUnlisted:
-                return (.needsApproval(command: base), permissions)
+                return (.needsApproval(command: base, reason: "requires MCP approval"), permissions)
             case .auditOnly:
                 // Allow execution but log for audit review
                 Log.info("MCP audit: command '\(base)' allowed under audit-only mode (\(permissions.sourceName))")
@@ -133,6 +137,40 @@ enum MCPCommandFilter {
         if trimmed.count <= 2 { return (.allowed, fallbackPermissions) }
         if !input.hasSuffix("\n"), !input.hasSuffix("\r") { return (.allowed, fallbackPermissions) }
         return check(trimmed, context: context)
+    }
+
+    private static func check(_ command: String, permissions: ResolvedPermissions, context: MCPTabContext?) -> (verdict: MCPCommandVerdict, permissions: ResolvedPermissions) {
+        if let verdict = selfProtectionVerdict(for: command, tabContext: context) {
+            return (verdict, permissions)
+        }
+
+        let baseCommands = extractBaseCommands(command)
+
+        for base in baseCommands {
+            let normalized = normalizeCommand(base)
+
+            if permissions.blockedCommands.contains(normalized) {
+                return (.blocked(command: base, reason: "blocked by MCP permissions"), permissions)
+            }
+
+            if permissions.allowedCommands.contains(normalized) {
+                continue
+            }
+
+            switch permissions.mode {
+            case .allowAll:
+                continue
+            case .allowlist:
+                return (.blocked(command: base, reason: "not present in the MCP allowlist"), permissions)
+            case .askUnlisted:
+                return (.needsApproval(command: base, reason: "requires MCP approval"), permissions)
+            case .auditOnly:
+                Log.info("MCP audit: command '\(base)' allowed under audit-only mode (\(permissions.sourceName))")
+                continue
+            }
+        }
+
+        return (.allowed, permissions)
     }
 
     // MARK: - Parsing
@@ -250,5 +288,31 @@ enum MCPCommandFilter {
         // Strip path: /usr/bin/rm → rm, ./script.sh → script.sh
         let base = (cmd as NSString).lastPathComponent
         return base.lowercased()
+    }
+
+    private static func selfProtectionVerdict(for command: String, tabContext: MCPTabContext?) -> MCPCommandVerdict? {
+        let settings = FeatureSettings.shared
+        guard settings.dangerousCommandProtectChau7Enabled else { return nil }
+
+        let extraPIDs = tabContext?.shellPID.map { Set([$0]) } ?? []
+        let observedProcesses = tabContext?.processes ?? []
+        let context = settings.dangerousCommandSelfProtectionContext(
+            extraProtectedPIDs: extraPIDs,
+            observedProcessNames: observedProcesses
+        )
+
+        guard let match = SelfProtectiveCommandDetection.detect(commandLine: command, context: context) else {
+            return nil
+        }
+
+        switch settings.dangerousCommandProtectChau7Level {
+        case .verboseLogging:
+            Log.warn("MCP self-protection log '\(match.command)' (\(match.reason))")
+            return nil
+        case .warning:
+            return .needsApproval(command: match.command, reason: "Protect Chau7: \(match.reason)")
+        case .blocking:
+            return .blocked(command: match.command, reason: match.reason)
+        }
     }
 }

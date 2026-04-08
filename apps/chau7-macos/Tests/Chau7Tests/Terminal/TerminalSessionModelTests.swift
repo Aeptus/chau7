@@ -300,6 +300,36 @@ final class TerminalSessionModelTests: XCTestCase {
         )
     }
 
+    func testDangerousCommandCheckForDirectUserInputUsesPendingBufferOnSubmit() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let guard_ = DangerousCommandGuard.shared
+        let originalEnabled = guard_.isEnabled
+        let originalBlockList = guard_.blockList
+
+        defer {
+            guard_.blockList = originalBlockList
+            guard_.isEnabled = originalEnabled
+        }
+
+        guard_.isEnabled = true
+        guard_.blockList = ["danger-cmd"]
+        session.inputBuffer = "danger-cmd"
+
+        XCTAssertEqual(
+            session.dangerousCommandCheckForDirectUserInput("\n"),
+            .blocked(reason: "blocked by dangerous command guard block list")
+        )
+    }
+
+    func testDangerousCommandCheckForDirectUserInputIgnoresNonSubmittingInput() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.inputBuffer = "kill 1234"
+
+        XCTAssertNil(session.dangerousCommandCheckForDirectUserInput("x"))
+    }
+
     func testHandlePromptDetectedEmitsWaitingInputFallbackForSupportedAITool() async {
         RuntimeSessionManager.shared.resetForTesting()
         let model = AppModel()

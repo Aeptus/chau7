@@ -18,6 +18,10 @@ protocol TerminalViewLike: NSView {
     /// Called when user input is sent
     var onInput: ((String) -> Void)? { get set }
 
+    /// Called before user-originated text is sent to the PTY.
+    /// Return false to suppress the input.
+    var shouldAcceptUserText: ((String) -> Bool)? { get set }
+
     /// Called when buffer content changes
     var onBufferChanged: (() -> Void)? { get set }
 

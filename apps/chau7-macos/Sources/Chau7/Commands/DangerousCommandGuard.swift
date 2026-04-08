@@ -50,7 +50,7 @@ final class DangerousCommandGuard {
         case safe // Not risky, proceed
         case allowed // Risky but in allow list
         case needsConfirmation(command: String, matchedPattern: String) // Needs user confirmation
-        case blocked // In block list
+        case blocked(reason: String) // Hard blocked by policy
     }
 
     private init() {
@@ -95,7 +95,11 @@ final class DangerousCommandGuard {
     /// - Parameters:
     ///   - commandLine: The command to check
     ///   - directory: Current working directory (for per-directory allowlist matching)
-    func check(commandLine: String, directory: String? = nil) -> CheckResult {
+    func check(
+        commandLine: String,
+        directory: String? = nil,
+        selfProtectionContext: SelfProtectiveCommandContext? = nil
+    ) -> CheckResult {
         guard isEnabled else { return .safe }
         let trimmed = commandLine.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .safe }
@@ -113,10 +117,26 @@ final class DangerousCommandGuard {
             return .needsConfirmation(command: trimmed, matchedPattern: "Multiline paste detected")
         }
 
+        let effectiveSelfProtectionContext = selfProtectionContext ?? FeatureSettings.shared.dangerousCommandSelfProtectionContext()
+        if FeatureSettings.shared.dangerousCommandProtectChau7Enabled,
+           let match = SelfProtectiveCommandDetection.detect(commandLine: trimmed, context: effectiveSelfProtectionContext) {
+            switch FeatureSettings.shared.dangerousCommandProtectChau7Level {
+            case .verboseLogging:
+                Log.warn("DangerousCommandGuard: self-protection log '\(trimmed)' (\(match.reason))")
+                return .safe
+            case .warning:
+                Log.warn("DangerousCommandGuard: self-protection warn '\(trimmed)' (\(match.reason))")
+                return .needsConfirmation(command: trimmed, matchedPattern: "Protect Chau7: \(match.reason)")
+            case .blocking:
+                Log.warn("DangerousCommandGuard: self-protection blocked '\(trimmed)' (\(match.reason))")
+                return .blocked(reason: match.reason)
+            }
+        }
+
         // Check block list first
         if blockList.contains(trimmed) {
             Log.warn("DangerousCommandGuard: BLOCKED '\(trimmed)'")
-            return .blocked
+            return .blocked(reason: "blocked by dangerous command guard block list")
         }
 
         // Check per-directory allowlist

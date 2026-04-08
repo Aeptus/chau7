@@ -294,6 +294,10 @@ extension RustTerminalView {
     }
 
     func pasteText(_ text: String) {
+        guard shouldAcceptUserText?(text) ?? true else {
+            Log.info("RustTerminalView[\(viewId)]: paste - Suppressed pasted input by command guard")
+            return
+        }
         // Check for bracketed paste mode from Rust terminal
         // This fixes bracketed paste for vim, zsh, and other programs that enable it
         if rustTerminal?.isBracketedPasteMode() == true {
@@ -349,6 +353,10 @@ extension RustTerminalView {
     func insertSnippet(_ insertion: SnippetInsertion) {
         Log.trace("RustTerminalView[\(viewId)]: insertSnippet - \(insertion.text.count) chars")
         let text = insertion.text
+        guard shouldAcceptUserText?(text) ?? true else {
+            Log.info("RustTerminalView[\(viewId)]: insertSnippet - Suppressed snippet input by command guard")
+            return
+        }
 
         // Send the snippet text (with bracketed paste if enabled)
         // Use Rust terminal's bracketed paste mode state

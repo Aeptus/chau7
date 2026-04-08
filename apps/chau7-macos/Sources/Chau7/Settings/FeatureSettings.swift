@@ -538,6 +538,12 @@ enum DangerousCommandHighlightScope: String, CaseIterable, Codable {
     case allOutputs = "all_outputs"
 }
 
+enum DangerousCommandProtectionLevel: String, CaseIterable, Codable {
+    case verboseLogging = "verbose_logging"
+    case warning
+    case blocking
+}
+
 // MCPPermissionMode is defined in Chau7Core/MCPPermissionMode.swift
 
 // MARK: - Feature Settings (Centralized configuration for all features)
@@ -962,6 +968,11 @@ final class FeatureSettings {
         "drop table",
         "truncate table",
         "delete from"
+    ]
+
+    private static let defaultDangerousProtectedProcessPatterns: [String] = [
+        "chau7",
+        "chau7-mcp-bridge"
     ]
 
     // MARK: - Color Scheme Settings (NEW)
@@ -1859,6 +1870,59 @@ final class FeatureSettings {
         }
     }
 
+    var dangerousCommandProtectChau7Enabled: Bool {
+        didSet { UserDefaults.standard.set(dangerousCommandProtectChau7Enabled, forKey: Keys.dangerousCommandProtectChau7Enabled) }
+    }
+
+    var dangerousCommandProtectChau7Level: DangerousCommandProtectionLevel {
+        didSet { UserDefaults.standard.set(dangerousCommandProtectChau7Level.rawValue, forKey: Keys.dangerousCommandProtectChau7Level) }
+    }
+
+    var dangerousCommandProtectedProcessPatterns: [String] {
+        didSet {
+            let cleaned = dangerousCommandProtectedProcessPatterns
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if dangerousCommandProtectedProcessPatterns != cleaned {
+                dangerousCommandProtectedProcessPatterns = cleaned
+                return
+            }
+            if let data = JSONOperations.encode(cleaned, context: "dangerousCommandProtectedProcessPatterns") {
+                UserDefaults.standard.set(data, forKey: Keys.dangerousCommandProtectedProcessPatterns)
+            }
+        }
+    }
+
+    func dangerousCommandSelfProtectionContext(
+        extraProtectedPIDs: Set<Int32> = [],
+        observedProcessNames: [String] = []
+    ) -> SelfProtectiveCommandContext {
+        var protectedPIDs = extraProtectedPIDs
+        protectedPIDs.insert(ProcessInfo.processInfo.processIdentifier)
+
+        var protectedNames = Set(dangerousCommandProtectedProcessPatterns)
+        if let bundleID = Bundle.main.bundleIdentifier, !bundleID.isEmpty {
+            protectedNames.insert(bundleID)
+        }
+
+        let normalizedConfigured = dangerousCommandProtectedProcessPatterns.map {
+            SelfProtectiveCommandDetection.normalizeToken($0)
+        }.filter { !$0.isEmpty }
+
+        for processName in observedProcessNames {
+            let normalized = SelfProtectiveCommandDetection.normalizeToken(processName)
+            guard !normalized.isEmpty else { continue }
+            if normalizedConfigured.contains(where: { normalized.contains($0) || $0.contains(normalized) }) {
+                protectedNames.insert(processName)
+            }
+        }
+
+        return SelfProtectiveCommandContext(
+            protectedPIDs: protectedPIDs,
+            protectedProcessNames: protectedNames
+        )
+    }
+
     var dangerousOutputHighlightIdleDelayMs: Int {
         didSet {
             let clamped = max(0, min(dangerousOutputHighlightIdleDelayMs, 5000))
@@ -2251,6 +2315,9 @@ final class FeatureSettings {
         static let dangerousCommandHighlightEnabled = "terminal.dangerousCommandHighlightEnabled"
         static let dangerousCommandHighlightScope = "terminal.dangerousCommandHighlightScope"
         static let dangerousCommandPatterns = "terminal.dangerousCommandPatterns"
+        static let dangerousCommandProtectChau7Enabled = "terminal.dangerousCommandProtectChau7Enabled"
+        static let dangerousCommandProtectChau7Level = "terminal.dangerousCommandProtectChau7Level"
+        static let dangerousCommandProtectedProcessPatterns = "terminal.dangerousCommandProtectedProcessPatterns"
         static let dangerousOutputHighlightIdleDelayMs = "terminal.dangerousOutputHighlightIdleDelayMs"
         static let dangerousOutputHighlightMaxIntervalMs = "terminal.dangerousOutputHighlightMaxIntervalMs"
         static let dangerousOutputHighlightLowPowerEnabled = "terminal.dangerousOutputHighlightLowPowerEnabled"
@@ -2630,6 +2697,19 @@ final class FeatureSettings {
         } else {
             self.dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
         }
+        self.dangerousCommandProtectChau7Enabled = defaults.object(forKey: Keys.dangerousCommandProtectChau7Enabled) as? Bool ?? true
+        if let raw = defaults.string(forKey: Keys.dangerousCommandProtectChau7Level),
+           let level = DangerousCommandProtectionLevel(rawValue: raw) {
+            self.dangerousCommandProtectChau7Level = level
+        } else {
+            self.dangerousCommandProtectChau7Level = .blocking
+        }
+        if let data = defaults.data(forKey: Keys.dangerousCommandProtectedProcessPatterns),
+           let patterns = JSONOperations.decode([String].self, from: data, context: "dangerousCommandProtectedProcessPatterns") {
+            self.dangerousCommandProtectedProcessPatterns = patterns
+        } else {
+            self.dangerousCommandProtectedProcessPatterns = Self.defaultDangerousProtectedProcessPatterns
+        }
         self.dangerousOutputHighlightIdleDelayMs = defaults.object(forKey: Keys.dangerousOutputHighlightIdleDelayMs) as? Int ?? 500
         self.dangerousOutputHighlightMaxIntervalMs = defaults.object(forKey: Keys.dangerousOutputHighlightMaxIntervalMs) as? Int ?? 2000
         self.dangerousOutputHighlightLowPowerEnabled = defaults.object(forKey: Keys.dangerousOutputHighlightLowPowerEnabled) as? Bool ?? false
@@ -2928,6 +3008,9 @@ final class FeatureSettings {
         var isDangerousCommandHighlightEnabled: Bool?
         var dangerousCommandHighlightScope: String?
         var dangerousCommandPatterns: [String]?
+        var dangerousCommandProtectChau7Enabled: Bool?
+        var dangerousCommandProtectChau7Level: String?
+        var dangerousCommandProtectedProcessPatterns: [String]?
         var dangerousOutputHighlightIdleDelayMs: Int?
         var dangerousOutputHighlightMaxIntervalMs: Int?
         var dangerousOutputHighlightLowPowerEnabled: Bool?
@@ -3039,6 +3122,9 @@ final class FeatureSettings {
             isDangerousCommandHighlightEnabled: dangerousCommandHighlightScope != .none,
             dangerousCommandHighlightScope: dangerousCommandHighlightScope.rawValue,
             dangerousCommandPatterns: dangerousCommandPatterns,
+            dangerousCommandProtectChau7Enabled: dangerousCommandProtectChau7Enabled,
+            dangerousCommandProtectChau7Level: dangerousCommandProtectChau7Level.rawValue,
+            dangerousCommandProtectedProcessPatterns: dangerousCommandProtectedProcessPatterns,
             dangerousOutputHighlightIdleDelayMs: dangerousOutputHighlightIdleDelayMs,
             dangerousOutputHighlightMaxIntervalMs: dangerousOutputHighlightMaxIntervalMs,
             dangerousOutputHighlightLowPowerEnabled: dangerousOutputHighlightLowPowerEnabled,
@@ -3189,6 +3275,14 @@ final class FeatureSettings {
             dangerousCommandHighlightScope = .allOutputs
         }
         dangerousCommandPatterns = imported.dangerousCommandPatterns ?? Self.defaultDangerousCommandPatterns
+        dangerousCommandProtectChau7Enabled = imported.dangerousCommandProtectChau7Enabled ?? true
+        if let raw = imported.dangerousCommandProtectChau7Level,
+           let level = DangerousCommandProtectionLevel(rawValue: raw) {
+            dangerousCommandProtectChau7Level = level
+        } else {
+            dangerousCommandProtectChau7Level = .blocking
+        }
+        dangerousCommandProtectedProcessPatterns = imported.dangerousCommandProtectedProcessPatterns ?? Self.defaultDangerousProtectedProcessPatterns
         if let idleDelay = imported.dangerousOutputHighlightIdleDelayMs {
             dangerousOutputHighlightIdleDelayMs = idleDelay
         }
@@ -3341,6 +3435,9 @@ final class FeatureSettings {
         bellRateLimitSeconds = 0.1
         dangerousCommandHighlightScope = .allOutputs
         dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
+        dangerousCommandProtectChau7Enabled = true
+        dangerousCommandProtectChau7Level = .blocking
+        dangerousCommandProtectedProcessPatterns = Self.defaultDangerousProtectedProcessPatterns
         dangerousOutputHighlightIdleDelayMs = 500
         dangerousOutputHighlightMaxIntervalMs = 2000
         dangerousOutputHighlightLowPowerEnabled = false
@@ -3459,6 +3556,9 @@ final class FeatureSettings {
         bellRateLimitSeconds = 0.1
         dangerousCommandHighlightScope = .allOutputs
         dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
+        dangerousCommandProtectChau7Enabled = true
+        dangerousCommandProtectChau7Level = .blocking
+        dangerousCommandProtectedProcessPatterns = Self.defaultDangerousProtectedProcessPatterns
         dangerousOutputHighlightIdleDelayMs = 500
         dangerousOutputHighlightMaxIntervalMs = 2000
         dangerousOutputHighlightLowPowerEnabled = false

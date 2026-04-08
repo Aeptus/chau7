@@ -16,12 +16,19 @@ struct DangerousCommandSettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
     @State private var newPattern = ""
     @State private var newBlockCommand = ""
+    @State private var newProtectedProcessPattern = ""
     @State private var showResetConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Master toggle
             masterToggleSection
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // Built-in protections
+            builtInProtectionsSection
 
             Divider()
                 .padding(.vertical, 8)
@@ -79,6 +86,85 @@ struct DangerousCommandSettingsView: View {
                 ],
                 disabled: !guard_.isEnabled
             )
+        }
+    }
+
+    // MARK: - Built-in Protections
+
+    private var builtInProtectionsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SettingsSectionHeader(L("settings.dangerousGuard.builtIn", "Built-in Protections"), icon: "lock.shield")
+
+            SettingsToggle(
+                label: L("settings.dangerousGuard.protectChau7", "Protect Chau7"),
+                help: L("settings.dangerousGuard.protectChau7.help", "Detect commands that would terminate Chau7 or its managed helper processes"),
+                isOn: $settings.dangerousCommandProtectChau7Enabled
+            )
+
+            Text(L(
+                "settings.dangerousGuard.protectChau7.description",
+                "This preset only targets self-harming commands such as killing the current Chau7-managed shell, `killall Chau7`, or quitting Chau7 via AppleScript. Regular `kill` commands remain available."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            SettingsPicker(
+                label: L("settings.dangerousGuard.protectChau7.level", "Response"),
+                help: L("settings.dangerousGuard.protectChau7.level.help", "How Chau7 should react when a self-harming command is detected"),
+                selection: $settings.dangerousCommandProtectChau7Level,
+                options: [
+                    (value: DangerousCommandProtectionLevel.verboseLogging, label: L("settings.dangerousGuard.level.verboseLogging", "Verbose Logging")),
+                    (value: DangerousCommandProtectionLevel.warning, label: L("settings.dangerousGuard.level.warning", "Warning")),
+                    (value: DangerousCommandProtectionLevel.blocking, label: L("settings.dangerousGuard.level.blocking", "Blocking"))
+                ],
+                disabled: !settings.dangerousCommandProtectChau7Enabled
+            )
+
+            SettingsRow(L("settings.dangerousGuard.protectChau7.targets", "Protected Targets")) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(settings.dangerousCommandProtectedProcessPatterns.indices, id: \.self) { index in
+                        HStack(spacing: 8) {
+                            TextField(
+                                L("settings.dangerousGuard.protectChau7.targets.placeholder", "Process pattern"),
+                                text: Binding(
+                                    get: { settings.dangerousCommandProtectedProcessPatterns[index] },
+                                    set: { settings.dangerousCommandProtectedProcessPatterns[index] = $0 }
+                                )
+                            )
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 240)
+                            .font(.system(.caption, design: .monospaced))
+
+                            Button {
+                                settings.dangerousCommandProtectedProcessPatterns.remove(at: index)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.borderless)
+                            .help(L("settings.dangerousGuard.patterns.remove", "Remove pattern"))
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        TextField(
+                            L("settings.dangerousGuard.protectChau7.targets.placeholder", "Process pattern"),
+                            text: $newProtectedProcessPattern
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 240)
+                        .font(.system(.caption, design: .monospaced))
+                        .onSubmit { addProtectedProcessPattern() }
+
+                        Button(L("settings.dangerousGuard.patterns.add", "Add")) {
+                            addProtectedProcessPattern()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(newProtectedProcessPattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
         }
     }
 
@@ -289,6 +375,13 @@ struct DangerousCommandSettingsView: View {
         guard !trimmed.isEmpty else { return }
         settings.dangerousCommandPatterns.append(trimmed)
         newPattern = ""
+    }
+
+    private func addProtectedProcessPattern() {
+        let trimmed = newProtectedProcessPattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        settings.dangerousCommandProtectedProcessPatterns.append(trimmed)
+        newProtectedProcessPattern = ""
     }
 
     private func addToBlockList() {

@@ -18,19 +18,22 @@ public struct MCPTabContext: Sendable {
     public let sshHost: String?
     public let processes: [String]?
     public let environment: [String: String]?
+    public let shellPID: Int32?
 
     public init(
         directory: String? = nil,
         gitBranch: String? = nil,
         sshHost: String? = nil,
         processes: [String]? = nil,
-        environment: [String: String]? = nil
+        environment: [String: String]? = nil,
+        shellPID: Int32? = nil
     ) {
         self.directory = directory
         self.gitBranch = gitBranch
         self.sshHost = sshHost
         self.processes = processes
         self.environment = environment
+        self.shellPID = shellPID
     }
 }
 

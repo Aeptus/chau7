@@ -936,11 +936,12 @@ final class TerminalControlService {
 
     /// Dual-path command approval: shows a three-option NSAlert on Mac AND sends
     /// request to iOS. First response (Mac or iOS) wins. Must be called on main thread.
-    private func requestCommandApproval(command: String, flaggedCommand: String, permissions: ResolvedPermissions) -> MCPApprovalResult {
+    private func requestCommandApproval(command: String, flaggedCommand: String, reason: String, permissions: ResolvedPermissions) -> MCPApprovalResult {
         let requestID = UUID().uuidString
         let sourceInfo = permissions.matchedProfile != nil
             ? "Permissions source: profile \"\(permissions.matchedProfile!.name)\""
             : "Permissions source: global settings"
+        let contextNote = "\(reason)\n\n\(sourceInfo)"
 
         // Send approval request to iOS via RemoteControlManager
         let payload = ApprovalRequestPayload(
@@ -954,7 +955,7 @@ final class TerminalControlService {
             branchName: nil,
             currentDirectory: nil,
             recentCommand: nil,
-            contextNote: sourceInfo,
+            contextNote: contextNote,
             sessionID: nil
         )
         if let data = try? JSONEncoder().encode(payload) {
@@ -966,7 +967,7 @@ final class TerminalControlService {
         // Show local alert with three options
         let alert = NSAlert()
         alert.messageText = L("mcp.approval.commandTitle", "MCP Command Approval")
-        alert.informativeText = String(format: L("mcp.approval.commandMessage", "An MCP client wants to execute:\n\n%@\n\n%@"), command, sourceInfo)
+        alert.informativeText = String(format: L("mcp.approval.commandMessage", "An MCP client wants to execute:\n\n%@\n\n%@"), command, contextNote)
         alert.alertStyle = .warning
 
         // Buttons: Deny (default, safest), Allow Once, Always Allow
@@ -1023,9 +1024,9 @@ final class TerminalControlService {
         case .blocked(let cmd, let reason):
             Log.info("MCP: blocked '\(cmd)' in \(context) (\(reason))")
             return jsonError("Command '\(cmd)' was blocked: \(reason).")
-        case .needsApproval(let cmd):
+        case .needsApproval(let cmd, let reason):
             let result = onMain {
-                self.requestCommandApproval(command: fullInput, flaggedCommand: cmd, permissions: permissions)
+                self.requestCommandApproval(command: fullInput, flaggedCommand: cmd, reason: reason, permissions: permissions)
             }
             switch result {
             case .denied:

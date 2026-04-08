@@ -103,7 +103,10 @@ final class DangerousCommandGuardTests: XCTestCase {
 
     func testBlockListedCommand() {
         let guard_ = makeGuard(blockList: ["rm -rf /"])
-        XCTAssertEqual(guard_.check(commandLine: "rm -rf /"), .blocked)
+        XCTAssertEqual(
+            guard_.check(commandLine: "rm -rf /"),
+            .blocked(reason: "blocked by dangerous command guard block list")
+        )
     }
 
     func testBlockListTakesPrecedenceOverAllowList() {
@@ -111,7 +114,10 @@ final class DangerousCommandGuardTests: XCTestCase {
             allowList: ["rm -rf /"],
             blockList: ["rm -rf /"]
         )
-        XCTAssertEqual(guard_.check(commandLine: "rm -rf /"), .blocked)
+        XCTAssertEqual(
+            guard_.check(commandLine: "rm -rf /"),
+            .blocked(reason: "blocked by dangerous command guard block list")
+        )
     }
 
     func testBlockListDoesNotAffectSafeCommands() {
@@ -205,7 +211,10 @@ final class DangerousCommandGuardTests: XCTestCase {
         let guard_ = makeGuard()
         guard_.addToBlockList("danger-cmd")
         XCTAssertTrue(guard_.blockList.contains("danger-cmd"))
-        XCTAssertEqual(guard_.check(commandLine: "danger-cmd"), .blocked)
+        XCTAssertEqual(
+            guard_.check(commandLine: "danger-cmd"),
+            .blocked(reason: "blocked by dangerous command guard block list")
+        )
     }
 
     func testRemoveFromBlockList() {
@@ -236,6 +245,34 @@ final class DangerousCommandGuardTests: XCTestCase {
         let guard_ = makeGuard()
         guard_.addToBlockList("  ")
         XCTAssertTrue(guard_.blockList.isEmpty)
+    }
+
+    func testSelfProtectionBlocksProtectedKillByPID() {
+        let guard_ = makeGuard(patterns: [])
+        XCTAssertEqual(
+            guard_.check(
+                commandLine: "kill 4242",
+                selfProtectionContext: SelfProtectiveCommandContext(
+                    protectedPIDs: [4242],
+                    protectedProcessNames: ["chau7"]
+                )
+            ),
+            .blocked(reason: "would terminate a protected Chau7-managed process")
+        )
+    }
+
+    func testSelfProtectionAllowsUnrelatedKillByPID() {
+        let guard_ = makeGuard(patterns: [])
+        XCTAssertEqual(
+            guard_.check(
+                commandLine: "kill 4242",
+                selfProtectionContext: SelfProtectiveCommandContext(
+                    protectedPIDs: [9999],
+                    protectedProcessNames: ["chau7"]
+                )
+            ),
+            .safe
+        )
     }
 }
 #endif

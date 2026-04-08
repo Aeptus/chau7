@@ -30,5 +30,42 @@ final class MCPCommandFilterTests: XCTestCase {
             ["rm"]
         )
     }
+
+    func testBlocksProtectedKillByShellPID() {
+        let result = MCPCommandFilter.check(
+            "kill 51199",
+            context: MCPTabContext(
+                directory: "/Users/christophehenner/Downloads/Repositories/Chau7",
+                processes: ["zsh", "codex", "chau7-mcp-bridge"],
+                shellPID: 51199
+            )
+        )
+
+        switch result.verdict {
+        case .blocked(let command, let reason):
+            XCTAssertEqual(command, "kill 51199")
+            XCTAssertEqual(reason, "would terminate a protected Chau7-managed process")
+        default:
+            XCTFail("Expected self-protection block, got \(result.verdict)")
+        }
+    }
+
+    func testAllowsUnrelatedKillCommand() {
+        let result = MCPCommandFilter.check(
+            "kill 12345",
+            context: MCPTabContext(
+                directory: "/tmp",
+                processes: ["zsh", "node"],
+                shellPID: 51199
+            )
+        )
+
+        switch result.verdict {
+        case .allowed, .needsApproval(_, _):
+            break
+        case .blocked(_, _):
+            XCTFail("Expected unrelated kill to remain available")
+        }
+    }
 }
 #endif

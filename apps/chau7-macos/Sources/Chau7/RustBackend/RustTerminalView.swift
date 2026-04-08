@@ -1941,6 +1941,9 @@ final class RustTerminalView: NSView {
     /// Callback when user input is sent
     var onInput: ((String) -> Void)?
 
+    /// Callback before user-originated text is sent to the PTY.
+    var shouldAcceptUserText: ((String) -> Bool)?
+
     /// Callback when buffer content changes
     var onBufferChanged: (() -> Void)?
 
