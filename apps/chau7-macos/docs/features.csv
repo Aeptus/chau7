@@ -233,6 +233,7 @@ Accessibility,Runtime Language Switching,Change language without restarting the 
 Scripting,JSON-RPC API,"Unix socket API for external automation — control tabs, run commands, query history, manage snippets",Shipped,Yes
 Scripting,Delegated Review Scripting API,"Scripting socket exposes start_review wait_review and get_review_result for commit-range and staged-diff delegated code review",Shipped,Yes
 Scripting,Pre-Commit Delegated Review Hook,"Repo-local Scripts/pre-commit-review hook reviews staged changes through Chau7, prints structured findings in terminal-friendly output, defaults to gpt-5.3-codex, and supports gate modes plus timeout/backend/model config via .chau7/pre-commit-review.conf",Shipped,Yes
+Scripting,Pre-Commit Review Socket Timeouts,"The pre-commit review client uses explicit Unix-socket timeouts so a stalled scripting server fails fast instead of hanging git commit",Shipped,No
 Scripting,Settings API,Query and modify settings programmatically from any language,Shipped,No
 Debugging,Data Explorer Refresh,Reopening the singleton Data Explorer window rebuilds its SwiftUI content so history and telemetry reload,Shipped,No
 Debugging,Session Explorer Metadata,Sessions Explorer rows derive provider and repo labels from the latest run for each session,Shipped,No

@@ -415,6 +415,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Review automation methods: `start_review`, `wait_review`, and `get_review_result` for delegated code review sessions.
 - `start_review` supports both commit-range reviews and staged-diff reviews with explicit staged file lists.
 - Repo-local pre-commit review automation via `Scripts/pre-commit-review`, which talks to the scripting socket, launches a delegated review, waits for a structured result, and prints findings in hook-friendly terminal output.
+- The pre-commit review client applies explicit socket timeouts so a stalled scripting server fails fast instead of hanging the entire commit hook.
 - Per-repo pre-commit review policy via `.chau7/pre-commit-review.conf` with gate modes (`off`, `advisory`, `high`, `any`), timeout, backend, and model selection. The shipped default reviewer model is `gpt-5.3-codex`.
 
 ### Debugging

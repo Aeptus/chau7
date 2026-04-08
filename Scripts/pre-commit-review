@@ -13,6 +13,7 @@ DEFAULT_GATE = "advisory"
 DEFAULT_TIMEOUT_MS = 45_000
 DEFAULT_BACKEND = "codex"
 DEFAULT_MODEL = "gpt-5.3-codex"
+DEFAULT_SOCKET_TIMEOUT_SECONDS = 5.0
 SOCKET_PATH = Path.home() / "Library/Application Support/Chau7/scripting.sock"
 DEFAULT_CONFIG_NAME = ".chau7/pre-commit-review.conf"
 CHAU7_BUNDLE_ID = "com.aeptus.Chau7"
@@ -150,6 +151,14 @@ def staged_diff(root: Path, files: list[str]) -> str:
     return output.strip()
 
 
+def socket_timeout_seconds(method: str, params: dict[str, Any]) -> float:
+    if method == "wait_review":
+        timeout_ms = params.get("timeout_ms")
+        if isinstance(timeout_ms, int):
+            return max(DEFAULT_SOCKET_TIMEOUT_SECONDS, (timeout_ms / 1000.0) + 5.0)
+    return DEFAULT_SOCKET_TIMEOUT_SECONDS
+
+
 def socket_call(method: str, params: dict[str, Any]) -> dict[str, Any]:
     if not SOCKET_PATH.exists():
         raise FileNotFoundError(f"scripting socket not found at {SOCKET_PATH}")
@@ -161,6 +170,7 @@ def socket_call(method: str, params: dict[str, Any]) -> dict[str, Any]:
     }
 
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(socket_timeout_seconds(method, params))
         client.connect(str(SOCKET_PATH))
         payload = json.dumps(request, sort_keys=True).encode("utf-8") + b"\n"
         client.sendall(payload)
@@ -222,6 +232,11 @@ def describe_scripting_unavailable(exc: Exception) -> str:
         return (
             f"unable to reach Chau7 scripting API ({exc}); the socket exists but no server is accepting "
             "connections; Chau7 may have left behind a stale socket or the scripting server failed to start; skipping"
+        )
+    if isinstance(exc, TimeoutError):
+        return (
+            f"unable to reach Chau7 scripting API ({exc}); the scripting socket did not respond before the client timeout; "
+            "skipping"
         )
     if isinstance(exc, PermissionError):
         return (
@@ -314,7 +329,7 @@ def main() -> int:
                 "model": model,
             },
         )
-    except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
+    except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
         print_skip(describe_scripting_unavailable(exc))
         return 0
 
@@ -327,12 +342,20 @@ def main() -> int:
         print_skip("review session did not return a session_id; skipping")
         return 0
 
-    wait_response = socket_call("wait_review", {"session_id": session_id, "timeout_ms": timeout_ms})
+    try:
+        wait_response = socket_call("wait_review", {"session_id": session_id, "timeout_ms": timeout_ms})
+    except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+        print_skip(describe_scripting_unavailable(exc))
+        return 0
     if wait_response.get("timed_out") is True:
         print_skip(f"review timed out after {timeout_ms}ms; skipping")
         return 0
 
-    result_response = socket_call("get_review_result", {"session_id": session_id})
+    try:
+        result_response = socket_call("get_review_result", {"session_id": session_id})
+    except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+        print_skip(describe_scripting_unavailable(exc))
+        return 0
     if "error" in result_response:
         print_skip(f"review did not produce a result ({result_response['error']}); skipping")
         return 0
