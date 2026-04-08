@@ -42,7 +42,16 @@ Use those for local verification. Keep `./Scripts/build-app.sh`, `./Scripts/buil
 
 For repo-wide doc ownership and canonical entry points, see [../../docs/README.md](../../docs/README.md).
 
-## Install (build + run)
+## Install (pre-built)
+
+```bash
+brew tap aeptus/chau7
+brew install --cask chau7
+```
+
+Or grab the DMG from the [latest release](https://github.com/aeptus/chau7/releases/latest).
+
+## Build from source
 
 All commands below assume you are in `apps/chau7-macos`.
 

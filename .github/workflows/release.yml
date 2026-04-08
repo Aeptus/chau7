@@ -12,8 +12,15 @@ jobs:
   build:
     name: Build and Release
     runs-on: macos-15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha256: ${{ steps.sha256.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Parse version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Swift version
         run: swift --version
@@ -44,9 +51,99 @@ jobs:
             echo "No dist script found, skipping DMG"
           fi
 
+      - name: Compute DMG SHA256
+        id: sha256
+        working-directory: apps/chau7-macos
+        run: |
+          DMG_FILE=$(ls dist/*.dmg 2>/dev/null | head -1)
+          if [ -n "$DMG_FILE" ]; then
+            SHA=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')
+            echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+            echo "Computed SHA256: $SHA"
+          fi
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          NOTES=$(./Scripts/extract-changelog "${{ steps.version.outputs.version }}")
+          if [ -z "$NOTES" ]; then
+            NOTES="See [CHANGELOG](https://github.com/aeptus/chau7/blob/main/apps/chau7-macos/docs/CHANGELOG.md) for details."
+          fi
+          # Write to file to avoid shell quoting issues in multiline output
+          echo "$NOTES" > /tmp/release-notes.md
+
+      - name: Build release body
+        run: |
+          cat > /tmp/release-body.md << 'HEADER'
+          ## What's Changed
+
+          HEADER
+          cat /tmp/release-notes.md >> /tmp/release-body.md
+          cat >> /tmp/release-body.md << 'FOOTER'
+
+          ## Install
+
+          ```bash
+          brew tap aeptus/chau7
+          brew install --cask chau7
+          ```
+
+          Or download **Chau7-AppleSilicon.dmg** from the assets below.
+
+          > Ad-hoc signed, not notarized. First launch may require: right-click Chau7.app, then Open.
+          FOOTER
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: /tmp/release-body.md
           files: |
             apps/chau7-macos/dist/*.dmg
+
+  update-homebrew-tap:
+    name: Update Homebrew Tap
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ needs.build.outputs.sha256 != '' && secrets.HOMEBREW_TAP_TOKEN != '' }}
+    steps:
+      - name: Checkout tap repo
+        uses: actions/checkout@v6
+        with:
+          repository: aeptus/homebrew-chau7
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Update cask formula
+        run: |
+          mkdir -p tap/Casks
+          cat > tap/Casks/chau7.rb << CASK
+          cask "chau7" do
+            version "${{ needs.build.outputs.version }}"
+            sha256 "${{ needs.build.outputs.sha256 }}"
+
+            url "https://github.com/aeptus/chau7/releases/download/v#{version}/Chau7-AppleSilicon.dmg"
+            name "Chau7"
+            desc "See your coding agents, know what they cost, steer them from the outside"
+            homepage "https://chau7.sh"
+
+            depends_on macos: ">= :sonoma"
+            depends_on arch: :arm64
+
+            app "Chau7.app"
+
+            zap trash: [
+              "~/.chau7",
+              "~/Library/Logs/Chau7.log",
+              "~/Library/Logs/Chau7",
+            ]
+          end
+          CASK
+
+      - name: Commit and push
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/chau7.rb
+          git commit -m "Update chau7 to ${{ needs.build.outputs.version }}"
+          git push

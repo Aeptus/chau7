@@ -51,6 +51,15 @@ Scripts/                    # Repo-level CI and build orchestration
 - [Feature inventory](apps/chau7-macos/docs/FEATURES.md)
 - [Documentation map](docs/README.md)
 
+## Install
+
+```bash
+brew tap aeptus/chau7
+brew install --cask chau7
+```
+
+Or grab the DMG from the [latest release](https://github.com/aeptus/chau7/releases/latest). Ad-hoc signed, not notarized yet. First launch may require: right-click Chau7.app, then Open.
+
 ## Build
 
 The fast way (knit the sock, wear the sock):
