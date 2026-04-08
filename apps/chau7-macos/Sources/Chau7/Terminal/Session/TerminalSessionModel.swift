@@ -1106,9 +1106,9 @@ final class TerminalSessionModel {
         terminationStateQueue.sync {
             sigtermSentAt = Date()
         }
-        Log.warn("Shell process group survived SIGINT; sending SIGTERM (pid=\(currentPID))")
+        let diagnostics = terminationDiagnosticsSummary(stage: "sigterm", shellPID: currentPID)
+        Log.warn("Shell process group survived SIGINT; sending SIGTERM (pid=\(currentPID)) \(diagnostics)")
         sendTerminationSignal(SIGTERM, toShellPID: currentPID)
-        logTerminationDiagnostics(stage: "sigterm", shellPID: currentPID)
 
         // Stage 3: SIGKILL after 3s more — unconditional kill
         let hardKill = DispatchWorkItem { [weak self] in
@@ -1128,12 +1128,12 @@ final class TerminalSessionModel {
         let currentPID = existingRustTerminalView?.shellPid ?? 0
         guard currentPID == expectedPID, currentPID > 0 else { return }
 
-        logTerminationDiagnostics(stage: "sigkill", shellPID: currentPID)
-        Log.error("Shell process group still alive after SIGINT+SIGTERM; sending SIGKILL (pid=\(currentPID))")
+        let diagnostics = terminationDiagnosticsSummary(stage: "sigkill", shellPID: currentPID)
+        Log.error("Shell process group still alive after SIGINT+SIGTERM; sending SIGKILL (pid=\(currentPID)) \(diagnostics)")
         sendTerminationSignal(SIGKILL, toShellPID: currentPID)
     }
 
-    private func logTerminationDiagnostics(stage: String, shellPID: pid_t) {
+    private func terminationDiagnosticsSummary(stage: String, shellPID: pid_t) -> String {
         let now = Date()
         let timing = terminationStateQueue.sync {
             (
@@ -1152,11 +1152,9 @@ final class TerminalSessionModel {
             "session_open=\(aiLogSession != nil)"
         ].joined(separator: ",")
 
-        Log.warn(
-            "Shell termination diagnostics stage=\(stage) title='\(title)' pid=\(shellPID) " +
-                "close_requested_ms=\(closeMs) sigint_ms=\(sigintMs) sigterm_ms=\(sigtermMs) " +
-                "pty={\(ptyState)} process_tree=\(processTree)"
-        )
+        return "diagnostics={stage=\(stage) title='\(title)' pid=\(shellPID) " +
+            "close_requested_ms=\(closeMs) sigint_ms=\(sigintMs) sigterm_ms=\(sigtermMs) " +
+            "pty={\(ptyState)} process_tree=\(processTree)}"
     }
 
     private func terminationProcessTreeSummary(shellPID: pid_t) -> String {
