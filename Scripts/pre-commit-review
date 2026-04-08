@@ -184,12 +184,19 @@ def print_skip(reason: str) -> None:
 
 def chau7_is_running() -> bool:
     result = subprocess.run(
-        ["pgrep", "-x", "Chau7"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        ["ps", "-axo", "command="],
+        capture_output=True,
+        text=True,
         check=False,
     )
-    return result.returncode == 0
+    if result.returncode != 0:
+        return False
+
+    candidates = [
+        "/Applications/Chau7.app/Contents/MacOS/Chau7",
+        "/build/Chau7.app/Contents/MacOS/Chau7",
+    ]
+    return any(candidate in result.stdout for candidate in candidates)
 
 
 def read_scripting_flag() -> bool | None:
@@ -211,6 +218,16 @@ def read_scripting_flag() -> bool | None:
 
 
 def describe_scripting_unavailable(exc: Exception) -> str:
+    if isinstance(exc, ConnectionRefusedError):
+        return (
+            f"unable to reach Chau7 scripting API ({exc}); the socket exists but no server is accepting "
+            "connections; Chau7 may have left behind a stale socket or the scripting server failed to start; skipping"
+        )
+    if isinstance(exc, PermissionError):
+        return (
+            f"unable to reach Chau7 scripting API ({exc}); the socket exists but this process was denied access; "
+            "check local macOS permissions or sandboxing; skipping"
+        )
     if not chau7_is_running():
         return f"unable to reach Chau7 scripting API ({exc}); Chau7 is not running; skipping"
 
