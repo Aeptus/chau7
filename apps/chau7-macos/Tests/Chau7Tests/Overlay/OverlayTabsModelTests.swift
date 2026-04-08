@@ -277,6 +277,19 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.tabs[1].repoGroupID, groupID)
     }
 
+    func testNewTabAtDirectoryFromGroupedSelectionDoesNotInheritDifferentRepoGroup() {
+        model.newTab()
+        let groupID = "/tmp/chau7-grouped-dir"
+        model.tabs[0].repoGroupID = groupID
+        model.selectTab(id: model.tabs[0].id)
+
+        model.newTab(at: "/tmp/chau7-website")
+
+        XCTAssertEqual(model.tabs[1].id, model.selectedTabID)
+        XCTAssertNil(model.tabs[1].repoGroupID)
+        XCTAssertFalse(model.tabs[1].hasInheritedRepoGroup)
+    }
+
     func testHandleTabBarSelectionDismissesDashboardForCurrentTab() {
         let selectedTabID = model.selectedTabID
         model.activeDashboardGroupID = "/tmp/chau7-dashboard"

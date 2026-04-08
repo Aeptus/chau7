@@ -53,10 +53,14 @@ extension OverlayTabsModel {
             tab.color = colors[tabs.count % colors.count]
         }
         tab.stampOwnerTabID()
-        if inherit, let directory = inheritedStartDirectory() {
-            tab.session?.updateCurrentDirectory(directory)
+        let startDirectory = inherit ? inheritedStartDirectory() : nil
+        if let startDirectory {
+            tab.session?.updateCurrentDirectory(startDirectory)
         }
-        let inheritedRepoGroupID = inherit ? selectedTab?.repoGroupID : nil
+        let inheritedRepoGroupID = RepoGroupInheritance.inheritedGroupID(
+            selectedRepoGroupID: inherit ? selectedTab?.repoGroupID : nil,
+            startDirectory: startDirectory
+        )
         tab.repoGroupID = inheritedRepoGroupID
         tab.hasInheritedRepoGroup = inheritedRepoGroupID != nil
 
@@ -115,7 +119,10 @@ extension OverlayTabsModel {
         // Set the starting directory for the new tab (triggers git status refresh)
         tab.session?.updateCurrentDirectory(directory)
         tab.session?.markCTOFlagDeferred(mode: FeatureSettings.shared.tokenOptimizationMode)
-        let inheritedRepoGroupID = selectedTab?.repoGroupID
+        let inheritedRepoGroupID = RepoGroupInheritance.inheritedGroupID(
+            selectedRepoGroupID: selectedTab?.repoGroupID,
+            startDirectory: directory
+        )
         tab.repoGroupID = inheritedRepoGroupID
         tab.hasInheritedRepoGroup = inheritedRepoGroupID != nil
 
