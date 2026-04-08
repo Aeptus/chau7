@@ -268,6 +268,7 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertEqual(response["purpose"] as? String, "code_review")
         XCTAssertEqual(session.config.purpose, "code_review")
         XCTAssertEqual(session.config.taskMetadata["review_mode"], "staged_diff")
+        XCTAssertEqual(session.config.taskMetadata["session_binding"], "isolated")
         XCTAssertEqual(session.config.policy.maxTurns, 1)
         XCTAssertFalse(session.config.policy.allowChildDelegation)
     }

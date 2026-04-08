@@ -115,6 +115,57 @@ final class TelemetryQueryServiceTests: XCTestCase {
         ])
     }
 
+    func testUpdateSessionIDSkipsIsolatedCodeReviewRuns() {
+        let tabID = "tab-\(UUID().uuidString)"
+        let repoPath = "/tmp/telemetry-isolated-\(UUID().uuidString)"
+
+        TelemetryRecorder.shared.runStarted(
+            tabID: tabID,
+            provider: "codex",
+            cwd: repoPath,
+            repoPath: repoPath,
+            metadata: [
+                "runtime_purpose": "code_review",
+                "session_binding": "isolated"
+            ]
+        )
+        defer {
+            TelemetryRecorder.shared.runEnded(tabID: tabID, exitStatus: 0)
+        }
+
+        TelemetryRecorder.shared.updateSessionID(provider: "codex", cwd: repoPath, sessionID: "wrong-session")
+
+        XCTAssertNil(TelemetryRecorder.shared.activeRunForTab(tabID)?.sessionID)
+    }
+
+    func testUpdateSessionIDSkipsAmbiguousProviderAndDirectoryMatches() {
+        let repoPath = "/tmp/telemetry-ambiguous-\(UUID().uuidString)"
+        let firstTabID = "tab-\(UUID().uuidString)"
+        let secondTabID = "tab-\(UUID().uuidString)"
+
+        TelemetryRecorder.shared.runStarted(
+            tabID: firstTabID,
+            provider: "codex",
+            cwd: repoPath,
+            repoPath: repoPath
+        )
+        TelemetryRecorder.shared.runStarted(
+            tabID: secondTabID,
+            provider: "codex",
+            cwd: repoPath,
+            repoPath: repoPath
+        )
+        defer {
+            TelemetryRecorder.shared.runEnded(tabID: firstTabID, exitStatus: 0)
+            TelemetryRecorder.shared.runEnded(tabID: secondTabID, exitStatus: 0)
+        }
+
+        TelemetryRecorder.shared.updateSessionID(provider: "codex", cwd: repoPath, sessionID: "ambiguous-session")
+
+        XCTAssertNil(TelemetryRecorder.shared.activeRunForTab(firstTabID)?.sessionID)
+        XCTAssertNil(TelemetryRecorder.shared.activeRunForTab(secondTabID)?.sessionID)
+    }
+
     private func parseJSONArray(_ text: String) -> [[String: Any]]? {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {

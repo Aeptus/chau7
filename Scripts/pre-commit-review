@@ -301,6 +301,10 @@ def has_blocking_findings(gate: str, findings: list[dict[str, Any]]) -> bool:
     return False
 
 
+def review_grace_timeout_ms(timeout_ms: int) -> int:
+    return max(5_000, min(15_000, timeout_ms // 3))
+
+
 def main() -> int:
     args = parse_args()
 
@@ -363,40 +367,49 @@ def main() -> int:
         try:
             wait_response = socket_call("wait_review", {"session_id": session_id, "timeout_ms": timeout_ms})
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-            cleanup_force = True
             print_skip(describe_scripting_unavailable(exc))
             return 0
         if wait_response.get("timed_out") is True:
-            cleanup_force = True
-            print_skip(f"review timed out after {timeout_ms}ms; skipping")
-            return 0
+            state = str(wait_response.get("state", "")).lower()
+            current_turn_id = wait_response.get("current_turn_id")
+            if state in {"busy", "awaitingapproval"} or isinstance(current_turn_id, str):
+                grace_ms = review_grace_timeout_ms(timeout_ms)
+                try:
+                    wait_response = socket_call("wait_review", {"session_id": session_id, "timeout_ms": grace_ms})
+                except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+                    print_skip(describe_scripting_unavailable(exc))
+                    return 0
+            if wait_response.get("timed_out") is True:
+                state = str(wait_response.get("state", "")).lower()
+                if state == "starting":
+                    print_skip(
+                        f"review startup timed out after {timeout_ms}ms before the reviewer became ready; skipping"
+                    )
+                else:
+                    print_skip(f"review timed out after {timeout_ms}ms; skipping")
+                return 0
 
         try:
             result_response = socket_call("get_review_result", {"session_id": session_id})
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-            cleanup_force = True
             print_skip(describe_scripting_unavailable(exc))
             return 0
         if "error" in result_response:
-            cleanup_force = True
             print_skip(f"review did not produce a result ({result_response['error']}); skipping")
             return 0
 
         status = str(result_response.get("status", "missing")).lower()
         if status != "available":
-            cleanup_force = True
             print_skip(f"structured review result unavailable (status={status}); skipping")
             return 0
 
         value = result_response.get("value")
         if not isinstance(value, dict):
-            cleanup_force = True
             print_skip("review result payload was malformed; skipping")
             return 0
 
         findings = value.get("findings")
         if not isinstance(findings, list):
-            cleanup_force = True
             print_skip("review findings payload was malformed; skipping")
             return 0
 

@@ -210,21 +210,27 @@ final class TelemetryRecorder {
     func updateSessionID(provider: String, cwd: String, sessionID: String) {
         lock.lock()
         let normalizedProvider = provider.lowercased()
-        let match = inProgressRuns.first { _, run in
+        let matches = inProgressRuns.values.filter { run in
             guard run.provider.lowercased().contains(normalizedProvider) else { return false }
             guard run.sessionID == nil || run.sessionID?.isEmpty == true else { return false }
+            guard run.metadata["session_binding"]?.lowercased() != "isolated" else { return false }
             // Flexible cwd match: exact, parent, or child directory
             let a = run.cwd
             let b = cwd
             return a == b || a.hasPrefix(b + "/") || b.hasPrefix(a + "/")
         }
-        if let (_, run) = match {
+        if matches.count == 1, let run = matches.first {
             inProgressRuns[run.id]?.sessionID = sessionID
             lock.unlock()
             store.updateRunSessionID(run.id, sessionID: sessionID)
             Log.info("TelemetryRecorder: session ID updated via cwd match: \(sessionID.prefix(8)) → run \(run.id.prefix(8))")
         } else {
             lock.unlock()
+            if matches.count > 1 {
+                Log.info(
+                    "TelemetryRecorder: skipped session ID update via cwd match for provider=\(provider) cwd=\(cwd) because \(matches.count) runs matched"
+                )
+            }
         }
     }
 
