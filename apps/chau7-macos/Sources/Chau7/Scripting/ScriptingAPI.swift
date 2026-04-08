@@ -45,6 +45,8 @@ final class ScriptingAPI {
     private var clientHandlers: [Int32: ScriptingClientHandler] = [:]
     @ObservationIgnored
     private let socketQueue = DispatchQueue(label: "com.chau7.scripting", qos: .userInitiated)
+    @ObservationIgnored
+    private var healthCheckSource: DispatchSourceTimer?
 
     /// Timestamp when the server was started, used for uptime calculation.
     @ObservationIgnored
@@ -119,8 +121,11 @@ final class ScriptingAPI {
             Log.error("ScriptingAPI: listen failed: \(String(cString: strerror(errno)))")
             close(socketFD)
             socketFD = -1
+            unlink(path)
             return
         }
+
+        chmod(path, 0o600)
 
         // Capture fd by value so cancel handler closes the correct descriptor.
         let listeningFD = socketFD
@@ -133,6 +138,7 @@ final class ScriptingAPI {
             self?.socketFD = -1
         }
         listeningSource?.resume()
+        startHealthChecks()
 
         startTime = Date()
         isRunning = true
@@ -155,12 +161,47 @@ final class ScriptingAPI {
             close(socketFD)
             socketFD = -1
         }
+        healthCheckSource?.cancel()
+        healthCheckSource = nil
 
         unlink(socketPath)
         isRunning = false
         connectedClients = 0
         startTime = nil
         Log.info("ScriptingAPI: server stopped")
+    }
+
+    private func startHealthChecks() {
+        healthCheckSource?.cancel()
+        let source = DispatchSource.makeTimerSource(queue: .main)
+        source.schedule(deadline: .now() + 15, repeating: 15)
+        source.setEventHandler { [weak self] in
+            self?.ensureServerHealthy(reason: "periodic")
+        }
+        source.resume()
+        healthCheckSource = source
+    }
+
+    private func ensureServerHealthy(reason: String) {
+        let snapshot = LocalSocketServerHealthSnapshot(
+            expectedRunning: isEnabled,
+            isRunning: isRunning,
+            hasSocketDescriptor: socketFD >= 0,
+            hasAcceptSource: listeningSource != nil,
+            socketPathExists: FileManager.default.fileExists(atPath: socketPath)
+        )
+        guard LocalSocketServerHealth.needsRecovery(snapshot) else {
+            return
+        }
+
+        Log.warn(
+            "ScriptingAPI: unhealthy server detected reason=\(reason) running=\(snapshot.isRunning) " +
+                "fd=\(snapshot.hasSocketDescriptor) source=\(snapshot.hasAcceptSource) path=\(snapshot.socketPathExists); restarting"
+        )
+        stopServer()
+        if isEnabled {
+            startServer()
+        }
     }
 
     // MARK: - Connection Handling
@@ -334,6 +375,17 @@ final class ScriptingAPI {
         snapshot["feature.scriptingAPI"] = defaults.bool(forKey: Self.featureFlagKey)
         snapshot["feature.persistentHistory"] = defaults.bool(forKey: "feature.persistentHistory")
         snapshot["history.maxRecords"] = defaults.integer(forKey: "history.maxRecords")
+        snapshot["scripting.socket_path"] = socketPath
+        snapshot["scripting.socket_exists"] = FileManager.default.fileExists(atPath: socketPath)
+        snapshot["scripting.socket_healthy"] = !LocalSocketServerHealth.needsRecovery(
+            LocalSocketServerHealthSnapshot(
+                expectedRunning: isEnabled,
+                isRunning: isRunning,
+                hasSocketDescriptor: socketFD >= 0,
+                hasAcceptSource: listeningSource != nil,
+                socketPathExists: FileManager.default.fileExists(atPath: socketPath)
+            )
+        )
         return ["result": snapshot]
     }
 
