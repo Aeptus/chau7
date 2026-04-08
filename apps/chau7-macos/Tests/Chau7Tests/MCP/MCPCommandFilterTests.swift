@@ -61,9 +61,9 @@ final class MCPCommandFilterTests: XCTestCase {
         )
 
         switch result.verdict {
-        case .allowed, .needsApproval(_, _):
+        case .allowed, .needsApproval:
             break
-        case .blocked(_, _):
+        case .blocked:
             XCTFail("Expected unrelated kill to remain available")
         }
     }

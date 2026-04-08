@@ -1988,6 +1988,9 @@
 "dangerousGuard.alert.cancel" = "Cancel";
 "dangerousGuard.alert.execute" = "Execute";
 "dangerousGuard.alert.title" = "Dangerous Command Detected";
+"dangerousGuard.blocked.body" = "Chau7 blocked this command because it would harm the app or its managed runtime.\n\n%@\n\nReason: %@";
+"dangerousGuard.blocked.dismiss" = "OK";
+"dangerousGuard.blocked.title" = "Command Blocked";
 "dangerousGuard.confirm.accessibility.cancel" = "Cancel command execution";
 "dangerousGuard.confirm.accessibility.dontShowAgain" = "Do not warn for this command again";
 "dangerousGuard.confirm.alwaysAllow" = "Always Allow";

@@ -1956,6 +1956,9 @@
 "dangerousGuard.alert.cancel" = "إلغاء";
 "dangerousGuard.alert.execute" = "تنفيذ";
 "dangerousGuard.alert.title" = "أمر خطير";
+"dangerousGuard.blocked.body" = "حظر Chau7 هذا الأمر لأنه قد يضر بالتطبيق أو ببيئة التشغيل المُدارة الخاصة به.\n\n%@\n\nالسبب: %@";
+"dangerousGuard.blocked.dismiss" = "حسنًا";
+"dangerousGuard.blocked.title" = "تم حظر الأمر";
 "dangerousGuard.confirm.accessibility.cancel" = "إلغاء الأمر الخطير";
 "dangerousGuard.confirm.accessibility.dontShowAgain" = "لا تظهر مرة أخرى لهذا الأمر";
 "dangerousGuard.confirm.alwaysAllow" = "السماح دائمًا";

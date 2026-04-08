@@ -294,6 +294,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 ### Command Safety
 
 - **Dangerous command guard** — intercepts `rm -rf`, `dd`, `mkfs`, etc. with confirmation.
+- **Protect Chau7** preset adds configurable `Verbose Logging`, `Warning`, and `Blocking` responses for self-harming commands that target Chau7 or its managed runtime.
 - Custom danger patterns via regex.
 - Visual highlighting of dangerous commands in output.
 

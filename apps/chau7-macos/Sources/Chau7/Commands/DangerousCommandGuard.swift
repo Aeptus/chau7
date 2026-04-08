@@ -217,6 +217,23 @@ final class DangerousCommandGuard {
         }
     }
 
+    /// Shows a blocking alert when a command is denied by policy.
+    /// Must be called on the main actor (which this class is isolated to).
+    func showBlockedAlert(command: String, reason: String) {
+        let alert = NSAlert()
+        alert.messageText = L("dangerousGuard.blocked.title", "Command Blocked")
+        alert.informativeText = L(
+            "dangerousGuard.blocked.body",
+            "Chau7 blocked this command because it would harm the app or its managed runtime.\n\n%@\n\nReason: %@",
+            command,
+            reason
+        )
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L("dangerousGuard.blocked.dismiss", "OK"))
+        _ = alert.runModal()
+        Log.warn("DangerousCommandGuard: blocked alert shown '\(command)' (\(reason))")
+    }
+
     // MARK: - List Management
 
     /// Adds a command to the allow list.

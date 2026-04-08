@@ -1956,6 +1956,9 @@
 "dangerousGuard.alert.cancel" = "ביטול";
 "dangerousGuard.alert.execute" = "הרץ";
 "dangerousGuard.alert.title" = "פקודה מסוכנת";
+"dangerousGuard.blocked.body" = "Chau7 חסם את הפקודה הזו כי היא עלולה לפגוע באפליקציה או בסביבת הריצה המנוהלת שלה.\n\n%@\n\nסיבה: %@";
+"dangerousGuard.blocked.dismiss" = "אישור";
+"dangerousGuard.blocked.title" = "הפקודה נחסמה";
 "dangerousGuard.confirm.accessibility.cancel" = "בטל פקודה מסוכנת";
 "dangerousGuard.confirm.accessibility.dontShowAgain" = "אל תציג שוב עבור פקודה זו";
 "dangerousGuard.confirm.alwaysAllow" = "אפשר תמיד";

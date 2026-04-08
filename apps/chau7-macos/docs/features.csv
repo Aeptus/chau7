@@ -279,6 +279,7 @@ API Analytics,TTFT Latency Tracking,"Time-to-first-token measured per API call v
 Safety,Unicode Homoglyph Detection,Flags Cyrillic/fullwidth lookalike characters in commands,Shipped,No
 Safety,Multiline Paste Protection,Flags pasted commands spanning multiple lines,Shipped,No
 Safety,Per-Directory Command Allowlist,Scope allowed dangerous commands to specific directories,Shipped,No
+Safety,Protect Chau7 Dangerous Command Preset,Adds logging/warning/blocking responses for self-harming commands that target Chau7 or its managed runtime,Shipped,No
 MCP Permissions,Audit-Only Mode,Allow execution but log unlisted commands for review,Shipped,No
 MCP Permissions,Per-Agent Profile Scoping,Restrict MCP profiles to specific AI agents via agentAllowlist,Shipped,No
 Clipboard,Clipboard Persistence,History persists across restarts via UserDefaults JSON,Shipped,No

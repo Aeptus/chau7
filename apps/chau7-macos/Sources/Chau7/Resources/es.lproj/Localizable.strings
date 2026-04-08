@@ -1987,6 +1987,9 @@
 "dangerousGuard.alert.cancel" = "Cancelar";
 "dangerousGuard.alert.execute" = "Ejecutar";
 "dangerousGuard.alert.title" = "Comando peligroso detectado";
+"dangerousGuard.blocked.body" = "Chau7 bloqueó este comando porque dañaría la app o su runtime gestionado.\n\n%@\n\nMotivo: %@";
+"dangerousGuard.blocked.dismiss" = "OK";
+"dangerousGuard.blocked.title" = "Comando bloqueado";
 "dangerousGuard.confirm.accessibility.cancel" = "Cancelar ejecución del comando";
 "dangerousGuard.confirm.accessibility.dontShowAgain" = "No volver a advertir sobre este comando";
 "dangerousGuard.confirm.alwaysAllow" = "Permitir siempre";
