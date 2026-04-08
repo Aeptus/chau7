@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Proxy Health Monitoring**: Dashboard now calls the proxy's existing (but unused) `/health` endpoint every 5th poll cycle and shows a warning triangle in the header when unhealthy.
 - **Dashboard Sheet Sizing**: Start Agent and Review Commits sheets now use adaptive widths (min/ideal/max) instead of hardcoded pixel values that broke on small displays.
 - **Timeline Pagination**: Dashboard timeline now shows a "Show more..." button when more than 50 events exist, instead of silently truncating.
+- **Bug Report Success Feedback**: The in-app issue reporter now formats the relay-returned issue number correctly in its success banner and falls back to a generic success message if no number is returned.
 - **Dashboard Accessibility**: Agent cards now have combined accessibility labels (backend, state, tokens). Batch action buttons have accessibility hints. Health indicator uses localized strings.
 - **Custom Pricing Documentation**: `~/.chau7/pricing.json` format is now documented with a JSON example in code comments. Malformed files now log a warning instead of being silently ignored.
 - **Telemetry Active-Run Queries**: `run_list` and `run_get` no longer duplicate active runs that were already inserted into SQLite at `runStarted`. MCP telemetry responses now consistently annotate `run_state` (`active` or `completed`) and `content_state` (`missing`, `partial`, `final`) so orchestrators can distinguish live partial data from finalized runs.

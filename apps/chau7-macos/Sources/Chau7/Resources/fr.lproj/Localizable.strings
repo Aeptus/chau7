@@ -1802,7 +1802,8 @@
 "bugReport.saveLocally" = "Enregistrer localement";
 "bugReport.submit" = "Soumettre";
 "bugReport.submitting" = "Soumission...";
-"bugReport.success" = "Issue #\\\\(issueNumber) envoyée";
+"bugReport.success" = "Issue n°%d envoyée";
+"bugReport.success.generic" = "Issue envoyée";
 "bugReport.tabHeader" = "Diagnostics de l'onglet";
 "bugReport.title" = "Signaler un problème";
 "bugReport.toggle.aiSession" = "Envoyer les infos de session IA";

@@ -1800,7 +1800,8 @@
 "bugReport.saveLocally" = "Save Locally";
 "bugReport.submit" = "Submit";
 "bugReport.submitting" = "Submitting...";
-"bugReport.success" = "Issue #\\(issueNumber) submitted";
+"bugReport.success" = "Issue #%d submitted";
+"bugReport.success.generic" = "Issue submitted";
 "bugReport.tabHeader" = "Tab-specific diagnostics";
 "bugReport.title" = "Report an Issue";
 "bugReport.toggle.aiSession" = "Send AI session info";

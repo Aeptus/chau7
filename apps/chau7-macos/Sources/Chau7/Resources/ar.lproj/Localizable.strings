@@ -1768,7 +1768,8 @@
 "bugReport.saveLocally" = "حفظ محليًا";
 "bugReport.submit" = "إرسال";
 "bugReport.submitting" = "جارٍ الإرسال...";
-"bugReport.success" = "تم إرسال المشكلة رقم \\\\(issueNumber)";
+"bugReport.success" = "تم إرسال المشكلة رقم %d";
+"bugReport.success.generic" = "تم إرسال المشكلة";
 "bugReport.tabHeader" = "تشخيصات علامة التبويب";
 "bugReport.title" = "الإبلاغ عن مشكلة";
 "bugReport.toggle.aiSession" = "إرسال معلومات جلسة الذكاء الاصطناعي";

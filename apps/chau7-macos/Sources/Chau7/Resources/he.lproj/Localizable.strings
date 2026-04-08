@@ -1768,7 +1768,8 @@
 "bugReport.saveLocally" = "שמור מקומית";
 "bugReport.submit" = "שלח";
 "bugReport.submitting" = "שולח...";
-"bugReport.success" = "הבעיה #\\\\(issueNumber) נשלחה";
+"bugReport.success" = "התקלה #%d נשלחה";
+"bugReport.success.generic" = "התקלה נשלחה";
 "bugReport.tabHeader" = "אבחון כרטיסייה";
 "bugReport.title" = "דווח על בעיה";
 "bugReport.toggle.aiSession" = "שלח מידע על הפעלת AI";

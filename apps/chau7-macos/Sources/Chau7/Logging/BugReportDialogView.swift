@@ -298,9 +298,15 @@ struct BugReportDialogView: View {
             if let issueNumber = draft.submitSuccess {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                Text(L("bugReport.success", "Issue #\(issueNumber) submitted"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.green)
+                Group {
+                    if issueNumber > 0 {
+                        Text(L("bugReport.success", "Issue #%d submitted", issueNumber))
+                    } else {
+                        Text(L("bugReport.success.generic", "Issue submitted"))
+                    }
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.green)
             }
 
             Spacer()

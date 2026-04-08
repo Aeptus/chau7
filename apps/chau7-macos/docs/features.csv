@@ -240,7 +240,7 @@ Debugging,Debug Console,"Cmd+Shift+D — live log viewer with State, Contexts, E
 Debugging,State Inspector,View live app state: tabs and sessions and models,Shipped,No
 Debugging,Feature Profiler,Per-feature timing metrics with os.signpost integration,Shipped,No
 Debugging,Structured Logging,"Category-based logging with correlation IDs (App, Tabs, Terminal, Render, etc.)",Shipped,No
-Debugging,Privacy-First Bug Report Dialog,"In-app issue reporter (⌥⌘I) with all sensitive data off by default, per-toggle tab pickers, live markdown preview, HTTPS-only private relay submission, tab title redaction, background history capture, and hardened rate limiting",Shipped,Yes
+Debugging,Privacy-First Bug Report Dialog,"In-app issue reporter (⌥⌘I) with all sensitive data off by default, per-toggle tab pickers, live markdown preview, HTTPS-only private relay submission, success banner with created issue number when available, tab title redaction, background history capture, and hardened rate limiting",Shipped,Yes
 Debugging,Issue Reporting Privacy Page,"GDPR-compliant sub-processor disclosure (Cloudflare, GitHub) with data categories, retention, legal basis (Art. 6(1)(f)), DPA links, and data subject rights",Shipped,Yes
 Debugging,Verbose & Trace Modes,CHAU7_VERBOSE=1 and CHAU7_TRACE=1 for deep diagnostics,Shipped,No
 Command Palette,Command Palette,Cmd+Shift+P for fuzzy-searchable command palette (VS Code style),Shipped,No
