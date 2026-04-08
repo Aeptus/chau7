@@ -315,6 +315,69 @@ final class RuntimeControlServiceTests: XCTestCase {
         XCTAssertEqual(waitJSON["timed_out"] as? Bool, true)
     }
 
+    func testRuntimeTurnWaitDispatchesDeferredInitialPromptOnceInteractiveBackendBecomesReady() throws {
+        let backendName = "mock-interactive-recover-\(UUID().uuidString)"
+        RuntimeControlService.registerBackend(name: backendName) { MockInteractiveBackend(name: backendName) }
+
+        var probeAttempts = 0
+        RuntimeControlService.shared.launchReadinessProbe = { _ in
+            probeAttempts += 1
+            if probeAttempts < 4 {
+                return RuntimeLaunchReadinessSnapshot(
+                    shellLoading: true,
+                    isAtPrompt: true,
+                    effectiveStatus: "idle",
+                    rawStatus: "idle",
+                    activeApp: nil,
+                    rawActiveApp: nil,
+                    aiProvider: nil,
+                    activeRunProvider: nil,
+                    processNames: []
+                )
+            }
+            return RuntimeLaunchReadinessSnapshot(
+                shellLoading: false,
+                isAtPrompt: false,
+                effectiveStatus: "running",
+                rawStatus: "idle",
+                activeApp: "MockInteractive",
+                rawActiveApp: "MockInteractive",
+                aiProvider: backendName,
+                activeRunProvider: backendName,
+                processNames: [backendName]
+            )
+        }
+
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": backendName,
+                "directory": "/tmp/runtime-recover-\(UUID().uuidString)",
+                "initial_prompt": "review this change"
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let sessionID = try XCTUnwrap(json["session_id"] as? String)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+
+        let waitResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_turn_wait",
+            arguments: [
+                "session_id": sessionID,
+                "timeout_ms": 1200
+            ]
+        )
+        let waitJSON = try XCTUnwrap(parseJSONObject(waitResponse))
+
+        XCTAssertEqual(waitJSON["timed_out"] as? Bool, true)
+        XCTAssertEqual(waitJSON["state"] as? String, "busy")
+        XCTAssertEqual(session.turnCount, 1)
+        XCTAssertEqual(session.state, .busy)
+        XCTAssertNil(session.pendingInitialPrompt)
+        XCTAssertGreaterThanOrEqual(probeAttempts, 4)
+    }
+
     func testRuntimeTurnResultReturnsCapturedStructuredPayload() throws {
         let response = RuntimeControlService.shared.handleToolCall(
             name: "runtime_session_create",

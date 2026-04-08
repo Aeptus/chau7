@@ -223,14 +223,17 @@ final class RuntimeControlService {
             _ = controlService.execInTab(tabID: tabID.uuidString, command: launchCmd)
             if backend.launchReadinessStrategy == .immediate {
                 sessionManager.markReady(sessionID: session.id)
-            } else if initialPrompt == nil {
+            } else {
                 scheduleBackendReadiness(session: session, attempt: 1)
             }
         }
 
         // Send initial prompt if provided — poll for readiness instead of fixed delay
         if let prompt = initialPrompt {
-            scheduleInitialPrompt(session: session, prompt: prompt, attempt: 1)
+            session.queueInitialPrompt(prompt)
+            if !dispatchPendingInitialPromptIfReady(session) {
+                scheduleInitialPrompt(session: session, attempt: 1)
+            }
         }
 
         Log.info("MCP runtime_session_create: session \(session.id) created (state=\(session.state.rawValue))")
@@ -238,15 +241,16 @@ final class RuntimeControlService {
     }
 
     /// Deliver initial_prompt with retry: waits for real backend readiness, not just session bookkeeping.
-    private func scheduleInitialPrompt(session: RuntimeSession, prompt: String, attempt: Int) {
-        let maxAttempts = 16
-        let delay = attempt <= 2 ? 0.3 : 0.5 // faster first checks, then slower
+    private func scheduleInitialPrompt(session: RuntimeSession, attempt: Int) {
+        let maxAttemptsBeforeSlowPolling = 16
+        let delay = readinessRetryDelay(forAttempt: attempt)
 
         DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
 
             if session.isTerminal {
                 Log.warn("MCP initial_prompt: session \(session.id) reached terminal state before prompt could be sent (state=\(session.state.rawValue))")
+                session.clearPendingInitialPrompt()
                 session.journal.append(
                     sessionID: session.id,
                     turnID: nil,
@@ -256,33 +260,27 @@ final class RuntimeControlService {
                 return
             }
 
-            if ensureSessionReadyForTurn(session) {
-                Log.info("MCP initial_prompt: sending to session \(session.id) (attempt \(attempt))")
-                let result = sendTurnInternal(session: session, prompt: prompt, context: nil)
-                if result.contains("\"error\"") {
-                    Log.warn("MCP initial_prompt: sendTurn failed — \(result)")
-                }
+            if dispatchPendingInitialPromptIfReady(session) {
                 return
             }
 
-            if attempt >= maxAttempts {
-                Log.warn("MCP initial_prompt: giving up after \(maxAttempts) attempts, session state=\(session.state.rawValue)")
+            if attempt == maxAttemptsBeforeSlowPolling {
+                Log.warn("MCP initial_prompt: still waiting after \(maxAttemptsBeforeSlowPolling) attempts, session state=\(session.state.rawValue)")
                 session.journal.append(
                     sessionID: session.id,
                     turnID: nil,
-                    type: "initial_prompt_failed",
-                    data: ["reason": "timeout", "state": session.state.rawValue, "attempts": "\(maxAttempts)"]
+                    type: "initial_prompt_deferred",
+                    data: ["reason": "backend_still_starting", "state": session.state.rawValue, "attempts": "\(maxAttemptsBeforeSlowPolling)"]
                 )
-                return
             }
 
-            scheduleInitialPrompt(session: session, prompt: prompt, attempt: attempt + 1)
+            scheduleInitialPrompt(session: session, attempt: attempt + 1)
         }
     }
 
     private func scheduleBackendReadiness(session: RuntimeSession, attempt: Int) {
-        let maxAttempts = 16
-        let delay = attempt <= 2 ? 0.3 : 0.5
+        let maxAttemptsBeforeSlowPolling = 16
+        let delay = readinessRetryDelay(forAttempt: attempt)
 
         DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
@@ -293,21 +291,32 @@ final class RuntimeControlService {
 
             if ensureSessionReadyForTurn(session) {
                 Log.info("MCP runtime_session_create: session \(session.id) became ready after launch (attempt \(attempt))")
+                _ = dispatchPendingInitialPromptIfReady(session)
                 return
             }
 
-            if attempt >= maxAttempts {
-                Log.warn("MCP runtime_session_create: backend readiness timed out for session \(session.id)")
+            if attempt == maxAttemptsBeforeSlowPolling {
+                Log.warn("MCP runtime_session_create: backend readiness still pending for session \(session.id) after \(maxAttemptsBeforeSlowPolling) attempts")
                 session.journal.append(
                     sessionID: session.id,
                     turnID: nil,
                     type: "backend_ready_timeout",
-                    data: ["state": session.state.rawValue, "attempts": "\(maxAttempts)"]
+                    data: ["state": session.state.rawValue, "attempts": "\(maxAttemptsBeforeSlowPolling)"]
                 )
-                return
             }
 
             scheduleBackendReadiness(session: session, attempt: attempt + 1)
+        }
+    }
+
+    private func readinessRetryDelay(forAttempt attempt: Int) -> TimeInterval {
+        switch attempt {
+        case ..<3:
+            return 0.3
+        case ..<16:
+            return 0.5
+        default:
+            return 2.0
         }
     }
 
@@ -577,6 +586,7 @@ final class RuntimeControlService {
         let statusArgs = statusArguments(sessionID: sessionID, turnID: requestedTurnID)
 
         while Date() < deadline {
+            _ = dispatchPendingInitialPromptIfReady(session)
             if turnIsFinished(session: session, requestedTurnID: requestedTurnID) {
                 var response = turnStatus(statusArgs)
                 if var object = parseJSONObject(response) {
@@ -773,6 +783,24 @@ final class RuntimeControlService {
             }
             return RuntimeLaunchReadiness.isReady(snapshot: snapshot, backendName: session.backend.name)
         }
+    }
+
+    @discardableResult
+    private func dispatchPendingInitialPromptIfReady(_ session: RuntimeSession) -> Bool {
+        guard let prompt = session.pendingInitialPrompt else {
+            return false
+        }
+        guard ensureSessionReadyForTurn(session) else {
+            return false
+        }
+
+        Log.info("MCP initial_prompt: sending pending prompt to session \(session.id)")
+        let result = sendTurnInternal(session: session, prompt: prompt, context: nil)
+        if result.contains("\"error\"") {
+            Log.warn("MCP initial_prompt: sendTurn failed — \(result)")
+            return false
+        }
+        return true
     }
 
     private func sanitizeStringDict(_ value: Any?) -> [String: String]? {

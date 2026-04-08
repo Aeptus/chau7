@@ -43,6 +43,7 @@ final class RuntimeSession: @unchecked Sendable {
     private var _lastExitReason: TurnExitReason?
     private var _lastTurnSubmittedAt: Date?
     private var _lastPrompt: String?
+    private var _pendingInitialPrompt: String?
     private var _lastCompletedTurnID: String?
     private var _currentResultSchema: JSONValue?
     private var _turnResults: [String: RuntimeTurnResult] = [:]
@@ -114,6 +115,12 @@ final class RuntimeSession: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return _lastPrompt
+    }
+
+    var pendingInitialPrompt: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _pendingInitialPrompt
     }
 
     func turnResult(id turnID: String? = nil) -> RuntimeTurnResult? {
@@ -197,6 +204,7 @@ final class RuntimeSession: @unchecked Sendable {
         _currentTurnID = turnID
         _lastTurnSubmittedAt = Date()
         _lastPrompt = prompt
+        _pendingInitialPrompt = nil
         _currentResultSchema = resultSchema ?? config.resultSchema
         _currentTurnStats = TurnStats()
         _lastDeniedApproval = false
@@ -218,6 +226,18 @@ final class RuntimeSession: @unchecked Sendable {
         )
 
         return turnID
+    }
+
+    func queueInitialPrompt(_ prompt: String) {
+        lock.lock()
+        _pendingInitialPrompt = prompt
+        lock.unlock()
+    }
+
+    func clearPendingInitialPrompt() {
+        lock.lock()
+        _pendingInitialPrompt = nil
+        lock.unlock()
     }
 
     /// Result of completing a turn, returned so callers can act without re-reading session state.
