@@ -114,6 +114,9 @@ MCP Tools — Runtime,runtime_turn_result,Fetch the latest structured result cap
 MCP Tools — Runtime,runtime_turn_wait,Wait for the current or requested turn to finish and return updated status,Shipped,Yes
 MCP Tools — Runtime,runtime_events_poll,Poll the runtime event stream using a cursor,Shipped,Yes
 MCP Tools — Runtime,runtime_approval_respond,Approve or deny a pending runtime tool-use request,Shipped,Yes
+MCP Tools — Runtime,Event-Driven Initial Prompt Delivery,"Pending initial prompts stay attached to real terminal readiness changes so slow interactive launches do not give up during startup",Shipped,Yes
+MCP Tools — Runtime,Asynchronous Runtime Tab Teardown,"runtime_session_stop and runtime_session_cancel_children queue tab close cleanup off the immediate stop path and report that teardown is still in flight",Shipped,Yes
+Performance,MCP Lifecycle Stall Diagnostics,"MCP session create/stop and tab create/close flows record focused main-thread stall telemetry with operation context for beachball investigations",Shipped,Yes
 MCP Resources,chau7://telemetry/runs,Read-only resource: latest 20 telemetry run summaries,Shipped,No
 MCP Resources,chau7://telemetry/sessions,Read-only resource: AI session index with metadata,Shipped,No
 MCP Resources,chau7://telemetry/sessions/current,Read-only resource: currently active AI sessions,Shipped,No

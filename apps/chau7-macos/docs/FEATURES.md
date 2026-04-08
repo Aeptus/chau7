@@ -202,6 +202,8 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `runtime_events_poll` | Poll the runtime event stream using a cursor |
 | `runtime_approval_respond` | Approve or deny a pending runtime tool-use request |
 
+Runtime sessions keep pending `initial_prompt` work attached to real terminal readiness changes, so slow interactive launches do not silently miss their first prompt. Runtime-driven tab teardown also queues close work off the immediate stop path and reports when close cleanup is still in flight.
+
 ### Resources (4 endpoints)
 
 | URI | Description |
@@ -254,6 +256,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | **Predictive rendering** | Pre-cache likely output to shave display latency |
 | **Dirty region tracking** | Only re-render what changed |
 | **Feature profiler** | Per-feature timing with os.signpost integration |
+
+MCP session create/stop and tab create/close flows also emit focused main-thread stall diagnostics with operation context, making beachball reports attributable to specific lifecycle operations instead of generic lag.
 
 ## Tabs, Panes & Windows
 
