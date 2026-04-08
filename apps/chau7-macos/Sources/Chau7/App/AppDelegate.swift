@@ -166,6 +166,8 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Start MCP telemetry server and register terminal control
         MCPServerManager.shared.start()
         TerminalControlService.shared.register(overlayModel)
+        let scriptingAPI = ScriptingAPI.shared
+        Log.info("AppDelegate: scripting API ready enabled=\(scriptingAPI.isEnabled) running=\(scriptingAPI.isRunning)")
 
         // Initialize status bar controller (replaces MenuBarExtra for multi-monitor support)
         StatusBarController.shared.setup(model: model)
@@ -263,6 +265,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         // Stop MCP telemetry server
         MCPServerManager.shared.stop()
+        ScriptingAPI.shared.stopServer()
 
         // CTO: clean up all flag files and wrappers (no-op if mode was .off)
         CTOManager.shared.teardown()
