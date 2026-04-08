@@ -316,7 +316,7 @@ final class RuntimeControlService {
         case ..<16:
             return 0.5
         default:
-            return 2.0
+            return 1.0
         }
     }
 
