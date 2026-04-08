@@ -55,6 +55,7 @@ final class OverlayTabsModelTests: XCTestCase {
         OverlayTabsModel.sessionFinders = [:]
         appModel = AppModel()
         model = OverlayTabsModel(appModel: appModel, restoreState: false)
+        FeatureSettings.shared.recentRepoRoots = []
     }
 
     override func tearDown() {
@@ -62,6 +63,7 @@ final class OverlayTabsModelTests: XCTestCase {
         appModel = nil
         OverlayTabsModel.sessionFinders = [:]
         removePersistedWindowStateArtifacts()
+        FeatureSettings.shared.recentRepoRoots = []
         super.tearDown()
     }
 
@@ -350,6 +352,21 @@ final class OverlayTabsModelTests: XCTestCase {
 
         XCTAssertEqual(model.tabs[0].repoGroupID, originalGroupID)
         XCTAssertFalse(model.tabs[0].hasInheritedRepoGroup)
+    }
+
+    func testAutoGroupingFallsBackToKnownRecentRepoWhenGitRootIsUnavailable() {
+        let originalMode = FeatureSettings.shared.repoGroupingMode
+        FeatureSettings.shared.repoGroupingMode = .auto
+        defer { FeatureSettings.shared.repoGroupingMode = originalMode }
+
+        let repoRoot = "/tmp/Downloads/Repositories/Chau7"
+        FeatureSettings.shared.recentRepoRoots = [repoRoot]
+        model.tabs[0].session?.currentDirectory = "\(repoRoot)/apps/chau7-macos"
+        model.tabs[0].session?.gitRootPath = nil
+
+        model.applyAutoGroupingToAllTabs()
+
+        XCTAssertEqual(model.tabs[0].repoGroupID, repoRoot)
     }
 
     func testInheritedRepoGroupDetachesForNewTabAtDirectoryWhenTabMovesToDifferentRepoInManualMode() {

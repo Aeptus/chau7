@@ -2737,9 +2737,10 @@ final class OverlayTabsModel {
     func applyAutoGroupingToAllTabs() {
         clearAllGitRootCallbacks()
         for i in tabs.indices {
-            // Preserve restored repoGroupID when gitRootPath is still nil
-            // (git detection is async and may not have completed yet)
-            tabs[i].repoGroupID = tabs[i].session?.gitRootPath ?? tabs[i].repoGroupID
+            let fallbackRepoRoot = knownRepoRoot(for: tabs[i])
+            tabs[i].repoGroupID = tabs[i].session?.gitRootPath
+                ?? fallbackRepoRoot
+                ?? tabs[i].repoGroupID
             tabs[i].hasInheritedRepoGroup = false
             if let session = tabs[i].session {
                 observeGitRootForAutoGrouping(tabID: tabs[i].id, session: session)
@@ -2759,10 +2760,10 @@ final class OverlayTabsModel {
                       let idx = self.tabs.firstIndex(where: { $0.id == tabID }) else { return }
 
                 if FeatureSettings.shared.repoGroupingMode == .auto {
-                    self.tabs[idx].repoGroupID = newRoot
+                    self.tabs[idx].repoGroupID = newRoot ?? self.knownRepoRoot(for: self.tabs[idx])
                     self.tabs[idx].hasInheritedRepoGroup = false
-                    if let newRoot {
-                        self.coalesceGroup(repoGroupID: newRoot)
+                    if let repoGroupID = self.tabs[idx].repoGroupID {
+                        self.coalesceGroup(repoGroupID: repoGroupID)
                     }
                     return
                 }
@@ -2784,7 +2785,7 @@ final class OverlayTabsModel {
         guard let session = tab.session else { return }
         if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
             if tabs[idx].repoGroupID == nil {
-                tabs[idx].repoGroupID = session.gitRootPath
+                tabs[idx].repoGroupID = session.gitRootPath ?? knownRepoRoot(for: tabs[idx])
             }
             let repoGroupID = tabs[idx].repoGroupID
             if let repoGroupID {
@@ -2792,6 +2793,18 @@ final class OverlayTabsModel {
             }
         }
         observeGitRootForAutoGrouping(tabID: tab.id, session: session)
+    }
+
+    private func knownRepoRoot(for tab: OverlayTab) -> String? {
+        guard let session = tab.session else {
+            return nil
+        }
+
+        return KnownRepoRootResolver.resolve(
+            currentDirectory: session.currentDirectory,
+            preferredRepoRoot: tab.repoGroupID,
+            recentRepoRoots: FeatureSettings.shared.recentRepoRoots
+        )
     }
 
     func insertionIndexForNewTab(inheritingRepoGroupID inheritedRepoGroupID: String?) -> Int {
