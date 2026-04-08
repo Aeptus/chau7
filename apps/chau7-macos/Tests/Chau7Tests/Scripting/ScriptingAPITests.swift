@@ -8,10 +8,15 @@ final class ScriptingAPITests: XCTestCase {
 
     private var api: ScriptingAPI!
     private var createdSessionIDs: [String] = []
+    private var defaultsSuiteName: String!
+    private var isolatedDefaults: UserDefaults!
 
     override func setUp() async throws {
         try await super.setUp()
         api = ScriptingAPI.shared
+        defaultsSuiteName = "ScriptingAPITests-\(UUID().uuidString)"
+        isolatedDefaults = UserDefaults(suiteName: defaultsSuiteName)
+        isolatedDefaults.removePersistentDomain(forName: defaultsSuiteName)
     }
 
     override func tearDown() async throws {
@@ -19,6 +24,11 @@ final class ScriptingAPITests: XCTestCase {
             _ = RuntimeSessionManager.shared.stopSession(id: sessionID)
         }
         createdSessionIDs.removeAll()
+        if let defaultsSuiteName {
+            isolatedDefaults?.removePersistentDomain(forName: defaultsSuiteName)
+        }
+        isolatedDefaults = nil
+        defaultsSuiteName = nil
         api = nil
         try await super.tearDown()
     }
@@ -124,6 +134,28 @@ final class ScriptingAPITests: XCTestCase {
         let response = await api.handleRequest(request)
         XCTAssertNil(response["error"])
         XCTAssertTrue(response["result"] is [String: Any])
+    }
+
+    func testInitialEnabledDefaultsToTrueWhenUnset() {
+        let defaults = isolatedDefaults!
+
+        XCTAssertNil(defaults.object(forKey: ScriptingAPI.featureFlagKey))
+        XCTAssertTrue(ScriptingAPI.initialEnabled(defaults: defaults))
+        XCTAssertEqual(defaults.object(forKey: ScriptingAPI.featureFlagKey) as? Bool, true)
+    }
+
+    func testInitialEnabledRespectsPersistedFalse() {
+        let defaults = isolatedDefaults!
+        defaults.set(false, forKey: ScriptingAPI.featureFlagKey)
+
+        XCTAssertFalse(ScriptingAPI.initialEnabled(defaults: defaults))
+    }
+
+    func testInitialEnabledRespectsPersistedTrue() {
+        let defaults = isolatedDefaults!
+        defaults.set(true, forKey: ScriptingAPI.featureFlagKey)
+
+        XCTAssertTrue(ScriptingAPI.initialEnabled(defaults: defaults))
     }
 
     // MARK: - set_setting Validation

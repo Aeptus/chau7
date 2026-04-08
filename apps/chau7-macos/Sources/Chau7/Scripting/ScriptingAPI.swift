@@ -24,10 +24,12 @@ import Chau7Core
 @MainActor
 final class ScriptingAPI {
     static let shared = ScriptingAPI()
+    static let featureFlagKey = "feature.scriptingAPI"
+    private static let defaultEnabled = true
 
     var isEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(isEnabled, forKey: "feature.scriptingAPI")
+            UserDefaults.standard.set(isEnabled, forKey: Self.featureFlagKey)
             if isEnabled { startServer() } else { stopServer() }
         }
     }
@@ -53,10 +55,27 @@ final class ScriptingAPI {
             .appendingPathComponent("scripting.sock").path
     }
 
+    static func initialEnabled(defaults: UserDefaults = .standard) -> Bool {
+        if defaults.object(forKey: featureFlagKey) == nil {
+            defaults.set(defaultEnabled, forKey: featureFlagKey)
+            return defaultEnabled
+        }
+        return defaults.bool(forKey: featureFlagKey)
+    }
+
     private init() {
-        self.isEnabled = UserDefaults.standard.bool(forKey: "feature.scriptingAPI")
-        if isEnabled { startServer() }
-        Log.info("ScriptingAPI initialized: enabled=\(isEnabled)")
+        let hadPersistedPreference = UserDefaults.standard.object(forKey: Self.featureFlagKey) != nil
+        self.isEnabled = Self.initialEnabled()
+        if isEnabled {
+            startServer()
+            if hadPersistedPreference {
+                Log.info("ScriptingAPI initialized: enabled=true")
+            } else {
+                Log.info("ScriptingAPI initialized: enabled=true (defaulted because no persisted preference was set)")
+            }
+        } else {
+            Log.info("ScriptingAPI initialized: enabled=false (feature flag disabled)")
+        }
     }
 
     // MARK: - Server Lifecycle
@@ -312,7 +331,7 @@ final class ScriptingAPI {
     private func handleGetSettings() -> [String: Any] {
         let defaults = UserDefaults.standard
         var snapshot: [String: Any] = [:]
-        snapshot["feature.scriptingAPI"] = defaults.bool(forKey: "feature.scriptingAPI")
+        snapshot["feature.scriptingAPI"] = defaults.bool(forKey: Self.featureFlagKey)
         snapshot["feature.persistentHistory"] = defaults.bool(forKey: "feature.persistentHistory")
         snapshot["history.maxRecords"] = defaults.integer(forKey: "history.maxRecords")
         return ["result": snapshot]
@@ -327,7 +346,7 @@ final class ScriptingAPI {
         }
 
         let allowedKeys: Set = [
-            "feature.scriptingAPI",
+            Self.featureFlagKey,
             "feature.persistentHistory",
             "history.maxRecords"
         ]
