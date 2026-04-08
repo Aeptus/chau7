@@ -1206,6 +1206,16 @@ final class OverlayTabsModel {
         }
     }
 
+    /// Handles a toolbar tab click. This dismisses the repo dashboard overlay
+    /// even when the clicked tab is already selected.
+    func handleTabBarSelection(id: UUID) {
+        if activeDashboardGroupID != nil {
+            activeDashboardGroupID = nil
+        }
+        guard selectedTabID != id else { return }
+        selectTab(id: id)
+    }
+
     // MARK: - Tab Switch Optimization: Snapshot Capture
 
     /// Captures a screenshot of the current terminal view for instant display during tab switch

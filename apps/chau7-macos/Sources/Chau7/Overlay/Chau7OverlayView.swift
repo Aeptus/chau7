@@ -856,6 +856,7 @@ private struct ToolbarTabBarView: View {
                                     RepoGroupBracket(
                                         name: name,
                                         groupColor: groupColor,
+                                        isSelected: overlayModel.activeDashboardGroupID == groupID,
                                         tabSpacing: tabSpacing,
                                         tabCount: groupTabs.count
                                     )
@@ -1065,7 +1066,7 @@ private struct ToolbarTabBarView: View {
             isSuspended: isSuspended,
             isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),
             hideRepoPath: hideRepoPath,
-            onSelect: { overlayModel.selectTab(id: tab.id) },
+            onSelect: { overlayModel.handleTabBarSelection(id: tab.id) },
             onRename: { overlayModel.beginRename(tabID: tab.id) },
             onClose: { overlayModel.closeTab(id: tab.id) },
             onHover: { isHovering in
@@ -1740,6 +1741,7 @@ private struct ReduceMotionAnimationModifier: ViewModifier {
 struct RepoTagChip: View {
     let name: String
     let groupColor: Color
+    var isSelected = false
 
     var body: some View {
         Text(name)
@@ -1748,6 +1750,8 @@ struct RepoTagChip: View {
             .padding(.horizontal, 4)
             .padding(.vertical, 3)
             .frame(height: OverlayLayout.tabChipHeight, alignment: .center)
+            .background(isSelected ? groupColor.opacity(0.25) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     /// Deterministic color for a repo path — same repo always gets the same color.
@@ -1770,11 +1774,12 @@ struct RepoTagChip: View {
 struct RepoGroupBracket: View {
     let name: String
     let groupColor: Color
+    let isSelected: Bool
     let tabSpacing: CGFloat
     let tabCount: Int // used only for identity stability
 
     var body: some View {
-        RepoTagChip(name: name, groupColor: groupColor)
+        RepoTagChip(name: name, groupColor: groupColor, isSelected: isSelected)
             .overlay {
                 GeometryReader { geo in
                     let radius: CGFloat = 4

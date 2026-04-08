@@ -225,6 +225,27 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.tabs[1].repoGroupID, groupID)
     }
 
+    func testHandleTabBarSelectionDismissesDashboardForCurrentTab() {
+        let selectedTabID = model.selectedTabID
+        model.activeDashboardGroupID = "/tmp/chau7-dashboard"
+
+        model.handleTabBarSelection(id: selectedTabID)
+
+        XCTAssertNil(model.activeDashboardGroupID)
+        XCTAssertEqual(model.selectedTabID, selectedTabID)
+    }
+
+    func testHandleTabBarSelectionDismissesDashboardAndSelectsDifferentTab() {
+        model.newTab()
+        let targetTabID = model.tabs[1].id
+        model.activeDashboardGroupID = "/tmp/chau7-dashboard"
+
+        model.handleTabBarSelection(id: targetTabID)
+
+        XCTAssertNil(model.activeDashboardGroupID)
+        XCTAssertEqual(model.selectedTabID, targetTabID)
+    }
+
     func testInheritedRepoGroupDetachesWhenTabMovesToDifferentRepoInManualMode() {
         let originalMode = FeatureSettings.shared.repoGroupingMode
         FeatureSettings.shared.repoGroupingMode = .manual
