@@ -267,7 +267,7 @@ Terminal,Markdown Runbooks,"Open .md in editor pane with executable code blocks 
 Terminal,Native Text Pane Edit Shortcuts,"Split-pane text editors preserve standard macOS cut, copy, and paste shortcuts before terminal-specific fallbacks run",Shipped,Yes
 Terminal,Show Changed Files,"Git diff snapshot per command (OSC 133) shows files modified by AI sessions (Cmd+Option+G)",Shipped,Yes
 Terminal,Idle Tabs Dropdown,"Tabs idle beyond configurable threshold (default 10 min) grouped into a dropdown chip in the tab bar with hover card support",Shipped,Yes
-Terminal,Repository Tab Grouping,"Group tabs by git repo (Off/Auto/Manual). Inline repo-name tag chip with connecting line overlay. Suppresses redundant repo path in grouped tab titles, and inherited group membership auto-detaches when a tab moves to a different repo.",Shipped,No
+Terminal,Repository Tab Grouping,"Group tabs by git repo (Off/Auto/Manual). Inline repo-name tag chip with connecting line overlay. Suppresses redundant repo path in grouped tab titles, and inherited group membership auto-detaches when a tab moves to a different repo, including tabs opened directly at another directory.",Shipped,No
 Terminal,Split Pane File Preview,"Read-only file viewer with syntax highlighting and image support (Cmd+Opt+P). Lighter than full editor.",Shipped,No
 Terminal,Split Pane Diff Viewer,"Unified git diff view with colored additions/deletions, dual line numbers, Working/Staged toggle (Cmd+Opt+Shift+D)",Shipped,No
 Terminal,chau7:// URL Scheme,"Open SSH sessions, run commands, change directory, or open files from external apps",Shipped,Yes

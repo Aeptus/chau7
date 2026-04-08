@@ -122,6 +122,10 @@ extension OverlayTabsModel {
         let insertIndex = insertionIndexForNewTab(inheritingRepoGroupID: inheritedRepoGroupID)
         tabs.insert(tab, at: insertIndex)
 
+        // Keep inherited repo groups provisional so manual-mode detachment
+        // still works when this tab later resolves to a different git root.
+        setupRepoGroupingForTab(tab)
+
         if selectNewTab {
             selectedTabID = tab.id
             focusSelected()

@@ -266,6 +266,27 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertFalse(model.tabs[0].hasInheritedRepoGroup)
     }
 
+    func testInheritedRepoGroupDetachesForNewTabAtDirectoryWhenTabMovesToDifferentRepoInManualMode() {
+        let originalMode = FeatureSettings.shared.repoGroupingMode
+        FeatureSettings.shared.repoGroupingMode = .manual
+        defer { FeatureSettings.shared.repoGroupingMode = originalMode }
+
+        let originalGroupID = "/tmp/chau7-group-a"
+        model.tabs[0].repoGroupID = originalGroupID
+        model.selectTab(id: model.tabs[0].id)
+
+        model.newTab(at: "/tmp/chau7-group-b")
+
+        XCTAssertEqual(model.tabs[1].repoGroupID, originalGroupID)
+        XCTAssertTrue(model.tabs[1].hasInheritedRepoGroup)
+
+        model.tabs[1].session?.gitRootPath = "/tmp/chau7-group-b"
+        drainMainQueue()
+
+        XCTAssertNil(model.tabs[1].repoGroupID)
+        XCTAssertFalse(model.tabs[1].hasInheritedRepoGroup)
+    }
+
     // MARK: - Notification Styling
 
     func testApplyNotificationStyleAppliesToSelectedTab() {
