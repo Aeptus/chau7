@@ -57,6 +57,8 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var activityToken: NSObjectProtocol?
     private var latencyReleaseWorkItem: DispatchWorkItem?
     private var appNapObservers: [Any] = []
+    private var isAppActive = true
+    private var latencyCriticalScopes: [String: DispatchWorkItem] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
@@ -156,6 +158,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         didPerformInitialSetup = true
 
         model.bootstrap()
+        beginLatencyCriticalScope(reason: "startup-restore", timeout: 90)
 
         // Activate persisted security-scoped bookmarks before tabs are restored,
         // so git detection in ~/Downloads etc. works on the first check.
@@ -221,6 +224,11 @@ private final class OverlayBlurView: NSVisualEffectView {
             // During the splash phase no window is key/main, so macOS may
             // drop the menu bar for this app. Re-activating here forces it back.
             NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.endLatencyCriticalScope(reason: "startup-restore")
+                }
+            }
         }
     }
 
@@ -279,6 +287,10 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         // End App Nap prevention
         latencyReleaseWorkItem?.cancel()
+        for (_, workItem) in latencyCriticalScopes {
+            workItem.cancel()
+        }
+        latencyCriticalScopes.removeAll()
         if let activityToken {
             ProcessInfo.processInfo.endActivity(activityToken)
             self.activityToken = nil
@@ -385,14 +397,20 @@ private final class OverlayBlurView: NSVisualEffectView {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.enableLowLatency() }
+            MainActor.assumeIsolated {
+                self?.isAppActive = true
+                self?.enableLowLatency()
+            }
         }
         let resignObs = NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.scheduleLatencyRelease() }
+            MainActor.assumeIsolated {
+                self?.isAppActive = false
+                self?.scheduleLatencyRelease()
+            }
         }
         appNapObservers = [activateObs, resignObs]
         Log.info("App Nap management started (conditional latency-critical activity)")
@@ -401,23 +419,56 @@ private final class OverlayBlurView: NSVisualEffectView {
     private func enableLowLatency() {
         latencyReleaseWorkItem?.cancel()
         latencyReleaseWorkItem = nil
-        guard activityToken == nil else { return }
-        activityToken = ProcessInfo.processInfo.beginActivity(
-            options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
-            reason: "Terminal requires low-latency input processing"
-        )
+        refreshLowLatencyActivity()
     }
 
     private func scheduleLatencyRelease() {
         latencyReleaseWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
-            guard let self, let token = activityToken else { return }
-            ProcessInfo.processInfo.endActivity(token)
-            activityToken = nil
-            Log.info("App Nap: released latency-critical activity (app backgrounded 30s)")
+            guard let self else { return }
+            refreshLowLatencyActivity()
         }
         latencyReleaseWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 30.0, execute: item)
+    }
+
+    private func refreshLowLatencyActivity() {
+        let shouldHoldLowLatency = isAppActive || !latencyCriticalScopes.isEmpty
+        if shouldHoldLowLatency {
+            guard activityToken == nil else { return }
+            activityToken = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+                reason: "Terminal requires low-latency input processing"
+            )
+            let scopeSummary = latencyCriticalScopes.keys.sorted().joined(separator: ",")
+            Log.info("App Nap: acquired latency-critical activity active=\(isAppActive) scopes=\(scopeSummary.isEmpty ? "(none)" : scopeSummary)")
+            return
+        }
+
+        guard let activityToken else { return }
+        ProcessInfo.processInfo.endActivity(activityToken)
+        self.activityToken = nil
+        Log.info("App Nap: released latency-critical activity (app inactive, no startup/restore scopes)")
+    }
+
+    private func beginLatencyCriticalScope(reason: String, timeout: TimeInterval) {
+        latencyCriticalScopes[reason]?.cancel()
+        let releaseWorkItem = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.endLatencyCriticalScope(reason: reason)
+            }
+        }
+        latencyCriticalScopes[reason] = releaseWorkItem
+        enableLowLatency()
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: releaseWorkItem)
+        Log.info("App Nap: began latency-critical scope reason=\(reason) timeout=\(Int(timeout.rounded()))s")
+    }
+
+    private func endLatencyCriticalScope(reason: String) {
+        guard let item = latencyCriticalScopes.removeValue(forKey: reason) else { return }
+        item.cancel()
+        refreshLowLatencyActivity()
+        Log.info("App Nap: ended latency-critical scope reason=\(reason)")
     }
 
     func showSSHManager() {
@@ -1219,6 +1270,14 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// Windows 1..N are created here with their saved tab states.
     private func restoreAdditionalWindows() {
         guard let model else { return }
+        let restoreStartedAt = CFAbsoluteTimeGetCurrent()
+        defer {
+            FeatureProfiler.shared.recordMainThreadStallIfNeeded(
+                operation: "AppDelegate.restoreAdditionalWindows",
+                startedAt: restoreStartedAt,
+                thresholdMs: 150
+            )
+        }
         let restoredWindows: [[SavedTabState]]
         let restoreSource: String
 
@@ -1250,11 +1309,18 @@ private final class OverlayBlurView: NSVisualEffectView {
             }
 
             // Pass pre-decoded states directly — no UserDefaults round-trip
+            let windowRestoreStartedAt = CFAbsoluteTimeGetCurrent()
             let tabsModel = OverlayTabsModel(appModel: model, restoringStates: windowStates)
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
             overlayHosts.append(OverlayHost(window: window, model: tabsModel))
+            FeatureProfiler.shared.recordMainThreadStallIfNeeded(
+                operation: "AppDelegate.restoreAdditionalWindow",
+                startedAt: windowRestoreStartedAt,
+                thresholdMs: 150,
+                metadata: "index=\(windowIndex + 1) tabs=\(windowStates.count)"
+            )
 
             Log.info("Restored additional window \(windowIndex + 1) with \(windowStates.count) tab(s) from \(restoreSource)")
         }

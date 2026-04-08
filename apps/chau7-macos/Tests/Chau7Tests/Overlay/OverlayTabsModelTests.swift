@@ -1068,6 +1068,34 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(session.effectiveAISessionId, claimedSessionID)
     }
 
+    func testResolveResumeMetadataCacheInvalidatesWhenExplicitCodexSessionChanges() {
+        guard let session = model.tabs[0].session else {
+            XCTFail("Expected initial session")
+            return
+        }
+
+        session.restoreAIMetadata(provider: "codex", sessionId: "codex-explicit-1")
+        let firstResolved = model.resolveResumeMetadata(
+            for: session,
+            directory: "/tmp/cached-codex-session",
+            outputHint: nil,
+            claimedSessionIds: ["codex-explicit-1"]
+        )
+
+        session.restoreAIMetadata(provider: "codex", sessionId: "codex-explicit-2")
+        let secondResolved = model.resolveResumeMetadata(
+            for: session,
+            directory: "/tmp/cached-codex-session",
+            outputHint: nil,
+            claimedSessionIds: ["codex-explicit-2"]
+        )
+
+        XCTAssertEqual(firstResolved?.sessionId, "codex-explicit-1")
+        XCTAssertEqual(secondResolved?.sessionId, "codex-explicit-2")
+        XCTAssertEqual(session.effectiveAIProvider, "codex")
+        XCTAssertEqual(session.effectiveAISessionId, "codex-explicit-2")
+    }
+
     func testResolveResumeMetadataIgnoresTelemetryOnlyCodexProvider() {
         guard let session = model.tabs[0].session else {
             XCTFail("Expected initial session")

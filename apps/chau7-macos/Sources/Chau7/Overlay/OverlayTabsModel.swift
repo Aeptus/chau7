@@ -546,6 +546,7 @@ final class OverlayTabsModel {
     @ObservationIgnored var renderSuspensionObserver: NSObjectProtocol?
     @ObservationIgnored var suspensionDebounceItem: DispatchWorkItem?
     @ObservationIgnored var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
+    @ObservationIgnored var codexResumeFallbackCache: [ObjectIdentifier: CachedCodexResumeFallback] = [:]
 
     /// Callback invoked when `tabs` changes — used by RemoteControlManager
     @ObservationIgnored var onTabsChanged: (() -> Void)?
@@ -560,6 +561,20 @@ final class OverlayTabsModel {
         let tabs: [OverlayTab]
         let selectedID: UUID
         let rawStates: [SavedTabState]
+    }
+
+    struct CodexResumeFallbackSignature: Equatable {
+        let directory: String
+        let explicitSessionId: String?
+        let referenceTimestamp: TimeInterval?
+        let claimedSessionFingerprint: Int
+        let claimedSessionCount: Int
+        let historyFingerprint: Int
+    }
+
+    struct CachedCodexResumeFallback {
+        let signature: CodexResumeFallbackSignature
+        let metadata: (provider: String, sessionId: String)?
     }
 
     /// When `restoreState` is false, the model starts with a single fresh tab
@@ -871,7 +886,22 @@ final class OverlayTabsModel {
             return nil
         }
 
-        let observedCandidates = appModel.codexHistoryEntries.suffix(64).compactMap { entry -> CodexSessionResolver.Candidate? in
+        let recentHistoryEntries = Array(appModel.codexHistoryEntries.suffix(64))
+        let fallbackSignature = CodexResumeFallbackSignature(
+            directory: directory,
+            explicitSessionId: explicitSessionId,
+            referenceTimestamp: referenceDate?.timeIntervalSince1970,
+            claimedSessionFingerprint: Self.sessionIDFingerprint(claimedSessionIds),
+            claimedSessionCount: claimedSessionIds.count,
+            historyFingerprint: Self.codexHistoryFingerprint(recentHistoryEntries)
+        )
+        let cacheKey = ObjectIdentifier(session)
+        if let cached = codexResumeFallbackCache[cacheKey],
+           cached.signature == fallbackSignature {
+            return cached.metadata
+        }
+
+        let observedCandidates = recentHistoryEntries.compactMap { entry -> CodexSessionResolver.Candidate? in
             let observedAt = Date(timeIntervalSince1970: entry.timestamp)
             guard let metadata = CodexSessionResolver.metadata(
                 forSessionID: entry.sessionId,
@@ -906,22 +936,41 @@ final class OverlayTabsModel {
             }
             if let explicitSessionId,
                explicitProvider == "codex" {
+                let preservedExplicit = (provider: "codex", sessionId: explicitSessionId)
+                codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
+                    signature: fallbackSignature,
+                    metadata: preservedExplicit
+                )
                 Log.info(
                     "saveTabState: preserving explicit Codex resume metadata sessionId=\(explicitSessionId) for dir=\(directory) despite unresolved replacement"
                 )
-                return (provider: "codex", sessionId: explicitSessionId)
+                return preservedExplicit
             }
             if hasClaimedExplicitCodexSession {
+                let retainedExplicit = explicitSessionId.map { (provider: "codex", sessionId: $0) }
+                codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
+                    signature: fallbackSignature,
+                    metadata: retainedExplicit
+                )
                 Log.info(
                     "saveTabState: retaining claimed Codex resume metadata sessionId=\(explicitSessionId ?? "nil") for dir=\(directory)"
                 )
+                return retainedExplicit
             }
+            codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
+                signature: fallbackSignature,
+                metadata: nil
+            )
             return nil
         }
 
         if explicitSessionId != sessionId || explicitProvider != "codex" {
             session.restoreAIMetadata(provider: "codex", sessionId: sessionId)
         }
+        codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
+            signature: fallbackSignature,
+            metadata: (provider: "codex", sessionId: sessionId)
+        )
         Log.trace("saveTabState: recovered Codex resume metadata from observed history for dir=\(directory)")
         return (provider: "codex", sessionId: sessionId)
     }
@@ -1009,6 +1058,33 @@ final class OverlayTabsModel {
     static func normalizedResumeReferenceDate(_ value: Date?) -> Date? {
         guard let value else { return nil }
         return value == .distantPast ? nil : value
+    }
+
+    static func codexHistoryFingerprint(_ entries: [HistoryEntry]) -> Int {
+        var hasher = Hasher()
+        hasher.combine(entries.count)
+        if let first = entries.first {
+            hasher.combine(first.sessionId)
+            hasher.combine(first.timestamp.bitPattern)
+        }
+        if let last = entries.last {
+            hasher.combine(last.sessionId)
+            hasher.combine(last.timestamp.bitPattern)
+        }
+        for entry in entries.suffix(8) {
+            hasher.combine(entry.sessionId)
+            hasher.combine(entry.timestamp.bitPattern)
+        }
+        return hasher.finalize()
+    }
+
+    static func sessionIDFingerprint(_ sessionIds: Set<String>) -> Int {
+        var hasher = Hasher()
+        hasher.combine(sessionIds.count)
+        for sessionId in sessionIds.sorted() {
+            hasher.combine(sessionId)
+        }
+        return hasher.finalize()
     }
 
     static func resolveAIResumeMetadata(

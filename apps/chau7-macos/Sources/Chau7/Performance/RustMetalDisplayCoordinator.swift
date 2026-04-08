@@ -40,6 +40,8 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var rows: Int
     private var cols: Int
     private var fontConfigured = false
+    private var lastTripleBufferRebuildSignature = ""
+    private var lastTripleBufferRebuildAt: CFAbsoluteTime = 0
 
     // MARK: - Blink Timer
 
@@ -304,12 +306,33 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             let newRows = Int(gs.rows)
             let newCols = Int(gs.cols)
             if newRows > 0, newCols > 0 {
-                Log.info("RustMetalDisplayCoordinator: Grid dimensions changed to \(newCols)x\(newRows), rebuilding triple buffer")
-                rows = newRows
-                cols = newCols
-                tripleBuffer = TripleBufferedTerminal(rows: newRows, cols: newCols)
-                // Re-sync with correctly sized buffer
+                let rebuildSignature = "\(newCols)x\(newRows)"
+                let rebuildStartedAt = CFAbsoluteTimeGetCurrent()
+                let sameDimensions = newRows == rows && newCols == cols
+                let isRapidDuplicate = sameDimensions && rebuildSignature == lastTripleBufferRebuildSignature
+                    && rebuildStartedAt - lastTripleBufferRebuildAt < 0.25
+
+                if isRapidDuplicate {
+                    tripleBuffer.markFullRefresh()
+                } else {
+                    if rebuildSignature != lastTripleBufferRebuildSignature || rebuildStartedAt - lastTripleBufferRebuildAt >= 1.0 {
+                        Log.info("RustMetalDisplayCoordinator: Grid dimensions changed to \(rebuildSignature), rebuilding triple buffer")
+                    }
+                    rows = newRows
+                    cols = newCols
+                    tripleBuffer = TripleBufferedTerminal(rows: newRows, cols: newCols)
+                    lastTripleBufferRebuildSignature = rebuildSignature
+                    lastTripleBufferRebuildAt = rebuildStartedAt
+                }
+
+                // Re-sync with correctly sized or refreshed buffer
                 bridge.syncToTripleBuffer(tripleBuffer, grid: gridPtr)
+                FeatureProfiler.shared.recordMainThreadStallIfNeeded(
+                    operation: "RustMetalDisplayCoordinator.rebuildTripleBuffer",
+                    startedAt: rebuildStartedAt,
+                    thresholdMs: 120,
+                    metadata: "grid=\(rebuildSignature) duplicate=\(isRapidDuplicate)"
+                )
             }
         }
 

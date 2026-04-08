@@ -695,6 +695,15 @@ extension OverlayTabsModel {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.restoreDelaySeconds) { [weak self] in
             guard let self else { return }
+            let restoreStartedAt = CFAbsoluteTimeGetCurrent()
+            defer {
+                FeatureProfiler.shared.recordMainThreadStallIfNeeded(
+                    operation: "OverlayTabsModel.restoreTabState",
+                    startedAt: restoreStartedAt,
+                    thresholdMs: 150,
+                    metadata: "tab=\(targetTabID) panes=\(terminalSessions.count)"
+                )
+            }
             guard let restoredTab = tabs.first(where: { $0.id == targetTabID }) else {
                 Log.warn("restoreTabState: tab no longer exists for id=\(targetTabID)")
                 return

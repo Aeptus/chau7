@@ -15,6 +15,7 @@ enum FeatureMetric: String, CaseIterable, Identifiable {
     case outputMainThread = "Output Main"
     case promptUpdate = "Prompt Update"
     case devServerDetect = "Dev Server"
+    case mainThreadStall = "Main Thread Stall"
 
     var id: String {
         rawValue
@@ -39,6 +40,7 @@ enum FeatureMetric: String, CaseIterable, Identifiable {
         case .outputMainThread: return "OutputMainThread"
         case .promptUpdate: return "PromptUpdate"
         case .devServerDetect: return "DevServerDetect"
+        case .mainThreadStall: return "MainThreadStall"
         }
     }
 }
@@ -171,6 +173,30 @@ final class FeatureProfiler {
                 events.removeFirst(events.count - eventCapacity)
             }
         }
+    }
+
+    func recordMainThreadStallIfNeeded(
+        operation: String,
+        startedAt: CFAbsoluteTime,
+        thresholdMs: Double = 200,
+        metadata: String? = nil
+    ) {
+        let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
+        guard durationMs >= thresholdMs else { return }
+
+        let messageMetadata: String
+        if let metadata, !metadata.isEmpty {
+            messageMetadata = "\(operation) \(metadata)"
+        } else {
+            messageMetadata = operation
+        }
+
+        record(
+            feature: .mainThreadStall,
+            durationMs: durationMs,
+            metadata: messageMetadata
+        )
+        Log.warn("Main-thread stall: \(operation)=\(Int(durationMs.rounded()))ms\(metadata.map { " \($0)" } ?? "")")
     }
 
     func snapshot() -> Snapshot {
