@@ -1903,6 +1903,18 @@ final class TerminalSessionModel {
     func updateCurrentDirectory(_ path: String) {
         let normalized = URL(fileURLWithPath: path).standardized.path
         guard currentDirectory != normalized else { return }
+        let shouldSkipAutoAccess = ProtectedPathPolicy.shouldSkipAutoAccess(path: normalized)
+        if shouldSkipAutoAccess {
+            Log.info("updateCurrentDirectory: deferring protected path validation for \(normalized)")
+            currentDirectory = normalized
+            rustTerminalView?.currentDirectory = normalized
+            if title == "Shell" {
+                title = URL(fileURLWithPath: normalized).lastPathComponent
+            }
+            refreshGitStatus(path: normalized)
+            SnippetManager.shared.updateContextPath(normalized)
+            return
+        }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: normalized, isDirectory: &isDir), isDir.boolValue else {
             Log.debug("updateCurrentDirectory rejected non-existent path: \(normalized)")

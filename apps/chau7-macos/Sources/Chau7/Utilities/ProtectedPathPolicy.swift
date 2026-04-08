@@ -20,16 +20,17 @@ enum ProtectedPathPolicy {
         guard let root = protectedRoot(for: path) else {
             return false
         }
-        guard FeatureSettings.shared.allowProtectedFolderAccess else {
-            return true
+        return !ensureAutoAccess(for: root)
+    }
+
+    static func hasPersistedBookmarks() -> Bool {
+        stateQueue.sync {
+            !bookmarksByRoot.isEmpty
         }
-        return !ensureAccess(for: root, source: "auto")
     }
 
     @MainActor
     static func requestAccessToProtectedFolders() {
-        guard FeatureSettings.shared.allowProtectedFolderAccess else { return }
-
         let panel = NSOpenPanel()
         panel.title = L("dialog.protectedAccess.title", "Grant Protected Folder Access")
         panel.message = L("dialog.protectedAccess.message", "Select folders like Downloads/Desktop/Documents for background repo detection.")
@@ -71,6 +72,7 @@ enum ProtectedPathPolicy {
             Log.info("ProtectedPathPolicy: ignored non-protected selections: \(ignoredPaths.joined(separator: ", "))")
         }
         if !grantedRoots.isEmpty {
+            FeatureSettings.shared.allowProtectedFolderAccess = true
             Log.info("ProtectedPathPolicy: granted roots -> \(grantedRoots.joined(separator: ", "))")
         } else {
             Log.warn("ProtectedPathPolicy: no protected roots granted from selection")
@@ -126,38 +128,38 @@ enum ProtectedPathPolicy {
         return nil
     }
 
-    private static func ensureAccess(for root: String, source: String) -> Bool {
+    private static func ensureAutoAccess(for root: String) -> Bool {
         stateQueue.sync {
-            if let cachedURL = activeSecurityURLs[root], cachedURL.path.hasPrefix(root) {
-                emitDecisionLogIfNeeded(root: root, allowed: true, source: source, reason: "activeScope")
-                return true
-            }
+            let hasActiveScope = activeSecurityURLs[root]?.path.hasPrefix(root) ?? false
+            let cooldownActive = deniedUntilByRoot[root].map { Date() < $0 } ?? false
+            let hasBookmark = bookmarksByRoot[root] != nil
 
-            if let deniedUntil = deniedUntilByRoot[root], Date() < deniedUntil {
-                emitDecisionLogIfNeeded(root: root, allowed: false, source: source, reason: "cooldown")
+            switch ProtectedPathAccessPolicy.autoAccessDecision(
+                isFeatureEnabled: FeatureSettings.shared.allowProtectedFolderAccess,
+                hasActiveScope: hasActiveScope,
+                hasSecurityScopedBookmark: hasBookmark,
+                isDeniedByCooldown: cooldownActive
+            ) {
+            case .skipFeatureDisabled:
+                emitDecisionLogIfNeeded(root: root, allowed: false, source: "auto", reason: "featureDisabled")
+                return false
+            case .skipCooldown:
+                emitDecisionLogIfNeeded(root: root, allowed: false, source: "auto", reason: "cooldown")
+                return false
+            case .skipNeedsExplicitGrant:
+                emitDecisionLogIfNeeded(root: root, allowed: false, source: "auto", reason: "needsExplicitGrant")
+                return false
+            case .allowActiveScope:
+                emitDecisionLogIfNeeded(root: root, allowed: true, source: "auto", reason: "activeScope")
+                return true
+            case .allowBookmarkedScope:
+                if startAccessingBookmark(for: root, source: "auto") {
+                    emitDecisionLogIfNeeded(root: root, allowed: true, source: "auto", reason: "bookmark")
+                    return true
+                }
+                markDenied(root: root, source: "auto", reason: "bookmarkFailed")
                 return false
             }
-
-            if startAccessingBookmark(for: root, source: source) {
-                emitDecisionLogIfNeeded(root: root, allowed: true, source: source, reason: "bookmark")
-                return true
-            }
-
-            if deniedRoots.contains(root) {
-                emitDecisionLogIfNeeded(root: root, allowed: false, source: source, reason: "deniedCache")
-                return false
-            }
-            if checkedRoots.contains(root) {
-                emitDecisionLogIfNeeded(root: root, allowed: true, source: source, reason: "checkedCache")
-                return true
-            }
-            checkedRoots.insert(root)
-            if canAccess(root) {
-                emitDecisionLogIfNeeded(root: root, allowed: true, source: source, reason: "directCheck")
-                return true
-            }
-            markDenied(root: root, source: source, reason: "directCheckDenied")
-            return false
         }
     }
 
@@ -231,21 +233,4 @@ enum ProtectedPathPolicy {
         Log.info("ProtectedPathPolicy: \(verdict) root=\(root) source=\(source) reason=\(reason)")
     }
 
-    private static func canAccess(_ path: String) -> Bool {
-        do {
-            _ = try FileManager.default.contentsOfDirectory(atPath: path)
-            return true
-        } catch let error as NSError {
-            // Only treat permission errors as denied; not-found means the path
-            // doesn't exist yet, which shouldn't permanently deny access.
-            if error.domain == NSCocoaErrorDomain, error.code == NSFileReadNoPermissionError {
-                return false
-            }
-            if error.domain == NSPOSIXErrorDomain, error.code == Int(EACCES) {
-                return false
-            }
-            // Path doesn't exist or other non-permission error — treat as accessible
-            return true
-        }
-    }
 }

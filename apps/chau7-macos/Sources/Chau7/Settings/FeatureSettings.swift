@@ -2579,7 +2579,7 @@ final class FeatureSettings {
         // F21: Snippets (default: enabled)
         self.isSnippetsEnabled = defaults.object(forKey: Keys.snippetsEnabled) as? Bool ?? true
         self.isRepoSnippetsEnabled = defaults.object(forKey: Keys.repoSnippetsEnabled) as? Bool ?? true
-        self.allowProtectedFolderAccess = defaults.object(forKey: Keys.allowProtectedFolderAccess) as? Bool ?? true
+        self.allowProtectedFolderAccess = defaults.object(forKey: Keys.allowProtectedFolderAccess) as? Bool ?? false
         self.recentRepoRoots = defaults.stringArray(forKey: Keys.recentRepoRoots) ?? []
         self.repoSnippetPath = defaults.string(forKey: Keys.repoSnippetPath) ?? ".chau7/snippets"
         self.snippetInsertMode = defaults.string(forKey: Keys.snippetInsertMode) ?? "expand"
@@ -3242,7 +3242,7 @@ final class FeatureSettings {
         maxBookmarksPerTab = imported.maxBookmarksPerTab
         isSnippetsEnabled = imported.isSnippetsEnabled
         isRepoSnippetsEnabled = imported.isRepoSnippetsEnabled
-        allowProtectedFolderAccess = imported.allowProtectedFolderAccess ?? true
+        allowProtectedFolderAccess = imported.allowProtectedFolderAccess ?? false
         if let recent = imported.recentRepoRoots {
             recentRepoRoots = recent
         }
@@ -3387,7 +3387,7 @@ final class FeatureSettings {
         maxBookmarksPerTab = 20
         isSnippetsEnabled = true
         isRepoSnippetsEnabled = true
-        allowProtectedFolderAccess = true
+        allowProtectedFolderAccess = false
         recentRepoRoots = []
         repoSnippetPath = ".chau7/snippets"
         snippetInsertMode = "expand"
@@ -3508,7 +3508,7 @@ final class FeatureSettings {
     func resetProductivityToDefaults() {
         isSnippetsEnabled = true
         isRepoSnippetsEnabled = true
-        allowProtectedFolderAccess = true
+        allowProtectedFolderAccess = false
         recentRepoRoots = []
         repoSnippetPath = ".chau7/snippets"
         snippetInsertMode = "expand"
@@ -3712,7 +3712,7 @@ extension FeatureSettings {
             maxBookmarksPerTab: 20,
             isSnippetsEnabled: true,
             isRepoSnippetsEnabled: true,
-            allowProtectedFolderAccess: true,
+            allowProtectedFolderAccess: false,
             repoSnippetPath: ".chau7/snippets",
             snippetInsertMode: "expand",
             snippetPlaceholdersEnabled: true,
