@@ -235,6 +235,8 @@ Scripting,Delegated Review Scripting API,"Scripting socket exposes start_review 
 Scripting,Pre-Commit Delegated Review Hook,"Repo-local Scripts/pre-commit-review hook reviews staged changes through Chau7, prints structured findings in terminal-friendly output, defaults to gpt-5.3-codex, and supports gate modes plus timeout/backend/model config via .chau7/pre-commit-review.conf",Shipped,Yes
 Scripting,Pre-Commit Review Socket Timeouts,"The pre-commit review client uses explicit Unix-socket timeouts so a stalled scripting server fails fast instead of hanging git commit",Shipped,No
 Scripting,Delegated Review Recovery And Cleanup,"Delegated review sessions keep their pending initial prompt until the backend is ready and the hook tears down the review session and tab after completion or failure",Shipped,No
+Overlay,Codex Resume Save Churn Suppression,"Save-time Codex resume fallback results are cached per session signature so unchanged unresolved tabs stop repeating the same history scan and unresolved log spam on every autosave",Shipped,No
+Debugging,Startup Stall Telemetry,"Restore and Metal render paths now record explicit main-thread stall events, and relaunch restore holds a scoped low-latency App Nap lease while startup work settles",Shipped,No
 Scripting,Settings API,Query and modify settings programmatically from any language,Shipped,No
 Overlay,Repo Dashboard Dismissal Consistency,"Repo badges highlight while their dashboard overlay is open, and clicking any tab closes the dashboard again, including the already-selected tab",Shipped,No
 Debugging,Data Explorer Refresh,Reopening the singleton Data Explorer window rebuilds its SwiftUI content so history and telemetry reload,Shipped,No

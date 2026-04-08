@@ -428,6 +428,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Sessions Explorer rows use the latest run metadata for provider and repo labels.
 - Live state inspector for tabs, sessions, and models.
 - Feature profiler with os.signpost integration.
+- Main-thread stall telemetry records restore and render work that blocks long enough to explain beachballs during startup or relaunch.
+- Relaunch restore keeps a scoped low-latency App Nap lease while windows and tabs recover, without reverting to the older slow trickle-restore behavior.
 - Structured logging with category-based filtering and correlation IDs.
 - Privacy-first bug report dialog (⌥⌘I): all sensitive data off by default, per-toggle tab pickers, live preview, HTTPS-only submission via relay, success banner with created issue number when available, tab title redaction, background history capture, no AI session fallback leak.
 - In-app issue reporting privacy page: GDPR-compliant sub-processor disclosure (Cloudflare, GitHub) with data categories, retention, legal basis, DPA links, and data subject rights.
