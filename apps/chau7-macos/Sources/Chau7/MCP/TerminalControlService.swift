@@ -159,8 +159,17 @@ final class TerminalControlService {
         }
     }
 
-    func createTab(directory: String?, windowID: Int?) -> String {
+    func createTab(directory: String?, windowID: Int?, context: String? = nil) -> String {
         onMain {
+            let startedAt = CFAbsoluteTimeGetCurrent()
+            defer {
+                FeatureProfiler.shared.recordMainThreadStallIfNeeded(
+                    operation: "TerminalControlService.createTab",
+                    startedAt: startedAt,
+                    thresholdMs: 120,
+                    metadata: "context=\(context ?? "default") windowID=\(windowID.map(String.init) ?? "nil")"
+                )
+            }
             let settings = FeatureSettings.shared
             guard settings.mcpEnabled else {
                 return self.jsonError("MCP is disabled in settings.")
@@ -373,8 +382,17 @@ final class TerminalControlService {
         pressKey(tabID: tabID, key: "enter", modifiers: [])
     }
 
-    func closeTab(tabID: String, force: Bool) -> String {
+    func closeTab(tabID: String, force: Bool, context: String? = nil) -> String {
         onMain {
+            let startedAt = CFAbsoluteTimeGetCurrent()
+            defer {
+                FeatureProfiler.shared.recordMainThreadStallIfNeeded(
+                    operation: "TerminalControlService.closeTab",
+                    startedAt: startedAt,
+                    thresholdMs: 120,
+                    metadata: "context=\(context ?? "default") force=\(force)"
+                )
+            }
             guard let uuid = UUID(uuidString: tabID) else {
                 return self.jsonError("Invalid tab ID: \(tabID)")
             }
@@ -389,9 +407,15 @@ final class TerminalControlService {
                 }
             }
 
-            Log.info("MCP: closing tab \(tabID) force=\(force)")
+            Log.info("MCP: closing tab \(tabID) force=\(force) context=\(context ?? "default")")
             model.closeTab(id: uuid, skipWarning: true)
             return self.encodeAny(["ok": true])
+        }
+    }
+
+    func closeTabAsync(tabID: String, force: Bool, context: String? = nil) {
+        DispatchQueue.main.async {
+            _ = self.closeTab(tabID: tabID, force: force, context: context)
         }
     }
 

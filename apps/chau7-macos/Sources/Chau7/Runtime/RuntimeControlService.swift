@@ -19,6 +19,7 @@ final class RuntimeControlService {
     }()
 
     var launchReadinessProbe: ((RuntimeSession) -> RuntimeLaunchReadinessSnapshot?)?
+    private var runtimeReadinessObserver: NSObjectProtocol?
 
     // MARK: - Backend Registry
 
@@ -35,7 +36,21 @@ final class RuntimeControlService {
         backends[name] = factory
     }
 
-    private init() {}
+    private init() {
+        self.runtimeReadinessObserver = NotificationCenter.default.addObserver(
+            forName: .terminalSessionRuntimeReadinessChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let terminalSession = notification.object as? TerminalSessionModel,
+                  let tabID = terminalSession.ownerTabID else {
+                return
+            }
+            let source = notification.userInfo?["source"] as? String ?? "unknown"
+            handleRuntimeReadinessChange(forTabID: tabID, source: source)
+        }
+    }
 
     // MARK: - Tool Dispatch
 
@@ -75,6 +90,8 @@ final class RuntimeControlService {
     // MARK: - Session Management
 
     private func createSession(_ args: [String: Any]) -> String {
+        let createStartedAt = CFAbsoluteTimeGetCurrent()
+        defer { logSlowRuntimeLifecycle(operation: "runtime_session_create", startedAt: createStartedAt) }
         let backendName = args["backend"] as? String ?? "claude"
         let directory = args["directory"] as? String ?? FileManager.default.currentDirectoryPath
         let model = args["model"] as? String
@@ -188,7 +205,11 @@ final class RuntimeControlService {
             Log.info("MCP runtime_session_create: attaching to existing tab \(attachStr)")
         } else {
             // Create a new tab via TerminalControlService
-            let tabResult = controlService.createTab(directory: directory, windowID: nil)
+            let tabResult = controlService.createTab(
+                directory: directory,
+                windowID: nil,
+                context: "runtime_session_create"
+            )
             guard let data = tabResult.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let tabIDStr = json["tab_id"] as? String,
@@ -223,101 +244,28 @@ final class RuntimeControlService {
             _ = controlService.execInTab(tabID: tabID.uuidString, command: launchCmd)
             if backend.launchReadinessStrategy == .immediate {
                 sessionManager.markReady(sessionID: session.id)
-            } else {
-                scheduleBackendReadiness(session: session, attempt: 1)
             }
         }
 
-        // Send initial prompt if provided — poll for readiness instead of fixed delay
+        // Send initial prompt if provided. Delivery is driven by real terminal
+        // readiness changes instead of background retry loops.
         if let prompt = initialPrompt {
             session.queueInitialPrompt(prompt)
             if !dispatchPendingInitialPromptIfReady(session) {
-                scheduleInitialPrompt(session: session, attempt: 1)
+                session.journal.append(
+                    sessionID: session.id,
+                    turnID: nil,
+                    type: "initial_prompt_pending",
+                    data: ["reason": "awaiting_runtime_readiness"]
+                )
+                Log.info("MCP initial_prompt: queued for session \(session.id) pending readiness events")
             }
         }
+
+        handleRuntimeReadinessChange(forTabID: tabID, source: "create")
 
         Log.info("MCP runtime_session_create: session \(session.id) created (state=\(session.state.rawValue))")
         return encodeAny(sessionSummary(session))
-    }
-
-    /// Deliver initial_prompt with retry: waits for real backend readiness, not just session bookkeeping.
-    private func scheduleInitialPrompt(session: RuntimeSession, attempt: Int) {
-        let maxAttemptsBeforeSlowPolling = 16
-        let delay = readinessRetryDelay(forAttempt: attempt)
-
-        DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { return }
-
-            if session.isTerminal {
-                Log.warn("MCP initial_prompt: session \(session.id) reached terminal state before prompt could be sent (state=\(session.state.rawValue))")
-                session.clearPendingInitialPrompt()
-                session.journal.append(
-                    sessionID: session.id,
-                    turnID: nil,
-                    type: "initial_prompt_failed",
-                    data: ["reason": "session_terminated", "state": session.state.rawValue]
-                )
-                return
-            }
-
-            if dispatchPendingInitialPromptIfReady(session) {
-                return
-            }
-
-            if attempt == maxAttemptsBeforeSlowPolling {
-                Log.warn("MCP initial_prompt: still waiting after \(maxAttemptsBeforeSlowPolling) attempts, session state=\(session.state.rawValue)")
-                session.journal.append(
-                    sessionID: session.id,
-                    turnID: nil,
-                    type: "initial_prompt_deferred",
-                    data: ["reason": "backend_still_starting", "state": session.state.rawValue, "attempts": "\(maxAttemptsBeforeSlowPolling)"]
-                )
-            }
-
-            scheduleInitialPrompt(session: session, attempt: attempt + 1)
-        }
-    }
-
-    private func scheduleBackendReadiness(session: RuntimeSession, attempt: Int) {
-        let maxAttemptsBeforeSlowPolling = 16
-        let delay = readinessRetryDelay(forAttempt: attempt)
-
-        DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { return }
-
-            if session.isTerminal {
-                return
-            }
-
-            if ensureSessionReadyForTurn(session) {
-                Log.info("MCP runtime_session_create: session \(session.id) became ready after launch (attempt \(attempt))")
-                _ = dispatchPendingInitialPromptIfReady(session)
-                return
-            }
-
-            if attempt == maxAttemptsBeforeSlowPolling {
-                Log.warn("MCP runtime_session_create: backend readiness still pending for session \(session.id) after \(maxAttemptsBeforeSlowPolling) attempts")
-                session.journal.append(
-                    sessionID: session.id,
-                    turnID: nil,
-                    type: "backend_ready_timeout",
-                    data: ["state": session.state.rawValue, "attempts": "\(maxAttemptsBeforeSlowPolling)"]
-                )
-            }
-
-            scheduleBackendReadiness(session: session, attempt: attempt + 1)
-        }
-    }
-
-    private func readinessRetryDelay(forAttempt attempt: Int) -> TimeInterval {
-        switch attempt {
-        case ..<3:
-            return 0.3
-        case ..<16:
-            return 0.5
-        default:
-            return 1.0
-        }
     }
 
     private func listSessions(_ args: [String: Any]) -> String {
@@ -338,6 +286,8 @@ final class RuntimeControlService {
     }
 
     private func stopSession(_ args: [String: Any]) -> String {
+        let stopStartedAt = CFAbsoluteTimeGetCurrent()
+        defer { logSlowRuntimeLifecycle(operation: "runtime_session_stop", startedAt: stopStartedAt) }
         guard let sessionID = args["session_id"] as? String else {
             return jsonError("session_id is required")
         }
@@ -359,10 +309,19 @@ final class RuntimeControlService {
         let stopped = sessionManager.stopSession(id: sessionID)
 
         if closeTab {
-            _ = controlService.closeTab(tabID: session.tabID.uuidString, force: true)
+            controlService.closeTabAsync(
+                tabID: session.tabID.uuidString,
+                force: true,
+                context: "runtime_session_stop"
+            )
         }
 
-        return encodeAny(["ok": stopped, "session_id": sessionID, "final_state": session.state.rawValue])
+        return encodeAny([
+            "ok": stopped,
+            "session_id": sessionID,
+            "final_state": session.state.rawValue,
+            "close_queued": closeTab
+        ])
     }
 
     private func listChildSessions(_ args: [String: Any]) -> String {
@@ -394,7 +353,11 @@ final class RuntimeControlService {
             if sessionManager.stopSession(id: child.id) {
                 stoppedIDs.append(child.id)
                 if closeTabs {
-                    _ = controlService.closeTab(tabID: child.tabID.uuidString, force: true)
+                    controlService.closeTabAsync(
+                        tabID: child.tabID.uuidString,
+                        force: true,
+                        context: "runtime_session_cancel_children"
+                    )
                 }
             }
         }
@@ -770,6 +733,40 @@ final class RuntimeControlService {
         }
         sessionManager.markReady(sessionID: session.id)
         return session.canAcceptTurn
+    }
+
+    private func handleRuntimeReadinessChange(forTabID tabID: UUID, source: String) {
+        guard let session = sessionManager.sessionForTab(tabID) else { return }
+        guard session.state == .starting || session.pendingInitialPrompt != nil else { return }
+
+        if session.isTerminal {
+            if session.pendingInitialPrompt != nil {
+                Log.warn("MCP initial_prompt: session \(session.id) reached terminal state before prompt could be sent (state=\(session.state.rawValue))")
+                session.clearPendingInitialPrompt()
+                session.journal.append(
+                    sessionID: session.id,
+                    turnID: nil,
+                    type: "initial_prompt_failed",
+                    data: ["reason": "session_terminated", "state": session.state.rawValue, "source": source]
+                )
+            }
+            return
+        }
+
+        if dispatchPendingInitialPromptIfReady(session) {
+            Log.info("MCP initial_prompt: dispatched for session \(session.id) via \(source)")
+            return
+        }
+
+        if ensureSessionReadyForTurn(session) {
+            Log.info("MCP runtime_session_create: session \(session.id) became ready via \(source)")
+        }
+    }
+
+    private func logSlowRuntimeLifecycle(operation: String, startedAt: CFAbsoluteTime, thresholdMs: Double = 150) {
+        let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
+        guard durationMs >= thresholdMs else { return }
+        Log.warn("MCP \(operation): slow path \(Int(durationMs.rounded()))ms")
     }
 
     private func backendLaunchReady(for session: RuntimeSession) -> Bool {

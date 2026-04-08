@@ -6,6 +6,8 @@ import Chau7Core
 extension Notification.Name {
     static let terminalSessionRenderSuspensionStateChanged =
         Notification.Name("com.chau7.terminalSessionRenderSuspensionStateChanged")
+    static let terminalSessionRuntimeReadinessChanged =
+        Notification.Name("com.chau7.terminalSessionRuntimeReadinessChanged")
 }
 
 enum CommandStatus: String {
@@ -108,7 +110,12 @@ final class TerminalSessionModel {
     }
 
     var status: CommandStatus = .idle {
-        didSet { onSessionStateChanged?() }
+        didSet {
+            onSessionStateChanged?()
+            if status != oldValue {
+                postRuntimeReadinessChange(source: "status")
+            }
+        }
     }
 
     var isGitRepo = false
@@ -125,6 +132,7 @@ final class TerminalSessionModel {
             recalculateCTOFlag()
             onSessionStateChanged?()
             if activeAppName != oldValue {
+                postRuntimeReadinessChange(source: "active_app")
                 NotificationCenter.default.post(
                     name: .terminalSessionRenderSuspensionStateChanged,
                     object: self
@@ -220,7 +228,12 @@ final class TerminalSessionModel {
     var activeSearchIndex = 0
     /// Whether the shell is at a prompt (not running a command). Used by history key monitor.
     var isAtPrompt = true {
-        didSet { onSessionStateChanged?() }
+        didSet {
+            onSessionStateChanged?()
+            if isAtPrompt != oldValue {
+                postRuntimeReadinessChange(source: "prompt")
+            }
+        }
     }
 
     /// Called when a permission/question is answered (user submits input after waiting).
@@ -228,7 +241,13 @@ final class TerminalSessionModel {
     @ObservationIgnored var onPermissionResolved: (() -> Void)?
 
     /// Whether the shell is still loading (no prompt yet). Cleared on first OSC 7.
-    var isShellLoading = true
+    var isShellLoading = true {
+        didSet {
+            if isShellLoading != oldValue {
+                postRuntimeReadinessChange(source: "shell_loading")
+            }
+        }
+    }
 
     /// Set to true when no PTY output arrives within the startup timeout (shell may be hung).
     /// Cleared automatically on first output.
@@ -244,6 +263,14 @@ final class TerminalSessionModel {
     /// The most recent input or output activity timestamp.
     var lastActivityDate: Date {
         max(lastInputAt, lastOutputAt)
+    }
+
+    private func postRuntimeReadinessChange(source: String) {
+        NotificationCenter.default.post(
+            name: .terminalSessionRuntimeReadinessChanged,
+            object: self,
+            userInfo: ["source": source]
+        )
     }
 
     /// Backdate activity timestamps to force the tab into the idle dropdown.

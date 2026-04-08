@@ -227,10 +227,9 @@ final class RuntimeControlServiceTests: XCTestCase {
         let backendName = "mock-interactive-prompt-\(UUID().uuidString)"
         RuntimeControlService.registerBackend(name: backendName) { MockInteractiveBackend(name: backendName) }
 
-        var probeAttempts = 0
+        var isReady = false
         RuntimeControlService.shared.launchReadinessProbe = { _ in
-            probeAttempts += 1
-            if probeAttempts < 3 {
+            if !isReady {
                 return RuntimeLaunchReadinessSnapshot(
                     shellLoading: true,
                     isAtPrompt: true,
@@ -268,9 +267,14 @@ final class RuntimeControlServiceTests: XCTestCase {
         let json = try XCTUnwrap(parseJSONObject(response))
         let sessionID = try XCTUnwrap(json["session_id"] as? String)
         let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+        let terminalSession = try XCTUnwrap(tabSession(for: session))
+
+        XCTAssertEqual(session.turnCount, 0)
+        isReady = true
+        terminalSession.isShellLoading = false
+        terminalSession.activeAppName = "MockInteractive"
 
         XCTAssertTrue(waitUntil(timeout: 3.0) { session.turnCount == 1 && session.state == .busy })
-        XCTAssertGreaterThanOrEqual(probeAttempts, 3)
     }
 
     func testRuntimeTurnWaitDoesNotFinishWhileInteractiveSessionIsStillStarting() throws {
@@ -559,6 +563,35 @@ final class RuntimeControlServiceTests: XCTestCase {
         XCTAssertTrue(descendants.contains { ($0["session_id"] as? String) == childSessionID })
     }
 
+    func testRuntimeSessionStopQueuesTabCloseAsynchronously() throws {
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": "shell",
+                "directory": "/tmp/runtime-stop-close-\(UUID().uuidString)"
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let sessionID = try XCTUnwrap(json["session_id"] as? String)
+        let tabID = try XCTUnwrap(json["tab_id"] as? String)
+
+        let stopResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_stop",
+            arguments: [
+                "session_id": sessionID,
+                "close_tab": true
+            ]
+        )
+
+        let stopJSON = try XCTUnwrap(parseJSONObject(stopResponse))
+        XCTAssertEqual(stopJSON["ok"] as? Bool, true)
+        XCTAssertEqual(stopJSON["close_queued"] as? Bool, true)
+        XCTAssertTrue(waitUntil(timeout: 1.0) {
+            !self.overlayModel.tabs.contains(where: { $0.id.uuidString == tabID })
+        })
+    }
+
     private func parseJSONObject(_ text: String) -> [String: Any]? {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -573,6 +606,10 @@ final class RuntimeControlServiceTests: XCTestCase {
             return nil
         }
         return json
+    }
+
+    private func tabSession(for runtimeSession: RuntimeSession) -> TerminalSessionModel? {
+        overlayModel.tabs.first(where: { $0.id == runtimeSession.tabID })?.session
     }
 
     private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) -> Bool {
