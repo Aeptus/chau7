@@ -628,7 +628,8 @@ final class TerminalControlService {
             gitBranch: session.gitBranch,
             sshHost: nil,
             processes: session.processGroup?.children.map(\.name),
-            environment: nil
+            environment: nil,
+            shellPID: session.existingRustTerminalView?.shellPid
         )
     }
 
@@ -825,6 +826,26 @@ final class TerminalControlService {
         }
     }
 
+    func runtimeLaunchSnapshot(forOverlayTabID tabID: UUID) -> RuntimeLaunchReadinessSnapshot? {
+        onMain {
+            guard let tab = self.allTabs.first(where: { $0.id == tabID }),
+                  let session = tab.displaySession ?? tab.session else {
+                return nil
+            }
+            return RuntimeLaunchReadinessSnapshot(
+                shellLoading: session.isShellLoading,
+                isAtPrompt: session.effectiveIsAtPrompt,
+                effectiveStatus: session.effectiveStatus.rawValue,
+                rawStatus: session.status.rawValue,
+                activeApp: session.aiDisplayAppName ?? session.activeAppName,
+                rawActiveApp: session.activeAppName,
+                aiProvider: session.effectiveAIProvider,
+                activeRunProvider: TelemetryRecorder.shared.activeRunForTab(session.tabIdentifier)?.provider,
+                processNames: session.processGroup?.children.map(\.name) ?? []
+            )
+        }
+    }
+
     /// Find the OverlayTabsModel that owns a given tab UUID.
     private func modelForTab(_ uuid: UUID) -> OverlayTabsModel? {
         allModels.first(where: { $0.model.tabs.contains(where: { $0.id == uuid }) })?.model
@@ -999,9 +1020,9 @@ final class TerminalControlService {
         switch verdict {
         case .allowed:
             return nil
-        case .blocked(let cmd):
-            Log.info("MCP: blocked '\(cmd)' in \(context)")
-            return jsonError("Command '\(cmd)' is blocked by MCP permissions.")
+        case .blocked(let cmd, let reason):
+            Log.info("MCP: blocked '\(cmd)' in \(context) (\(reason))")
+            return jsonError("Command '\(cmd)' was blocked: \(reason).")
         case .needsApproval(let cmd):
             let result = onMain {
                 self.requestCommandApproval(command: fullInput, flaggedCommand: cmd, permissions: permissions)

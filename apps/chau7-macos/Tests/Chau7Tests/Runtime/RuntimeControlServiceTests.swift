@@ -2,6 +2,29 @@ import XCTest
 #if !SWIFT_PACKAGE
 @testable import Chau7
 
+private struct MockInteractiveBackend: AgentBackend {
+    let name: String
+
+    func launchCommand(config: SessionConfig) -> String {
+        "printf ''"
+    }
+
+    func formatPromptInput(_ prompt: String, context: String?) -> String {
+        if let context, !context.isEmpty {
+            return "CTX:\(context)\nPROMPT:\(prompt)\n"
+        }
+        return "PROMPT:\(prompt)\n"
+    }
+
+    var resumeProviderKey: String? {
+        nil
+    }
+
+    var launchReadinessStrategy: AgentLaunchReadinessStrategy {
+        .interactiveAgent
+    }
+}
+
 @MainActor
 final class RuntimeControlServiceTests: XCTestCase {
     private var appModel: AppModel!
@@ -18,8 +41,8 @@ final class RuntimeControlServiceTests: XCTestCase {
     }
 
     override func tearDown() {
-        if let selectedTabID = overlayModel?.selectedTabID,
-           let session = RuntimeSessionManager.shared.sessionForTab(selectedTabID) {
+        RuntimeControlService.shared.launchReadinessProbe = nil
+        for session in RuntimeSessionManager.shared.allSessions(includeStopped: false) {
             _ = RuntimeSessionManager.shared.stopSession(id: session.id)
         }
         if let overlayModel {
@@ -122,6 +145,174 @@ final class RuntimeControlServiceTests: XCTestCase {
         XCTAssertEqual(session.config.parentRunID, "run_parent123")
         XCTAssertEqual(session.config.delegationDepth, 1)
         XCTAssertEqual(session.config.taskMetadata["review_scope"], "commits")
+    }
+
+    func testInteractiveBackendSessionStartsInStartingStateUntilLaunchReady() throws {
+        let backendName = "mock-interactive-start-\(UUID().uuidString)"
+        RuntimeControlService.registerBackend(name: backendName) { MockInteractiveBackend(name: backendName) }
+        RuntimeControlService.shared.launchReadinessProbe = { _ in
+            RuntimeLaunchReadinessSnapshot(
+                shellLoading: true,
+                isAtPrompt: true,
+                effectiveStatus: "idle",
+                rawStatus: "idle",
+                activeApp: nil,
+                rawActiveApp: nil,
+                aiProvider: nil,
+                activeRunProvider: nil,
+                processNames: []
+            )
+        }
+
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": backendName,
+                "directory": "/tmp/runtime-starting-\(UUID().uuidString)"
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let sessionID = try XCTUnwrap(json["session_id"] as? String)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+
+        XCTAssertEqual(json["state"] as? String, "starting")
+        XCTAssertEqual(session.state, .starting)
+    }
+
+    func testRuntimeTurnSendPromotesInteractiveSessionOnceLaunchProbeIsReady() throws {
+        let backendName = "mock-interactive-send-\(UUID().uuidString)"
+        RuntimeControlService.registerBackend(name: backendName) { MockInteractiveBackend(name: backendName) }
+        RuntimeControlService.shared.launchReadinessProbe = { _ in
+            RuntimeLaunchReadinessSnapshot(
+                shellLoading: false,
+                isAtPrompt: false,
+                effectiveStatus: "running",
+                rawStatus: "running",
+                activeApp: "MockInteractive",
+                rawActiveApp: "MockInteractive",
+                aiProvider: backendName,
+                activeRunProvider: backendName,
+                processNames: [backendName]
+            )
+        }
+
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": backendName,
+                "directory": "/tmp/runtime-promote-\(UUID().uuidString)"
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let sessionID = try XCTUnwrap(json["session_id"] as? String)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+        XCTAssertEqual(session.state, .starting)
+
+        let sendResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_turn_send",
+            arguments: [
+                "session_id": sessionID,
+                "prompt": "status"
+            ]
+        )
+
+        let sendJSON = try XCTUnwrap(parseJSONObject(sendResponse))
+        XCTAssertEqual(sendJSON["status"] as? String, "accepted")
+        XCTAssertEqual(session.state, .busy)
+    }
+
+    func testInitialPromptWaitsUntilInteractiveLaunchProbeBecomesReady() throws {
+        let backendName = "mock-interactive-prompt-\(UUID().uuidString)"
+        RuntimeControlService.registerBackend(name: backendName) { MockInteractiveBackend(name: backendName) }
+
+        var probeAttempts = 0
+        RuntimeControlService.shared.launchReadinessProbe = { _ in
+            probeAttempts += 1
+            if probeAttempts < 3 {
+                return RuntimeLaunchReadinessSnapshot(
+                    shellLoading: true,
+                    isAtPrompt: true,
+                    effectiveStatus: "idle",
+                    rawStatus: "idle",
+                    activeApp: nil,
+                    rawActiveApp: nil,
+                    aiProvider: nil,
+                    activeRunProvider: nil,
+                    processNames: []
+                )
+            }
+            return RuntimeLaunchReadinessSnapshot(
+                shellLoading: false,
+                isAtPrompt: false,
+                effectiveStatus: "running",
+                rawStatus: "running",
+                activeApp: "MockInteractive",
+                rawActiveApp: "MockInteractive",
+                aiProvider: backendName,
+                activeRunProvider: backendName,
+                processNames: [backendName]
+            )
+        }
+
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": backendName,
+                "directory": "/tmp/runtime-initial-\(UUID().uuidString)",
+                "initial_prompt": "review this change"
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let sessionID = try XCTUnwrap(json["session_id"] as? String)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+
+        XCTAssertTrue(waitUntil(timeout: 3.0) { session.turnCount == 1 && session.state == .busy })
+        XCTAssertGreaterThanOrEqual(probeAttempts, 3)
+    }
+
+    func testRuntimeTurnWaitDoesNotFinishWhileInteractiveSessionIsStillStarting() throws {
+        let backendName = "mock-interactive-wait-\(UUID().uuidString)"
+        RuntimeControlService.registerBackend(name: backendName) { MockInteractiveBackend(name: backendName) }
+        RuntimeControlService.shared.launchReadinessProbe = { _ in
+            RuntimeLaunchReadinessSnapshot(
+                shellLoading: true,
+                isAtPrompt: true,
+                effectiveStatus: "idle",
+                rawStatus: "idle",
+                activeApp: nil,
+                rawActiveApp: nil,
+                aiProvider: nil,
+                activeRunProvider: nil,
+                processNames: []
+            )
+        }
+
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": backendName,
+                "directory": "/tmp/runtime-wait-\(UUID().uuidString)",
+                "initial_prompt": "review this change"
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let sessionID = try XCTUnwrap(json["session_id"] as? String)
+
+        let waitResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_turn_wait",
+            arguments: [
+                "session_id": sessionID,
+                "timeout_ms": 150
+            ]
+        )
+
+        let waitJSON = try XCTUnwrap(parseJSONObject(waitResponse))
+        XCTAssertEqual(waitJSON["state"] as? String, "starting")
+        XCTAssertEqual(waitJSON["timed_out"] as? Bool, true)
     }
 
     func testRuntimeTurnResultReturnsCapturedStructuredPayload() throws {
@@ -268,6 +459,17 @@ final class RuntimeControlServiceTests: XCTestCase {
             return nil
         }
         return json
+    }
+
+    private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() {
+                return true
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        return condition()
     }
 }
 #endif

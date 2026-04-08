@@ -18,6 +18,8 @@ final class RuntimeControlService {
         return encoder
     }()
 
+    var launchReadinessProbe: ((RuntimeSession) -> RuntimeLaunchReadinessSnapshot?)?
+
     // MARK: - Backend Registry
 
     private static let backendsLock = NSLock()
@@ -219,7 +221,11 @@ final class RuntimeControlService {
         if !launchCmd.isEmpty, attachTabID == nil {
             Log.info("MCP runtime_session_create: launching command: \(launchCmd)")
             _ = controlService.execInTab(tabID: tabID.uuidString, command: launchCmd)
-            sessionManager.markReady(sessionID: session.id)
+            if backend.launchReadinessStrategy == .immediate {
+                sessionManager.markReady(sessionID: session.id)
+            } else if initialPrompt == nil {
+                scheduleBackendReadiness(session: session, attempt: 1)
+            }
         }
 
         // Send initial prompt if provided — poll for readiness instead of fixed delay
@@ -231,9 +237,9 @@ final class RuntimeControlService {
         return encodeAny(sessionSummary(session))
     }
 
-    /// Deliver initial_prompt with retry: waits for .ready state, backs off up to ~4s total.
+    /// Deliver initial_prompt with retry: waits for real backend readiness, not just session bookkeeping.
     private func scheduleInitialPrompt(session: RuntimeSession, prompt: String, attempt: Int) {
-        let maxAttempts = 8
+        let maxAttempts = 16
         let delay = attempt <= 2 ? 0.3 : 0.5 // faster first checks, then slower
 
         DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -250,7 +256,7 @@ final class RuntimeControlService {
                 return
             }
 
-            if session.canAcceptTurn {
+            if ensureSessionReadyForTurn(session) {
                 Log.info("MCP initial_prompt: sending to session \(session.id) (attempt \(attempt))")
                 let result = sendTurnInternal(session: session, prompt: prompt, context: nil)
                 if result.contains("\"error\"") {
@@ -271,6 +277,37 @@ final class RuntimeControlService {
             }
 
             scheduleInitialPrompt(session: session, prompt: prompt, attempt: attempt + 1)
+        }
+    }
+
+    private func scheduleBackendReadiness(session: RuntimeSession, attempt: Int) {
+        let maxAttempts = 16
+        let delay = attempt <= 2 ? 0.3 : 0.5
+
+        DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+
+            if session.isTerminal {
+                return
+            }
+
+            if ensureSessionReadyForTurn(session) {
+                Log.info("MCP runtime_session_create: session \(session.id) became ready after launch (attempt \(attempt))")
+                return
+            }
+
+            if attempt >= maxAttempts {
+                Log.warn("MCP runtime_session_create: backend readiness timed out for session \(session.id)")
+                session.journal.append(
+                    sessionID: session.id,
+                    turnID: nil,
+                    type: "backend_ready_timeout",
+                    data: ["state": session.state.rawValue, "attempts": "\(maxAttempts)"]
+                )
+                return
+            }
+
+            scheduleBackendReadiness(session: session, attempt: attempt + 1)
         }
     }
 
@@ -434,7 +471,7 @@ final class RuntimeControlService {
             session.recordPolicyBlock(tool: "turn_submission", reason: policyError)
             return jsonError(policyError)
         }
-        guard session.canAcceptTurn else {
+        guard ensureSessionReadyForTurn(session) else {
             Log.info("MCP runtime_turn_send: rejected for session \(session.id), state=\(session.state.rawValue)")
             return jsonError("Session \(session.id) is not ready (state: \(session.state.rawValue)). Wait for ready state.")
         }
@@ -711,6 +748,33 @@ final class RuntimeControlService {
         return summary
     }
 
+    private func ensureSessionReadyForTurn(_ session: RuntimeSession) -> Bool {
+        if session.canAcceptTurn {
+            return true
+        }
+        guard session.state == .starting else {
+            return false
+        }
+        guard backendLaunchReady(for: session) else {
+            return false
+        }
+        sessionManager.markReady(sessionID: session.id)
+        return session.canAcceptTurn
+    }
+
+    private func backendLaunchReady(for session: RuntimeSession) -> Bool {
+        switch session.backend.launchReadinessStrategy {
+        case .immediate:
+            return true
+        case .interactiveAgent:
+            guard let snapshot = launchReadinessProbe?(session)
+                ?? controlService.runtimeLaunchSnapshot(forOverlayTabID: session.tabID) else {
+                return false
+            }
+            return RuntimeLaunchReadiness.isReady(snapshot: snapshot, backendName: session.backend.name)
+        }
+    }
+
     private func sanitizeStringDict(_ value: Any?) -> [String: String]? {
         guard let value else { return nil }
         if let dict = value as? [String: String] {
@@ -778,6 +842,9 @@ final class RuntimeControlService {
 
     private func turnIsFinished(session: RuntimeSession, requestedTurnID: String?) -> Bool {
         if let requestedTurnID {
+            if session.state == .starting {
+                return false
+            }
             if session.turnResult(id: requestedTurnID) != nil {
                 return true
             }
@@ -786,7 +853,7 @@ final class RuntimeControlService {
             }
             return session.currentTurnID != requestedTurnID && session.state != .busy && session.state != .awaitingApproval
         }
-        return session.state != .busy && session.state != .awaitingApproval
+        return session.state != .starting && session.state != .busy && session.state != .awaitingApproval
     }
 
     private func statusArguments(sessionID: String, turnID: String?) -> [String: Any] {
