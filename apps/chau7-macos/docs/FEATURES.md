@@ -419,6 +419,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - The pre-commit review client applies explicit socket timeouts so a stalled scripting server fails fast instead of hanging the entire commit hook.
 - Delegated review sessions retain their initial prompt until the backend is actually ready, and the hook tears down review tabs after completion or failure instead of leaving orphaned MCP-controlled review tabs open.
 - Per-repo pre-commit review policy via `.chau7/pre-commit-review.conf` with gate modes (`off`, `advisory`, `high`, `any`), timeout, backend, and model selection. The shipped default reviewer model is `gpt-5.3-codex`.
+- The local `pre-push` hook rejects plain release tags like `0.1.1` when the release workflow is configured for `v*`, so release tags match the GitHub workflow trigger before they are pushed.
 
 ### Debugging
 

@@ -104,9 +104,16 @@ jobs:
     name: Update Homebrew Tap
     needs: build
     runs-on: ubuntu-latest
-    if: ${{ needs.build.outputs.sha256 != '' && secrets.HOMEBREW_TAP_TOKEN != '' }}
+    if: ${{ needs.build.outputs.sha256 != '' }}
+    env:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
+      - name: Skip when tap token is missing
+        if: ${{ env.HOMEBREW_TAP_TOKEN == '' }}
+        run: echo "HOMEBREW_TAP_TOKEN is not configured; skipping Homebrew tap update."
+
       - name: Checkout tap repo
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
         uses: actions/checkout@v6
         with:
           repository: aeptus/homebrew-chau7
@@ -114,6 +121,7 @@ jobs:
           path: tap
 
       - name: Update cask formula
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
         run: |
           mkdir -p tap/Casks
           cat > tap/Casks/chau7.rb << CASK
@@ -140,6 +148,7 @@ jobs:
           CASK
 
       - name: Commit and push
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
         working-directory: tap
         run: |
           git config user.name "github-actions[bot]"

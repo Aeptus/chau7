@@ -9,5 +9,8 @@ pre-commit:
 
 pre-push:
   commands:
+    release-tag-check:
+      run: ./Scripts/check-release-tag-push
+      use_stdin: true
     local-ci:
       run: ./Scripts/ci-local

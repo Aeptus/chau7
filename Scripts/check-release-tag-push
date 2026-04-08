@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/ci-lib.sh"
+
+ROOT_DIR="$(ci_repo_root)"
+RELEASE_WORKFLOW="$ROOT_DIR/.github/workflows/release.yml"
+
+workflow_requires_v_prefix() {
+  [[ -f "$RELEASE_WORKFLOW" ]] || return 1
+  grep -Eq "^[[:space:]]*-[[:space:]]*'v\\*'" "$RELEASE_WORKFLOW"
+}
+
+is_zero_sha() {
+  local sha="${1:-}"
+  [[ "$sha" =~ ^0+$ ]]
+}
+
+looks_like_plain_release_tag() {
+  local tag="$1"
+  [[ "$tag" =~ ^[0-9]+(\.[0-9]+)*([.-][A-Za-z0-9][A-Za-z0-9.-]*)?$ ]]
+}
+
+main() {
+  local enforce_v_prefix=0
+  if workflow_requires_v_prefix; then
+    enforce_v_prefix=1
+  fi
+
+  local line local_ref local_sha remote_ref remote_sha tag suggested
+  while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    [[ -n "${local_ref:-}" ]] || continue
+    [[ "$local_ref" == refs/tags/* ]] || continue
+    is_zero_sha "${local_sha:-}" && continue
+
+    tag="${local_ref#refs/tags/}"
+    if [[ "$enforce_v_prefix" == "1" ]] && looks_like_plain_release_tag "$tag"; then
+      suggested="v$tag"
+      ci_fail "Pushing tag '$tag' would not trigger .github/workflows/release.yml (current release trigger: 'v*'). Use '$suggested' instead."
+    fi
+  done
+}
+
+main "$@"
