@@ -402,20 +402,28 @@ final class RuntimeSession: @unchecked Sendable {
         approvalTimeoutWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            let currentState = state
-            guard currentState == .awaitingApproval else { return }
-            lock.lock()
-            _pendingApproval = nil
-            lock.unlock()
-            let transitioned = transition(.turnCompleted)
-            if transitioned {
-                Log.warn("RuntimeSession \(id): approval timed out after \(Int(Self.approvalTimeoutSeconds))s, recovering to ready")
-            } else {
-                Log.debug("RuntimeSession \(id): duplicate approval timeout ignored in state=\(state.rawValue)")
-            }
+            handleApprovalTimeout()
         }
         approvalTimeoutWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.approvalTimeoutSeconds, execute: work)
+    }
+
+    func handleApprovalTimeout() {
+        approvalTimeoutWork?.cancel()
+        approvalTimeoutWork = nil
+
+        let currentState = state
+        guard currentState == .awaitingApproval else {
+            Log.debug("RuntimeSession \(id): duplicate approval timeout ignored in state=\(currentState.rawValue)")
+            return
+        }
+
+        lock.lock()
+        _pendingApproval = nil
+        lock.unlock()
+
+        failTurn(reason: "approval_timeout")
+        Log.warn("RuntimeSession \(id): approval timed out after \(Int(Self.approvalTimeoutSeconds))s, recovering to ready")
     }
 
     /// Resolve a pending approval. Transitions back to `.busy`.

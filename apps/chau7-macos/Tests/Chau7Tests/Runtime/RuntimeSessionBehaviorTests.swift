@@ -34,5 +34,30 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
         XCTAssertEqual(session.state, .ready)
         XCTAssertNil(session.pendingApproval)
     }
+
+    func testApprovalTimeoutFailsTurnAndClearsPendingTurnState() {
+        let session = RuntimeSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: "/tmp/runtime-approval-timeout", provider: "claude")
+        )
+
+        session.transition(.backendReady)
+        XCTAssertNotNil(session.startTurn(prompt: "Need approval"))
+        XCTAssertNotNil(session.requestApproval(tool: "Read", description: "Need approval"))
+
+        session.handleApprovalTimeout()
+
+        XCTAssertEqual(session.state, .ready)
+        XCTAssertNil(session.pendingApproval)
+        XCTAssertNil(session.currentTurnID)
+
+        let failureEvents = session.journal
+            .events(after: 0, limit: 100)
+            .events
+            .filter { $0.type == RuntimeEventType.turnFailed.rawValue }
+        XCTAssertEqual(failureEvents.count, 1)
+        XCTAssertEqual(failureEvents.first?.data?["reason"], "approval_timeout")
+    }
 }
 #endif
