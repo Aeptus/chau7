@@ -14,6 +14,7 @@ final class MCPServerManager {
     private let queue = DispatchQueue(label: "com.chau7.mcp.server")
     private var isRunning = false
     private var acceptSource: DispatchSourceRead?
+    private var healthCheckSource: DispatchSourceTimer?
 
     private init() {
         self.socketPath = RuntimeIsolation.pathInHome(".chau7/mcp.sock")
@@ -305,6 +306,7 @@ final class MCPServerManager {
         guard bindResult == 0 else {
             Log.error("MCPServer: failed to bind socket at \(socketPath): \(String(cString: strerror(errno)))")
             close(serverSocket)
+            serverSocket = -1
             return
         }
 
@@ -312,6 +314,7 @@ final class MCPServerManager {
         guard listen(serverSocket, 5) == 0 else {
             Log.error("MCPServer: failed to listen on socket")
             close(serverSocket)
+            serverSocket = -1
             unlink(socketPath)
             return
         }
@@ -334,6 +337,7 @@ final class MCPServerManager {
         }
         source.resume()
         acceptSource = source
+        startHealthChecks()
     }
 
     private func _stop() {
@@ -342,6 +346,8 @@ final class MCPServerManager {
 
         acceptSource?.cancel()
         acceptSource = nil
+        healthCheckSource?.cancel()
+        healthCheckSource = nil
 
         for client in clientSockets {
             close(client)
@@ -349,6 +355,37 @@ final class MCPServerManager {
         clientSockets.removeAll()
 
         Log.info("MCPServer: stopped")
+    }
+
+    private func startHealthChecks() {
+        healthCheckSource?.cancel()
+        let source = DispatchSource.makeTimerSource(queue: queue)
+        source.schedule(deadline: .now() + 15, repeating: 15)
+        source.setEventHandler { [weak self] in
+            self?.ensureHealthy(reason: "periodic")
+        }
+        source.resume()
+        healthCheckSource = source
+    }
+
+    private func ensureHealthy(reason: String) {
+        let snapshot = LocalSocketServerHealthSnapshot(
+            expectedRunning: true,
+            isRunning: isRunning,
+            hasSocketDescriptor: serverSocket >= 0,
+            hasAcceptSource: acceptSource != nil,
+            socketPathExists: FileManager.default.fileExists(atPath: socketPath)
+        )
+        guard LocalSocketServerHealth.needsRecovery(snapshot) else {
+            return
+        }
+
+        Log.warn(
+            "MCPServer: unhealthy server detected reason=\(reason) running=\(snapshot.isRunning) " +
+                "fd=\(snapshot.hasSocketDescriptor) source=\(snapshot.hasAcceptSource) path=\(snapshot.socketPathExists); restarting"
+        )
+        _stop()
+        _start()
     }
 
     // MARK: - Connection Handling
