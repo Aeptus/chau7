@@ -35,8 +35,12 @@ public struct RuntimeLaunchReadinessSnapshot: Sendable, Equatable {
 }
 
 public enum RuntimeLaunchReadiness {
-    public static func isReady(snapshot: RuntimeLaunchReadinessSnapshot, backendName: String) -> Bool {
-        guard !snapshot.shellLoading else {
+    public static func isReady(
+        snapshot: RuntimeLaunchReadinessSnapshot,
+        backendName: String,
+        purpose: String? = nil
+    ) -> Bool {
+        guard !requiresShellLoadCompletion(for: purpose) || !snapshot.shellLoading else {
             return false
         }
         guard !snapshot.isAtPrompt else {
@@ -69,6 +73,10 @@ public enum RuntimeLaunchReadiness {
         return snapshot.processNames.contains { processName in
             processName.lowercased().contains(normalizedBackend)
         }
+    }
+
+    private static func requiresShellLoadCompletion(for purpose: String?) -> Bool {
+        purpose?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != "code_review"
     }
 
     private static func normalizeStatusToken(_ value: String) -> String {

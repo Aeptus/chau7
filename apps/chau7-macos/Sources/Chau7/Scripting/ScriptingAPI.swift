@@ -277,7 +277,7 @@ final class ScriptingAPI {
         case "start_review":
             return await handleStartReview(params)
         case "wait_review":
-            return handleWaitReview(params)
+            return await handleWaitReview(params)
         case "get_review_result":
             return handleGetReviewResult(params)
         case "stop_review":
@@ -449,7 +449,10 @@ final class ScriptingAPI {
             .lowercased()
         let extraInstructions = sanitizeOptionalString(params["extra_instructions"] as? String)
         let prompt: String
-        var taskMetadata: [String: String] = ["review_mode": mode]
+        var taskMetadata: [String: String] = [
+            "review_mode": mode,
+            "session_binding": "isolated"
+        ]
 
         switch mode {
         case "commit_range":
@@ -511,22 +514,18 @@ final class ScriptingAPI {
         ) ?? ["error": "review_start_failed"]
     }
 
-    private func handleWaitReview(_ params: [String: Any]) -> [String: Any] {
+    private func handleWaitReview(_ params: [String: Any]) async -> [String: Any] {
         guard let sessionID = params["session_id"] as? String,
               !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return ["error": "missing param: session_id"]
         }
 
-        var arguments: [String: Any] = ["session_id": sessionID]
-        if let timeoutMs = params["timeout_ms"] as? Int {
-            arguments["timeout_ms"] = timeoutMs
-        }
-        return parseJSONResponse(
-            RuntimeControlService.shared.handleToolCall(
-                name: "runtime_turn_wait",
-                arguments: arguments
-            )
-        ) ?? ["error": "review_wait_failed"]
+        let timeoutMs = params["timeout_ms"] as? Int ?? 30000
+        let response = await RuntimeControlService.shared.waitForTurnAsync(
+            sessionID: sessionID,
+            timeoutMs: timeoutMs
+        )
+        return parseJSONResponse(response) ?? ["error": "review_wait_failed"]
     }
 
     private func handleGetReviewResult(_ params: [String: Any]) -> [String: Any] {

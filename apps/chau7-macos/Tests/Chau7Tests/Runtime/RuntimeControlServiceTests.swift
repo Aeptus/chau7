@@ -277,6 +277,41 @@ final class RuntimeControlServiceTests: XCTestCase {
         XCTAssertTrue(waitUntil(timeout: 3.0) { session.turnCount == 1 && session.state == .busy })
     }
 
+    func testCodeReviewInitialPromptDispatchesWhileInteractiveShellStillReportsLoading() throws {
+        let backendName = "mock-interactive-code-review-\(UUID().uuidString)"
+        RuntimeControlService.registerBackend(name: backendName) { MockInteractiveBackend(name: backendName) }
+        RuntimeControlService.shared.launchReadinessProbe = { session in
+            RuntimeLaunchReadinessSnapshot(
+                shellLoading: true,
+                isAtPrompt: false,
+                effectiveStatus: "running",
+                rawStatus: "running",
+                activeApp: "MockInteractive",
+                rawActiveApp: "MockInteractive",
+                aiProvider: session.config.purpose == "code_review" ? backendName : nil,
+                activeRunProvider: backendName,
+                processNames: [backendName]
+            )
+        }
+
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": backendName,
+                "directory": "/tmp/runtime-code-review-\(UUID().uuidString)",
+                "purpose": "code_review",
+                "initial_prompt": "review this staged diff"
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let sessionID = try XCTUnwrap(json["session_id"] as? String)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+
+        XCTAssertTrue(waitUntil(timeout: 1.5) { session.turnCount == 1 && session.state == .busy })
+        XCTAssertNil(session.pendingInitialPrompt)
+    }
+
     func testRuntimeTurnWaitDoesNotFinishWhileInteractiveSessionIsStillStarting() throws {
         let backendName = "mock-interactive-wait-\(UUID().uuidString)"
         RuntimeControlService.registerBackend(name: backendName) { MockInteractiveBackend(name: backendName) }

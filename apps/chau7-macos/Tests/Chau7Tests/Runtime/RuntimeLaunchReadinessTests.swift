@@ -11,6 +11,23 @@ final class RuntimeLaunchReadinessTests: XCTestCase {
         )
     }
 
+    func testCodeReviewCanBecomeReadyBeforeShellLoadingClears() {
+        XCTAssertTrue(
+            RuntimeLaunchReadiness.isReady(
+                snapshot: snapshot(
+                    shellLoading: true,
+                    isAtPrompt: false,
+                    effectiveStatus: "running",
+                    rawStatus: "running",
+                    aiProvider: "codex",
+                    processNames: ["codex"]
+                ),
+                backendName: "codex",
+                purpose: "code_review"
+            )
+        )
+    }
+
     func testNotReadyWhileStillAtPrompt() {
         XCTAssertFalse(
             RuntimeLaunchReadiness.isReady(

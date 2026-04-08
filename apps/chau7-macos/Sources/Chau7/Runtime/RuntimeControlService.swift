@@ -309,11 +309,7 @@ final class RuntimeControlService {
         let stopped = sessionManager.stopSession(id: sessionID)
 
         if closeTab {
-            controlService.closeTabAsync(
-                tabID: session.tabID.uuidString,
-                force: true,
-                context: "runtime_session_stop"
-            )
+            queueTabClose(tabID: session.tabID, force: force, context: "runtime_session_stop")
         }
 
         return encodeAny([
@@ -353,11 +349,7 @@ final class RuntimeControlService {
             if sessionManager.stopSession(id: child.id) {
                 stoppedIDs.append(child.id)
                 if closeTabs {
-                    controlService.closeTabAsync(
-                        tabID: child.tabID.uuidString,
-                        force: true,
-                        context: "runtime_session_cancel_children"
-                    )
+                    queueTabClose(tabID: child.tabID, force: force, context: "runtime_session_cancel_children")
                 }
             }
         }
@@ -537,38 +529,15 @@ final class RuntimeControlService {
         guard let sessionID = args["session_id"] as? String else {
             return jsonError("session_id is required")
         }
-        guard let session = sessionManager.session(id: sessionID) else {
-            return jsonError("Session not found: \(sessionID)")
-        }
-
         let requestedTurnID = sanitizeOptionalString(args["turn_id"] as? String)
         let defaultTimeoutMs = 30000
         let maxTimeoutMs = 3_600_000
         let timeoutMs = min(max(args["timeout_ms"] as? Int ?? defaultTimeoutMs, 100), maxTimeoutMs)
-        let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
-        let statusArgs = statusArguments(sessionID: sessionID, turnID: requestedTurnID)
-
-        while Date() < deadline {
-            _ = dispatchPendingInitialPromptIfReady(session)
-            if turnIsFinished(session: session, requestedTurnID: requestedTurnID) {
-                var response = turnStatus(statusArgs)
-                if var object = parseJSONObject(response) {
-                    object["timed_out"] = false
-                    object["waited_ms"] = timeoutMs - max(Int(deadline.timeIntervalSinceNow * 1000), 0)
-                    response = encodeAny(object)
-                }
-                return response
-            }
-            Thread.sleep(forTimeInterval: 0.2)
-        }
-
-        var response = turnStatus(statusArgs)
-        if var object = parseJSONObject(response) {
-            object["timed_out"] = true
-            object["waited_ms"] = timeoutMs
-            response = encodeAny(object)
-        }
-        return response
+        return waitForTurnResponseSync(
+            sessionID: sessionID,
+            turnID: requestedTurnID,
+            timeoutMs: timeoutMs
+        )
     }
 
     // MARK: - Event Polling
@@ -778,7 +747,11 @@ final class RuntimeControlService {
                 ?? controlService.runtimeLaunchSnapshot(forOverlayTabID: session.tabID) else {
                 return false
             }
-            return RuntimeLaunchReadiness.isReady(snapshot: snapshot, backendName: session.backend.name)
+            return RuntimeLaunchReadiness.isReady(
+                snapshot: snapshot,
+                backendName: session.backend.name,
+                purpose: session.config.purpose
+            )
         }
     }
 
@@ -914,6 +887,101 @@ final class RuntimeControlService {
             output: nil,
             schema: session.config.resultSchema
         )
+    }
+
+    private func queueTabClose(tabID: UUID, force: Bool, context: String) {
+        controlService.closeTabAsync(
+            tabID: tabID.uuidString,
+            force: force,
+            context: context
+        )
+        guard !force else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [controlService] in
+            guard controlService.tabExistsAcrossWindows(tabID: tabID) else { return }
+            Log.info("MCP \(context): escalating delayed tab close for \(tabID)")
+            controlService.closeTabAsync(
+                tabID: tabID.uuidString,
+                force: true,
+                context: "\(context)_retry"
+            )
+        }
+    }
+
+    func waitForTurnAsync(sessionID: String, turnID: String? = nil, timeoutMs: Int) async -> String {
+        await waitForTurnResponseAsync(
+            sessionID: sessionID,
+            turnID: sanitizeOptionalString(turnID),
+            timeoutMs: min(max(timeoutMs, 100), 3_600_000)
+        )
+    }
+
+    private func waitForTurnResponseSync(
+        sessionID: String,
+        turnID requestedTurnID: String?,
+        timeoutMs: Int
+    ) -> String {
+        guard let session = sessionManager.session(id: sessionID) else {
+            return jsonError("Session not found: \(sessionID)")
+        }
+        let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
+        let statusArgs = statusArguments(sessionID: sessionID, turnID: requestedTurnID)
+
+        while Date() < deadline {
+            _ = dispatchPendingInitialPromptIfReady(session)
+            if turnIsFinished(session: session, requestedTurnID: requestedTurnID) {
+                return completedWaitResponse(statusArgs: statusArgs, timeoutMs: timeoutMs, deadline: deadline)
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+
+        return timedOutWaitResponse(statusArgs: statusArgs, timeoutMs: timeoutMs)
+    }
+
+    private func waitForTurnResponseAsync(
+        sessionID: String,
+        turnID requestedTurnID: String?,
+        timeoutMs: Int
+    ) async -> String {
+        guard let session = sessionManager.session(id: sessionID) else {
+            return jsonError("Session not found: \(sessionID)")
+        }
+        let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
+        let statusArgs = statusArguments(sessionID: sessionID, turnID: requestedTurnID)
+
+        while Date() < deadline {
+            _ = dispatchPendingInitialPromptIfReady(session)
+            if turnIsFinished(session: session, requestedTurnID: requestedTurnID) {
+                return completedWaitResponse(statusArgs: statusArgs, timeoutMs: timeoutMs, deadline: deadline)
+            }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+
+        return timedOutWaitResponse(statusArgs: statusArgs, timeoutMs: timeoutMs)
+    }
+
+    private func completedWaitResponse(
+        statusArgs: [String: Any],
+        timeoutMs: Int,
+        deadline: Date
+    ) -> String {
+        var response = turnStatus(statusArgs)
+        if var object = parseJSONObject(response) {
+            object["timed_out"] = false
+            object["waited_ms"] = timeoutMs - max(Int(deadline.timeIntervalSinceNow * 1000), 0)
+            response = encodeAny(object)
+        }
+        return response
+    }
+
+    private func timedOutWaitResponse(statusArgs: [String: Any], timeoutMs: Int) -> String {
+        var response = turnStatus(statusArgs)
+        if var object = parseJSONObject(response) {
+            object["timed_out"] = true
+            object["waited_ms"] = timeoutMs
+            response = encodeAny(object)
+        }
+        return response
     }
 
     private func encode(_ value: some Encodable) -> String {
