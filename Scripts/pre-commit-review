@@ -156,6 +156,8 @@ def socket_timeout_seconds(method: str, params: dict[str, Any]) -> float:
         timeout_ms = params.get("timeout_ms")
         if isinstance(timeout_ms, int):
             return max(DEFAULT_SOCKET_TIMEOUT_SECONDS, (timeout_ms / 1000.0) + 5.0)
+    if method == "stop_review":
+        return 2.0
     return DEFAULT_SOCKET_TIMEOUT_SECONDS
 
 
@@ -190,6 +192,17 @@ def socket_call(method: str, params: dict[str, Any]) -> dict[str, Any]:
 
 def print_skip(reason: str) -> None:
     print(f"pre-commit review: {reason}", file=sys.stderr)
+
+
+def cleanup_review_session(session_id: str, force: bool) -> None:
+    try:
+        response = socket_call("stop_review", {"session_id": session_id, "force": force})
+    except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+        print_skip(f"unable to clean up review session {session_id} ({exc})")
+        return
+
+    if "error" in response:
+        print_skip(f"unable to clean up review session {session_id} ({response['error']})")
 
 
 def chau7_is_running() -> bool:
@@ -317,85 +330,100 @@ def main() -> int:
     if not diff:
         return 0
 
-    try:
-        start_response = socket_call(
-            "start_review",
-            {
-                "directory": str(root),
-                "backend": backend,
-                "mode": "staged_diff",
-                "staged_files": reviewable_files,
-                "staged_diff": diff,
-                "model": model,
-            },
-        )
-    except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-        print_skip(describe_scripting_unavailable(exc))
-        return 0
-
-    if "error" in start_response:
-        print_skip(f"unable to start review ({start_response['error']}); skipping")
-        return 0
-
-    session_id = start_response.get("session_id")
-    if not isinstance(session_id, str) or not session_id:
-        print_skip("review session did not return a session_id; skipping")
-        return 0
+    session_id: str | None = None
+    cleanup_force = False
+    exit_code = 0
 
     try:
-        wait_response = socket_call("wait_review", {"session_id": session_id, "timeout_ms": timeout_ms})
-    except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-        print_skip(describe_scripting_unavailable(exc))
-        return 0
-    if wait_response.get("timed_out") is True:
-        print_skip(f"review timed out after {timeout_ms}ms; skipping")
-        return 0
+        try:
+            start_response = socket_call(
+                "start_review",
+                {
+                    "directory": str(root),
+                    "backend": backend,
+                    "mode": "staged_diff",
+                    "staged_files": reviewable_files,
+                    "staged_diff": diff,
+                    "model": model,
+                },
+            )
+        except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+            print_skip(describe_scripting_unavailable(exc))
+            return 0
 
-    try:
-        result_response = socket_call("get_review_result", {"session_id": session_id})
-    except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-        print_skip(describe_scripting_unavailable(exc))
-        return 0
-    if "error" in result_response:
-        print_skip(f"review did not produce a result ({result_response['error']}); skipping")
-        return 0
+        if "error" in start_response:
+            print_skip(f"unable to start review ({start_response['error']}); skipping")
+            return 0
 
-    status = str(result_response.get("status", "missing")).lower()
-    if status != "available":
-        print_skip(f"structured review result unavailable (status={status}); skipping")
-        return 0
+        session_id = start_response.get("session_id")
+        if not isinstance(session_id, str) or not session_id:
+            print_skip("review session did not return a session_id; skipping")
+            return 0
 
-    value = result_response.get("value")
-    if not isinstance(value, dict):
-        print_skip("review result payload was malformed; skipping")
-        return 0
+        try:
+            wait_response = socket_call("wait_review", {"session_id": session_id, "timeout_ms": timeout_ms})
+        except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+            cleanup_force = True
+            print_skip(describe_scripting_unavailable(exc))
+            return 0
+        if wait_response.get("timed_out") is True:
+            cleanup_force = True
+            print_skip(f"review timed out after {timeout_ms}ms; skipping")
+            return 0
 
-    findings = value.get("findings")
-    if not isinstance(findings, list):
-        print_skip("review findings payload was malformed; skipping")
-        return 0
+        try:
+            result_response = socket_call("get_review_result", {"session_id": session_id})
+        except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+            cleanup_force = True
+            print_skip(describe_scripting_unavailable(exc))
+            return 0
+        if "error" in result_response:
+            cleanup_force = True
+            print_skip(f"review did not produce a result ({result_response['error']}); skipping")
+            return 0
 
-    findings = [item for item in findings if isinstance(item, dict)]
-    if not findings:
-        return 0
+        status = str(result_response.get("status", "missing")).lower()
+        if status != "available":
+            cleanup_force = True
+            print_skip(f"structured review result unavailable (status={status}); skipping")
+            return 0
 
-    summary = str(value.get("summary", "Pre-commit review reported findings.")).strip()
-    confidence = str(value.get("confidence", "unknown")).strip()
-    recommendations = value.get("recommendations")
-    print(f"pre-commit review: {summary} (confidence: {confidence})", file=sys.stderr)
-    for finding in findings:
-        print(format_finding(finding), file=sys.stderr)
-    if isinstance(recommendations, list):
-        rendered = [str(item).strip() for item in recommendations if str(item).strip()]
-        if rendered:
-            print("recommendations:", file=sys.stderr)
-            for item in rendered:
-                print(f"- {item}", file=sys.stderr)
+        value = result_response.get("value")
+        if not isinstance(value, dict):
+            cleanup_force = True
+            print_skip("review result payload was malformed; skipping")
+            return 0
 
-    if has_blocking_findings(gate, findings):
-        print("pre-commit review blocked the commit.", file=sys.stderr)
-        return 1
-    return 0
+        findings = value.get("findings")
+        if not isinstance(findings, list):
+            cleanup_force = True
+            print_skip("review findings payload was malformed; skipping")
+            return 0
+
+        findings = [item for item in findings if isinstance(item, dict)]
+        if not findings:
+            return 0
+
+        summary = str(value.get("summary", "Pre-commit review reported findings.")).strip()
+        confidence = str(value.get("confidence", "unknown")).strip()
+        recommendations = value.get("recommendations")
+        print(f"pre-commit review: {summary} (confidence: {confidence})", file=sys.stderr)
+        for finding in findings:
+            print(format_finding(finding), file=sys.stderr)
+        if isinstance(recommendations, list):
+            rendered = [str(item).strip() for item in recommendations if str(item).strip()]
+            if rendered:
+                print("recommendations:", file=sys.stderr)
+                for item in rendered:
+                    print(f"- {item}", file=sys.stderr)
+
+        if has_blocking_findings(gate, findings):
+            print("pre-commit review blocked the commit.", file=sys.stderr)
+            exit_code = 1
+        return exit_code
+    finally:
+        if session_id:
+            cleanup_review_session(session_id, force=cleanup_force)
 
 
 if __name__ == "__main__":

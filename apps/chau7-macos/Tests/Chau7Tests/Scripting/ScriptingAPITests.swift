@@ -343,6 +343,34 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertEqual(value["summary"] as? String, "ready")
     }
 
+    func testStopReviewStopsSessionAndClosesTab() async throws {
+        let response = await api.handleRequest([
+            "method": "start_review",
+            "params": [
+                "backend": "shell",
+                "directory": "/tmp/review-\(UUID().uuidString)",
+                "mode": "staged_diff",
+                "staged_diff": "diff --git a/file.swift b/file.swift"
+            ]
+        ])
+
+        let sessionID = try XCTUnwrap(response["session_id"] as? String)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+        createdSessionIDs.append(sessionID)
+
+        let stopResponse = await api.handleRequest([
+            "method": "stop_review",
+            "params": [
+                "session_id": sessionID,
+                "force": true
+            ]
+        ])
+
+        XCTAssertEqual(stopResponse["ok"] as? Bool, true)
+        XCTAssertEqual(stopResponse["session_id"] as? String, sessionID)
+        XCTAssertEqual(session.state, .stopped)
+    }
+
     private func waitForTurnStart(_ session: RuntimeSession, timeoutNs: UInt64 = 2_000_000_000) async throws {
         let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNs
         while session.currentTurnID == nil {

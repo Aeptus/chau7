@@ -20,6 +20,7 @@ import Chau7Core
 /// - {"method": "start_review", "params": {...}} -> delegated review session metadata
 /// - {"method": "wait_review", "params": {"session_id": "...", "timeout_ms": 60000}}
 /// - {"method": "get_review_result", "params": {"session_id": "..."}}
+/// - {"method": "stop_review", "params": {"session_id": "...", "force": true}}
 @Observable
 @MainActor
 final class ScriptingAPI {
@@ -279,6 +280,8 @@ final class ScriptingAPI {
             return handleWaitReview(params)
         case "get_review_result":
             return handleGetReviewResult(params)
+        case "stop_review":
+            return handleStopReview(params)
         default:
             return ["error": "unknown method: \(method)"]
         }
@@ -538,6 +541,24 @@ final class ScriptingAPI {
                 arguments: ["session_id": sessionID]
             )
         ) ?? ["error": "review_result_failed"]
+    }
+
+    private func handleStopReview(_ params: [String: Any]) -> [String: Any] {
+        guard let sessionID = params["session_id"] as? String,
+              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return ["error": "missing param: session_id"]
+        }
+
+        return parseJSONResponse(
+            RuntimeControlService.shared.handleToolCall(
+                name: "runtime_session_stop",
+                arguments: [
+                    "session_id": sessionID,
+                    "close_tab": true,
+                    "force": params["force"] as? Bool ?? false
+                ]
+            )
+        ) ?? ["error": "review_stop_failed"]
     }
 
     private func handleGetStatus() -> [String: Any] {
