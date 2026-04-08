@@ -225,6 +225,47 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.tabs[1].repoGroupID, groupID)
     }
 
+    func testInheritedRepoGroupDetachesWhenTabMovesToDifferentRepoInManualMode() {
+        let originalMode = FeatureSettings.shared.repoGroupingMode
+        FeatureSettings.shared.repoGroupingMode = .manual
+        defer { FeatureSettings.shared.repoGroupingMode = originalMode }
+
+        let originalGroupID = "/tmp/chau7-group-a"
+        model.tabs[0].repoGroupID = originalGroupID
+        model.selectTab(id: model.tabs[0].id)
+
+        model.newTab()
+
+        XCTAssertEqual(model.tabs[1].repoGroupID, originalGroupID)
+        XCTAssertTrue(model.tabs[1].hasInheritedRepoGroup)
+
+        model.tabs[1].session?.gitRootPath = "/tmp/chau7-group-b"
+        drainMainQueue()
+
+        XCTAssertNil(model.tabs[1].repoGroupID)
+        XCTAssertFalse(model.tabs[1].hasInheritedRepoGroup)
+    }
+
+    func testExplicitRepoGroupPersistsWhenTabMovesToDifferentRepoInManualMode() {
+        let originalMode = FeatureSettings.shared.repoGroupingMode
+        FeatureSettings.shared.repoGroupingMode = .manual
+        defer { FeatureSettings.shared.repoGroupingMode = originalMode }
+
+        let originalGroupID = "/tmp/chau7-group-a"
+        model.tabs[0].session?.gitRootPath = originalGroupID
+        drainMainQueue()
+
+        model.addTabToRepoGroup(tabID: model.tabs[0].id)
+        XCTAssertEqual(model.tabs[0].repoGroupID, originalGroupID)
+        XCTAssertFalse(model.tabs[0].hasInheritedRepoGroup)
+
+        model.tabs[0].session?.gitRootPath = "/tmp/chau7-group-b"
+        drainMainQueue()
+
+        XCTAssertEqual(model.tabs[0].repoGroupID, originalGroupID)
+        XCTAssertFalse(model.tabs[0].hasInheritedRepoGroup)
+    }
+
     // MARK: - Notification Styling
 
     func testApplyNotificationStyleAppliesToSelectedTab() {

@@ -58,6 +58,7 @@ extension OverlayTabsModel {
         }
         let inheritedRepoGroupID = inherit ? selectedTab?.repoGroupID : nil
         tab.repoGroupID = inheritedRepoGroupID
+        tab.hasInheritedRepoGroup = inheritedRepoGroupID != nil
 
         let insertIndex = inherit
             ? insertionIndexForNewTab(inheritingRepoGroupID: inheritedRepoGroupID)
@@ -116,6 +117,7 @@ extension OverlayTabsModel {
         tab.session?.markCTOFlagDeferred(mode: FeatureSettings.shared.tokenOptimizationMode)
         let inheritedRepoGroupID = selectedTab?.repoGroupID
         tab.repoGroupID = inheritedRepoGroupID
+        tab.hasInheritedRepoGroup = inheritedRepoGroupID != nil
 
         let insertIndex = insertionIndexForNewTab(inheritingRepoGroupID: inheritedRepoGroupID)
         tabs.insert(tab, at: insertIndex)

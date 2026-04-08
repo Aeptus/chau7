@@ -113,6 +113,9 @@ struct OverlayTab: Identifiable, Equatable {
     /// Repo group membership. nil = ungrouped.
     /// Value is the canonical git root path (e.g. "/Users/me/repos/Chau7").
     var repoGroupID: String?
+    /// Whether repo group membership was inherited from another tab and should
+    /// be dropped if the tab's actual git root diverges.
+    var hasInheritedRepoGroup = false
 
     /// Display name derived from repo group path (e.g. "Chau7")
     var repoGroupName: String? {
@@ -225,6 +228,7 @@ struct OverlayTab: Identifiable, Equatable {
             && lhs.tokenOptOverride == rhs.tokenOptOverride
             && lhs.notificationStyle == rhs.notificationStyle
             && lhs.repoGroupID == rhs.repoGroupID
+            && lhs.hasInheritedRepoGroup == rhs.hasInheritedRepoGroup
     }
 
     // MARK: - Split Pane Operations
@@ -2622,6 +2626,7 @@ final class OverlayTabsModel {
             // Preserve restored repoGroupID when gitRootPath is still nil
             // (git detection is async and may not have completed yet)
             tabs[i].repoGroupID = tabs[i].session?.gitRootPath ?? tabs[i].repoGroupID
+            tabs[i].hasInheritedRepoGroup = false
             if let session = tabs[i].session {
                 observeGitRootForAutoGrouping(tabID: tabs[i].id, session: session)
             }
@@ -2637,11 +2642,21 @@ final class OverlayTabsModel {
         session.onGitRootPathChanged = { [weak self] newRoot in
             DispatchQueue.main.async {
                 guard let self,
-                      FeatureSettings.shared.repoGroupingMode == .auto,
                       let idx = self.tabs.firstIndex(where: { $0.id == tabID }) else { return }
-                self.tabs[idx].repoGroupID = newRoot
-                if let newRoot {
-                    self.coalesceGroup(repoGroupID: newRoot)
+
+                if FeatureSettings.shared.repoGroupingMode == .auto {
+                    self.tabs[idx].repoGroupID = newRoot
+                    self.tabs[idx].hasInheritedRepoGroup = false
+                    if let newRoot {
+                        self.coalesceGroup(repoGroupID: newRoot)
+                    }
+                    return
+                }
+
+                if self.tabs[idx].hasInheritedRepoGroup,
+                   self.tabs[idx].repoGroupID != newRoot {
+                    self.tabs[idx].repoGroupID = nil
+                    self.tabs[idx].hasInheritedRepoGroup = false
                 }
             }
         }
@@ -2654,8 +2669,10 @@ final class OverlayTabsModel {
     func setupRepoGroupingForTab(_ tab: OverlayTab) {
         guard let session = tab.session else { return }
         if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
-            let repoGroupID = tabs[idx].repoGroupID ?? session.gitRootPath
-            tabs[idx].repoGroupID = repoGroupID
+            if tabs[idx].repoGroupID == nil {
+                tabs[idx].repoGroupID = session.gitRootPath
+            }
+            let repoGroupID = tabs[idx].repoGroupID
             if let repoGroupID {
                 coalesceGroup(repoGroupID: repoGroupID)
             }
@@ -2689,12 +2706,14 @@ final class OverlayTabsModel {
         guard let idx = tabs.firstIndex(where: { $0.id == tabID }),
               let root = tabs[idx].session?.gitRootPath else { return }
         tabs[idx].repoGroupID = root
+        tabs[idx].hasInheritedRepoGroup = false
         coalesceGroup(repoGroupID: root)
     }
 
     func removeTabFromRepoGroup(tabID: UUID) {
         guard let idx = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         tabs[idx].repoGroupID = nil
+        tabs[idx].hasInheritedRepoGroup = false
     }
 
     /// Toggle the agent dashboard overlay for a repo group.
@@ -2714,6 +2733,7 @@ final class OverlayTabsModel {
         for i in tabs.indices {
             if tabs[i].session?.gitRootPath == root {
                 tabs[i].repoGroupID = root
+                tabs[i].hasInheritedRepoGroup = false
             }
         }
         coalesceGroup(repoGroupID: root)
