@@ -63,6 +63,14 @@ final class NotificationActionExecutor {
     /// Keyed by tab UUID (not tool name) so timers for different tabs running the same tool don't collide.
     /// All access must be on the main queue.
     private var pendingStyleClears: [UUID: DispatchWorkItem] = [:]
+    private var pendingStyleRetries: [UUID: PendingStyleRetry] = [:]
+
+    private struct PendingStyleRetry {
+        let eventID: UUID
+        let tabID: UUID
+        let sessionID: String?
+        let workItem: DispatchWorkItem
+    }
 
     /// Held to prevent the flash window from being deallocated during animation
     private var flashWindow: NSWindow?
@@ -79,6 +87,35 @@ final class NotificationActionExecutor {
             report.append(executeAction(actionConfig, for: event))
         }
         return report
+    }
+
+    func cancelPendingStyleWork(tabID: UUID? = nil, sessionID: String? = nil) {
+        let normalizedSessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let tabID {
+            pendingStyleClears.removeValue(forKey: tabID)?.cancel()
+            lastAppliedPreset.removeValue(forKey: tabID)
+        }
+
+        let retryIDs = pendingStyleRetries.compactMap { eventID, retry -> UUID? in
+            let matchesTab = tabID.map { retry.tabID == $0 } ?? false
+            let matchesSession = normalizedSessionID.map { retry.sessionID == $0 } ?? false
+            return (matchesTab || matchesSession) ? eventID : nil
+        }
+
+        for eventID in retryIDs {
+            pendingStyleRetries.removeValue(forKey: eventID)?.workItem.cancel()
+        }
+    }
+
+    func resetForTesting() {
+        pendingStyleClears.values.forEach { $0.cancel() }
+        pendingStyleRetries.values.forEach { $0.workItem.cancel() }
+        pendingStyleClears.removeAll()
+        pendingStyleRetries.removeAll()
+        lastAppliedPreset.removeAll()
+        activeTimers.removeAll()
+        delegate = nil
     }
 
     private func executeAction(_ config: NotificationActionConfig, for event: AIEvent) -> ExecutionReport {
@@ -417,15 +454,16 @@ final class NotificationActionExecutor {
         config: [String: String],
         autoClearSeconds: Int
     ) -> Bool {
-        guard event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+        guard let recoveredTabID = recoverableStyleTabID(event: event, explicitTabID: explicitTabID) else {
             return false
         }
 
         Log.info(
-            "Action styleTab: scheduling deferred retry for missing tab \(explicitTabID) event=\(event.id.uuidString)"
+            "Action styleTab: scheduling deferred retry for stale tab \(explicitTabID) recoveredTabID=\(recoveredTabID) event=\(event.id.uuidString)"
         )
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.styleRetryDelay) { [weak self] in
+        let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            pendingStyleRetries.removeValue(forKey: event.id)
             guard let recoveredTabID = resolveLiveStyleTabID(
                 event: event,
                 explicitTabID: explicitTabID,
@@ -447,7 +485,36 @@ final class NotificationActionExecutor {
                 "Action styleTab: deferred retry succeeded for explicit tabID \(explicitTabID) recoveredTabID=\(recoveredTabID) event=\(event.id.uuidString)"
             )
         }
+        pendingStyleRetries[event.id] = PendingStyleRetry(
+            eventID: event.id,
+            tabID: explicitTabID,
+            sessionID: event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+            workItem: workItem
+        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.styleRetryDelay, execute: workItem)
         return true
+    }
+
+    private func recoverableStyleTabID(event: AIEvent, explicitTabID: UUID) -> UUID? {
+        guard let sessionID = event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sessionID.isEmpty else {
+            return nil
+        }
+
+        let exactTarget = TabTarget(
+            tool: event.tool,
+            directory: event.directory,
+            tabID: nil,
+            sessionID: sessionID
+        )
+
+        guard let recoveredTabID = delegate?.resolveExactTab(target: exactTarget),
+              recoveredTabID != explicitTabID,
+              delegate?.tabExists(tabID: recoveredTabID) == true else {
+            return nil
+        }
+
+        return recoveredTabID
     }
 
     private func resolveAutoClearTabID(originalTabID: UUID, event: AIEvent) -> UUID? {

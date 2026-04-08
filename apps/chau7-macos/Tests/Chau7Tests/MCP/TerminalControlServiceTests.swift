@@ -121,6 +121,20 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertEqual(secondOverlayModel.tabs.first?.notificationStyle, .attention)
     }
 
+    func testApplyNotificationStyleAcrossWindowsTreatsUnchangedStyleAsSuccess() throws {
+        let tabID = try XCTUnwrap(overlayModel.tabs.first?.id)
+        overlayModel.tabs[0].notificationStyle = .attention
+
+        let resolvedTabID = TerminalControlService.shared.applyNotificationStyleAcrossWindows(
+            to: tabID,
+            stylePreset: "attention",
+            config: [:]
+        )
+
+        XCTAssertEqual(resolvedTabID, tabID)
+        XCTAssertEqual(overlayModel.tabs.first?.notificationStyle, .attention)
+    }
+
     private func parseJSONObject(_ text: String) -> [String: Any]? {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {

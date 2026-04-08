@@ -231,25 +231,49 @@ final class RuntimeSessionManagerTests: XCTestCase {
     func testResolveClaudeTabIDFallsBackToStrictSessionMatchWhenTabSummaryMissesSession() {
         let sessionID = "claude-session-strict"
         let resolvedTabID = UUID()
-        let target = TabTarget(
-            tool: "Claude",
-            directory: "/tmp/project/subdir",
-            tabID: nil,
-            sessionID: sessionID
-        )
 
         let resolved = RuntimeSessionManager.resolveAuthoritativeClaudeTabID(
             sessionID: sessionID,
             cwd: "/tmp/project/subdir",
             boundSession: nil,
             tabs: [],
-            strictResolver: { incomingTarget in
-                XCTAssertEqual(incomingTarget, target)
+            strictResolver: { incomingSessionID, incomingCwd in
+                XCTAssertEqual(incomingSessionID, sessionID)
+                XCTAssertEqual(incomingCwd, "/tmp/project/subdir")
                 return resolvedTabID
             }
         )
 
         XCTAssertEqual(resolved, resolvedTabID)
+    }
+
+    func testResolveAuthoritativeClaudeTabIDIgnoresBoundSessionWhoseTabIsNoLongerLive() {
+        let session = RuntimeSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: "/tmp/project", provider: "claude")
+        )
+        let liveTabID = UUID()
+
+        let resolved = RuntimeSessionManager.resolveAuthoritativeClaudeTabID(
+            sessionID: "claude-session-live",
+            cwd: "/tmp/project",
+            boundSession: session,
+            tabs: [
+                RuntimeSessionManager.AITabSummary(
+                    tabID: liveTabID,
+                    cwd: "/tmp/project",
+                    provider: "claude",
+                    sessionID: "claude-session-live"
+                )
+            ],
+            strictResolver: { _, _ in
+                XCTFail("strict resolver should not be needed when a live tab summary exists")
+                return nil
+            }
+        )
+
+        XCTAssertEqual(resolved, liveTabID)
     }
 
     func testUserPromptStartsTurnForAdoptedClaudeSession() {

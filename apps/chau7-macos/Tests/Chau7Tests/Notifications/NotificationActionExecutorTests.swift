@@ -59,6 +59,16 @@ final class NotificationActionExecutorTests: XCTestCase {
         )
     }
 
+    override func setUp() {
+        super.setUp()
+        NotificationActionExecutor.shared.resetForTesting()
+    }
+
+    override func tearDown() {
+        NotificationActionExecutor.shared.resetForTesting()
+        super.tearDown()
+    }
+
     func testStyleActionReportsFailureWhenDelegateCannotResolveExplicitTab() {
         let delegate = MockDelegate()
         let executor = NotificationActionExecutor.shared
@@ -174,12 +184,14 @@ final class NotificationActionExecutorTests: XCTestCase {
         XCTAssertNil(resolved)
     }
 
-    func testStyleActionSchedulesDeferredRetryForTransientMissingTab() {
+    func testStyleActionSchedulesDeferredRetryForRecoverableStaleTab() {
         let delegate = MockDelegate()
         let executor = NotificationActionExecutor.shared
-        let tabID = UUID()
-        delegate.existingTabs = [tabID]
-        delegate.styleCallResults = [nil, tabID]
+        let staleTabID = UUID()
+        let recoveredTabID = UUID()
+        delegate.styleCallResults = [nil, recoveredTabID]
+        delegate.resolvedExactTabID = recoveredTabID
+        delegate.existingTabs = [recoveredTabID]
         executor.delegate = delegate
 
         let report = executor.execute(
@@ -191,7 +203,7 @@ final class NotificationActionExecutorTests: XCTestCase {
                 message: "waiting",
                 ts: "2026-04-04T08:00:00Z",
                 directory: "/tmp/chau7",
-                tabID: tabID,
+                tabID: staleTabID,
                 sessionID: "claude-session-1",
                 reliability: .authoritative
             )
@@ -206,7 +218,74 @@ final class NotificationActionExecutorTests: XCTestCase {
         }
         wait(for: [expectation], timeout: 1.0)
 
-        XCTAssertEqual(delegate.styledTabIDs, [tabID, tabID])
+        XCTAssertEqual(delegate.styledTabIDs, [recoveredTabID, recoveredTabID])
+    }
+
+    func testStyleActionDoesNotScheduleDeferredRetryWhenStaleTabCannotBeRecovered() {
+        let delegate = MockDelegate()
+        let executor = NotificationActionExecutor.shared
+        let staleTabID = UUID()
+        delegate.styleResult = nil
+        delegate.existingTabs = []
+        delegate.resolvedExactTabID = staleTabID
+        executor.delegate = delegate
+
+        let report = executor.execute(
+            actions: [NotificationActionConfig(actionType: .styleTab, enabled: true)],
+            for: AIEvent(
+                source: .claudeCode,
+                type: "waiting_input",
+                tool: "Claude",
+                message: "waiting",
+                ts: "2026-04-04T08:00:00Z",
+                directory: "/tmp/chau7",
+                tabID: staleTabID,
+                sessionID: "claude-session-2",
+                reliability: .authoritative
+            )
+        )
+
+        XCTAssertTrue(report.successfulActions.isEmpty)
+        XCTAssertFalse(report.didStyleTab)
+        XCTAssertFalse(report.notes.contains { $0.contains("deferred retry scheduled") })
+    }
+
+    func testCancelPendingStyleWorkCancelsDeferredRetryForSession() {
+        let delegate = MockDelegate()
+        let executor = NotificationActionExecutor.shared
+        let staleTabID = UUID()
+        let recoveredTabID = UUID()
+        delegate.styleCallResults = [nil, recoveredTabID]
+        delegate.resolvedExactTabID = recoveredTabID
+        delegate.existingTabs = [recoveredTabID]
+        executor.delegate = delegate
+
+        let report = executor.execute(
+            actions: [NotificationActionConfig(actionType: .styleTab, enabled: true)],
+            for: AIEvent(
+                source: .claudeCode,
+                type: "waiting_input",
+                tool: "Claude",
+                message: "waiting",
+                ts: "2026-04-04T08:00:00Z",
+                directory: "/tmp/chau7",
+                tabID: staleTabID,
+                sessionID: "claude-session-cancel",
+                reliability: .authoritative
+            )
+        )
+
+        XCTAssertTrue(report.notes.contains { $0.contains("deferred retry scheduled") })
+
+        executor.cancelPendingStyleWork(tabID: staleTabID, sessionID: "claude-session-cancel")
+
+        let expectation = expectation(description: "cancelled deferred retry")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
+
+        XCTAssertEqual(delegate.styledTabIDs, [recoveredTabID])
     }
 
     func testBadgeActionReportsFailureWhenDelegateCannotResolveExplicitTab() {

@@ -70,10 +70,17 @@ final class TerminalControlService {
     @discardableResult
     func applyNotificationStyleAcrossWindows(to tabID: UUID, stylePreset: String, config: [String: String]) -> UUID? {
         let models = allModels
+        var foundTab = false
         for (_, model) in models {
+            guard model.tabs.contains(where: { $0.id == tabID }) else { continue }
+            foundTab = true
             if model.applyNotificationStyle(to: tabID, stylePreset: stylePreset, config: config) {
                 return tabID
             }
+        }
+        if foundTab {
+            Log.debug("applyNotificationStyle: tabID \(tabID) already matched requested style")
+            return tabID
         }
         Log.warn("applyNotificationStyle: tabID \(tabID) not found across \(models.count) windows (\(models.flatMap(\.model.tabs).count) total tabs)")
         return nil

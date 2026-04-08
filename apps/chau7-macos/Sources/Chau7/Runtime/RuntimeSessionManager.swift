@@ -646,12 +646,14 @@ final class RuntimeSessionManager {
     ) -> UUID? {
         if let boundSession {
             let normalizedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if normalizedCwd == nil
+            let hasLiveBoundTab = tabs.contains { $0.tabID == boundSession.tabID }
+            let cwdMatchesBoundSession = normalizedCwd == nil
                 || normalizedCwd?.isEmpty == true
                 || DirectoryPathMatcher.bidirectionalPrefixRank(
                     targetPath: normalizedCwd ?? "",
                     candidatePath: boundSession.config.directory
-                ) != nil {
+                ) != nil
+            if cwdMatchesBoundSession, hasLiveBoundTab {
                 return boundSession.tabID
             }
         }
@@ -825,6 +827,7 @@ final class RuntimeSessionManager {
     // MARK: - Private
 
     private func moveToStopped(_ session: RuntimeSession) {
+        var externalSessionID: String?
         lock.lock()
         sessions.removeValue(forKey: session.id)
         tabToSession.removeValue(forKey: session.tabID)
@@ -838,9 +841,17 @@ final class RuntimeSessionManager {
         }
         if let claudeSessionID = runtimeToClaudeSession.removeValue(forKey: session.id) {
             claudeToRuntimeSession.removeValue(forKey: claudeSessionID)
+            externalSessionID = claudeSessionID
         }
         recentlyStopped[session.id] = (session, Date())
         lock.unlock()
+
+        Task { @MainActor in
+            NotificationActionExecutor.shared.cancelPendingStyleWork(
+                tabID: session.tabID,
+                sessionID: externalSessionID
+            )
+        }
 
         Log.info("RuntimeSessionManager: session \(session.id) stopped")
     }

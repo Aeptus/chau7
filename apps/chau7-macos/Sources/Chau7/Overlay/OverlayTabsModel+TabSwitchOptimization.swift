@@ -301,6 +301,10 @@ extension OverlayTabsModel {
         if isLastTab {
             let closeWindow = skipWarning ? false : confirmCloseLastTab()
             guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
+            let aiSessionID = tabs[idx].session?.effectiveAISessionId
+            MainActor.assumeIsolated {
+                NotificationActionExecutor.shared.cancelPendingStyleWork(tabID: id, sessionID: aiSessionID)
+            }
 
             // Clean up per-tab state before replacing
             if let sessionID = tabs[idx].session?.tabIdentifier {
@@ -361,6 +365,10 @@ extension OverlayTabsModel {
         // Use initialIndex (captured before the modal dialog) so reopening restores
         // to the original position even if other tabs were closed while the dialog was open.
         captureClosedTabSnapshot(tab: tabs[index], at: initialIndex)
+        let aiSessionID = tabs[index].session?.effectiveAISessionId
+        MainActor.assumeIsolated {
+            NotificationActionExecutor.shared.cancelPendingStyleWork(tabID: id, sessionID: aiSessionID)
+        }
 
         // Clean up per-tab command history
         if let sessionID = tabs[index].session?.tabIdentifier {
