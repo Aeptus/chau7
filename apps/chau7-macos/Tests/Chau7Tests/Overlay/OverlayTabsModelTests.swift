@@ -120,6 +120,58 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(resolved?.sessionId, "claude-session-1")
     }
 
+    func testResolveResumeMetadataReusesClaimedCodexFallbackAcrossHistoryGrowth() throws {
+        let session = try XCTUnwrap(model.tabs.first?.session)
+        session.currentDirectory = "/tmp/chau7-runtime"
+        session.restoreAIMetadata(provider: "codex", sessionId: "codex-claimed")
+
+        let firstHistory = [
+            HistoryEntry(
+                sessionId: "candidate-1",
+                timestamp: 1,
+                summary: "prompt",
+                isExit: false
+            )
+        ]
+        let secondHistory = firstHistory + [
+            HistoryEntry(
+                sessionId: "candidate-2",
+                timestamp: 2,
+                summary: "prompt",
+                isExit: false
+            )
+        ]
+
+        appModel.toolHistoryEntries["codex"] = firstHistory
+        let firstResolved = model.resolveResumeMetadata(
+            for: session,
+            directory: session.currentDirectory,
+            outputHint: nil,
+            claimedSessionIds: ["codex-claimed"]
+        )
+        let cacheKey = ObjectIdentifier(session)
+        let firstCache = try XCTUnwrap(model.codexResumeFallbackCache[cacheKey])
+
+        appModel.toolHistoryEntries["codex"] = secondHistory
+        let secondResolved = model.resolveResumeMetadata(
+            for: session,
+            directory: session.currentDirectory,
+            outputHint: nil,
+            claimedSessionIds: ["codex-claimed"]
+        )
+        let secondCache = try XCTUnwrap(model.codexResumeFallbackCache[cacheKey])
+
+        XCTAssertEqual(firstResolved?.provider, "codex")
+        XCTAssertEqual(firstResolved?.sessionId, "codex-claimed")
+        XCTAssertEqual(secondResolved?.provider, "codex")
+        XCTAssertEqual(secondResolved?.sessionId, "codex-claimed")
+        XCTAssertNotEqual(
+            OverlayTabsModel.codexHistoryFingerprint(firstHistory),
+            OverlayTabsModel.codexHistoryFingerprint(secondHistory)
+        )
+        XCTAssertEqual(firstCache.signature.historyFingerprint, secondCache.signature.historyFingerprint)
+    }
+
     func testClearPersistedWindowStateRemovesSavedStateAndBackups() {
         let state = makeSavedTabState(title: "Primary", directory: "/tmp/primary")
         storeSavedTabStates([state])

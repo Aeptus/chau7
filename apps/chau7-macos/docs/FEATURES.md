@@ -71,6 +71,7 @@ Detection methods:
 - **Notification delivery ledger** — lifecycle tracking for debugging: coalescing, retry scheduling, drop reasons, and real UI outcomes.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
 - **Codex session resolver** — maps Codex sessions to working directories with LRU caching.
+- **Codex resume fallback cache** — reuses claimed explicit Codex session matches across history growth, reducing autosave churn and unresolved resume-metadata log spam.
 
 ### Context Token Optimization (CTO)
 

@@ -572,8 +572,17 @@ final class OverlayTabsModel {
         let historyFingerprint: Int
     }
 
+    struct StableCodexResumeFallbackSignature: Equatable {
+        let directory: String
+        let explicitSessionId: String?
+        let referenceTimestamp: TimeInterval?
+        let claimedSessionFingerprint: Int
+        let claimedSessionCount: Int
+    }
+
     struct CachedCodexResumeFallback {
         let signature: CodexResumeFallbackSignature
+        let stableSignature: StableCodexResumeFallbackSignature?
         let metadata: (provider: String, sessionId: String)?
     }
 
@@ -895,9 +904,24 @@ final class OverlayTabsModel {
             claimedSessionCount: claimedSessionIds.count,
             historyFingerprint: Self.codexHistoryFingerprint(recentHistoryEntries)
         )
+        let stableFallbackSignature = StableCodexResumeFallbackSignature(
+            directory: directory,
+            explicitSessionId: explicitSessionId,
+            referenceTimestamp: referenceDate?.timeIntervalSince1970,
+            claimedSessionFingerprint: fallbackSignature.claimedSessionFingerprint,
+            claimedSessionCount: fallbackSignature.claimedSessionCount
+        )
         let cacheKey = ObjectIdentifier(session)
         if let cached = codexResumeFallbackCache[cacheKey],
            cached.signature == fallbackSignature {
+            return cached.metadata
+        }
+        if explicitProvider == "codex",
+           let explicitSessionId,
+           let cached = codexResumeFallbackCache[cacheKey],
+           cached.stableSignature == stableFallbackSignature,
+           cached.metadata?.provider == "codex",
+           cached.metadata?.sessionId == explicitSessionId {
             return cached.metadata
         }
 
@@ -939,6 +963,7 @@ final class OverlayTabsModel {
                 let preservedExplicit = (provider: "codex", sessionId: explicitSessionId)
                 codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
                     signature: fallbackSignature,
+                    stableSignature: stableFallbackSignature,
                     metadata: preservedExplicit
                 )
                 Log.info(
@@ -950,6 +975,7 @@ final class OverlayTabsModel {
                 let retainedExplicit = explicitSessionId.map { (provider: "codex", sessionId: $0) }
                 codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
                     signature: fallbackSignature,
+                    stableSignature: stableFallbackSignature,
                     metadata: retainedExplicit
                 )
                 Log.info(
@@ -959,6 +985,7 @@ final class OverlayTabsModel {
             }
             codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
                 signature: fallbackSignature,
+                stableSignature: stableFallbackSignature,
                 metadata: nil
             )
             return nil
@@ -969,6 +996,7 @@ final class OverlayTabsModel {
         }
         codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
             signature: fallbackSignature,
+            stableSignature: stableFallbackSignature,
             metadata: (provider: "codex", sessionId: sessionId)
         )
         Log.trace("saveTabState: recovered Codex resume metadata from observed history for dir=\(directory)")
