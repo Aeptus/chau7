@@ -367,7 +367,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 - Full VoiceOver support.
 - Respects High Contrast and Reduced Motion system preferences.
-- 4 languages: English, French, Arabic, Hebrew — with proper RTL layout across all windows.
+- 5 languages: English, French, Spanish, Arabic, Hebrew — with proper RTL layout across all windows.
 - RTL layout direction propagated at every NSHostingView boundary — overlay, settings, command palette, data explorer, help docs, bug report, splash, and all auxiliary windows.
 - Runtime language switching without restart.
 - Full translation coverage: all UI strings localized with zero untranslated gaps across en, fr, ar, he — including NSMenuItem context menus, hover cards, and agent dashboard.

@@ -75,6 +75,7 @@ let package = Package(
             resources: [
                 .process("Resources/ar.lproj"),
                 .process("Resources/en.lproj"),
+                .process("Resources/es.lproj"),
                 .process("Resources/fr.lproj"),
                 .process("Resources/he.lproj"),
                 .process("Resources/aider-logo.png"),

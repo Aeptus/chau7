@@ -159,7 +159,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         // Activate persisted security-scoped bookmarks before tabs are restored,
         // so git detection in ~/Downloads etc. works on the first check.
-        if FeatureSettings.shared.allowProtectedFolderAccess {
+        if FeatureSettings.shared.allowProtectedFolderAccess, ProtectedPathPolicy.hasPersistedBookmarks() {
             ProtectedPathPolicy.activatePersistedBookmarks()
         }
 

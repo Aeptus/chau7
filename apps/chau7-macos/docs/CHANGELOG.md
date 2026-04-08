@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Spanish Language Support**: Full Spanish (es) locale with 2,612 translated keys and 41 .stringsdict plural entries. Informal "tú" form, standard Spanish computing vocabulary. Accessible from Settings > General > Language.
+
 ### Fixed
 - **Pricing Table Accuracy**: Fixed wrong prices for Claude Opus 4.6 ($15→$5/$75→$25), Haiku 4.5 ($0.80→$1/$4→$5), and Gemini 2.0 Flash (free→$0.10/$0.40 paid tier). Added ~20 missing models (GPT-5.x, GPT-4.1, o3/o4-mini, Gemini 2.5). Unknown models now log a warning with the model name instead of failing silently. Gemini fallback uses Flash pricing instead of free tier.
 - **Dashboard Polling Waste**: Dashboard now polls adaptively — 2s when agents are active, 5s when idle, 10s with no agents — instead of a fixed 2s interval that wasted CPU even with zero agents running.

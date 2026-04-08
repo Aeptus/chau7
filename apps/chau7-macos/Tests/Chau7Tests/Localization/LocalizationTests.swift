@@ -15,7 +15,7 @@ final class LocalizationTests: XCTestCase {
             return
         }
 
-        for locale in ["fr", "ar", "he"] {
+        for locale in ["fr", "ar", "he", "es"] {
             let current = loadStrings(locale: locale)
             guard !current.isEmpty else {
                 XCTFail("Locale \(locale) .strings file is missing or empty")
@@ -36,7 +36,7 @@ final class LocalizationTests: XCTestCase {
 
         let specifierPattern = try NSRegularExpression(pattern: "%(?:\\d+\\$)?[dDuUxXoOfFeEgGcCsSpaAn@]|%#@\\w+@")
 
-        for locale in ["fr", "ar", "he"] {
+        for locale in ["fr", "ar", "he", "es"] {
             let current = loadStrings(locale: locale)
             for (key, enValue) in base {
                 guard let localizedValue = current[key] else { continue }
@@ -71,7 +71,7 @@ final class LocalizationTests: XCTestCase {
         // Key prefixes that are inherently format-only or technical
         let skipPrefixes = ["a11y.", "debug.", "cto.runtime."]
 
-        for locale in ["fr", "ar", "he"] {
+        for locale in ["fr", "ar", "he", "es"] {
             let current = loadStrings(locale: locale)
             var untranslated: [String] = []
 
@@ -109,7 +109,7 @@ final class LocalizationTests: XCTestCase {
         XCTAssertFalse(baseDict.isEmpty, "English .stringsdict should have plural definitions")
 
         // Verify all 4 locales define the same set of plural keys
-        for locale in ["fr", "ar", "he"] {
+        for locale in ["fr", "ar", "he", "es"] {
             let currentKeys = loadStringsdictKeys(locale: locale)
             let missing = baseDict.subtracting(currentKeys)
             XCTAssertTrue(missing.isEmpty, "Locale \(locale) .stringsdict missing keys: \(missing.sorted())")
@@ -125,7 +125,7 @@ final class LocalizationTests: XCTestCase {
             return
         }
 
-        for locale in ["fr", "ar", "he"] {
+        for locale in ["fr", "ar", "he", "es"] {
             let currentKeys = loadStringsdictKeys(locale: locale)
             let missing = baseKeys.subtracting(currentKeys)
             let extra = currentKeys.subtracting(baseKeys)

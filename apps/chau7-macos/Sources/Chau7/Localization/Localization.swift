@@ -7,6 +7,7 @@ enum AppLanguage: String, CaseIterable, Identifiable, Codable {
     case system
     case english = "en"
     case french = "fr"
+    case spanish = "es"
     case arabic = "ar" // RTL language
     case hebrew = "he" // RTL language
 
@@ -23,6 +24,8 @@ enum AppLanguage: String, CaseIterable, Identifiable, Codable {
             return "English"
         case .french:
             return "Français"
+        case .spanish:
+            return "Español"
         case .arabic:
             return "العربية"
         case .hebrew:
@@ -38,6 +41,8 @@ enum AppLanguage: String, CaseIterable, Identifiable, Codable {
             return Locale(identifier: "en")
         case .french:
             return Locale(identifier: "fr")
+        case .spanish:
+            return Locale(identifier: "es")
         case .arabic:
             return Locale(identifier: "ar")
         case .hebrew:
