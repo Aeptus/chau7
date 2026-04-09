@@ -95,7 +95,7 @@ final class RepositoryCacheTests: XCTestCase {
                 XCTFail("gitRunner should not be called when protected access is blocked")
                 return ""
             },
-            recentRepoRecorder: { _ in }
+            recentRepoRecorder: { _, _ in }
         )
 
         let expectation = expectation(description: "returns cached model")
@@ -125,7 +125,7 @@ final class RepositoryCacheTests: XCTestCase {
                     return ""
                 }
             },
-            recentRepoRecorder: { _ in }
+            recentRepoRecorder: { _, _ in }
         )
 
         let parentExpectation = expectation(description: "parent repo resolved")
@@ -179,7 +179,7 @@ final class RepositoryCacheTests: XCTestCase {
                 XCTFail("gitRunner should not be called when protected access is blocked")
                 return ""
             },
-            recentRepoRecorder: { _ in }
+            recentRepoRecorder: { _, _ in }
         )
 
         let expectation = expectation(description: "returns cached model with branch")

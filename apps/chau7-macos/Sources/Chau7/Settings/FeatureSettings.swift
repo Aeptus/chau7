@@ -1698,7 +1698,7 @@ final class FeatureSettings {
         didSet { UserDefaults.standard.set(snippetPlaceholdersEnabled, forKey: Keys.snippetPlaceholders) }
     }
 
-    func recordRecentRepo(_ path: String) {
+    func recordRecentRepo(_ path: String, branch: String? = nil) {
         let normalized = URL(fileURLWithPath: path).standardized.path
         var updated = recentRepoRoots.filter { $0 != normalized }
         updated.insert(normalized, at: 0)
@@ -1706,7 +1706,7 @@ final class FeatureSettings {
             updated.removeLast(updated.count - 20)
         }
         recentRepoRoots = updated
-        KnownRepoIdentityStore.shared.record(rootPath: normalized)
+        KnownRepoIdentityStore.shared.record(rootPath: normalized, branch: branch)
     }
 
     // MARK: - F08: Smart Syntax Highlighting

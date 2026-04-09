@@ -19,7 +19,7 @@ final class RepositoryCache {
 
     private let queue = DispatchQueue(label: "com.chau7.repository-cache", qos: .utility)
     private let gitRunner: ([String], String) -> String
-    private let recentRepoRecorder: (String) -> Void
+    private let recentRepoRecorder: (String, String?) -> Void
     private let refreshDelay: TimeInterval
 
     /// Canonical root path → shared model
@@ -32,7 +32,7 @@ final class RepositoryCache {
 
     init(
         gitRunner: @escaping ([String], String) -> String = GitDiffTracker.runGit,
-        recentRepoRecorder: @escaping (String) -> Void = { FeatureSettings.shared.recordRecentRepo($0) },
+        recentRepoRecorder: @escaping (String, String?) -> Void = { FeatureSettings.shared.recordRecentRepo($0, branch: $1) },
         refreshDelay: TimeInterval = 0.1
     ) {
         self.gitRunner = gitRunner
@@ -144,7 +144,7 @@ final class RepositoryCache {
                 model.loadMetadata()
                 DispatchQueue.main.async {
                     KnownRepoIdentityStore.shared.record(rootPath: canonicalRoot, branch: branch)
-                    self.recentRepoRecorder(canonicalRoot)
+                    self.recentRepoRecorder(canonicalRoot, branch)
                 }
             }
             resolvedRootsByPath[normalized] = canonicalRoot
