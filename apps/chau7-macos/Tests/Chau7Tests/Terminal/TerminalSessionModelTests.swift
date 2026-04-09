@@ -267,6 +267,59 @@ final class TerminalSessionModelTests: XCTestCase {
         )
     }
 
+    // MARK: - Repository AccessLevel lifecycle
+
+    func testRepositoryStateFromCachedModel() {
+        let snapshot = ProtectedPathAccessPolicy.accessSnapshot(
+            root: "/Users/me/Downloads",
+            isProtectedPath: true,
+            isFeatureEnabled: false,
+            hasActiveScope: false,
+            hasSecurityScopedBookmark: false,
+            isDeniedByCooldown: false,
+            hasKnownIdentity: true
+        )
+        let model = RepositoryModel(
+            rootPath: "/Users/me/Downloads/Repositories/Chau7",
+            branch: "feature/cached",
+            accessLevel: .cached
+        )
+
+        let state = TerminalSessionModel.repositoryState(
+            from: .repository(model, access: snapshot)
+        )
+
+        XCTAssertTrue(state.isGitRepo)
+        XCTAssertEqual(state.gitRootPath, model.rootPath)
+        XCTAssertEqual(state.gitBranch, "feature/cached")
+        XCTAssertFalse(state.accessSnapshot.canProbeLive)
+    }
+
+    func testRepositoryStateFromLiveModel() {
+        let snapshot = ProtectedPathAccessPolicy.accessSnapshot(
+            root: nil,
+            isProtectedPath: false,
+            isFeatureEnabled: false,
+            hasActiveScope: false,
+            hasSecurityScopedBookmark: false,
+            isDeniedByCooldown: false,
+            hasKnownIdentity: false
+        )
+        let model = RepositoryModel(
+            rootPath: "/Users/me/Code/MyProject",
+            branch: "main",
+            accessLevel: .live
+        )
+
+        let state = TerminalSessionModel.repositoryState(
+            from: .repository(model, access: snapshot)
+        )
+
+        XCTAssertTrue(state.isGitRepo)
+        XCTAssertEqual(state.gitBranch, "main")
+        XCTAssertTrue(state.accessSnapshot.canProbeLive)
+    }
+
     func testRepositoryStateKeepsKnownIdentityWhenLiveAccessIsBlocked() {
         let snapshot = ProtectedPathAccessPolicy.accessSnapshot(
             root: "/Users/me/Downloads",

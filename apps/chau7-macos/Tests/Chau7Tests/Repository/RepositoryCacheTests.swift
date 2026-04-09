@@ -196,6 +196,162 @@ final class RepositoryCacheTests: XCTestCase {
         wait(for: [expectation], timeout: 1.0)
     }
 
+    // MARK: - AccessLevel lifecycle tests
+
+    func testCachedModelDoesNotSpawnGitProcess() {
+        let runnerCalls = LockedCounter()
+        let model = RepositoryModel(
+            rootPath: "/repos/protected",
+            branch: "main",
+            accessLevel: .cached,
+            gitRunner: { _, _ in
+                runnerCalls.increment()
+                return "main"
+            },
+            refreshDelay: 0.01
+        )
+
+        model.refreshBranch()
+
+        let expectation = expectation(description: "no git calls for cached model")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            XCTAssertEqual(runnerCalls.value, 0, "Cached model should not spawn git processes")
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
+    }
+
+    func testPromoteToLiveEnablesGitRefresh() {
+        let runnerCalls = LockedCounter()
+        let model = RepositoryModel(
+            rootPath: "/repos/protected",
+            branch: "old-branch",
+            accessLevel: .cached,
+            gitRunner: { _, _ in
+                runnerCalls.increment()
+                return "new-branch"
+            },
+            refreshDelay: 0.01
+        )
+
+        XCTAssertEqual(model.accessLevel, .cached)
+        model.promoteToLive()
+        XCTAssertEqual(model.accessLevel, .live)
+
+        let expectation = expectation(description: "git refresh after promote")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            XCTAssertGreaterThan(runnerCalls.value, 0, "Promoted model should refresh branch via git")
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
+    }
+
+    func testCachedModelReusesSameInstanceAcrossResolves() {
+        let settings = FeatureSettings.shared
+        let previousAllowProtectedFolderAccess = settings.allowProtectedFolderAccess
+        let previousRecentRepoRoots = settings.recentRepoRoots
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer {
+            settings.allowProtectedFolderAccess = previousAllowProtectedFolderAccess
+            settings.recentRepoRoots = previousRecentRepoRoots
+            KnownRepoIdentityStore.shared.restore(previousKnownIdentities)
+            ProtectedPathPolicy.resetAccessChecks()
+        }
+
+        let repoRoot = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Downloads/Repositories/SharedRepoTest")
+            .path
+
+        settings.allowProtectedFolderAccess = false
+        settings.recentRepoRoots = [repoRoot]
+        KnownRepoIdentityStore.shared.restore([
+            KnownRepoIdentity(rootPath: repoRoot, lastConfirmedAt: .distantPast, lastKnownBranch: "main")
+        ])
+        ProtectedPathPolicy.resetAccessChecks()
+
+        let cache = RepositoryCache(
+            gitRunner: { _, _ in "" },
+            recentRepoRecorder: { _, _ in }
+        )
+
+        var firstModel: RepositoryModel?
+        let first = expectation(description: "first resolve")
+        cache.resolveDetailed(path: repoRoot + "/src") { result in
+            if case .repository(let model, _) = result { firstModel = model }
+            first.fulfill()
+        }
+        wait(for: [first], timeout: 1.0)
+
+        var secondModel: RepositoryModel?
+        let second = expectation(description: "second resolve")
+        cache.resolveDetailed(path: repoRoot + "/tests") { result in
+            if case .repository(let model, _) = result { secondModel = model }
+            second.fulfill()
+        }
+        wait(for: [second], timeout: 1.0)
+
+        XCTAssertNotNil(firstModel)
+        XCTAssertTrue(firstModel === secondModel, "Same cached model should be shared across resolves")
+    }
+
+    func testCachedModelBranchUpdatedFromNewerIdentity() {
+        let settings = FeatureSettings.shared
+        let previousAllowProtectedFolderAccess = settings.allowProtectedFolderAccess
+        let previousRecentRepoRoots = settings.recentRepoRoots
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer {
+            settings.allowProtectedFolderAccess = previousAllowProtectedFolderAccess
+            settings.recentRepoRoots = previousRecentRepoRoots
+            KnownRepoIdentityStore.shared.restore(previousKnownIdentities)
+            ProtectedPathPolicy.resetAccessChecks()
+        }
+
+        let repoRoot = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Downloads/Repositories/BranchUpdateTest")
+            .path
+
+        settings.allowProtectedFolderAccess = false
+        settings.recentRepoRoots = [repoRoot]
+        // Start with no branch
+        KnownRepoIdentityStore.shared.restore([
+            KnownRepoIdentity(rootPath: repoRoot, lastConfirmedAt: .distantPast, lastKnownBranch: nil)
+        ])
+        ProtectedPathPolicy.resetAccessChecks()
+
+        let cache = RepositoryCache(
+            gitRunner: { _, _ in "" },
+            recentRepoRecorder: { _, _ in }
+        )
+
+        // First resolve — model created with nil branch
+        let first = expectation(description: "first resolve")
+        var model: RepositoryModel?
+        cache.resolveDetailed(path: repoRoot) { result in
+            if case .repository(let m, _) = result { model = m }
+            first.fulfill()
+        }
+        wait(for: [first], timeout: 1.0)
+        XCTAssertNil(model?.branch)
+
+        // Now update the identity store with a branch
+        KnownRepoIdentityStore.shared.record(rootPath: repoRoot, branch: "feature/new")
+
+        // Second resolve — same model should get branch update
+        let second = expectation(description: "second resolve updates branch")
+        cache.resolveDetailed(path: repoRoot) { result in
+            second.fulfill()
+        }
+        wait(for: [second], timeout: 1.0)
+
+        // Give the main-thread async dispatch time to set the branch
+        let check = expectation(description: "branch propagated")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            XCTAssertEqual(model?.branch, "feature/new", "Cached model branch should update from identity store")
+            check.fulfill()
+        }
+        wait(for: [check], timeout: 1.0)
+    }
+
     func testRefreshBranchCoalescesRapidCalls() {
         let runnerCalls = LockedCounter()
         let model = RepositoryModel(
