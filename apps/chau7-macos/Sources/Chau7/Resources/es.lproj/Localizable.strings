@@ -3138,3 +3138,26 @@
 // MARK: - Missing Keys
 "bugReport.success.generic" = "Problema enviado";
 "settings.productivity.enableBookmarks" = "Activar marcadores";
+"settings.productivity.permissions" = "Permisos";
+"settings.productivity.permissions.help" = "Revisa el estado de las notificaciones y del acceso a carpetas protegidas sin adivinar qué está bloqueado.";
+"settings.productivity.permissions.refresh" = "Actualizar estado";
+"settings.productivity.permissions.notifications" = "Notificaciones";
+"settings.productivity.permissions.notifications.ok" = "Las notificaciones del sistema están disponibles.";
+"settings.productivity.permissions.notifications.notDetermined" = "El permiso de notificaciones aún no se ha solicitado.";
+"settings.productivity.permissions.notifications.denied" = "Las notificaciones están denegadas en Ajustes del Sistema.";
+"settings.productivity.permissions.notifications.unavailable" = "Las notificaciones requieren la app empaquetada.";
+"settings.productivity.permissions.notifications.unknown" = "No se pudo determinar el estado de las notificaciones.";
+"settings.productivity.permissions.protected.unknownRoot" = "Raíz protegida";
+"settings.productivity.permissions.protected.state.unprotected" = "No protegido";
+"settings.productivity.permissions.protected.state.active" = "Concedido";
+"settings.productivity.permissions.protected.state.bookmark" = "Concedido por marcador";
+"settings.productivity.permissions.protected.state.disabled" = "Desactivado";
+"settings.productivity.permissions.protected.state.needsGrant" = "Necesita acceso";
+"settings.productivity.permissions.protected.state.cooldown" = "Reintentar más tarde";
+"settings.productivity.permissions.protected.state.stale" = "Necesita volver a concederse";
+"settings.productivity.permissions.protected.detail.cachedIdentity" = "La identidad conocida del repositorio se conserva, pero la actualización en vivo está bloqueada.";
+"settings.productivity.permissions.protected.detail.ok" = "La detección en vivo del repositorio está disponible para esta raíz.";
+"settings.productivity.permissions.protected.detail.enableFeature" = "Activa el acceso a carpetas protegidas en Chau7 para permitir la actualización en vivo.";
+"settings.productivity.permissions.protected.detail.grantAccess" = "Concede acceso a la carpeta para permitir la actualización en vivo en esta ubicación.";
+"settings.productivity.permissions.protected.detail.cooldown" = "Chau7 está esperando antes de reintentar el acceso tras una denegación reciente.";
+"settings.productivity.permissions.protected.detail.regrant" = "El permiso guardado está obsoleto. Concede acceso otra vez para restaurar la actualización en vivo.";

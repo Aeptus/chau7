@@ -3054,3 +3054,28 @@
 
 // MARK: - Pane
 "pane.copied" = "تم النسخ";
+
+// MARK: - Permissions
+"settings.productivity.permissions" = "الأذونات";
+"settings.productivity.permissions.help" = "راجع حالة الإشعارات والوصول إلى المجلدات المحمية دون تخمين ما الذي تم حجبه.";
+"settings.productivity.permissions.refresh" = "تحديث الحالة";
+"settings.productivity.permissions.notifications" = "الإشعارات";
+"settings.productivity.permissions.notifications.ok" = "إشعارات النظام متاحة.";
+"settings.productivity.permissions.notifications.notDetermined" = "لم يُطلب إذن الإشعارات بعد.";
+"settings.productivity.permissions.notifications.denied" = "تم رفض الإشعارات في إعدادات النظام.";
+"settings.productivity.permissions.notifications.unavailable" = "تتطلب الإشعارات تشغيل التطبيق المجمّع.";
+"settings.productivity.permissions.notifications.unknown" = "تعذر تحديد حالة الإشعارات.";
+"settings.productivity.permissions.protected.unknownRoot" = "جذر محمي";
+"settings.productivity.permissions.protected.state.unprotected" = "غير محمي";
+"settings.productivity.permissions.protected.state.active" = "ممنوح";
+"settings.productivity.permissions.protected.state.bookmark" = "ممنوح عبر إشارة مرجعية";
+"settings.productivity.permissions.protected.state.disabled" = "معطل";
+"settings.productivity.permissions.protected.state.needsGrant" = "يتطلب وصولاً";
+"settings.productivity.permissions.protected.state.cooldown" = "أعد المحاولة لاحقًا";
+"settings.productivity.permissions.protected.state.stale" = "يتطلب منحًا جديدًا";
+"settings.productivity.permissions.protected.detail.cachedIdentity" = "تم الاحتفاظ بهوية المستودع المعروفة، لكن التحديث المباشر محظور.";
+"settings.productivity.permissions.protected.detail.ok" = "اكتشاف المستودع المباشر متاح لهذا الجذر.";
+"settings.productivity.permissions.protected.detail.enableFeature" = "فعّل الوصول إلى المجلدات المحمية في Chau7 للسماح بالتحديث المباشر.";
+"settings.productivity.permissions.protected.detail.grantAccess" = "امنح الوصول إلى المجلد للسماح بالتحديث المباشر في هذا الموقع.";
+"settings.productivity.permissions.protected.detail.cooldown" = "ينتظر Chau7 قبل إعادة محاولة الوصول بعد رفض حديث.";
+"settings.productivity.permissions.protected.detail.regrant" = "الإذن المحفوظ قديم. امنح الوصول مرة أخرى لاستعادة التحديث المباشر.";

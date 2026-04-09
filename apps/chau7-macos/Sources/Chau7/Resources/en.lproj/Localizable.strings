@@ -3086,3 +3086,28 @@
 
 // MARK: - Pane
 "pane.copied" = "Copied";
+
+// MARK: - Permissions
+"settings.productivity.permissions" = "Permissions";
+"settings.productivity.permissions.help" = "Review notification status and protected-folder access without guessing what is blocked.";
+"settings.productivity.permissions.refresh" = "Refresh Status";
+"settings.productivity.permissions.notifications" = "Notifications";
+"settings.productivity.permissions.notifications.ok" = "System notifications are available.";
+"settings.productivity.permissions.notifications.notDetermined" = "Notification permission has not been requested yet.";
+"settings.productivity.permissions.notifications.denied" = "Notifications are denied in System Settings.";
+"settings.productivity.permissions.notifications.unavailable" = "Notifications require the bundled app.";
+"settings.productivity.permissions.notifications.unknown" = "Notification status could not be determined.";
+"settings.productivity.permissions.protected.unknownRoot" = "Protected Root";
+"settings.productivity.permissions.protected.state.unprotected" = "Not Protected";
+"settings.productivity.permissions.protected.state.active" = "Granted";
+"settings.productivity.permissions.protected.state.bookmark" = "Granted by Bookmark";
+"settings.productivity.permissions.protected.state.disabled" = "Disabled";
+"settings.productivity.permissions.protected.state.needsGrant" = "Needs Access";
+"settings.productivity.permissions.protected.state.cooldown" = "Retry Later";
+"settings.productivity.permissions.protected.state.stale" = "Needs Re-Grant";
+"settings.productivity.permissions.protected.detail.cachedIdentity" = "Known repo identity is preserved, but live refresh is blocked.";
+"settings.productivity.permissions.protected.detail.ok" = "Live repo detection is available for this root.";
+"settings.productivity.permissions.protected.detail.enableFeature" = "Enable protected folder access in Chau7 to allow live repo refresh.";
+"settings.productivity.permissions.protected.detail.grantAccess" = "Grant folder access to allow live repo refresh in this location.";
+"settings.productivity.permissions.protected.detail.cooldown" = "Chau7 is waiting before retrying access after a recent denial.";
+"settings.productivity.permissions.protected.detail.regrant" = "The saved permission is stale. Grant access again to restore live refresh.";

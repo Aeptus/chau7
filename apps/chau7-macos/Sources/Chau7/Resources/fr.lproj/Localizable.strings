@@ -3088,3 +3088,28 @@
 
 // MARK: - Pane
 "pane.copied" = "Copié";
+
+// MARK: - Permissions
+"settings.productivity.permissions" = "Autorisations";
+"settings.productivity.permissions.help" = "Vérifiez l’état des notifications et l’accès aux dossiers protégés sans deviner ce qui est bloqué.";
+"settings.productivity.permissions.refresh" = "Actualiser l’état";
+"settings.productivity.permissions.notifications" = "Notifications";
+"settings.productivity.permissions.notifications.ok" = "Les notifications système sont disponibles.";
+"settings.productivity.permissions.notifications.notDetermined" = "L’autorisation des notifications n’a pas encore été demandée.";
+"settings.productivity.permissions.notifications.denied" = "Les notifications sont refusées dans Réglages Système.";
+"settings.productivity.permissions.notifications.unavailable" = "Les notifications nécessitent l’app empaquetée.";
+"settings.productivity.permissions.notifications.unknown" = "Impossible de déterminer l’état des notifications.";
+"settings.productivity.permissions.protected.unknownRoot" = "Racine protégée";
+"settings.productivity.permissions.protected.state.unprotected" = "Non protégé";
+"settings.productivity.permissions.protected.state.active" = "Accordé";
+"settings.productivity.permissions.protected.state.bookmark" = "Accordé via signet";
+"settings.productivity.permissions.protected.state.disabled" = "Désactivé";
+"settings.productivity.permissions.protected.state.needsGrant" = "Accès requis";
+"settings.productivity.permissions.protected.state.cooldown" = "Réessayer plus tard";
+"settings.productivity.permissions.protected.state.stale" = "Nouvel accès requis";
+"settings.productivity.permissions.protected.detail.cachedIdentity" = "L’identité du dépôt est conservée, mais l’actualisation en direct est bloquée.";
+"settings.productivity.permissions.protected.detail.ok" = "La détection en direct du dépôt est disponible pour cette racine.";
+"settings.productivity.permissions.protected.detail.enableFeature" = "Activez l’accès aux dossiers protégés dans Chau7 pour permettre l’actualisation en direct.";
+"settings.productivity.permissions.protected.detail.grantAccess" = "Accordez l’accès au dossier pour permettre l’actualisation en direct ici.";
+"settings.productivity.permissions.protected.detail.cooldown" = "Chau7 attend avant de réessayer après un refus récent.";
+"settings.productivity.permissions.protected.detail.regrant" = "L’autorisation enregistrée n’est plus valide. Accordez de nouveau l’accès pour rétablir l’actualisation.";

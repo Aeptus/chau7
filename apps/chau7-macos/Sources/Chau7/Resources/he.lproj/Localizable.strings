@@ -3054,3 +3054,28 @@
 
 // MARK: - Pane
 "pane.copied" = "הועתק";
+
+// MARK: - Permissions
+"settings.productivity.permissions" = "הרשאות";
+"settings.productivity.permissions.help" = "בדוק את מצב ההתראות והגישה לתיקיות מוגנות בלי לנחש מה נחסם.";
+"settings.productivity.permissions.refresh" = "רענן מצב";
+"settings.productivity.permissions.notifications" = "התראות";
+"settings.productivity.permissions.notifications.ok" = "התראות המערכת זמינות.";
+"settings.productivity.permissions.notifications.notDetermined" = "עדיין לא התבקשה הרשאת התראות.";
+"settings.productivity.permissions.notifications.denied" = "ההתראות נדחו בהגדרות המערכת.";
+"settings.productivity.permissions.notifications.unavailable" = "התראות דורשות את האפליקציה הארוזה.";
+"settings.productivity.permissions.notifications.unknown" = "לא ניתן היה לקבוע את מצב ההתראות.";
+"settings.productivity.permissions.protected.unknownRoot" = "שורש מוגן";
+"settings.productivity.permissions.protected.state.unprotected" = "לא מוגן";
+"settings.productivity.permissions.protected.state.active" = "מאושר";
+"settings.productivity.permissions.protected.state.bookmark" = "מאושר באמצעות סימנייה";
+"settings.productivity.permissions.protected.state.disabled" = "מושבת";
+"settings.productivity.permissions.protected.state.needsGrant" = "דורש גישה";
+"settings.productivity.permissions.protected.state.cooldown" = "נסה שוב מאוחר יותר";
+"settings.productivity.permissions.protected.state.stale" = "נדרשת הענקה מחדש";
+"settings.productivity.permissions.protected.detail.cachedIdentity" = "זהות המאגר הידועה נשמרת, אך רענון חי חסום.";
+"settings.productivity.permissions.protected.detail.ok" = "זיהוי מאגר חי זמין עבור שורש זה.";
+"settings.productivity.permissions.protected.detail.enableFeature" = "הפעל גישה לתיקיות מוגנות ב-Chau7 כדי לאפשר רענון חי.";
+"settings.productivity.permissions.protected.detail.grantAccess" = "הענק גישה לתיקייה כדי לאפשר רענון חי במיקום זה.";
+"settings.productivity.permissions.protected.detail.cooldown" = "Chau7 ממתין לפני ניסיון גישה נוסף לאחר דחייה אחרונה.";
+"settings.productivity.permissions.protected.detail.regrant" = "ההרשאה השמורה התיישנה. הענק גישה שוב כדי לשחזר רענון חי.";
