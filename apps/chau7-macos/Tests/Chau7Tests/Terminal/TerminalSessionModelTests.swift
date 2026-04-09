@@ -314,8 +314,8 @@ final class TerminalSessionModelTests: XCTestCase {
     }
 
     func testDisplayRepoIdentityFallsBackToKnownIdentity() {
-        let previousKnownRoots = KnownRepoIdentityStore.shared.allRoots()
-        defer { KnownRepoIdentityStore.shared.replaceAll(with: previousKnownRoots) }
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
 
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
@@ -336,8 +336,8 @@ final class TerminalSessionModelTests: XCTestCase {
     }
 
     func testDisplayRepoIdentityPrefersLiveGitState() {
-        let previousKnownRoots = KnownRepoIdentityStore.shared.allRoots()
-        defer { KnownRepoIdentityStore.shared.replaceAll(with: previousKnownRoots) }
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
 
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)

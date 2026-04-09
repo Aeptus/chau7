@@ -61,6 +61,10 @@ final class KnownRepoIdentityStore {
         queue.sync { identities.map(\.rootPath) }
     }
 
+    func allIdentities() -> [KnownRepoIdentity] {
+        queue.sync { identities }
+    }
+
     func identity(forRootPath rootPath: String) -> KnownRepoIdentity? {
         let normalized = URL(fileURLWithPath: rootPath).standardized.path
         return queue.sync {
@@ -83,7 +87,7 @@ final class KnownRepoIdentityStore {
     }
 
     func replaceAll(with roots: [String]) {
-        let normalizedRoots = roots.map { URL(fileURLWithPath: $0).standardized.path }
+        let normalizedRoots = Self.normalizedUniqueRoots(from: roots)
         queue.sync {
             identities = normalizedRoots.map {
                 KnownRepoIdentity(rootPath: $0, lastConfirmedAt: .distantPast, lastKnownBranch: nil)
@@ -91,6 +95,46 @@ final class KnownRepoIdentityStore {
             if identities.count > Self.maxIdentities {
                 identities = Array(identities.prefix(Self.maxIdentities))
             }
+            persist()
+        }
+    }
+
+    /// Reorders identities to match the supplied recent roots while preserving any
+    /// existing branch metadata and retaining additional known repos after them.
+    func mergeRecentRoots(_ roots: [String]) {
+        let normalizedRoots = Self.normalizedUniqueRoots(from: roots)
+        queue.sync {
+            let existingByRoot = Dictionary(uniqueKeysWithValues: identities.map { ($0.rootPath, $0) })
+            var merged: [KnownRepoIdentity] = normalizedRoots.map { root in
+                existingByRoot[root] ?? KnownRepoIdentity(
+                    rootPath: root,
+                    lastConfirmedAt: .distantPast,
+                    lastKnownBranch: nil
+                )
+            }
+
+            for identity in identities where !normalizedRoots.contains(identity.rootPath) {
+                merged.append(identity)
+            }
+
+            if merged.count > Self.maxIdentities {
+                merged.removeLast(merged.count - Self.maxIdentities)
+            }
+            identities = merged
+            persist()
+        }
+    }
+
+    func restore(_ restoredIdentities: [KnownRepoIdentity]) {
+        let normalized = restoredIdentities.map { identity in
+            KnownRepoIdentity(
+                rootPath: URL(fileURLWithPath: identity.rootPath).standardized.path,
+                lastConfirmedAt: identity.lastConfirmedAt,
+                lastKnownBranch: identity.lastKnownBranch?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            )
+        }
+        queue.sync {
+            identities = Array(Self.deduplicated(normalized).prefix(Self.maxIdentities))
             persist()
         }
     }
@@ -126,5 +170,26 @@ final class KnownRepoIdentityStore {
         let encoder = JSONEncoder()
         guard let data = try? encoder.encode(identities) else { return }
         defaults.set(data, forKey: Keys.identities)
+    }
+
+    private static func normalizedUniqueRoots(from roots: [String]) -> [String] {
+        deduplicated(
+            roots.map { KnownRepoIdentity(rootPath: URL(fileURLWithPath: $0).standardized.path, lastConfirmedAt: .distantPast, lastKnownBranch: nil) }
+        ).map(\.rootPath)
+    }
+
+    private static func deduplicated(_ identities: [KnownRepoIdentity]) -> [KnownRepoIdentity] {
+        var seen = Set<String>()
+        return identities.filter { identity in
+            guard !identity.rootPath.isEmpty, !seen.contains(identity.rootPath) else { return false }
+            seen.insert(identity.rootPath)
+            return true
+        }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

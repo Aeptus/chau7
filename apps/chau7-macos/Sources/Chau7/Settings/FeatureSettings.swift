@@ -3340,9 +3340,7 @@ final class FeatureSettings {
         allowProtectedFolderAccess = imported.allowProtectedFolderAccess ?? false
         if let recent = imported.recentRepoRoots {
             recentRepoRoots = recent
-            KnownRepoIdentityStore.shared.replaceAll(with: recent)
-        } else {
-            KnownRepoIdentityStore.shared.reset()
+            KnownRepoIdentityStore.shared.mergeRecentRoots(recent)
         }
         repoSnippetPath = imported.repoSnippetPath
         snippetInsertMode = imported.snippetInsertMode

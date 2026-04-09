@@ -417,6 +417,65 @@ final class FeatureSettingsTests: XCTestCase {
         settings.customShortcuts = original
     }
 
+    func testImportSettingsPreservesKnownRepoBranchMetadataForRecentRoots() throws {
+        let settings = FeatureSettings.shared
+        let previousRecentRepoRoots = settings.recentRepoRoots
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer {
+            settings.recentRepoRoots = previousRecentRepoRoots
+            KnownRepoIdentityStore.shared.restore(previousKnownIdentities)
+        }
+
+        let repoRoot = "/tmp/Downloads/Repositories/Chau7"
+        settings.recentRepoRoots = [repoRoot]
+        KnownRepoIdentityStore.shared.restore([
+            KnownRepoIdentity(
+                rootPath: repoRoot,
+                lastConfirmedAt: Date(timeIntervalSince1970: 0),
+                lastKnownBranch: "feature/protected"
+            )
+        ])
+
+        let exported = try XCTUnwrap(settings.exportSettings())
+        XCTAssertTrue(settings.importSettings(from: exported))
+        XCTAssertEqual(
+            KnownRepoIdentityStore.shared.identity(forRootPath: repoRoot)?.lastKnownBranch,
+            "feature/protected"
+        )
+    }
+
+    func testImportSettingsWithoutRecentRepoRootsDoesNotResetKnownRepoIdentities() throws {
+        let settings = FeatureSettings.shared
+        let previousRecentRepoRoots = settings.recentRepoRoots
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer {
+            settings.recentRepoRoots = previousRecentRepoRoots
+            KnownRepoIdentityStore.shared.restore(previousKnownIdentities)
+        }
+
+        let repoRoot = "/tmp/Downloads/Repositories/Chau7"
+        settings.recentRepoRoots = [repoRoot]
+        KnownRepoIdentityStore.shared.restore([
+            KnownRepoIdentity(
+                rootPath: repoRoot,
+                lastConfirmedAt: Date(timeIntervalSince1970: 0),
+                lastKnownBranch: "main"
+            )
+        ])
+
+        let exported = try XCTUnwrap(settings.exportSettings())
+        let raw = try XCTUnwrap(try JSONSerialization.jsonObject(with: exported) as? [String: Any])
+        var mutated = raw
+        mutated.removeValue(forKey: "recentRepoRoots")
+        let mutatedData = try JSONSerialization.data(withJSONObject: mutated, options: [])
+
+        XCTAssertTrue(settings.importSettings(from: mutatedData))
+        XCTAssertEqual(
+            KnownRepoIdentityStore.shared.identity(forRootPath: repoRoot)?.lastKnownBranch,
+            "main"
+        )
+    }
+
     // MARK: - Notification Trigger Actions
 
     func testActionsForUnknownTriggerReturnsDefault() {

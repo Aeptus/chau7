@@ -1602,11 +1602,11 @@ final class OverlayTabsModelTests: XCTestCase {
         let settings = FeatureSettings.shared
         let previousAllowProtectedFolderAccess = settings.allowProtectedFolderAccess
         let previousRecentRepoRoots = settings.recentRepoRoots
-        let previousKnownRoots = KnownRepoIdentityStore.shared.allRoots()
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
         defer {
             settings.allowProtectedFolderAccess = previousAllowProtectedFolderAccess
             settings.recentRepoRoots = previousRecentRepoRoots
-            KnownRepoIdentityStore.shared.replaceAll(with: previousKnownRoots)
+            KnownRepoIdentityStore.shared.restore(previousKnownIdentities)
             ProtectedPathPolicy.resetAccessChecks()
             RepositoryCache.shared.resetNegativeCache()
         }

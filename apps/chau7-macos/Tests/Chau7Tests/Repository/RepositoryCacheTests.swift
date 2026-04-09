@@ -48,15 +48,30 @@ final class RepositoryCacheTests: XCTestCase {
         XCTAssertEqual(store.identity(forRootPath: "/repos/Chau7")?.lastKnownBranch, "main")
     }
 
+    func testKnownRepoIdentityStoreMergeRecentRootsPreservesExistingBranchMetadata() {
+        let suiteName = "KnownRepoIdentityStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let store = KnownRepoIdentityStore(defaults: defaults, bootstrapRoots: [])
+        store.record(rootPath: "/repos/Chau7", branch: "feature/protected")
+        store.record(rootPath: "/repos/Website", branch: "main")
+
+        store.mergeRecentRoots(["/repos/Chau7", "/repos/NewRepo"])
+
+        XCTAssertEqual(store.identity(forRootPath: "/repos/Chau7")?.lastKnownBranch, "feature/protected")
+        XCTAssertNil(store.identity(forRootPath: "/repos/NewRepo")?.lastKnownBranch)
+        XCTAssertEqual(store.allRoots(), ["/repos/Chau7", "/repos/NewRepo", "/repos/Website"])
+    }
+
     func testResolveDetailedReturnsCachedIdentityWhenProtectedPathCannotProbeLive() {
         let settings = FeatureSettings.shared
         let previousAllowProtectedFolderAccess = settings.allowProtectedFolderAccess
         let previousRecentRepoRoots = settings.recentRepoRoots
-        let previousKnownRoots = KnownRepoIdentityStore.shared.allRoots()
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
         defer {
             settings.allowProtectedFolderAccess = previousAllowProtectedFolderAccess
             settings.recentRepoRoots = previousRecentRepoRoots
-            KnownRepoIdentityStore.shared.replaceAll(with: previousKnownRoots)
+            KnownRepoIdentityStore.shared.restore(previousKnownIdentities)
             ProtectedPathPolicy.resetAccessChecks()
         }
 
@@ -66,7 +81,13 @@ final class RepositoryCacheTests: XCTestCase {
 
         settings.allowProtectedFolderAccess = false
         settings.recentRepoRoots = [repoRoot]
-        KnownRepoIdentityStore.shared.replaceAll(with: [repoRoot])
+        KnownRepoIdentityStore.shared.restore([
+            KnownRepoIdentity(
+                rootPath: repoRoot,
+                lastConfirmedAt: .distantPast,
+                lastKnownBranch: nil
+            )
+        ])
         ProtectedPathPolicy.resetAccessChecks()
 
         let cache = RepositoryCache(
@@ -128,11 +149,11 @@ final class RepositoryCacheTests: XCTestCase {
         let settings = FeatureSettings.shared
         let previousAllowProtectedFolderAccess = settings.allowProtectedFolderAccess
         let previousRecentRepoRoots = settings.recentRepoRoots
-        let previousKnownRoots = KnownRepoIdentityStore.shared.allRoots()
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
         defer {
             settings.allowProtectedFolderAccess = previousAllowProtectedFolderAccess
             settings.recentRepoRoots = previousRecentRepoRoots
-            KnownRepoIdentityStore.shared.replaceAll(with: previousKnownRoots)
+            KnownRepoIdentityStore.shared.restore(previousKnownIdentities)
             ProtectedPathPolicy.resetAccessChecks()
         }
 
@@ -142,7 +163,13 @@ final class RepositoryCacheTests: XCTestCase {
 
         settings.allowProtectedFolderAccess = false
         settings.recentRepoRoots = [repoRoot]
-        KnownRepoIdentityStore.shared.replaceAll(with: [repoRoot])
+        KnownRepoIdentityStore.shared.restore([
+            KnownRepoIdentity(
+                rootPath: repoRoot,
+                lastConfirmedAt: .distantPast,
+                lastKnownBranch: nil
+            )
+        ])
         KnownRepoIdentityStore.shared.record(rootPath: repoRoot, branch: "feature/protected")
         ProtectedPathPolicy.resetAccessChecks()
 
