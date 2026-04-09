@@ -81,6 +81,10 @@ enum ProtectedPathPolicy {
         protectedRoots
     }
 
+    static func protectedRootForDiagnostics(path: String) -> String? {
+        protectedRoot(for: path)
+    }
+
     @MainActor
     static func requestAccessToProtectedFolders() {
         let panel = NSOpenPanel()

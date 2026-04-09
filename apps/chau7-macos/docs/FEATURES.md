@@ -260,6 +260,12 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 MCP session create/stop and tab create/close flows also emit focused main-thread stall diagnostics with operation context, making beachball reports attributable to specific lifecycle operations instead of generic lag.
 
+Startup restore keeps the same “show windows fast, settle intelligently” bias:
+- Protected-folder validation is coalesced per root during restore instead of repeating the same deferral noise for every restored tab.
+- Snippet-context refresh debounces transient home-level restore paths so the stable repo context wins without extra churn.
+- Resume-prefill fallback waits briefly for pane-view readiness before dropping to session-level queueing, which reduces restore retries and keeps first paint reactive.
+- A single startup summary line reports protected-root, snippet, and resume-prefill counts for postmortem analysis.
+
 ## Tabs, Panes & Windows
 
 ### Tabs

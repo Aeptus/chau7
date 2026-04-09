@@ -1,0 +1,146 @@
+import Foundation
+
+public struct StartupRestoreSummary: Equatable {
+    public let durationMs: Int
+    public let protectedRoots: [String]
+    public let protectedPathDeferrals: Int
+    public let debouncedSnippetResolves: Int
+    public let completedSnippetResolves: Int
+    public let delayedResumePrefills: Int
+    public let queuedResumePrefills: Int
+    public let deliveredResumePrefills: Int
+
+    public init(
+        durationMs: Int,
+        protectedRoots: [String],
+        protectedPathDeferrals: Int,
+        debouncedSnippetResolves: Int,
+        completedSnippetResolves: Int,
+        delayedResumePrefills: Int,
+        queuedResumePrefills: Int,
+        deliveredResumePrefills: Int
+    ) {
+        self.durationMs = durationMs
+        self.protectedRoots = protectedRoots
+        self.protectedPathDeferrals = protectedPathDeferrals
+        self.debouncedSnippetResolves = debouncedSnippetResolves
+        self.completedSnippetResolves = completedSnippetResolves
+        self.delayedResumePrefills = delayedResumePrefills
+        self.queuedResumePrefills = queuedResumePrefills
+        self.deliveredResumePrefills = deliveredResumePrefills
+    }
+}
+
+public struct StartupRestoreTracker: Equatable {
+    public private(set) var isActive = false
+    public private(set) var startedAt: Date?
+    public private(set) var protectedRoots: Set<String> = []
+    public private(set) var protectedPathDeferrals = 0
+    public private(set) var debouncedSnippetResolves = 0
+    public private(set) var completedSnippetResolves = 0
+    public private(set) var delayedResumePrefills = 0
+    public private(set) var queuedResumePrefills = 0
+    public private(set) var deliveredResumePrefills = 0
+
+    public init() {}
+
+    public mutating func begin(at date: Date) {
+        isActive = true
+        startedAt = date
+        protectedRoots.removeAll(keepingCapacity: true)
+        protectedPathDeferrals = 0
+        debouncedSnippetResolves = 0
+        completedSnippetResolves = 0
+        delayedResumePrefills = 0
+        queuedResumePrefills = 0
+        deliveredResumePrefills = 0
+    }
+
+    public mutating func noteProtectedPathDeferral(root: String) -> Bool {
+        protectedPathDeferrals += 1
+        return protectedRoots.insert(root).inserted
+    }
+
+    public mutating func noteSnippetResolveDebounced() {
+        debouncedSnippetResolves += 1
+    }
+
+    public mutating func noteSnippetResolveCompleted() {
+        completedSnippetResolves += 1
+    }
+
+    public mutating func noteResumePrefillDelayed() {
+        delayedResumePrefills += 1
+    }
+
+    public mutating func noteResumePrefillQueued() {
+        queuedResumePrefills += 1
+    }
+
+    public mutating func noteResumePrefillDelivered() {
+        deliveredResumePrefills += 1
+    }
+
+    public mutating func end(at date: Date) -> StartupRestoreSummary? {
+        guard isActive, let startedAt else { return nil }
+        isActive = false
+        self.startedAt = nil
+
+        let durationMs = max(0, Int((date.timeIntervalSince(startedAt) * 1000).rounded()))
+        return StartupRestoreSummary(
+            durationMs: durationMs,
+            protectedRoots: protectedRoots.sorted(),
+            protectedPathDeferrals: protectedPathDeferrals,
+            debouncedSnippetResolves: debouncedSnippetResolves,
+            completedSnippetResolves: completedSnippetResolves,
+            delayedResumePrefills: delayedResumePrefills,
+            queuedResumePrefills: queuedResumePrefills,
+            deliveredResumePrefills: deliveredResumePrefills
+        )
+    }
+}
+
+public enum StartupSnippetResolvePolicy {
+    public static let debouncedDelay: TimeInterval = 0.12
+
+    public static func shouldDebounce(
+        isStartupRestoreActive: Bool,
+        path: String,
+        homePath: String
+    ) -> Bool {
+        guard isStartupRestoreActive else { return false }
+        let normalizedHome = URL(fileURLWithPath: homePath).standardized.path
+        let normalizedPath = URL(fileURLWithPath: path).standardized.path
+
+        if normalizedPath == normalizedHome {
+            return true
+        }
+
+        let parent = URL(fileURLWithPath: normalizedPath).deletingLastPathComponent().path
+        return parent == normalizedHome
+    }
+}
+
+public enum StartupResumePrefillPolicy {
+    public static let startupGraceAttempts = 3
+
+    public enum NoViewDecision: Equatable {
+        case retryWaitingForView
+        case queueSessionPrefill
+    }
+
+    public static func noViewDecision(
+        isStartupRestoreActive: Bool,
+        remainingAttempts: Int,
+        graceAttempts: Int = startupGraceAttempts
+    ) -> NoViewDecision {
+        guard isStartupRestoreActive, remainingAttempts > max(0, graceAttempts) else {
+            return .queueSessionPrefill
+        }
+        return .retryWaitingForView
+    }
+
+    public static func shouldWarnAboutNotReady(isStartupRestoreActive: Bool) -> Bool {
+        !isStartupRestoreActive
+    }
+}

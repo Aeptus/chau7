@@ -159,6 +159,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         model.bootstrap()
         beginLatencyCriticalScope(reason: "startup-restore", timeout: 90)
+        StartupRestoreCoordinator.shared.begin()
 
         // Activate persisted security-scoped bookmarks before tabs are restored,
         // so git detection in ~/Downloads etc. works on the first check.
@@ -227,6 +228,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
                 MainActor.assumeIsolated {
                     self?.endLatencyCriticalScope(reason: "startup-restore")
+                    StartupRestoreCoordinator.shared.end()
                 }
             }
         }
