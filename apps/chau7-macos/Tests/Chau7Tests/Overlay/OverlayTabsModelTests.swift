@@ -1128,26 +1128,33 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(restoredModel.selectedTabID, secondTabID, "explicit selected tab marker should override legacy selectedIndex")
     }
 
-    func testResolveResumeMetadataPreservesExplicitCodexSessionWhenNoReplacementExists() {
+    func testResolveResumeMetadataDropsClaimedExplicitSessionIDButKeepsProvider() {
         guard let session = model.tabs[0].session else {
             XCTFail("Expected initial session")
             return
         }
 
         let claimedSessionID = "019d25d0-d0bd-7501-99ba-1f937c17b29b"
-        session.restoreAIMetadata(provider: "codex", sessionId: claimedSessionID)
+        session.restoreAIMetadata(provider: "claude", sessionId: claimedSessionID)
 
         let resolved = model.resolveResumeMetadata(
             for: session,
-            directory: "/tmp/claimed-codex-session",
+            directory: "/tmp/claimed-claude-session",
             outputHint: nil,
             claimedSessionIds: [claimedSessionID]
         )
 
-        XCTAssertEqual(resolved?.provider, "codex")
-        XCTAssertEqual(resolved?.sessionId, claimedSessionID)
-        XCTAssertEqual(session.effectiveAIProvider, "codex")
-        XCTAssertEqual(session.effectiveAISessionId, claimedSessionID)
+        let persisted = model.persistedAIResumeMetadata(
+            from: session,
+            resolvedResumeMetadata: resolved,
+            claimedSessionIds: [claimedSessionID]
+        )
+
+        XCTAssertNil(resolved)
+        XCTAssertEqual(persisted.provider, "claude")
+        XCTAssertNil(persisted.sessionId)
+        XCTAssertEqual(session.effectiveAIProvider, "claude")
+        XCTAssertNil(session.effectiveAISessionId)
     }
 
     func testResolveResumeMetadataCacheInvalidatesWhenExplicitCodexSessionChanges() {
@@ -1176,6 +1183,57 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(secondResolved?.sessionId, "codex-explicit-2")
         XCTAssertEqual(session.effectiveAIProvider, "codex")
         XCTAssertEqual(session.effectiveAISessionId, "codex-explicit-2")
+    }
+
+    func testSanitizeRestoredAIResumeOwnershipDropsDuplicateSessionIDs() {
+        let duplicateSessionID = "019d25d0-d0bd-7501-99ba-1f937c17b29b"
+        let states = [
+            SavedTabState(
+                tabID: UUID().uuidString,
+                selectedTabID: nil,
+                customTitle: "First",
+                color: TabColor.blue.rawValue,
+                directory: "/tmp/a",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: "codex resume \(duplicateSessionID)",
+                aiProvider: "codex",
+                aiSessionId: duplicateSessionID,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: nil,
+                createdAt: nil,
+                repoGroupID: nil
+            ),
+            SavedTabState(
+                tabID: UUID().uuidString,
+                selectedTabID: nil,
+                customTitle: "Second",
+                color: TabColor.green.rawValue,
+                directory: "/tmp/b",
+                selectedIndex: nil,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: "claude --resume \(duplicateSessionID)",
+                aiProvider: "claude",
+                aiSessionId: duplicateSessionID,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: nil,
+                createdAt: nil,
+                repoGroupID: nil
+            )
+        ]
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(states: states)
+
+        XCTAssertEqual(sanitized[0].aiProvider, "codex")
+        XCTAssertEqual(sanitized[0].aiSessionId, duplicateSessionID)
+        XCTAssertEqual(sanitized[0].aiResumeCommand, "codex resume \(duplicateSessionID)")
+        XCTAssertEqual(sanitized[1].aiProvider, "claude")
+        XCTAssertNil(sanitized[1].aiSessionId)
+        XCTAssertNil(sanitized[1].aiResumeCommand)
     }
 
     func testResolveResumeMetadataIgnoresTelemetryOnlyCodexProvider() {

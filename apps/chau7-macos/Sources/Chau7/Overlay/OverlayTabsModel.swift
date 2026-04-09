@@ -598,6 +598,9 @@ final class OverlayTabsModel {
         } else {
             restoredPayload = restoreState ? Self.restoreSavedTabs(appModel: appModel) : nil
         }
+        let sanitizedRestoredStates = restoredPayload.map { payload in
+            Self.sanitizeRestoredAIResumeOwnership(states: payload.rawStates)
+        }
 
         if let restoredPayload {
             self.tabs = restoredPayload.tabs
@@ -616,8 +619,8 @@ final class OverlayTabsModel {
 
         // Apply persisted terminal state (scrollback + resume command) after the
         // instance is fully initialized.
-        if let restoredPayload {
-            for (index, state) in restoredPayload.rawStates.enumerated() where index < tabs.count {
+        if let sanitizedRestoredStates {
+            for (index, state) in sanitizedRestoredStates.enumerated() where index < tabs.count {
                 restoreTabState(for: tabs[index], state: state)
             }
         }
@@ -743,18 +746,23 @@ final class OverlayTabsModel {
                 let resumeMetadata = resolveResumeMetadata(
                     for: session, directory: dir, outputHint: scrollback, claimedSessionIds: claimedSessionIds
                 )
-                let resumeCommand = Self.buildAIResumeCommand(
-                    provider: resumeMetadata?.provider, sessionId: resumeMetadata?.sessionId
+                let persistedMetadata = persistedAIResumeMetadata(
+                    from: session,
+                    resolvedResumeMetadata: resumeMetadata,
+                    claimedSessionIds: claimedSessionIds
                 )
-                if let sessionId = resumeMetadata?.sessionId { claimedSessionIds.insert(sessionId) }
+                let resumeCommand = Self.buildAIResumeCommand(
+                    provider: persistedMetadata.provider, sessionId: persistedMetadata.sessionId
+                )
+                if let sessionId = persistedMetadata.sessionId { claimedSessionIds.insert(sessionId) }
 
                 paneStates.append(SavedTerminalPaneState(
                     paneID: paneID.uuidString,
                     directory: dir,
                     scrollbackContent: scrollback,
                     aiResumeCommand: resumeCommand,
-                    aiProvider: resumeMetadata?.provider,
-                    aiSessionId: resumeMetadata?.sessionId,
+                    aiProvider: persistedMetadata.provider,
+                    aiSessionId: persistedMetadata.sessionId,
                     lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate)
                 ))
             }
@@ -801,9 +809,13 @@ final class OverlayTabsModel {
                 directory: dir,
                 outputHint: scrollback
             )
+            let persistedMetadata = persistedAIResumeMetadata(
+                from: session,
+                resolvedResumeMetadata: resumeMetadata
+            )
             let resumeCommand = Self.buildAIResumeCommand(
-                provider: resumeMetadata?.provider,
-                sessionId: resumeMetadata?.sessionId
+                provider: persistedMetadata.provider,
+                sessionId: persistedMetadata.sessionId
             )
 
             paneStates.append(SavedTerminalPaneState(
@@ -811,8 +823,8 @@ final class OverlayTabsModel {
                 directory: dir,
                 scrollbackContent: scrollback,
                 aiResumeCommand: resumeCommand,
-                aiProvider: resumeMetadata?.provider,
-                aiSessionId: resumeMetadata?.sessionId,
+                aiProvider: persistedMetadata.provider,
+                aiSessionId: persistedMetadata.sessionId,
                 lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate)
             ))
         }
@@ -959,7 +971,8 @@ final class OverlayTabsModel {
                 Log.info(logMessage)
             }
             if let explicitSessionId,
-               explicitProvider == "codex" {
+               explicitProvider == "codex",
+               !claimedSessionIds.contains(explicitSessionId) {
                 let preservedExplicit = (provider: "codex", sessionId: explicitSessionId)
                 codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
                     signature: fallbackSignature,
@@ -1009,6 +1022,102 @@ final class OverlayTabsModel {
 
     private static func explicitResumeSessionId(for session: TerminalSessionModel) -> String? {
         normalizeAISessionId(session.lastAISessionId)
+    }
+
+    func persistedAIResumeMetadata(
+        from session: TerminalSessionModel,
+        resolvedResumeMetadata: (provider: String, sessionId: String)?,
+        claimedSessionIds: Set<String> = []
+    ) -> AIResumeOwnership.Metadata {
+        if let resolvedResumeMetadata {
+            return AIResumeOwnership.Metadata(
+                provider: resolvedResumeMetadata.provider,
+                sessionId: resolvedResumeMetadata.sessionId
+            )
+        }
+
+        let explicitProvider = Self.explicitResumeProvider(for: session)
+        let explicitSessionId = Self.explicitResumeSessionId(for: session)
+        let preserved = AIResumeOwnership.sanitizeForPersistence(
+            provider: explicitProvider,
+            sessionId: explicitSessionId,
+            claimedSessionIds: claimedSessionIds
+        )
+        if explicitSessionId != nil,
+           preserved.sessionId == nil,
+           explicitProvider == preserved.provider {
+            session.restoreAIMetadata(provider: preserved.provider, sessionId: nil)
+        }
+        return preserved
+    }
+
+    static func sanitizeRestoredAIResumeOwnership(states: [SavedTabState]) -> [SavedTabState] {
+        var claimedSessionIds = Set<String>()
+
+        return states.map { state in
+            let sanitizedPaneStates = state.paneStates?.map { paneState -> SavedTerminalPaneState in
+                let sanitizedPane = AIResumeOwnership.sanitizeForPersistence(
+                    provider: normalizedAIProvider(from: paneState.aiProvider),
+                    sessionId: normalizeAISessionId(paneState.aiSessionId),
+                    claimedSessionIds: claimedSessionIds
+                )
+                if let sessionId = sanitizedPane.sessionId {
+                    claimedSessionIds.insert(sessionId)
+                }
+
+                return SavedTerminalPaneState(
+                    paneID: paneState.paneID,
+                    directory: paneState.directory,
+                    scrollbackContent: paneState.scrollbackContent,
+                    aiResumeCommand: buildAIResumeCommand(
+                        provider: sanitizedPane.provider,
+                        sessionId: sanitizedPane.sessionId
+                    ),
+                    aiProvider: sanitizedPane.provider,
+                    aiSessionId: sanitizedPane.sessionId,
+                    lastOutputAt: paneState.lastOutputAt
+                )
+            }
+
+            let sanitizedTopLevel: AIResumeOwnership.Metadata
+            if let firstPane = sanitizedPaneStates?.first {
+                sanitizedTopLevel = AIResumeOwnership.Metadata(
+                    provider: firstPane.aiProvider,
+                    sessionId: firstPane.aiSessionId
+                )
+            } else {
+                sanitizedTopLevel = AIResumeOwnership.sanitizeForPersistence(
+                    provider: normalizedAIProvider(from: state.aiProvider),
+                    sessionId: normalizeAISessionId(state.aiSessionId),
+                    claimedSessionIds: claimedSessionIds
+                )
+                if let sessionId = sanitizedTopLevel.sessionId {
+                    claimedSessionIds.insert(sessionId)
+                }
+            }
+
+            return SavedTabState(
+                tabID: state.tabID,
+                selectedTabID: state.selectedTabID,
+                customTitle: state.customTitle,
+                color: state.color,
+                directory: state.directory,
+                selectedIndex: state.selectedIndex,
+                tokenOptOverride: state.tokenOptOverride,
+                scrollbackContent: state.scrollbackContent,
+                aiResumeCommand: buildAIResumeCommand(
+                    provider: sanitizedTopLevel.provider,
+                    sessionId: sanitizedTopLevel.sessionId
+                ),
+                aiProvider: sanitizedTopLevel.provider,
+                aiSessionId: sanitizedTopLevel.sessionId,
+                splitLayout: state.splitLayout,
+                focusedPaneID: state.focusedPaneID,
+                paneStates: sanitizedPaneStates,
+                createdAt: state.createdAt,
+                repoGroupID: state.repoGroupID
+            )
+        }
     }
 
     /// Build a resume command for an AI session running in the given directory.
