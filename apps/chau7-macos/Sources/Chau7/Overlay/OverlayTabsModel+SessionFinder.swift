@@ -854,6 +854,7 @@ extension OverlayTabsModel {
             if let tab = tabs.first(where: { $0.id == targetTabID }),
                let session = tab.splitController.root.findSession(id: paneID) {
                 session.prefillInput(command)
+                StartupRestoreCoordinator.shared.noteQueuedResumePrefill()
                 Log.warn("restoreTabState: retries exhausted, queued prefill for tab=\(targetTabID) pane=\(paneID)")
             } else {
                 Log.warn("restoreTabState: retries exhausted, tab/pane gone for tab=\(targetTabID) pane=\(paneID)")
@@ -885,25 +886,47 @@ extension OverlayTabsModel {
                 let hasView = reResolvedSession.existingRustTerminalView != nil
 
                 // No view means this tab is outside the nearby rendering range.
-                // Delegate to the session's pending prefill mechanism which will
-                // deliver the command when the view is eventually created via
-                // attachRustTerminal → flushPendingPrefillInputIfReady.
                 if !hasView {
-                    reResolvedSession.prefillInput(command)
-                    latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
-                    Log.info("restoreTabState: no view for tab=\(targetTabID) pane=\(paneID), queued session-level prefill")
-                    return
+                    switch StartupRestoreCoordinator.shared.noViewResumeDecision(remainingAttempts: remainingAttempts) {
+                    case .retryWaitingForView:
+                        let nextDelay = min(delay + 0.15, 0.75)
+                        Log.trace(
+                            "restoreTabState: waiting for view before resume prefill for tab=\(targetTabID) pane=\(paneID) retry in \(String(format: "%.2f", nextDelay))s"
+                        )
+                        scheduleResumeCommand(
+                            command: command,
+                            targetTabID: targetTabID,
+                            paneID: paneID,
+                            restoreToken: restoreToken,
+                            remainingAttempts: remainingAttempts - 1,
+                            delay: nextDelay
+                        )
+                        return
+                    case .queueSessionPrefill:
+                        // Delegate to the session's pending prefill mechanism which will
+                        // deliver the command when the view is eventually created via
+                        // attachRustTerminal → flushPendingPrefillInputIfReady.
+                        reResolvedSession.prefillInput(command)
+                        StartupRestoreCoordinator.shared.noteQueuedResumePrefill()
+                        latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
+                        Log.info("restoreTabState: no view for tab=\(targetTabID) pane=\(paneID), queued session-level prefill")
+                        return
+                    }
                 }
 
                 let nextDelay = min(delay + Self.resumeCommandRetryDelaySeconds, Self.resumeCommandMaxRetryDelay)
-                Log.warn(
+                let message =
                     """
                     restoreTabState: resume command not ready for tab=\(targetTabID) pane=\(paneID) \
                     (loading=\(reResolvedSession.isShellLoading), atPrompt=\(reResolvedSession.isAtPrompt), \
                     status=\(reResolvedSession.status), hasView=\(hasView)); \
                     retry in \(String(format: "%.2f", nextDelay))s
                     """
-                )
+                if StartupRestoreCoordinator.shared.shouldWarnAboutResumeNotReady() {
+                    Log.warn(message)
+                } else {
+                    Log.trace(message)
+                }
                 scheduleResumeCommand(
                     command: command,
                     targetTabID: targetTabID,
@@ -917,6 +940,7 @@ extension OverlayTabsModel {
 
             // Prefill the command in the active terminal so user can confirm with Enter.
             reResolvedSession.prefillInput(command)
+            StartupRestoreCoordinator.shared.noteDeliveredResumePrefill()
             latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
             Log.info("restoreTabState: resume command prefilling for tab=\(targetTabID) pane=\(paneID)")
         }
