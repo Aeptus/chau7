@@ -77,8 +77,8 @@ final class ScriptingAPI {
     }
 
     private init() {
-        let hadPersistedPreference = UserDefaults.standard.object(forKey: featureFlagKey) != nil
-        isEnabled = initialEnabled()
+        let hadPersistedPreference = UserDefaults.standard.object(forKey: Self.featureFlagKey) != nil
+        self.isEnabled = Self.initialEnabled()
         if isEnabled {
             startServer()
             if hadPersistedPreference {

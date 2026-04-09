@@ -338,7 +338,7 @@ final class RepositoryCacheTests: XCTestCase {
 
         // Second resolve — same model should get branch update
         let second = expectation(description: "second resolve updates branch")
-        cache.resolveDetailed(path: repoRoot) { result in
+        cache.resolveDetailed(path: repoRoot) { _ in
             second.fulfill()
         }
         wait(for: [second], timeout: 1.0)

@@ -451,8 +451,11 @@ final class TerminalSessionModelTests: XCTestCase {
 
         XCTAssertTrue(session.hasRepositoryIdentity)
         XCTAssertEqual(session.displayGitRootPath, repoRoot)
-        XCTAssertEqual(session.displayGitBranch, "feature/from-store",
-                       "Should fall back to identity store when model branch is nil")
+        XCTAssertEqual(
+            session.displayGitBranch,
+            "feature/from-store",
+            "Should fall back to identity store when model branch is nil"
+        )
     }
 
     func testRestoreAIMetadata() {
