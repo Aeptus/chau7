@@ -1916,30 +1916,24 @@ final class TerminalSessionModel {
         return displayPath()
     }
 
-    private var knownRepoIdentityForDisplay: KnownRepoIdentity? {
-        if let gitRootPath = gitRootPath?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !gitRootPath.isEmpty,
-           let identity = KnownRepoIdentityStore.shared.identity(forRootPath: gitRootPath) {
-            return identity
-        }
-        return KnownRepoIdentityStore.shared.resolveIdentity(forPath: currentDirectory)
-    }
-
     /// Repo identity suitable for passive UI surfaces even when live git access is blocked.
+    /// Since RepositoryCache now creates models for cached identities, gitRootPath is
+    /// always set for known repos and no fallback chain is needed.
     var hasRepositoryIdentity: Bool {
         displayGitRootPath != nil
     }
 
-    /// Repo root suitable for passive UI chrome. Falls back to known identity when
-    /// live git probing is unavailable.
+    /// Repo root suitable for passive UI chrome. Populated by both live and cached
+    /// RepositoryModel instances, so this is always available for known repos.
     var displayGitRootPath: String? {
-        gitRootPath ?? knownRepoIdentityForDisplay?.rootPath
+        gitRootPath
     }
 
-    /// Branch suitable for passive UI chrome. Falls back to last known branch when
-    /// live git probing is unavailable.
+    /// Branch suitable for passive UI chrome. Populated by both live and cached
+    /// RepositoryModel instances. Live models refresh from git; cached models carry
+    /// the last-known branch from the identity store.
     var displayGitBranch: String? {
-        gitBranch ?? knownRepoIdentityForDisplay?.lastKnownBranch
+        gitBranch
     }
 
     // Latency telemetry methods moved to TerminalSessionModel+Telemetry.swift

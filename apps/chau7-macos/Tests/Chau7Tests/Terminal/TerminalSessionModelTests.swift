@@ -313,21 +313,21 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertTrue(state.accessSnapshot.canProbeLive)
     }
 
-    func testDisplayRepoIdentityFallsBackToKnownIdentity() {
-        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
-        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
-
-        let model = AppModel()
-        let session = TerminalSessionModel(appModel: model)
+    func testDisplayPropertiesReflectCachedModel() {
+        let appModel = AppModel()
+        let session = TerminalSessionModel(appModel: appModel)
         let repoRoot = "/tmp/Downloads/Repositories/Chau7"
 
-        KnownRepoIdentityStore.shared.reset()
-        KnownRepoIdentityStore.shared.record(rootPath: repoRoot, branch: "feature/protected")
-
-        session.currentDirectory = repoRoot + "/apps/chau7-macos"
-        session.isGitRepo = false
-        session.gitRootPath = nil
-        session.gitBranch = nil
+        // Simulate a cached model (protected path, no live git access)
+        let repoModel = RepositoryModel(
+            rootPath: repoRoot,
+            branch: "feature/protected",
+            accessLevel: .cached
+        )
+        session.repositoryModel = repoModel
+        session.isGitRepo = true
+        session.gitRootPath = repoRoot
+        session.gitBranch = "feature/protected"
 
         XCTAssertTrue(session.hasRepositoryIdentity)
         XCTAssertEqual(session.displayGitRootPath, repoRoot)
@@ -335,18 +335,18 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(session.tabPathDisplayName(), "Chau7")
     }
 
-    func testDisplayRepoIdentityPrefersLiveGitState() {
-        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
-        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
-
-        let model = AppModel()
-        let session = TerminalSessionModel(appModel: model)
+    func testDisplayPropertiesReflectLiveModel() {
+        let appModel = AppModel()
+        let session = TerminalSessionModel(appModel: appModel)
         let repoRoot = "/tmp/Downloads/Repositories/Chau7"
 
-        KnownRepoIdentityStore.shared.reset()
-        KnownRepoIdentityStore.shared.record(rootPath: repoRoot, branch: "main")
-
-        session.currentDirectory = repoRoot + "/apps/chau7-macos"
+        // Simulate a live model (full git access)
+        let repoModel = RepositoryModel(
+            rootPath: repoRoot,
+            branch: "feature/live",
+            accessLevel: .live
+        )
+        session.repositoryModel = repoModel
         session.isGitRepo = true
         session.gitRootPath = repoRoot
         session.gitBranch = "feature/live"
