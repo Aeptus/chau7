@@ -40,8 +40,10 @@ final class RepositoryCache {
         self.refreshDelay = refreshDelay
     }
 
-    /// Resolve a directory path to its RepositoryModel.
-    /// Returns nil (via completion) if the path is not inside a git repo.
+    /// Resolve a directory path to a *live* RepositoryModel.
+    /// Returns nil (via completion) if the path is not inside a git repo
+    /// or if live git access is blocked (e.g. protected directory without bookmark).
+    /// Use `resolveDetailed` to also receive cached models for protected-path repos.
     /// Cache hits are instant (no git process). Completion always on main.
     func resolve(path: String, completion: @escaping (RepositoryModel?) -> Void) {
         resolveDetailed(path: path) { result in
@@ -60,8 +62,9 @@ final class RepositoryCache {
 
         if !access.canProbeLive {
             if let knownIdentity, access.canUseKnownIdentity {
-                let model = queue.sync { cachedModelForIdentity(knownIdentity) }
+                let (model, pendingBranch) = queue.sync { cachedModelForIdentity(knownIdentity) }
                 DispatchQueue.main.async {
+                    if let pendingBranch { model.branch = pendingBranch }
                     completion(.repository(model, access: access))
                 }
             } else {
@@ -165,21 +168,25 @@ final class RepositoryCache {
     func promoteCachedModel(forRoot rootPath: String) {
         let canonical = URL(fileURLWithPath: rootPath).standardized.path
         queue.async { [weak self] in
-            self?.models[canonical]?.promoteToLive()
+            guard let model = self?.models[canonical] else { return }
+            DispatchQueue.main.async { model.promoteToLive() }
         }
     }
 
-    /// Returns (or creates) a cached-access model for a known identity.
+    /// Returns (or creates) a model for a known identity when live access is blocked.
     /// Must be called on `queue`. Reuses an existing model if one is already
-    /// cached for this root path, preserving any branch data it may have.
-    private func cachedModelForIdentity(_ identity: KnownRepoIdentity) -> RepositoryModel {
+    /// cached for this root path (even if that model is `.live` — its branch data
+    /// is still valid; the access snapshot on the result conveys the blocked state).
+    /// Returns (model, pendingBranch) where pendingBranch is non-nil if the
+    /// model's branch needs updating on the main thread before use.
+    private func cachedModelForIdentity(_ identity: KnownRepoIdentity) -> (RepositoryModel, String?) {
         let canonical = URL(fileURLWithPath: identity.rootPath).standardized.path
         if let existing = models[canonical] {
-            // Promote branch if identity has newer data than the model
-            if existing.branch == nil, let branch = identity.lastKnownBranch {
-                DispatchQueue.main.async { existing.branch = branch }
-            }
-            return existing
+            // If identity has a branch the model lacks, return it as a pending
+            // update so the caller can set it on main before the completion fires.
+            let pendingBranch = (existing.branch == nil && identity.lastKnownBranch != nil)
+                ? identity.lastKnownBranch : nil
+            return (existing, pendingBranch)
         }
         let model = RepositoryModel(
             rootPath: canonical,
@@ -190,7 +197,7 @@ final class RepositoryCache {
         )
         models[canonical] = model
         resolvedRootsByPath[canonical] = canonical
-        return model
+        return (model, nil)
     }
 
     /// Clear the negative cache (e.g. after user grants protected folder access).

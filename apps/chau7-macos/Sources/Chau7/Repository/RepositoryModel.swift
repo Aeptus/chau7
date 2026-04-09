@@ -30,7 +30,8 @@ final class RepositoryModel: Identifiable {
     }
 
     /// Whether this model has live git access or is operating from cached identity.
-    @ObservationIgnored var accessLevel: AccessLevel
+    /// Observable so UI updates when a cached model is promoted to live.
+    var accessLevel: AccessLevel
 
     var metadata: RepoMetadata = .empty
     var stats: RepoStats?
@@ -105,7 +106,9 @@ final class RepositoryModel: Identifiable {
 
     /// Promote a cached model to live access. Called when security-scoped access
     /// is granted and the model can now perform git I/O.
+    /// Must be called on the main thread (mutates observable state).
     func promoteToLive() {
+        dispatchPrecondition(condition: .onQueue(.main))
         guard accessLevel == .cached else { return }
         accessLevel = .live
         refreshBranch()

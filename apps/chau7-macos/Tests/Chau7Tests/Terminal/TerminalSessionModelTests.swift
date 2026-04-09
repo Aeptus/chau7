@@ -320,25 +320,11 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertTrue(state.accessSnapshot.canProbeLive)
     }
 
-    func testStaleRefreshGitStatusCompletionIsDiscarded() {
-        let appModel = AppModel()
-        let session = TerminalSessionModel(appModel: appModel)
-        let repoRoot = "/tmp/Downloads/Repositories/Chau7"
-
-        // Simulate a cached model from a protected-path resolve (the "current" state)
-        let cachedModel = RepositoryModel(
-            rootPath: repoRoot,
-            branch: "feature/protected",
-            accessLevel: .cached
-        )
-        session.repositoryModel = cachedModel
-        session.isGitRepo = true
-        session.gitRootPath = repoRoot
-        session.gitBranch = "feature/protected"
-
-        // Simulate what happens when a stale completion arrives:
-        // A .notRepository result from an earlier init resolve for ~ should
-        // NOT overwrite the current cached model if a newer generation exists.
+    func testNotRepositoryStateSnapshotDoesNotClaimGitRepo() {
+        // Validates that a .notRepository result produces the correct snapshot.
+        // The actual generation-counter race guard (stale init completion arriving
+        // after a restore completion) is exercised by the integration test
+        // testRestoreProtectedRepoUsesPersistedKnownRepoIdentity in OverlayTabsModelTests.
         let notRepoSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
             root: nil,
             isProtectedPath: false,
@@ -348,19 +334,13 @@ final class TerminalSessionModelTests: XCTestCase {
             isDeniedByCooldown: false,
             hasKnownIdentity: false
         )
-        let staleResult = TerminalSessionModel.repositoryState(
+        let state = TerminalSessionModel.repositoryState(
             from: .notRepository(access: notRepoSnapshot)
         )
 
-        // The generation counter should prevent applying stale results.
-        // We verify the model state is preserved (not overwritten to nil).
-        XCTAssertTrue(session.isGitRepo)
-        XCTAssertEqual(session.gitRootPath, repoRoot)
-        XCTAssertEqual(session.gitBranch, "feature/protected")
-
-        // The stale result itself should indicate no repo
-        XCTAssertFalse(staleResult.isGitRepo)
-        XCTAssertNil(staleResult.gitRootPath)
+        XCTAssertFalse(state.isGitRepo)
+        XCTAssertNil(state.gitRootPath)
+        XCTAssertNil(state.gitBranch)
     }
 
     func testRepositoryStateKeepsKnownIdentityWhenLiveAccessIsBlocked() {
