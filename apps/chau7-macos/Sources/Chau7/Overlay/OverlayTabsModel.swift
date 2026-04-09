@@ -1055,46 +1055,53 @@ final class OverlayTabsModel {
         var claimedSessionIds = Set<String>()
 
         return states.map { state in
+            let originalTopLevelCommand = normalizedResumeCommand(state.aiResumeCommand)
             let sanitizedPaneStates = state.paneStates?.map { paneState -> SavedTerminalPaneState in
+                let commandMetadata = AIResumeParser.extractMetadata(
+                    from: paneState.aiResumeCommand ?? ""
+                )
                 let sanitizedPane = AIResumeOwnership.sanitizeForPersistence(
-                    provider: normalizedAIProvider(from: paneState.aiProvider),
-                    sessionId: normalizeAISessionId(paneState.aiSessionId),
+                    provider: normalizedAIProvider(from: paneState.aiProvider) ?? commandMetadata?.provider,
+                    sessionId: normalizeAISessionId(paneState.aiSessionId) ?? commandMetadata?.sessionId,
                     claimedSessionIds: claimedSessionIds
                 )
                 if let sessionId = sanitizedPane.sessionId {
                     claimedSessionIds.insert(sessionId)
                 }
 
+                let sanitizedCommand = sanitizedResumeCommand(
+                    originalCommand: normalizedResumeCommand(paneState.aiResumeCommand),
+                    originalCommandMetadata: commandMetadata,
+                    sanitizedMetadata: sanitizedPane
+                )
+
                 return SavedTerminalPaneState(
                     paneID: paneState.paneID,
                     directory: paneState.directory,
                     scrollbackContent: paneState.scrollbackContent,
-                    aiResumeCommand: buildAIResumeCommand(
-                        provider: sanitizedPane.provider,
-                        sessionId: sanitizedPane.sessionId
-                    ),
+                    aiResumeCommand: sanitizedCommand,
                     aiProvider: sanitizedPane.provider,
                     aiSessionId: sanitizedPane.sessionId,
                     lastOutputAt: paneState.lastOutputAt
                 )
             }
 
-            let sanitizedTopLevel: AIResumeOwnership.Metadata
-            if let firstPane = sanitizedPaneStates?.first {
-                sanitizedTopLevel = AIResumeOwnership.Metadata(
-                    provider: firstPane.aiProvider,
-                    sessionId: firstPane.aiSessionId
-                )
-            } else {
-                sanitizedTopLevel = AIResumeOwnership.sanitizeForPersistence(
-                    provider: normalizedAIProvider(from: state.aiProvider),
-                    sessionId: normalizeAISessionId(state.aiSessionId),
-                    claimedSessionIds: claimedSessionIds
-                )
-                if let sessionId = sanitizedTopLevel.sessionId {
-                    claimedSessionIds.insert(sessionId)
-                }
+            let topLevelCommandMetadata = AIResumeParser.extractMetadata(
+                from: state.aiResumeCommand ?? ""
+            )
+            let sanitizedTopLevel = AIResumeOwnership.sanitizeForPersistence(
+                provider: normalizedAIProvider(from: state.aiProvider) ?? topLevelCommandMetadata?.provider,
+                sessionId: normalizeAISessionId(state.aiSessionId) ?? topLevelCommandMetadata?.sessionId,
+                claimedSessionIds: claimedSessionIds
+            )
+            if let sessionId = sanitizedTopLevel.sessionId {
+                claimedSessionIds.insert(sessionId)
             }
+            let sanitizedTopLevelCommand = sanitizedResumeCommand(
+                originalCommand: originalTopLevelCommand,
+                originalCommandMetadata: topLevelCommandMetadata,
+                sanitizedMetadata: sanitizedTopLevel
+            )
 
             return SavedTabState(
                 tabID: state.tabID,
@@ -1105,10 +1112,7 @@ final class OverlayTabsModel {
                 selectedIndex: state.selectedIndex,
                 tokenOptOverride: state.tokenOptOverride,
                 scrollbackContent: state.scrollbackContent,
-                aiResumeCommand: buildAIResumeCommand(
-                    provider: sanitizedTopLevel.provider,
-                    sessionId: sanitizedTopLevel.sessionId
-                ),
+                aiResumeCommand: sanitizedTopLevelCommand,
                 aiProvider: sanitizedTopLevel.provider,
                 aiSessionId: sanitizedTopLevel.sessionId,
                 splitLayout: state.splitLayout,
@@ -1118,6 +1122,34 @@ final class OverlayTabsModel {
                 repoGroupID: state.repoGroupID
             )
         }
+    }
+
+    private static func sanitizedResumeCommand(
+        originalCommand: String?,
+        originalCommandMetadata: AIResumeParser.ResumeMetadata?,
+        sanitizedMetadata: AIResumeOwnership.Metadata
+    ) -> String? {
+        if let rebuilt = buildAIResumeCommand(
+            provider: sanitizedMetadata.provider,
+            sessionId: sanitizedMetadata.sessionId
+        ) {
+            return rebuilt
+        }
+
+        guard let originalCommand else { return nil }
+
+        // Preserve legacy command-only metadata until restore-time resolution can
+        // consume it. If sanitization removed the session identity because it was
+        // already claimed elsewhere, drop the command too so duplicates still clear.
+        if let originalCommandMetadata {
+            if sanitizedMetadata.provider == originalCommandMetadata.provider,
+               sanitizedMetadata.sessionId == originalCommandMetadata.sessionId {
+                return originalCommand
+            }
+            return nil
+        }
+
+        return originalCommand
     }
 
     /// Build a resume command for an AI session running in the given directory.

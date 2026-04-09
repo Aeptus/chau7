@@ -1236,6 +1236,83 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertNil(sanitized[1].aiResumeCommand)
     }
 
+    func testSanitizeRestoredAIResumeOwnershipPreservesLegacyCommandOnlyPaneMetadata() {
+        let legacySessionID = "legacy-pane-001"
+        let states = [
+            SavedTabState(
+                tabID: UUID().uuidString,
+                selectedTabID: nil,
+                customTitle: "Legacy Pane",
+                color: TabColor.blue.rawValue,
+                directory: "/tmp/legacy-pane",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                aiProvider: nil,
+                aiSessionId: nil,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: [
+                    SavedTerminalPaneState(
+                        paneID: UUID().uuidString,
+                        directory: "/tmp/legacy-pane",
+                        scrollbackContent: nil,
+                        aiResumeCommand: "claude --resume \(legacySessionID)",
+                        aiProvider: nil,
+                        aiSessionId: nil
+                    )
+                ],
+                createdAt: nil,
+                repoGroupID: nil
+            )
+        ]
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(states: states)
+        XCTAssertEqual(sanitized.first?.paneStates?.first?.aiProvider, "claude")
+        XCTAssertEqual(sanitized.first?.paneStates?.first?.aiSessionId, legacySessionID)
+        XCTAssertEqual(sanitized.first?.paneStates?.first?.aiResumeCommand, "claude --resume \(legacySessionID)")
+    }
+
+    func testSanitizeRestoredAIResumeOwnershipPreservesLegacyTopLevelFallbackMetadata() {
+        let legacySessionID = "legacy-top-level-001"
+        let paneID = UUID().uuidString
+        let states = [
+            SavedTabState(
+                tabID: UUID().uuidString,
+                selectedTabID: nil,
+                customTitle: "Legacy Top Level",
+                color: TabColor.green.rawValue,
+                directory: "/tmp/legacy-top-level",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: "claude --resume \(legacySessionID)",
+                aiProvider: nil,
+                aiSessionId: nil,
+                splitLayout: nil,
+                focusedPaneID: paneID,
+                paneStates: [
+                    SavedTerminalPaneState(
+                        paneID: paneID,
+                        directory: "/tmp/legacy-top-level",
+                        scrollbackContent: nil,
+                        aiResumeCommand: nil,
+                        aiProvider: nil,
+                        aiSessionId: nil
+                    )
+                ],
+                createdAt: nil,
+                repoGroupID: nil
+            )
+        ]
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(states: states)
+        XCTAssertEqual(sanitized.first?.aiProvider, "claude")
+        XCTAssertEqual(sanitized.first?.aiSessionId, legacySessionID)
+        XCTAssertEqual(sanitized.first?.aiResumeCommand, "claude --resume \(legacySessionID)")
+    }
+
     func testResolveResumeMetadataIgnoresTelemetryOnlyCodexProvider() {
         guard let session = model.tabs[0].session else {
             XCTFail("Expected initial session")
