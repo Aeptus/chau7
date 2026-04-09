@@ -10,7 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Spanish Language Support**: Full Spanish (es) locale with 2,612 translated keys and 41 .stringsdict plural entries. Informal "tú" form, standard Spanish computing vocabulary. Accessible from Settings > General > Language.
 
+### Changed
+- **Repository Model Unification**: `RepositoryModel` now exists for every known repo, including those in protected directories where live git probing is blocked. The model carries an `accessLevel` (.live or .cached) so consumers get a single, always-present object instead of switching between live models and thin fallback identities. Eliminates the `.cachedIdentity` resolution path, simplifies display fallback chains in tab chrome, and fixes the circular dependency where branch data could only be recorded with live access that was itself blocked.
+
 ### Fixed
+- **Protected Repo Branch Display**: Protected-folder repos that were showing "unknown" branch labels now reliably display the last-known branch. The root cause was that branch data was only recorded during live git probing, which is exactly the path blocked for protected directories. Branch recording now flows through all paths: tab restore, recent-repo updates, and live→cached transitions.
 - **Pricing Table Accuracy**: Fixed wrong prices for Claude Opus 4.6 ($15→$5/$75→$25), Haiku 4.5 ($0.80→$1/$4→$5), and Gemini 2.0 Flash (free→$0.10/$0.40 paid tier). Added ~20 missing models (GPT-5.x, GPT-4.1, o3/o4-mini, Gemini 2.5). Unknown models now log a warning with the model name instead of failing silently. Gemini fallback uses Flash pricing instead of free tier.
 - **Dashboard Polling Waste**: Dashboard now polls adaptively — 2s when agents are active, 5s when idle, 10s with no agents — instead of a fixed 2s interval that wasted CPU even with zero agents running.
 - **Cost Lock Safety**: Replaced bare `costLock.lock()/unlock()` pairs with `defer` pattern to prevent lock leaks on unexpected errors.

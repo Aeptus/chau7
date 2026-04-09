@@ -3,8 +3,21 @@ import Foundation
 /// Shared observable model for a single git repository.
 /// One instance per unique git root path, shared across all tabs in that repo.
 /// Branch changes publish to all subscribers automatically.
+///
+/// A model exists for every *known* repo — including repos in protected directories
+/// where live git probing is blocked. The `accessLevel` property distinguishes
+/// live models (full git access) from cached models (identity only, no git I/O).
 @Observable
 final class RepositoryModel: Identifiable {
+    /// Whether this model has live git access or is operating from cached identity.
+    enum AccessLevel: String, Codable, Equatable {
+        /// Full git probing active — branch refreshes, metadata loads, etc.
+        case live
+        /// Known identity only — no git I/O. Branch is seeded from persisted data
+        /// and will not auto-refresh until access is granted.
+        case cached
+    }
+
     let id: String
     let rootPath: String
 
@@ -15,6 +28,9 @@ final class RepositoryModel: Identifiable {
             }
         }
     }
+
+    /// Whether this model has live git access or is operating from cached identity.
+    @ObservationIgnored var accessLevel: AccessLevel
 
     var metadata: RepoMetadata = .empty
     var stats: RepoStats?
@@ -28,6 +44,11 @@ final class RepositoryModel: Identifiable {
         URL(fileURLWithPath: rootPath).lastPathComponent
     }
 
+    /// Whether this model can perform git I/O operations.
+    var isLive: Bool {
+        accessLevel == .live
+    }
+
     @ObservationIgnored private var refreshWorkItem: DispatchWorkItem?
     @ObservationIgnored private var saveWorkItem: DispatchWorkItem?
     @ObservationIgnored private static let gitQueue = DispatchQueue(label: "com.chau7.repository.git", qos: .utility)
@@ -39,6 +60,7 @@ final class RepositoryModel: Identifiable {
     init(
         rootPath: String,
         branch: String? = nil,
+        accessLevel: AccessLevel = .live,
         gitRunner: @escaping ([String], String) -> String = GitDiffTracker.runGit,
         identityRecorder: @escaping (String, String?) -> Void = { rootPath, branch in
             KnownRepoIdentityStore.shared.record(rootPath: rootPath, branch: branch)
@@ -48,6 +70,7 @@ final class RepositoryModel: Identifiable {
         self.id = rootPath
         self.rootPath = rootPath
         self.branch = branch
+        self.accessLevel = accessLevel
         self.gitRunner = gitRunner
         self.identityRecorder = identityRecorder
         self.refreshDelay = refreshDelay
@@ -55,7 +78,9 @@ final class RepositoryModel: Identifiable {
 
     /// Refresh the branch name from git. Coalesces rapid calls via work item cancellation.
     /// Safe to call from any thread — all state mutations happen on gitQueue.
+    /// No-op for cached models (no git I/O available).
     func refreshBranch() {
+        guard accessLevel == .live else { return }
         let root = rootPath
         Self.gitQueue.async { [weak self] in
             guard let self else { return }
@@ -78,9 +103,20 @@ final class RepositoryModel: Identifiable {
 
     // MARK: - Repo Metadata
 
+    /// Promote a cached model to live access. Called when security-scoped access
+    /// is granted and the model can now perform git I/O.
+    func promoteToLive() {
+        guard accessLevel == .cached else { return }
+        accessLevel = .live
+        refreshBranch()
+        loadMetadata()
+    }
+
     /// Load metadata from `.chau7/metadata.json` asynchronously.
     /// Publishes on main thread when done. Safe to call from any thread.
+    /// No-op for cached models (protected path may block filesystem reads).
     func loadMetadata() {
+        guard accessLevel == .live else { return }
         let root = rootPath
         Self.metadataQueue.async { [weak self] in
             let loaded = RepoMetadataStore.load(repoRoot: root)

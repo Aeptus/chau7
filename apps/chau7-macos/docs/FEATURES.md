@@ -616,3 +616,5 @@ Key patterns:
   Known repo identities now preserve last-known branch metadata when recent repos are reordered or settings are imported, so protected-folder repos do not regress from a real branch name back to `unknown` during normal settings churn.
 - Protected-folder action dedupe:
   Repository pane, diff viewer, and related live-git surfaces now share a per-root user-action cooldown after a canceled or failed grant, so one denied `Downloads` prompt suppresses the next immediate attempt instead of re-asking on every click.
+- Unified repository model for protected paths:
+  `RepositoryModel` now carries an `accessLevel` (.live or .cached) so that a model exists for every known repo, even when live git access is blocked in protected directories. Consumers see a single, always-present object instead of switching between live models and thin fallback identities. Branch data flows into the model from tab restore, recent-repo recording, and live-to-cached transitions, eliminating the prior circular dependency where recording a branch required the same live access that was blocked.
