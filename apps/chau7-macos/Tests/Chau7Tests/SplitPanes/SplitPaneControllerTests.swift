@@ -1009,6 +1009,97 @@ final class SplitEnumTests: XCTestCase {
         XCTAssertTrue(diff.rawDiff.contains("+fresh"))
     }
 
+    func testDiffViewerRequestsProtectedAccessBeforeLoadingDiff() {
+        let blockedSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
+            root: "/Users/me/Downloads",
+            isProtectedPath: true,
+            isFeatureEnabled: true,
+            hasActiveScope: false,
+            hasSecurityScopedBookmark: false,
+            isDeniedByCooldown: false,
+            hasKnownIdentity: true
+        )
+        let grantedSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
+            root: "/Users/me/Downloads",
+            isProtectedPath: true,
+            isFeatureEnabled: true,
+            hasActiveScope: true,
+            hasSecurityScopedBookmark: false,
+            isDeniedByCooldown: false,
+            hasKnownIdentity: true
+        )
+        let gitCalled = expectation(description: "git diff called")
+        var requestedAction: String?
+
+        let diff = DiffViewerModel(
+            gitRunner: { args, directory in
+                XCTAssertEqual(args, ["diff", "--", "src/main.swift"])
+                XCTAssertEqual(directory, "/Users/me/Downloads/Repositories/Chau7")
+                gitCalled.fulfill()
+                return "@@ -1 +1 @@\n-old\n+new\n"
+            },
+            accessSnapshotProvider: { _ in blockedSnapshot },
+            accessRequester: { path, actionDescription in
+                requestedAction = actionDescription
+                XCTAssertEqual(path, "/Users/me/Downloads/Repositories/Chau7")
+                return grantedSnapshot
+            },
+            loadQueue: DispatchQueue(label: "DiffViewerModelTests.load")
+        )
+
+        diff.loadDiff(file: "src/main.swift", in: "/Users/me/Downloads/Repositories/Chau7")
+
+        wait(for: [gitCalled], timeout: 1.0)
+        waitUntil(timeout: 1.0) { !diff.hunks.isEmpty }
+
+        XCTAssertEqual(requestedAction, "load live diff")
+        XCTAssertTrue(diff.protectedAccessSnapshot.canProbeLive)
+        XCTAssertNil(diff.lastError)
+    }
+
+    func testDiffViewerLeavesExistingDiffVisibleWhenProtectedAccessIsDenied() {
+        let blockedSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
+            root: "/Users/me/Downloads",
+            isProtectedPath: true,
+            isFeatureEnabled: true,
+            hasActiveScope: false,
+            hasSecurityScopedBookmark: false,
+            isDeniedByCooldown: false,
+            hasKnownIdentity: true
+        )
+        var gitCallCount = 0
+
+        let diff = DiffViewerModel(
+            gitRunner: { _, _ in
+                gitCallCount += 1
+                return ""
+            },
+            accessSnapshotProvider: { _ in blockedSnapshot },
+            accessRequester: { _, _ in blockedSnapshot },
+            loadQueue: DispatchQueue(label: "DiffViewerModelTests.denied")
+        )
+        diff.hunks = [DiffHunk(
+            header: "@@ -1 +1 @@",
+            oldStart: 1,
+            oldCount: 1,
+            newStart: 1,
+            newCount: 1,
+            lines: [.deletion("old"), .addition("new")]
+        )]
+        diff.rawDiff = "@@ -1 +1 @@\n-old\n+new\n"
+
+        diff.loadDiff(file: "src/main.swift", in: "/Users/me/Downloads/Repositories/Chau7")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+        XCTAssertEqual(gitCallCount, 0)
+        XCTAssertEqual(
+            diff.lastError,
+            "Grant Chau7 access to Downloads to load live diff."
+        )
+        XCTAssertEqual(diff.hunks.count, 1)
+        XCTAssertFalse(diff.protectedAccessSnapshot.canProbeLive)
+    }
+
     // MARK: - FilePreviewModel
 
     func testFilePreviewModelFileName() {
@@ -1121,6 +1212,16 @@ final class SplitEnumTests: XCTestCase {
         XCTAssertEqual(saved.diffFilePath, "src/main.swift")
         XCTAssertEqual(saved.diffDirectory, "/Users/test/project")
         XCTAssertEqual(saved.diffMode, "staged")
+    }
+}
+
+private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() {
+            return
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
     }
 }
 #endif

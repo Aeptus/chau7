@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Chau7Core
 
 // MARK: - F02: Native Split Panes with Text Editor Support
 
@@ -769,9 +770,22 @@ final class DiffViewerModel: Identifiable {
     var rawDiff = ""
     var additions = 0
     var deletions = 0
+    var protectedAccessSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
+        root: nil,
+        isProtectedPath: false,
+        isFeatureEnabled: false,
+        hasActiveScope: false,
+        hasSecurityScopedBookmark: false,
+        isDeniedByCooldown: false,
+        hasKnownIdentity: false
+    )
 
     @ObservationIgnored
     private let gitRunner: ([String], String) -> String
+    @ObservationIgnored
+    private let accessSnapshotProvider: (String) -> ProtectedPathAccessSnapshot
+    @ObservationIgnored
+    private let accessRequester: (String, String) -> ProtectedPathAccessSnapshot
     @ObservationIgnored
     private let loadQueue: DispatchQueue
     @ObservationIgnored
@@ -779,9 +793,23 @@ final class DiffViewerModel: Identifiable {
 
     init(
         gitRunner: @escaping ([String], String) -> String = GitDiffTracker.runGit,
+        accessSnapshotProvider: @escaping (String) -> ProtectedPathAccessSnapshot = { path in
+            ProtectedPathPolicy.liveAccessSnapshot(forPath: path)
+        },
+        accessRequester: @escaping (String, String) -> ProtectedPathAccessSnapshot = { path, actionDescription in
+            precondition(Thread.isMainThread, "Protected folder prompts must run on the main thread")
+            return MainActor.assumeIsolated {
+                ProtectedPathPolicy.ensureLiveAccessForUserInitiatedAction(
+                    path: path,
+                    actionDescription: actionDescription
+                )
+            }
+        },
         loadQueue: DispatchQueue = DispatchQueue.global(qos: .userInitiated)
     ) {
         self.gitRunner = gitRunner
+        self.accessSnapshotProvider = accessSnapshotProvider
+        self.accessRequester = accessRequester
         self.loadQueue = loadQueue
     }
 
@@ -822,20 +850,23 @@ final class DiffViewerModel: Identifiable {
     }
 
     func loadDiff(file: String, in directory: String, mode: DiffMode = .workingTree) {
-        let token = startLoading(file: file, in: directory, mode: mode)
+        guard let liveDirectory = prepareLiveGitAccess(for: directory, actionDescription: "load live diff") else {
+            return
+        }
+        let token = startLoading(file: file, in: liveDirectory, mode: mode)
 
         loadQueue.async { [weak self] in
             var args = ["diff"]
             if mode == .staged { args.append("--cached") }
             args += ["--", file]
 
-            var output = self?.gitRunner(args, directory) ?? ""
+            var output = self?.gitRunner(args, liveDirectory) ?? ""
             var parsed = Self.parseUnifiedDiff(output)
             var effectiveMode = mode
 
             // Fallback: try staged diff if working tree was empty (runs on background thread)
             if output.isEmpty, parsed.hunks.isEmpty, mode == .workingTree {
-                let stagedOutput = self?.gitRunner(["diff", "--cached", "--", file], directory) ?? ""
+                let stagedOutput = self?.gitRunner(["diff", "--cached", "--", file], liveDirectory) ?? ""
                 if !stagedOutput.isEmpty {
                     output = stagedOutput
                     parsed = Self.parseUnifiedDiff(stagedOutput)
@@ -858,6 +889,44 @@ final class DiffViewerModel: Identifiable {
     func refresh() {
         guard let path = filePath, let dir = directory else { return }
         loadDiff(file: path, in: dir, mode: diffMode)
+    }
+
+    private func prepareLiveGitAccess(for directory: String, actionDescription: String) -> String? {
+        let normalized = URL(fileURLWithPath: directory).standardized.path
+        let initialSnapshot = accessSnapshotProvider(normalized)
+        protectedAccessSnapshot = initialSnapshot
+
+        guard initialSnapshot.root != nil, !initialSnapshot.canProbeLive else {
+            lastError = nil
+            return normalized
+        }
+
+        let updatedSnapshot = accessRequester(normalized, actionDescription)
+        protectedAccessSnapshot = updatedSnapshot
+        guard updatedSnapshot.canProbeLive else {
+            lastError = liveAccessDeniedMessage(for: updatedSnapshot, actionDescription: actionDescription)
+            isLoading = false
+            return nil
+        }
+
+        lastError = nil
+        return normalized
+    }
+
+    private func liveAccessDeniedMessage(for snapshot: ProtectedPathAccessSnapshot, actionDescription: String) -> String {
+        let location = snapshot.root.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "this folder"
+        switch snapshot.recommendedAction {
+        case .enableFeature:
+            return "Chau7 needs protected-folder access enabled to \(actionDescription) in \(location)."
+        case .grantAccess:
+            return "Grant Chau7 access to \(location) to \(actionDescription)."
+        case .waitForCooldown:
+            return "Chau7 cannot \(actionDescription) in \(location) until protected-folder access is granted again."
+        case .regrantAccess:
+            return "Chau7 needs refreshed access to \(location) to \(actionDescription)."
+        case .none:
+            return "Chau7 could not \(actionDescription)."
+        }
     }
 
     func toggleDiffMode() {

@@ -33,18 +33,23 @@ final class RepositoryModel: Identifiable {
     @ObservationIgnored private static let gitQueue = DispatchQueue(label: "com.chau7.repository.git", qos: .utility)
     @ObservationIgnored private static let metadataQueue = DispatchQueue(label: "com.chau7.repository.metadata", qos: .utility)
     @ObservationIgnored private let gitRunner: ([String], String) -> String
+    @ObservationIgnored private let identityRecorder: (String, String?) -> Void
     @ObservationIgnored private let refreshDelay: TimeInterval
 
     init(
         rootPath: String,
         branch: String? = nil,
         gitRunner: @escaping ([String], String) -> String = GitDiffTracker.runGit,
+        identityRecorder: @escaping (String, String?) -> Void = { rootPath, branch in
+            KnownRepoIdentityStore.shared.record(rootPath: rootPath, branch: branch)
+        },
         refreshDelay: TimeInterval = 0.1
     ) {
         self.id = rootPath
         self.rootPath = rootPath
         self.branch = branch
         self.gitRunner = gitRunner
+        self.identityRecorder = identityRecorder
         self.refreshDelay = refreshDelay
     }
 
@@ -62,6 +67,7 @@ final class RepositoryModel: Identifiable {
                     guard let self else { return }
                     if self.branch != newBranch {
                         self.branch = newBranch
+                        self.identityRecorder(root, newBranch)
                     }
                 }
             }

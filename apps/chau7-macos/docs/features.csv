@@ -136,7 +136,7 @@ Tab Management,Multi-Tab Interface,"Unlimited tabs per window — Cmd+T to creat
 Tab Management,Tab Renaming,Custom tab names via Cmd+Shift+R,Shipped,No
 Tab Management,Tab Colors,"12+ colors: blue, teal, green, red, orange, pink, purple, yellow, gray, and more",Shipped,No
 Tab Management,Tab Reordering,Drag tabs or Cmd+Opt+Shift+[/] to move left/right — center-crossing snap thresholds keep sibling motion aligned with the grabbed tab,Shipped,No
-Tab Management,Git Branch Indicator,Current git branch displayed in the tab — no need to type git branch,Shipped,No
+Tab Management,Git Branch Indicator,"Current git branch displayed in the tab — no need to type git branch. In protected folders, the last known branch remains visible from cached repo identity until live access is granted again.",Shipped,No
 Tab Management,Directory Path Display,Working directory visible in the tab title,Shipped,No
 Tab Management,Last Command Badge,Tab shows last command name with duration and exit status,Shipped,No
 Tab Management,Broadcast Input,Type once and send to all tabs — with per-tab exclusion and visual indicator,Shipped,No
@@ -147,7 +147,7 @@ Split Panes,Horizontal Split,Cmd+Opt+H — split side-by-side with draggable div
 Split Panes,Vertical Split,Cmd+Opt+V — stack panes vertically,Shipped,No
 Split Panes,Nested Splits,Arbitrary nesting depth via binary tree layout controller,Shipped,No
 Split Panes,Built-in Text Editor,"Full editor in a split pane — syntax highlighting, line numbers, bracket matching, find/replace",Shipped,Yes
-Split Panes,Repository Pane,"Full git UI in a split pane (⌘⌥B) — session-aware: shows agent-touched files with diff stats when AI active, resets after push. Stage/unstage, commit (⌘Enter), branch, push/pull, stash, history with search, conflict resolution, ahead/behind, hover tooltips, commit chips",Shipped,Yes
+Split Panes,Repository Pane,"Full git UI in a split pane (⌘⌥B) — session-aware: shows agent-touched files with diff stats when AI active, resets after push. Stage/unstage, commit (⌘Enter), branch, push/pull, stash, history with search, conflict resolution, ahead/behind, hover tooltips, commit chips. Prompts for protected-folder access only when a live git action is requested.",Shipped,Yes
 Split Panes,Click-to-Copy Document Name,"Click the file name in the editor pane header to copy it to the clipboard",Shipped,No
 Split Panes,Multi-Language Syntax,"Syntax highlighting for HTML, CSS, JavaScript, Python, and more",Shipped,No
 Split Panes,Terminal + Editor Side-by-Side,Edit code and run it in the same window — no app switching,Shipped,Yes
@@ -280,7 +280,8 @@ Terminal,Show Changed Files,"Git diff snapshot per command (OSC 133) shows files
 Terminal,Idle Tabs Dropdown,"Tabs idle beyond configurable threshold (default 10 min) grouped into a dropdown chip in the tab bar with hover card support",Shipped,Yes
 Terminal,Repository Tab Grouping,"Group tabs by git repo (Off/Auto/Manual). Inline repo-name tag chip with connecting line overlay. Suppresses redundant repo path in grouped tab titles, and inherited group membership auto-detaches when a tab moves to a different repo, including tabs opened directly at another directory.",Shipped,No
 Terminal,Split Pane File Preview,"Read-only file viewer with syntax highlighting and image support (Cmd+Opt+P). Lighter than full editor.",Shipped,No
-Terminal,Split Pane Diff Viewer,"Unified git diff view with colored additions/deletions, dual line numbers, Working/Staged toggle (Cmd+Opt+Shift+D)",Shipped,No
+Terminal,Split Pane Diff Viewer,"Unified git diff view with colored additions/deletions, dual line numbers, Working/Staged toggle (Cmd+Opt+Shift+D). Requests protected-folder access on demand before loading live git diffs.",Shipped,No
+Terminal,Protected Repo Identity Fallback,"Tabs preserve known repo root and last-known branch when macOS protected-folder access blocks live git probing, so passive repo UI and grouping remain stable until live access is granted.",Shipped,Yes
 Terminal,chau7:// URL Scheme,"Open SSH sessions, run commands, change directory, or open files from external apps",Shipped,Yes
 Terminal,Keyboard Shortcut Standardization,"All Chau7-specific shortcuts use Cmd+Option; tab selection internationalized (Cmd+1-9)",Shipped,No
 API Analytics,Streaming Metadata Fix,"Anthropic/OpenAI streaming responses correctly parsed for model, tokens, and cost",Shipped,No

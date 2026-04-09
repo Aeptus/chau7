@@ -1553,6 +1553,8 @@
 "dialog.importHistory.title" = "استيراد سجل الأوامر";
 "dialog.protectedAccess.title" = "منح الوصول إلى المجلدات المحمية";
 "dialog.protectedAccess.message" = "حدد مجلدات مثل التنزيلات/سطح المكتب/المستندات لاكتشاف المستودعات في الخلفية.";
+"dialog.protectedAccess.grantAction" = "منح الوصول";
+"dialog.protectedAccess.liveAction.message" = "لكي يتمكن Chau7 من %@، امنحه حق الوصول إلى %@.";
 
 // MARK: - Changed Files Panel
 "panel.changedFiles.filter" = "تصفية الملفات...";

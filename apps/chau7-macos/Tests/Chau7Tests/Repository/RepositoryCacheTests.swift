@@ -27,10 +27,25 @@ final class RepositoryCacheTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         let store = KnownRepoIdentityStore(defaults: defaults, bootstrapRoots: [])
-        store.record(rootPath: "/Users/me/Downloads/Repositories/Chau7")
+        store.record(rootPath: "/Users/me/Downloads/Repositories/Chau7", branch: "main")
 
         XCTAssertTrue(store.hasKnownRepo(beneathProtectedRoot: "/Users/me/Downloads"))
         XCTAssertFalse(store.hasKnownRepo(beneathProtectedRoot: "/Users/me/Desktop"))
+        XCTAssertEqual(
+            store.resolveIdentity(forPath: "/Users/me/Downloads/Repositories/Chau7/apps/chau7-macos")?.lastKnownBranch,
+            "main"
+        )
+    }
+
+    func testKnownRepoIdentityStorePreservesExistingBranchWhenRecordingWithoutBranch() {
+        let suiteName = "KnownRepoIdentityStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let store = KnownRepoIdentityStore(defaults: defaults, bootstrapRoots: [])
+        store.record(rootPath: "/repos/Chau7", branch: "main")
+        store.record(rootPath: "/repos/Chau7")
+
+        XCTAssertEqual(store.identity(forRootPath: "/repos/Chau7")?.lastKnownBranch, "main")
     }
 
     func testResolveDetailedReturnsCachedIdentityWhenProtectedPathCannotProbeLive() {
@@ -64,10 +79,10 @@ final class RepositoryCacheTests: XCTestCase {
 
         let expectation = expectation(description: "returns cached identity")
         cache.resolveDetailed(path: repoRoot + "/apps/chau7-macos") { result in
-            guard case .cachedIdentity(rootPath: let rootPath, access: let access) = result else {
+            guard case .cachedIdentity(identity: let identity, access: let access) = result else {
                 return XCTFail("Expected cachedIdentity, got \(result)")
             }
-            XCTAssertEqual(rootPath, repoRoot)
+            XCTAssertEqual(identity.rootPath, repoRoot)
             XCTAssertFalse(access.canProbeLive)
             XCTAssertTrue(access.canUseKnownIdentity)
             expectation.fulfill()
@@ -107,6 +122,49 @@ final class RepositoryCacheTests: XCTestCase {
         wait(for: [nestedExpectation], timeout: 1.0)
 
         XCTAssertEqual(cache.cachedRepoCount, 2)
+    }
+
+    func testResolveDetailedReturnsCachedIdentityWithLastKnownBranch() {
+        let settings = FeatureSettings.shared
+        let previousAllowProtectedFolderAccess = settings.allowProtectedFolderAccess
+        let previousRecentRepoRoots = settings.recentRepoRoots
+        let previousKnownRoots = KnownRepoIdentityStore.shared.allRoots()
+        defer {
+            settings.allowProtectedFolderAccess = previousAllowProtectedFolderAccess
+            settings.recentRepoRoots = previousRecentRepoRoots
+            KnownRepoIdentityStore.shared.replaceAll(with: previousKnownRoots)
+            ProtectedPathPolicy.resetAccessChecks()
+        }
+
+        let repoRoot = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Downloads/Repositories/Chau7")
+            .path
+
+        settings.allowProtectedFolderAccess = false
+        settings.recentRepoRoots = [repoRoot]
+        KnownRepoIdentityStore.shared.replaceAll(with: [repoRoot])
+        KnownRepoIdentityStore.shared.record(rootPath: repoRoot, branch: "feature/protected")
+        ProtectedPathPolicy.resetAccessChecks()
+
+        let cache = RepositoryCache(
+            gitRunner: { _, _ in
+                XCTFail("gitRunner should not be called when protected access is blocked")
+                return ""
+            },
+            recentRepoRecorder: { _ in }
+        )
+
+        let expectation = expectation(description: "returns cached branch identity")
+        cache.resolveDetailed(path: repoRoot + "/apps/chau7-macos") { result in
+            guard case .cachedIdentity(identity: let identity, access: let access) = result else {
+                return XCTFail("Expected cachedIdentity, got \(result)")
+            }
+            XCTAssertEqual(identity.rootPath, repoRoot)
+            XCTAssertEqual(identity.lastKnownBranch, "feature/protected")
+            XCTAssertFalse(access.canProbeLive)
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
     }
 
     func testRefreshBranchCoalescesRapidCalls() {

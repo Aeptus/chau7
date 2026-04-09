@@ -120,6 +120,15 @@ final class TerminalSessionModel {
 
     var isGitRepo = false
     var gitBranch: String?
+    var repositoryAccessSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
+        root: nil,
+        isProtectedPath: false,
+        isFeatureEnabled: false,
+        hasActiveScope: false,
+        hasSecurityScopedBookmark: false,
+        isDeniedByCooldown: false,
+        hasKnownIdentity: false
+    )
     /// Callback invoked when `gitRootPath` changes (used by OverlayTabsModel for auto-grouping).
     @ObservationIgnored var onGitRootPathChanged: ((String?) -> Void)?
 
@@ -793,7 +802,6 @@ final class TerminalSessionModel {
           [ -f "$CHAU7_USER_ZDOTDIR/.zprofile" ] && source "$CHAU7_USER_ZDOTDIR/.zprofile"
           [ -f "$CHAU7_USER_ZDOTDIR/.zlogin" ] && source "$CHAU7_USER_ZDOTDIR/.zlogin"
         fi
-
         # Ensure Volta image node toolchains stay ahead of the legacy ~/.volta/bin shim.
         path=("${(s/:/)PATH}")
         for _codex_image_bin in "$CHAU7_USER_HOME/.volta/tools/image/node/"*"/bin"(N); do
@@ -802,21 +810,17 @@ final class TerminalSessionModel {
         typeset -U path
         export PATH="${(j/:/)path}"
         unset _codex_image_bin
-
         # Disable PROMPT_CR - prevents the 143 spaces + CRs before each prompt
         # that can cause visual artifacts in some terminals
         setopt NO_PROMPT_CR
-
         # Chau7 default start directory
         if [ -n "$CHAU7_START_DIR" ] && [ -d "$CHAU7_START_DIR" ]; then
           cd "$CHAU7_START_DIR"
         fi
-
         # Chau7 startup command
         if [ -n "$CHAU7_STARTUP_CMD" ]; then
           eval "$CHAU7_STARTUP_CMD"
         fi
-
         # Chau7 shell integration (runs at startup, not in history)
         chau7_emit_exit_status() {
           local code=$?
@@ -832,7 +836,6 @@ final class TerminalSessionModel {
           precmd_functions+=smartoverlay_precmd
         fi
         smartoverlay_precmd
-
         # Chau7 CLI header injection for Claude Code
         chau7_update_project() {
           local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
@@ -851,17 +854,14 @@ final class TerminalSessionModel {
         export CHAU7_USER_HOME="${CHAU7_USER_HOME:-${HOME:-\(fallbackHome)}}"
         [ -f "$CHAU7_USER_HOME/.bashrc" ] && source "$CHAU7_USER_HOME/.bashrc"
         [ -f "$CHAU7_USER_HOME/.bash_profile" ] && source "$CHAU7_USER_HOME/.bash_profile"
-
         # Chau7 default start directory
         if [ -n "$CHAU7_START_DIR" ] && [ -d "$CHAU7_START_DIR" ]; then
           cd "$CHAU7_START_DIR"
         fi
-
         # Chau7 startup command
         if [ -n "$CHAU7_STARTUP_CMD" ]; then
           eval "$CHAU7_STARTUP_CMD"
         fi
-
         # Chau7 shell integration
         smartoverlay_precmd() {
           printf '\\e]7;file://%s%s\\a' "$HOSTNAME" "$PWD"
@@ -871,7 +871,6 @@ final class TerminalSessionModel {
           printf '\\e]9;chau7;exit=%s\\a' "$code"
         }
         PROMPT_COMMAND="smartoverlay_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
-
         # Chau7 CLI header injection for Claude Code
         chau7_update_project() {
           local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
@@ -895,33 +894,27 @@ final class TerminalSessionModel {
             set -gx CHAU7_USER_HOME "\(fallbackHome)"
           end
         end
-
         set -gx CHAU7_USER_XDG_CONFIG_HOME (string trim -- "$CHAU7_USER_XDG_CONFIG_HOME")
         if test -z "$CHAU7_USER_XDG_CONFIG_HOME"
           set -gx CHAU7_USER_XDG_CONFIG_HOME "\(fallbackXDGConfigHome)"
         end
-
         if test -f "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
           source "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
         end
-
         # Chau7 default start directory
         if test -n "$CHAU7_START_DIR"; and test -d "$CHAU7_START_DIR"
           cd "$CHAU7_START_DIR"
         end
-
         # Chau7 startup command
         if test -n "$CHAU7_STARTUP_CMD"
           eval "$CHAU7_STARTUP_CMD"
         end
-
         # Chau7 shell integration
         function smartoverlay_precmd --on-event fish_prompt
           set -l code $status
           printf '\\e]9;chau7;exit=%s\\a' $code
           printf '\\e]7;file://%s%s\\a' (hostname) (pwd)
         end
-
         # Chau7 CLI header injection for Claude Code
         function chau7_update_project --on-variable PWD
           set -l git_root (git rev-parse --show-toplevel 2>/dev/null)
@@ -1972,26 +1965,52 @@ final class TerminalSessionModel {
         }
     }
 
+    struct RepositoryStateSnapshot: Equatable {
+        let accessSnapshot: ProtectedPathAccessSnapshot
+        let isGitRepo: Bool
+        let gitRootPath: String?
+        let gitBranch: String?
+    }
+
+    static func repositoryState(from result: RepositoryResolutionResult) -> RepositoryStateSnapshot {
+        switch result {
+        case .live(let model, access: let access):
+            return RepositoryStateSnapshot(
+                accessSnapshot: access,
+                isGitRepo: true,
+                gitRootPath: model.rootPath,
+                gitBranch: model.branch
+            )
+        case .cachedIdentity(identity: let identity, access: let access):
+            return RepositoryStateSnapshot(
+                accessSnapshot: access,
+                isGitRepo: true,
+                gitRootPath: identity.rootPath,
+                gitBranch: identity.lastKnownBranch
+            )
+        case .blocked(let access), .notRepository(let access):
+            return RepositoryStateSnapshot(
+                accessSnapshot: access,
+                isGitRepo: false,
+                gitRootPath: nil,
+                gitBranch: nil
+            )
+        }
+    }
+
     private func refreshGitStatus(path: String) {
         RepositoryCache.shared.resolveDetailed(path: path) { [weak self] result in
             guard let self else { return }
+            let resolved = Self.repositoryState(from: result)
             let model: RepositoryModel?
-            let gitRoot: String?
-            let isGitRepo: Bool
 
             switch result {
-            case .live(let liveModel):
+            case .live(let liveModel, access: _):
                 model = liveModel
-                gitRoot = liveModel.rootPath
-                isGitRepo = true
-            case .cachedIdentity(rootPath: let rootPath, access: _):
-                model = RepositoryCache.shared.cachedModel(forRoot: rootPath)
-                gitRoot = rootPath
-                isGitRepo = true
+            case .cachedIdentity(identity: let identity, access: _):
+                model = RepositoryCache.shared.cachedModel(forRoot: identity.rootPath)
             case .blocked, .notRepository:
                 model = nil
-                gitRoot = nil
-                isGitRepo = false
             }
 
             let oldModel = repositoryModel
@@ -1999,9 +2018,10 @@ final class TerminalSessionModel {
 
             // Update the shared model reference
             repositoryModel = model
-            self.isGitRepo = isGitRepo
-            gitRootPath = gitRoot
-            gitBranch = model?.branch
+            repositoryAccessSnapshot = resolved.accessSnapshot
+            isGitRepo = resolved.isGitRepo
+            gitRootPath = resolved.gitRootPath
+            gitBranch = model?.branch ?? resolved.gitBranch
 
             // Subscribe to branch changes from the shared model via didSet callback
             if model !== oldModel {
@@ -2010,14 +2030,17 @@ final class TerminalSessionModel {
                     DispatchQueue.main.async {
                         guard let self, self.gitBranch != newBranch else { return }
                         self.gitBranch = newBranch
+                        if let rootPath = self.gitRootPath {
+                            KnownRepoIdentityStore.shared.record(rootPath: rootPath, branch: newBranch)
+                        }
                         self.shellEventDetector.gitBranchChanged(to: newBranch)
                     }
                 }
             }
 
             // Notify shell event detector of branch change
-            if oldBranch != model?.branch {
-                shellEventDetector.gitBranchChanged(to: model?.branch)
+            if oldBranch != gitBranch {
+                shellEventDetector.gitBranchChanged(to: gitBranch)
             }
         }
     }

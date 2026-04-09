@@ -1587,6 +1587,8 @@
 "dialog.importHistory.title" = "Importer l'historique des commandes";
 "dialog.protectedAccess.title" = "Accorder l'accès aux dossiers protégés";
 "dialog.protectedAccess.message" = "Sélectionnez des dossiers comme Téléchargements/Bureau/Documents pour la détection de dépôts en arrière-plan.";
+"dialog.protectedAccess.grantAction" = "Accorder l'accès";
+"dialog.protectedAccess.liveAction.message" = "Pour %@, accordez à Chau7 l'accès à %@.";
 
 // MARK: - Changed Files Panel
 "panel.changedFiles.filter" = "Filtrer les fichiers...";

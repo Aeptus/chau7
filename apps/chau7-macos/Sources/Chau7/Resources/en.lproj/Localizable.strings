@@ -1585,6 +1585,8 @@
 "dialog.importHistory.title" = "Import Command History";
 "dialog.protectedAccess.title" = "Grant Protected Folder Access";
 "dialog.protectedAccess.message" = "Select folders like Downloads/Desktop/Documents for background repo detection.";
+"dialog.protectedAccess.grantAction" = "Grant Access";
+"dialog.protectedAccess.liveAction.message" = "To %@, grant Chau7 access to %@.";
 
 // MARK: - Changed Files Panel
 "panel.changedFiles.filter" = "Filter files...";

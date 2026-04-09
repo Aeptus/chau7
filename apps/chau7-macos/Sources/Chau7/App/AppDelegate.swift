@@ -928,6 +928,12 @@ private final class OverlayBlurView: NSVisualEffectView {
             return
         }
 
+        let accessSnapshot = ProtectedPathPolicy.ensureLiveAccessForUserInitiatedAction(
+            path: dir,
+            actionDescription: "load live Git status"
+        )
+        guard accessSnapshot.canProbeLive else { return }
+
         // Fallback: first dirty file in working tree
         let porcelain = GitDiffTracker.runGit(args: ["status", "--porcelain"], in: dir)
         if let file = GitDiffTracker.firstChangedPath(inStatusPorcelain: porcelain) {

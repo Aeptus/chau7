@@ -20,6 +20,10 @@ final class RepositoryPaneModel: Identifiable {
     @ObservationIgnored
     private let gitRunnerWithStatus: ([String], String) -> GitDiffTracker.GitResult
     @ObservationIgnored
+    private let accessSnapshotProvider: (String) -> ProtectedPathAccessSnapshot
+    @ObservationIgnored
+    private let accessRequester: (String, String) -> ProtectedPathAccessSnapshot
+    @ObservationIgnored
     private let loadQueue = DispatchQueue(label: "com.chau7.repo-pane", qos: .userInitiated)
 
     // MARK: - Configuration
@@ -146,6 +150,15 @@ final class RepositoryPaneModel: Identifiable {
     var isLoading = false
     var lastError: String?
     var operationInProgress: String?
+    var protectedAccessSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
+        root: nil,
+        isProtectedPath: false,
+        isFeatureEnabled: false,
+        hasActiveScope: false,
+        hasSecurityScopedBookmark: false,
+        isDeniedByCooldown: false,
+        hasKnownIdentity: false
+    )
     @ObservationIgnored
     var lastRefreshDate: Date?
 
@@ -164,10 +177,24 @@ final class RepositoryPaneModel: Identifiable {
 
     init(
         gitRunner: @escaping ([String], String) -> String = GitDiffTracker.runGit,
-        gitRunnerWithStatus: @escaping ([String], String) -> GitDiffTracker.GitResult = GitDiffTracker.runGitWithStatus
+        gitRunnerWithStatus: @escaping ([String], String) -> GitDiffTracker.GitResult = GitDiffTracker.runGitWithStatus,
+        accessSnapshotProvider: @escaping (String) -> ProtectedPathAccessSnapshot = { path in
+            ProtectedPathPolicy.liveAccessSnapshot(forPath: path)
+        },
+        accessRequester: @escaping (String, String) -> ProtectedPathAccessSnapshot = { path, actionDescription in
+            precondition(Thread.isMainThread, "Protected folder prompts must run on the main thread")
+            return MainActor.assumeIsolated {
+                ProtectedPathPolicy.ensureLiveAccessForUserInitiatedAction(
+                    path: path,
+                    actionDescription: actionDescription
+                )
+            }
+        }
     ) {
         self.gitRunner = gitRunner
         self.gitRunnerWithStatus = gitRunnerWithStatus
+        self.accessSnapshotProvider = accessSnapshotProvider
+        self.accessRequester = accessRequester
     }
 
     // MARK: - Lifecycle
@@ -203,7 +230,7 @@ final class RepositoryPaneModel: Identifiable {
     }
 
     func refreshAll() {
-        guard let dir = directory else { return }
+        guard let dir = prepareLiveGitAccess(actionDescription: "load live Git data") else { return }
         let limit = commitLogLimit // capture before dispatch
         DispatchQueue.main.async { [weak self] in
             self?.isLoading = true
@@ -277,7 +304,7 @@ final class RepositoryPaneModel: Identifiable {
     // MARK: - Read Operations
 
     func refreshStatus() {
-        guard let dir = directory else { return }
+        guard let dir = prepareLiveGitAccess(actionDescription: "refresh repository status") else { return }
         loadQueue.async { [weak self] in
             guard let self else { return }
             let output = gitRunner(["status", "--porcelain"], dir)
@@ -292,7 +319,7 @@ final class RepositoryPaneModel: Identifiable {
     }
 
     func refreshBranches() {
-        guard let dir = directory else { return }
+        guard let dir = prepareLiveGitAccess(actionDescription: "refresh branches") else { return }
         loadQueue.async { [weak self] in
             guard let self else { return }
             let branch = gitRunner(["rev-parse", "--abbrev-ref", "HEAD"], dir)
@@ -311,7 +338,7 @@ final class RepositoryPaneModel: Identifiable {
     }
 
     func refreshCommitLog() {
-        guard let dir = directory else { return }
+        guard let dir = prepareLiveGitAccess(actionDescription: "load commit history") else { return }
         let limit = commitLogLimit
         loadQueue.async { [weak self] in
             guard let self else { return }
@@ -332,7 +359,7 @@ final class RepositoryPaneModel: Identifiable {
     }
 
     func refreshStashes() {
-        guard let dir = directory else { return }
+        guard let dir = prepareLiveGitAccess(actionDescription: "load stashes") else { return }
         loadQueue.async { [weak self] in
             guard let self else { return }
             let output = gitRunner(["stash", "list"], dir)
@@ -519,7 +546,7 @@ final class RepositoryPaneModel: Identifiable {
     func stashPop(index: Int) {
         // Stash indices are positional — verify the stash still exists at the expected index
         // by refreshing stashes first, then operating.
-        guard let dir = directory else { return }
+        guard let dir = prepareLiveGitAccess(actionDescription: "pop a stash") else { return }
         let freshList = gitRunner(["stash", "list"], dir)
         let freshStashes = Self.parseStashList(freshList)
         guard index < freshStashes.count else {
@@ -533,7 +560,7 @@ final class RepositoryPaneModel: Identifiable {
     }
 
     func stashDrop(index: Int) {
-        guard let dir = directory else { return }
+        guard let dir = prepareLiveGitAccess(actionDescription: "drop a stash") else { return }
         let freshList = gitRunner(["stash", "list"], dir)
         let freshStashes = Self.parseStashList(freshList)
         guard index < freshStashes.count else {
@@ -562,7 +589,7 @@ final class RepositoryPaneModel: Identifiable {
     // MARK: - Write Operation Runner
 
     private func runWriteOp(args: [String], label: String?, onSuccess: @escaping () -> Void) {
-        guard let dir = directory else { return }
+        guard let dir = prepareLiveGitAccess(actionDescription: "run live Git commands") else { return }
         DispatchQueue.main.async { [weak self] in
             self?.lastError = nil
             self?.operationInProgress = label
@@ -580,6 +607,44 @@ final class RepositoryPaneModel: Identifiable {
                     Log.warn("RepoPaneModel: git \(args.joined(separator: " ")) failed: \(errMsg)")
                 }
             }
+        }
+    }
+
+    private func prepareLiveGitAccess(actionDescription: String) -> String? {
+        guard let dir = directory else { return nil }
+        let normalized = URL(fileURLWithPath: dir).standardized.path
+        let initialSnapshot = accessSnapshotProvider(normalized)
+        protectedAccessSnapshot = initialSnapshot
+
+        guard initialSnapshot.root != nil, !initialSnapshot.canProbeLive else {
+            lastError = nil
+            return normalized
+        }
+
+        let updatedSnapshot = accessRequester(normalized, actionDescription)
+        protectedAccessSnapshot = updatedSnapshot
+        guard updatedSnapshot.canProbeLive else {
+            isLoading = false
+            lastError = liveAccessDeniedMessage(for: updatedSnapshot, actionDescription: actionDescription)
+            return nil
+        }
+        lastError = nil
+        return normalized
+    }
+
+    private func liveAccessDeniedMessage(for snapshot: ProtectedPathAccessSnapshot, actionDescription: String) -> String {
+        let location = snapshot.root.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "this folder"
+        switch snapshot.recommendedAction {
+        case .enableFeature:
+            return "Chau7 needs protected-folder access enabled to \(actionDescription) in \(location)."
+        case .grantAccess:
+            return "Grant Chau7 access to \(location) to \(actionDescription)."
+        case .waitForCooldown:
+            return "Chau7 cannot \(actionDescription) in \(location) until protected-folder access is granted again."
+        case .regrantAccess:
+            return "Chau7 needs refreshed access to \(location) to \(actionDescription)."
+        case .none:
+            return "Chau7 could not \(actionDescription)."
         }
     }
 

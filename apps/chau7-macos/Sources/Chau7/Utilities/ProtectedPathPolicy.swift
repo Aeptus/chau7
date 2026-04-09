@@ -101,28 +101,9 @@ enum ProtectedPathPolicy {
             return
         }
 
-        var grantedRoots: [String] = []
-        var ignoredPaths: [String] = []
-        for url in panel.urls {
-            guard let root = protectedRoot(for: url.path) else {
-                ignoredPaths.append(url.path)
-                continue
-            }
-
-            do {
-                let bookmark = try url.bookmarkData(
-                    options: [.withSecurityScope],
-                    includingResourceValuesForKeys: nil,
-                    relativeTo: nil
-                )
-                persistBookmark(bookmark, for: root)
-                if startAccessingBookmark(for: root, source: "grant") {
-                    grantedRoots.append(root)
-                }
-            } catch {
-                Log.warn("ProtectedPathPolicy: failed to create bookmark for \(root): \(error)")
-            }
-        }
+        let result = grantAccess(forSelectedURLs: panel.urls, source: "grant")
+        let grantedRoots = result.grantedRoots
+        let ignoredPaths = result.ignoredPaths
 
         if !ignoredPaths.isEmpty {
             Log.info("ProtectedPathPolicy: ignored non-protected selections: \(ignoredPaths.joined(separator: ", "))")
@@ -133,6 +114,45 @@ enum ProtectedPathPolicy {
         } else {
             Log.warn("ProtectedPathPolicy: no protected roots granted from selection")
         }
+    }
+
+    @MainActor
+    static func ensureLiveAccessForUserInitiatedAction(path: String, actionDescription: String) -> ProtectedPathAccessSnapshot {
+        let normalized = URL(fileURLWithPath: path).standardized.path
+        let initial = liveAccessSnapshot(forPath: normalized)
+        guard !initial.canProbeLive,
+              let root = initial.root else {
+            return initial
+        }
+
+        let rootName = URL(fileURLWithPath: root).lastPathComponent
+        let panel = NSOpenPanel()
+        panel.title = L("dialog.protectedAccess.title", "Grant Protected Folder Access")
+        panel.message = String(
+            format: L(
+                "dialog.protectedAccess.liveAction.message",
+                "To %@, grant Chau7 access to %@."
+            ),
+            actionDescription,
+            rootName
+        )
+        panel.prompt = L("dialog.protectedAccess.grantAction", "Grant Access")
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.directoryURL = RuntimeIsolation.homeDirectory()
+
+        guard panel.runModal() == .OK else {
+            Log.info("ProtectedPathPolicy: user-initiated grant canceled for root=\(root) action=\(actionDescription)")
+            return liveAccessSnapshot(forPath: normalized)
+        }
+
+        let result = grantAccess(forSelectedURLs: panel.urls, source: "userAction")
+        if result.grantedRoots.isEmpty {
+            Log.warn("ProtectedPathPolicy: user-initiated grant did not activate root=\(root) action=\(actionDescription)")
+        }
+        return liveAccessSnapshot(forPath: normalized)
     }
 
     /// Eagerly activate all persisted security-scoped bookmarks.
@@ -297,6 +317,44 @@ enum ProtectedPathPolicy {
         lastDecisionByRoot[root] = allowed
         let verdict = allowed ? "allow" : "skip"
         Log.info("ProtectedPathPolicy: \(verdict) root=\(root) source=\(source) reason=\(reason)")
+    }
+
+    private static func grantAccess(forSelectedURLs urls: [URL], source: String) -> (grantedRoots: [String], ignoredPaths: [String]) {
+        var grantedRoots: [String] = []
+        var ignoredPaths: [String] = []
+
+        for url in urls {
+            guard let root = protectedRoot(for: url.path) else {
+                ignoredPaths.append(url.path)
+                continue
+            }
+            let normalizedURL = URL(fileURLWithPath: url.path).standardizedFileURL
+            let expectedRootURL = URL(fileURLWithPath: root).standardizedFileURL
+            guard normalizedURL.path == expectedRootURL.path else {
+                ignoredPaths.append(url.path)
+                Log.warn("ProtectedPathPolicy: ignoring non-root protected selection \(url.path); expected \(root)")
+                continue
+            }
+
+            do {
+                let bookmark = try expectedRootURL.bookmarkData(
+                    options: [.withSecurityScope],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+                persistBookmark(bookmark, for: root)
+                if startAccessingBookmark(for: root, source: source) {
+                    grantedRoots.append(root)
+                }
+            } catch {
+                Log.warn("ProtectedPathPolicy: failed to create bookmark for \(root): \(error)")
+            }
+        }
+
+        if !grantedRoots.isEmpty {
+            FeatureSettings.shared.allowProtectedFolderAccess = true
+        }
+        return (grantedRoots, ignoredPaths)
     }
 
 }

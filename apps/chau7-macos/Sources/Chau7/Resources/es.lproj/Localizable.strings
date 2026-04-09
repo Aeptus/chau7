@@ -1585,6 +1585,8 @@
 "dialog.importHistory.title" = "Importar historial de comandos";
 "dialog.protectedAccess.title" = "Conceder acceso a carpetas protegidas";
 "dialog.protectedAccess.message" = "Selecciona carpetas como Descargas/Escritorio/Documentos para la detección de repositorios en segundo plano.";
+"dialog.protectedAccess.grantAction" = "Conceder acceso";
+"dialog.protectedAccess.liveAction.message" = "Para %@, concede a Chau7 acceso a %@.";
 
 // MARK: - Changed Files Panel
 "panel.changedFiles.filter" = "Filtrar archivos...";

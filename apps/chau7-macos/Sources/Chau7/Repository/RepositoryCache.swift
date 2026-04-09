@@ -2,10 +2,10 @@ import Foundation
 import Chau7Core
 
 enum RepositoryResolutionResult {
-    case live(RepositoryModel)
-    case cachedIdentity(rootPath: String, access: ProtectedPathAccessSnapshot)
+    case live(RepositoryModel, access: ProtectedPathAccessSnapshot)
+    case cachedIdentity(identity: KnownRepoIdentity, access: ProtectedPathAccessSnapshot)
     case blocked(access: ProtectedPathAccessSnapshot)
-    case notRepository
+    case notRepository(access: ProtectedPathAccessSnapshot)
 }
 
 /// Singleton cache mapping directory paths to shared RepositoryModel instances.
@@ -42,7 +42,7 @@ final class RepositoryCache {
     /// Cache hits are instant (no git process). Completion always on main.
     func resolve(path: String, completion: @escaping (RepositoryModel?) -> Void) {
         resolveDetailed(path: path) { result in
-            if case .live(let model) = result {
+            if case .live(let model, _) = result {
                 completion(model)
             } else {
                 completion(nil)
@@ -53,12 +53,12 @@ final class RepositoryCache {
     func resolveDetailed(path: String, completion: @escaping (RepositoryResolutionResult) -> Void) {
         let normalized = URL(fileURLWithPath: path).standardized.path
         let access = ProtectedPathPolicy.liveAccessSnapshot(forPath: normalized)
-        let knownRoot = KnownRepoIdentityStore.shared.resolveRoot(forPath: normalized)
+        let knownIdentity = KnownRepoIdentityStore.shared.resolveIdentity(forPath: normalized)
 
         if !access.canProbeLive {
             DispatchQueue.main.async {
-                if let knownRoot, access.canUseKnownIdentity {
-                    completion(.cachedIdentity(rootPath: knownRoot, access: access))
+                if let knownIdentity, access.canUseKnownIdentity {
+                    completion(.cachedIdentity(identity: knownIdentity, access: access))
                 } else {
                     completion(.blocked(access: access))
                 }
@@ -68,20 +68,20 @@ final class RepositoryCache {
 
         queue.async { [weak self] in
             guard let self else {
-                DispatchQueue.main.async { completion(.notRepository) }
+                DispatchQueue.main.async { completion(.notRepository(access: access)) }
                 return
             }
 
             // Negative cache hit
             if nonGitPaths.contains(normalized) {
-                DispatchQueue.main.async { completion(.notRepository) }
+                DispatchQueue.main.async { completion(.notRepository(access: access)) }
                 return
             }
 
             if let root = resolvedRootsByPath[normalized],
                let model = models[root] {
                 model.refreshBranch()
-                DispatchQueue.main.async { completion(.live(model)) }
+                DispatchQueue.main.async { completion(.live(model, access: access)) }
                 return
             }
 
@@ -105,12 +105,12 @@ final class RepositoryCache {
                 if let bestMatch {
                     resolvedRootsByPath[normalized] = bestMatch.root
                     bestMatch.model.refreshBranch()
-                    DispatchQueue.main.async { completion(.live(bestMatch.model)) }
+                    DispatchQueue.main.async { completion(.live(bestMatch.model, access: access)) }
                     return
                 }
                 // Not a git repo — cache the negative result
                 nonGitPaths.insert(normalized)
-                DispatchQueue.main.async { completion(.notRepository) }
+                DispatchQueue.main.async { completion(.notRepository(access: access)) }
                 return
             }
 
@@ -137,14 +137,14 @@ final class RepositoryCache {
                 // Load persisted metadata and record as recent repo (first discovery)
                 model.loadMetadata()
                 DispatchQueue.main.async {
-                    KnownRepoIdentityStore.shared.record(rootPath: canonicalRoot)
+                    KnownRepoIdentityStore.shared.record(rootPath: canonicalRoot, branch: branch)
                     self.recentRepoRecorder(canonicalRoot)
                 }
             }
             resolvedRootsByPath[normalized] = canonicalRoot
-            KnownRepoIdentityStore.shared.record(rootPath: canonicalRoot)
+            KnownRepoIdentityStore.shared.record(rootPath: canonicalRoot, branch: branch)
 
-            DispatchQueue.main.async { completion(.live(model)) }
+            DispatchQueue.main.async { completion(.live(model, access: access)) }
         }
     }
 

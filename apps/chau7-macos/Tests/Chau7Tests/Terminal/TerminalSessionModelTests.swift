@@ -261,6 +261,56 @@ final class TerminalSessionModelTests: XCTestCase {
             session.lagTimeline.isEmpty,
             "Default lagTimeline should be empty"
         )
+        XCTAssertFalse(
+            session.repositoryAccessSnapshot.canUseKnownIdentity,
+            "Default repository access snapshot should be unprotected"
+        )
+    }
+
+    func testRepositoryStateKeepsKnownIdentityWhenLiveAccessIsBlocked() {
+        let snapshot = ProtectedPathAccessPolicy.accessSnapshot(
+            root: "/Users/me/Downloads",
+            isProtectedPath: true,
+            isFeatureEnabled: false,
+            hasActiveScope: false,
+            hasSecurityScopedBookmark: false,
+            isDeniedByCooldown: false,
+            hasKnownIdentity: true
+        )
+        let identity = KnownRepoIdentity(
+            rootPath: "/Users/me/Downloads/Repositories/Chau7",
+            lastConfirmedAt: Date(timeIntervalSince1970: 0),
+            lastKnownBranch: "main"
+        )
+
+        let state = TerminalSessionModel.repositoryState(
+            from: .cachedIdentity(identity: identity, access: snapshot)
+        )
+
+        XCTAssertTrue(state.isGitRepo)
+        XCTAssertEqual(state.gitRootPath, identity.rootPath)
+        XCTAssertEqual(state.gitBranch, "main")
+        XCTAssertFalse(state.accessSnapshot.canProbeLive)
+        XCTAssertTrue(state.accessSnapshot.canUseKnownIdentity)
+    }
+
+    func testRepositoryStateDropsIdentityWhenRepositoryIsActuallyUnavailable() {
+        let snapshot = ProtectedPathAccessPolicy.accessSnapshot(
+            root: nil,
+            isProtectedPath: false,
+            isFeatureEnabled: false,
+            hasActiveScope: false,
+            hasSecurityScopedBookmark: false,
+            isDeniedByCooldown: false,
+            hasKnownIdentity: false
+        )
+
+        let state = TerminalSessionModel.repositoryState(from: .notRepository(access: snapshot))
+
+        XCTAssertFalse(state.isGitRepo)
+        XCTAssertNil(state.gitRootPath)
+        XCTAssertNil(state.gitBranch)
+        XCTAssertTrue(state.accessSnapshot.canProbeLive)
     }
 
     func testRestoreAIMetadata() {

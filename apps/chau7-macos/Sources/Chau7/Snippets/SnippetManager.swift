@@ -342,10 +342,10 @@ final class SnippetManager {
             StartupRestoreCoordinator.shared.noteSnippetResolveCompleted()
             let root: String?
             switch result {
-            case .live(let model):
+            case .live(let model, access: _):
                 root = model.rootPath
-            case .cachedIdentity(rootPath: let rootPath, access: _):
-                root = rootPath
+            case .cachedIdentity(identity: let identity, access: _):
+                root = identity.rootPath
             case .blocked, .notRepository:
                 root = nil
             }

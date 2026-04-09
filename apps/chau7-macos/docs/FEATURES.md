@@ -233,9 +233,10 @@ Runtime sessions keep pending `initial_prompt` work attached to real terminal re
 - Show Changed Files (Cmd+Option+G): git diff snapshot per command shows which files were modified.
 - Idle tabs dropdown: tabs idle beyond a configurable threshold (default 10 min) are grouped into a compact chip in the tab bar.
 - Repository tab grouping: group tabs by git repo (Off/Auto/Manual). Shows inline repo-name tag chip with connecting line. Suppresses redundant repo path in tab titles, and inherited group membership auto-detaches when a tab moves to a different repo, including tabs opened directly at another directory.
+- Protected repo identity fallback: tabs keep their known repo root and last-known branch even when macOS protected-folder access blocks live git probing, so passive repo-aware UI does not collapse to “not a repo.”
 - Repo dashboard overlay: clicking a repo badge opens its dashboard, the active repo badge highlights like a selected tab while the dashboard is open, and clicking any tab closes the dashboard again, including the currently selected tab.
 - Split pane file preview: read-only viewer with syntax highlighting and image support (Cmd+Opt+P).
-- Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D).
+- Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D). Prompts for protected-folder access on demand before loading live diffs.
 - `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (with confirmation).
 - Default start directory and optional startup commands.
 - Copy on select, Option+click cursor positioning, paste escaping.
@@ -272,7 +273,7 @@ Startup restore keeps the same “show windows fast, settle intelligently” bia
 
 - Unlimited tabs per window — `Cmd+T` to create, `Cmd+1–9` to jump.
 - Tab renaming (`Cmd+Shift+R`), 12+ colors, reordering via drag or shortcuts with center-crossing snap thresholds.
-- AI agent logos, git branch indicator, directory path, last command badge.
+- AI agent logos, git branch indicator, directory path, last command badge. The branch indicator stays populated from cached repo identity when a protected folder blocks live git refresh.
 - Broadcast input to all tabs with per-tab exclusion and visual indicator.
 - Background rendering suspension for inactive tabs (configurable delay).
 - Close other tabs (`Cmd+Opt+W`), configurable new tab position.
@@ -284,7 +285,7 @@ Startup restore keeps the same “show windows fast, settle intelligently” bia
 - Built-in text editor in split panes — syntax highlighting, line numbers, bracket matching, find/replace.
 - Click-to-copy document name in the editor pane header.
 - Multi-language syntax: HTML, CSS, JavaScript, Python, and more.
-- Repository pane (`Cmd+Opt+B`): full git UI — stage, commit (⌘Enter), branch, push/pull, stash, history with search. Session-aware: shows only agent-touched files with diff stats when an AI is active, resets after push. Ahead/behind indicator, hover tooltips, conventional commit chips.
+- Repository pane (`Cmd+Opt+B`): full git UI — stage, commit (⌘Enter), branch, push/pull, stash, history with search. Session-aware: shows only agent-touched files with diff stats when an AI is active, resets after push. Ahead/behind indicator, hover tooltips, conventional commit chips. In protected folders, passive repo identity remains visible and live git actions prompt for access only when needed.
 
 ### Windows
 

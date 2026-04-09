@@ -1553,6 +1553,8 @@
 "dialog.importHistory.title" = "ייבוא היסטוריית פקודות";
 "dialog.protectedAccess.title" = "הענקת גישה לתיקיות מוגנות";
 "dialog.protectedAccess.message" = "בחרו תיקיות כמו הורדות/שולחן עבודה/מסמכים לזיהוי מאגרים ברקע.";
+"dialog.protectedAccess.grantAction" = "הענק גישה";
+"dialog.protectedAccess.liveAction.message" = "כדי %@, הענק ל-Chau7 גישה אל %@.";
 
 // MARK: - Changed Files Panel
 "panel.changedFiles.filter" = "סינון קבצים...";

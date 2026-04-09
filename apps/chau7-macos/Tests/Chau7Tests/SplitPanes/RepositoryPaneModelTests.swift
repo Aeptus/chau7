@@ -400,6 +400,91 @@ final class RepositoryPaneModelTests: XCTestCase {
         XCTAssertNil(model.turnSummary)
     }
 
+    func testRefreshStatusRequestsProtectedAccessBeforeRunningGit() {
+        let blockedSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
+            root: "/Users/me/Downloads",
+            isProtectedPath: true,
+            isFeatureEnabled: true,
+            hasActiveScope: false,
+            hasSecurityScopedBookmark: false,
+            isDeniedByCooldown: false,
+            hasKnownIdentity: true
+        )
+        let grantedSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
+            root: "/Users/me/Downloads",
+            isProtectedPath: true,
+            isFeatureEnabled: true,
+            hasActiveScope: true,
+            hasSecurityScopedBookmark: false,
+            isDeniedByCooldown: false,
+            hasKnownIdentity: true
+        )
+        let gitCalled = expectation(description: "git status called")
+        var requestedAction: String?
+
+        let model = RepositoryPaneModel(
+            gitRunner: { args, directory in
+                XCTAssertEqual(args, ["status", "--porcelain"])
+                XCTAssertEqual(directory, "/Users/me/Downloads/Repositories/Chau7")
+                gitCalled.fulfill()
+                return " M src/main.swift"
+            },
+            gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) },
+            accessSnapshotProvider: { _ in blockedSnapshot },
+            accessRequester: { path, actionDescription in
+                requestedAction = actionDescription
+                XCTAssertEqual(path, "/Users/me/Downloads/Repositories/Chau7")
+                return grantedSnapshot
+            }
+        )
+        model.directory = "/Users/me/Downloads/Repositories/Chau7"
+
+        model.refreshStatus()
+
+        wait(for: [gitCalled], timeout: 1.0)
+        waitUntil(timeout: 1.0) { !model.unstagedFiles.isEmpty }
+
+        XCTAssertEqual(requestedAction, "refresh repository status")
+        XCTAssertEqual(model.unstagedFiles.map(\.path), ["src/main.swift"])
+        XCTAssertTrue(model.protectedAccessSnapshot.canProbeLive)
+        XCTAssertNil(model.lastError)
+    }
+
+    func testRefreshStatusLeavesPaneInIdentityOnlyModeWhenAccessIsDenied() {
+        let blockedSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
+            root: "/Users/me/Downloads",
+            isProtectedPath: true,
+            isFeatureEnabled: true,
+            hasActiveScope: false,
+            hasSecurityScopedBookmark: false,
+            isDeniedByCooldown: false,
+            hasKnownIdentity: true
+        )
+        var gitCallCount = 0
+
+        let model = RepositoryPaneModel(
+            gitRunner: { _, _ in
+                gitCallCount += 1
+                return ""
+            },
+            gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) },
+            accessSnapshotProvider: { _ in blockedSnapshot },
+            accessRequester: { _, _ in blockedSnapshot }
+        )
+        model.directory = "/Users/me/Downloads/Repositories/Chau7"
+
+        model.refreshStatus()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+        XCTAssertEqual(gitCallCount, 0)
+        XCTAssertEqual(
+            model.lastError,
+            "Grant Chau7 access to Downloads to refresh repository status."
+        )
+        XCTAssertFalse(model.protectedAccessSnapshot.canProbeLive)
+        XCTAssertTrue(model.protectedAccessSnapshot.canUseKnownIdentity)
+    }
+
     // MARK: - SessionFilesTracker
 
     func testSessionFilesTrackerNormalization() {
@@ -470,5 +555,15 @@ final class RepositoryPaneModelTests: XCTestCase {
         )
         tracker.update(from: journal)
         XCTAssertEqual(tracker.touchedFiles, ["a.swift", "b.swift"])
+    }
+}
+
+private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() {
+            return
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
     }
 }
