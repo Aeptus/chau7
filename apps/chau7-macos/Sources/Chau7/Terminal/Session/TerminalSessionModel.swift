@@ -409,6 +409,8 @@ final class TerminalSessionModel {
     @ObservationIgnored var inputBuffer = ""
     /// Shared repository model for this session's current git repo (nil if not in a repo)
     var repositoryModel: RepositoryModel?
+    /// Generation counter for refreshGitStatus — stale completions are discarded.
+    @ObservationIgnored private var gitStatusGeneration: UInt64 = 0
     @ObservationIgnored var searchUpdateWorkItem: DispatchWorkItem?
     @ObservationIgnored let searchQueue = DispatchQueue(label: "com.chau7.search", qos: .utility)
     @ObservationIgnored var searchQuery = ""
@@ -2012,8 +2014,16 @@ final class TerminalSessionModel {
     }
 
     private func refreshGitStatus(path: String) {
+        gitStatusGeneration &+= 1
+        let expectedGeneration = gitStatusGeneration
+
         RepositoryCache.shared.resolveDetailed(path: path) { [weak self] result in
             guard let self else { return }
+            // Discard stale completions: a newer refreshGitStatus was issued
+            // while this resolve was in flight (e.g. init resolve for ~ arriving
+            // after a restore-triggered resolve for the actual directory).
+            guard expectedGeneration == gitStatusGeneration else { return }
+
             let resolved = Self.repositoryState(from: result)
             let model: RepositoryModel?
 
