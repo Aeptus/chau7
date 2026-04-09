@@ -25,6 +25,7 @@ enum CommandStatus: String {
 final class TerminalSessionModel {
     private enum PendingTerminalAction {
         case text(String)
+        case pastedText(String)
         case keyPress(TerminalKeyPress)
     }
 
@@ -397,6 +398,8 @@ final class TerminalSessionModel {
     /// Input queued before the terminal view exists. Preserves ordering between raw
     /// text input and synthesized key presses, then flushes on view attachment.
     @ObservationIgnored private var pendingTerminalActions: [PendingTerminalAction] = []
+    @ObservationIgnored private var pendingAutomationSubmitWorkItem: DispatchWorkItem?
+    @ObservationIgnored private var lastAutomationInputAt: Date?
     /// Cached snapshot of the last rendered terminal frame, used for instant tab-switch visuals
     /// when the actual NSView has been removed from the hierarchy (distant-tab optimization).
     @ObservationIgnored var lastRenderedSnapshot: NSImage?
@@ -672,6 +675,12 @@ final class TerminalSessionModel {
             }
         }
 
+        // Wire up shell-reported git branch (from OSC 9;chau7;branch=NAME)
+        view.onBranchChanged = { [weak self] branch in
+            guard let self else { return }
+            handleShellBranchReport(branch)
+        }
+
         view.onShellIntegrationEvent = { [weak self] event in
             guard let self = self else { return }
             hasShellIntegration = true
@@ -828,7 +837,11 @@ final class TerminalSessionModel {
           local code=$?
           print -Pn "\\e]9;chau7;exit=${code}\\a"
         }
-        smartoverlay_precmd() { print -Pn "\\e]7;file://$HOSTNAME$PWD\\a"; }
+        smartoverlay_precmd() {
+          print -Pn "\\e]7;file://$HOSTNAME$PWD\\a"
+          local __b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+          [ -n "$__b" ] && print -Pn "\\e]9;chau7;branch=${__b}\\a"
+        }
         autoload -Uz add-zsh-hook 2>/dev/null
         if command -v add-zsh-hook >/dev/null 2>&1; then
           add-zsh-hook precmd chau7_emit_exit_status
@@ -867,6 +880,8 @@ final class TerminalSessionModel {
         # Chau7 shell integration
         smartoverlay_precmd() {
           printf '\\e]7;file://%s%s\\a' "$HOSTNAME" "$PWD"
+          local __b; __b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+          [ -n "$__b" ] && printf '\\e]9;chau7;branch=%s\\a' "$__b"
         }
         chau7_emit_exit_status() {
           local code=$?
@@ -916,6 +931,10 @@ final class TerminalSessionModel {
           set -l code $status
           printf '\\e]9;chau7;exit=%s\\a' $code
           printf '\\e]7;file://%s%s\\a' (hostname) (pwd)
+          set -l __b (git rev-parse --abbrev-ref HEAD 2>/dev/null)
+          if test -n "$__b"
+            printf '\\e]9;chau7;branch=%s\\a' $__b
+          end
         end
         # Chau7 CLI header injection for Claude Code
         function chau7_update_project --on-variable PWD
@@ -1277,6 +1296,10 @@ final class TerminalSessionModel {
 
     /// Sends text input to the terminal (used for broadcast mode)
     func sendInput(_ text: String) {
+        sendRawInput(text)
+    }
+
+    private func sendRawInput(_ text: String) {
         guard !text.isEmpty else { return }
         // If this input contains a newline (command submission), suppress output-based
         // AI detection until handleInputLine processes the echoed command. This gives
@@ -1292,12 +1315,50 @@ final class TerminalSessionModel {
         activeTerminalView.send(txt: text)
     }
 
+    private func sendPastedInput(_ text: String) {
+        guard !text.isEmpty else { return }
+        guard let activeTerminalView else {
+            enqueuePendingTerminalAction(.pastedText(text))
+            return
+        }
+        activeTerminalView.pasteText(text)
+    }
+
     /// Queues executable input (e.g. `cd /path\n`) for when the terminal view
     /// becomes available. Used during tab restore when the view hasn't been
     /// created yet. If the view already exists, sends immediately.
     func sendOrQueueInput(_ text: String) {
         trackAIResumeMetadata(from: text)
-        sendInput(text)
+        sendRawInput(text)
+    }
+
+    func sendOrQueueAutomationInput(_ text: String) {
+        trackAIResumeMetadata(from: text)
+        let provider = aiDisplayAppName ?? activeAppName ?? effectiveAIProvider
+        let plan = AIAutomationStrategy.inputPlan(for: text, provider: provider)
+        if !plan.insertText.isEmpty {
+            lastAutomationInputAt = Date()
+            switch plan.insertMode {
+            case .rawText:
+                sendRawInput(plan.insertText)
+            case .pasteText:
+                sendPastedInput(plan.insertText)
+            }
+        }
+        scheduleAutomationSubmit(
+            mode: plan.submitMode,
+            delayMs: plan.submitDelayMs
+        )
+    }
+
+    func submitAutomationPrompt() {
+        let provider = aiDisplayAppName ?? activeAppName ?? effectiveAIProvider
+        let ageMs = lastAutomationInputAt.map { max(0, Int(Date().timeIntervalSince($0) * 1000)) }
+        let plan = AIAutomationStrategy.submitPlan(
+            provider: provider,
+            recentAutomationInputAgeMs: ageMs
+        )
+        scheduleAutomationSubmit(mode: plan.submitMode, delayMs: plan.submitDelayMs)
     }
 
     /// Queues restore-time shell maintenance commands (scrollback replay, cd,
@@ -1327,8 +1388,35 @@ final class TerminalSessionModel {
         switch (pendingTerminalActions.last, action) {
         case let (.some(.text(existingText)), .text(newText)):
             pendingTerminalActions[pendingTerminalActions.count - 1] = .text(existingText + newText)
+        case let (.some(.pastedText(existingText)), .pastedText(newText)):
+            pendingTerminalActions[pendingTerminalActions.count - 1] = .pastedText(existingText + newText)
         default:
             pendingTerminalActions.append(action)
+        }
+    }
+
+    private func scheduleAutomationSubmit(mode: AIAutomationSubmitMode, delayMs: Int) {
+        guard mode != .none else { return }
+        pendingAutomationSubmitWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingAutomationSubmitWorkItem = nil
+            self.performAutomationSubmit(mode: mode)
+        }
+        pendingAutomationSubmitWorkItem = work
+        let deadline = DispatchTime.now() + .milliseconds(max(0, delayMs))
+        DispatchQueue.main.asyncAfter(deadline: deadline, execute: work)
+    }
+
+    private func performAutomationSubmit(mode: AIAutomationSubmitMode) {
+        switch mode {
+        case .none:
+            return
+        case .rawNewline:
+            sendRawInput("\n")
+        case .enterKey:
+            guard let keyPress = try? TerminalKeyPress(key: "enter", modifiers: []) else { return }
+            sendKeyPress(keyPress)
         }
     }
 
@@ -1339,7 +1427,9 @@ final class TerminalSessionModel {
         for action in actions {
             switch action {
             case let .text(text):
-                sendInput(text)
+                sendRawInput(text)
+            case let .pastedText(text):
+                sendPastedInput(text)
             case let .keyPress(keyPress):
                 sendKeyPress(keyPress)
             }
@@ -2082,6 +2172,39 @@ final class TerminalSessionModel {
             if oldBranch != gitBranch {
                 shellEventDetector.gitBranchChanged(to: gitBranch)
             }
+        }
+    }
+
+    /// Called when the shell integration reports the current git branch via
+    /// OSC 9;chau7;branch=NAME. This is the primary branch source for repos
+    /// in protected directories where the app cannot spawn git directly.
+    /// Also keeps branch data fresh for live repos between refreshBranch() calls.
+    func handleShellBranchReport(_ branch: String) {
+        let changed = gitBranch != branch
+        gitBranch = branch
+        repositoryModel?.branch = branch
+
+        // Persist to identity store so tab restore and other sessions can use it.
+        if let root = gitRootPath ?? repositoryModel?.rootPath {
+            KnownRepoIdentityStore.shared.record(rootPath: root, branch: branch)
+        } else if let root = KnownRepoIdentityStore.shared.resolveRoot(forPath: currentDirectory) {
+            KnownRepoIdentityStore.shared.record(rootPath: root, branch: branch)
+        }
+
+        // If we didn't know this was a git repo yet (e.g. first shell prompt
+        // in a protected directory with no prior identity), mark it now.
+        if !isGitRepo {
+            isGitRepo = true
+            if gitRootPath == nil {
+                // Try to derive root from identity store
+                if let root = KnownRepoIdentityStore.shared.resolveRoot(forPath: currentDirectory) {
+                    gitRootPath = root
+                }
+            }
+        }
+
+        if changed {
+            shellEventDetector.gitBranchChanged(to: branch)
         }
     }
 }

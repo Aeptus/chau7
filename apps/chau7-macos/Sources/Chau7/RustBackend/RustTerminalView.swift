@@ -1965,6 +1965,10 @@ final class RustTerminalView: NSView {
     /// Callback when current directory changes (OSC 7)
     var onDirectoryChanged: ((String) -> Void)?
 
+    /// Callback when shell integration reports the current git branch
+    /// (via OSC 9;chau7;branch=NAME). Fires on every prompt in a git repo.
+    var onBranchChanged: ((String) -> Void)?
+
     /// Callback when OSC 133 shell integration events arrive (prompt/command lifecycle)
     var onShellIntegrationEvent: ((ShellIntegrationEvent) -> Void)?
 

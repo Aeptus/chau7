@@ -291,6 +291,10 @@ extension RustTerminalView {
             // OSC 7 format: ESC ] 7 ; file://hostname/path BEL
             parseOSC7(from: outputData)
 
+            // Parse OSC 9 chau7 branch report (git branch from shell integration)
+            // Format: ESC ] 9 ; chau7;branch=NAME BEL
+            parseChau7Branch(from: outputData)
+
             // Smart Scroll: Save state before feeding data to the renderer
             // If user had scrolled up and smart scroll is enabled, we'll restore their position
             let smartScrollEnabled = FeatureSettings.shared.isSmartScrollEnabled
@@ -819,6 +823,49 @@ extension RustTerminalView {
                 }
             }
             i += 1
+        }
+    }
+
+    // MARK: - OSC 9 chau7;branch= parsing
+
+    private static let branchMarkerPrefix = Array("\u{1b}]9;chau7;branch=".utf8)
+    private static let belTerminator: UInt8 = 0x07
+
+    /// Extract git branch name from OSC 9;chau7;branch=NAME sequences in terminal output.
+    /// The shell integration precmd hook emits this on every prompt when inside a git repo.
+    func parseChau7Branch(from data: Data) {
+        let bytes = Array(data)
+        let prefix = Self.branchMarkerPrefix
+        guard bytes.count > prefix.count else { return }
+
+        var i = 0
+        while i <= bytes.count - prefix.count {
+            var matched = true
+            for j in 0 ..< prefix.count {
+                if bytes[i + j] != prefix[j] {
+                    matched = false
+                    break
+                }
+            }
+            if matched {
+                let start = i + prefix.count
+                var end = start
+                while end < bytes.count, bytes[end] != Self.belTerminator {
+                    if bytes[end] == 0x1B, end + 1 < bytes.count, bytes[end + 1] == 0x5C { break }
+                    end += 1
+                }
+                if end > start, let branch = String(bytes: bytes[start ..< end], encoding: .utf8) {
+                    let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        DispatchQueue.main.async { [weak self] in
+                            self?.onBranchChanged?(trimmed)
+                        }
+                    }
+                }
+                i = end + 1
+            } else {
+                i += 1
+            }
         }
     }
 
