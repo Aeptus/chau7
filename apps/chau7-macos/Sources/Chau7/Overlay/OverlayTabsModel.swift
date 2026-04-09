@@ -322,15 +322,19 @@ struct SavedTerminalPaneState: Codable {
     let aiProvider: String?
     let aiSessionId: String?
     let lastOutputAt: Date?
+    let knownRepoRoot: String?
+    let knownGitBranch: String?
 
     init(
         paneID: String,
         directory: String,
         scrollbackContent: String?,
         aiResumeCommand: String?,
-        aiProvider: String?,
-        aiSessionId: String?,
-        lastOutputAt: Date? = nil
+        aiProvider: String? = nil,
+        aiSessionId: String? = nil,
+        lastOutputAt: Date? = nil,
+        knownRepoRoot: String? = nil,
+        knownGitBranch: String? = nil
     ) {
         self.paneID = paneID
         self.directory = directory
@@ -339,6 +343,8 @@ struct SavedTerminalPaneState: Codable {
         self.aiProvider = aiProvider
         self.aiSessionId = aiSessionId
         self.lastOutputAt = lastOutputAt
+        self.knownRepoRoot = knownRepoRoot
+        self.knownGitBranch = knownGitBranch
     }
 }
 
@@ -362,8 +368,50 @@ struct SavedTabState: Codable {
     let paneStates: [SavedTerminalPaneState]?
     let createdAt: String? // ISO8601 encoded, nil for legacy saves
     let repoGroupID: String? // repo grouping membership, nil = ungrouped
+    let knownRepoRoot: String?
+    let knownGitBranch: String?
 
     static let userDefaultsKey = "com.chau7.savedTabState"
+
+    init(
+        tabID: String? = nil,
+        selectedTabID: String? = nil,
+        customTitle: String?,
+        color: String,
+        directory: String,
+        selectedIndex: Int?,
+        tokenOptOverride: String?,
+        scrollbackContent: String?,
+        aiResumeCommand: String?,
+        aiProvider: String? = nil,
+        aiSessionId: String? = nil,
+        splitLayout: SavedSplitNode?,
+        focusedPaneID: String?,
+        paneStates: [SavedTerminalPaneState]?,
+        createdAt: String? = nil,
+        repoGroupID: String? = nil,
+        knownRepoRoot: String? = nil,
+        knownGitBranch: String? = nil
+    ) {
+        self.tabID = tabID
+        self.selectedTabID = selectedTabID
+        self.customTitle = customTitle
+        self.color = color
+        self.directory = directory
+        self.selectedIndex = selectedIndex
+        self.tokenOptOverride = tokenOptOverride
+        self.scrollbackContent = scrollbackContent
+        self.aiResumeCommand = aiResumeCommand
+        self.aiProvider = aiProvider
+        self.aiSessionId = aiSessionId
+        self.splitLayout = splitLayout
+        self.focusedPaneID = focusedPaneID
+        self.paneStates = paneStates
+        self.createdAt = createdAt
+        self.repoGroupID = repoGroupID
+        self.knownRepoRoot = knownRepoRoot
+        self.knownGitBranch = knownGitBranch
+    }
 }
 
 /// Multi-window save format: each entry is one window's tab states.
@@ -743,6 +791,11 @@ final class OverlayTabsModel {
             for (paneID, session) in terminalSessions {
                 let dir = session.currentDirectory
                 let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
+                let knownRepoIdentity = Self.persistedRepoIdentity(
+                    for: session,
+                    directory: dir,
+                    fallbackRoot: tab.repoGroupID
+                )
                 let resumeMetadata = resolveResumeMetadata(
                     for: session, directory: dir, outputHint: scrollback, claimedSessionIds: claimedSessionIds
                 )
@@ -763,13 +816,23 @@ final class OverlayTabsModel {
                     aiResumeCommand: resumeCommand,
                     aiProvider: persistedMetadata.provider,
                     aiSessionId: persistedMetadata.sessionId,
-                    lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate)
+                    lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate),
+                    knownRepoRoot: knownRepoIdentity?.rootPath,
+                    knownGitBranch: knownRepoIdentity?.branch
                 ))
             }
 
             let primaryDirectory = terminalSessions.first?.1.currentDirectory
                 ?? tab.session?.currentDirectory
                 ?? TerminalSessionModel.defaultStartDirectory()
+            let primaryKnownRepoIdentity = paneStates.first.flatMap(Self.persistedRepoIdentity(from:))
+                ?? tab.session.flatMap {
+                    Self.persistedRepoIdentity(
+                        for: $0,
+                        directory: primaryDirectory,
+                        fallbackRoot: tab.repoGroupID
+                    )
+                }
 
             states.append(SavedTabState(
                 tabID: tab.id.uuidString,
@@ -787,7 +850,9 @@ final class OverlayTabsModel {
                 focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
                 paneStates: paneStates.isEmpty ? nil : paneStates,
                 createdAt: DateFormatters.iso8601.string(from: tab.createdAt),
-                repoGroupID: tab.repoGroupID
+                repoGroupID: tab.repoGroupID,
+                knownRepoRoot: primaryKnownRepoIdentity?.rootPath,
+                knownGitBranch: primaryKnownRepoIdentity?.branch
             ))
         }
         return states
@@ -804,6 +869,11 @@ final class OverlayTabsModel {
         for (paneID, session) in terminalSessions {
             let dir = session.currentDirectory
             let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
+            let knownRepoIdentity = Self.persistedRepoIdentity(
+                for: session,
+                directory: dir,
+                fallbackRoot: tab.repoGroupID
+            )
             let resumeMetadata = resolveResumeMetadata(
                 for: session,
                 directory: dir,
@@ -825,7 +895,9 @@ final class OverlayTabsModel {
                 aiResumeCommand: resumeCommand,
                 aiProvider: persistedMetadata.provider,
                 aiSessionId: persistedMetadata.sessionId,
-                lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate)
+                lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate),
+                knownRepoRoot: knownRepoIdentity?.rootPath,
+                knownGitBranch: knownRepoIdentity?.branch
             ))
         }
 
@@ -834,6 +906,14 @@ final class OverlayTabsModel {
             ?? TerminalSessionModel.defaultStartDirectory()
         let primaryScrollback = paneStates.first?.scrollbackContent
         let primaryResumeCommand = paneStates.first?.aiResumeCommand
+        let primaryKnownRepoIdentity = paneStates.first.flatMap(Self.persistedRepoIdentity(from:))
+            ?? tab.session.flatMap {
+                Self.persistedRepoIdentity(
+                    for: $0,
+                    directory: primaryDirectory,
+                    fallbackRoot: tab.repoGroupID
+                )
+            }
 
         let overrideRaw = tab.tokenOptOverride == .default ? nil : tab.tokenOptOverride.rawValue
         let state = SavedTabState(
@@ -852,7 +932,9 @@ final class OverlayTabsModel {
             focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
             paneStates: paneStates.isEmpty ? nil : paneStates,
             createdAt: DateFormatters.iso8601.string(from: tab.createdAt),
-            repoGroupID: tab.repoGroupID
+            repoGroupID: tab.repoGroupID,
+            knownRepoRoot: primaryKnownRepoIdentity?.rootPath,
+            knownGitBranch: primaryKnownRepoIdentity?.branch
         )
 
         closedTabStack.append(ClosedTabEntry(
@@ -1082,7 +1164,9 @@ final class OverlayTabsModel {
                     aiResumeCommand: sanitizedCommand,
                     aiProvider: sanitizedPane.provider,
                     aiSessionId: sanitizedPane.sessionId,
-                    lastOutputAt: paneState.lastOutputAt
+                    lastOutputAt: paneState.lastOutputAt,
+                    knownRepoRoot: paneState.knownRepoRoot,
+                    knownGitBranch: paneState.knownGitBranch
                 )
             }
 
@@ -1119,9 +1203,49 @@ final class OverlayTabsModel {
                 focusedPaneID: state.focusedPaneID,
                 paneStates: sanitizedPaneStates,
                 createdAt: state.createdAt,
-                repoGroupID: state.repoGroupID
+                repoGroupID: state.repoGroupID,
+                knownRepoRoot: state.knownRepoRoot,
+                knownGitBranch: state.knownGitBranch
             )
         }
+    }
+
+    private struct PersistedRepoIdentity {
+        let rootPath: String
+        let branch: String?
+    }
+
+    private static func persistedRepoIdentity(
+        for session: TerminalSessionModel,
+        directory: String,
+        fallbackRoot: String? = nil
+    ) -> PersistedRepoIdentity? {
+        let directRoot = normalizedSavedRepoField(session.gitRootPath) ?? normalizedSavedRepoField(fallbackRoot)
+        let storeIdentity = KnownRepoIdentityStore.shared.resolveIdentity(forPath: directory)
+            ?? directRoot.flatMap { KnownRepoIdentityStore.shared.identity(forRootPath: $0) }
+        guard let rootPath = directRoot ?? normalizedSavedRepoField(storeIdentity?.rootPath) else {
+            return nil
+        }
+        let branch = normalizedSavedRepoField(session.gitBranch) ?? normalizedSavedRepoField(storeIdentity?.lastKnownBranch)
+        return PersistedRepoIdentity(rootPath: rootPath, branch: branch)
+    }
+
+    private static func persistedRepoIdentity(from paneState: SavedTerminalPaneState) -> PersistedRepoIdentity? {
+        guard let rootPath = normalizedSavedRepoField(paneState.knownRepoRoot) else {
+            return nil
+        }
+        return PersistedRepoIdentity(
+            rootPath: rootPath,
+            branch: normalizedSavedRepoField(paneState.knownGitBranch)
+        )
+    }
+
+    static func normalizedSavedRepoField(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 
     private static func sanitizedResumeCommand(

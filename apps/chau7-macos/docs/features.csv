@@ -348,3 +348,4 @@ API Analytics,Adaptive Dashboard Polling,"Dashboard polls adaptively — 2s acti
 API Analytics,Updated Pricing Table,"~20 new models (GPT-5.x, GPT-4.1, o3/o4-mini, Gemini 2.5), corrected Opus 4.6/Haiku 4.5 prices, fallback warning logging, documented pricing.json schema",Shipped,Yes
 API Analytics,DB Performance & Pruning,"Compound cost index, automatic 180-day data pruning, ANALYZE after migrations",Shipped,No
 Networking,IPC Socket Retry,Proxy IPC socket retries once on broken connection before giving up,Shipped,No
+Restore,Protected Repo Identity Persistence,"Tab restore now persists each terminal pane's repo root and last-known branch, and older saved tabs can fall back to repo grouping metadata so protected-folder repos keep their passive git badge without immediate live access",Shipped,Yes

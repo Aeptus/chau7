@@ -607,7 +607,10 @@ extension OverlayTabsModel {
             appModel: appModel,
             splitLayout: state.splitLayout,
             focusedPaneID: state.focusedPaneID,
-            paneStates: state.paneStates
+            paneStates: state.paneStates,
+            directory: state.directory,
+            knownRepoRoot: state.knownRepoRoot ?? state.repoGroupID,
+            knownGitBranch: state.knownGitBranch
         )
 
         let restoredTabID = Self.validatedUUID(from: state.tabID) ?? UUID()

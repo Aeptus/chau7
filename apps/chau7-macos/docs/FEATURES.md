@@ -604,3 +604,8 @@ Key patterns:
 - Correlation IDs for trace logging.
 - Binary tree layout for split pane nesting.
 - MCP server with thread-safe main-thread dispatch.
+
+## Recent Additions
+
+- Protected-folder repo identity restore:
+  Restored tabs now persist each terminal pane's last-known repo root and branch, and restore can fall back to the existing repo group identifier when reopening older saved tabs. This keeps passive git UI such as the tab branch badge available even when the repo lives under protected folders like `Downloads` and live git probing is blocked until the user explicitly grants access.

@@ -1567,6 +1567,99 @@ final class OverlayTabsModelTests: XCTestCase {
         wait(for: [readyExpectation], timeout: 2.0)
     }
 
+    func testExportTabStatesPersistsKnownRepoIdentity() {
+        let repoRoot = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Downloads/Repositories/Chau7")
+            .path
+        let session = model.tabs[0].session!
+        session.currentDirectory = repoRoot + "/apps/chau7-macos"
+        session.isGitRepo = true
+        session.gitRootPath = repoRoot
+        session.gitBranch = "main"
+
+        let states = model.exportTabStates()
+        let paneState = try? XCTUnwrap(states.first?.paneStates?.first)
+        XCTAssertEqual(paneState?.knownRepoRoot, repoRoot)
+        XCTAssertEqual(paneState?.knownGitBranch, "main")
+        XCTAssertEqual(states.first?.knownRepoRoot, repoRoot)
+        XCTAssertEqual(states.first?.knownGitBranch, "main")
+    }
+
+    func testRestoreProtectedRepoUsesPersistedKnownRepoIdentity() {
+        let settings = FeatureSettings.shared
+        let previousAllowProtectedFolderAccess = settings.allowProtectedFolderAccess
+        let previousRecentRepoRoots = settings.recentRepoRoots
+        let previousKnownRoots = KnownRepoIdentityStore.shared.allRoots()
+        defer {
+            settings.allowProtectedFolderAccess = previousAllowProtectedFolderAccess
+            settings.recentRepoRoots = previousRecentRepoRoots
+            KnownRepoIdentityStore.shared.replaceAll(with: previousKnownRoots)
+            ProtectedPathPolicy.resetAccessChecks()
+            RepositoryCache.shared.resetNegativeCache()
+        }
+
+        let repoRoot = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Downloads/Repositories/Chau7")
+            .path
+        let paneID = UUID()
+        let split = SavedSplitNode(
+            kind: .terminal,
+            id: paneID.uuidString,
+            direction: nil,
+            ratio: nil,
+            first: nil,
+            second: nil,
+            textEditorPath: nil
+        )
+        let paneState = SavedTerminalPaneState(
+            paneID: paneID.uuidString,
+            directory: repoRoot + "/apps/chau7-macos",
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            knownRepoRoot: repoRoot,
+            knownGitBranch: "feature/protected"
+        )
+
+        settings.allowProtectedFolderAccess = false
+        settings.recentRepoRoots = []
+        KnownRepoIdentityStore.shared.reset()
+        ProtectedPathPolicy.resetAccessChecks()
+        RepositoryCache.shared.resetNegativeCache()
+
+        storeSavedTabStates([
+            SavedTabState(
+                customTitle: "Protected Repo",
+                color: TabColor.blue.rawValue,
+                directory: repoRoot + "/apps/chau7-macos",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: split,
+                focusedPaneID: paneID.uuidString,
+                paneStates: [paneState],
+                knownRepoRoot: repoRoot,
+                knownGitBranch: "feature/protected"
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+        drainMainQueue()
+        drainMainQueue()
+
+        guard let session = restoredModel.tabs.first?.splitController.terminalSessions
+            .first(where: { $0.0 == paneID })?.1 else {
+            XCTFail("Expected restored session for pane \(paneID)")
+            return
+        }
+
+        XCTAssertTrue(session.isGitRepo)
+        XCTAssertEqual(session.gitRootPath, repoRoot)
+        XCTAssertEqual(session.gitBranch, "feature/protected")
+        XCTAssertFalse(session.repositoryAccessSnapshot.canProbeLive)
+        XCTAssertTrue(session.repositoryAccessSnapshot.canUseKnownIdentity)
+    }
+
     func testRestorePrefillsLegacyTopLevelMetadataForSinglePaneStates() {
         let firstPaneID = UUID()
         let secondPaneID = UUID()

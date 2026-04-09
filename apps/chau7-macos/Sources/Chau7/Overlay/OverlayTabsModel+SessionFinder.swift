@@ -368,7 +368,10 @@ extension OverlayTabsModel {
                 appModel: appModel,
                 splitLayout: state.splitLayout,
                 focusedPaneID: state.focusedPaneID,
-                paneStates: state.paneStates
+                paneStates: state.paneStates,
+                directory: state.directory,
+                knownRepoRoot: state.knownRepoRoot ?? state.repoGroupID,
+                knownGitBranch: state.knownGitBranch
             )
 
             let restoredTabID = Self.validatedUUID(from: state.tabID) ?? UUID()
@@ -632,10 +635,24 @@ extension OverlayTabsModel {
         appModel: AppModel,
         splitLayout: SavedSplitNode?,
         focusedPaneID: String?,
-        paneStates: [SavedTerminalPaneState]?
+        paneStates: [SavedTerminalPaneState]?,
+        directory: String,
+        knownRepoRoot: String?,
+        knownGitBranch: String?
     ) -> SplitPaneController {
         guard let splitLayout else {
             let fallbackController = SplitPaneController(appModel: appModel)
+            if let session = fallbackController.terminalSessions.first?.1 {
+                if let knownRepoRoot = OverlayTabsModel.normalizedSavedRepoField(knownRepoRoot) {
+                    KnownRepoIdentityStore.shared.record(
+                        rootPath: knownRepoRoot,
+                        branch: OverlayTabsModel.normalizedSavedRepoField(knownGitBranch)
+                    )
+                }
+                if !directory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    session.updateCurrentDirectory(directory)
+                }
+            }
             if let focusedPaneID, let focusID = UUID(uuidString: focusedPaneID) {
                 fallbackController.setFocusedPane(focusID)
             }
@@ -672,7 +689,9 @@ extension OverlayTabsModel {
                 scrollbackContent: state.scrollbackContent,
                 aiResumeCommand: state.aiResumeCommand,
                 aiProvider: state.aiProvider,
-                aiSessionId: state.aiSessionId
+                aiSessionId: state.aiSessionId,
+                knownRepoRoot: state.knownRepoRoot ?? state.repoGroupID,
+                knownGitBranch: state.knownGitBranch
             )
         }
 
@@ -688,7 +707,9 @@ extension OverlayTabsModel {
                     aiResumeCommand: legacyCommand,
                     aiProvider: firstPane.aiProvider ?? state.aiProvider,
                     aiSessionId: firstPane.aiSessionId ?? state.aiSessionId,
-                    lastOutputAt: firstPane.lastOutputAt
+                    lastOutputAt: firstPane.lastOutputAt,
+                    knownRepoRoot: firstPane.knownRepoRoot ?? state.knownRepoRoot ?? state.repoGroupID,
+                    knownGitBranch: firstPane.knownGitBranch ?? state.knownGitBranch
                 )
             }
         }
@@ -736,7 +757,9 @@ extension OverlayTabsModel {
                     aiResumeCommand: nil,
                     aiProvider: nil,
                     aiSessionId: nil,
-                    lastOutputAt: nil
+                    lastOutputAt: nil,
+                    knownRepoRoot: nil,
+                    knownGitBranch: nil
                 )
                 let shouldUseLegacyTabFallback = paneStatesByID.isEmpty && currentSessions.count == 1
                 let fallbackProvider = shouldUseLegacyTabFallback ? state.aiProvider : nil
@@ -764,7 +787,9 @@ extension OverlayTabsModel {
                     aiResumeCommand: resolvedCommand ?? Self.normalizedResumeCommand(paneState.aiResumeCommand),
                     aiProvider: resolvedMetadata?.provider,
                     aiSessionId: resolvedMetadata?.sessionId,
-                    lastOutputAt: paneState.lastOutputAt
+                    lastOutputAt: paneState.lastOutputAt,
+                    knownRepoRoot: paneState.knownRepoRoot,
+                    knownGitBranch: paneState.knownGitBranch
                 )
                 resolvedPaneStates[paneID] = effectivePaneState
                 paneStatesToRestore[paneID] = effectivePaneState
@@ -790,7 +815,9 @@ extension OverlayTabsModel {
                     aiResumeCommand: nil,
                     aiProvider: nil,
                     aiSessionId: nil,
-                    lastOutputAt: nil
+                    lastOutputAt: nil,
+                    knownRepoRoot: nil,
+                    knownGitBranch: nil
                 )
 
                 // Restore scrollback via cat through the shell so the terminal re-renders

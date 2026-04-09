@@ -270,8 +270,16 @@ extension SplitNode {
         switch node.kind {
         case .terminal:
             let session = TerminalSessionModel(appModel: appModel)
-            if let state = paneStates[resolvedID], !state.directory.isEmpty {
-                session.updateCurrentDirectory(state.directory)
+            if let state = paneStates[resolvedID] {
+                if let knownRepoRoot = OverlayTabsModel.normalizedSavedRepoField(state.knownRepoRoot) {
+                    KnownRepoIdentityStore.shared.record(
+                        rootPath: knownRepoRoot,
+                        branch: OverlayTabsModel.normalizedSavedRepoField(state.knownGitBranch)
+                    )
+                }
+                if !state.directory.isEmpty {
+                    session.updateCurrentDirectory(state.directory)
+                }
             }
             return .terminal(id: resolvedID, session: session)
         case .textEditor:
