@@ -2000,19 +2000,12 @@ final class TerminalSessionModel {
 
     static func repositoryState(from result: RepositoryResolutionResult) -> RepositoryStateSnapshot {
         switch result {
-        case .live(let model, access: let access):
+        case .repository(let model, access: let access):
             return RepositoryStateSnapshot(
                 accessSnapshot: access,
                 isGitRepo: true,
                 gitRootPath: model.rootPath,
                 gitBranch: model.branch
-            )
-        case .cachedIdentity(identity: let identity, access: let access):
-            return RepositoryStateSnapshot(
-                accessSnapshot: access,
-                isGitRepo: true,
-                gitRootPath: identity.rootPath,
-                gitBranch: identity.lastKnownBranch
             )
         case .blocked(let access), .notRepository(let access):
             return RepositoryStateSnapshot(
@@ -2031,12 +2024,19 @@ final class TerminalSessionModel {
             let model: RepositoryModel?
 
             switch result {
-            case .live(let liveModel, access: _):
-                model = liveModel
-            case .cachedIdentity(identity: let identity, access: _):
-                model = RepositoryCache.shared.cachedModel(forRoot: identity.rootPath)
+            case .repository(let resolvedModel, access: _):
+                model = resolvedModel
             case .blocked, .notRepository:
                 model = nil
+            }
+
+            // Snapshot current branch before overwriting model, so a live→cached
+            // transition preserves branch data in the identity store.
+            if let currentBranch = repositoryModel?.branch,
+               let root = gitRootPath,
+               repositoryModel?.isLive == true,
+               model?.isLive != true {
+                KnownRepoIdentityStore.shared.record(rootPath: root, branch: currentBranch)
             }
 
             let oldModel = repositoryModel

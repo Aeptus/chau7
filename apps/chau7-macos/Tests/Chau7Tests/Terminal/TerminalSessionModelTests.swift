@@ -277,18 +277,18 @@ final class TerminalSessionModelTests: XCTestCase {
             isDeniedByCooldown: false,
             hasKnownIdentity: true
         )
-        let identity = KnownRepoIdentity(
+        let model = RepositoryModel(
             rootPath: "/Users/me/Downloads/Repositories/Chau7",
-            lastConfirmedAt: Date(timeIntervalSince1970: 0),
-            lastKnownBranch: "main"
+            branch: "main",
+            accessLevel: .cached
         )
 
         let state = TerminalSessionModel.repositoryState(
-            from: .cachedIdentity(identity: identity, access: snapshot)
+            from: .repository(model, access: snapshot)
         )
 
         XCTAssertTrue(state.isGitRepo)
-        XCTAssertEqual(state.gitRootPath, identity.rootPath)
+        XCTAssertEqual(state.gitRootPath, model.rootPath)
         XCTAssertEqual(state.gitBranch, "main")
         XCTAssertFalse(state.accessSnapshot.canProbeLive)
         XCTAssertTrue(state.accessSnapshot.canUseKnownIdentity)

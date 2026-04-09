@@ -98,12 +98,13 @@ final class RepositoryCacheTests: XCTestCase {
             recentRepoRecorder: { _ in }
         )
 
-        let expectation = expectation(description: "returns cached identity")
+        let expectation = expectation(description: "returns cached model")
         cache.resolveDetailed(path: repoRoot + "/apps/chau7-macos") { result in
-            guard case .cachedIdentity(identity: let identity, access: let access) = result else {
-                return XCTFail("Expected cachedIdentity, got \(result)")
+            guard case .repository(let model, access: let access) = result else {
+                return XCTFail("Expected repository, got \(result)")
             }
-            XCTAssertEqual(identity.rootPath, repoRoot)
+            XCTAssertEqual(model.rootPath, repoRoot)
+            XCTAssertEqual(model.accessLevel, .cached)
             XCTAssertFalse(access.canProbeLive)
             XCTAssertTrue(access.canUseKnownIdentity)
             expectation.fulfill()
@@ -181,13 +182,14 @@ final class RepositoryCacheTests: XCTestCase {
             recentRepoRecorder: { _ in }
         )
 
-        let expectation = expectation(description: "returns cached branch identity")
+        let expectation = expectation(description: "returns cached model with branch")
         cache.resolveDetailed(path: repoRoot + "/apps/chau7-macos") { result in
-            guard case .cachedIdentity(identity: let identity, access: let access) = result else {
-                return XCTFail("Expected cachedIdentity, got \(result)")
+            guard case .repository(let model, access: let access) = result else {
+                return XCTFail("Expected repository, got \(result)")
             }
-            XCTAssertEqual(identity.rootPath, repoRoot)
-            XCTAssertEqual(identity.lastKnownBranch, "feature/protected")
+            XCTAssertEqual(model.rootPath, repoRoot)
+            XCTAssertEqual(model.branch, "feature/protected")
+            XCTAssertEqual(model.accessLevel, .cached)
             XCTAssertFalse(access.canProbeLive)
             expectation.fulfill()
         }
