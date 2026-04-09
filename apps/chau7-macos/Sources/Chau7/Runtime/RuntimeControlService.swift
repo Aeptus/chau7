@@ -200,7 +200,11 @@ final class RuntimeControlService {
 
         // Create or attach to tab
         let tabID: UUID
-        if let attachStr = attachTabID, let uuid = UUID(uuidString: attachStr) {
+        if let attachStr = attachTabID {
+            guard let uuid = controlService.resolveControlPlaneTabID(attachStr) else {
+                Log.warn("MCP runtime_session_create: invalid attach tab id \(attachStr)")
+                return jsonError("Invalid tab ID: \(attachStr)")
+            }
             tabID = uuid
             Log.info("MCP runtime_session_create: attaching to existing tab \(attachStr)")
         } else {
@@ -213,7 +217,7 @@ final class RuntimeControlService {
             guard let data = tabResult.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let tabIDStr = json["tab_id"] as? String,
-                  let uuid = UUID(uuidString: tabIDStr) else {
+                  let uuid = controlService.resolveControlPlaneTabID(tabIDStr) else {
                 Log.error("MCP runtime_session_create: failed to create tab — \(tabResult)")
                 return jsonError("Failed to create tab: \(tabResult)")
             }
@@ -684,6 +688,7 @@ final class RuntimeControlService {
 
     private func sessionSummary(_ session: RuntimeSession) -> [String: Any] {
         var summary = session.summary()
+        summary["tab_id"] = controlService.controlPlaneTabID(for: session.tabID)
         if let activeRun = controlService.activeRunSummary(forOverlayTabID: session.tabID) {
             summary["active_run"] = activeRun
         }

@@ -1400,8 +1400,8 @@ final class TerminalSessionModel {
         pendingAutomationSubmitWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.pendingAutomationSubmitWorkItem = nil
-            self.performAutomationSubmit(mode: mode)
+            pendingAutomationSubmitWorkItem = nil
+            performAutomationSubmit(mode: mode)
         }
         pendingAutomationSubmitWorkItem = work
         let deadline = DispatchTime.now() + .milliseconds(max(0, delayMs))

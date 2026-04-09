@@ -120,6 +120,16 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertTrue(result["supported_methods"] is [String])
     }
 
+    func testGetStatusIncludesUnifiedInteractiveMethods() async throws {
+        let response = await api.handleRequest(["method": "get_status"])
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        let methods = try XCTUnwrap(result["supported_methods"] as? [String])
+
+        XCTAssertTrue(methods.contains("send_input"))
+        XCTAssertTrue(methods.contains("press_key"))
+        XCTAssertTrue(methods.contains("submit_prompt"))
+    }
+
     // MARK: - get_history
 
     func testGetHistoryReturnsArray() async {
@@ -199,6 +209,16 @@ final class ScriptingAPITests: XCTestCase {
         let request: [String: Any] = ["method": "run_command", "params": ["tab_id": "t1"]]
         let response = await api.handleRequest(request)
         XCTAssertEqual(response["error"] as? String, "missing param: command")
+    }
+
+    func testSendInputMissingTabID() async {
+        let response = await api.handleRequest(["method": "send_input", "params": ["input": "hello"]])
+        XCTAssertEqual(response["error"] as? String, "missing param: tab_id")
+    }
+
+    func testSubmitPromptMissingTabID() async {
+        let response = await api.handleRequest(["method": "submit_prompt", "params": [:]])
+        XCTAssertEqual(response["error"] as? String, "missing param: tab_id")
     }
 
     func testGetOutputMissingTabID() async {

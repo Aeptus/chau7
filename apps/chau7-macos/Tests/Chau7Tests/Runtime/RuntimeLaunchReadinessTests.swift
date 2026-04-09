@@ -28,10 +28,31 @@ final class RuntimeLaunchReadinessTests: XCTestCase {
         )
     }
 
-    func testNotReadyWhileStillAtPrompt() {
+    func testReadyWhenInteractivePromptIsAvailable() {
+        XCTAssertTrue(
+            RuntimeLaunchReadiness.isReady(
+                snapshot: snapshot(
+                    shellLoading: false,
+                    isAtPrompt: true,
+                    effectiveStatus: "idle",
+                    rawStatus: "idle",
+                    aiProvider: "codex"
+                ),
+                backendName: "codex"
+            )
+        )
+    }
+
+    func testNotReadyAtPromptWithoutMatchingBackendSignal() {
         XCTAssertFalse(
             RuntimeLaunchReadiness.isReady(
-                snapshot: snapshot(shellLoading: false, isAtPrompt: true, effectiveStatus: "running", rawStatus: "running", aiProvider: "codex"),
+                snapshot: snapshot(
+                    shellLoading: false,
+                    isAtPrompt: true,
+                    effectiveStatus: "idle",
+                    rawStatus: "idle",
+                    aiProvider: "claude"
+                ),
                 backendName: "codex"
             )
         )
@@ -40,7 +61,13 @@ final class RuntimeLaunchReadinessTests: XCTestCase {
     func testNotReadyWhenStatusDoesNotLookRunning() {
         XCTAssertFalse(
             RuntimeLaunchReadiness.isReady(
-                snapshot: snapshot(shellLoading: false, isAtPrompt: false, effectiveStatus: "idle", rawStatus: "idle", aiProvider: "codex"),
+                snapshot: snapshot(
+                    shellLoading: false,
+                    isAtPrompt: false,
+                    effectiveStatus: "paused",
+                    rawStatus: "paused",
+                    aiProvider: "codex"
+                ),
                 backendName: "codex"
             )
         )

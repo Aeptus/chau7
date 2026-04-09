@@ -7,6 +7,7 @@ final class MCPSession {
     private let fd: Int32
     private let queryService = TelemetryQueryService()
     private let controlService = TerminalControlService.shared
+    private let controlPlane = ControlPlaneService.shared
 
     init(fd: Int32) {
         self.fd = fd
@@ -223,7 +224,7 @@ final class MCPSession {
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "tab_id": ["type": "string", "description": "Tab UUID from tab_create or tab_list"],
+                        "tab_id": ["type": "string", "description": "Deterministic tab ID from tab_create or tab_list, such as 'tab_1'"],
                         "command": ["type": "string", "description": "Shell command to execute"]
                     ],
                     "required": ["tab_id", "command"]
@@ -235,7 +236,7 @@ final class MCPSession {
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "tab_id": ["type": "string", "description": "Tab UUID"]
+                        "tab_id": ["type": "string", "description": "Deterministic tab ID, such as 'tab_1'"]
                     ],
                     "required": ["tab_id"]
                 ]
@@ -246,7 +247,7 @@ final class MCPSession {
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "tab_id": ["type": "string", "description": "Tab UUID"],
+                        "tab_id": ["type": "string", "description": "Deterministic tab ID, such as 'tab_1'"],
                         "input": ["type": "string", "description": "Raw text to send to the terminal"]
                     ],
                     "required": ["tab_id", "input"]
@@ -258,7 +259,7 @@ final class MCPSession {
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "tab_id": ["type": "string", "description": "Tab UUID"],
+                        "tab_id": ["type": "string", "description": "Deterministic tab ID, such as 'tab_1'"],
                         "key": [
                             "type": "string",
                             "description": "Key name, e.g. enter, escape, tab, up, down, left, right, backspace, delete, home, end, page_up, page_down, insert, or a single character for ctrl/alt combos"
@@ -278,7 +279,7 @@ final class MCPSession {
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "tab_id": ["type": "string", "description": "Tab UUID"]
+                        "tab_id": ["type": "string", "description": "Deterministic tab ID, such as 'tab_1'"]
                     ],
                     "required": ["tab_id"]
                 ]
@@ -289,7 +290,7 @@ final class MCPSession {
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "tab_id": ["type": "string", "description": "Tab UUID"],
+                        "tab_id": ["type": "string", "description": "Deterministic tab ID, such as 'tab_1'"],
                         "force": ["type": "boolean", "description": "Close even if processes are running"]
                     ],
                     "required": ["tab_id"]
@@ -301,7 +302,7 @@ final class MCPSession {
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "tab_id": ["type": "string", "description": "Tab UUID"],
+                        "tab_id": ["type": "string", "description": "Deterministic tab ID, such as 'tab_1'"],
                         "lines": ["type": "integer", "description": "Number of lines to return (default 50, max 10000)"],
                         "wait_for_stable_ms": ["type": "integer", "description": "Wait until buffer content is stable for this many ms before returning (max 30000). Only applies to source='buffer'."],
                         "source": [
@@ -318,7 +319,7 @@ final class MCPSession {
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "tab_id": ["type": "string", "description": "Tab UUID"],
+                        "tab_id": ["type": "string", "description": "Deterministic tab ID, such as 'tab_1'"],
                         "override": ["type": "string", "description": "Override value: 'default', 'forceOn', or 'forceOff'"]
                     ],
                     "required": ["tab_id", "override"]
@@ -331,7 +332,7 @@ final class MCPSession {
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "tab_id": ["type": "string", "description": "Tab UUID"],
+                        "tab_id": ["type": "string", "description": "Deterministic tab ID, such as 'tab_1'"],
                         "title": ["type": "string", "description": "New custom title for the tab. Empty string clears it."]
                     ],
                     "required": ["tab_id", "title"]
@@ -410,7 +411,7 @@ final class MCPSession {
                         "backend_args": ["type": "array", "items": ["type": "string"], "description": "Additional CLI arguments"],
                         "initial_prompt": ["type": "string", "description": "Prompt to send immediately after backend starts. Delivered with retry (up to ~4s) to handle backend startup time."],
                         "auto_approve": ["type": "boolean", "description": "Auto-approve safe tool use requests. For claude: --dangerously-skip-permissions. For codex: --full-auto."],
-                        "attach_tab_id": ["type": "string", "description": "Attach to existing tab instead of creating new one"],
+                        "attach_tab_id": ["type": "string", "description": "Attach to an existing deterministic tab ID such as 'tab_1' instead of creating a new tab"],
                         "purpose": ["type": "string", "description": "Optional generic purpose label for the session, such as 'code_review'."],
                         "parent_session_id": ["type": "string", "description": "Runtime session ID that delegated this child session."],
                         "parent_run_id": ["type": "string", "description": "Telemetry run ID that delegated this child session."],
@@ -626,63 +627,31 @@ final class MCPSession {
 
         // Control plane
         case "tab_list":
-            return controlService.listTabs()
+            return controlPlane.call(name: "tab_list", arguments: arguments)
 
         case "tab_create":
-            return controlService.createTab(
-                directory: arguments["directory"] as? String,
-                windowID: arguments["window_id"] as? Int
-            )
+            return controlPlane.call(name: "tab_create", arguments: arguments)
 
         case "tab_exec":
-            guard let tabID = arguments["tab_id"] as? String,
-                  let command = arguments["command"] as? String else {
-                return jsonError("tab_id and command are required")
-            }
-            return controlService.execInTab(tabID: tabID, command: command)
+            return controlPlane.call(name: "tab_exec", arguments: arguments)
 
         case "tab_status":
-            guard let tabID = arguments["tab_id"] as? String else {
-                return jsonError("tab_id is required")
-            }
-            return controlService.tabStatus(tabID: tabID)
+            return controlPlane.call(name: "tab_status", arguments: arguments)
 
         case "tab_send_input":
-            guard let tabID = arguments["tab_id"] as? String,
-                  let input = arguments["input"] as? String else {
-                return jsonError("tab_id and input are required")
-            }
-            return controlService.sendInput(tabID: tabID, input: input)
+            return controlPlane.call(name: "tab_send_input", arguments: arguments)
 
         case "tab_press_key":
-            guard let tabID = arguments["tab_id"] as? String,
-                  let key = arguments["key"] as? String else {
-                return jsonError("tab_id and key are required")
-            }
-            let modifiers = arguments["modifiers"] as? [String] ?? []
-            return controlService.pressKey(tabID: tabID, key: key, modifiers: modifiers)
+            return controlPlane.call(name: "tab_press_key", arguments: arguments)
 
         case "tab_submit_prompt":
-            guard let tabID = arguments["tab_id"] as? String else {
-                return jsonError("tab_id is required")
-            }
-            return controlService.submitPrompt(tabID: tabID)
+            return controlPlane.call(name: "tab_submit_prompt", arguments: arguments)
 
         case "tab_close":
-            guard let tabID = arguments["tab_id"] as? String else {
-                return jsonError("tab_id is required")
-            }
-            let force = arguments["force"] as? Bool ?? false
-            return controlService.closeTab(tabID: tabID, force: force)
+            return controlPlane.call(name: "tab_close", arguments: arguments)
 
         case "tab_output":
-            guard let tabID = arguments["tab_id"] as? String else {
-                return jsonError("tab_id is required")
-            }
-            let lines = max(1, min(arguments["lines"] as? Int ?? 50, 10000))
-            let waitForStableMs = arguments["wait_for_stable_ms"] as? Int
-            let source = arguments["source"] as? String
-            return controlService.tabOutput(tabID: tabID, lines: lines, waitForStableMs: waitForStableMs, source: source)
+            return controlPlane.call(name: "tab_output", arguments: arguments)
 
         case "tab_set_cto":
             guard let tabID = arguments["tab_id"] as? String,
@@ -732,7 +701,7 @@ final class MCPSession {
 
         // Runtime API
         case let name where name.hasPrefix("runtime_"):
-            return RuntimeControlService.shared.handleToolCall(name: name, arguments: arguments)
+            return controlPlane.call(name: name, arguments: arguments)
 
         default:
             return jsonError("Unknown tool: \(name)")

@@ -17,7 +17,6 @@ public final class EventJournal: @unchecked Sendable {
     private var totalAppended: UInt64 = 0
     /// Whether the buffer has wrapped around at least once.
     private var wrapped = false
-
     private let lock = NSLock()
 
     public init(capacity: Int = 1000) {
@@ -31,8 +30,6 @@ public final class EventJournal: @unchecked Sendable {
     @discardableResult
     public func append(sessionID: String, turnID: String?, type: String, data: [String: String] = [:]) -> RuntimeEvent {
         lock.lock()
-        defer { lock.unlock() }
-
         totalAppended += 1
         let event = RuntimeEvent(
             seq: totalAppended,
@@ -50,6 +47,7 @@ public final class EventJournal: @unchecked Sendable {
             wrapped = true
         }
         writeIndex = (writeIndex + 1) % capacity
+        lock.unlock()
 
         return event
     }

@@ -94,12 +94,13 @@ final class RuntimeControlServiceTests: XCTestCase {
     }
 
     func testRuntimeSessionCreateWithAttachTabStartsReadySession() throws {
+        let attachTabID = TerminalControlService.shared.controlPlaneTabID(for: overlayModel.selectedTabID)
         let response = RuntimeControlService.shared.handleToolCall(
             name: "runtime_session_create",
             arguments: [
                 "backend": "shell",
                 "directory": "/tmp/runtime-attach-\(UUID().uuidString)",
-                "attach_tab_id": overlayModel.selectedTabID.uuidString
+                "attach_tab_id": attachTabID
             ]
         )
 
@@ -108,6 +109,7 @@ final class RuntimeControlServiceTests: XCTestCase {
         let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
 
         XCTAssertEqual(json["state"] as? String, "ready")
+        XCTAssertEqual(json["tab_id"] as? String, attachTabID)
         XCTAssertEqual(session.state, .ready)
     }
 
@@ -186,9 +188,9 @@ final class RuntimeControlServiceTests: XCTestCase {
         RuntimeControlService.shared.launchReadinessProbe = { _ in
             RuntimeLaunchReadinessSnapshot(
                 shellLoading: false,
-                isAtPrompt: false,
-                effectiveStatus: "running",
-                rawStatus: "running",
+                isAtPrompt: true,
+                effectiveStatus: "idle",
+                rawStatus: "idle",
                 activeApp: "MockInteractive",
                 rawActiveApp: "MockInteractive",
                 aiProvider: backendName,
@@ -244,9 +246,9 @@ final class RuntimeControlServiceTests: XCTestCase {
             }
             return RuntimeLaunchReadinessSnapshot(
                 shellLoading: false,
-                isAtPrompt: false,
-                effectiveStatus: "running",
-                rawStatus: "running",
+                isAtPrompt: true,
+                effectiveStatus: "idle",
+                rawStatus: "idle",
                 activeApp: "MockInteractive",
                 rawActiveApp: "MockInteractive",
                 aiProvider: backendName,
@@ -376,8 +378,8 @@ final class RuntimeControlServiceTests: XCTestCase {
             }
             return RuntimeLaunchReadinessSnapshot(
                 shellLoading: false,
-                isAtPrompt: false,
-                effectiveStatus: "running",
+                isAtPrompt: true,
+                effectiveStatus: "idle",
                 rawStatus: "idle",
                 activeApp: "MockInteractive",
                 rawActiveApp: "MockInteractive",
@@ -439,8 +441,8 @@ final class RuntimeControlServiceTests: XCTestCase {
             }
             return RuntimeLaunchReadinessSnapshot(
                 shellLoading: false,
-                isAtPrompt: false,
-                effectiveStatus: "running",
+                isAtPrompt: true,
+                effectiveStatus: "idle",
                 rawStatus: "idle",
                 activeApp: "MockInteractive",
                 rawActiveApp: "MockInteractive",

@@ -101,6 +101,9 @@ protocol TerminalViewLike: NSView {
     /// Send a normalized key press to the PTY
     func send(keyPress: TerminalKeyPress)
 
+    /// Paste text into the terminal, using bracketed paste when supported.
+    func pasteText(_ text: String)
+
     // MARK: - Selection Methods
 
     /// Get selected text

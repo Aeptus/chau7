@@ -24,6 +24,7 @@ final class TerminalControlService {
 
     private var registeredModels: [WeakModel] = []
     private var nextWindowID = 0
+    private var mcpTabIDs = MCPTabIDAllocator()
 
     /// Hard ceiling — even if the user sets a higher value in settings.
     private static let absoluteMaxTabs = 50
@@ -145,6 +146,7 @@ final class TerminalControlService {
 
     func listTabs() -> String {
         onMain {
+            self.pruneTabAliasesLocked()
             let models = self.allModels
             guard !models.isEmpty else { return self.noWindowError() }
             var result: [[String: Any]] = []
@@ -238,7 +240,7 @@ final class TerminalControlService {
             Log.info("MCP: tab created \(tab.id) dir=\(directory ?? "(inherited)")")
 
             return self.encodeAny([
-                "tab_id": tab.id.uuidString,
+                "tab_id": self.controlPlaneTabIDLocked(for: tab.id),
                 "window_id": resolvedWindowID,
                 "status": "created",
                 "shell_loading": tab.session?.isShellLoading ?? true
@@ -393,7 +395,7 @@ final class TerminalControlService {
                     metadata: "context=\(context ?? "default") force=\(force)"
                 )
             }
-            guard let uuid = UUID(uuidString: tabID) else {
+            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID) else {
                 return self.jsonError("Invalid tab ID: \(tabID)")
             }
             guard let model = self.modelForTab(uuid) else {
@@ -409,6 +411,7 @@ final class TerminalControlService {
 
             Log.info("MCP: closing tab \(tabID) force=\(force) context=\(context ?? "default")")
             model.closeTab(id: uuid, skipWarning: true)
+            self.mcpTabIDs.release(tabID: uuid)
             return self.encodeAny(["ok": true])
         }
     }
@@ -469,14 +472,14 @@ final class TerminalControlService {
 
         // Final capture and format from terminal buffer
         return onMain {
-            guard let (_, session) = self.resolveTab(tabID) else {
+            guard let (tab, session) = self.resolveTab(tabID) else {
                 return self.jsonError("Tab not found: \(tabID)")
             }
 
             let clampedLines = max(1, lines)
 
             guard let data = session.captureRemoteSnapshot() else {
-                return self.encodeAny(["tab_id": tabID, "output": "", "lines": 0])
+                return self.encodeAny(["tab_id": self.controlPlaneTabIDLocked(for: tab.id), "output": "", "lines": 0])
             }
 
             return self.formatBufferOutput(tabID: tabID, data: data, lines: clampedLines)
@@ -497,9 +500,10 @@ final class TerminalControlService {
         guard let path = result.path else {
             return jsonError("No PTY log available for tab \(tabID). The tab may not have run an AI tool.")
         }
+        let outputTabID = canonicalControlPlaneTabID(tabID)
 
         guard let text = TelemetryRecorder.readPTYLogTail(path: path) else {
-            return encodeAny(["tab_id": tabID, "output": "", "lines": 0, "source": "pty_log"])
+            return encodeAny(["tab_id": outputTabID, "output": "", "lines": 0, "source": "pty_log"])
         }
 
         let clampedLines = max(1, lines)
@@ -515,7 +519,7 @@ final class TerminalControlService {
         }
 
         return encodeAny([
-            "tab_id": tabID,
+            "tab_id": outputTabID,
             "output": output,
             "lines": outputLines.count,
             "source": "pty_log"
@@ -524,6 +528,7 @@ final class TerminalControlService {
 
     /// Formats buffer data into the standard tab_output response.
     private func formatBufferOutput(tabID: String, data: Data, lines: Int) -> String {
+        let outputTabID = canonicalControlPlaneTabID(tabID)
         let text = String(decoding: data, as: UTF8.self)
         var outputLines = text.components(separatedBy: "\n")
 
@@ -546,7 +551,7 @@ final class TerminalControlService {
         }
 
         return encodeAny([
-            "tab_id": tabID,
+            "tab_id": outputTabID,
             "output": output,
             "lines": outputLines.count,
             "source": "buffer"
@@ -575,7 +580,7 @@ final class TerminalControlService {
                 return self.jsonError("Invalid override value: \(overrideStr). Valid values: \(valid)")
             }
 
-            guard let uuid = UUID(uuidString: tabID) else {
+            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID) else {
                 return self.jsonError("Invalid tab ID: \(tabID)")
             }
             guard let model = self.modelForTab(uuid) else {
@@ -680,7 +685,7 @@ final class TerminalControlService {
 
     func renameTab(tabID: String, title: String) -> String {
         onMain {
-            guard let uuid = UUID(uuidString: tabID) else {
+            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID) else {
                 return self.jsonError("Invalid tab ID: \(tabID)")
             }
             guard let model = self.modelForTab(uuid) else {
@@ -818,7 +823,7 @@ final class TerminalControlService {
                 "ts": event.ts
             ]
             if let dir = event.directory { entry["directory"] = dir }
-            if let tab = event.tabID { entry["tab_id"] = tab.uuidString }
+            if let tab = event.tabID { entry["tab_id"] = self.controlPlaneTabID(for: tab) }
             if let session = event.sessionID { entry["session_id"] = session }
             return entry
         }
@@ -876,7 +881,7 @@ final class TerminalControlService {
     }
 
     private func resolveTab(_ tabID: String) -> (OverlayTab, TerminalSessionModel)? {
-        guard let uuid = UUID(uuidString: tabID) else { return nil }
+        guard let uuid = resolveControlPlaneTabIDLocked(tabID) else { return nil }
         for (_, model) in allModels {
             if let tab = model.tabs.first(where: { $0.id == uuid }),
                let session = tab.displaySession ?? tab.session {
@@ -889,7 +894,7 @@ final class TerminalControlService {
     private func tabSummary(_ tab: OverlayTab) -> [String: Any] {
         let session = tab.displaySession ?? tab.session
         var result: [String: Any] = [
-            "tab_id": tab.id.uuidString,
+            "tab_id": controlPlaneTabIDLocked(for: tab.id),
             "title": tab.displayTitle,
             "status": session?.effectiveStatus.rawValue ?? session?.status.rawValue ?? "unknown",
             "cwd": session?.currentDirectory ?? "",
@@ -929,6 +934,50 @@ final class TerminalControlService {
             }
         }
         return result
+    }
+
+    func controlPlaneTabID(for nativeTabID: UUID) -> String {
+        onMain {
+            self.controlPlaneTabIDLocked(for: nativeTabID)
+        }
+    }
+
+    func resolveControlPlaneTabID(_ tabID: String) -> UUID? {
+        onMain {
+            self.resolveControlPlaneTabIDLocked(tabID)
+        }
+    }
+
+    private func canonicalControlPlaneTabID(_ tabID: String) -> String {
+        onMain {
+            guard let nativeTabID = self.resolveControlPlaneTabIDLocked(tabID) else {
+                return tabID
+            }
+            return self.controlPlaneTabIDLocked(for: nativeTabID)
+        }
+    }
+
+    private func controlPlaneTabIDLocked(for nativeTabID: UUID) -> String {
+        pruneTabAliasesLocked()
+        if let existingID = mcpTabIDs.id(for: nativeTabID) {
+            return existingID
+        }
+        guard allTabs.contains(where: { $0.id == nativeTabID }) else {
+            return nativeTabID.uuidString
+        }
+        return mcpTabIDs.assignID(for: nativeTabID)
+    }
+
+    private func resolveControlPlaneTabIDLocked(_ tabID: String) -> UUID? {
+        pruneTabAliasesLocked()
+        if let nativeTabID = mcpTabIDs.nativeTabID(for: tabID) {
+            return nativeTabID
+        }
+        return UUID(uuidString: tabID)
+    }
+
+    private func pruneTabAliasesLocked() {
+        mcpTabIDs.prune(validTabIDs: Set(allTabs.map(\.id)))
     }
 
     /// Dispatch to main thread and return result. Safe from any background queue.

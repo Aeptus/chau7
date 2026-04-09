@@ -70,6 +70,26 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertEqual(selectedSession?.autoFocusOnAttachEnabled, true)
     }
 
+    func testListTabsReturnsDeterministicControlPlaneIDs() throws {
+        let response = TerminalControlService.shared.listTabs()
+        let json = try XCTUnwrap(parseJSONArray(response))
+        let first = try XCTUnwrap(json.first)
+
+        XCTAssertEqual(first["tab_id"] as? String, "tab_1")
+    }
+
+    func testControlPlaneIDsAreReusedAfterTabClose() throws {
+        overlayModel.newTab(selectNewTab: false)
+        let createdID = try XCTUnwrap(overlayModel.tabs.last?.id)
+        XCTAssertEqual(TerminalControlService.shared.controlPlaneTabID(for: createdID), "tab_2")
+
+        _ = TerminalControlService.shared.closeTab(tabID: "tab_2", force: true)
+
+        overlayModel.newTab(selectNewTab: false)
+        let recreatedID = try XCTUnwrap(overlayModel.tabs.last?.id)
+        XCTAssertEqual(TerminalControlService.shared.controlPlaneTabID(for: recreatedID), "tab_2")
+    }
+
     func testIsToolAtPromptCanBeScopedToSessionID() throws {
         let promptSession = try XCTUnwrap(overlayModel.tabs.first?.session)
         promptSession.activeAppName = "Codex"
@@ -138,6 +158,14 @@ final class TerminalControlServiceTests: XCTestCase {
     private func parseJSONObject(_ text: String) -> [String: Any]? {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return json
+    }
+
+    private func parseJSONArray(_ text: String) -> [[String: Any]]? {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             return nil
         }
         return json

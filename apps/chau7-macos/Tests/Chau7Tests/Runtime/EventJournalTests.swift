@@ -206,4 +206,5 @@ final class EventJournalTests: XCTestCase {
         journal.append(sessionID: "s1", turnID: nil, type: "d")
         XCTAssertEqual(journal.oldestAvailableCursor, 2)
     }
+
 }

@@ -191,8 +191,6 @@ final class ScriptingClientHandler {
             return normalized
         case let string as String:
             return string
-        case let bool as Bool:
-            return bool
         case let int as Int:
             return NSNumber(value: int)
         case let int8 as Int8:
@@ -226,7 +224,12 @@ final class ScriptingClientHandler {
             guard double.isFinite else { return nil }
             return NSNumber(value: double)
         case let number as NSNumber:
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return number.boolValue
+            }
             return number
+        case let bool as Bool:
+            return bool
         case _ as NSNull:
             return NSNull()
         default:

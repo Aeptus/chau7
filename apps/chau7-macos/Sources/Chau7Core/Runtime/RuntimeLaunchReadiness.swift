@@ -43,18 +43,18 @@ public enum RuntimeLaunchReadiness {
         guard !requiresShellLoadCompletion(for: purpose) || !snapshot.shellLoading else {
             return false
         }
-        guard !snapshot.isAtPrompt else {
+        guard launchSignalsMatchBackend(snapshot, backendName: backendName) else {
             return false
         }
-        guard statusLooksRunning(snapshot) else {
-            return false
+        if snapshot.isAtPrompt {
+            return true
         }
-        return launchSignalsMatchBackend(snapshot, backendName: backendName)
+        return statusLooksInteractive(snapshot)
     }
 
-    private static func statusLooksRunning(_ snapshot: RuntimeLaunchReadinessSnapshot) -> Bool {
+    private static func statusLooksInteractive(_ snapshot: RuntimeLaunchReadinessSnapshot) -> Bool {
         let candidates = [snapshot.effectiveStatus, snapshot.rawStatus].map(normalizeStatusToken)
-        return candidates.contains(where: { ["running", "waitingforinput", "stuck"].contains($0) })
+        return candidates.contains(where: { ["idle", "running", "waitingforinput", "stuck"].contains($0) })
     }
 
     private static func launchSignalsMatchBackend(_ snapshot: RuntimeLaunchReadinessSnapshot, backendName: String) -> Bool {

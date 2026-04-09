@@ -705,7 +705,7 @@ final class RuntimeSessionManager {
         }
         return tabs.compactMap { tab in
             guard let tabIDStr = tab["tab_id"] as? String,
-                  let uuid = UUID(uuidString: tabIDStr) else {
+                  let uuid = controlService.resolveControlPlaneTabID(tabIDStr) else {
                 return nil
             }
             let provider = AIResumeParser.normalizeProviderName(
