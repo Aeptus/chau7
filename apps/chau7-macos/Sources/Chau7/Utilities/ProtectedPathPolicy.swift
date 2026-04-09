@@ -119,9 +119,12 @@ enum ProtectedPathPolicy {
     @MainActor
     static func ensureLiveAccessForUserInitiatedAction(path: String, actionDescription: String) -> ProtectedPathAccessSnapshot {
         let normalized = URL(fileURLWithPath: path).standardized.path
-        let initial = liveAccessSnapshot(forPath: normalized)
+        let initial = accessSnapshotForUserInitiatedAction(path: normalized)
         guard !initial.canProbeLive,
               let root = initial.root else {
+            return initial
+        }
+        guard initial.recommendedAction != .waitForCooldown else {
             return initial
         }
 
@@ -145,14 +148,45 @@ enum ProtectedPathPolicy {
 
         guard panel.runModal() == .OK else {
             Log.info("ProtectedPathPolicy: user-initiated grant canceled for root=\(root) action=\(actionDescription)")
-            return liveAccessSnapshot(forPath: normalized)
+            return recordUserInitiatedDenial(path: normalized, reason: "canceled")
         }
 
         let result = grantAccess(forSelectedURLs: panel.urls, source: "userAction")
         if result.grantedRoots.isEmpty {
             Log.warn("ProtectedPathPolicy: user-initiated grant did not activate root=\(root) action=\(actionDescription)")
+            return recordUserInitiatedDenial(path: normalized, reason: "noGrant")
         }
         return liveAccessSnapshot(forPath: normalized)
+    }
+
+    static func accessSnapshotForUserInitiatedAction(path: String) -> ProtectedPathAccessSnapshot {
+        let normalized = URL(fileURLWithPath: path).standardized.path
+        let initial = liveAccessSnapshot(forPath: normalized)
+        guard !initial.canProbeLive,
+              let root = initial.root,
+              userInitiatedCooldownActive(forRoot: root) else {
+            return initial
+        }
+
+        return ProtectedPathAccessSnapshot(
+            root: root,
+            state: .blockedCooldown,
+            canProbeLive: false,
+            canUseKnownIdentity: initial.hasKnownIdentity,
+            hasKnownIdentity: initial.hasKnownIdentity,
+            recommendedAction: .waitForCooldown
+        )
+    }
+
+    static func recordUserInitiatedDenial(path: String, reason: String) -> ProtectedPathAccessSnapshot {
+        let normalized = URL(fileURLWithPath: path).standardized.path
+        guard let root = protectedRoot(for: normalized) else {
+            return liveAccessSnapshot(forPath: normalized)
+        }
+        stateQueue.sync {
+            markDenied(root: root, source: "userAction", reason: reason)
+        }
+        return accessSnapshotForUserInitiatedAction(path: normalized)
     }
 
     /// Eagerly activate all persisted security-scoped bookmarks.
@@ -243,6 +277,12 @@ enum ProtectedPathPolicy {
                 markDenied(root: root, source: "auto", reason: "bookmarkFailed")
                 return false
             }
+        }
+    }
+
+    private static func userInitiatedCooldownActive(forRoot root: String) -> Bool {
+        stateQueue.sync {
+            deniedUntilByRoot[root].map { Date() < $0 } ?? false
         }
     }
 
