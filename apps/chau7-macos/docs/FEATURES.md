@@ -609,3 +609,5 @@ Key patterns:
 
 - Protected-folder repo identity restore:
   Restored tabs now persist each terminal pane's last-known repo root and branch, and restore can fall back to the existing repo group identifier when reopening older saved tabs. This keeps passive git UI such as the tab branch badge available even when the repo lives under protected folders like `Downloads` and live git probing is blocked until the user explicitly grants access.
+- Passive protected-repo tab chrome:
+  Passive tab chrome now reads cached repo identity too, so the selected-tab branch badge, tab git indicator, hover-card branch row, and repo path label remain repo-aware even when live git probing is unavailable in a protected folder.

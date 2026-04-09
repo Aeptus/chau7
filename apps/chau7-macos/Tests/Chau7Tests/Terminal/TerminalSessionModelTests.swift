@@ -313,6 +313,49 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertTrue(state.accessSnapshot.canProbeLive)
     }
 
+    func testDisplayRepoIdentityFallsBackToKnownIdentity() {
+        let previousKnownRoots = KnownRepoIdentityStore.shared.allRoots()
+        defer { KnownRepoIdentityStore.shared.replaceAll(with: previousKnownRoots) }
+
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let repoRoot = "/tmp/Downloads/Repositories/Chau7"
+
+        KnownRepoIdentityStore.shared.reset()
+        KnownRepoIdentityStore.shared.record(rootPath: repoRoot, branch: "feature/protected")
+
+        session.currentDirectory = repoRoot + "/apps/chau7-macos"
+        session.isGitRepo = false
+        session.gitRootPath = nil
+        session.gitBranch = nil
+
+        XCTAssertTrue(session.hasRepositoryIdentity)
+        XCTAssertEqual(session.displayGitRootPath, repoRoot)
+        XCTAssertEqual(session.displayGitBranch, "feature/protected")
+        XCTAssertEqual(session.tabPathDisplayName(), "Chau7")
+    }
+
+    func testDisplayRepoIdentityPrefersLiveGitState() {
+        let previousKnownRoots = KnownRepoIdentityStore.shared.allRoots()
+        defer { KnownRepoIdentityStore.shared.replaceAll(with: previousKnownRoots) }
+
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let repoRoot = "/tmp/Downloads/Repositories/Chau7"
+
+        KnownRepoIdentityStore.shared.reset()
+        KnownRepoIdentityStore.shared.record(rootPath: repoRoot, branch: "main")
+
+        session.currentDirectory = repoRoot + "/apps/chau7-macos"
+        session.isGitRepo = true
+        session.gitRootPath = repoRoot
+        session.gitBranch = "feature/live"
+
+        XCTAssertTrue(session.hasRepositoryIdentity)
+        XCTAssertEqual(session.displayGitRootPath, repoRoot)
+        XCTAssertEqual(session.displayGitBranch, "feature/live")
+    }
+
     func testRestoreAIMetadata() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)

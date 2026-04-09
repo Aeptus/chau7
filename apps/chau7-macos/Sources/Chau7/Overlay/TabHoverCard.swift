@@ -193,7 +193,7 @@ private struct TabHoverCardContent: View {
 
     @ViewBuilder
     private var gitRow: some View {
-        if session.isGitRepo, let branch = session.gitBranch, !branch.isEmpty {
+        if session.hasRepositoryIdentity, let branch = session.displayGitBranch, !branch.isEmpty {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 11))
@@ -590,7 +590,7 @@ private struct TabHoverCardContent: View {
 
     @ViewBuilder
     private var repoStatsRow: some View {
-        let repoRoot = session.gitRootPath ?? session.displayPath()
+        let repoRoot = session.displayGitRootPath ?? session.displayPath()
         let stats = RepoStatsProvider.stats(for: repoRoot)
         if stats.totalRuns > 0 || stats.totalCommands > 0 {
             HStack(spacing: 6) {

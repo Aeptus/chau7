@@ -1910,10 +1910,36 @@ final class TerminalSessionModel {
     }
 
     func tabPathDisplayName() -> String {
-        if let gitRootPath, !gitRootPath.isEmpty {
-            return URL(fileURLWithPath: gitRootPath).lastPathComponent
+        if let displayGitRootPath, !displayGitRootPath.isEmpty {
+            return URL(fileURLWithPath: displayGitRootPath).lastPathComponent
         }
         return displayPath()
+    }
+
+    private var knownRepoIdentityForDisplay: KnownRepoIdentity? {
+        if let gitRootPath = gitRootPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !gitRootPath.isEmpty,
+           let identity = KnownRepoIdentityStore.shared.identity(forRootPath: gitRootPath) {
+            return identity
+        }
+        return KnownRepoIdentityStore.shared.resolveIdentity(forPath: currentDirectory)
+    }
+
+    /// Repo identity suitable for passive UI surfaces even when live git access is blocked.
+    var hasRepositoryIdentity: Bool {
+        displayGitRootPath != nil
+    }
+
+    /// Repo root suitable for passive UI chrome. Falls back to known identity when
+    /// live git probing is unavailable.
+    var displayGitRootPath: String? {
+        gitRootPath ?? knownRepoIdentityForDisplay?.rootPath
+    }
+
+    /// Branch suitable for passive UI chrome. Falls back to last known branch when
+    /// live git probing is unavailable.
+    var displayGitBranch: String? {
+        gitBranch ?? knownRepoIdentityForDisplay?.lastKnownBranch
     }
 
     // Latency telemetry methods moved to TerminalSessionModel+Telemetry.swift

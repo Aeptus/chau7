@@ -292,6 +292,19 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertFalse(model.tabs[1].hasInheritedRepoGroup)
     }
 
+    func testDisplaySessionTracksFocusedTerminalPane() {
+        model.splitCurrentTabHorizontally()
+
+        let sessions = model.tabs[0].splitController.terminalSessions
+        XCTAssertEqual(sessions.count, 2)
+
+        let secondaryPaneID = sessions[1].0
+        let secondarySession = sessions[1].1
+        model.tabs[0].splitController.setFocusedPane(secondaryPaneID)
+
+        XCTAssertTrue(model.tabs[0].displaySession === secondarySession)
+    }
+
     func testHandleTabBarSelectionDismissesDashboardForCurrentTab() {
         let selectedTabID = model.selectedTabID
         model.activeDashboardGroupID = "/tmp/chau7-dashboard"

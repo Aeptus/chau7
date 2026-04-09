@@ -953,7 +953,7 @@ private struct ToolbarTabBarView: View {
                     }
                 }
 
-                if let session = selected?.session {
+                if let session = selected?.displaySession ?? selected?.session {
                     Spacer(minLength: 8)
                     HStack(spacing: 8) {
                         DevServerBadge(session: session)
@@ -1233,8 +1233,8 @@ private struct GitBranchBadge: View {
     var session: TerminalSessionModel
 
     var body: some View {
-        if session.isGitRepo {
-            let branchName = session.gitBranch ?? L("status.unknown", "unknown")
+        if session.hasRepositoryIdentity {
+            let branchName = session.displayGitBranch ?? L("status.unknown", "unknown")
             HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 11, weight: .semibold))
@@ -1972,9 +1972,9 @@ struct UnifiedTabButton: View {
                 }
 
                 // Git branch indicator — three-headed arrow: center = main branch, laterals = feature branches
-                if FeatureSettings.shared.showTabGitIndicator, tab.displaySession?.isGitRepo ?? false {
+                if FeatureSettings.shared.showTabGitIndicator, tab.displaySession?.hasRepositoryIdentity ?? false {
                     BranchIndicator(isOnMain: {
-                        guard let branch = tab.displaySession?.gitBranch else { return true }
+                        guard let branch = tab.displaySession?.displayGitBranch else { return true }
                         return branch == "main" || branch == "master"
                     }())
                 }

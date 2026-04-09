@@ -349,3 +349,4 @@ API Analytics,Updated Pricing Table,"~20 new models (GPT-5.x, GPT-4.1, o3/o4-min
 API Analytics,DB Performance & Pruning,"Compound cost index, automatic 180-day data pruning, ANALYZE after migrations",Shipped,No
 Networking,IPC Socket Retry,Proxy IPC socket retries once on broken connection before giving up,Shipped,No
 Restore,Protected Repo Identity Persistence,"Tab restore now persists each terminal pane's repo root and last-known branch, and older saved tabs can fall back to repo grouping metadata so protected-folder repos keep their passive git badge without immediate live access",Shipped,Yes
+Overlay,Passive Protected Repo Chrome,"Selected-tab branch badge, tab git indicator, hover-card branch row, and repo path label now fall back to cached repo identity for protected-folder repos when live git probing is unavailable",Shipped,Yes
