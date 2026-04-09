@@ -1932,7 +1932,9 @@ final class TerminalSessionModel {
         guard currentDirectory != normalized else { return }
         let shouldSkipAutoAccess = ProtectedPathPolicy.shouldSkipAutoAccess(path: normalized)
         if shouldSkipAutoAccess {
-            Log.info("updateCurrentDirectory: deferring protected path validation for \(normalized)")
+            if StartupRestoreCoordinator.shared.shouldLogProtectedPathDeferral(forPath: normalized) {
+                Log.info("updateCurrentDirectory: deferring protected path validation for \(normalized)")
+            }
             currentDirectory = normalized
             rustTerminalView?.currentDirectory = normalized
             if title == "Shell" {

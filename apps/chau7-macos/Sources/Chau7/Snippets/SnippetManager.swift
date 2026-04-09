@@ -322,9 +322,24 @@ final class SnippetManager {
         }
 
         resolveWorkItem?.cancel()
-        // Use the centralized RepositoryCache — no debounce needed since cache hits are instant
+        if StartupRestoreCoordinator.shared.shouldDebounceSnippetResolve(forPath: normalized) {
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.resolveContextPath(normalized)
+            }
+            resolveWorkItem = workItem
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + StartupSnippetResolvePolicy.debouncedDelay,
+                execute: workItem
+            )
+        } else {
+            resolveContextPath(normalized)
+        }
+    }
+
+    private func resolveContextPath(_ normalized: String) {
         RepositoryCache.shared.resolveDetailed(path: normalized) { [weak self] result in
             guard let self else { return }
+            StartupRestoreCoordinator.shared.noteSnippetResolveCompleted()
             let root: String?
             switch result {
             case .live(let model):
