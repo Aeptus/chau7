@@ -1,4 +1,12 @@
 import Foundation
+import Chau7Core
+
+enum RepositoryResolutionResult {
+    case live(RepositoryModel)
+    case cachedIdentity(rootPath: String, access: ProtectedPathAccessSnapshot)
+    case blocked(access: ProtectedPathAccessSnapshot)
+    case notRepository
+}
 
 /// Singleton cache mapping directory paths to shared RepositoryModel instances.
 /// Deduplicates git queries: once a repo root is known, subdirectory lookups
@@ -33,30 +41,47 @@ final class RepositoryCache {
     /// Returns nil (via completion) if the path is not inside a git repo.
     /// Cache hits are instant (no git process). Completion always on main.
     func resolve(path: String, completion: @escaping (RepositoryModel?) -> Void) {
-        let normalized = URL(fileURLWithPath: path).standardized.path
+        resolveDetailed(path: path) { result in
+            if case .live(let model) = result {
+                completion(model)
+            } else {
+                completion(nil)
+            }
+        }
+    }
 
-        // Protected paths: no git query
-        if ProtectedPathPolicy.shouldSkipAutoAccess(path: normalized) {
-            DispatchQueue.main.async { completion(nil) }
+    func resolveDetailed(path: String, completion: @escaping (RepositoryResolutionResult) -> Void) {
+        let normalized = URL(fileURLWithPath: path).standardized.path
+        let access = ProtectedPathPolicy.liveAccessSnapshot(forPath: normalized)
+        let knownRoot = KnownRepoIdentityStore.shared.resolveRoot(forPath: normalized)
+
+        if !access.canProbeLive {
+            DispatchQueue.main.async {
+                if let knownRoot, access.canUseKnownIdentity {
+                    completion(.cachedIdentity(rootPath: knownRoot, access: access))
+                } else {
+                    completion(.blocked(access: access))
+                }
+            }
             return
         }
 
         queue.async { [weak self] in
             guard let self else {
-                DispatchQueue.main.async { completion(nil) }
+                DispatchQueue.main.async { completion(.notRepository) }
                 return
             }
 
             // Negative cache hit
             if nonGitPaths.contains(normalized) {
-                DispatchQueue.main.async { completion(nil) }
+                DispatchQueue.main.async { completion(.notRepository) }
                 return
             }
 
             if let root = resolvedRootsByPath[normalized],
                let model = models[root] {
                 model.refreshBranch()
-                DispatchQueue.main.async { completion(model) }
+                DispatchQueue.main.async { completion(.live(model)) }
                 return
             }
 
@@ -80,12 +105,12 @@ final class RepositoryCache {
                 if let bestMatch {
                     resolvedRootsByPath[normalized] = bestMatch.root
                     bestMatch.model.refreshBranch()
-                    DispatchQueue.main.async { completion(bestMatch.model) }
+                    DispatchQueue.main.async { completion(.live(bestMatch.model)) }
                     return
                 }
                 // Not a git repo — cache the negative result
                 nonGitPaths.insert(normalized)
-                DispatchQueue.main.async { completion(nil) }
+                DispatchQueue.main.async { completion(.notRepository) }
                 return
             }
 
@@ -112,12 +137,14 @@ final class RepositoryCache {
                 // Load persisted metadata and record as recent repo (first discovery)
                 model.loadMetadata()
                 DispatchQueue.main.async {
+                    KnownRepoIdentityStore.shared.record(rootPath: canonicalRoot)
                     self.recentRepoRecorder(canonicalRoot)
                 }
             }
             resolvedRootsByPath[normalized] = canonicalRoot
+            KnownRepoIdentityStore.shared.record(rootPath: canonicalRoot)
 
-            DispatchQueue.main.async { completion(model) }
+            DispatchQueue.main.async { completion(.live(model)) }
         }
     }
 

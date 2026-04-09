@@ -323,9 +323,17 @@ final class SnippetManager {
 
         resolveWorkItem?.cancel()
         // Use the centralized RepositoryCache — no debounce needed since cache hits are instant
-        RepositoryCache.shared.resolve(path: normalized) { [weak self] model in
+        RepositoryCache.shared.resolveDetailed(path: normalized) { [weak self] result in
             guard let self else { return }
-            let root = model?.rootPath
+            let root: String?
+            switch result {
+            case .live(let model):
+                root = model.rootPath
+            case .cachedIdentity(rootPath: let rootPath, access: _):
+                root = rootPath
+            case .blocked, .notRepository:
+                root = nil
+            }
             Log.info("Snippet context: path=\(normalized) resolved repoRoot=\(root ?? "nil")")
 
             // Migrate legacy repo snippets if needed
@@ -429,7 +437,7 @@ final class SnippetManager {
         guard FeatureSettings.shared.isRepoSnippetsEnabled else { return [:] }
         let fm = FileManager.default
         var cache: [String: [Snippet]] = [:]
-        for root in FeatureSettings.shared.recentRepoRoots {
+        for root in KnownRepoIdentityStore.shared.allRoots() {
             let repoDir = repoURL(for: root)
             guard fm.fileExists(atPath: repoDir.path) else { continue }
             let snippets = loadSnippetsFromDirectory(repoDir)
@@ -483,9 +491,9 @@ final class SnippetManager {
                 }
                 migrated.append("\(label) (\(snippets.count) snippets)")
             }
-            // Migrate all known repos (iterate recentRepoRoots, not the cache)
+            // Migrate all known repos from the persisted identity store, not the in-memory cache
             let fm = FileManager.default
-            for root in FeatureSettings.shared.recentRepoRoots {
+            for root in KnownRepoIdentityStore.shared.allRoots() {
                 let repoDir = repoURL(for: root)
                 guard fm.fileExists(atPath: repoDir.path) else { continue }
                 let snippets = loadSnippetsFromDirectory(repoDir)

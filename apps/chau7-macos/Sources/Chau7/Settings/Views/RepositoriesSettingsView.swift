@@ -2,7 +2,6 @@ import SwiftUI
 
 /// Settings tab for managing per-repo metadata: descriptions, labels, and favorite files.
 struct RepositoriesSettingsView: View {
-    private var settings = FeatureSettings.shared
     @State private var repos: [RepoEntry] = []
     @State private var selectedRepo: String?
     @State private var editDescription = ""
@@ -179,7 +178,7 @@ struct RepositoriesSettingsView: View {
     }
 
     private func reload() {
-        repos = settings.recentRepoRoots.map { path in
+        repos = KnownRepoIdentityStore.shared.allRoots().map { path in
             let metadata = RepositoryCache.shared.cachedModel(forRoot: path)?.metadata
                 ?? RepoMetadataStore.load(repoRoot: path)
             return RepoEntry(

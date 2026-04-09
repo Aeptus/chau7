@@ -1706,6 +1706,7 @@ final class FeatureSettings {
             updated.removeLast(updated.count - 20)
         }
         recentRepoRoots = updated
+        KnownRepoIdentityStore.shared.record(rootPath: normalized)
     }
 
     // MARK: - F08: Smart Syntax Highlighting
@@ -3339,6 +3340,9 @@ final class FeatureSettings {
         allowProtectedFolderAccess = imported.allowProtectedFolderAccess ?? false
         if let recent = imported.recentRepoRoots {
             recentRepoRoots = recent
+            KnownRepoIdentityStore.shared.replaceAll(with: recent)
+        } else {
+            KnownRepoIdentityStore.shared.reset()
         }
         repoSnippetPath = imported.repoSnippetPath
         snippetInsertMode = imported.snippetInsertMode
@@ -3486,6 +3490,7 @@ final class FeatureSettings {
         isRepoSnippetsEnabled = true
         allowProtectedFolderAccess = false
         recentRepoRoots = []
+        KnownRepoIdentityStore.shared.reset()
         repoSnippetPath = ".chau7/snippets"
         snippetInsertMode = "expand"
         snippetPlaceholdersEnabled = true
@@ -3610,6 +3615,7 @@ final class FeatureSettings {
         isRepoSnippetsEnabled = true
         allowProtectedFolderAccess = false
         recentRepoRoots = []
+        KnownRepoIdentityStore.shared.reset()
         repoSnippetPath = ".chau7/snippets"
         snippetInsertMode = "expand"
         snippetPlaceholdersEnabled = true

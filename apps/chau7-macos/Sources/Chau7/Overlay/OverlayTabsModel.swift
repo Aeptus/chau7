@@ -2803,7 +2803,7 @@ final class OverlayTabsModel {
         return KnownRepoRootResolver.resolve(
             currentDirectory: session.currentDirectory,
             preferredRepoRoot: tab.repoGroupID,
-            recentRepoRoots: FeatureSettings.shared.recentRepoRoots
+            recentRepoRoots: KnownRepoIdentityStore.shared.allRoots()
         )
     }
 

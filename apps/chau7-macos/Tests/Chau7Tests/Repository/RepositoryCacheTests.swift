@@ -3,6 +3,78 @@ import XCTest
 @testable import Chau7
 
 final class RepositoryCacheTests: XCTestCase {
+    func testKnownRepoIdentityStoreResolvesLongestMatchingKnownRoot() {
+        let suiteName = "KnownRepoIdentityStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let store = KnownRepoIdentityStore(defaults: defaults, bootstrapRoots: [
+            "/repos/main",
+            "/repos/main/submodule"
+        ])
+
+        XCTAssertEqual(
+            store.resolveRoot(forPath: "/repos/main/submodule/worktree"),
+            "/repos/main/submodule"
+        )
+        XCTAssertEqual(
+            store.resolveRoot(forPath: "/repos/main/docs"),
+            "/repos/main"
+        )
+    }
+
+    func testKnownRepoIdentityStoreRecordsAndFlagsProtectedRoots() {
+        let suiteName = "KnownRepoIdentityStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let store = KnownRepoIdentityStore(defaults: defaults, bootstrapRoots: [])
+        store.record(rootPath: "/Users/me/Downloads/Repositories/Chau7")
+
+        XCTAssertTrue(store.hasKnownRepo(beneathProtectedRoot: "/Users/me/Downloads"))
+        XCTAssertFalse(store.hasKnownRepo(beneathProtectedRoot: "/Users/me/Desktop"))
+    }
+
+    func testResolveDetailedReturnsCachedIdentityWhenProtectedPathCannotProbeLive() {
+        let settings = FeatureSettings.shared
+        let previousAllowProtectedFolderAccess = settings.allowProtectedFolderAccess
+        let previousRecentRepoRoots = settings.recentRepoRoots
+        let previousKnownRoots = KnownRepoIdentityStore.shared.allRoots()
+        defer {
+            settings.allowProtectedFolderAccess = previousAllowProtectedFolderAccess
+            settings.recentRepoRoots = previousRecentRepoRoots
+            KnownRepoIdentityStore.shared.replaceAll(with: previousKnownRoots)
+            ProtectedPathPolicy.resetAccessChecks()
+        }
+
+        let repoRoot = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Downloads/Repositories/Chau7")
+            .path
+
+        settings.allowProtectedFolderAccess = false
+        settings.recentRepoRoots = [repoRoot]
+        KnownRepoIdentityStore.shared.replaceAll(with: [repoRoot])
+        ProtectedPathPolicy.resetAccessChecks()
+
+        let cache = RepositoryCache(
+            gitRunner: { _, _ in
+                XCTFail("gitRunner should not be called when protected access is blocked")
+                return ""
+            },
+            recentRepoRecorder: { _ in }
+        )
+
+        let expectation = expectation(description: "returns cached identity")
+        cache.resolveDetailed(path: repoRoot + "/apps/chau7-macos") { result in
+            guard case .cachedIdentity(rootPath: let rootPath, access: let access) = result else {
+                return XCTFail("Expected cachedIdentity, got \(result)")
+            }
+            XCTAssertEqual(rootPath, repoRoot)
+            XCTAssertFalse(access.canProbeLive)
+            XCTAssertTrue(access.canUseKnownIdentity)
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
+    }
+
     func testResolveDiscoversNestedRepositoryAfterParentWasCached() {
         let cache = RepositoryCache(
             gitRunner: { args, directory in

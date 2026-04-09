@@ -17,16 +17,68 @@ enum ProtectedPathPolicy {
     }()
 
     static func shouldSkipAutoAccess(path: String) -> Bool {
-        guard let root = protectedRoot(for: path) else {
-            return false
-        }
-        return !ensureAutoAccess(for: root)
+        !liveAccessSnapshot(forPath: path).canProbeLive
     }
 
     static func hasPersistedBookmarks() -> Bool {
         stateQueue.sync {
             !bookmarksByRoot.isEmpty
         }
+    }
+
+    static func snapshot(forPath path: String) -> ProtectedPathAccessSnapshot {
+        let normalized = URL(fileURLWithPath: path).standardized.path
+        guard let root = protectedRoot(for: normalized) else {
+            return ProtectedPathAccessPolicy.accessSnapshot(
+                root: nil,
+                isProtectedPath: false,
+                isFeatureEnabled: FeatureSettings.shared.allowProtectedFolderAccess,
+                hasActiveScope: false,
+                hasSecurityScopedBookmark: false,
+                isDeniedByCooldown: false,
+                hasKnownIdentity: false
+            )
+        }
+
+        let hasKnownIdentity = KnownRepoIdentityStore.shared.hasKnownRepo(beneathProtectedRoot: root)
+        return stateQueue.sync {
+            let hasActiveScope = activeSecurityURLs[root]?.path.hasPrefix(root) ?? false
+            let cooldownActive = deniedUntilByRoot[root].map { Date() < $0 } ?? false
+            let hasBookmark = bookmarksByRoot[root] != nil
+            let bookmarkResolveFailed = staleBookmarkRoots.contains(root)
+
+            return ProtectedPathAccessPolicy.accessSnapshot(
+                root: root,
+                isProtectedPath: true,
+                isFeatureEnabled: FeatureSettings.shared.allowProtectedFolderAccess,
+                hasActiveScope: hasActiveScope,
+                hasSecurityScopedBookmark: hasBookmark,
+                isDeniedByCooldown: cooldownActive,
+                hasKnownIdentity: hasKnownIdentity,
+                bookmarkResolveFailed: bookmarkResolveFailed
+            )
+        }
+    }
+
+    static func liveAccessSnapshot(forPath path: String) -> ProtectedPathAccessSnapshot {
+        let initial = snapshot(forPath: path)
+        guard let root = initial.root,
+              initial.state == .availableBookmarkedScope else {
+            return initial
+        }
+
+        _ = ensureAutoAccess(for: root)
+        return snapshot(forPath: path)
+    }
+
+    static func snapshots() -> [ProtectedPathAccessSnapshot] {
+        protectedRoots.map { root in
+            snapshot(forPath: root)
+        }
+    }
+
+    static func protectedRootsList() -> [String] {
+        protectedRoots
     }
 
     @MainActor
@@ -103,6 +155,7 @@ enum ProtectedPathPolicy {
             deniedRoots.removeAll()
             deniedUntilByRoot.removeAll()
             lastDecisionByRoot.removeAll()
+            staleBookmarkRoots.removeAll()
         }
     }
 
@@ -115,6 +168,7 @@ enum ProtectedPathPolicy {
     private static var deniedUntilByRoot: [String: Date] = [:]
     private static var activeSecurityURLs: [String: URL] = [:]
     private static var bookmarksByRoot: [String: Data] = (defaults.dictionary(forKey: bookmarksDefaultsKey) as? [String: Data]) ?? [:]
+    private static var staleBookmarkRoots: Set<String> = []
 
     private static var lastDecisionByRoot: [String: Bool] = [:]
 
@@ -133,18 +187,23 @@ enum ProtectedPathPolicy {
             let hasActiveScope = activeSecurityURLs[root]?.path.hasPrefix(root) ?? false
             let cooldownActive = deniedUntilByRoot[root].map { Date() < $0 } ?? false
             let hasBookmark = bookmarksByRoot[root] != nil
+            let staleBookmark = staleBookmarkRoots.contains(root)
 
             switch ProtectedPathAccessPolicy.autoAccessDecision(
                 isFeatureEnabled: FeatureSettings.shared.allowProtectedFolderAccess,
                 hasActiveScope: hasActiveScope,
                 hasSecurityScopedBookmark: hasBookmark,
-                isDeniedByCooldown: cooldownActive
+                isDeniedByCooldown: cooldownActive,
+                bookmarkResolveFailed: staleBookmark
             ) {
             case .skipFeatureDisabled:
                 emitDecisionLogIfNeeded(root: root, allowed: false, source: "auto", reason: "featureDisabled")
                 return false
             case .skipCooldown:
                 emitDecisionLogIfNeeded(root: root, allowed: false, source: "auto", reason: "cooldown")
+                return false
+            case .skipStaleBookmark:
+                emitDecisionLogIfNeeded(root: root, allowed: false, source: "auto", reason: "staleBookmark")
                 return false
             case .skipNeedsExplicitGrant:
                 emitDecisionLogIfNeeded(root: root, allowed: false, source: "auto", reason: "needsExplicitGrant")
@@ -174,6 +233,7 @@ enum ProtectedPathPolicy {
             bookmarkDataIsStale: &isStale
         ) else {
             bookmarksByRoot.removeValue(forKey: root)
+            staleBookmarkRoots.insert(root)
             persistBookmarks()
             Log.warn("ProtectedPathPolicy: failed to resolve bookmark for \(root), removed")
             return false
@@ -203,6 +263,7 @@ enum ProtectedPathPolicy {
         checkedRoots.insert(root)
         deniedRoots.remove(root)
         deniedUntilByRoot.removeValue(forKey: root)
+        staleBookmarkRoots.remove(root)
         return true
     }
 
@@ -212,6 +273,7 @@ enum ProtectedPathPolicy {
             persistBookmarks()
             deniedRoots.remove(root)
             deniedUntilByRoot.removeValue(forKey: root)
+            staleBookmarkRoots.remove(root)
         }
     }
 

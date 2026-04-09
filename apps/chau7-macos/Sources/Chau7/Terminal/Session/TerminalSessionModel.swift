@@ -1971,15 +1971,34 @@ final class TerminalSessionModel {
     }
 
     private func refreshGitStatus(path: String) {
-        RepositoryCache.shared.resolve(path: path) { [weak self] model in
+        RepositoryCache.shared.resolveDetailed(path: path) { [weak self] result in
             guard let self else { return }
+            let model: RepositoryModel?
+            let gitRoot: String?
+            let isGitRepo: Bool
+
+            switch result {
+            case .live(let liveModel):
+                model = liveModel
+                gitRoot = liveModel.rootPath
+                isGitRepo = true
+            case .cachedIdentity(rootPath: let rootPath, access: _):
+                model = RepositoryCache.shared.cachedModel(forRoot: rootPath)
+                gitRoot = rootPath
+                isGitRepo = true
+            case .blocked, .notRepository:
+                model = nil
+                gitRoot = nil
+                isGitRepo = false
+            }
+
             let oldModel = repositoryModel
             let oldBranch = gitBranch
 
             // Update the shared model reference
             repositoryModel = model
-            isGitRepo = model != nil
-            gitRootPath = model?.rootPath
+            self.isGitRepo = isGitRepo
+            gitRootPath = gitRoot
             gitBranch = model?.branch
 
             // Subscribe to branch changes from the shared model via didSet callback
