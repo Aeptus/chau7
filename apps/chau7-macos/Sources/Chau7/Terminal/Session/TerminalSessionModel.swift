@@ -1918,24 +1918,34 @@ final class TerminalSessionModel {
         return displayPath()
     }
 
+    /// Identity resolved from the known-repo store for the current directory.
+    /// Used as a fallback when the cached model has stale or nil data, e.g. when
+    /// another tab updates the identity store after this session's model was created.
+    private var knownRepoIdentityForDisplay: KnownRepoIdentity? {
+        if let gitRootPath = gitRootPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !gitRootPath.isEmpty,
+           let identity = KnownRepoIdentityStore.shared.identity(forRootPath: gitRootPath) {
+            return identity
+        }
+        return KnownRepoIdentityStore.shared.resolveIdentity(forPath: currentDirectory)
+    }
+
     /// Repo identity suitable for passive UI surfaces even when live git access is blocked.
-    /// Since RepositoryCache now creates models for cached identities, gitRootPath is
-    /// always set for known repos and no fallback chain is needed.
     var hasRepositoryIdentity: Bool {
         displayGitRootPath != nil
     }
 
-    /// Repo root suitable for passive UI chrome. Populated by both live and cached
-    /// RepositoryModel instances, so this is always available for known repos.
+    /// Repo root suitable for passive UI chrome. Prefers the model's root path
+    /// (set for both live and cached models), falls back to identity store.
     var displayGitRootPath: String? {
-        gitRootPath
+        gitRootPath ?? knownRepoIdentityForDisplay?.rootPath
     }
 
-    /// Branch suitable for passive UI chrome. Populated by both live and cached
-    /// RepositoryModel instances. Live models refresh from git; cached models carry
-    /// the last-known branch from the identity store.
+    /// Branch suitable for passive UI chrome. Prefers the model's branch
+    /// (live-refreshed or cached), falls back to identity store for cases
+    /// where the model's branch is nil but the store has been updated since.
     var displayGitBranch: String? {
-        gitBranch
+        gitBranch ?? knownRepoIdentityForDisplay?.lastKnownBranch
     }
 
     // Latency telemetry methods moved to TerminalSessionModel+Telemetry.swift

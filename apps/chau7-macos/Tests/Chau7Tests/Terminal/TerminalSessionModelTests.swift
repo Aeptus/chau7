@@ -452,6 +452,29 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(session.displayGitBranch, "feature/live")
     }
 
+    func testDisplayBranchFallsBackToIdentityStoreWhenModelBranchIsNil() {
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
+
+        let appModel = AppModel()
+        let session = TerminalSessionModel(appModel: appModel)
+        let repoRoot = "/tmp/Downloads/Repositories/Chau7"
+
+        // Identity store has a branch, but the model does not
+        KnownRepoIdentityStore.shared.reset()
+        KnownRepoIdentityStore.shared.record(rootPath: repoRoot, branch: "feature/from-store")
+
+        session.currentDirectory = repoRoot + "/apps/chau7-macos"
+        session.isGitRepo = true
+        session.gitRootPath = repoRoot
+        session.gitBranch = nil // model had no branch
+
+        XCTAssertTrue(session.hasRepositoryIdentity)
+        XCTAssertEqual(session.displayGitRootPath, repoRoot)
+        XCTAssertEqual(session.displayGitBranch, "feature/from-store",
+                       "Should fall back to identity store when model branch is nil")
+    }
+
     func testRestoreAIMetadata() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
