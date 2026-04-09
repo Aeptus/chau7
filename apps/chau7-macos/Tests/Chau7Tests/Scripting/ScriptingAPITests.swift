@@ -106,6 +106,8 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertNotNil(result["connected_clients"])
         XCTAssertNotNil(result["server_running"])
         XCTAssertNotNil(result["history_count"])
+        XCTAssertNotNil(result["api_version"])
+        XCTAssertNotNil(result["supported_methods"])
 
         // Verify types
         XCTAssertTrue(result["version"] is String)
@@ -114,6 +116,8 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertTrue(result["connected_clients"] is Int)
         XCTAssertTrue(result["server_running"] is Bool)
         XCTAssertTrue(result["history_count"] is Int)
+        XCTAssertTrue(result["api_version"] is Int)
+        XCTAssertTrue(result["supported_methods"] is [String])
     }
 
     // MARK: - get_history
@@ -218,11 +222,11 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertTrue(response["result"] is [[String: Any]])
     }
 
-    // MARK: - Review Automation
+    // MARK: - Delegated Sessions
 
-    func testStartReviewRequiresDirectory() async {
+    func testCreateSessionRequiresDirectory() async {
         let response = await api.handleRequest([
-            "method": "start_review",
+            "method": "create_session",
             "params": [
                 "mode": "staged_diff",
                 "staged_diff": "diff --git a/file.swift b/file.swift"
@@ -232,9 +236,9 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertEqual(response["error"] as? String, "missing param: directory")
     }
 
-    func testStartReviewRejectsUnsupportedMode() async {
+    func testCreateSessionRejectsUnsupportedMode() async {
         let response = await api.handleRequest([
-            "method": "start_review",
+            "method": "create_session",
             "params": [
                 "directory": "/tmp/review-\(UUID().uuidString)",
                 "mode": "mystery"
@@ -244,9 +248,9 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertEqual(response["error"] as? String, "unsupported review mode: mystery")
     }
 
-    func testStartReviewCreatesDelegatedCodeReviewSession() async throws {
+    func testCreateSessionCreatesDelegatedCodeReviewSession() async throws {
         let response = await api.handleRequest([
-            "method": "start_review",
+            "method": "create_session",
             "params": [
                 "backend": "shell",
                 "directory": "/tmp/review-\(UUID().uuidString)",
@@ -273,9 +277,9 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertFalse(session.config.policy.allowChildDelegation)
     }
 
-    func testWaitReviewReturnsTurnStatusAfterCompletion() async throws {
+    func testCreateReviewSessionDoesNotStartTurnBeforePromptIsSent() async throws {
         let response = await api.handleRequest([
-            "method": "start_review",
+            "method": "create_session",
             "params": [
                 "backend": "shell",
                 "directory": "/tmp/review-\(UUID().uuidString)",
@@ -287,31 +291,150 @@ final class ScriptingAPITests: XCTestCase {
         let sessionID = try XCTUnwrap(response["session_id"] as? String)
         createdSessionIDs.append(sessionID)
         let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+
+        XCTAssertEqual(response["phase"] as? String, "created")
+        XCTAssertEqual(response["prompt_sent"] as? Bool, false)
+        XCTAssertNil(session.currentTurnID)
+    }
+
+    func testGetSessionEventsReturnsReadyEventForImmediateBackend() async throws {
+        let createResponse = await api.handleRequest([
+            "method": "create_session",
+            "params": [
+                "backend": "shell",
+                "directory": "/tmp/review-\(UUID().uuidString)",
+                "mode": "staged_diff",
+                "staged_diff": "diff --git a/file.swift b/file.swift"
+            ]
+        ])
+
+        let sessionID = try XCTUnwrap(createResponse["session_id"] as? String)
+        createdSessionIDs.append(sessionID)
+
+        let eventsResponse = await api.handleRequest([
+            "method": "get_session_events",
+            "params": [
+                "session_id": sessionID,
+                "cursor": 0
+            ]
+        ])
+
+        XCTAssertEqual(eventsResponse["session_id"] as? String, sessionID)
+        let events = try XCTUnwrap(eventsResponse["events"] as? [[String: Any]])
+        XCTAssertTrue(events.contains(where: { $0["type"] as? String == RuntimeEventType.sessionReady.rawValue }))
+    }
+
+    func testGetSessionEventsPreservesRuntimeCursorWhenFilterRemovesEvents() async throws {
+        let createResponse = await api.handleRequest([
+            "method": "create_session",
+            "params": [
+                "backend": "shell",
+                "directory": "/tmp/review-\(UUID().uuidString)",
+                "mode": "staged_diff",
+                "staged_diff": "diff --git a/file.swift b/file.swift"
+            ]
+        ])
+
+        let sessionID = try XCTUnwrap(createResponse["session_id"] as? String)
+        createdSessionIDs.append(sessionID)
+
+        let unfilteredResponse = await api.handleRequest([
+            "method": "get_session_events",
+            "params": [
+                "session_id": sessionID,
+                "cursor": 0
+            ]
+        ])
+        let unfilteredCursor = try XCTUnwrap(unfilteredResponse["cursor"])
+
+        let filteredResponse = await api.handleRequest([
+            "method": "get_session_events",
+            "params": [
+                "session_id": sessionID,
+                "cursor": 0,
+                "event_types": ["definitely_not_a_real_event_type"]
+            ]
+        ])
+
+        XCTAssertEqual(filteredResponse["session_id"] as? String, sessionID)
+        let filteredEvents = try XCTUnwrap(filteredResponse["events"] as? [[String: Any]])
+        XCTAssertTrue(filteredEvents.isEmpty)
+        XCTAssertEqual(String(describing: filteredResponse["cursor"]), String(describing: unfilteredCursor))
+    }
+
+    func testSubmitSessionTurnStartsTurnForPreparedSession() async throws {
+        let createResponse = await api.handleRequest([
+            "method": "create_session",
+            "params": [
+                "backend": "shell",
+                "directory": "/tmp/review-\(UUID().uuidString)",
+                "mode": "staged_diff",
+                "staged_diff": "diff --git a/file.swift b/file.swift"
+            ]
+        ])
+
+        let sessionID = try XCTUnwrap(createResponse["session_id"] as? String)
+        createdSessionIDs.append(sessionID)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+
+        let sendResponse = await api.handleRequest([
+            "method": "submit_session_turn",
+            "params": ["session_id": sessionID]
+        ])
+
+        XCTAssertEqual(sendResponse["phase"] as? String, "prompt_sent")
+        XCTAssertEqual(sendResponse["prompt_sent"] as? Bool, true)
+        XCTAssertEqual(sendResponse["status"] as? String, "accepted")
+        XCTAssertNotNil(sendResponse["turn_id"] as? String)
+        XCTAssertNotNil(session.currentTurnID)
+        XCTAssertNil(sendResponse["result_schema"])
+    }
+
+    func testGetSessionEventsReturnsTurnResultAfterCompletion() async throws {
+        let response = await api.handleRequest([
+            "method": "create_session",
+            "params": [
+                "backend": "shell",
+                "directory": "/tmp/review-\(UUID().uuidString)",
+                "mode": "staged_diff",
+                "staged_diff": "diff --git a/file.swift b/file.swift"
+            ]
+        ])
+
+        let sessionID = try XCTUnwrap(response["session_id"] as? String)
+        createdSessionIDs.append(sessionID)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+        _ = await api.handleRequest([
+            "method": "submit_session_turn",
+            "params": ["session_id": sessionID]
+        ])
         try await waitForTurnStart(session)
         _ = session.completeTurn(
             summary: """
             ```json
-            {"summary":"ready","findings":[],"recommendations":[],"confidence":"high"}
+            {"summary":"done","findings":[],"recommendations":[],"confidence":"high"}
             ```
             """,
             terminalOutput: nil
         )
 
-        let waitResponse = await api.handleRequest([
-            "method": "wait_review",
+        let eventsResponse = await api.handleRequest([
+            "method": "get_session_events",
             "params": [
                 "session_id": sessionID,
-                "timeout_ms": 1000
+                "cursor": 0,
+                "event_types": [RuntimeEventType.turnResult.rawValue]
             ]
         ])
 
-        XCTAssertEqual(waitResponse["session_id"] as? String, sessionID)
-        XCTAssertEqual(waitResponse["timed_out"] as? Bool, false)
+        XCTAssertEqual(eventsResponse["session_id"] as? String, sessionID)
+        let events = try XCTUnwrap(eventsResponse["events"] as? [[String: Any]])
+        XCTAssertTrue(events.contains(where: { $0["type"] as? String == RuntimeEventType.turnResult.rawValue }))
     }
 
-    func testGetReviewResultReturnsStructuredPayload() async throws {
+    func testGetSessionResultReturnsStructuredPayload() async throws {
         let response = await api.handleRequest([
-            "method": "start_review",
+            "method": "create_session",
             "params": [
                 "backend": "shell",
                 "directory": "/tmp/review-\(UUID().uuidString)",
@@ -324,6 +447,10 @@ final class ScriptingAPITests: XCTestCase {
         let sessionID = try XCTUnwrap(response["session_id"] as? String)
         createdSessionIDs.append(sessionID)
         let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+        _ = await api.handleRequest([
+            "method": "submit_session_turn",
+            "params": ["session_id": sessionID]
+        ])
         try await waitForTurnStart(session)
         _ = session.completeTurn(
             summary: """
@@ -335,7 +462,7 @@ final class ScriptingAPITests: XCTestCase {
         )
 
         let resultResponse = await api.handleRequest([
-            "method": "get_review_result",
+            "method": "get_session_result",
             "params": ["session_id": sessionID]
         ])
 
@@ -344,9 +471,9 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertEqual(value["summary"] as? String, "ready")
     }
 
-    func testStopReviewStopsSessionAndClosesTab() async throws {
+    func testStopSessionStopsSessionAndClosesTab() async throws {
         let response = await api.handleRequest([
-            "method": "start_review",
+            "method": "create_session",
             "params": [
                 "backend": "shell",
                 "directory": "/tmp/review-\(UUID().uuidString)",
@@ -360,7 +487,7 @@ final class ScriptingAPITests: XCTestCase {
         createdSessionIDs.append(sessionID)
 
         let stopResponse = await api.handleRequest([
-            "method": "stop_review",
+            "method": "stop_session",
             "params": [
                 "session_id": sessionID,
                 "force": true

@@ -5,12 +5,14 @@ import os
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 
 DEFAULT_GATE = "advisory"
 DEFAULT_TIMEOUT_MS = 45_000
+DEFAULT_STARTUP_TIMEOUT_MS = 20_000
 DEFAULT_BACKEND = "codex"
 DEFAULT_MODEL = "gpt-5.3-codex"
 DEFAULT_SOCKET_TIMEOUT_SECONDS = 5.0
@@ -34,6 +36,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gate")
     parser.add_argument(
         "--timeout-ms",
+        type=int,
+    )
+    parser.add_argument(
+        "--startup-timeout-ms",
         type=int,
     )
     parser.add_argument("--model")
@@ -61,6 +67,7 @@ def default_config(root: Path) -> dict[str, str]:
         "enabled": "1",
         "gate": DEFAULT_GATE,
         "timeout_ms": str(DEFAULT_TIMEOUT_MS),
+        "startup_timeout_ms": str(DEFAULT_STARTUP_TIMEOUT_MS),
         "model": DEFAULT_MODEL,
         "backend": DEFAULT_BACKEND,
         "config_path": str(root / DEFAULT_CONFIG_NAME),
@@ -87,7 +94,7 @@ def load_config_file(path: Path) -> dict[str, str]:
             continue
         key, value = line.split("=", 1)
         normalized_key = key.strip().lower()
-        if normalized_key not in {"enabled", "gate", "timeout_ms", "model", "backend"}:
+        if normalized_key not in {"enabled", "gate", "timeout_ms", "startup_timeout_ms", "model", "backend"}:
             continue
         result[normalized_key] = strip_quotes(value)
     return result
@@ -104,6 +111,7 @@ def resolve_config(root: Path, args: argparse.Namespace) -> dict[str, str]:
         "enabled": os.environ.get("CHAU7_PRE_COMMIT_REVIEW_ENABLED"),
         "gate": os.environ.get("CHAU7_PRE_COMMIT_REVIEW_GATE"),
         "timeout_ms": os.environ.get("CHAU7_PRE_COMMIT_REVIEW_TIMEOUT_MS"),
+        "startup_timeout_ms": os.environ.get("CHAU7_PRE_COMMIT_REVIEW_STARTUP_TIMEOUT_MS"),
         "model": os.environ.get("CHAU7_PRE_COMMIT_REVIEW_MODEL"),
         "backend": os.environ.get("CHAU7_PRE_COMMIT_REVIEW_BACKEND"),
     }
@@ -117,6 +125,8 @@ def resolve_config(root: Path, args: argparse.Namespace) -> dict[str, str]:
         config["gate"] = args.gate
     if args.timeout_ms is not None:
         config["timeout_ms"] = str(args.timeout_ms)
+    if args.startup_timeout_ms is not None:
+        config["startup_timeout_ms"] = str(args.startup_timeout_ms)
     if args.model is not None:
         config["model"] = args.model
     if args.backend is not None:
@@ -152,11 +162,7 @@ def staged_diff(root: Path, files: list[str]) -> str:
 
 
 def socket_timeout_seconds(method: str, params: dict[str, Any]) -> float:
-    if method == "wait_review":
-        timeout_ms = params.get("timeout_ms")
-        if isinstance(timeout_ms, int):
-            return max(DEFAULT_SOCKET_TIMEOUT_SECONDS, (timeout_ms / 1000.0) + 5.0)
-    if method == "stop_review":
+    if method == "stop_session":
         return 2.0
     return DEFAULT_SOCKET_TIMEOUT_SECONDS
 
@@ -194,9 +200,14 @@ def print_skip(reason: str) -> None:
     print(f"pre-commit review: {reason}", file=sys.stderr)
 
 
+def is_unknown_method(response: dict[str, Any], method: str) -> bool:
+    error = response.get("error")
+    return isinstance(error, str) and error == f"unknown method: {method}"
+
+
 def cleanup_review_session(session_id: str, force: bool) -> None:
     try:
-        response = socket_call("stop_review", {"session_id": session_id, "force": force})
+        response = socket_call("stop_session", {"session_id": session_id, "force": force})
     except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
         print_skip(f"unable to clean up review session {session_id} ({exc})")
         return
@@ -305,6 +316,45 @@ def review_grace_timeout_ms(timeout_ms: int) -> int:
     return max(5_000, min(15_000, timeout_ms // 3))
 
 
+def poll_session_events(
+    session_id: str,
+    cursor: int,
+    timeout_ms: int,
+    event_types: list[str] | None = None,
+    limit: int = 50,
+) -> tuple[dict[str, Any], int]:
+    deadline = time.monotonic() + max(timeout_ms, 1) / 1000.0
+    current_cursor = cursor
+    while time.monotonic() < deadline:
+        response = socket_call(
+            "get_session_events",
+            {
+                "session_id": session_id,
+                "cursor": current_cursor,
+                "limit": limit,
+                "event_types": event_types or [],
+            },
+        )
+        if "error" in response:
+            return response, current_cursor
+        events = response.get("events")
+        next_cursor = response.get("cursor")
+        if isinstance(next_cursor, int):
+            current_cursor = next_cursor
+        elif isinstance(next_cursor, str) and next_cursor.isdigit():
+            current_cursor = int(next_cursor)
+        if isinstance(events, list) and events:
+            return response, current_cursor
+        time.sleep(0.2)
+
+    return {
+        "session_id": session_id,
+        "cursor": current_cursor,
+        "events": [],
+        "timed_out": True,
+    }, current_cursor
+
+
 def main() -> int:
     args = parse_args()
 
@@ -322,6 +372,10 @@ def main() -> int:
         timeout_ms = int(config["timeout_ms"])
     except ValueError:
         timeout_ms = DEFAULT_TIMEOUT_MS
+    try:
+        startup_timeout_ms = int(config.get("startup_timeout_ms", DEFAULT_STARTUP_TIMEOUT_MS))
+    except ValueError:
+        startup_timeout_ms = DEFAULT_STARTUP_TIMEOUT_MS
     gate = config["gate"]
     backend = config["backend"] or DEFAULT_BACKEND
     model = config["model"] or None
@@ -340,8 +394,8 @@ def main() -> int:
 
     try:
         try:
-            start_response = socket_call(
-                "start_review",
+            create_response = socket_call(
+                "create_session",
                 {
                     "directory": str(root),
                     "backend": backend,
@@ -355,42 +409,125 @@ def main() -> int:
             print_skip(describe_scripting_unavailable(exc))
             return 0
 
-        if "error" in start_response:
-            print_skip(f"unable to start review ({start_response['error']}); skipping")
+        if is_unknown_method(create_response, "create_session"):
+            print_skip(
+                "running Chau7 app does not support generic delegated sessions yet; rebuild/relaunch Chau7 from the current source; skipping"
+            )
+            return 0
+        if "error" in create_response:
+            print_skip(f"unable to start review ({create_response['error']}); skipping")
             return 0
 
-        session_id = start_response.get("session_id")
+        session_id = create_response.get("session_id")
         if not isinstance(session_id, str) or not session_id:
             print_skip("review session did not return a session_id; skipping")
             return 0
 
+        cursor_value = create_response.get("cursor", 0)
+        cursor = int(cursor_value) if isinstance(cursor_value, int) else 0
+
         try:
-            wait_response = socket_call("wait_review", {"session_id": session_id, "timeout_ms": timeout_ms})
+            ready_response, cursor = poll_session_events(
+                session_id,
+                cursor,
+                startup_timeout_ms,
+                [
+                    "session_ready",
+                    "approval_needed",
+                    "session_stopped",
+                    "session_error",
+                    "state_changed",
+                ],
+            )
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
             print_skip(describe_scripting_unavailable(exc))
             return 0
-        if wait_response.get("timed_out") is True:
-            state = str(wait_response.get("state", "")).lower()
-            current_turn_id = wait_response.get("current_turn_id")
-            if state in {"busy", "awaitingapproval"} or isinstance(current_turn_id, str):
-                grace_ms = review_grace_timeout_ms(timeout_ms)
-                try:
-                    wait_response = socket_call("wait_review", {"session_id": session_id, "timeout_ms": grace_ms})
-                except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-                    print_skip(describe_scripting_unavailable(exc))
-                    return 0
-            if wait_response.get("timed_out") is True:
-                state = str(wait_response.get("state", "")).lower()
-                if state == "starting":
-                    print_skip(
-                        f"review startup timed out after {timeout_ms}ms before the reviewer became ready; skipping"
-                    )
-                else:
-                    print_skip(f"review timed out after {timeout_ms}ms; skipping")
-                return 0
+        if is_unknown_method(ready_response, "get_session_events"):
+            print_skip(
+                "running Chau7 app does not support generic delegated session events yet; rebuild/relaunch Chau7 from the current source; skipping"
+            )
+            return 0
+        if "error" in ready_response:
+            print_skip(f"review did not become ready ({ready_response['error']}); skipping")
+            return 0
+        ready_events = ready_response.get("events")
+        if ready_response.get("timed_out") is True or not isinstance(ready_events, list) or not ready_events:
+            state = str(ready_response.get("session_state", "starting")).lower()
+            if state == "starting":
+                print_skip(
+                    f"review startup timed out after {startup_timeout_ms}ms before the reviewer became ready; skipping"
+                )
+            else:
+                print_skip(f"review did not become ready (state={state or 'unknown'}); skipping")
+            return 0
+        if any(str(event.get("type")) in {"session_stopped", "session_error"} for event in ready_events if isinstance(event, dict)):
+            state = str(ready_response.get("session_state", "unknown")).lower()
+            print_skip(f"review stopped during startup (state={state}); skipping")
+            return 0
 
         try:
-            result_response = socket_call("get_review_result", {"session_id": session_id})
+            send_response = socket_call("submit_session_turn", {"session_id": session_id})
+        except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+            print_skip(describe_scripting_unavailable(exc))
+            return 0
+        if is_unknown_method(send_response, "submit_session_turn"):
+            print_skip(
+                "running Chau7 app does not support generic delegated turn submission yet; rebuild/relaunch Chau7 from the current source; skipping"
+            )
+            return 0
+        if "error" in send_response:
+            print_skip(f"unable to send review prompt ({send_response['error']}); skipping")
+            return 0
+
+        try:
+            wait_response, cursor = poll_session_events(
+                session_id,
+                cursor,
+                timeout_ms,
+                [
+                    "turn_result",
+                    "turn_completed",
+                    "turn_failed",
+                    "session_stopped",
+                    "session_error",
+                ],
+            )
+        except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+            print_skip(describe_scripting_unavailable(exc))
+            return 0
+        if "error" in wait_response:
+            print_skip(f"review completion failed ({wait_response['error']}); skipping")
+            return 0
+        completion_events = wait_response.get("events")
+        if wait_response.get("timed_out") is True or not isinstance(completion_events, list) or not completion_events:
+            grace_ms = review_grace_timeout_ms(timeout_ms)
+            try:
+                wait_response, cursor = poll_session_events(
+                    session_id,
+                    cursor,
+                    grace_ms,
+                    [
+                        "turn_result",
+                        "turn_completed",
+                        "turn_failed",
+                        "session_stopped",
+                        "session_error",
+                    ],
+                )
+            except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+                print_skip(describe_scripting_unavailable(exc))
+                return 0
+            completion_events = wait_response.get("events")
+            if wait_response.get("timed_out") is True or not isinstance(completion_events, list) or not completion_events:
+                print_skip(f"review timed out after {timeout_ms}ms; skipping")
+                return 0
+        if any(str(event.get("type")) in {"turn_failed", "session_stopped", "session_error"} for event in completion_events if isinstance(event, dict)):
+            state = str(wait_response.get("session_state", "unknown")).lower()
+            print_skip(f"review did not complete successfully (state={state}); skipping")
+            return 0
+
+        try:
+            result_response = socket_call("get_session_result", {"session_id": session_id})
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
             print_skip(describe_scripting_unavailable(exc))
             return 0

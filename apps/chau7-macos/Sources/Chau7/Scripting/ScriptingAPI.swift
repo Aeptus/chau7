@@ -17,16 +17,37 @@ import Chau7Core
 /// - {"method": "list_snippets"} -> all snippets
 /// - {"method": "run_snippet", "params": {"name": "..."}}
 /// - {"method": "get_status"} -> app status (version, tabs, uptime)
-/// - {"method": "start_review", "params": {...}} -> delegated review session metadata
-/// - {"method": "wait_review", "params": {"session_id": "...", "timeout_ms": 60000}}
-/// - {"method": "get_review_result", "params": {"session_id": "..."}}
-/// - {"method": "stop_review", "params": {"session_id": "...", "force": true}}
+/// - {"method": "create_session", "params": {...}} -> delegated session metadata without sending the prepared turn
+/// - {"method": "get_session_events", "params": {"session_id": "...", "cursor": 0, "limit": 50, "event_types": ["turn_completed"]}}
+/// - {"method": "submit_session_turn", "params": {"session_id": "..."}}
+/// - {"method": "get_session_result", "params": {"session_id": "..."}}
+/// - {"method": "stop_session", "params": {"session_id": "...", "force": true}}
 @Observable
 @MainActor
 final class ScriptingAPI {
     static let shared = ScriptingAPI()
     static let featureFlagKey = "feature.scriptingAPI"
     private static let defaultEnabled = true
+    private static let apiVersion = 2
+    private static let supportedMethods = [
+        "list_tabs",
+        "get_tab",
+        "run_command",
+        "get_output",
+        "create_tab",
+        "close_tab",
+        "get_history",
+        "get_settings",
+        "set_setting",
+        "list_snippets",
+        "run_snippet",
+        "get_status",
+        "create_session",
+        "get_session_events",
+        "submit_session_turn",
+        "get_session_result",
+        "stop_session"
+    ]
 
     var isEnabled: Bool {
         didSet {
@@ -48,10 +69,17 @@ final class ScriptingAPI {
     private let socketQueue = DispatchQueue(label: "com.chau7.scripting", qos: .userInitiated)
     @ObservationIgnored
     private var healthCheckSource: DispatchSourceTimer?
+    @ObservationIgnored
+    private var preparedSessionTurns: [String: PreparedTurn] = [:]
 
     /// Timestamp when the server was started, used for uptime calculation.
     @ObservationIgnored
     private var startTime: Date?
+
+    private struct PreparedTurn {
+        let prompt: String
+        let resultSchema: JSONValue
+    }
 
     private var socketPath: String {
         RuntimeIsolation.appSupportDirectory(named: "Chau7")
@@ -274,14 +302,16 @@ final class ScriptingAPI {
             return await handleRunSnippet(params)
         case "get_status":
             return handleGetStatus()
-        case "start_review":
-            return await handleStartReview(params)
-        case "wait_review":
-            return await handleWaitReview(params)
-        case "get_review_result":
-            return handleGetReviewResult(params)
-        case "stop_review":
-            return handleStopReview(params)
+        case "create_session":
+            return await handleCreateSession(params)
+        case "get_session_events":
+            return handleGetSessionEvents(params)
+        case "submit_session_turn":
+            return await handleSubmitSessionTurn(params)
+        case "get_session_result":
+            return handleGetSessionResult(params)
+        case "stop_session":
+            return handleStopSession(params)
         default:
             return ["error": "unknown method: \(method)"]
         }
@@ -438,10 +468,244 @@ final class ScriptingAPI {
         return ["ok": true, "snippet": entry.snippet.title, "body": entry.snippet.body]
     }
 
-    private func handleStartReview(_ params: [String: Any]) async -> [String: Any] {
-        guard let directory = params["directory"] as? String,
-              !directory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return ["error": "missing param: directory"]
+    private func handleCreateSession(_ params: [String: Any]) async -> [String: Any] {
+        guard let reviewRequest = buildReviewRequest(params) else {
+            return buildReviewRequestError(params)
+        }
+
+        var arguments: [String: Any] = [
+            "backend": reviewRequest.backend,
+            "directory": reviewRequest.directory,
+            "purpose": "code_review",
+            "task_metadata": reviewRequest.taskMetadata,
+            "result_schema": reviewRequest.resultSchema.foundationValue,
+            "policy": CodeReviewTaskTemplate.defaultPolicy.foundationValue
+        ]
+        if let model = reviewRequest.model {
+            arguments["model"] = model
+        }
+        if let parentSessionID = reviewRequest.parentSessionID {
+            arguments["parent_session_id"] = parentSessionID
+            arguments["delegation_depth"] = max(reviewRequest.delegationDepth ?? 1, 1)
+        }
+        if let autoApprove = reviewRequest.autoApprove {
+            arguments["auto_approve"] = autoApprove
+        }
+
+        guard let response = parseJSONResponse(
+            RuntimeControlService.shared.handleToolCall(
+                name: "runtime_session_create",
+                arguments: arguments
+            )
+        ) else {
+            return ["error": "review_start_failed"]
+        }
+        guard let sessionID = response["session_id"] as? String else {
+            return response
+        }
+
+        preparedSessionTurns[sessionID] = PreparedTurn(
+            prompt: reviewRequest.prompt,
+            resultSchema: reviewRequest.resultSchema
+        )
+
+        var enriched = response
+        enriched["phase"] = "created"
+        enriched["prompt_sent"] = false
+        return enriched
+    }
+
+    private func handleGetSessionEvents(_ params: [String: Any]) -> [String: Any] {
+        guard let sessionID = params["session_id"] as? String,
+              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return ["error": "missing param: session_id"]
+        }
+        let cursor = parsedCursor(params["cursor"])
+        let limit = max(1, min(params["limit"] as? Int ?? 50, 200))
+        let eventTypes = Set((params["event_types"] as? [String] ?? []).filter { !$0.isEmpty })
+        Log.trace("ScriptingAPI: get_session_events session=\(sessionID) cursor=\(cursor) limit=\(limit) filterCount=\(eventTypes.count)")
+
+        guard var response = parseJSONResponse(
+            RuntimeControlService.shared.handleToolCall(
+                name: "runtime_events_poll",
+                arguments: [
+                    "session_id": sessionID,
+                    "cursor": NSNumber(value: cursor),
+                    "limit": limit
+                ]
+            )
+        ) else {
+            return ["error": "session_events_failed"]
+        }
+
+        guard var events = response["events"] as? [[String: Any]] else {
+            return response
+        }
+
+        if !eventTypes.isEmpty {
+            events = events.filter { eventTypes.contains($0["type"] as? String ?? "") }
+            response["events"] = events
+        }
+
+        response["session_id"] = sessionID
+        return response
+    }
+
+    private func handleSubmitSessionTurn(_ params: [String: Any]) async -> [String: Any] {
+        guard let sessionID = params["session_id"] as? String,
+              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return ["error": "missing param: session_id"]
+        }
+        guard let prepared = preparedSessionTurns[sessionID] else {
+            return ["error": "session turn not prepared for session \(sessionID)"]
+        }
+
+        guard let session = RuntimeSessionManager.shared.session(id: sessionID) else {
+            preparedSessionTurns.removeValue(forKey: sessionID)
+            return ["error": "Session not found: \(sessionID)"]
+        }
+
+        guard session.canAcceptTurn else {
+            return [
+                "error": "Session \(sessionID) is not ready to accept the review prompt (state: \(session.state.rawValue))"
+            ]
+        }
+
+        let response = parseJSONResponse(
+            RuntimeControlService.shared.handleToolCall(
+                name: "runtime_turn_send",
+                arguments: [
+                    "session_id": sessionID,
+                    "prompt": prepared.prompt,
+                    "result_schema": prepared.resultSchema.foundationValue
+                ]
+            )
+        ) ?? ["error": "review_prompt_failed"]
+
+        if response["error"] == nil {
+            preparedSessionTurns.removeValue(forKey: sessionID)
+        }
+
+        if let error = response["error"] as? String {
+            Log.warn("ScriptingAPI: submit_session_turn failed for session \(sessionID): \(error)")
+            return [
+                "error": error,
+                "session_id": sessionID,
+                "phase": "prompt_failed"
+            ]
+        }
+
+        let turnID = sanitizeOptionalString(response["turn_id"] as? String)
+        let sessionState = sanitizeOptionalString(response["session_state"] as? String) ?? session.state.rawValue
+        let status = sanitizeOptionalString(response["status"] as? String) ?? "accepted"
+        let cursor = response["cursor"]
+
+        var result: [String: Any] = [
+            "session_id": sessionID,
+            "phase": "prompt_sent",
+            "prompt_sent": true,
+            "status": status,
+            "session_state": sessionState
+        ]
+        if let turnID {
+            result["turn_id"] = turnID
+        }
+        if let cursor {
+            result["cursor"] = cursor
+        }
+        Log.info(
+            "ScriptingAPI: submit_session_turn completed for session \(sessionID) turn=\(turnID ?? "(none)") state=\(sessionState)"
+        )
+        return result
+    }
+
+    private func handleGetSessionResult(_ params: [String: Any]) -> [String: Any] {
+        guard let sessionID = params["session_id"] as? String,
+              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return ["error": "missing param: session_id"]
+        }
+
+        return parseJSONResponse(
+            RuntimeControlService.shared.handleToolCall(
+                name: "runtime_turn_result",
+                arguments: ["session_id": sessionID]
+            )
+        ) ?? ["error": "session_result_failed"]
+    }
+
+    private func handleStopSession(_ params: [String: Any]) -> [String: Any] {
+        guard let sessionID = params["session_id"] as? String,
+              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return ["error": "missing param: session_id"]
+        }
+
+        preparedSessionTurns.removeValue(forKey: sessionID)
+
+        return parseJSONResponse(
+            RuntimeControlService.shared.handleToolCall(
+                name: "runtime_session_stop",
+                arguments: [
+                    "session_id": sessionID,
+                    "close_tab": true,
+                    "force": params["force"] as? Bool ?? false
+                ]
+            )
+        ) ?? ["error": "session_stop_failed"]
+    }
+
+    private func handleGetStatus() -> [String: Any] {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
+        let uptime: TimeInterval = startTime.map { Date().timeIntervalSince($0) } ?? 0
+
+        return [
+            "result": [
+                "version": version,
+                "build": build,
+                "api_version": Self.apiVersion,
+                "supported_methods": Self.supportedMethods,
+                "uptime_seconds": Int(uptime),
+                "connected_clients": connectedClients,
+                "server_running": isRunning,
+                "history_count": PersistentHistoryStore.shared.totalCount()
+            ] as [String: Any]
+        ]
+    }
+
+    private func parsedCursor(_ raw: Any?) -> UInt64 {
+        if let number = raw as? NSNumber {
+            return number.uint64Value
+        }
+        if let integer = raw as? Int {
+            return UInt64(integer)
+        }
+        if let string = raw as? String, let integer = UInt64(string) {
+            return integer
+        }
+        return 0
+    }
+
+    private func sanitizeOptionalString(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private struct ReviewRequest {
+        let directory: String
+        let backend: String
+        let model: String?
+        let parentSessionID: String?
+        let delegationDepth: Int?
+        let autoApprove: Bool?
+        let prompt: String
+        let taskMetadata: [String: String]
+        let resultSchema: JSONValue
+    }
+
+    private func buildReviewRequest(_ params: [String: Any]) -> ReviewRequest? {
+        guard let directory = sanitizeOptionalString(params["directory"] as? String) else {
+            return nil
         }
 
         let mode = ((params["mode"] as? String) ?? "staged_diff")
@@ -458,7 +722,7 @@ final class ScriptingAPI {
         case "commit_range":
             guard let baseCommit = sanitizeOptionalString(params["base_commit"] as? String),
                   let headCommit = sanitizeOptionalString(params["head_commit"] as? String) else {
-                return ["error": "missing params for commit_range review: base_commit and head_commit are required"]
+                return nil
             }
             taskMetadata["base_commit"] = baseCommit
             taskMetadata["head_commit"] = headCommit
@@ -469,7 +733,7 @@ final class ScriptingAPI {
             )
         case "staged_diff":
             guard let stagedDiff = sanitizeOptionalString(params["staged_diff"] as? String) else {
-                return ["error": "missing param: staged_diff"]
+                return nil
             }
             let stagedFiles = (params["staged_files"] as? [String] ?? [])
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -483,103 +747,38 @@ final class ScriptingAPI {
                 extraInstructions: extraInstructions
             )
         default:
+            return nil
+        }
+
+        return ReviewRequest(
+            directory: directory,
+            backend: sanitizeOptionalString(params["backend"] as? String) ?? "codex",
+            model: sanitizeOptionalString(params["model"] as? String),
+            parentSessionID: sanitizeOptionalString(params["parent_session_id"] as? String),
+            delegationDepth: params["delegation_depth"] as? Int,
+            autoApprove: params["auto_approve"] as? Bool,
+            prompt: prompt,
+            taskMetadata: taskMetadata,
+            resultSchema: CodeReviewTaskTemplate.resultSchema
+        )
+    }
+
+    private func buildReviewRequestError(_ params: [String: Any]) -> [String: Any] {
+        guard sanitizeOptionalString(params["directory"] as? String) != nil else {
+            return ["error": "missing param: directory"]
+        }
+
+        let mode = ((params["mode"] as? String) ?? "staged_diff")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        switch mode {
+        case "commit_range":
+            return ["error": "missing params for commit_range review: base_commit and head_commit are required"]
+        case "staged_diff":
+            return ["error": "missing param: staged_diff"]
+        default:
             return ["error": "unsupported review mode: \(mode)"]
         }
-
-        var arguments: [String: Any] = [
-            "backend": sanitizeOptionalString(params["backend"] as? String) ?? "codex",
-            "directory": directory,
-            "purpose": "code_review",
-            "task_metadata": taskMetadata,
-            "result_schema": CodeReviewTaskTemplate.resultSchema.foundationValue,
-            "initial_prompt": prompt,
-            "policy": CodeReviewTaskTemplate.defaultPolicy.foundationValue
-        ]
-        if let model = sanitizeOptionalString(params["model"] as? String) {
-            arguments["model"] = model
-        }
-        if let parentSessionID = sanitizeOptionalString(params["parent_session_id"] as? String) {
-            arguments["parent_session_id"] = parentSessionID
-            arguments["delegation_depth"] = max(params["delegation_depth"] as? Int ?? 1, 1)
-        }
-        if let autoApprove = params["auto_approve"] as? Bool {
-            arguments["auto_approve"] = autoApprove
-        }
-
-        return parseJSONResponse(
-            RuntimeControlService.shared.handleToolCall(
-                name: "runtime_session_create",
-                arguments: arguments
-            )
-        ) ?? ["error": "review_start_failed"]
-    }
-
-    private func handleWaitReview(_ params: [String: Any]) async -> [String: Any] {
-        guard let sessionID = params["session_id"] as? String,
-              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return ["error": "missing param: session_id"]
-        }
-
-        let timeoutMs = params["timeout_ms"] as? Int ?? 30000
-        let response = await RuntimeControlService.shared.waitForTurnAsync(
-            sessionID: sessionID,
-            timeoutMs: timeoutMs
-        )
-        return parseJSONResponse(response) ?? ["error": "review_wait_failed"]
-    }
-
-    private func handleGetReviewResult(_ params: [String: Any]) -> [String: Any] {
-        guard let sessionID = params["session_id"] as? String,
-              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return ["error": "missing param: session_id"]
-        }
-
-        return parseJSONResponse(
-            RuntimeControlService.shared.handleToolCall(
-                name: "runtime_turn_result",
-                arguments: ["session_id": sessionID]
-            )
-        ) ?? ["error": "review_result_failed"]
-    }
-
-    private func handleStopReview(_ params: [String: Any]) -> [String: Any] {
-        guard let sessionID = params["session_id"] as? String,
-              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return ["error": "missing param: session_id"]
-        }
-
-        return parseJSONResponse(
-            RuntimeControlService.shared.handleToolCall(
-                name: "runtime_session_stop",
-                arguments: [
-                    "session_id": sessionID,
-                    "close_tab": true,
-                    "force": params["force"] as? Bool ?? false
-                ]
-            )
-        ) ?? ["error": "review_stop_failed"]
-    }
-
-    private func handleGetStatus() -> [String: Any] {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
-        let uptime: TimeInterval = startTime.map { Date().timeIntervalSince($0) } ?? 0
-
-        return [
-            "result": [
-                "version": version,
-                "build": build,
-                "uptime_seconds": Int(uptime),
-                "connected_clients": connectedClients,
-                "server_running": isRunning,
-                "history_count": PersistentHistoryStore.shared.totalCount()
-            ] as [String: Any]
-        ]
-    }
-
-    private func sanitizeOptionalString(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
     }
 }
