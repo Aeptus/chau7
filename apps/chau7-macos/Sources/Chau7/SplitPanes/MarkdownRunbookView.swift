@@ -8,6 +8,7 @@ struct MarkdownRunbookView: View {
     let fileName: String
     let onRunBlock: (String) -> Void
     let onRunAll: () -> Void
+    var onContentChange: ((String) -> Void)?
 
     private var sections: [MarkdownSection] {
         parseMarkdown(content)
@@ -31,6 +32,9 @@ struct MarkdownRunbookView: View {
 
                     case .codeBlock(let lang, let code):
                         codeBlockView(language: lang, code: code)
+
+                    case .checkboxItem(let checked, let text, let lineNumber):
+                        checkboxItemView(checked: checked, text: text, lineNumber: lineNumber)
                     }
                 }
             }
@@ -77,6 +81,27 @@ struct MarkdownRunbookView: View {
         )
     }
 
+    private func checkboxItemView(checked: Bool, text: String, lineNumber: Int) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Button {
+                let newContent = toggleCheckboxInContent(content, lineNumber: lineNumber)
+                onContentChange?(newContent)
+            } label: {
+                Image(systemName: checked ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(checked ? .accentColor : .secondary)
+                    .font(.system(size: 14))
+            }
+            .buttonStyle(.plain)
+
+            Text(LocalizedStringKey(text))
+                .strikethrough(checked)
+                .foregroundStyle(checked ? .secondary : .primary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.leading, 4)
+    }
+
     private func fontForHeading(_ level: Int) -> Font {
         switch level {
         case 1: return .system(size: 22, weight: .bold)
@@ -93,6 +118,7 @@ enum MarkdownSectionKind {
     case heading(level: Int, text: String)
     case text(String)
     case codeBlock(language: String?, code: String)
+    case checkboxItem(checked: Bool, text: String, lineNumber: Int)
 }
 
 struct MarkdownSection: Identifiable {
@@ -151,6 +177,14 @@ func parseMarkdown(_ input: String) -> [MarkdownSection] {
             continue
         }
 
+        // Checkbox item: - [ ] text, - [x] text, * [ ] text, * [x] text
+        if let match = parseCheckboxLine(line) {
+            flushText()
+            sections.append(MarkdownSection(kind: .checkboxItem(checked: match.checked, text: match.text, lineNumber: i)))
+            i += 1
+            continue
+        }
+
         // Regular text
         textAccum += line + "\n"
         i += 1
@@ -158,4 +192,38 @@ func parseMarkdown(_ input: String) -> [MarkdownSection] {
 
     flushText()
     return sections
+}
+
+/// Parses a single line for checkbox syntax: `- [ ] text` or `- [x] text` (also `*` bullets).
+private func parseCheckboxLine(_ line: String) -> (checked: Bool, text: String)? {
+    let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
+    guard let first = trimmed.first, (first == "-" || first == "*") else { return nil }
+    let afterBullet = trimmed.dropFirst()
+    guard afterBullet.hasPrefix(" [") else { return nil }
+    let afterBracket = afterBullet.dropFirst(2) // drop " ["
+    guard let marker = afterBracket.first else { return nil }
+    let checked: Bool
+    switch marker {
+    case "x", "X": checked = true
+    case " ": checked = false
+    default: return nil
+    }
+    let rest = afterBracket.dropFirst() // drop the marker character
+    guard rest.hasPrefix("] ") else { return nil }
+    let text = String(rest.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+    guard !text.isEmpty else { return nil }
+    return (checked, text)
+}
+
+/// Returns new content with the checkbox on the given line toggled.
+func toggleCheckboxInContent(_ content: String, lineNumber: Int) -> String {
+    var lines = content.components(separatedBy: "\n")
+    guard lineNumber >= 0, lineNumber < lines.count else { return content }
+    let line = lines[lineNumber]
+    if line.contains("[ ]") {
+        lines[lineNumber] = line.replacingOccurrences(of: "[ ]", with: "[x]", range: line.range(of: "[ ]"))
+    } else if let range = line.range(of: "[x]", options: .caseInsensitive) {
+        lines[lineNumber] = line.replacingCharacters(in: range, with: "[ ]")
+    }
+    return lines.joined(separator: "\n")
 }
