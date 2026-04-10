@@ -6,6 +6,7 @@ public enum NotificationDeliverySemantics {
     ]
     public static let authorityRetentionSeconds: TimeInterval = 180
     public static let repeatedAttentionSuppressionSeconds: TimeInterval = 90
+    public static let closedSessionSuppressionSeconds: TimeInterval = 180
 
     public static func requiresAuthoritativeRouting(_ event: AIEvent) -> Bool {
         event.reliability == .authoritative
@@ -97,6 +98,37 @@ public enum NotificationDeliverySemantics {
     ) -> Bool {
         guard let key = repeatSuppressionKey(for: event),
               let seenAt = recentRepeatEvents[key] else {
+            return false
+        }
+        return now.timeIntervalSince(seenAt) <= suppressionSeconds
+    }
+
+    public static func closedIdentityKey(for event: AIEvent) -> String {
+        let tool = event.tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let identity = MonitoringSchedule.notificationIdentityKey(for: event)
+        return "\(tool)|\(identity)"
+    }
+
+    public static func shouldRegisterClosedIdentity(_ event: AIEvent) -> Bool {
+        switch event.normalizedType {
+        case "finished", "failed":
+            return true
+        default:
+            return false
+        }
+    }
+
+    public static func shouldSuppressAfterClose(
+        _ event: AIEvent,
+        recentlyClosedEvents: [String: Date],
+        now: Date = Date(),
+        suppressionSeconds: TimeInterval = closedSessionSuppressionSeconds
+    ) -> Bool {
+        guard repeatSuppressionFamily(for: event) != nil else {
+            return false
+        }
+        let key = closedIdentityKey(for: event)
+        guard let seenAt = recentlyClosedEvents[key] else {
             return false
         }
         return now.timeIntervalSince(seenAt) <= suppressionSeconds

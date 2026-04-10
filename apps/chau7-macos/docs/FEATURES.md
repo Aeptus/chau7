@@ -69,6 +69,7 @@ Detection methods:
 - **Session-aware notification routing** — notifications route by exact AI session ID with fallback to provider/title heuristics. Handles tab restoration, split sessions, nested working directories, and cross-tab file conflicts.
 - **AI-first notification settings** — simplified overview for Finished, Failed, and Permission Request with direct controls for banner, tab highlight, sound, and dock bounce. Waiting-input and attention-required states surface as “needs me” attention. Per-tool overrides and advanced trigger plumbing available separately.
 - **Repeated attention suppression** — permission, waiting-input, idle, and attention-required events for the same unresolved AI session collapse into one delivered attention state for a cooldown window, reducing alert fatigue on long-running tabs.
+- **Post-close stale-event suppression** — once a session emits a finished or failed state, later permission, waiting-input, idle, and attention-required events for that same session identity are dropped as stale instead of re-triggering delivery.
 - **Bounded runtime approval recovery** — repeated MCP/runtime approval timeouts no longer recover to `ready` forever. After a bounded retry count the session records a runtime error and moves to a failed state so stuck approval loops are visible and queryable.
 - **Notification delivery ledger** — lifecycle tracking for debugging: coalescing, retry scheduling, drop reasons, and real UI outcomes.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.

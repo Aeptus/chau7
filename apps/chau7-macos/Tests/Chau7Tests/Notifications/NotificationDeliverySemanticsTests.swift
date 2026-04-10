@@ -147,4 +147,63 @@ final class NotificationDeliverySemanticsTests: XCTestCase {
             NotificationDeliverySemantics.repeatSuppressionKey(for: waiting)
         )
     }
+
+    func testRegistersClosedIdentityForFinishedAndSuppressesLateAttention() {
+        let finished = AIEvent(
+            source: .claudeCode,
+            type: "finished",
+            tool: "Claude",
+            message: "done",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "session-1",
+            reliability: .authoritative
+        )
+        let lateAttention = AIEvent(
+            source: .claudeCode,
+            type: "attention_required",
+            tool: "Claude",
+            message: "needs attention",
+            ts: "2026-04-01T00:00:30Z",
+            sessionID: "session-1",
+            reliability: .authoritative
+        )
+
+        XCTAssertTrue(NotificationDeliverySemantics.shouldRegisterClosedIdentity(finished))
+        let key = NotificationDeliverySemantics.closedIdentityKey(for: finished)
+        XCTAssertTrue(
+            NotificationDeliverySemantics.shouldSuppressAfterClose(
+                lateAttention,
+                recentlyClosedEvents: [key: Date()]
+            )
+        )
+    }
+
+    func testClosedSuppressionDoesNotApplyToDifferentIdentity() {
+        let finished = AIEvent(
+            source: .claudeCode,
+            type: "finished",
+            tool: "Claude",
+            message: "done",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "session-1",
+            reliability: .authoritative
+        )
+        let otherSession = AIEvent(
+            source: .claudeCode,
+            type: "waiting_input",
+            tool: "Claude",
+            message: "waiting",
+            ts: "2026-04-01T00:00:30Z",
+            sessionID: "session-2",
+            reliability: .authoritative
+        )
+
+        let key = NotificationDeliverySemantics.closedIdentityKey(for: finished)
+        XCTAssertFalse(
+            NotificationDeliverySemantics.shouldSuppressAfterClose(
+                otherSession,
+                recentlyClosedEvents: [key: Date()]
+            )
+        )
+    }
 }

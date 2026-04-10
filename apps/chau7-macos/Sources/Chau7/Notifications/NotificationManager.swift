@@ -49,6 +49,7 @@ final class NotificationManager {
     private var routingRetryCounts: [UUID: Int] = [:]
     private var recentAuthoritativeEvents: [String: Date] = [:]
     private var recentRepeatedAttentionEvents: [String: Date] = [:]
+    private var recentClosedSessionEvents: [String: Date] = [:]
     private let authoritativeRetryDelays: [TimeInterval] = [0.05, 0.15, 0.5]
 
     private init() {
@@ -213,6 +214,17 @@ final class NotificationManager {
             }
         }
 
+        if NotificationDeliverySemantics.shouldSuppressAfterClose(
+            preparedEvent,
+            recentlyClosedEvents: recentClosedSessionEvents
+        ) {
+            let reason = "Suppressed stale post-close notification for an already-finished session"
+            Log.trace("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
+            history.markDropped(eventID: preparedEvent.id, reason: reason)
+            routingRetryCounts.removeValue(forKey: preparedEvent.id)
+            return
+        }
+
         if NotificationDeliverySemantics.shouldSuppressAsFallback(
             preparedEvent,
             authoritativeEvents: recentAuthoritativeEvents
@@ -235,6 +247,7 @@ final class NotificationManager {
         }
 
         registerAuthoritativeEventIfNeeded(preparedEvent)
+        registerClosedIdentityIfNeeded(preparedEvent)
 
         let input = NotificationPipeline.Input(
             event: preparedEvent,
@@ -435,6 +448,9 @@ final class NotificationManager {
         recentRepeatedAttentionEvents = recentRepeatedAttentionEvents.filter {
             now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.repeatedAttentionSuppressionSeconds
         }
+        recentClosedSessionEvents = recentClosedSessionEvents.filter {
+            now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.closedSessionSuppressionSeconds
+        }
         // Cap routing retry entries: any event that exhausted its retries
         // but was never cleaned up (e.g., dropped before reaching processEvent)
         // will linger. Remove entries that exceeded the max retry count.
@@ -448,6 +464,13 @@ final class NotificationManager {
             return
         }
         recentRepeatedAttentionEvents[key] = now
+    }
+
+    private func registerClosedIdentityIfNeeded(_ event: AIEvent, now: Date = Date()) {
+        guard NotificationDeliverySemantics.shouldRegisterClosedIdentity(event) else {
+            return
+        }
+        recentClosedSessionEvents[NotificationDeliverySemantics.closedIdentityKey(for: event)] = now
     }
 
     /// Applies a default tab style for attention-worthy events when no explicit

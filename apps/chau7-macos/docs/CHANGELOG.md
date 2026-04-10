@@ -392,6 +392,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.36 | 2026-04-10 | Late permission, waiting-input, idle, and attention-required events are now dropped for sessions that already emitted a finished or failed state, preventing stale post-close notification wakeups |
 | 0.5.35 | 2026-04-10 | Repeated permission, waiting-input, idle, and attention-required notifications for the same unresolved AI session state are now suppressed for a cooldown window instead of re-alerting continuously |
 | 0.5.34 | 2026-04-10 | Runtime sessions now fail explicitly after repeated approval timeouts instead of recovering to ready forever, so stuck approval loops surface as unhealthy sessions instead of silent retry churn |
 | 0.5.33 | 2026-04-09 | Protected-folder repos now persist repo identity and last-known branch in tab restore state, so restored tabs keep their git badge even when live Downloads/Desktop/Documents access is unavailable |
