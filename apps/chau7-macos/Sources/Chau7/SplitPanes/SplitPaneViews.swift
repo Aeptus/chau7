@@ -390,6 +390,9 @@ struct TextEditorPaneView: View {
                                 onRunCommand?(block + "\n")
                             }
                         }
+                    },
+                    onContentChange: { newContent in
+                        editor.updateContent(newContent)
                     }
                 )
             } else {
