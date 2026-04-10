@@ -187,9 +187,11 @@ This is the distilled remote AI task state selected by macOS for iOS Live Activi
   "tool_name": "Claude",
   "project_name": "chau7-macos",
   "session_id": "abc123",
-  "status": "running|waiting_input|completed|failed|idle",
+  "status": "running|approval_required|waiting_input|completed|failed|idle",
   "headline": "Claude is editing files",
   "detail": "Needs approval to continue",
+  "logo_asset_name": "claude-logo",
+  "tab_color_name": "purple",
   "started_at": "ISO8601",
   "updated_at": "ISO8601",
   "priority": 100,
@@ -207,7 +209,7 @@ This is the distilled remote AI task state selected by macOS for iOS Live Activi
 Rules:
 
 - macOS computes this from internal AI events and exports only the single highest-priority activity
-- `waiting_input` wins over running work
+- `approval_required` wins over `waiting_input`, which wins over running work
 - `completed` and `failed` are transient end states
 - iOS must treat this payload as authoritative
 

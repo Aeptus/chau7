@@ -54,7 +54,9 @@ public enum RuntimeLaunchReadiness {
 
     private static func statusLooksInteractive(_ snapshot: RuntimeLaunchReadinessSnapshot) -> Bool {
         let candidates = [snapshot.effectiveStatus, snapshot.rawStatus].map(normalizeStatusToken)
-        return candidates.contains(where: { ["idle", "running", "waitingforinput", "stuck"].contains($0) })
+        return candidates.contains(where: {
+            ["idle", "done", "running", "approvalrequired", "waitingforinput", "stuck"].contains($0)
+        })
     }
 
     private static func launchSignalsMatchBackend(_ snapshot: RuntimeLaunchReadinessSnapshot, backendName: String) -> Bool {

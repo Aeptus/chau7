@@ -3,6 +3,7 @@ import Foundation
 public enum RemoteActivityStatus: String, Codable, CaseIterable, Sendable, Hashable {
     case idle
     case running
+    case approvalRequired = "approval_required"
     case waitingInput
     case completed
     case failed
@@ -37,6 +38,8 @@ public struct RemoteActivityCandidate: Equatable, Sendable {
     public let sessionID: String?
     public let status: RemoteActivityStatus
     public let detail: String?
+    public let logoAssetName: String?
+    public let tabColorName: String?
     public let isSelected: Bool
     public let updatedAt: Date
     public let startedAt: Date?
@@ -51,6 +54,8 @@ public struct RemoteActivityCandidate: Equatable, Sendable {
         sessionID: String? = nil,
         status: RemoteActivityStatus,
         detail: String? = nil,
+        logoAssetName: String? = nil,
+        tabColorName: String? = nil,
         isSelected: Bool,
         updatedAt: Date,
         startedAt: Date? = nil,
@@ -64,6 +69,8 @@ public struct RemoteActivityCandidate: Equatable, Sendable {
         self.sessionID = sessionID
         self.status = status
         self.detail = detail
+        self.logoAssetName = logoAssetName
+        self.tabColorName = tabColorName
         self.isSelected = isSelected
         self.updatedAt = updatedAt
         self.startedAt = startedAt
@@ -81,6 +88,8 @@ public struct RemoteActivityState: Codable, Equatable, Sendable, Hashable {
     public let status: RemoteActivityStatus
     public let headline: String
     public let detail: String?
+    public let logoAssetName: String?
+    public let tabColorName: String?
     public let isSelectedTab: Bool
     public let startedAt: Date?
     public let updatedAt: Date
@@ -96,6 +105,8 @@ public struct RemoteActivityState: Codable, Equatable, Sendable, Hashable {
         status: RemoteActivityStatus,
         headline: String,
         detail: String? = nil,
+        logoAssetName: String? = nil,
+        tabColorName: String? = nil,
         isSelectedTab: Bool,
         startedAt: Date? = nil,
         updatedAt: Date,
@@ -110,6 +121,8 @@ public struct RemoteActivityState: Codable, Equatable, Sendable, Hashable {
         self.status = status
         self.headline = headline
         self.detail = detail
+        self.logoAssetName = logoAssetName
+        self.tabColorName = tabColorName
         self.isSelectedTab = isSelectedTab
         self.startedAt = startedAt
         self.updatedAt = updatedAt
@@ -126,6 +139,8 @@ public struct RemoteActivityState: Codable, Equatable, Sendable, Hashable {
         case status
         case headline
         case detail
+        case logoAssetName = "logo_asset_name"
+        case tabColorName = "tab_color_name"
         case isSelectedTab = "is_selected_tab"
         case startedAt = "started_at"
         case updatedAt = "updated_at"
@@ -153,6 +168,8 @@ public enum RemoteActivityProjection {
             status: best.status,
             headline: headline,
             detail: detail,
+            logoAssetName: best.logoAssetName,
+            tabColorName: best.tabColorName,
             isSelectedTab: best.isSelected,
             startedAt: best.startedAt,
             updatedAt: best.updatedAt,
@@ -175,6 +192,8 @@ public enum RemoteActivityProjection {
 
     private static func priority(for status: RemoteActivityStatus) -> Int {
         switch status {
+        case .approvalRequired:
+            return 5
         case .waitingInput:
             return 4
         case .failed:
@@ -190,10 +209,9 @@ public enum RemoteActivityProjection {
 
     private static func headline(for candidate: RemoteActivityCandidate) -> String {
         switch candidate.status {
+        case .approvalRequired:
+            return "Approval required"
         case .waitingInput:
-            if candidate.approval != nil {
-                return "Approval required"
-            }
             return "\(candidate.toolName) needs input"
         case .failed:
             return "\(candidate.toolName) failed"

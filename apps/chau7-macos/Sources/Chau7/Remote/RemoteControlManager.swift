@@ -504,6 +504,7 @@ final class RemoteControlManager {
             var candidates: [RemoteActivityCandidate] = []
 
             if let approval {
+                let displayMetadata = activityDisplayMetadata(toolName: approval.toolName, provider: nil)
                 candidates.append(RemoteActivityCandidate(
                     activityID: "tab-\(tabID)-approval",
                     tabID: tabID,
@@ -511,8 +512,10 @@ final class RemoteControlManager {
                     toolName: approval.toolName,
                     projectName: approval.projectName,
                     sessionID: approval.sessionID,
-                    status: .waitingInput,
+                    status: .approvalRequired,
                     detail: approval.approval.displayCommand,
+                    logoAssetName: displayMetadata.logoAssetName,
+                    tabColorName: displayMetadata.tabColorName,
                     isSelected: tab.id == overlayModel.selectedTabID,
                     updatedAt: approval.requestedAt,
                     startedAt: approval.requestedAt,
@@ -523,7 +526,11 @@ final class RemoteControlManager {
             for (paneID, session) in tab.splitController.terminalSessions {
                 let toolName = activityToolName(for: session, tab: tab)
                 let projectName = activityProjectName(for: session)
-                let startedAt = tab.lastCommand?.startTime
+                let displayMetadata = activityDisplayMetadata(
+                    toolName: toolName,
+                    provider: session.effectiveAIProvider
+                )
+                let startedAt = session.agentStartedAt ?? tab.lastCommand?.startTime
                 let updatedAt = activityUpdatedAt(for: session, tab: tab, approval: nil)
 
                 guard session.aiDisplayAppName != nil ||
@@ -536,6 +543,9 @@ final class RemoteControlManager {
                 let detail: String?
 
                 switch session.effectiveStatus {
+                case .approvalRequired:
+                    resolvedStatus = .approvalRequired
+                    detail = session.effectiveIsAtPrompt ? "Approval required at prompt" : "Approval required"
                 case .waitingForInput:
                     resolvedStatus = .waitingInput
                     detail = session.effectiveIsAtPrompt ? "Waiting at prompt" : nil
@@ -545,8 +555,8 @@ final class RemoteControlManager {
                 case .stuck:
                     resolvedStatus = .running
                     detail = "No output for a while"
-                case .idle, .exited:
-                    if let outcome = recentCompletionStatus(for: tab, now: now) {
+                case .done, .idle, .exited:
+                    if let outcome = recentCompletionStatus(for: session, tab: tab, now: now) {
                         resolvedStatus = outcome.status
                         detail = outcome.detail
                     } else {
@@ -566,6 +576,8 @@ final class RemoteControlManager {
                     sessionID: session.effectiveAISessionId,
                     status: resolvedStatus,
                     detail: detail,
+                    logoAssetName: displayMetadata.logoAssetName,
+                    tabColorName: displayMetadata.tabColorName,
                     isSelected: tab.id == overlayModel.selectedTabID,
                     updatedAt: updatedAt,
                     startedAt: startedAt
@@ -634,6 +646,10 @@ final class RemoteControlManager {
     }
 
     private func activityProjectName(for session: TerminalSessionModel) -> String? {
+        if let repoName = session.repoName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !repoName.isEmpty {
+            return repoName
+        }
         let trimmed = session.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let lastPathComponent = URL(fileURLWithPath: trimmed).lastPathComponent
@@ -651,18 +667,26 @@ final class RemoteControlManager {
     }
 
     private func activityRecentCommand(for tab: OverlayTab) -> String? {
+        if let sessionCommand = tab.displaySession?.lastAgentLaunchCommand?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sessionCommand.isEmpty {
+            return sessionCommand
+        }
         let trimmed = tab.lastCommand?.command.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
     }
 
     private func activityContextNote(for session: TerminalSessionModel) -> String? {
         switch session.effectiveStatus {
+        case .approvalRequired:
+            return session.effectiveIsAtPrompt ? "Approval required at prompt" : "Approval required"
         case .waitingForInput:
             return session.effectiveIsAtPrompt ? "Waiting at prompt" : "Waiting for input"
         case .running:
             return "Command is running"
         case .stuck:
             return "No output for a while"
+        case .done:
+            return "Task finished at prompt"
         case .idle, .exited:
             return nil
         }
@@ -675,6 +699,8 @@ final class RemoteControlManager {
     ) -> Date {
         [
             approval?.requestedAt,
+            session.lastInputDate,
+            session.lastExitAt,
             tab.lastCommand?.endTime,
             tab.lastCommand?.startTime,
             session.lastOutputDate
@@ -684,9 +710,27 @@ final class RemoteControlManager {
     }
 
     private func recentCompletionStatus(
-        for tab: OverlayTab,
+        for session: TerminalSessionModel,
+        tab: OverlayTab,
         now: Date
     ) -> (status: RemoteActivityStatus, detail: String?)? {
+        let commandText = session.lastAgentLaunchCommand?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let exitAt = session.lastExitAt,
+           now.timeIntervalSince(exitAt) <= 20 {
+            let exitCode = session.lastExitCode ?? 0
+            if exitCode == 0 {
+                return (
+                    .completed,
+                    commandText?.isEmpty == false ? commandText : nil
+                )
+            }
+
+            if let commandText, !commandText.isEmpty {
+                return (.failed, "Exit \(exitCode): \(commandText)")
+            }
+            return (.failed, "Exit \(exitCode)")
+        }
+
         guard let lastCommand = tab.lastCommand,
               let endTime = lastCommand.endTime,
               now.timeIntervalSince(endTime) <= 20 else {
@@ -706,6 +750,12 @@ final class RemoteControlManager {
             return (.failed, "Exit \(exitCode)")
         }
         return (.failed, "Exit \(exitCode): \(trimmedCommand)")
+    }
+
+    private func activityDisplayMetadata(toolName: String, provider: String?) -> AIToolDisplayMetadata {
+        AIToolRegistry.displayMetadata(forName: toolName)
+            ?? AIToolRegistry.displayMetadata(forName: provider)
+            ?? AIToolDisplayMetadata(logoAssetName: nil, tabColorName: nil)
     }
 
     private func sendTabList() {

@@ -48,6 +48,16 @@ public struct AIToolDefinition: Sendable {
     }
 }
 
+public struct AIToolDisplayMetadata: Equatable, Sendable {
+    public let logoAssetName: String?
+    public let tabColorName: String?
+
+    public init(logoAssetName: String?, tabColorName: String?) {
+        self.logoAssetName = logoAssetName
+        self.tabColorName = tabColorName
+    }
+}
+
 /// Central registry of all known AI coding tools.
 ///
 /// Chau7 strives to be fully backend-agnostic: every subsystem — detection,
@@ -303,9 +313,35 @@ public enum AIToolRegistry {
         return allTools.first { $0.displayName.lowercased() == lowered }
     }
 
+    /// Finds the tool definition by display name, command name, or provider key.
+    public static func tool(matching name: String?) -> AIToolDefinition? {
+        guard let lowered = normalizedLookupName(name) else { return nil }
+        return allTools.first { tool in
+            tool.displayName.lowercased() == lowered
+                || tool.commandNames.contains(lowered)
+                || tool.resumeProviderKey == lowered
+        }
+    }
+
     /// Returns the logo asset name for a given app name, or nil if no logo exists.
     public static func logoAssetName(forAppName appName: String) -> String? {
         tool(named: appName)?.logoAssetName
+    }
+
+    public static func logoAssetName(forName name: String?) -> String? {
+        tool(matching: name)?.logoAssetName
+    }
+
+    public static func tabColorName(forName name: String?) -> String? {
+        tool(matching: name)?.tabColorName
+    }
+
+    public static func displayMetadata(forName name: String?) -> AIToolDisplayMetadata? {
+        guard let definition = tool(matching: name) else { return nil }
+        return AIToolDisplayMetadata(
+            logoAssetName: definition.logoAssetName,
+            tabColorName: definition.tabColorName
+        )
     }
 
     /// Returns the `AIEventSource` raw value for a tool name, checking display name,
@@ -319,5 +355,13 @@ public enum AIToolRegistry {
             if let key = tool.resumeProviderKey, key == lowered { return source }
         }
         return nil
+    }
+
+    private static func normalizedLookupName(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !value.isEmpty else {
+            return nil
+        }
+        return value
     }
 }
