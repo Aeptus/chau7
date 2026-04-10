@@ -30,6 +30,24 @@ struct ProxyDailyAnalyticsPoint: Identifiable, Sendable {
     }
 }
 
+struct ProxyModelAnalytics: Identifiable, Sendable {
+    let provider: String
+    let model: String
+    let callCount: Int
+    let totalInputTokens: Int
+    let totalOutputTokens: Int
+    let totalCostUSD: Double
+    let averageLatencyMs: Double
+
+    var id: String {
+        "\(provider)/\(model)"
+    }
+
+    var totalTokens: Int {
+        totalInputTokens + totalOutputTokens
+    }
+}
+
 final class ProxyAnalyticsStore {
     static let shared = ProxyAnalyticsStore()
 
@@ -194,6 +212,69 @@ final class ProxyAnalyticsStore {
             }
             return events
         } ?? []
+    }
+
+    func modelStats(after: Date? = nil) -> [ProxyModelAnalytics] {
+        withDatabase { db in
+            var sql = """
+            SELECT provider, model, COUNT(*),
+                   COALESCE(SUM(input_tokens), 0),
+                   COALESCE(SUM(output_tokens), 0),
+                   COALESCE(SUM(cost_usd), 0),
+                   COALESCE(AVG(latency_ms), 0)
+            FROM api_calls
+            """
+            if after != nil {
+                sql += " WHERE timestamp >= ?"
+            }
+            sql += " GROUP BY provider, model ORDER BY SUM(cost_usd) DESC"
+
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            if let after {
+                bindText(stmt, 1, isoString(after))
+            }
+
+            var results: [ProxyModelAnalytics] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let provider = colText(stmt, 0) else { continue }
+                results.append(
+                    ProxyModelAnalytics(
+                        provider: provider,
+                        model: colText(stmt, 1) ?? "",
+                        callCount: Int(sqlite3_column_int64(stmt, 2)),
+                        totalInputTokens: Int(sqlite3_column_int64(stmt, 3)),
+                        totalOutputTokens: Int(sqlite3_column_int64(stmt, 4)),
+                        totalCostUSD: sqlite3_column_double(stmt, 5),
+                        averageLatencyMs: sqlite3_column_double(stmt, 6)
+                    )
+                )
+            }
+            return results
+        } ?? []
+    }
+
+    func errorRate(after: Date? = nil) -> Double {
+        withDatabase { db in
+            var sql = """
+            SELECT CAST(SUM(CASE WHEN status_code < 200 OR status_code >= 300 THEN 1 ELSE 0 END) AS REAL)
+                   / MAX(COUNT(*), 1)
+            FROM api_calls
+            """
+            if after != nil {
+                sql += " WHERE timestamp >= ?"
+            }
+
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
+            defer { sqlite3_finalize(stmt) }
+            if let after {
+                bindText(stmt, 1, isoString(after))
+            }
+            guard sqlite3_step(stmt) == SQLITE_ROW else { return 0 }
+            return sqlite3_column_double(stmt, 0)
+        } ?? 0
     }
 
     private func withDatabase<T>(_ body: (OpaquePointer) -> T?) -> T? {
