@@ -70,6 +70,19 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertEqual(selectedSession?.autoFocusOnAttachEnabled, true)
     }
 
+    func testCloseTabRejectsApprovalRequiredStatusWithoutForce() throws {
+        let session = try XCTUnwrap(overlayModel.tabs.first?.session)
+        session.status = .approvalRequired
+
+        let response = TerminalControlService.shared.closeTab(
+            tabID: overlayModel.selectedTabID.uuidString,
+            force: false
+        )
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["error"] as? String, "Tab has a running process (status: approvalRequired). Use force=true to close anyway.")
+    }
+
     func testListTabsReturnsDeterministicControlPlaneIDs() throws {
         let response = TerminalControlService.shared.listTabs()
         let json = try XCTUnwrap(parseJSONArray(response))

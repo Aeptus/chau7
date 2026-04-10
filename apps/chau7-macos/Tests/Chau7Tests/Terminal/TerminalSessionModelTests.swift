@@ -10,14 +10,16 @@ final class TerminalSessionModelTests: XCTestCase {
 
     func testCommandStatusRawValues() {
         XCTAssertEqual(CommandStatus.idle.rawValue, "idle")
+        XCTAssertEqual(CommandStatus.done.rawValue, "done")
         XCTAssertEqual(CommandStatus.running.rawValue, "running")
         XCTAssertEqual(CommandStatus.waitingForInput.rawValue, "waitingForInput")
+        XCTAssertEqual(CommandStatus.approvalRequired.rawValue, "approvalRequired")
         XCTAssertEqual(CommandStatus.stuck.rawValue, "stuck")
         XCTAssertEqual(CommandStatus.exited.rawValue, "exited")
     }
 
     func testCommandStatusCasesAreDistinct() {
-        let all: [CommandStatus] = [.idle, .running, .waitingForInput, .stuck, .exited]
+        let all: [CommandStatus] = [.idle, .done, .running, .waitingForInput, .approvalRequired, .stuck, .exited]
         let rawValues = Set(all.map(\.rawValue))
         XCTAssertEqual(
             rawValues.count,

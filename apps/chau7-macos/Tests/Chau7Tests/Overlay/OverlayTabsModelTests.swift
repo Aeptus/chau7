@@ -1326,6 +1326,92 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(sanitized.first?.aiResumeCommand, "claude --resume \(legacySessionID)")
     }
 
+    func testBuildAIResumeCommandRejectsSyntheticSessionIdentity() {
+        let command = OverlayTabsModel.buildAIResumeCommand(
+            provider: "claude",
+            sessionId: "synth:claude:abc123",
+            sessionIdSource: .synthetic
+        )
+
+        XCTAssertNil(command)
+    }
+
+    func testResolveAIResumeMetadataFromSavedStatePreservesSyntheticSessionIdentity() {
+        let paneState = SavedTerminalPaneState(
+            paneID: UUID().uuidString,
+            directory: "/tmp/synthetic-pane",
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            aiProvider: "claude",
+            aiSessionId: "synth:claude:abc123",
+            aiSessionIdSource: .synthetic
+        )
+
+        let resolved = OverlayTabsModel.resolveAIResumeMetadataFromSavedState(
+            paneState: paneState,
+            fallbackAIProvider: nil,
+            fallbackAISessionId: nil
+        )
+
+        XCTAssertEqual(resolved?.provider, "claude")
+        XCTAssertEqual(resolved?.sessionId, "synth:claude:abc123")
+        XCTAssertEqual(resolved?.sessionIdSource, .synthetic)
+    }
+
+    func testSanitizeRestoredAIResumeOwnershipPreservesPaneMetadataFields() {
+        let startedAt = Date(timeIntervalSince1970: 1234.0)
+        let lastInputAt = Date(timeIntervalSince1970: 1235.0)
+        let lastExitAt = Date(timeIntervalSince1970: 1236.0)
+        let pane = SavedTerminalPaneState(
+            paneID: UUID().uuidString,
+            directory: "/tmp/persisted-pane",
+            scrollbackContent: nil,
+            aiResumeCommand: "claude --resume persisted-001",
+            aiProvider: "claude",
+            aiSessionId: "persisted-001",
+            aiSessionIdSource: .observed,
+            lastOutputAt: startedAt,
+            lastInputAt: lastInputAt,
+            knownRepoRoot: "/tmp",
+            knownGitBranch: "main",
+            lastStatus: .done,
+            agentLaunchCommand: "claude fix the bug",
+            agentStartedAt: startedAt,
+            lastExitCode: 0,
+            lastExitAt: lastExitAt
+        )
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(states: [
+            SavedTabState(
+                tabID: UUID().uuidString,
+                selectedTabID: nil,
+                customTitle: "Persisted Pane",
+                color: TabColor.blue.rawValue,
+                directory: "/tmp/persisted-pane",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: nil,
+                focusedPaneID: pane.paneID,
+                paneStates: [pane]
+            )
+        ])
+
+        guard let sanitizedPane = sanitized.first?.paneStates?.first else {
+            XCTFail("Expected sanitized pane state")
+            return
+        }
+
+        XCTAssertEqual(sanitizedPane.aiSessionIdSource, .observed)
+        XCTAssertEqual(sanitizedPane.lastInputAt, lastInputAt)
+        XCTAssertEqual(sanitizedPane.lastStatus, .done)
+        XCTAssertEqual(sanitizedPane.agentLaunchCommand, "claude fix the bug")
+        XCTAssertEqual(sanitizedPane.agentStartedAt, startedAt)
+        XCTAssertEqual(sanitizedPane.lastExitCode, 0)
+        XCTAssertEqual(sanitizedPane.lastExitAt, lastExitAt)
+    }
+
     func testResolveResumeMetadataIgnoresTelemetryOnlyCodexProvider() {
         guard let session = model.tabs[0].session else {
             XCTFail("Expected initial session")
@@ -1772,6 +1858,119 @@ final class OverlayTabsModelTests: XCTestCase {
             expectationDone.fulfill()
         }
         wait(for: [expectationDone], timeout: 2.0)
+    }
+
+    func testRestoreLegacyTopLevelMetadataRestoresLifecycleFields() {
+        let paneID = UUID()
+        let split = SavedSplitNode(
+            kind: .terminal,
+            id: paneID.uuidString,
+            direction: nil,
+            ratio: nil,
+            first: nil,
+            second: nil,
+            textEditorPath: nil
+        )
+        let startedAt = Date(timeIntervalSince1970: 4000.0)
+        let lastInputAt = Date(timeIntervalSince1970: 4005.0)
+        let lastExitAt = Date(timeIntervalSince1970: 4010.0)
+
+        storeSavedTabStates([
+            SavedTabState(
+                customTitle: "Legacy Lifecycle",
+                color: TabColor.purple.rawValue,
+                directory: "/tmp/legacy-lifecycle",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                aiProvider: "claude",
+                aiSessionId: "legacy-lifecycle-001",
+                aiSessionIdSource: .explicit,
+                splitLayout: split,
+                focusedPaneID: paneID.uuidString,
+                paneStates: [
+                    SavedTerminalPaneState(
+                        paneID: paneID.uuidString,
+                        directory: "/tmp/legacy-lifecycle",
+                        scrollbackContent: nil,
+                        aiResumeCommand: nil,
+                        lastOutputAt: startedAt
+                    )
+                ],
+                lastInputAt: lastInputAt,
+                lastStatus: .done,
+                agentLaunchCommand: "claude --model opus",
+                agentStartedAt: startedAt,
+                lastExitCode: 0,
+                lastExitAt: lastExitAt
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+        guard let session = restoredModel.tabs.first?.splitController.terminalSessions
+            .first(where: { $0.0 == paneID })?.1 else {
+            XCTFail("Expected restored session for pane \(paneID)")
+            return
+        }
+
+        XCTAssertEqual(session.lastAISessionIdentitySource, .explicit)
+        XCTAssertEqual(session.lastInputDate, lastInputAt)
+        XCTAssertEqual(session.lastOutputDate, startedAt)
+        XCTAssertEqual(session.status, .done)
+        XCTAssertEqual(session.lastAgentLaunchCommand, "claude --model opus")
+        XCTAssertEqual(session.agentStartedAt, startedAt)
+        XCTAssertEqual(session.lastExitCode, 0)
+        XCTAssertEqual(session.lastExitAt, lastExitAt)
+    }
+
+    func testRestorePreservesSyntheticSessionIdentityWithoutResumeCommand() {
+        let paneID = UUID()
+        let split = SavedSplitNode(
+            kind: .terminal,
+            id: paneID.uuidString,
+            direction: nil,
+            ratio: nil,
+            first: nil,
+            second: nil,
+            textEditorPath: nil
+        )
+        let syntheticID = "synth:claude:deadbeef"
+
+        storeSavedTabStates([
+            SavedTabState(
+                customTitle: "Synthetic Session",
+                color: TabColor.purple.rawValue,
+                directory: "/tmp/synthetic-session",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: split,
+                focusedPaneID: paneID.uuidString,
+                paneStates: [
+                    SavedTerminalPaneState(
+                        paneID: paneID.uuidString,
+                        directory: "/tmp/synthetic-session",
+                        scrollbackContent: nil,
+                        aiResumeCommand: nil,
+                        aiProvider: "claude",
+                        aiSessionId: syntheticID,
+                        aiSessionIdSource: .synthetic
+                    )
+                ]
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+        guard let session = restoredModel.tabs.first?.splitController.terminalSessions
+            .first(where: { $0.0 == paneID })?.1 else {
+            XCTFail("Expected restored synthetic session")
+            return
+        }
+
+        XCTAssertEqual(session.effectiveAISessionId, syntheticID)
+        XCTAssertEqual(session.effectiveAISessionIdentitySource, .synthetic)
     }
 
     func testRestorePrefillsDistinctCodexResumeCommandsPerTab() {

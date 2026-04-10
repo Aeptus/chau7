@@ -20,7 +20,7 @@ final class RemoteActivityStateTests: XCTestCase {
             tabTitle: "Codex",
             toolName: "Codex",
             projectName: "repo-b",
-            status: .waitingInput,
+            status: .approvalRequired,
             isSelected: false,
             updatedAt: now.addingTimeInterval(-10),
             approval: RemoteActivityApproval(
@@ -33,7 +33,7 @@ final class RemoteActivityStateTests: XCTestCase {
         let projected = RemoteActivityProjection.project(from: [running, waiting])
 
         XCTAssertEqual(projected?.tabID, 2)
-        XCTAssertEqual(projected?.status, .waitingInput)
+        XCTAssertEqual(projected?.status, .approvalRequired)
         XCTAssertEqual(projected?.headline, "Approval required")
         XCTAssertEqual(projected?.detail, "rm -rf build")
     }
@@ -103,5 +103,26 @@ final class RemoteActivityStateTests: XCTestCase {
         ])
 
         XCTAssertNil(projected)
+    }
+
+    func testProjectionCarriesDisplayMetadata() {
+        let projected = RemoteActivityProjection.project(from: [
+            RemoteActivityCandidate(
+                activityID: "tab-1",
+                tabID: 1,
+                tabTitle: "Claude",
+                toolName: "Claude",
+                projectName: "repo-a",
+                status: .running,
+                detail: nil,
+                logoAssetName: "claude-logo",
+                tabColorName: "purple",
+                isSelected: true,
+                updatedAt: Date()
+            )
+        ])
+
+        XCTAssertEqual(projected?.logoAssetName, "claude-logo")
+        XCTAssertEqual(projected?.tabColorName, "purple")
     }
 }

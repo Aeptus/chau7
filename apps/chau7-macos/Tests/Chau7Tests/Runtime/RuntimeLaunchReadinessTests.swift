@@ -98,6 +98,36 @@ final class RuntimeLaunchReadinessTests: XCTestCase {
         )
     }
 
+    func testReadyWhenDoneStatusStillLooksInteractive() {
+        XCTAssertTrue(
+            RuntimeLaunchReadiness.isReady(
+                snapshot: snapshot(
+                    shellLoading: false,
+                    isAtPrompt: false,
+                    effectiveStatus: "done",
+                    rawStatus: "done",
+                    aiProvider: "codex"
+                ),
+                backendName: "codex"
+            )
+        )
+    }
+
+    func testReadyWhenApprovalRequiredStatusMatchesBackend() {
+        XCTAssertTrue(
+            RuntimeLaunchReadiness.isReady(
+                snapshot: snapshot(
+                    shellLoading: false,
+                    isAtPrompt: false,
+                    effectiveStatus: "approvalRequired",
+                    rawStatus: "approvalRequired",
+                    aiProvider: "codex"
+                ),
+                backendName: "codex"
+            )
+        )
+    }
+
     func testNotReadyWhenSignalsBelongToAnotherBackend() {
         XCTAssertFalse(
             RuntimeLaunchReadiness.isReady(

@@ -96,6 +96,11 @@ final class AIToolRegistryTests: XCTestCase {
         }
     }
 
+    func testToolMatchingFindsProviderAndCommandNames() {
+        XCTAssertEqual(AIToolRegistry.tool(matching: "claude")?.displayName, "Claude")
+        XCTAssertEqual(AIToolRegistry.tool(matching: "codex")?.displayName, "Codex")
+    }
+
     // MARK: - Resume Provider Key
 
     func testResumeProviderKeyDirectMatch() {
@@ -128,6 +133,12 @@ final class AIToolRegistryTests: XCTestCase {
     func testLogoAssetNilForToolsWithoutLogo() {
         // Tools with nil logoAssetName return nil through the lookup
         XCTAssertNil(AIToolRegistry.logoAssetName(forAppName: "NotARealTool"))
+    }
+
+    func testDisplayMetadataResolvesAcrossProviderNames() {
+        let metadata = AIToolRegistry.displayMetadata(forName: "claude")
+        XCTAssertEqual(metadata?.logoAssetName, "claude-logo")
+        XCTAssertEqual(metadata?.tabColorName, "purple")
     }
 
     // MARK: - Event Source Raw Value
