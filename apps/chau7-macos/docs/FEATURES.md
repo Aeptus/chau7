@@ -68,6 +68,7 @@ Detection methods:
 - **Multi-provider event normalization** — Claude, Codex, and terminal sources translate provider-specific events into one shared semantic layer. Authoritative events from runtime and hooks take priority over history-derived fallbacks.
 - **Session-aware notification routing** — notifications route by exact AI session ID with fallback to provider/title heuristics. Handles tab restoration, split sessions, nested working directories, and cross-tab file conflicts.
 - **AI-first notification settings** — simplified overview for Finished, Failed, and Permission Request with direct controls for banner, tab highlight, sound, and dock bounce. Waiting-input and attention-required states surface as “needs me” attention. Per-tool overrides and advanced trigger plumbing available separately.
+- **Bounded runtime approval recovery** — repeated MCP/runtime approval timeouts no longer recover to `ready` forever. After a bounded retry count the session records a runtime error and moves to a failed state so stuck approval loops are visible and queryable.
 - **Notification delivery ledger** — lifecycle tracking for debugging: coalescing, retry scheduling, drop reasons, and real UI outcomes.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
 - **Codex session resolver** — maps Codex sessions to working directories with LRU caching.

@@ -91,9 +91,11 @@ public struct RuntimeSessionStateMachine: Sendable {
         case (.awaitingApproval, .turnCompleted): return .ready
         case (.awaitingApproval, .approvalNeeded): return .awaitingApproval
         case (.awaitingApproval, .interrupted): return .interrupted
+        case (.awaitingApproval, .processCrashed): return .failed
         case (.awaitingApproval, .tabClosed): return .stopped
         // waitingInput
         case (.waitingInput, .inputProvided): return .busy
+        case (.waitingInput, .processCrashed): return .failed
         case (.waitingInput, .tabClosed): return .stopped
         // interrupted
         case (.interrupted, .backendReady): return .ready

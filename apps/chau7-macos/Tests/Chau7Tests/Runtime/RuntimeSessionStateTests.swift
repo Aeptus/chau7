@@ -133,6 +133,13 @@ final class RuntimeSessionStateTests: XCTestCase {
         XCTAssertEqual(sm.state, .stopped)
     }
 
+    func testAwaitingApprovalToFailed() {
+        var sm = makeBusy()
+        sm.handle(.approvalNeeded)
+        XCTAssertTrue(sm.handle(.processCrashed("approval_timeout_stuck")))
+        XCTAssertEqual(sm.state, .failed)
+    }
+
     // MARK: - WaitingInput Transitions
 
     func testInputProvidedReturnsToBusy() {
@@ -147,6 +154,13 @@ final class RuntimeSessionStateTests: XCTestCase {
         sm.handle(.inputRequested)
         XCTAssertTrue(sm.handle(.tabClosed))
         XCTAssertEqual(sm.state, .stopped)
+    }
+
+    func testWaitingInputToFailed() {
+        var sm = makeBusy()
+        sm.handle(.inputRequested)
+        XCTAssertTrue(sm.handle(.processCrashed("backend_crash")))
+        XCTAssertEqual(sm.state, .failed)
     }
 
     // MARK: - Interrupted Transitions

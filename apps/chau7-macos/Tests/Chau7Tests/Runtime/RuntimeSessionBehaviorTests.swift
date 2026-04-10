@@ -59,5 +59,31 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
         XCTAssertEqual(failureEvents.count, 1)
         XCTAssertEqual(failureEvents.first?.data?["reason"], "approval_timeout")
     }
+
+    func testRepeatedApprovalTimeoutsMarkSessionFailed() {
+        let session = RuntimeSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: "/tmp/runtime-approval-stuck", provider: "claude")
+        )
+
+        session.transition(.backendReady)
+
+        for attempt in 1 ... 3 {
+            XCTAssertNotNil(session.startTurn(prompt: "Need approval \(attempt)"))
+            XCTAssertNotNil(session.requestApproval(tool: "Read", description: "Need approval"))
+            session.handleApprovalTimeout()
+        }
+
+        XCTAssertEqual(session.state, .failed)
+        XCTAssertNil(session.pendingApproval)
+        XCTAssertNil(session.currentTurnID)
+
+        let events = session.journal.events(after: 0, limit: 100).events
+        let sessionErrors = events.filter { $0.type == RuntimeEventType.sessionError.rawValue }
+        XCTAssertEqual(sessionErrors.count, 1)
+        XCTAssertEqual(sessionErrors.first?.data?["reason"], "approval_timeout_stuck")
+        XCTAssertEqual(sessionErrors.first?.data?["approval_timeout_count"], "3")
+    }
 }
 #endif

@@ -48,6 +48,8 @@ final class RuntimeSession: @unchecked Sendable {
     private var _currentResultSchema: JSONValue?
     private var _turnResults: [String: RuntimeTurnResult] = [:]
     private var approvalTimeoutWork: DispatchWorkItem?
+    private var consecutiveApprovalTimeouts = 0
+    private var lastApprovalTimeoutAt: Date?
 
     // MARK: - Lock-Acquiring Accessors
 
@@ -209,6 +211,8 @@ final class RuntimeSession: @unchecked Sendable {
         _currentTurnStats = TurnStats()
         _lastDeniedApproval = false
         _wasInterrupted = false
+        consecutiveApprovalTimeouts = 0
+        lastApprovalTimeoutAt = nil
         lock.unlock()
 
         // Journal writes are self-locked
@@ -417,6 +421,8 @@ final class RuntimeSession: @unchecked Sendable {
     }
 
     private static let approvalTimeoutSeconds: TimeInterval = 30
+    private static let approvalTimeoutFailureThreshold = 3
+    private static let approvalTimeoutResetWindowSeconds: TimeInterval = 300
 
     private func scheduleApprovalTimeout() {
         approvalTimeoutWork?.cancel()
@@ -440,10 +446,43 @@ final class RuntimeSession: @unchecked Sendable {
 
         lock.lock()
         _pendingApproval = nil
+        let now = Date()
+        if let previousTimeout = lastApprovalTimeoutAt,
+           now.timeIntervalSince(previousTimeout) > Self.approvalTimeoutResetWindowSeconds {
+            consecutiveApprovalTimeouts = 0
+        }
+        consecutiveApprovalTimeouts += 1
+        lastApprovalTimeoutAt = now
+        let timeoutCount = consecutiveApprovalTimeouts
         lock.unlock()
 
         failTurn(reason: "approval_timeout")
-        Log.warn("RuntimeSession \(id): approval timed out after \(Int(Self.approvalTimeoutSeconds))s, recovering to ready")
+        guard timeoutCount < Self.approvalTimeoutFailureThreshold else {
+            journal.append(
+                sessionID: id,
+                turnID: nil,
+                type: RuntimeEventType.sessionError.rawValue,
+                data: [
+                    "reason": "approval_timeout_stuck",
+                    "approval_timeout_count": "\(timeoutCount)"
+                ]
+            )
+            let transitioned = transition(.processCrashed("approval_timeout_stuck"))
+            if transitioned {
+                Log.error(
+                    "RuntimeSession \(id): approval timed out \(timeoutCount)x within \(Int(Self.approvalTimeoutResetWindowSeconds))s, marking session failed"
+                )
+            } else {
+                Log.warn(
+                    "RuntimeSession \(id): approval timed out \(timeoutCount)x but failed transition was rejected in state=\(state.rawValue)"
+                )
+            }
+            return
+        }
+
+        Log.warn(
+            "RuntimeSession \(id): approval timed out after \(Int(Self.approvalTimeoutSeconds))s, recovering to ready (attempt \(timeoutCount)/\(Self.approvalTimeoutFailureThreshold))"
+        )
     }
 
     /// Resolve a pending approval. Transitions back to `.busy`.
@@ -461,6 +500,9 @@ final class RuntimeSession: @unchecked Sendable {
         _pendingApproval = nil
         if !approved {
             _lastDeniedApproval = true
+        } else {
+            consecutiveApprovalTimeouts = 0
+            lastApprovalTimeoutAt = nil
         }
         let turnID = _currentTurnID
         lock.unlock()

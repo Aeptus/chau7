@@ -392,6 +392,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.34 | 2026-04-10 | Runtime sessions now fail explicitly after repeated approval timeouts instead of recovering to ready forever, so stuck approval loops surface as unhealthy sessions instead of silent retry churn |
 | 0.5.33 | 2026-04-09 | Protected-folder repos now persist repo identity and last-known branch in tab restore state, so restored tabs keep their git badge even when live Downloads/Desktop/Documents access is unavailable |
 | 0.5.32 | 2026-04-04 | App termination now reuses a recent cached multi-window snapshot instead of re-exporting every visible tab during quit, reducing synchronous shutdown stalls and beachball risk |
 | 0.5.31 | 2026-04-04 | Ambiguous same-repo Codex save-time resolution now preserves a tab's explicit session metadata instead of clearing it, so restored tabs can keep their last-known resume command |
