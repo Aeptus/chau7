@@ -88,7 +88,7 @@ struct MarkdownRunbookView: View {
                 onContentChange?(newContent)
             } label: {
                 Image(systemName: checked ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(checked ? .accentColor : .secondary)
+                    .foregroundStyle(checked ? Color.accentColor : .secondary)
                     .font(.system(size: 14))
             }
             .buttonStyle(.plain)
@@ -197,7 +197,7 @@ func parseMarkdown(_ input: String) -> [MarkdownSection] {
 /// Parses a single line for checkbox syntax: `- [ ] text` or `- [x] text` (also `*` bullets).
 private func parseCheckboxLine(_ line: String) -> (checked: Bool, text: String)? {
     let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
-    guard let first = trimmed.first, (first == "-" || first == "*") else { return nil }
+    guard let first = trimmed.first, first == "-" || first == "*" else { return nil }
     let afterBullet = trimmed.dropFirst()
     guard afterBullet.hasPrefix(" [") else { return nil }
     let afterBracket = afterBullet.dropFirst(2) // drop " ["
