@@ -324,6 +324,7 @@ func runMigrations(db *sql.DB) error {
 
 	hasTaskID := false
 	hasCacheTokens := false
+	hasTTFT := false
 	for rows.Next() {
 		var cid int
 		var name, ctype string
@@ -337,6 +338,8 @@ func runMigrations(db *sql.DB) error {
 			hasTaskID = true
 		case "cache_creation_input_tokens":
 			hasCacheTokens = true
+		case "ttft_ms":
+			hasTTFT = true
 		}
 	}
 
@@ -360,6 +363,10 @@ func runMigrations(db *sql.DB) error {
 		for _, m := range cacheTokenMigrations {
 			db.Exec(m) // Ignore errors for columns that may already exist
 		}
+	}
+
+	if !hasTTFT {
+		db.Exec("ALTER TABLE api_calls ADD COLUMN ttft_ms INTEGER DEFAULT 0")
 	}
 
 	// v1.2 migrations: Add baseline fields to api_calls
