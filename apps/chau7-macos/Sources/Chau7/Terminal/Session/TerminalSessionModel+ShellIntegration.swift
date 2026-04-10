@@ -240,7 +240,14 @@ extension TerminalSessionModel {
         let token = FeatureProfiler.shared.begin(.aiDetect, bytes: data.count, metadata: "wait-for-input")
         defer { FeatureProfiler.shared.end(token) }
 
-        // Common AI input waiting patterns
+        let approvalPatterns = [
+            "needs your approval",
+            "needs your permission",
+            "approval required",
+            "approve this command",
+            "allow once",
+            "always allow"
+        ]
         let waitingPatterns = [
             "Yes/No",
             "[y/N]",
@@ -259,9 +266,18 @@ extension TerminalSessionModel {
         ]
 
         let lowercased = text.lowercased()
-        let loweredPatterns = waitingPatterns.map { $0.lowercased() }
+        let loweredApprovalPatterns = approvalPatterns.map { $0.lowercased() }
+        let loweredWaitingPatterns = waitingPatterns.map { $0.lowercased() }
+        let isApprovalRequired: Bool
+        if let rustMatch = RustPatternMatcher.waitPatterns.containsAny(haystack: lowercased, patterns: loweredApprovalPatterns) {
+            isApprovalRequired = rustMatch
+        } else {
+            isApprovalRequired = approvalPatterns.contains { pattern in
+                lowercased.contains(pattern.lowercased())
+            }
+        }
         let isWaiting: Bool
-        if let rustMatch = RustPatternMatcher.waitPatterns.containsAny(haystack: lowercased, patterns: loweredPatterns) {
+        if let rustMatch = RustPatternMatcher.waitPatterns.containsAny(haystack: lowercased, patterns: loweredWaitingPatterns) {
             isWaiting = rustMatch
         } else {
             isWaiting = waitingPatterns.contains { pattern in
@@ -269,11 +285,11 @@ extension TerminalSessionModel {
             }
         }
 
-        if isWaiting {
+        if isApprovalRequired || isWaiting {
             DispatchQueue.main.async { [weak self] in
-                guard let self, status == .running else { return }
-                status = .waitingForInput
-                Log.trace("AI agent waiting for input detected")
+                guard let self, status == .running || status == .stuck else { return }
+                status = isApprovalRequired ? .approvalRequired : .waitingForInput
+                Log.trace("AI agent blocked detected status=\(status.rawValue)")
             }
         }
     }
@@ -332,6 +348,7 @@ extension TerminalSessionModel {
             let trimmedCommand = commandLine.flatMap { SensitiveInputGuard.sanitizedCommandForPersistence($0) }
             aiLogContext = AILogContext(toolName: toolName, commandLine: trimmedCommand, logPath: logPath)
             aiLogPrefixBuffer.removeAll(keepingCapacity: true)
+            noteAgentLaunch(toolName: toolName, commandLine: trimmedCommand)
 
             let message: String
             if let trimmedCommand, !trimmedCommand.isEmpty {
@@ -519,8 +536,12 @@ extension TerminalSessionModel {
         // Transition status to idle when the prompt returns — the command cycle
         // is complete. Without this, status stays .running forever when OSC 133
         // clears hasPendingCommand (blocking the idle timer from transitioning).
-        if status == .running || status == .stuck {
-            status = .idle
+        if status == .running || status == .stuck || status == .waitingForInput || status == .approvalRequired {
+            if activeAppName != nil || effectiveAIProvider != nil || lastDetectedAppName != nil {
+                status = .done
+            } else {
+                status = .idle
+            }
         }
         createDeferredCTOFlag()
         devServerMonitor.commandDidFinish()
@@ -1161,7 +1182,11 @@ extension TerminalSessionModel {
             // Check for idle - no activity for idleSeconds
             guard latestIdleFor >= idleSeconds else { return }
 
-            status = .idle
+            if activeAppName != nil || effectiveAIProvider != nil || lastDetectedAppName != nil {
+                status = .done
+            } else {
+                status = .idle
+            }
             hasPendingCommand = false
             promptSeenForPendingCommand = false
             pendingCommandLine = nil
@@ -1227,8 +1252,15 @@ extension TerminalSessionModel {
         guard !trimmed.isEmpty else { return }
 
         if let metadata = AIResumeParser.extractMetadata(from: trimmed) {
+            let previousSessionId = normalizedStoredAISessionId()
             lastAIProvider = metadata.provider
             lastAISessionId = metadata.sessionId
+            lastAISessionIdentitySource = .explicit
+            if previousSessionId != metadata.sessionId {
+                agentStartedAt = nil
+                lastExitCode = nil
+                lastExitAt = nil
+            }
             // Update telemetry run with discovered session ID
             if !metadata.sessionId.isEmpty {
                 TelemetryRecorder.shared.updateSessionID(tabID: tabIdentifier, sessionID: metadata.sessionId)
@@ -1239,13 +1271,25 @@ extension TerminalSessionModel {
         if let detectedProvider = AIResumeParser.detectProvider(from: trimmed) {
             lastAIProvider = detectedProvider
             lastAISessionId = nil
+            lastAISessionIdentitySource = nil
         }
     }
 
     /// Restores AI metadata from persisted tab state without waiting for user input.
     /// This keeps explicit session metadata stable across restoration boundaries and
     /// prevents fallback logic from collapsing multiple tabs into one inferred session.
-    func restoreAIMetadata(provider: String?, sessionId: String?) {
+    func restoreAIMetadata(
+        provider: String?,
+        sessionId: String?,
+        sessionIdSource: AISessionIdentitySource? = nil,
+        launchCommand: String? = nil,
+        startedAt: Date? = nil,
+        lastInputAt: Date? = nil,
+        lastOutputAt: Date? = nil,
+        lastStatus: CommandStatus? = nil,
+        lastExitCode: Int? = nil,
+        lastExitAt: Date? = nil
+    ) {
         let normalizedProvider = AIResumeParser.normalizeProviderName(
             provider ?? ""
         )
@@ -1265,13 +1309,56 @@ extension TerminalSessionModel {
             )
         }
 
+        agentStartedAt = startedAt
+        if let lastInputAt {
+            self.lastInputAt = lastInputAt
+        }
+        if let lastOutputAt {
+            self.lastOutputAt = lastOutputAt
+        }
+        lastAgentLaunchCommand = launchCommand
+        if let lastStatus {
+            status = lastStatus
+        }
+        self.lastExitCode = lastExitCode
+        self.lastExitAt = lastExitAt
+
         if let sessionId {
             let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
-            lastAISessionId = AIResumeParser.isValidSessionId(trimmed) ? trimmed : nil
+            if AIResumeParser.isValidSessionId(trimmed)
+                || (sessionIdSource == .synthetic && trimmed.hasPrefix("synth:")) {
+                lastAISessionId = trimmed
+            } else {
+                lastAISessionId = nil
+            }
+            lastAISessionIdentitySource = lastAISessionId == nil ? nil : (sessionIdSource ?? .explicit)
             return
         }
 
         lastAISessionId = nil
+        lastAISessionIdentitySource = nil
+    }
+
+    private func noteAgentLaunch(toolName: String, commandLine: String?) {
+        let normalizedProvider = AIResumeParser.normalizeProviderName(toolName)
+            ?? AIResumeParser.detectProvider(from: toolName)
+        let hasConcreteSessionIdentity = normalizedStoredAISessionId() != nil
+            && lastAISessionIdentitySource != .synthetic
+
+        if !hasConcreteSessionIdentity || agentStartedAt == nil {
+            agentStartedAt = Date()
+        }
+        if let normalizedProvider {
+            lastAIProvider = normalizedProvider
+        }
+        if let commandLine, !commandLine.isEmpty {
+            lastAgentLaunchCommand = commandLine
+        }
+        lastExitCode = nil
+        lastExitAt = nil
+        if status == .done {
+            status = .running
+        }
     }
 
     private func shouldAllowRestoredProviderOverride(

@@ -43,6 +43,22 @@ extension OverlayTabsModel {
         return trimmed
     }
 
+    static func normalizePersistedAISessionId(
+        _ sessionId: String?,
+        source: AISessionIdentitySource?
+    ) -> String? {
+        guard let sessionId else { return nil }
+        let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if AIResumeParser.isValidSessionId(trimmed) {
+            return trimmed
+        }
+        if source == .synthetic, trimmed.hasPrefix("synth:") {
+            return trimmed
+        }
+        return nil
+    }
+
     static func findClaudeSessionId(
         forDirectory directory: String,
         referenceDate: Date? = nil,
@@ -681,7 +697,7 @@ extension OverlayTabsModel {
         let paneStatesByID = Self.paneStateMap(from: state.paneStates)
         var paneStatesToRestore = paneStatesByID
 
-        // Backward compatibility: legacy single-pane save has no per-pane states.
+        // Legacy single-pane adapter. Remove once all persisted state uses paneStates.
         if paneStatesByID.isEmpty, let firstPaneID = terminalSessions.first?.0 {
             paneStatesToRestore[firstPaneID] = SavedTerminalPaneState(
                 paneID: firstPaneID.uuidString,
@@ -690,11 +706,19 @@ extension OverlayTabsModel {
                 aiResumeCommand: state.aiResumeCommand,
                 aiProvider: state.aiProvider,
                 aiSessionId: state.aiSessionId,
+                aiSessionIdSource: state.aiSessionIdSource,
+                lastInputAt: state.lastInputAt,
                 knownRepoRoot: state.knownRepoRoot ?? state.repoGroupID,
-                knownGitBranch: state.knownGitBranch
+                knownGitBranch: state.knownGitBranch,
+                lastStatus: state.lastStatus,
+                agentLaunchCommand: state.agentLaunchCommand,
+                agentStartedAt: state.agentStartedAt,
+                lastExitCode: state.lastExitCode,
+                lastExitAt: state.lastExitAt
             )
         }
 
+        // Legacy top-level AI metadata adapter. Remove once all restore payloads are pane-native.
         if paneStatesToRestore.count == 1,
            let firstEntry = paneStatesToRestore.first {
             let firstPane = firstEntry.value
@@ -707,9 +731,16 @@ extension OverlayTabsModel {
                     aiResumeCommand: legacyCommand,
                     aiProvider: firstPane.aiProvider ?? state.aiProvider,
                     aiSessionId: firstPane.aiSessionId ?? state.aiSessionId,
+                    aiSessionIdSource: firstPane.aiSessionIdSource ?? state.aiSessionIdSource,
                     lastOutputAt: firstPane.lastOutputAt,
+                    lastInputAt: firstPane.lastInputAt ?? state.lastInputAt,
                     knownRepoRoot: firstPane.knownRepoRoot ?? state.knownRepoRoot ?? state.repoGroupID,
-                    knownGitBranch: firstPane.knownGitBranch ?? state.knownGitBranch
+                    knownGitBranch: firstPane.knownGitBranch ?? state.knownGitBranch,
+                    lastStatus: firstPane.lastStatus ?? state.lastStatus,
+                    agentLaunchCommand: firstPane.agentLaunchCommand ?? state.agentLaunchCommand,
+                    agentStartedAt: firstPane.agentStartedAt ?? state.agentStartedAt,
+                    lastExitCode: firstPane.lastExitCode ?? state.lastExitCode,
+                    lastExitAt: firstPane.lastExitAt ?? state.lastExitAt
                 )
             }
         }
@@ -757,27 +788,45 @@ extension OverlayTabsModel {
                     aiResumeCommand: nil,
                     aiProvider: nil,
                     aiSessionId: nil,
+                    aiSessionIdSource: nil,
                     lastOutputAt: nil,
+                    lastInputAt: nil,
                     knownRepoRoot: nil,
-                    knownGitBranch: nil
+                    knownGitBranch: nil,
+                    lastStatus: nil,
+                    agentLaunchCommand: nil,
+                    agentStartedAt: nil,
+                    lastExitCode: nil,
+                    lastExitAt: nil
                 )
                 let shouldUseLegacyTabFallback = paneStatesByID.isEmpty && currentSessions.count == 1
                 let fallbackProvider = shouldUseLegacyTabFallback ? state.aiProvider : nil
                 let fallbackSessionId = shouldUseLegacyTabFallback ? state.aiSessionId : nil
+                let fallbackSessionSource = shouldUseLegacyTabFallback ? state.aiSessionIdSource : nil
 
                 let resolvedMetadata = Self.resolveAIResumeMetadataFromSavedState(
                     paneState: paneState,
                     fallbackAIProvider: fallbackProvider,
-                    fallbackAISessionId: fallbackSessionId
+                    fallbackAISessionId: fallbackSessionId,
+                    fallbackAISessionIdSource: fallbackSessionSource
                 )
                 let resolvedCommand = Self.buildAIResumeCommand(
                     provider: resolvedMetadata?.provider,
-                    sessionId: resolvedMetadata?.sessionId
+                    sessionId: resolvedMetadata?.sessionId,
+                    sessionIdSource: resolvedMetadata?.sessionIdSource
                 )
 
                 session.restoreAIMetadata(
                     provider: resolvedMetadata?.provider,
-                    sessionId: resolvedMetadata?.sessionId
+                    sessionId: resolvedMetadata?.sessionId,
+                    sessionIdSource: resolvedMetadata?.sessionIdSource,
+                    launchCommand: paneState.agentLaunchCommand,
+                    startedAt: paneState.agentStartedAt,
+                    lastInputAt: paneState.lastInputAt,
+                    lastOutputAt: paneState.lastOutputAt,
+                    lastStatus: paneState.lastStatus,
+                    lastExitCode: paneState.lastExitCode,
+                    lastExitAt: paneState.lastExitAt
                 )
 
                 let effectivePaneState = SavedTerminalPaneState(
@@ -787,9 +836,16 @@ extension OverlayTabsModel {
                     aiResumeCommand: resolvedCommand ?? Self.normalizedResumeCommand(paneState.aiResumeCommand),
                     aiProvider: resolvedMetadata?.provider,
                     aiSessionId: resolvedMetadata?.sessionId,
+                    aiSessionIdSource: resolvedMetadata?.sessionIdSource,
                     lastOutputAt: paneState.lastOutputAt,
+                    lastInputAt: paneState.lastInputAt,
                     knownRepoRoot: paneState.knownRepoRoot,
-                    knownGitBranch: paneState.knownGitBranch
+                    knownGitBranch: paneState.knownGitBranch,
+                    lastStatus: paneState.lastStatus,
+                    agentLaunchCommand: paneState.agentLaunchCommand,
+                    agentStartedAt: paneState.agentStartedAt,
+                    lastExitCode: paneState.lastExitCode,
+                    lastExitAt: paneState.lastExitAt
                 )
                 resolvedPaneStates[paneID] = effectivePaneState
                 paneStatesToRestore[paneID] = effectivePaneState
@@ -815,9 +871,16 @@ extension OverlayTabsModel {
                     aiResumeCommand: nil,
                     aiProvider: nil,
                     aiSessionId: nil,
+                    aiSessionIdSource: nil,
                     lastOutputAt: nil,
+                    lastInputAt: nil,
                     knownRepoRoot: nil,
-                    knownGitBranch: nil
+                    knownGitBranch: nil,
+                    lastStatus: nil,
+                    agentLaunchCommand: nil,
+                    agentStartedAt: nil,
+                    lastExitCode: nil,
+                    lastExitAt: nil
                 )
 
                 // Restore scrollback via cat through the shell so the terminal re-renders

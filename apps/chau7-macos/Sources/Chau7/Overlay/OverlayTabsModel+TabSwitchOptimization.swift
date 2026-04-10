@@ -169,9 +169,9 @@ extension OverlayTabsModel {
         var count = 0
         for session in tab.splitController.root.allSessions {
             switch session.status {
-            case .running, .waitingForInput, .stuck:
+            case .running, .waitingForInput, .approvalRequired, .stuck:
                 count += 1
-            case .idle, .exited:
+            case .idle, .done, .exited:
                 continue
             }
         }

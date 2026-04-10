@@ -10,12 +10,20 @@ extension Notification.Name {
         Notification.Name("com.chau7.terminalSessionRuntimeReadinessChanged")
 }
 
-enum CommandStatus: String {
+enum CommandStatus: String, Codable {
     case idle
+    case done
     case running
     case waitingForInput // AI agent waiting for user input/permission
+    case approvalRequired // AI agent is blocked on an explicit approval decision
     case stuck // Running for too long without output
     case exited
+}
+
+enum AISessionIdentitySource: String, Codable {
+    case explicit
+    case observed
+    case synthetic
 }
 
 /// Model for a terminal session, managing shell state, search, and output capture.
@@ -134,7 +142,14 @@ final class TerminalSessionModel {
     @ObservationIgnored var onGitRootPathChanged: ((String?) -> Void)?
 
     var gitRootPath: String? {
-        didSet { onGitRootPathChanged?(gitRootPath) }
+        didSet {
+            cachedRepoName = Self.repoName(from: gitRootPath)
+            onGitRootPathChanged?(gitRootPath)
+        }
+    }
+
+    var repoName: String? {
+        cachedRepoName
     }
 
     var activeAppName: String? {
@@ -179,17 +194,36 @@ final class TerminalSessionModel {
     }
 
     var effectiveAISessionId: String? {
-        if let sessionId = lastAISessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
-           AIResumeParser.isValidSessionId(sessionId) {
-            return sessionId
+        effectiveAISessionIdentity?.id
+    }
+
+    var effectiveAISessionIdentitySource: AISessionIdentitySource? {
+        effectiveAISessionIdentity?.source
+    }
+
+    var effectiveAISessionIdentity: (id: String, source: AISessionIdentitySource)? {
+        if let sessionId = normalizedStoredAISessionId(),
+           let source = lastAISessionIdentitySource {
+            if source != .synthetic {
+                return (sessionId, source)
+            }
+            if let observed = resolveObservedAISessionIdentityIfNeeded() {
+                return observed
+            }
+            return (sessionId, source)
         }
 
-        let telemetrySessionId = TelemetryRecorder.shared.activeRunForTab(tabIdentifier)?.sessionID
-        guard let telemetrySessionId = telemetrySessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
-              AIResumeParser.isValidSessionId(telemetrySessionId) else {
+        if let observed = resolveObservedAISessionIdentityIfNeeded() {
+            return observed
+        }
+
+        guard let provider = effectiveAIProvider,
+              let synthetic = syntheticAISessionIdentity(provider: provider) else {
             return nil
         }
-        return telemetrySessionId
+        lastAISessionId = synthetic.id
+        lastAISessionIdentitySource = synthetic.source
+        return synthetic
     }
 
     var effectiveStatus: CommandStatus {
@@ -275,6 +309,10 @@ final class TerminalSessionModel {
         max(lastInputAt, lastOutputAt)
     }
 
+    var lastInputDate: Date {
+        lastInputAt
+    }
+
     private func postRuntimeReadinessChange(source: String) {
         NotificationCenter.default.post(
             name: .terminalSessionRuntimeReadinessChanged,
@@ -295,10 +333,15 @@ final class TerminalSessionModel {
 
     var lastAIProvider: String?
     var lastAISessionId: String?
+    var lastAISessionIdentitySource: AISessionIdentitySource?
     /// The last app name set by live detection (command or output).
     /// Unlike `activeAppName`, this is NOT cleared on process exit,
     /// so it survives across save/restore boundaries.
     var lastDetectedAppName: String?
+    var agentStartedAt: Date?
+    var lastAgentLaunchCommand: String?
+    var lastExitCode: Int?
+    var lastExitAt: Date?
 
     /// Update the last detected app name and clear stale session metadata
     /// when the provider changes. For example, if `lastAIProvider` is "claude"
@@ -310,6 +353,9 @@ final class TerminalSessionModel {
            let oldProvider = AIResumeParser.normalizeProviderName(lastAIProvider ?? ""),
            newProvider != oldProvider {
             lastAISessionId = nil
+            lastAISessionIdentitySource = nil
+            agentStartedAt = nil
+            lastAgentLaunchCommand = nil
         }
     }
 
@@ -338,15 +384,121 @@ final class TerminalSessionModel {
         return normalized.capitalized
     }
 
+    static func repoName(from repoRootPath: String?) -> String? {
+        guard let root = repoRootPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !root.isEmpty else {
+            return nil
+        }
+        let name = URL(fileURLWithPath: root).lastPathComponent
+        return name.isEmpty ? nil : name
+    }
+
+    func normalizedStoredAISessionId() -> String? {
+        guard let sessionId = lastAISessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sessionId.isEmpty else {
+            return nil
+        }
+        if AIResumeParser.isValidSessionId(sessionId) {
+            return sessionId
+        }
+        if lastAISessionIdentitySource == .synthetic, sessionId.hasPrefix("synth:") {
+            return sessionId
+        }
+        return nil
+    }
+
+    private func resolveObservedAISessionIdentityIfNeeded() -> (id: String, source: AISessionIdentitySource)? {
+        if let stored = normalizedStoredAISessionId(),
+           lastAISessionIdentitySource == .observed {
+            return (stored, .observed)
+        }
+
+        if let telemetrySessionIdRaw = TelemetryRecorder.shared.activeRunForTab(tabIdentifier)?.sessionID,
+           let telemetrySessionId = {
+               let trimmed = telemetrySessionIdRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+               return trimmed.isEmpty ? nil : trimmed
+           }(),
+           AIResumeParser.isValidSessionId(telemetrySessionId) {
+            lastAISessionId = telemetrySessionId
+            lastAISessionIdentitySource = .observed
+            return (telemetrySessionId, .observed)
+        }
+
+        guard let provider = effectiveAIProvider,
+              let startedAt = agentStartedAt else {
+            return nil
+        }
+
+        let lookupSignature = "\(provider)|\(currentDirectory)|\(Int(startedAt.timeIntervalSince1970))"
+        let now = Date()
+        if lastObservedSessionLookupSignature == lookupSignature,
+           let lastLookup = lastObservedSessionLookupAt,
+           now.timeIntervalSince(lastLookup) < 1.0 {
+            return nil
+        }
+
+        lastObservedSessionLookupSignature = lookupSignature
+        lastObservedSessionLookupAt = now
+
+        guard let observed = OverlayTabsModel.findAIResumeSessionId(
+            for: provider,
+            directory: currentDirectory,
+            referenceDate: startedAt
+        ) else {
+            return nil
+        }
+
+        lastAISessionId = observed
+        lastAISessionIdentitySource = .observed
+        TelemetryRecorder.shared.updateSessionID(tabID: tabIdentifier, sessionID: observed)
+        return (observed, .observed)
+    }
+
+    private func syntheticAISessionIdentity(provider: String) -> (id: String, source: AISessionIdentitySource)? {
+        if let stored = normalizedStoredAISessionId(),
+           lastAISessionIdentitySource == .synthetic {
+            return (stored, .synthetic)
+        }
+
+        guard let startedAt = agentStartedAt else { return nil }
+
+        let normalizedProvider = AIResumeParser.normalizeProviderName(provider) ?? provider.lowercased()
+        let fingerprint = Self.fnv1a64Hex("\(normalizedProvider)|\(tabIdentifier)|\(startedAt.timeIntervalSince1970)")
+        return ("synth:\(normalizedProvider):\(fingerprint)", .synthetic)
+    }
+
+    private static func fnv1a64Hex(_ value: String) -> String {
+        var hash: UInt64 = 0xCBF2_9CE4_8422_2325
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0100_0000_01B3
+        }
+        return String(format: "%016llx", hash)
+    }
+
     static func resolveEffectiveStatus(
         historyState: HistorySessionState,
         fallback: CommandStatus
     ) -> CommandStatus {
         switch historyState {
         case .active:
-            return fallback == .waitingForInput ? .waitingForInput : .running
+            switch fallback {
+            case .waitingForInput, .approvalRequired, .stuck:
+                return fallback
+            case .done, .idle:
+                return .running
+            case .running, .exited:
+                return fallback
+            }
         case .idle:
-            return fallback == .exited ? .exited : .idle
+            switch fallback {
+            case .done, .exited:
+                return fallback
+            case .approvalRequired, .waitingForInput:
+                return fallback
+            case .running, .stuck, .idle:
+                return .idle
+            }
         case .closed:
             return fallback
         }
@@ -407,6 +559,9 @@ final class TerminalSessionModel {
     @ObservationIgnored private var idleTimer: DispatchSourceTimer?
     @ObservationIgnored var lastInputAt = Date()
     @ObservationIgnored var lastOutputAt = Date()
+    @ObservationIgnored private var cachedRepoName: String?
+    @ObservationIgnored private var lastObservedSessionLookupAt: Date?
+    @ObservationIgnored private var lastObservedSessionLookupSignature: String?
     @ObservationIgnored var commandStartedAt = Date.distantPast // Track when command started for "stuck" detection
     @ObservationIgnored var hasPendingCommand = false
     @ObservationIgnored var inputBuffer = ""
@@ -567,7 +722,14 @@ final class TerminalSessionModel {
     }
 
     /// Stuck timeout in seconds - when command runs this long without output, mark as stuck.
-    let stuckSeconds: TimeInterval = 30.0
+    var stuckSeconds: TimeInterval {
+        if let raw = EnvVars.get("CHAU7_STUCK_SECONDS"),
+           let value = Double(raw), value > 0 {
+            return value
+        }
+        return 30.0
+    }
+
     var fallbackCompletionSeconds: TimeInterval {
         if let raw = EnvVars.get(EnvVars.commandFallbackSeconds, legacy: EnvVars.legacyCommandFallbackSeconds),
            let value = Double(raw), value > 0 {
@@ -587,6 +749,7 @@ final class TerminalSessionModel {
         SnippetManager.shared.updateContextPath(currentDirectory)
         startIdleTimer()
         setupDevServerMonitor()
+        self.cachedRepoName = Self.repoName(from: gitRootPath)
     }
 
     private func setupDevServerMonitor() {
@@ -1052,6 +1215,8 @@ final class TerminalSessionModel {
         DispatchQueue.main.async {
             self.status = .exited
             self.devServer = nil
+            self.lastExitCode = exitCode.map(Int.init)
+            self.lastExitAt = Date()
         }
         devServerMonitor.stop()
         // finishAILogging is idempotent and has internal synchronization

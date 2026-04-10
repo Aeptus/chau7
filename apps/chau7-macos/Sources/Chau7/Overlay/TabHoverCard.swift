@@ -70,11 +70,15 @@ private struct TabHoverCardContent: View {
     }()
 
     private var statusLabel: (text: String, color: Color) {
-        switch session.status {
+        switch session.effectiveStatus {
         case .idle:
             return ("Idle", .secondary)
+        case .done:
+            return ("Done", .blue)
         case .running:
             return ("Running", .green)
+        case .approvalRequired:
+            return ("Approval", .orange)
         case .waitingForInput:
             return ("Waiting", .orange)
         case .stuck:
@@ -92,7 +96,7 @@ private struct TabHoverCardContent: View {
     private var footerSessionId: String? {
         guard let raw = session.effectiveAISessionId else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard AIResumeParser.isValidSessionId(trimmed) else { return nil }
+        guard AIResumeParser.isValidSessionId(trimmed) || trimmed.hasPrefix("synth:") else { return nil }
         return trimmed
     }
 

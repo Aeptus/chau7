@@ -143,6 +143,16 @@ struct OverlayTab: Identifiable, Equatable {
         splitController.focusedSession ?? splitController.primarySession
     }
 
+    var agentCount: Int {
+        splitController.root.allSessions.reduce(into: 0) { count, session in
+            if session.aiDisplayAppName != nil
+                || session.effectiveAIProvider != nil
+                || session.effectiveAISessionId != nil {
+                count += 1
+            }
+        }
+    }
+
     init(appModel: AppModel) {
         self.id = UUID()
         self.splitController = SplitPaneController(appModel: appModel)
@@ -321,9 +331,16 @@ struct SavedTerminalPaneState: Codable {
     let aiResumeCommand: String? // e.g. "claude --resume abc123"
     let aiProvider: String?
     let aiSessionId: String?
+    let aiSessionIdSource: AISessionIdentitySource?
     let lastOutputAt: Date?
+    let lastInputAt: Date?
     let knownRepoRoot: String?
     let knownGitBranch: String?
+    let lastStatus: CommandStatus?
+    let agentLaunchCommand: String?
+    let agentStartedAt: Date?
+    let lastExitCode: Int?
+    let lastExitAt: Date?
 
     init(
         paneID: String,
@@ -332,9 +349,16 @@ struct SavedTerminalPaneState: Codable {
         aiResumeCommand: String?,
         aiProvider: String? = nil,
         aiSessionId: String? = nil,
+        aiSessionIdSource: AISessionIdentitySource? = nil,
         lastOutputAt: Date? = nil,
+        lastInputAt: Date? = nil,
         knownRepoRoot: String? = nil,
-        knownGitBranch: String? = nil
+        knownGitBranch: String? = nil,
+        lastStatus: CommandStatus? = nil,
+        agentLaunchCommand: String? = nil,
+        agentStartedAt: Date? = nil,
+        lastExitCode: Int? = nil,
+        lastExitAt: Date? = nil
     ) {
         self.paneID = paneID
         self.directory = directory
@@ -342,9 +366,16 @@ struct SavedTerminalPaneState: Codable {
         self.aiResumeCommand = aiResumeCommand
         self.aiProvider = aiProvider
         self.aiSessionId = aiSessionId
+        self.aiSessionIdSource = aiSessionIdSource
         self.lastOutputAt = lastOutputAt
+        self.lastInputAt = lastInputAt
         self.knownRepoRoot = knownRepoRoot
         self.knownGitBranch = knownGitBranch
+        self.lastStatus = lastStatus
+        self.agentLaunchCommand = agentLaunchCommand
+        self.agentStartedAt = agentStartedAt
+        self.lastExitCode = lastExitCode
+        self.lastExitAt = lastExitAt
     }
 }
 
@@ -363,6 +394,7 @@ struct SavedTabState: Codable {
     let aiResumeCommand: String? // backward compatibility (legacy single-pane restore)
     let aiProvider: String?
     let aiSessionId: String?
+    let aiSessionIdSource: AISessionIdentitySource?
     let splitLayout: SavedSplitNode? // split tree including editor panes
     let focusedPaneID: String? // persisted focused pane ID
     let paneStates: [SavedTerminalPaneState]?
@@ -370,6 +402,12 @@ struct SavedTabState: Codable {
     let repoGroupID: String? // repo grouping membership, nil = ungrouped
     let knownRepoRoot: String?
     let knownGitBranch: String?
+    let lastInputAt: Date?
+    let lastStatus: CommandStatus?
+    let agentLaunchCommand: String?
+    let agentStartedAt: Date?
+    let lastExitCode: Int?
+    let lastExitAt: Date?
 
     static let userDefaultsKey = "com.chau7.savedTabState"
 
@@ -385,13 +423,20 @@ struct SavedTabState: Codable {
         aiResumeCommand: String?,
         aiProvider: String? = nil,
         aiSessionId: String? = nil,
+        aiSessionIdSource: AISessionIdentitySource? = nil,
         splitLayout: SavedSplitNode?,
         focusedPaneID: String?,
         paneStates: [SavedTerminalPaneState]?,
         createdAt: String? = nil,
         repoGroupID: String? = nil,
         knownRepoRoot: String? = nil,
-        knownGitBranch: String? = nil
+        knownGitBranch: String? = nil,
+        lastInputAt: Date? = nil,
+        lastStatus: CommandStatus? = nil,
+        agentLaunchCommand: String? = nil,
+        agentStartedAt: Date? = nil,
+        lastExitCode: Int? = nil,
+        lastExitAt: Date? = nil
     ) {
         self.tabID = tabID
         self.selectedTabID = selectedTabID
@@ -404,6 +449,7 @@ struct SavedTabState: Codable {
         self.aiResumeCommand = aiResumeCommand
         self.aiProvider = aiProvider
         self.aiSessionId = aiSessionId
+        self.aiSessionIdSource = aiSessionIdSource
         self.splitLayout = splitLayout
         self.focusedPaneID = focusedPaneID
         self.paneStates = paneStates
@@ -411,6 +457,12 @@ struct SavedTabState: Codable {
         self.repoGroupID = repoGroupID
         self.knownRepoRoot = knownRepoRoot
         self.knownGitBranch = knownGitBranch
+        self.lastInputAt = lastInputAt
+        self.lastStatus = lastStatus
+        self.agentLaunchCommand = agentLaunchCommand
+        self.agentStartedAt = agentStartedAt
+        self.lastExitCode = lastExitCode
+        self.lastExitAt = lastExitAt
     }
 }
 
@@ -796,29 +848,34 @@ final class OverlayTabsModel {
                     directory: dir,
                     fallbackRoot: tab.repoGroupID
                 )
-                let resumeMetadata = resolveResumeMetadata(
-                    for: session, directory: dir, outputHint: scrollback, claimedSessionIds: claimedSessionIds
-                )
-                let persistedMetadata = persistedAIResumeMetadata(
+                let persistedIdentity = persistedAISessionIdentity(
                     from: session,
-                    resolvedResumeMetadata: resumeMetadata,
                     claimedSessionIds: claimedSessionIds
                 )
                 let resumeCommand = Self.buildAIResumeCommand(
-                    provider: persistedMetadata.provider, sessionId: persistedMetadata.sessionId
+                    provider: persistedIdentity.provider,
+                    sessionId: persistedIdentity.sessionId,
+                    sessionIdSource: persistedIdentity.sessionIdSource
                 )
-                if let sessionId = persistedMetadata.sessionId { claimedSessionIds.insert(sessionId) }
+                if let sessionId = persistedIdentity.sessionId { claimedSessionIds.insert(sessionId) }
 
                 paneStates.append(SavedTerminalPaneState(
                     paneID: paneID.uuidString,
                     directory: dir,
                     scrollbackContent: scrollback,
                     aiResumeCommand: resumeCommand,
-                    aiProvider: persistedMetadata.provider,
-                    aiSessionId: persistedMetadata.sessionId,
+                    aiProvider: persistedIdentity.provider,
+                    aiSessionId: persistedIdentity.sessionId,
+                    aiSessionIdSource: persistedIdentity.sessionIdSource,
                     lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate),
+                    lastInputAt: session.lastInputDate,
                     knownRepoRoot: knownRepoIdentity?.rootPath,
-                    knownGitBranch: knownRepoIdentity?.branch
+                    knownGitBranch: knownRepoIdentity?.branch,
+                    lastStatus: session.effectiveStatus,
+                    agentLaunchCommand: session.lastAgentLaunchCommand,
+                    agentStartedAt: session.agentStartedAt,
+                    lastExitCode: session.lastExitCode,
+                    lastExitAt: session.lastExitAt
                 ))
             }
 
@@ -846,13 +903,20 @@ final class OverlayTabsModel {
                 aiResumeCommand: paneStates.first?.aiResumeCommand,
                 aiProvider: paneStates.first?.aiProvider,
                 aiSessionId: paneStates.first?.aiSessionId,
+                aiSessionIdSource: paneStates.first?.aiSessionIdSource,
                 splitLayout: tab.splitController.exportLayout(),
                 focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
                 paneStates: paneStates.isEmpty ? nil : paneStates,
                 createdAt: DateFormatters.iso8601.string(from: tab.createdAt),
                 repoGroupID: tab.repoGroupID,
                 knownRepoRoot: primaryKnownRepoIdentity?.rootPath,
-                knownGitBranch: primaryKnownRepoIdentity?.branch
+                knownGitBranch: primaryKnownRepoIdentity?.branch,
+                lastInputAt: paneStates.first?.lastInputAt,
+                lastStatus: paneStates.first?.lastStatus,
+                agentLaunchCommand: paneStates.first?.agentLaunchCommand,
+                agentStartedAt: paneStates.first?.agentStartedAt,
+                lastExitCode: paneStates.first?.lastExitCode,
+                lastExitAt: paneStates.first?.lastExitAt
             ))
         }
         return states
@@ -874,18 +938,13 @@ final class OverlayTabsModel {
                 directory: dir,
                 fallbackRoot: tab.repoGroupID
             )
-            let resumeMetadata = resolveResumeMetadata(
-                for: session,
-                directory: dir,
-                outputHint: scrollback
-            )
-            let persistedMetadata = persistedAIResumeMetadata(
-                from: session,
-                resolvedResumeMetadata: resumeMetadata
+            let persistedIdentity = persistedAISessionIdentity(
+                from: session
             )
             let resumeCommand = Self.buildAIResumeCommand(
-                provider: persistedMetadata.provider,
-                sessionId: persistedMetadata.sessionId
+                provider: persistedIdentity.provider,
+                sessionId: persistedIdentity.sessionId,
+                sessionIdSource: persistedIdentity.sessionIdSource
             )
 
             paneStates.append(SavedTerminalPaneState(
@@ -893,11 +952,18 @@ final class OverlayTabsModel {
                 directory: dir,
                 scrollbackContent: scrollback,
                 aiResumeCommand: resumeCommand,
-                aiProvider: persistedMetadata.provider,
-                aiSessionId: persistedMetadata.sessionId,
+                aiProvider: persistedIdentity.provider,
+                aiSessionId: persistedIdentity.sessionId,
+                aiSessionIdSource: persistedIdentity.sessionIdSource,
                 lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate),
+                lastInputAt: session.lastInputDate,
                 knownRepoRoot: knownRepoIdentity?.rootPath,
-                knownGitBranch: knownRepoIdentity?.branch
+                knownGitBranch: knownRepoIdentity?.branch,
+                lastStatus: session.effectiveStatus,
+                agentLaunchCommand: session.lastAgentLaunchCommand,
+                agentStartedAt: session.agentStartedAt,
+                lastExitCode: session.lastExitCode,
+                lastExitAt: session.lastExitAt
             ))
         }
 
@@ -928,13 +994,20 @@ final class OverlayTabsModel {
             aiResumeCommand: primaryResumeCommand,
             aiProvider: paneStates.first?.aiProvider,
             aiSessionId: paneStates.first?.aiSessionId,
+            aiSessionIdSource: paneStates.first?.aiSessionIdSource,
             splitLayout: tab.splitController.exportLayout(),
             focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
             paneStates: paneStates.isEmpty ? nil : paneStates,
             createdAt: DateFormatters.iso8601.string(from: tab.createdAt),
             repoGroupID: tab.repoGroupID,
             knownRepoRoot: primaryKnownRepoIdentity?.rootPath,
-            knownGitBranch: primaryKnownRepoIdentity?.branch
+            knownGitBranch: primaryKnownRepoIdentity?.branch,
+            lastInputAt: paneStates.first?.lastInputAt,
+            lastStatus: paneStates.first?.lastStatus,
+            agentLaunchCommand: paneStates.first?.agentLaunchCommand,
+            agentStartedAt: paneStates.first?.agentStartedAt,
+            lastExitCode: paneStates.first?.lastExitCode,
+            lastExitAt: paneStates.first?.lastExitAt
         )
 
         closedTabStack.append(ClosedTabEntry(
@@ -1133,6 +1206,33 @@ final class OverlayTabsModel {
         return preserved
     }
 
+    private func persistedAISessionIdentity(
+        from session: TerminalSessionModel,
+        claimedSessionIds: Set<String> = []
+    ) -> (provider: String?, sessionId: String?, sessionIdSource: AISessionIdentitySource?) {
+        let effectiveProvider = Self.normalizedAIProvider(from: session.effectiveAIProvider ?? session.lastAIProvider)
+        let effectiveSessionId = Self.normalizePersistedAISessionId(
+            session.effectiveAISessionId,
+            source: session.effectiveAISessionIdentitySource
+        )
+        let sanitized = AIResumeOwnership.sanitizeForPersistence(
+            provider: effectiveProvider,
+            sessionId: effectiveSessionId,
+            claimedSessionIds: claimedSessionIds
+        )
+        let persistedSource: AISessionIdentitySource?
+        if sanitized.sessionId == nil {
+            persistedSource = nil
+        } else {
+            persistedSource = session.effectiveAISessionIdentitySource
+        }
+        return (
+            provider: sanitized.provider ?? effectiveProvider,
+            sessionId: sanitized.sessionId,
+            sessionIdSource: persistedSource
+        )
+    }
+
     static func sanitizeRestoredAIResumeOwnership(states: [SavedTabState]) -> [SavedTabState] {
         var claimedSessionIds = Set<String>()
 
@@ -1144,7 +1244,10 @@ final class OverlayTabsModel {
                 )
                 let sanitizedPane = AIResumeOwnership.sanitizeForPersistence(
                     provider: normalizedAIProvider(from: paneState.aiProvider) ?? commandMetadata?.provider,
-                    sessionId: normalizeAISessionId(paneState.aiSessionId) ?? commandMetadata?.sessionId,
+                    sessionId: normalizePersistedAISessionId(
+                        paneState.aiSessionId,
+                        source: paneState.aiSessionIdSource
+                    ) ?? commandMetadata?.sessionId,
                     claimedSessionIds: claimedSessionIds
                 )
                 if let sessionId = sanitizedPane.sessionId {
@@ -1164,9 +1267,16 @@ final class OverlayTabsModel {
                     aiResumeCommand: sanitizedCommand,
                     aiProvider: sanitizedPane.provider,
                     aiSessionId: sanitizedPane.sessionId,
+                    aiSessionIdSource: sanitizedPane.sessionId == nil ? nil : paneState.aiSessionIdSource,
                     lastOutputAt: paneState.lastOutputAt,
+                    lastInputAt: paneState.lastInputAt,
                     knownRepoRoot: paneState.knownRepoRoot,
-                    knownGitBranch: paneState.knownGitBranch
+                    knownGitBranch: paneState.knownGitBranch,
+                    lastStatus: paneState.lastStatus,
+                    agentLaunchCommand: paneState.agentLaunchCommand,
+                    agentStartedAt: paneState.agentStartedAt,
+                    lastExitCode: paneState.lastExitCode,
+                    lastExitAt: paneState.lastExitAt
                 )
             }
 
@@ -1175,7 +1285,10 @@ final class OverlayTabsModel {
             )
             let sanitizedTopLevel = AIResumeOwnership.sanitizeForPersistence(
                 provider: normalizedAIProvider(from: state.aiProvider) ?? topLevelCommandMetadata?.provider,
-                sessionId: normalizeAISessionId(state.aiSessionId) ?? topLevelCommandMetadata?.sessionId,
+                sessionId: normalizePersistedAISessionId(
+                    state.aiSessionId,
+                    source: state.aiSessionIdSource
+                ) ?? topLevelCommandMetadata?.sessionId,
                 claimedSessionIds: claimedSessionIds
             )
             if let sessionId = sanitizedTopLevel.sessionId {
@@ -1199,13 +1312,20 @@ final class OverlayTabsModel {
                 aiResumeCommand: sanitizedTopLevelCommand,
                 aiProvider: sanitizedTopLevel.provider,
                 aiSessionId: sanitizedTopLevel.sessionId,
+                aiSessionIdSource: sanitizedTopLevel.sessionId == nil ? nil : state.aiSessionIdSource,
                 splitLayout: state.splitLayout,
                 focusedPaneID: state.focusedPaneID,
                 paneStates: sanitizedPaneStates,
                 createdAt: state.createdAt,
                 repoGroupID: state.repoGroupID,
                 knownRepoRoot: state.knownRepoRoot,
-                knownGitBranch: state.knownGitBranch
+                knownGitBranch: state.knownGitBranch,
+                lastInputAt: state.lastInputAt,
+                lastStatus: state.lastStatus,
+                agentLaunchCommand: state.agentLaunchCommand,
+                agentStartedAt: state.agentStartedAt,
+                lastExitCode: state.lastExitCode,
+                lastExitAt: state.lastExitAt
             )
         }
     }
@@ -1311,6 +1431,17 @@ final class OverlayTabsModel {
     }
 
     static func buildAIResumeCommand(provider: String?, sessionId: String?) -> String? {
+        buildAIResumeCommand(provider: provider, sessionId: sessionId, sessionIdSource: nil)
+    }
+
+    static func buildAIResumeCommand(
+        provider: String?,
+        sessionId: String?,
+        sessionIdSource: AISessionIdentitySource?
+    ) -> String? {
+        if sessionIdSource == .synthetic {
+            return nil
+        }
         guard let provider = normalizedAIProvider(from: provider),
               let sessionId = normalizeAISessionId(sessionId) else {
             return nil
@@ -1326,22 +1457,31 @@ final class OverlayTabsModel {
     static func resolveAIResumeMetadataFromSavedState(
         paneState: SavedTerminalPaneState,
         fallbackAIProvider: String?,
-        fallbackAISessionId: String?
-    ) -> (provider: String, sessionId: String)? {
+        fallbackAISessionId: String?,
+        fallbackAISessionIdSource: AISessionIdentitySource? = nil
+    ) -> (provider: String, sessionId: String, sessionIdSource: AISessionIdentitySource?)? {
         let commandMetadata = AIResumeParser.extractMetadata(
             from: paneState.aiResumeCommand ?? ""
         )
         let resolvedProvider = normalizedAIProvider(from: paneState.aiProvider)
             ?? commandMetadata?.provider
             ?? normalizedAIProvider(from: fallbackAIProvider)
-        let resolvedSessionId = normalizeAISessionId(paneState.aiSessionId)
-            ?? commandMetadata?.sessionId
-            ?? normalizeAISessionId(fallbackAISessionId)
+        let resolvedSource = paneState.aiSessionIdSource
+            ?? (paneState.aiSessionId != nil ? .explicit : nil)
+            ?? fallbackAISessionIdSource
+        let resolvedSessionId = normalizePersistedAISessionId(
+            paneState.aiSessionId,
+            source: resolvedSource
+        ) ?? commandMetadata?.sessionId
+            ?? normalizePersistedAISessionId(
+                fallbackAISessionId,
+                source: fallbackAISessionIdSource
+            )
 
         guard let resolvedProvider, let resolvedSessionId else {
             return nil
         }
-        return (provider: resolvedProvider, sessionId: resolvedSessionId)
+        return (provider: resolvedProvider, sessionId: resolvedSessionId, sessionIdSource: resolvedSource)
     }
 
     static func normalizedResumeReferenceDate(_ value: Date) -> Date? {

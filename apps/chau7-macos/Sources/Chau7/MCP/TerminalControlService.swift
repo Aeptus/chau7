@@ -404,7 +404,10 @@ final class TerminalControlService {
 
             if !force {
                 if let (_, session) = self.resolveTab(tabID),
-                   session.status == .running || session.status == .waitingForInput {
+                   session.status == .running
+                   || session.status == .waitingForInput
+                   || session.status == .approvalRequired
+                   || session.status == .stuck {
                     return self.jsonError("Tab has a running process (status: \(session.status.rawValue)). Use force=true to close anyway.")
                 }
             }

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Repository Model Unification**: `RepositoryModel` now exists for every known repo, including those in protected directories where live git probing is blocked. The model carries an `accessLevel` (.live or .cached) so consumers get a single, always-present object instead of switching between live models and thin fallback identities. Eliminates the `.cachedIdentity` resolution path, simplifies display fallback chains in tab chrome, and fixes the circular dependency where branch data could only be recorded with live access that was itself blocked.
+- **AI Session Data Plane**: Terminal sessions now persist richer agent identity and lifecycle metadata end-to-end: explicit vs observed vs synthetic session IDs, launch command, agent start time, last user input time, `done` vs `idle`, first-class `approvalRequired`, configurable stuck timeout, cached repo name, and last shell exit code/time. Remote activity payloads now carry approval state plus pre-derived logo and tab-color metadata instead of forcing downstream consumers to reconstruct them.
 
 ### Fixed
 - **Protected Repo Branch Display**: Protected-folder repos that were showing "unknown" branch labels now reliably display the last-known branch. The root cause was that branch data was only recorded during live git probing, which is exactly the path blocked for protected directories. Branch recording now flows through all paths: tab restore, recent-repo updates, and live→cached transitions.

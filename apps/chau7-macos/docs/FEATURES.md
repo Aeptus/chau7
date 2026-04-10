@@ -75,6 +75,8 @@ Detection methods:
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
 - **Codex session resolver** — maps Codex sessions to working directories with LRU caching.
 - **Codex resume fallback cache** — reuses claimed explicit Codex session matches across history growth, reducing autosave churn and unresolved resume-metadata log spam.
+- **Persistent AI session identity lineage** — restored tabs keep explicit, observed, and clearly marked synthetic AI session IDs, along with launch command, agent start time, last input time, and last exit metadata for accurate resume behavior and audits.
+- **Richer agent state semantics** — local and remote state now distinguish `done` from `idle`, surface `approvalRequired` as a first-class status, and include pre-derived tool logo and tab color metadata so downstream surfaces do not need to rediscover branding on every render.
 
 ### Context Token Optimization (CTO)
 

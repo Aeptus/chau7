@@ -266,11 +266,13 @@ struct CommandCenterSessionSummary: Identifiable, Equatable {
         switch status {
         case .running:
             return .running
+        case .approvalRequired:
+            return .waitingInput
         case .waitingForInput:
             return .waitingInput
         case .stuck:
             return .stuck
-        case .idle, .exited:
+        case .idle, .done, .exited:
             return nil
         }
     }
@@ -317,7 +319,7 @@ struct CommandCenterSessionSummary: Identifiable, Equatable {
                         title: title,
                         appName: appName,
                         directory: directory.isEmpty ? nil : directory,
-                        lastActivity: max(session.lastOutputDate, tab.createdAt),
+                        lastActivity: max(session.lastActivityDate, tab.createdAt),
                         state: state
                     )
                 }
