@@ -611,6 +611,8 @@ Key patterns:
 
 ## Recent Additions
 
+- Terminal latency telemetry separation:
+  Input-lag telemetry now tracks local PTY responsiveness only. AI prompt round trips keep their dedicated timing logs, but they no longer inflate the input-lag panel or CPU-saturation heuristics used for UI throttling.
 - Protected-folder repo identity restore:
   Restored tabs now persist each terminal pane's last-known repo root and branch, and restore can fall back to the existing repo group identifier when reopening older saved tabs. This keeps passive git UI such as the tab branch badge available even when the repo lives under protected folders like `Downloads` and live git probing is blocked until the user explicitly grants access.
 - Passive protected-repo tab chrome:

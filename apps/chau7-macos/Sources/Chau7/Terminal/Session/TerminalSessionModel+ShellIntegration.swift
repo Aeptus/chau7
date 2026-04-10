@@ -625,6 +625,16 @@ extension TerminalSessionModel {
         }
     }
 
+    private func clearPendingInputLatencyMeasurement() {
+        if Thread.isMainThread {
+            pendingInputLatencyAt = nil
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.pendingInputLatencyAt = nil
+            }
+        }
+    }
+
     private func recordInputLatencyIfNeeded() {
         guard pendingInputLatencyAt != nil else { return }
         let now = CFAbsoluteTimeGetCurrent()
@@ -1334,11 +1344,19 @@ extension TerminalSessionModel {
             currentDirectory: currentDirectory,
             searchPath: launchPATHValue()
         )
-        guard hasBackgroundRenderingAIContext || detectedApp != nil else {
+        let measurementKind = LatencyMeasurementSemantics.inputMeasurementKind(
+            hasBackgroundAIContext: hasBackgroundRenderingAIContext,
+            detectedLaunchableApp: detectedApp
+        )
+        guard measurementKind == .aiRoundTrip else {
             clearPendingAITiming()
             clearWaitingInputFallbackTracking()
             return
         }
+
+        // Keep terminal responsiveness metrics focused on local PTY/UI lag.
+        // AI sessions already log their own input-to-first-output timing separately.
+        clearPendingInputLatencyMeasurement()
 
         pendingWaitingInputFallbackArmed = AIResumeParser.extractMetadata(from: commandLine) == nil
         pendingWaitingInputFallbackSawLiveOutput = false

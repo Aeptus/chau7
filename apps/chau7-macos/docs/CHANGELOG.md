@@ -392,6 +392,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.37 | 2026-04-10 | Terminal input-lag telemetry now excludes AI input-to-first-output round trips, so local responsiveness metrics and CPU-saturation heuristics no longer treat slow model replies as UI lag |
 | 0.5.36 | 2026-04-10 | Late permission, waiting-input, idle, and attention-required events are now dropped for sessions that already emitted a finished or failed state, preventing stale post-close notification wakeups |
 | 0.5.35 | 2026-04-10 | Repeated permission, waiting-input, idle, and attention-required notifications for the same unresolved AI session state are now suppressed for a cooldown window instead of re-alerting continuously |
 | 0.5.34 | 2026-04-10 | Runtime sessions now fail explicitly after repeated approval timeouts instead of recovering to ready forever, so stuck approval loops surface as unhealthy sessions instead of silent retry churn |
