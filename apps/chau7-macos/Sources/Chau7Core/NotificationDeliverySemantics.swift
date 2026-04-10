@@ -5,6 +5,7 @@ public enum NotificationDeliverySemantics {
         "finished", "failed", "permission", "waiting_input", "attention_required"
     ]
     public static let authorityRetentionSeconds: TimeInterval = 180
+    public static let repeatedAttentionSuppressionSeconds: TimeInterval = 90
 
     public static func requiresAuthoritativeRouting(_ event: AIEvent) -> Bool {
         event.reliability == .authoritative
@@ -78,6 +79,35 @@ public enum NotificationDeliverySemantics {
         return authorityKeys(for: event).contains { key in
             guard let seenAt = authoritativeEvents[key] else { return false }
             return now.timeIntervalSince(seenAt) <= retentionSeconds
+        }
+    }
+
+    public static func repeatSuppressionKey(for event: AIEvent) -> String? {
+        guard let family = repeatSuppressionFamily(for: event) else { return nil }
+        let tool = event.tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let identity = MonitoringSchedule.notificationIdentityKey(for: event)
+        return "\(family)|\(tool)|\(identity)"
+    }
+
+    public static func shouldSuppressRepeat(
+        _ event: AIEvent,
+        recentRepeatEvents: [String: Date],
+        now: Date = Date(),
+        suppressionSeconds: TimeInterval = repeatedAttentionSuppressionSeconds
+    ) -> Bool {
+        guard let key = repeatSuppressionKey(for: event),
+              let seenAt = recentRepeatEvents[key] else {
+            return false
+        }
+        return now.timeIntervalSince(seenAt) <= suppressionSeconds
+    }
+
+    private static func repeatSuppressionFamily(for event: AIEvent) -> String? {
+        switch event.normalizedType {
+        case "permission", "waiting_input", "attention_required", "idle":
+            return "interactive_attention"
+        default:
+            return nil
         }
     }
 }

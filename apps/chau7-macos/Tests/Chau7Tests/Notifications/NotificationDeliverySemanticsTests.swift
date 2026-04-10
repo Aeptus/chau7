@@ -100,4 +100,51 @@ final class NotificationDeliverySemanticsTests: XCTestCase {
             "Authoritative permission event missing exact routing identity"
         )
     }
+
+    func testSuppressesRepeatedInteractiveAttentionWithinCooldown() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "waiting_input",
+            tool: "Claude",
+            message: "Ready for your input",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "session-1",
+            reliability: .authoritative
+        )
+
+        let key = NotificationDeliverySemantics.repeatSuppressionKey(for: event)
+        XCTAssertNotNil(key)
+        XCTAssertTrue(
+            NotificationDeliverySemantics.shouldSuppressRepeat(
+                event,
+                recentRepeatEvents: [key!: Date()]
+            )
+        )
+    }
+
+    func testRepeatSuppressionCoalescesAttentionFamilyAcrossTypes() {
+        let permission = AIEvent(
+            source: .claudeCode,
+            type: "permission",
+            tool: "Claude",
+            message: "Need approval",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "session-1",
+            reliability: .authoritative
+        )
+        let waiting = AIEvent(
+            source: .claudeCode,
+            type: "waiting_input",
+            tool: "Claude",
+            message: "Need approval",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "session-1",
+            reliability: .authoritative
+        )
+
+        XCTAssertEqual(
+            NotificationDeliverySemantics.repeatSuppressionKey(for: permission),
+            NotificationDeliverySemantics.repeatSuppressionKey(for: waiting)
+        )
+    }
 }

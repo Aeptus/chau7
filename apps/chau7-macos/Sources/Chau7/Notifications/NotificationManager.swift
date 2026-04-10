@@ -48,6 +48,7 @@ final class NotificationManager {
     private var pendingNotificationFlushWorkItem: DispatchWorkItem?
     private var routingRetryCounts: [UUID: Int] = [:]
     private var recentAuthoritativeEvents: [String: Date] = [:]
+    private var recentRepeatedAttentionEvents: [String: Date] = [:]
     private let authoritativeRetryDelays: [TimeInterval] = [0.05, 0.15, 0.5]
 
     private init() {
@@ -222,6 +223,17 @@ final class NotificationManager {
             return
         }
 
+        if NotificationDeliverySemantics.shouldSuppressRepeat(
+            preparedEvent,
+            recentRepeatEvents: recentRepeatedAttentionEvents
+        ) {
+            let reason = "Suppressed repeated interactive-attention notification for unchanged session state"
+            Log.trace("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
+            history.markDropped(eventID: preparedEvent.id, reason: reason)
+            routingRetryCounts.removeValue(forKey: preparedEvent.id)
+            return
+        }
+
         registerAuthoritativeEventIfNeeded(preparedEvent)
 
         let input = NotificationPipeline.Input(
@@ -272,6 +284,7 @@ final class NotificationManager {
                 didStyleTab: didStyleTab
             )
             history.markCompleted(eventID: preparedEvent.id)
+            registerRepeatSuppressionIfNeeded(preparedEvent)
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
 
         case .fireStyleOnly(let triggerId, let actions):
@@ -306,6 +319,7 @@ final class NotificationManager {
                 didStyleTab: report.didStyleTab
             )
             history.markCompleted(eventID: preparedEvent.id)
+            registerRepeatSuppressionIfNeeded(preparedEvent)
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
 
         case .fireActions(let triggerId, let actions):
@@ -376,6 +390,7 @@ final class NotificationManager {
                 didStyleTab: aggregateReport.didStyleTab
             )
             history.markCompleted(eventID: preparedEvent.id)
+            registerRepeatSuppressionIfNeeded(preparedEvent)
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
         }
     }
@@ -417,12 +432,22 @@ final class NotificationManager {
         recentAuthoritativeEvents = recentAuthoritativeEvents.filter {
             now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.authorityRetentionSeconds
         }
+        recentRepeatedAttentionEvents = recentRepeatedAttentionEvents.filter {
+            now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.repeatedAttentionSuppressionSeconds
+        }
         // Cap routing retry entries: any event that exhausted its retries
         // but was never cleaned up (e.g., dropped before reaching processEvent)
         // will linger. Remove entries that exceeded the max retry count.
         if routingRetryCounts.count > 100 {
             routingRetryCounts = routingRetryCounts.filter { $0.value < authoritativeRetryDelays.count }
         }
+    }
+
+    private func registerRepeatSuppressionIfNeeded(_ event: AIEvent, now: Date = Date()) {
+        guard let key = NotificationDeliverySemantics.repeatSuppressionKey(for: event) else {
+            return
+        }
+        recentRepeatedAttentionEvents[key] = now
     }
 
     /// Applies a default tab style for attention-worthy events when no explicit
