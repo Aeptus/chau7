@@ -233,4 +233,104 @@ public enum CodexNotifyHookConfiguration {
         let closes = rhs.filter { $0 == "]" }.count
         return opens - closes
     }
+
+    // MARK: - TUI notification settings
+
+    //
+    // Codex's TUI writes desktop notifications to stdout as `ESC]9;<message>BEL`
+    // (OSC 9 sequences) for EVERY notification kind — agent-turn-complete,
+    // exec/edit approval requests, plan-mode prompts, user-input requests,
+    // elicitations. That's a strictly larger set than the external `notify`
+    // program, which only fires for `agent-turn-complete`.
+    //
+    // Two conditions have to be true for Codex to emit OSC 9 in the first place:
+    //
+    //   1. `notification_method = "osc9"`. Otherwise the default is `auto`, which
+    //      falls back to a bare BEL (\x07) when the terminal isn't one of a short
+    //      allow-list (iTerm, WezTerm, ghostty, kitty). Chau7 sets
+    //      `TERM_PROGRAM=Chau7` so the auto-detect fails — we must pin explicitly.
+    //
+    //   2. `notification_condition = "always"`. Otherwise the default is
+    //      `unfocused`, and Codex suppresses notifications whenever the terminal
+    //      is focused. Chau7 IS the terminal, so "focused" is the normal state;
+    //      we'd silence almost every notification in practice.
+    //
+    // This helper upserts both settings under a `[tui]` section so that Codex's
+    // OSC 9 stream is fully live. We parse it back downstream from the PTY.
+    public static let tuiNotificationMethod = "osc9"
+    public static let tuiNotificationCondition = "always"
+
+    /// Upsert `[tui]` with `notification_method = "osc9"` and
+    /// `notification_condition = "always"` into the given config.toml content.
+    /// Preserves any other keys already present in a `[tui]` section.
+    public static func upsertTuiNotificationSettings(in content: String) -> String {
+        let lines = content.components(separatedBy: .newlines)
+        var result: [String] = []
+        var inTuiSection = false
+        var seenSection = false
+        var sawMethod = false
+        var sawCondition = false
+
+        func emitDesiredKeysIfNeeded() {
+            if !sawMethod {
+                result.append("notification_method = \"\(tuiNotificationMethod)\"")
+                sawMethod = true
+            }
+            if !sawCondition {
+                result.append("notification_condition = \"\(tuiNotificationCondition)\"")
+                sawCondition = true
+            }
+        }
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Start of a new top-level section
+            if trimmed.hasPrefix("[") {
+                if inTuiSection {
+                    // Leaving [tui] — make sure both keys were written before the next section
+                    emitDesiredKeysIfNeeded()
+                }
+                inTuiSection = (trimmed == "[tui]")
+                if inTuiSection {
+                    seenSection = true
+                }
+                result.append(line)
+                continue
+            }
+
+            if inTuiSection {
+                // Replace existing notification_method / notification_condition lines
+                if trimmed.hasPrefix("notification_method") {
+                    result.append("notification_method = \"\(tuiNotificationMethod)\"")
+                    sawMethod = true
+                    continue
+                }
+                if trimmed.hasPrefix("notification_condition") {
+                    result.append("notification_condition = \"\(tuiNotificationCondition)\"")
+                    sawCondition = true
+                    continue
+                }
+            }
+
+            result.append(line)
+        }
+
+        // File ended while still inside [tui] — flush any missing keys
+        if inTuiSection {
+            emitDesiredKeysIfNeeded()
+        }
+
+        // No [tui] section at all — append one
+        if !seenSection {
+            if !result.isEmpty, !(result.last?.isEmpty ?? true) {
+                result.append("")
+            }
+            result.append("[tui]")
+            result.append("notification_method = \"\(tuiNotificationMethod)\"")
+            result.append("notification_condition = \"\(tuiNotificationCondition)\"")
+        }
+
+        return result.joined(separator: "\n")
+    }
 }

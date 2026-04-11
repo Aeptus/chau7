@@ -169,6 +169,13 @@ final class MCPServerManager {
                 content = CodexNotifyHookConfiguration.upsertNotify(in: content, helperPath: notifyPath)
             }
 
+            // Make sure the TUI writes OSC 9 desktop notifications to the PTY
+            // for ALL event types (approval, user-input, plan-mode, elicitation,
+            // agent-turn-complete) so Chau7 can catch them from the terminal
+            // stream instead of relying on the notify hook, which only fires
+            // for agent-turn-complete.
+            content = CodexNotifyHookConfiguration.upsertTuiNotificationSettings(in: content)
+
             try content.write(toFile: path, atomically: true, encoding: .utf8)
             Log.info("MCPServer: registered with Codex config at \(path)")
         } catch {
