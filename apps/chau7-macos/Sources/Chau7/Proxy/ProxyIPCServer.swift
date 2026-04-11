@@ -463,7 +463,8 @@ final class ProxyIPCServer {
                     object: nil,
                     userInfo: ["assessment": assessment]
                 )
-                self.logger.info("Task assessed: \(assessment.taskId, privacy: .public) - \(assessment.approved ? ", privacy: .public)approved" : "failed")")
+                let outcome: StaticString = assessment.approved ? "approved" : "failed"
+                self.logger.info("Task assessed: \(assessment.taskId, privacy: .public) - \(outcome)")
             }
         } catch {
             logger.warning("Failed to decode task_assessment: \(error.localizedDescription, privacy: .public)")
@@ -484,10 +485,10 @@ final class ProxyIPCServer {
             userInfo: ["event": event]
         )
 
-        logger
-            .info(
-                "API call: \(event.provider.rawValue, privacy: .public) \(event.model, privacy: .public) - in:\(event.inputTokens, privacy: .public) out:\(event.outputTokens, privacy: .public) $\(String(format: ", privacy: .public)%.4f", event.costUSD))"
-            )
+        let cost = String(format: "%.4f", event.costUSD)
+        logger.info(
+            "API call: \(event.provider.rawValue, privacy: .public) \(event.model, privacy: .public) - in:\(event.inputTokens, privacy: .public) out:\(event.outputTokens, privacy: .public) $\(cost, privacy: .public)"
+        )
     }
 }
 

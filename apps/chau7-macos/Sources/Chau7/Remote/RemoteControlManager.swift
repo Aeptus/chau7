@@ -357,7 +357,8 @@ final class RemoteControlManager {
         }
         TerminalControlService.shared.resolveApproval(requestID: response.requestID, approved: response.approved)
         sendRemoteActivity()
-        logger.info("Remote: approval response for \(response.requestID, privacy: .public): \(response.approved ? ", privacy: .public)allowed" : "denied")")
+        let decision: StaticString = response.approved ? "allowed" : "denied"
+        logger.info("Remote: approval response for \(response.requestID, privacy: .public): \(decision)")
     }
 
     private func handleRemoteTelemetry(_ frame: RemoteFrame) {
