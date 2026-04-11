@@ -30,6 +30,13 @@ public struct TrackedFileActivity: Equatable, Sendable {
 }
 
 public enum FileTrackingParser {
+    private static let commonExtensionlessFileNames: Set<String> = [
+        "Dockerfile", "Containerfile", "Makefile", "Justfile", "Brewfile",
+        "Gemfile", "Podfile", "Procfile", "Vagrantfile", "Rakefile",
+        "Guardfile", "Fastfile", "Appfile", "Cartfile", "Mintfile",
+        "Pipfile", "README", "LICENSE", "NOTICE", "CHANGELOG", "TODO"
+    ]
+
     public static func activities(from event: RuntimeEvent, gitRoot: String? = nil) -> [TrackedFileActivity] {
         guard event.type == RuntimeEventType.toolUse.rawValue else { return [] }
         let toolName = event.data["tool"] ?? ""
@@ -218,6 +225,9 @@ public enum FileTrackingParser {
 
     private static func looksLikePath(_ token: String) -> Bool {
         if token.hasPrefix("/") || token.hasPrefix("./") || token.hasPrefix("../") || token.hasPrefix("~/") {
+            return true
+        }
+        if commonExtensionlessFileNames.contains(token) {
             return true
         }
         if token.contains("/") || token.contains("*") || token.contains("?") {

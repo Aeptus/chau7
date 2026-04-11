@@ -40,7 +40,24 @@ final class GitDiffTrackerTests: XCTestCase {
         let result = tracker.changedFilesResult(directory: directory.path)
         XCTAssertTrue(result.usedFallback)
         XCTAssertEqual(result.files, ["example.txt"])
-        XCTAssertFalse(result.diffUnavailable)
+        XCTAssertTrue(result.diffUnavailable)
+        XCTAssertNotNil(result.unavailableReason)
+    }
+
+    func testChangedFilesResultFallbackIncludesHiddenFiles() throws {
+        let tracker = GitDiffTracker()
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("git-diff-hidden-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        tracker.snapshot(directory: directory.path)
+        let file = directory.appendingPathComponent(".env")
+        try "SECRET=1".write(to: file, atomically: true, encoding: .utf8)
+
+        let result = tracker.changedFilesResult(directory: directory.path)
+        XCTAssertTrue(result.usedFallback)
+        XCTAssertTrue(result.files.contains(".env"))
     }
 }
 #endif

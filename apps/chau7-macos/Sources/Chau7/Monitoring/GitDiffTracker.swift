@@ -18,7 +18,7 @@ final class GitDiffTracker {
 
     private enum SnapshotMode {
         case git(Set<String>)
-        case fileSystem([String: Date])
+        case fileSystem([String: Date], reason: String?)
     }
 
     static func changedPath(fromStatusPorcelainLine line: String) -> String? {
@@ -79,7 +79,7 @@ final class GitDiffTracker {
         case let (.git(before), .git(after)):
             let changed = Array(after.symmetricDifference(before)).sorted()
             return ChangedFilesResult(files: changed, unavailableReason: nil, usedFallback: false)
-        case let (.fileSystem(before), .fileSystem(after)):
+        case let (.fileSystem(before, _), .fileSystem(after, _)):
             let changed = Array(changedPaths(from: before, to: after)).sorted()
             return ChangedFilesResult(files: changed, unavailableReason: nil, usedFallback: true)
         default:
@@ -108,14 +108,14 @@ final class GitDiffTracker {
         if gitResult.succeeded {
             return .git(gitResult.files)
         }
-        return .fileSystem(currentFileModDates(in: directory))
+        return .fileSystem(currentFileModDates(in: directory), reason: gitResult.reason)
     }
 
     private func snapshotFiles(from snapshot: SnapshotMode) -> [String] {
         switch snapshot {
         case .git(let files):
             return Array(files).sorted()
-        case .fileSystem(let files):
+        case .fileSystem(let files, _):
             return Array(files.keys).sorted()
         }
     }
@@ -124,8 +124,8 @@ final class GitDiffTracker {
         switch snapshot {
         case .git:
             return nil
-        case .fileSystem:
-            return nil
+        case .fileSystem(_, let reason):
+            return reason
         }
     }
 
@@ -134,11 +134,12 @@ final class GitDiffTracker {
         return false
     }
 
-    private func currentDirtyFilesResult(in directory: String) -> (files: Set<String>, succeeded: Bool) {
+    private func currentDirtyFilesResult(in directory: String) -> (files: Set<String>, succeeded: Bool, reason: String?) {
         let first = Self.runGitWithStatus(args: ["status", "--porcelain"], in: directory)
         let result = first.succeeded ? first : Self.runGitWithStatus(args: ["status", "--porcelain"], in: directory)
         guard result.succeeded else {
-            return ([], false)
+            let reason = result.stderr.isEmpty ? "git status unavailable" : result.stderr
+            return ([], false, reason)
         }
 
         var files = Set<String>()
@@ -146,7 +147,7 @@ final class GitDiffTracker {
             guard let path = Self.changedPath(fromStatusPorcelainLine: line) else { continue }
             files.insert(path)
         }
-        return (files, true)
+        return (files, true, nil)
     }
 
     private func currentFileModDates(in directory: String) -> [String: Date] {
@@ -154,7 +155,7 @@ final class GitDiffTracker {
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
             includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey, .isDirectoryKey],
-            options: [.skipsHiddenFiles]
+            options: []
         ) else {
             return [:]
         }

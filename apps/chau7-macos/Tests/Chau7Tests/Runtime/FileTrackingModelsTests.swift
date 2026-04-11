@@ -46,6 +46,30 @@ final class FileTrackingModelsTests: XCTestCase {
         )
     }
 
+    func testBashActivitiesCaptureExtensionlessFiles() {
+        let event = RuntimeEvent(
+            seq: 1,
+            sessionID: "s1",
+            turnID: "t1",
+            timestamp: Date(),
+            type: RuntimeEventType.toolUse.rawValue,
+            data: [
+                "tool": "Bash",
+                "args_summary": "cat Dockerfile Makefile README"
+            ]
+        )
+
+        let activities = FileTrackingParser.activities(from: event, gitRoot: nil)
+        XCTAssertEqual(
+            activities,
+            [
+                TrackedFileActivity(path: "Dockerfile", action: .read),
+                TrackedFileActivity(path: "Makefile", action: .read),
+                TrackedFileActivity(path: "README", action: .read)
+            ]
+        )
+    }
+
     func testCommandBlockFallbackUsesChangedFilesAndDefaultAction() {
         var block = CommandBlock(command: "python script.py", startLine: 1, directory: "/repo")
         block.changedFiles = ["Sources/App.swift", "Tests/AppTests.swift"]
