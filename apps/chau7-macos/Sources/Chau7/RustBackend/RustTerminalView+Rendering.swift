@@ -199,16 +199,18 @@ extension RustTerminalView {
             }
         }
 
-        // Check for clipboard events (OSC 52)
+        // Check for clipboard events (OSC 52). These fire on every terminal
+        // copy/paste so they're logged at .debug rather than .info to avoid
+        // drowning the signal stream during AI-heavy sessions.
         if let clipboardText = rust.getPendingClipboard() {
-            Log.info("RustTerminalView[\(viewId)]: OSC 52 clipboard store: \(clipboardText.count) chars")
+            Log.debug("RustTerminalView[\(viewId)]: OSC 52 clipboard store: \(clipboardText.count) chars")
             DispatchQueue.main.async {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(clipboardText, forType: .string)
             }
         }
         if rust.hasClipboardRequest() {
-            Log.info("RustTerminalView[\(viewId)]: OSC 52 clipboard load request")
+            Log.debug("RustTerminalView[\(viewId)]: OSC 52 clipboard load request")
             let clipboardContent = NSPasteboard.general.string(forType: .string) ?? ""
             rust.respondClipboard(text: clipboardContent)
         }
