@@ -1843,6 +1843,24 @@ struct UnifiedTabButton: View {
         tab.notificationStyle
     }
 
+    /// Background fill for the tab pill. When selected and grouped, use a
+    /// slightly lighter version of the group's hashed color so the active tab
+    /// visually belongs to its group bracket (which uses the same color at
+    /// 0.5 stroke opacity). Ungrouped tabs keep the legacy effectiveColor fill.
+    @ViewBuilder private var selectedBackgroundFill: some View {
+        if isSelected {
+            if let groupID = tab.repoGroupID, !groupID.isEmpty {
+                RepoTagChip.color(for: groupID).opacity(0.32)
+            } else {
+                tab.effectiveColor.color.opacity(0.25)
+            }
+        } else if tab.isMCPControlled, FeatureSettings.shared.mcpShowTabIndicator {
+            Color.purple.opacity(0.15)
+        } else {
+            Color.black.opacity(0.18)
+        }
+    }
+
     private var titleFont: Font {
         var font = Font.custom("Avenir Next", size: 12)
         if notificationStyle?.isBold == true {
@@ -1990,11 +2008,7 @@ struct UnifiedTabButton: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 3)
         .frame(height: OverlayLayout.tabChipHeight, alignment: .center)
-        .background(
-            isSelected
-                ? tab.effectiveColor.color.opacity(0.25)
-                : (tab.isMCPControlled && FeatureSettings.shared.mcpShowTabIndicator ? Color.purple.opacity(0.15) : Color.black.opacity(0.18))
-        )
+        .background(selectedBackgroundFill)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(notificationBorderOverlay)
         .contentShape(Rectangle())
