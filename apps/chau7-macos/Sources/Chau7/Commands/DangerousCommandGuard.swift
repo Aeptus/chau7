@@ -188,16 +188,21 @@ final class DangerousCommandGuard {
     /// Shows a confirmation alert for a dangerous command.
     /// Returns true if the user confirms execution.
     /// Must be called on the main actor (which this class is isolated to).
+    ///
+    /// The command text is rendered inside a bounded scrollable accessoryView
+    /// rather than the alert's informativeText so that very long or multi-line
+    /// commands don't stretch the alert past the screen edge and push the
+    /// Execute/Cancel/Always Allow buttons out of view.
     func showConfirmation(command: String, matchedPattern: String) -> Bool {
         let alert = NSAlert()
         alert.messageText = L("dangerousGuard.alert.title", "Dangerous Command Detected")
         alert.informativeText = L(
             "dangerousGuard.alert.body",
-            "The command matches a risky pattern:\n\n%@\n\nMatched: %@\n\nAre you sure you want to execute this?",
-            command,
+            "This input matches a risky pattern:\n\nMatched: %@\n\nReview the command below and confirm whether to execute it.",
             matchedPattern
         )
         alert.alertStyle = .warning
+        alert.accessoryView = Self.makeCommandAccessoryView(command: command)
         alert.addButton(withTitle: L("dangerousGuard.alert.execute", "Execute"))
         alert.addButton(withTitle: L("dangerousGuard.alert.cancel", "Cancel"))
         alert.addButton(withTitle: L("dangerousGuard.alert.alwaysAllow", "Always Allow"))
@@ -277,6 +282,50 @@ final class DangerousCommandGuard {
     }
 
     // MARK: - Helpers
+
+    /// Builds a bounded scrollable NSView that displays the command inside the
+    /// confirmation NSAlert. Using an accessoryView instead of stuffing the full
+    /// text into `informativeText` caps the dialog height so that very long or
+    /// multi-line commands scroll inside the box rather than pushing the
+    /// Execute/Cancel/Always Allow buttons off-screen.
+    ///
+    /// Width: 480pt (comfortable for an NSAlert).
+    /// Height: clamped to the screen so there's always room for header + buttons.
+    @MainActor
+    static func makeCommandAccessoryView(command: String) -> NSView {
+        let width: CGFloat = 480
+        // Reserve 220pt for alert header, informative text, and button row so
+        // the whole alert fits comfortably on the smallest likely screen.
+        let screenBudget = NSScreen.main?.visibleFrame.height ?? 800
+        let maxHeight: CGFloat = max(120, min(320, screenBudget - 220))
+
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: maxHeight))
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.textColor = NSColor.labelColor
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.string = command
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: width - 16, height: .greatestFiniteMagnitude)
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: maxHeight))
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.autohidesScrollers = true
+        scroll.borderType = .bezelBorder
+        scroll.drawsBackground = true
+        scroll.backgroundColor = NSColor.textBackgroundColor
+        scroll.documentView = textView
+        scroll.translatesAutoresizingMaskIntoConstraints = true
+
+        return scroll
+    }
 
     private func findMatchedPattern(_ command: String) -> String {
         for pattern in resolvedPatterns {
