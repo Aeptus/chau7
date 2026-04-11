@@ -1,5 +1,26 @@
 import Foundation
 
+// MARK: - Localization Hook
+
+/// Localization hook for strings generated inside Chau7Core. The Core module
+/// cannot depend on the Chau7 app target (where the full `L()` helper and
+/// custom-bundle logic live), so it exposes an injectable closure that Chau7
+/// wires at startup. The default is identity — when Core is used in isolation
+/// (tests, CLIs), it falls back to the English defaults baked into the call.
+public enum Chau7CoreLocalization {
+    /// Closure: `(key, englishDefault) -> String`.
+    /// Chau7 overrides this in its app init to forward to its `L()` helper.
+    public static var localize: @Sendable (_ key: String, _ defaultValue: String) -> String = { _, defaultValue in
+        defaultValue
+    }
+}
+
+/// Short helper used inside Core to call the injected localizer.
+@usableFromInline
+func LCore(_ key: String, _ defaultValue: String) -> String {
+    Chau7CoreLocalization.localize(key, defaultValue)
+}
+
 // MARK: - Tool-Agnostic Event System
 
 //
@@ -253,61 +274,66 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         } else {
             prefix = name
         }
+        let suffix: String
         switch type.lowercased() {
         case "needs_validation":
-            return "\(prefix): Needs review"
+            suffix = LCore("aiEvent.title.needsValidation", "Needs review")
         case "idle", "waiting_input":
-            return "\(prefix): Waiting for input"
+            suffix = LCore("aiEvent.title.waitingInput", "Waiting for input")
         case "attention_required":
-            return "\(prefix): Needs attention"
+            suffix = LCore("aiEvent.title.attention", "Needs attention")
         case "finished":
-            return "\(prefix): Finished"
+            suffix = LCore("aiEvent.title.finished", "Finished")
         case "failed":
-            return "\(prefix): Failed"
+            suffix = LCore("aiEvent.title.failed", "Failed")
         case "permission":
-            return "\(prefix): Permission needed"
+            suffix = LCore("aiEvent.title.permission", "Permission needed")
         case "error":
-            return "\(prefix): Error"
+            suffix = LCore("aiEvent.title.error", "Error")
         case "context_limit":
-            return "\(prefix): Context limit reached"
+            suffix = LCore("aiEvent.title.contextLimit", "Context limit reached")
         case "file_conflict":
-            return "\(prefix): File conflict"
+            suffix = LCore("aiEvent.title.fileConflict", "File conflict")
         case "tool_called":
-            return "\(prefix): Tool called"
+            suffix = LCore("aiEvent.title.toolCalled", "Tool called")
         case "file_edited":
-            return "\(prefix): File edited"
+            suffix = LCore("aiEvent.title.fileEdited", "File edited")
         case "token_threshold":
-            return "\(prefix): Token threshold"
+            suffix = LCore("aiEvent.title.tokenThreshold", "Token threshold")
         case "cost_threshold":
-            return "\(prefix): Cost threshold"
+            suffix = LCore("aiEvent.title.costThreshold", "Cost threshold")
         default:
-            return "\(prefix): Update"
+            suffix = LCore("aiEvent.title.update", "Update")
         }
+        return "\(prefix): \(suffix)"
     }
 
     /// Returns the notification body for this event.
+    /// For known event types, an explicit `message` supplied by the producer
+    /// takes precedence over the localized default. For unknown types, the
+    /// fallback is `"<type>: <message>"` or just `<type>` when message is empty.
     public var notificationBody: String {
         switch type.lowercased() {
         case "needs_validation":
-            return message.isEmpty ? "Your input is required." : message
+            return message.isEmpty ? LCore("aiEvent.body.needsValidation", "Your input is required.") : message
         case "idle":
-            return message.isEmpty ? "No new history entries for a while." : message
+            return message.isEmpty ? LCore("aiEvent.body.idle", "No new history entries for a while.") : message
         case "waiting_input":
-            return message.isEmpty ? "Ready for your input." : message
+            return message.isEmpty ? LCore("aiEvent.body.waitingInput", "Ready for your input.") : message
         case "attention_required":
-            return message.isEmpty ? "Needs your attention." : message
+            return message.isEmpty ? LCore("aiEvent.body.attention", "Needs your attention.") : message
         case "finished":
-            return message.isEmpty ? "Done." : message
+            return message.isEmpty ? LCore("aiEvent.body.finished", "Done.") : message
         case "failed":
-            return message.isEmpty ? "Check the logs." : message
+            return message.isEmpty ? LCore("aiEvent.body.failed", "Check the logs.") : message
         case "permission":
-            return message.isEmpty ? "Needs your permission to continue." : message
+            return message.isEmpty ? LCore("aiEvent.body.permission", "Needs your permission to continue.") : message
         case "error":
-            return message.isEmpty ? "An error occurred." : message
+            return message.isEmpty ? LCore("aiEvent.body.error", "An error occurred.") : message
         case "context_limit":
-            return message.isEmpty ? "Approaching context window limit." : message
+            return message.isEmpty ? LCore("aiEvent.body.contextLimit", "Approaching context window limit.") : message
         case "token_threshold", "cost_threshold":
-            return message.isEmpty ? "Usage threshold exceeded." : message
+            return message.isEmpty ? LCore("aiEvent.body.usageThreshold", "Usage threshold exceeded.") : message
         default:
             return message.isEmpty ? type : "\(type): \(message)"
         }

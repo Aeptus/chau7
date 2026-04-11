@@ -65,6 +65,13 @@ private final class OverlayBlurView: NSVisualEffectView {
         Log.info("AppDelegate did finish launching.")
         didFinishLaunching = true
 
+        // Wire Chau7Core's localization hook into the Chau7 app's L() helper so
+        // strings generated inside Core (e.g. AIEvent.notificationTitle/body) are
+        // localized through the same bundle as the rest of the UI.
+        Chau7CoreLocalization.localize = { key, defaultValue in
+            L(key, defaultValue)
+        }
+
         // Ignore SIGPIPE process-wide: broken socket/pipe writes return EPIPE error
         // instead of killing the app. Per-socket SO_NOSIGPIPE is also set where possible,
         // but this catches any unprotected write paths (proxies, IPC, MCP bridges).
