@@ -147,7 +147,7 @@ final class RemoteControlManager {
         guard !isAgentRunning else { return }
         guard let binaryPath = remoteBinaryPath() else {
             let error = lastError ?? "Remote agent binary not found."
-            logger.error("\(error)")
+            logger.error("\(error, privacy: .public)")
             lastError = error
             return
         }
@@ -155,7 +155,7 @@ final class RemoteControlManager {
         do {
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binaryPath.path)
         } catch {
-            logger.warning("Failed to set remote binary permissions: \(error.localizedDescription)")
+            logger.warning("Failed to set remote binary permissions: \(error.localizedDescription, privacy: .public)")
         }
 
         let process = Process()
@@ -186,13 +186,13 @@ final class RemoteControlManager {
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
-            self?.logger.debug("Remote stdout: \(output)")
+            self?.logger.debug("Remote stdout: \(output, privacy: .public)")
         }
 
         errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
-            self?.logger.warning("Remote stderr: \(output)")
+            self?.logger.warning("Remote stderr: \(output, privacy: .public)")
         }
 
         process.terminationHandler = { [weak self] proc in
@@ -201,7 +201,7 @@ final class RemoteControlManager {
                 self.isAgentRunning = false
                 if proc.terminationStatus != 0 {
                     let error = "Remote agent exited with status \(proc.terminationStatus)"
-                    self.logger.error("\(error)")
+                    self.logger.error("\(error, privacy: .public)")
                     self.lastError = error
                 }
             }
@@ -212,11 +212,11 @@ final class RemoteControlManager {
             self.process = process
             isAgentRunning = true
             lastError = nil
-            logger.info("Remote agent started from \(binaryPath.path)")
+            logger.info("Remote agent started from \(binaryPath.path, privacy: .public)")
             refreshPairedDevices()
         } catch {
             let errorMessage = "Failed to start remote agent: \(error.localizedDescription)"
-            logger.error("\(errorMessage)")
+            logger.error("\(errorMessage, privacy: .public)")
             lastError = errorMessage
         }
     }
@@ -242,7 +242,7 @@ final class RemoteControlManager {
 
     private func handleIPCFrame(_ frame: RemoteFrame) {
         guard let type = RemoteFrameType(rawValue: frame.type) else {
-            logger.warning("Unknown IPC frame type: 0x\(String(frame.type, radix: 16))")
+            logger.warning("Unknown IPC frame type: 0x\(String(frame.type, radix: 16), privacy: .public)")
             return
         }
         switch type {
@@ -276,7 +276,7 @@ final class RemoteControlManager {
                 lastError = message
             }
         default:
-            logger.debug("Unhandled IPC frame type: 0x\(String(type.rawValue, radix: 16))")
+            logger.debug("Unhandled IPC frame type: 0x\(String(type.rawValue, radix: 16), privacy: .public)")
         }
     }
 
@@ -329,7 +329,7 @@ final class RemoteControlManager {
         registerApprovalContext(requestID: requestID, payload: payload)
         sendFrame(type: .approvalRequest, tabID: 0, payload: payload)
         sendRemoteActivity()
-        logger.info("Remote: sent approval request \(requestID)")
+        logger.info("Remote: sent approval request \(requestID, privacy: .public)")
     }
 
     private func handleApprovalResponse(_ frame: RemoteFrame) {
@@ -342,9 +342,9 @@ final class RemoteControlManager {
             if response.approved,
                let session = session(for: protectedInput.tabID) {
                 session.sendInput(protectedInput.text)
-                logger.info("Remote: protected action approved for tab \(protectedInput.tabID)")
+                logger.info("Remote: protected action approved for tab \(protectedInput.tabID, privacy: .public)")
             } else {
-                logger.info("Remote: protected action denied for tab \(protectedInput.tabID)")
+                logger.info("Remote: protected action denied for tab \(protectedInput.tabID, privacy: .public)")
             }
             sendRemoteActivity()
             return
@@ -354,7 +354,7 @@ final class RemoteControlManager {
         }
         TerminalControlService.shared.resolveApproval(requestID: response.requestID, approved: response.approved)
         sendRemoteActivity()
-        logger.info("Remote: approval response for \(response.requestID): \(response.approved ? "allowed" : "denied")")
+        logger.info("Remote: approval response for \(response.requestID, privacy: .public): \(response.approved ? ", privacy: .public)allowed" : "denied")")
     }
 
     private func handleRemoteTelemetry(_ frame: RemoteFrame) {
@@ -779,11 +779,11 @@ final class RemoteControlManager {
         do {
             let payload = try JSONEncoder().encode(RemoteTabListPayload(tabs: tabPayloads))
             sendFrame(type: .tabList, tabID: 0, payload: payload)
-            logger.info("Remote: sent tab list with \(tabPayloads.count) tabs")
+            logger.info("Remote: sent tab list with \(tabPayloads.count, privacy: .public) tabs")
             sendRemoteActivity()
             sendInteractivePrompts()
         } catch {
-            logger.warning("Failed to encode tab list: \(error.localizedDescription)")
+            logger.warning("Failed to encode tab list: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -860,7 +860,7 @@ final class RemoteControlManager {
     private func sendError(code: String, message: String, tabID: UInt32 = 0) {
         let payload = RemoteErrorPayload(code: code, message: message)
         guard let data = try? JSONEncoder().encode(payload) else {
-            logger.warning("Failed to encode remote error payload for code \(code)")
+            logger.warning("Failed to encode remote error payload for code \(code, privacy: .public)")
             return
         }
         sendFrame(type: .error, tabID: tabID, payload: data)
@@ -875,7 +875,7 @@ final class RemoteControlManager {
         do {
             return try JSONDecoder().decode(type, from: frame.payload)
         } catch {
-            logger.warning("Failed to decode \(context): \(error.localizedDescription)")
+            logger.warning("Failed to decode \(context, privacy: .public): \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }
@@ -916,7 +916,7 @@ final class RemoteControlManager {
         for (key, input) in expired {
             pendingProtectedInputs.removeValue(forKey: key)
             approvalContexts.removeValue(forKey: key)
-            logger.info("Remote: expired protected action for tab \(input.tabID) after \(ProtectedRemoteInput.ttl)s")
+            logger.info("Remote: expired protected action for tab \(input.tabID, privacy: .public) after \(ProtectedRemoteInput.ttl, privacy: .public)s")
         }
     }
 
@@ -980,7 +980,7 @@ final class RemoteControlManager {
     ) {
         purgeExpiredProtectedInputs()
         if pendingProtectedInputs.count >= Self.maxPendingProtectedInputs {
-            logger.warning("Remote: pending protected inputs at capacity (\(Self.maxPendingProtectedInputs)), dropping oldest")
+            logger.warning("Remote: pending protected inputs at capacity (\(Self.maxPendingProtectedInputs, privacy: .public)), dropping oldest")
             if let oldestKey = pendingProtectedInputs.min(by: { $0.value.createdAt < $1.value.createdAt })?.key {
                 pendingProtectedInputs.removeValue(forKey: oldestKey)
             }
@@ -1038,7 +1038,7 @@ final class RemoteControlManager {
         }
 
         sendApprovalRequest(requestID: requestID, payload: data)
-        logger.warning("Remote: queued protected action approval for tab \(tabID) (\(sessionTitle))")
+        logger.warning("Remote: queued protected action approval for tab \(tabID, privacy: .public) (\(sessionTitle, privacy: .public))")
     }
 
     private func protectedRemoteActionLabel(for input: String) -> String? {
@@ -1054,7 +1054,7 @@ final class RemoteControlManager {
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
-            logger.error("Failed to create data directory: \(error.localizedDescription)")
+            logger.error("Failed to create data directory: \(error.localizedDescription, privacy: .public)")
             lastError = "Failed to create data directory"
             return nil
         }
@@ -1083,7 +1083,7 @@ final class RemoteControlManager {
             refreshPairedDevices()
             restartAgentIfRunning()
         } catch {
-            logger.error("Failed to revoke paired device: \(error.localizedDescription)")
+            logger.error("Failed to revoke paired device: \(error.localizedDescription, privacy: .public)")
             lastError = "Failed to revoke paired device"
         }
     }
@@ -1105,7 +1105,7 @@ final class RemoteControlManager {
                 )
             }
         } catch {
-            logger.warning("Failed to refresh paired devices: \(error.localizedDescription)")
+            logger.warning("Failed to refresh paired devices: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -1185,7 +1185,7 @@ final class RemoteControlManager {
             try fileManager.copyItem(at: bundledPath, to: installedPath)
             try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: installedPath.path)
         } catch {
-            logger.warning("Failed to sync bundled remote agent to App Support: \(error.localizedDescription)")
+            logger.warning("Failed to sync bundled remote agent to App Support: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -1291,7 +1291,7 @@ final class RemoteControlManager {
         do {
             try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
         } catch {
-            logger.error("Failed to create remote agent output directory: \(error.localizedDescription)")
+            logger.error("Failed to create remote agent output directory: \(error.localizedDescription, privacy: .public)")
             lastError = "Failed to create remote agent output directory."
             return false
         }
@@ -1309,7 +1309,7 @@ final class RemoteControlManager {
             try process.run()
             process.waitUntilExit()
         } catch {
-            logger.error("Failed to launch go build: \(error.localizedDescription)")
+            logger.error("Failed to launch go build: \(error.localizedDescription, privacy: .public)")
             lastError = "Failed to launch Go build for remote agent."
             return false
         }
@@ -1318,7 +1318,7 @@ final class RemoteControlManager {
         let output = String(data: outputData, encoding: .utf8) ?? ""
 
         guard process.terminationStatus == 0 else {
-            logger.error("Remote agent build failed: \(output)")
+            logger.error("Remote agent build failed: \(output, privacy: .public)")
             let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 lastError = "Remote agent build failed. Make sure Go is installed."
@@ -1331,7 +1331,7 @@ final class RemoteControlManager {
         do {
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: outputURL.path)
         } catch {
-            logger.warning("Failed to set remote binary permissions: \(error.localizedDescription)")
+            logger.warning("Failed to set remote binary permissions: \(error.localizedDescription, privacy: .public)")
         }
 
         return true

@@ -105,7 +105,7 @@ final class ProxyIPCServer {
         // Create socket
         socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
         if socketFD < 0 {
-            logger.error("Failed to create socket: \(String(cString: strerror(errno)))")
+            logger.error("Failed to create socket: \(String(cString: strerror(errno)), privacy: .public)")
             return
         }
 
@@ -129,7 +129,7 @@ final class ProxyIPCServer {
         }
 
         if bindResult < 0 {
-            logger.error("Failed to bind socket: \(String(cString: strerror(errno)))")
+            logger.error("Failed to bind socket: \(String(cString: strerror(errno)), privacy: .public)")
             close(socketFD)
             socketFD = -1
             return
@@ -137,7 +137,7 @@ final class ProxyIPCServer {
 
         // Listen for connections
         if listen(socketFD, 1) < 0 {
-            logger.error("Failed to listen: \(String(cString: strerror(errno)))")
+            logger.error("Failed to listen: \(String(cString: strerror(errno)), privacy: .public)")
             close(socketFD)
             socketFD = -1
             return
@@ -157,7 +157,7 @@ final class ProxyIPCServer {
         listeningSource?.resume()
 
         isListening = true
-        logger.info("IPC server listening at \(path)")
+        logger.info("IPC server listening at \(path, privacy: .public)")
     }
 
     /// Stops the IPC server
@@ -204,7 +204,7 @@ final class ProxyIPCServer {
         }
 
         if newClientFD < 0 {
-            logger.warning("Failed to accept connection: \(String(cString: strerror(errno)))")
+            logger.warning("Failed to accept connection: \(String(cString: strerror(errno)), privacy: .public)")
             return
         }
 
@@ -243,7 +243,7 @@ final class ProxyIPCServer {
         if bytesRead <= 0 {
             // Connection closed or error
             if bytesRead < 0 {
-                logger.warning("Read error: \(String(cString: strerror(errno)))")
+                logger.warning("Read error: \(String(cString: strerror(errno)), privacy: .public)")
             }
             clientSource?.cancel()
             return
@@ -268,9 +268,9 @@ final class ProxyIPCServer {
                 let message = try ProxyIPCServerMessage.decode(from: lineData)
                 handleMessage(message)
             } catch {
-                logger.warning("Failed to decode IPC message: \(error.localizedDescription)")
+                logger.warning("Failed to decode IPC message: \(error.localizedDescription, privacy: .public)")
                 if let str = String(data: lineData, encoding: .utf8) {
-                    logger.debug("Raw message: \(str)")
+                    logger.debug("Raw message: \(str, privacy: .public)")
                 }
             }
         }
@@ -294,7 +294,7 @@ final class ProxyIPCServer {
             handleTaskAssessmentMessage(message.rawData)
 
         default:
-            logger.warning("Unknown message type: \(message.type)")
+            logger.warning("Unknown message type: \(message.type, privacy: .public)")
         }
     }
 
@@ -359,10 +359,10 @@ final class ProxyIPCServer {
                     object: nil,
                     userInfo: ["candidate": candidate]
                 )
-                self.logger.info("Task candidate received: \(candidate.suggestedName)")
+                self.logger.info("Task candidate received: \(candidate.suggestedName, privacy: .public)")
             }
         } catch {
-            logger.warning("Failed to decode task_candidate: \(error.localizedDescription)")
+            logger.warning("Failed to decode task_candidate: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -401,10 +401,10 @@ final class ProxyIPCServer {
                     object: nil,
                     userInfo: ["task": task]
                 )
-                self.logger.info("Task started: \(task.name)")
+                self.logger.info("Task started: \(task.name, privacy: .public)")
             }
         } catch {
-            logger.warning("Failed to decode task_started: \(error.localizedDescription)")
+            logger.warning("Failed to decode task_started: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -422,11 +422,11 @@ final class ProxyIPCServer {
                         object: nil,
                         userInfo: ["candidateId": removed.id, "tabId": dismissData.tabId]
                     )
-                    self.logger.info("Task candidate dismissed: \(removed.suggestedName)")
+                    self.logger.info("Task candidate dismissed: \(removed.suggestedName, privacy: .public)")
                 }
             }
         } catch {
-            logger.warning("Failed to decode task_candidate_dismissed: \(error.localizedDescription)")
+            logger.warning("Failed to decode task_candidate_dismissed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -463,10 +463,10 @@ final class ProxyIPCServer {
                     object: nil,
                     userInfo: ["assessment": assessment]
                 )
-                self.logger.info("Task assessed: \(assessment.taskId) - \(assessment.approved ? "approved" : "failed")")
+                self.logger.info("Task assessed: \(assessment.taskId, privacy: .public) - \(assessment.approved ? ", privacy: .public)approved" : "failed")")
             }
         } catch {
-            logger.warning("Failed to decode task_assessment: \(error.localizedDescription)")
+            logger.warning("Failed to decode task_assessment: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -484,7 +484,10 @@ final class ProxyIPCServer {
             userInfo: ["event": event]
         )
 
-        logger.info("API call: \(event.provider.rawValue) \(event.model) - in:\(event.inputTokens) out:\(event.outputTokens) $\(String(format: "%.4f", event.costUSD))")
+        logger
+            .info(
+                "API call: \(event.provider.rawValue, privacy: .public) \(event.model, privacy: .public) - in:\(event.inputTokens, privacy: .public) out:\(event.outputTokens, privacy: .public) $\(String(format: ", privacy: .public)%.4f", event.costUSD))"
+            )
     }
 }
 

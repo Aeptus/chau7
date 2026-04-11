@@ -38,14 +38,14 @@ final class RemoteIPCServer {
             do {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             } catch {
-                logger.error("Failed to create IPC socket directory: \(error.localizedDescription)")
+                logger.error("Failed to create IPC socket directory: \(error.localizedDescription, privacy: .public)")
                 return
             }
             unlink(path)
 
             socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
             guard socketFD >= 0 else {
-                logger.error("Failed to create socket: \(String(cString: strerror(errno)))")
+                logger.error("Failed to create socket: \(String(cString: strerror(errno)), privacy: .public)")
                 return
             }
 
@@ -66,14 +66,14 @@ final class RemoteIPCServer {
             }
 
             guard bindResult >= 0 else {
-                logger.error("Failed to bind socket: \(String(cString: strerror(errno)))")
+                logger.error("Failed to bind socket: \(String(cString: strerror(errno)), privacy: .public)")
                 close(socketFD)
                 socketFD = -1
                 return
             }
 
             guard listen(socketFD, 1) >= 0 else {
-                logger.error("Failed to listen: \(String(cString: strerror(errno)))")
+                logger.error("Failed to listen: \(String(cString: strerror(errno)), privacy: .public)")
                 close(socketFD)
                 socketFD = -1
                 return
@@ -94,7 +94,7 @@ final class RemoteIPCServer {
             DispatchQueue.main.async { [weak self] in
                 self?.isListening = true
             }
-            logger.info("Remote IPC listening at \(path)")
+            logger.info("Remote IPC listening at \(path, privacy: .public)")
         }
     }
 
@@ -143,7 +143,7 @@ final class RemoteIPCServer {
 
                 guard written > 0 else {
                     let err = String(cString: strerror(errno))
-                    logger.error("IPC write failed: \(err)")
+                    logger.error("IPC write failed: \(err, privacy: .public)")
                     Task { @MainActor [weak self] in
                         self?.disconnectClient(notify: true)
                     }
@@ -165,7 +165,7 @@ final class RemoteIPCServer {
         }
 
         guard newClientFD >= 0 else {
-            logger.warning("Failed to accept connection: \(String(cString: strerror(errno)))")
+            logger.warning("Failed to accept connection: \(String(cString: strerror(errno)), privacy: .public)")
             return
         }
 
@@ -220,7 +220,7 @@ final class RemoteIPCServer {
         let result = FrameParser.parseFrames(from: &buffer, maxFrameSize: maxFrameSize)
 
         for error in result.errors {
-            logger.warning("Frame error: \(error.localizedDescription)")
+            logger.warning("Frame error: \(error.localizedDescription, privacy: .public)")
         }
 
         for frame in result.frames {
