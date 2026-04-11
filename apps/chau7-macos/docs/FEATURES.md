@@ -210,6 +210,15 @@ Registration only occurs if the AI tool's config directory exists — no files a
 
 Runtime sessions keep pending `initial_prompt` work attached to real terminal readiness changes, so slow interactive launches do not silently miss their first prompt. Runtime-driven tab teardown also queues close work off the immediate stop path and reports when close cleanup is still in flight.
 
+### Runtime Journal
+
+- **Turn-scoped event causality** — runtime events now carry optional correlation IDs so tool use, approval requests, approval resolution, and tool results can be stitched back into one causal chain.
+- **User input boundaries** — each runtime turn journals an explicit `user_input` event with prompt length and preview, giving orchestrators a stable “since last user input” boundary.
+- **Turn integrity metadata** — `turn_completed` events include `turn_duration_ms`, and turn-scoped journal queries can fetch all retained events for a specific turn ID without manual session-wide filtering.
+- **Richer tool results** — `tool_result` events include success/failure, exit code, error preview, output preview, duration, and file path metadata matched back to the originating tool invocation.
+- **Streaming output chunks** — `output_chunk` events are emitted during the active turn with `turn_id` and `chunk_index`, using an 8K default chunk size that can be tuned through runtime settings.
+- **Configurable journal retention** — per-session runtime event journal capacity and output chunk limits are configurable, so long-running orchestration sessions can trade memory for deeper history.
+
 ### Resources (4 endpoints)
 
 | URI | Description |

@@ -8,6 +8,21 @@ import Chau7Core
 final class RuntimeSessionManager {
     static let shared = RuntimeSessionManager()
 
+    private struct PendingToolInvocation {
+        let turnID: String
+        let correlationID: String
+        let toolName: String
+        let file: String?
+        let argsSummary: String?
+        let startedAt: Date
+    }
+
+    private struct OutputJournalState {
+        let turnID: String
+        var emittedCharacterCount: Int
+        var nextChunkIndex: Int
+    }
+
     // MARK: - Session Storage
 
     private var sessions: [String: RuntimeSession] = [:] // sessionID → session
@@ -23,6 +38,12 @@ final class RuntimeSessionManager {
 
     /// Incremental transcript readers for token extraction (sessionID → reader).
     private var transcriptReaders: [String: IncrementalTranscriptReader] = [:]
+    private var pendingToolInvocations: [String: [PendingToolInvocation]] = [:]
+    private var outputJournalStates: [String: OutputJournalState] = [:]
+
+    private var outputChunkPreviewLimit: Int {
+        FeatureSettings.shared.runtimeOutputChunkLimit
+    }
 
     private init() {}
 
@@ -39,7 +60,8 @@ final class RuntimeSessionManager {
             tabID: tabID,
             backend: backend,
             config: config,
-            autoApprove: autoApprove
+            autoApprove: autoApprove,
+            journalCapacity: FeatureSettings.shared.runtimeEventJournalCapacity
         )
 
         lock.lock()
@@ -69,7 +91,8 @@ final class RuntimeSessionManager {
             tabID: tabID,
             backend: backend,
             config: config,
-            adopted: true
+            adopted: true,
+            journalCapacity: FeatureSettings.shared.runtimeEventJournalCapacity
         )
 
         // Adopted sessions start as ready (backend already running)
@@ -203,16 +226,26 @@ final class RuntimeSessionManager {
             if session.currentTurnID == nil, session.canAcceptTurn {
                 _ = session.startTurn(prompt: event.message)
             }
-            // Record tool use for TurnStats
             let file = extractFilePath(from: event)
+            let argsSummary = RuntimeToolEventMetadata.argsSummary(from: event.message)
+            let correlationID = registerPendingToolInvocation(
+                sessionID: session.id,
+                turnID: session.currentTurnID ?? "unknown",
+                toolName: event.toolName,
+                file: file,
+                argsSummary: argsSummary
+            )
+
             session.recordToolUse(name: event.toolName, file: file)
 
             var toolData: [String: String] = ["tool": event.toolName]
             if let file { toolData["file"] = file }
+            if let argsSummary { toolData["args_summary"] = argsSummary }
             session.journal.append(
                 sessionID: session.id,
                 turnID: session.currentTurnID,
                 type: RuntimeEventType.toolUse.rawValue,
+                correlationID: correlationID,
                 data: toolData
             )
 
@@ -226,21 +259,53 @@ final class RuntimeSessionManager {
             }
 
         case .toolComplete:
+            journalOutputDeltaIfNeeded(for: session)
+            let toolInvocation = completePendingToolInvocation(
+                sessionID: session.id,
+                turnID: session.currentTurnID,
+                toolName: event.toolName
+            )
+            let resultMetadata = RuntimeToolEventMetadata.inferResult(
+                toolName: event.toolName,
+                message: event.message
+            )
+            var toolResultData: [String: String] = [
+                "tool": event.toolName,
+                "success": resultMetadata.success ? "true" : "false"
+            ]
+            if let file = toolInvocation?.file {
+                toolResultData["file"] = file
+            }
+            if let durationMs = toolInvocation.map({ max(0, Int(Date().timeIntervalSince($0.startedAt) * 1000)) }) {
+                toolResultData["duration_ms"] = "\(durationMs)"
+            }
+            if let exitCode = resultMetadata.exitCode {
+                toolResultData["exit_code"] = "\(exitCode)"
+            }
+            if let error = resultMetadata.error {
+                toolResultData["error"] = error
+            }
+            if let preview = resultMetadata.outputPreview {
+                toolResultData["output_preview"] = preview
+            }
             session.journal.append(
                 sessionID: session.id,
                 turnID: session.currentTurnID,
                 type: RuntimeEventType.toolResult.rawValue,
-                data: ["tool": event.toolName]
+                correlationID: toolInvocation?.correlationID,
+                data: toolResultData
             )
 
         case .permissionRequest:
             if session.currentTurnID == nil, session.canAcceptTurn {
                 _ = session.startTurn(prompt: event.message)
             }
+            journalOutputDeltaIfNeeded(for: session)
             let canHandlePermission = session.currentTurnID != nil
                 || session.state == .busy
                 || session.state == .awaitingApproval
             if canHandlePermission {
+                let toolCorrelationID = currentToolCorrelationID(sessionID: session.id, turnID: session.currentTurnID)
                 let ownsUserFacingNotifications = session.backend.name.lowercased() == "claude"
                 if let policyError = session.config.policy.validateTool(event.toolName) {
                     _ = TerminalControlService.shared.sendInput(
@@ -263,7 +328,8 @@ final class RuntimeSessionManager {
                 } else {
                     _ = session.requestApproval(
                         tool: event.toolName,
-                        description: event.message
+                        description: event.message,
+                        correlationID: toolCorrelationID
                     )
                     if !ownsUserFacingNotifications {
                         emitNotification(session: session, type: "permission", message: event.message)
@@ -282,16 +348,12 @@ final class RuntimeSessionManager {
                 // Capture terminal output and turnID before completeTurn clears them
                 let output = captureOutput(for: session)
                 let turnIDForOutput = session.currentTurnID
-                let result = session.completeTurn(summary: event.message, terminalOutput: output)
-
-                if let output, !output.isEmpty {
-                    session.journal.append(
-                        sessionID: session.id,
-                        turnID: turnIDForOutput,
-                        type: RuntimeEventType.outputChunk.rawValue,
-                        data: ["output": String(output.prefix(4096))]
-                    )
+                journalOutputDeltaIfNeeded(for: session)
+                guard let result = session.completeTurn(summary: event.message, terminalOutput: output) else {
+                    Log.error("RuntimeSessionManager: completeTurn rejected for session \(session.id)")
+                    return
                 }
+                clearTurnScopedTracking(sessionID: session.id, turnID: turnIDForOutput)
 
                 // Claude owns waiting-input delivery through its upstream
                 // Notification hook. Runtime stays responsible for state and
@@ -323,18 +385,14 @@ final class RuntimeSessionManager {
         case .sessionEnd:
             session.transition(.tabClosed)
             cleanupTranscriptReader(for: session)
+            clearSessionEventTracking(sessionID: session.id)
             moveToStopped(session)
 
         case .userPrompt:
             if session.currentTurnID == nil, session.canAcceptTurn {
                 _ = session.startTurn(prompt: event.message)
             }
-            session.journal.append(
-                sessionID: session.id,
-                turnID: session.currentTurnID,
-                type: RuntimeEventType.agentResponding.rawValue,
-                data: ["message": event.message]
-            )
+            session.journalUserInput(prompt: event.message)
 
         case .notification:
             session.journal.append(
@@ -800,31 +858,141 @@ final class RuntimeSessionManager {
 
     /// Extract file path from a Claude Code event (tool-specific).
     private func extractFilePath(from event: ClaudeCodeEvent) -> String? {
-        // Claude Code hook events include the file in the message for file-editing tools.
-        // Only extract for tools that operate on files.
-        let fileTools: Set = ["Write", "Edit", "Read", "NotebookEdit"]
-        guard fileTools.contains(event.toolName) else { return nil }
-
-        let message = event.message
-        guard !message.isEmpty else { return nil }
-
-        // The message is often the file path itself.
-        // Handle both absolute (/path) and relative (src/file.swift) paths.
-        let candidate = message.components(separatedBy: .whitespaces).first ?? message
-
-        if candidate.hasPrefix("/") {
-            return candidate
-        }
-
-        // Relative path — resolve against the event's cwd if available
-        if !candidate.isEmpty, !event.cwd.isEmpty {
-            return event.cwd + "/" + candidate
-        }
-
-        return nil
+        RuntimeToolEventMetadata.extractFilePath(
+            toolName: event.toolName,
+            message: event.message,
+            cwd: event.cwd
+        )
     }
 
     // MARK: - Private
+
+    private func registerPendingToolInvocation(
+        sessionID: String,
+        turnID: String,
+        toolName: String,
+        file: String?,
+        argsSummary: String?
+    ) -> String {
+        let correlationID = UUID().uuidString
+        let invocation = PendingToolInvocation(
+            turnID: turnID,
+            correlationID: correlationID,
+            toolName: toolName,
+            file: file,
+            argsSummary: argsSummary,
+            startedAt: Date()
+        )
+        lock.lock()
+        let existing = pendingToolInvocations[sessionID] ?? []
+        pendingToolInvocations[sessionID] = existing.filter { $0.turnID == turnID } + [invocation]
+        lock.unlock()
+        return correlationID
+    }
+
+    private func completePendingToolInvocation(sessionID: String, turnID: String?, toolName: String) -> PendingToolInvocation? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard var invocations = pendingToolInvocations[sessionID], !invocations.isEmpty else {
+            return nil
+        }
+
+        if let turnID {
+            invocations.removeAll { $0.turnID != turnID }
+        }
+        guard !invocations.isEmpty else {
+            pendingToolInvocations.removeValue(forKey: sessionID)
+            return nil
+        }
+
+        let index = invocations.firstIndex { $0.toolName == toolName } ?? 0
+        let invocation = invocations.remove(at: index)
+        if invocations.isEmpty {
+            pendingToolInvocations.removeValue(forKey: sessionID)
+        } else {
+            pendingToolInvocations[sessionID] = invocations
+        }
+        return invocation
+    }
+
+    private func currentToolCorrelationID(sessionID: String, turnID: String?) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let turnID else { return nil }
+        return pendingToolInvocations[sessionID]?.last(where: { $0.turnID == turnID })?.correlationID
+    }
+
+    private func journalOutputDeltaIfNeeded(for session: RuntimeSession) {
+        guard let turnID = session.currentTurnID,
+              let output = captureOutput(for: session),
+              !output.isEmpty else {
+            return
+        }
+
+        lock.lock()
+        var state = outputJournalStates[session.id]
+            ?? OutputJournalState(turnID: turnID, emittedCharacterCount: 0, nextChunkIndex: 0)
+        if state.turnID != turnID || output.count < state.emittedCharacterCount {
+            state = OutputJournalState(turnID: turnID, emittedCharacterCount: 0, nextChunkIndex: 0)
+        }
+
+        let emittedCount = min(state.emittedCharacterCount, output.count)
+        let delta = String(output.dropFirst(emittedCount))
+        guard !delta.isEmpty else {
+            outputJournalStates[session.id] = state
+            lock.unlock()
+            return
+        }
+
+        let chunks = chunkStrings(delta, maxLength: outputChunkPreviewLimit)
+        let startingChunkIndex = state.nextChunkIndex
+        state.emittedCharacterCount = output.count
+        state.nextChunkIndex += chunks.count
+        outputJournalStates[session.id] = state
+        lock.unlock()
+
+        for (index, chunk) in chunks.enumerated() {
+            session.journal.append(
+                sessionID: session.id,
+                turnID: turnID,
+                type: RuntimeEventType.outputChunk.rawValue,
+                data: [
+                    "turn_id": turnID,
+                    "chunk_index": "\(startingChunkIndex + index)",
+                    "output": chunk
+                ]
+            )
+        }
+    }
+
+    private func chunkStrings(_ text: String, maxLength: Int) -> [String] {
+        guard maxLength > 0, !text.isEmpty else { return [] }
+        var chunks: [String] = []
+        var start = text.startIndex
+        while start < text.endIndex {
+            let end = text.index(start, offsetBy: maxLength, limitedBy: text.endIndex) ?? text.endIndex
+            chunks.append(String(text[start ..< end]))
+            start = end
+        }
+        return chunks
+    }
+
+    private func clearTurnScopedTracking(sessionID: String, turnID: String?) {
+        lock.lock()
+        pendingToolInvocations.removeValue(forKey: sessionID)
+        if let turnID, outputJournalStates[sessionID]?.turnID == turnID {
+            outputJournalStates.removeValue(forKey: sessionID)
+        }
+        lock.unlock()
+    }
+
+    private func clearSessionEventTracking(sessionID: String) {
+        lock.lock()
+        pendingToolInvocations.removeValue(forKey: sessionID)
+        outputJournalStates.removeValue(forKey: sessionID)
+        lock.unlock()
+    }
 
     private func moveToStopped(_ session: RuntimeSession) {
         var externalSessionID: String?
@@ -843,6 +1011,8 @@ final class RuntimeSessionManager {
             claudeToRuntimeSession.removeValue(forKey: claudeSessionID)
             externalSessionID = claudeSessionID
         }
+        pendingToolInvocations.removeValue(forKey: session.id)
+        outputJournalStates.removeValue(forKey: session.id)
         recentlyStopped[session.id] = (session, Date())
         lock.unlock()
 
@@ -865,6 +1035,8 @@ final class RuntimeSessionManager {
         runtimeToClaudeSession.removeAll()
         recentlyStopped.removeAll()
         transcriptReaders.removeAll()
+        pendingToolInvocations.removeAll()
+        outputJournalStates.removeAll()
         lock.unlock()
     }
 }

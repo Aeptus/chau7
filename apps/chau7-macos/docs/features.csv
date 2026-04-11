@@ -59,6 +59,7 @@ AI Integration,Restored Session Fallback Lock,"Restored AI tabs suppress prompt-
 AI Integration,Deterministic Notification Action Outcomes,"Notification delivery records whether focus style badge and snippet actions actually succeeded instead of assuming success once requested, making logs and ledger entries fully explainable",Shipped,Yes
 AI Integration,Runtime Session Startup,"MCP-created runtime sessions transition to ready after launch, and attach_tab_id sessions start usable immediately",Shipped,Yes
 Runtime,Bounded Approval Timeout Recovery,"Repeated runtime approval timeouts recover only for a bounded number of attempts before the session records a session_error and moves to failed",Shipped,Yes
+Runtime,Turn-Scoped Runtime Event Journal,"Runtime journals record user_input boundaries, correlated tool use and results, turn-scoped output chunks, duration metadata, and per-turn event queries for deterministic orchestration",Shipped,Yes
 MCP Server,MCP Command Filter Hardening,"Permission checks parse background separators, tabs, and newlines before applying allow/block/approval rules",Shipped,Yes
 MCP Server,Backend Launch Environment Validation,"Runtime backend launch strings drop invalid environment variable names before shell interpolation",Shipped,Yes
 AI Integration,History Monitor Tab Routing,"History-monitor idle and finished events resolve provider session metadata to recover the working directory before notification routing",Shipped,Yes

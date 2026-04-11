@@ -145,6 +145,57 @@ final class RuntimeSessionManagerTests: XCTestCase {
         XCTAssertEqual(notificationEvents.first?.data?["message"], "Heads up")
     }
 
+    func testToolLifecycleJournalsCorrelationDurationAndResultMetadata() throws {
+        let manager = RuntimeSessionManager.shared
+        let cwd = "/tmp/runtime-tool-metadata-\(UUID().uuidString)"
+        let session = manager.createSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: cwd, provider: "claude")
+        )
+
+        manager.handleClaudeEvent(
+            ClaudeCodeEvent(
+                type: .toolStart,
+                hook: "PreToolUse",
+                sessionId: "claude-session-tool-metadata",
+                transcriptPath: "",
+                toolName: "Bash",
+                message: "rg -n EventJournal apps/chau7-macos/Sources/Chau7Core/Runtime/EventJournal.swift",
+                cwd: cwd,
+                timestamp: Date()
+            )
+        )
+
+        manager.handleClaudeEvent(
+            ClaudeCodeEvent(
+                type: .toolComplete,
+                hook: "PostToolUse",
+                sessionId: "claude-session-tool-metadata",
+                transcriptPath: "",
+                toolName: "Bash",
+                message: "Command failed with exit code 2: rg: file not found",
+                cwd: cwd,
+                timestamp: Date().addingTimeInterval(1)
+            )
+        )
+
+        let events = session.journal.events(after: 0, limit: 100).events
+        let toolUse = try XCTUnwrap(events.first { $0.type == RuntimeEventType.toolUse.rawValue })
+        let toolResult = try XCTUnwrap(events.first { $0.type == RuntimeEventType.toolResult.rawValue })
+
+        XCTAssertEqual(toolUse.data["tool"], "Bash")
+        XCTAssertEqual(toolUse.data["args_summary"], "rg -n EventJournal apps/chau7-macos/Sources/Chau7Core/Runtime/EventJournal.swift")
+        XCTAssertEqual(toolUse.data["file"], "\(cwd)/apps/chau7-macos/Sources/Chau7Core/Runtime/EventJournal.swift")
+        XCTAssertEqual(toolUse.correlationID, toolResult.correlationID)
+        XCTAssertEqual(toolResult.data["success"], "false")
+        XCTAssertEqual(toolResult.data["exit_code"], "2")
+        XCTAssertNotNil(toolResult.data["duration_ms"])
+        XCTAssertNotNil(toolResult.data["error"])
+        XCTAssertNotNil(toolResult.data["output_preview"])
+        XCTAssertEqual(toolResult.data["file"], "\(cwd)/apps/chau7-macos/Sources/Chau7Core/Runtime/EventJournal.swift")
+    }
+
     func testAmbiguousClaudeSessionsInSameDirectoryDoNotBindNewSessionByGuessing() {
         let manager = RuntimeSessionManager.shared
         let cwd = "/tmp/runtime-ambiguous-\(UUID().uuidString)"

@@ -1831,6 +1831,30 @@ final class FeatureSettings {
         }
     }
 
+    /// Maximum runtime events retained per session journal.
+    var runtimeEventJournalCapacity: Int {
+        get {
+            let raw = UserDefaults.standard.object(forKey: Keys.runtimeEventJournalCapacity) as? Int ?? 1000
+            return max(100, min(raw, 10000))
+        }
+        set {
+            let clamped = max(100, min(newValue, 10000))
+            UserDefaults.standard.set(clamped, forKey: Keys.runtimeEventJournalCapacity)
+        }
+    }
+
+    /// Maximum characters stored per output_chunk journal event.
+    var runtimeOutputChunkLimit: Int {
+        get {
+            let raw = UserDefaults.standard.object(forKey: Keys.runtimeOutputChunkLimit) as? Int ?? 8192
+            return max(1024, min(raw, 65536))
+        }
+        set {
+            let clamped = max(1024, min(newValue, 65536))
+            UserDefaults.standard.set(clamped, forKey: Keys.runtimeOutputChunkLimit)
+        }
+    }
+
     var bellEnabled: Bool {
         didSet { UserDefaults.standard.set(bellEnabled, forKey: Keys.bellEnabled) }
     }
@@ -2311,6 +2335,8 @@ final class FeatureSettings {
         static let cursorBlink = "terminal.cursorBlink"
         static let scrollbackLines = "terminal.scrollbackLines"
         static let restoredScrollbackLines = "terminal.restoredScrollbackLines"
+        static let runtimeEventJournalCapacity = "runtime.eventJournalCapacity"
+        static let runtimeOutputChunkLimit = "runtime.outputChunkLimit"
         static let bellEnabled = "terminal.bellEnabled"
         static let bellSound = "terminal.bellSound"
         static let dangerousCommandHighlightEnabled = "terminal.dangerousCommandHighlightEnabled"
