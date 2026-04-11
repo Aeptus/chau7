@@ -15,16 +15,13 @@ export CHAU7_LOG_ROOT="$ROOT_DIR"
 CHAU7_LOG_NAME="build-and-run"
 export CHAU7_LOG_NAME
 
+# shellcheck source=apps/chau7-macos/Scripts/logging.sh
 source "$ROOT_DIR/Scripts/logging.sh"
 
-start_ts=$(date +%s)
 STATUS="success"
 LAST_STEP="init"
 
 summary() {
-  end_ts=$(date +%s)
-  elapsed=$((end_ts - start_ts))
-
   log_divider
   log_info "Build Summary"
   log_info "Status: $STATUS"

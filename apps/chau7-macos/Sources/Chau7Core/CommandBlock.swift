@@ -19,7 +19,7 @@ public struct CommandBlock: Identifiable, Codable, Equatable, Sendable {
     /// Empty if not a git repo, or if the command hasn't finished yet.
     public var changedFiles: [String] = []
     /// Whether change detection completed but could not determine the diff reliably.
-    public var changedFilesUnavailable: Bool = false
+    public var changedFilesUnavailable = false
 
     /// Whether the command is still executing (neither end line nor end time recorded)
     public var isRunning: Bool {

@@ -67,7 +67,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-	r.Body.Close()
+	_ = r.Body.Close()
 
 	// Extract prompt preview for task naming (first 500 chars)
 	promptPreview := extractPromptPreview(bodyBytes, p.config.LogPrompts)
@@ -119,7 +119,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Upstream request failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Copy response headers
 	copyHeaders(resp.Header, w.Header())
@@ -435,7 +435,7 @@ func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Upstream connection failed", http.StatusBadGateway)
 		return
 	}
-	defer tlsConn.Close()
+	defer func() { _ = tlsConn.Close() }()
 
 	// Build the upgrade request to send to upstream.
 	// Use the upstream path and forward all headers except X-Chau7-*.
@@ -475,16 +475,16 @@ func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[ERROR] WebSocket: hijack failed: %v", err)
 		return
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	// Bidirectional pipe: client <-> upstream
 	done := make(chan struct{}, 2)
 	go func() {
-		io.Copy(clientConn, tlsConn)
+		_, _ = io.Copy(clientConn, tlsConn)
 		done <- struct{}{}
 	}()
 	go func() {
-		io.Copy(tlsConn, clientConn)
+		_, _ = io.Copy(tlsConn, clientConn)
 		done <- struct{}{}
 	}()
 	<-done

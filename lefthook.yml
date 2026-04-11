@@ -1,5 +1,48 @@
+# Chau7 lefthook configuration.
+#
+# Pre-commit runs fast, scoped, and deterministic. Every command here either
+# runs against the full diff or is glob-scoped so an unrelated edit does not
+# trigger unrelated checks.
+#
+# Escape hatches (documented in CONTRIBUTING.md):
+#   LEFTHOOK=0 git commit ...                 # bypass the whole hook system
+#   git commit --no-verify                    # bypass all git hooks
+#   CHAU7_SKIP_FORBIDDEN_CHECK=1 git commit … # forbidden-file guard only
+#   CHAU7_SKIP_ANTISLOP=1 git commit …        # anti-slop regex suite only
+#   CHAU7_SKIP_DS_CHECK=1 git commit …        # design-system ratchet only
+#   CHAU7_SKIP_DOC_CHECK=1 git commit …       # docs-staged rule only
+#   CHAU7_PRE_COMMIT_REVIEW_ENABLED=0 …       # AI pre-commit review only
+
 pre-commit:
+  parallel: true
   commands:
+    secrets:
+      run: gitleaks protect --staged --redact --no-banner --exit-code 1
+    forbidden-files:
+      run: ./Scripts/check-forbidden-files
+    anti-slop:
+      run: ./Scripts/check-anti-slop
+    design-system:
+      glob: "*.swift"
+      run: ./Scripts/check-design-system
+    shellcheck:
+      glob: "*.{sh,bash}"
+      run: shellcheck -x {staged_files}
+    ruff:
+      glob: "Scripts/*.py"
+      run: ruff check --config Scripts/ruff.toml {staged_files} && ruff format --config Scripts/ruff.toml --check {staged_files}
+    relay-ts:
+      glob:
+        - "services/chau7-relay/src/**/*.ts"
+        - "services/chau7-relay/src/**/*.js"
+        - "services/chau7-relay/src/**/*.json"
+        - "services/chau7-relay/test/**/*.ts"
+        - "services/chau7-relay/test/**/*.js"
+        - "services/chau7-relay/test/**/*.json"
+        - "services/chau7-relay/tsconfig.json"
+        - "services/chau7-relay/package.json"
+        - "services/chau7-relay/.prettierrc.json"
+      run: ./Scripts/ci-local-relay-ts
     docs-check:
       run: ./Scripts/check-docs-staged
     local-ci-fast:

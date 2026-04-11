@@ -8,14 +8,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EMIT="$SCRIPT_DIR/ai-event.sh"
 
-export CHAU7_LOG_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CHAU7_LOG_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+export CHAU7_LOG_ROOT
 CHAU7_LOG_NAME="codex-wrapper"
 export CHAU7_LOG_NAME
+# shellcheck source=apps/chau7-macos/Scripts/logging.sh
 source "$SCRIPT_DIR/logging.sh"
 
 log_init "Codex Wrapper"
 log_info "Args: $*"
 
+# shellcheck disable=SC2329 # Invoked via `trap finish EXIT`
 finish() {
   local code=$?
   log_finish "$code"

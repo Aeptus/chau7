@@ -14,10 +14,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export CHAU7_LOG_ROOT="$ROOT_DIR"
 CHAU7_LOG_NAME="ai-event"
 export CHAU7_LOG_NAME
+# shellcheck source=apps/chau7-macos/Scripts/logging.sh
 source "$ROOT_DIR/Scripts/logging.sh"
 
 log_init "AI Event"
 
+# shellcheck disable=SC2329 # Invoked via `trap finish EXIT`
 finish() {
   local code=$?
   log_finish "$code"

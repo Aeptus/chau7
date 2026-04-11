@@ -39,11 +39,35 @@ swift test
 | SwiftFormat | latest | Pre-commit hook | `brew install swiftformat` |
 | SwiftLint | latest | Pre-commit hook | `brew install swiftlint` |
 | lefthook | any | Git hooks | `brew install lefthook` |
+| gitleaks | any | Pre-commit secret scan | `brew install gitleaks` |
+| shellcheck | any | Pre-commit shell lint | `brew install shellcheck` |
+| ruff | any | Pre-commit Python lint | `brew install ruff` |
+| golangci-lint | any | Go lint | `brew install golangci-lint` |
+| periphery | any | Local CI dead-code scan | `brew install periphery` |
+| cargo-deny | any | Local CI Rust dep audit | `cargo install cargo-deny` |
+| jscpd | any | Local CI duplication scan | `npm install -g jscpd` |
 | Rust | stable | Terminal backend rebuild | [rustup.rs](https://rustup.rs) |
 | Go | 1.25+ | Proxy and remote agent | `brew install go` |
 | Node.js | 22+ | Relay service | `brew install node` |
 
-The Rust terminal backend and Go proxy ship pre-built in the repo. You only need the Rust and Go toolchains if you're modifying those components. Swift, SwiftFormat, SwiftLint, and lefthook are required for all contributors.
+The Rust terminal backend and Go proxy ship pre-built in the repo. You only need the Rust and Go toolchains if you're modifying those components. Swift, SwiftFormat, SwiftLint, lefthook, gitleaks, shellcheck, ruff, and golangci-lint are required for all contributors; periphery, cargo-deny, and jscpd are only required when running the full local CI (`./Scripts/ci-local`).
+
+### Bypassing a check
+
+Hooks use deterministic escape hatches so you can unblock yourself without reaching for `--no-verify`:
+
+| Situation | Escape hatch |
+|---|---|
+| Whole hook system, one commit | `LEFTHOOK=0 git commit ...` |
+| Whole hook system, git fallback | `git commit --no-verify` |
+| Forbidden-file guard only | `CHAU7_SKIP_FORBIDDEN_CHECK=1 git commit ...` |
+| Anti-slop regex suite only | `CHAU7_SKIP_ANTISLOP=1 git commit ...` |
+| Design-system ratchet only | `CHAU7_SKIP_DS_CHECK=1 git commit ...` |
+| Docs-staged rule only | `CHAU7_SKIP_DOC_CHECK=1 git commit ...` |
+| AI pre-commit review only | `CHAU7_PRE_COMMIT_REVIEW_ENABLED=0 git commit ...` |
+| Silence the "Chau7 not running" banner | `CHAU7_PRE_COMMIT_REVIEW_QUIET=1 git commit ...` |
+
+Any use of a bypass should be explained in the commit message. The whole point of the ratchet is that touched files ratchet up quality — bypassing defeats that.
 
 ## Code Style
 

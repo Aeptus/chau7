@@ -622,6 +622,8 @@ Key patterns:
 
 ## Recent Additions
 
+- Local quality pipeline:
+  lefthook-driven pre-commit/pre-push/local-CI layered enforcement. Pre-commit runs gitleaks, forbidden-file and large-file guards, anti-slop regex (Swift/TS/Go/Python), a design-system guard on net-new Swift, shellcheck, ruff, tsc+prettier for the relay, and scoped Swift/Rust/Go lint/build. Local CI (`./Scripts/ci-local`) adds periphery dead-code, jscpd duplication, cargo-deny dependency audit, full golangci-lint, and the entire test suite. Escape hatches documented in CONTRIBUTING.md. Running `./Scripts/install-hooks` wires lefthook and removes any stale legacy hooks.
 - Terminal latency telemetry separation:
   Input-lag telemetry now tracks local PTY responsiveness only. AI prompt round trips keep their dedicated timing logs, but they no longer inflate the input-lag panel or CPU-saturation heuristics used for UI throttling.
 - Protected-folder repo identity restore:

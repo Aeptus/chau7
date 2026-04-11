@@ -190,7 +190,7 @@ custom_rules:
     name: "No Print Statements"
     regex: '^\s*print\s*\('
     message: "Use Log.debug() instead of print()"
-    severity: warning
+    severity: error
     match_kinds:
       - identifier
 
@@ -200,6 +200,10 @@ custom_rules:
     regex: '// MARK:[^ -]'
     message: "MARK comments should have a space after the colon"
     severity: warning
+
+  # Note: AI ghost-comment and placeholder-TODO detection is enforced by
+  # Scripts/check-anti-slop on added diff lines only. SwiftLint's custom_rules
+  # would flag legacy test fixtures and conflict with the grandfather policy.
 
 # Reporter type
 reporter: "xcode"

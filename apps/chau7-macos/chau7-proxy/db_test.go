@@ -18,7 +18,7 @@ func TestNewDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Verify file was created
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -47,7 +47,7 @@ func TestDatabase_InsertAndRetrieve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Insert a test record
 	now := time.Now().UTC()
@@ -105,7 +105,7 @@ func TestDatabase_MultipleRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Insert multiple records
 	now := time.Now().UTC()
@@ -151,7 +151,7 @@ func TestDatabase_GetDailyStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Insert records for today
 	now := time.Now().UTC()
@@ -243,7 +243,7 @@ func TestDatabase_EmptyStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Get stats from empty database
 	stats, err := db.GetDailyStats()
@@ -270,7 +270,7 @@ func TestDatabase_ErrorRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Insert error record
 	record := &APICallRecord{
@@ -327,15 +327,15 @@ func TestDatabase_CloseAndReopen(t *testing.T) {
 		StatusCode:   200,
 		Timestamp:    time.Now().UTC(),
 	}
-	db1.InsertAPICall(record)
-	db1.Close()
+	_ = db1.InsertAPICall(record)
+	_ = db1.Close()
 
 	// Reopen and verify data persisted
 	db2, err := NewDatabase(dbPath)
 	if err != nil {
 		t.Fatalf("Failed to reopen database: %v", err)
 	}
-	defer db2.Close()
+	defer func() { _ = db2.Close() }()
 
 	records, err := db2.GetRecentCalls(10)
 	if err != nil {
@@ -358,7 +358,7 @@ func TestDatabase_ConcurrentWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Sequential writes with goroutines (more realistic)
 	// In practice, API calls don't happen at exactly the same microsecond

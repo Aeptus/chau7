@@ -7,11 +7,16 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "format:check": "prettier --check 'src/**/*.{ts,js,json}' 'test/**/*.{ts,js,json}'",
+    "format:write": "prettier --write 'src/**/*.{ts,js,json}' 'test/**/*.{ts,js,json}'",
     "build": "wrangler deploy --dry-run",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260403.1",
+    "prettier": "^3.8.2",
+    "typescript": "^5.9.3",
     "wrangler": "^4.81.1"
   }
 }

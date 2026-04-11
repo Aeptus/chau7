@@ -72,7 +72,7 @@ public enum AINotificationSettingsBridge {
     }
 
     public static func preference(
-        for event: AINotificationPrimaryEvent,
+        for _: AINotificationPrimaryEvent,
         currentActions: [NotificationActionConfig],
         defaultActions: [NotificationActionConfig]
     ) -> AINotificationPrimaryPreference {
@@ -122,7 +122,7 @@ public enum AINotificationSettingsBridge {
     }
 
     public static func updatedActions(
-        for event: AINotificationPrimaryEvent,
+        for _: AINotificationPrimaryEvent,
         preference: AINotificationPrimaryPreference,
         currentActions: [NotificationActionConfig],
         defaultActions: [NotificationActionConfig]

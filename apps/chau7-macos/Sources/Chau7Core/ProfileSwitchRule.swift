@@ -63,7 +63,7 @@ public struct ProfileSwitchRule: Codable, Identifiable, Equatable, Sendable {
 extension ProfileSwitchRule {
     public func matches(
         directory: String? = nil,
-        gitBranch: String? = nil,
+        gitBranch _: String? = nil,
         sshHost: String? = nil,
         processes: [String]? = nil,
         environment: [String: String]? = nil

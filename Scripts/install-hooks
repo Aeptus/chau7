@@ -10,5 +10,15 @@ if ! command -v lefthook >/dev/null 2>&1; then
 fi
 
 cd "$ROOT_DIR"
+
+# Remove any stale, non-lefthook pre-push hook left over from earlier setups.
+# core.hooksPath takes precedence, but a leftover .git/hooks/pre-push used to
+# confuse contributors who hadn't yet run this installer.
+stale_hook="$ROOT_DIR/.git/hooks/pre-push"
+if [[ -f "$stale_hook" ]] && ! grep -q 'call_lefthook' "$stale_hook"; then
+  printf 'Removing stale non-lefthook pre-push hook at %s\n' "$stale_hook"
+  rm -f "$stale_hook"
+fi
+
 bash "$ROOT_DIR/tools/git-hooks/install.sh"
 printf 'Lefthook-enabled hooks are active for %s\n' "$ROOT_DIR"

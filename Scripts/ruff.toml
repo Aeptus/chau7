@@ -1,0 +1,35 @@
+# Ruff config for Chau7 helper scripts in Scripts/.
+# Scoped narrow: this repo is not a Python project, only the helper scripts.
+
+target-version = "py311"
+line-length = 120
+
+extend-exclude = [
+    "__pycache__",
+    "*.pyc",
+    ".build",
+    "build",
+]
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # Pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "PLC",  # Pylint convention
+    "PLE",  # Pylint error
+    "PLW",  # Pylint warning
+]
+ignore = [
+    "E501",  # line-too-long — ruff format handles wrapping
+    "PLR",   # Pylint refactor — opinionated, off
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

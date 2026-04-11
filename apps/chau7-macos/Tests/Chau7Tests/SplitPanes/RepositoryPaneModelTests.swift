@@ -622,7 +622,7 @@ final class RepositoryPaneModelTests: XCTestCase {
         let journal = EventJournal(capacity: 100)
         journal.append(sessionID: "test", turnID: "t1", type: RuntimeEventType.turnStarted.rawValue)
         let firstTurnTime = Date()
-        usleep(10_000)
+        usleep(10000)
         journal.append(sessionID: "test", turnID: "t2", type: RuntimeEventType.turnStarted.rawValue)
 
         var block = CommandBlock(command: "touch Sources/OldTurn.swift", startLine: 1, directory: "/repo")
@@ -640,7 +640,7 @@ final class RepositoryPaneModelTests: XCTestCase {
     func testSessionFilesTrackerDrainsLargeJournalBursts() {
         let tracker = SessionFilesTracker()
         let journal = EventJournal(capacity: 1200)
-        for index in 0..<650 {
+        for index in 0 ..< 650 {
             journal.append(
                 sessionID: "test",
                 turnID: "t\(index / 10)",

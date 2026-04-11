@@ -239,8 +239,6 @@ main() {
             ;;
         *)
             error "Unknown command: $1"
-            usage
-            exit 1
             ;;
     esac
 }

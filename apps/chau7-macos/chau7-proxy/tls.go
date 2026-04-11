@@ -65,7 +65,7 @@ func ensureSelfSignedCert(certPath, keyPath string) error {
 	if err != nil {
 		return fmt.Errorf("create cert file: %w", err)
 	}
-	defer certFile.Close()
+	defer func() { _ = certFile.Close() }()
 
 	if err := pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
 		return fmt.Errorf("encode cert: %w", err)
@@ -76,7 +76,7 @@ func ensureSelfSignedCert(certPath, keyPath string) error {
 	if err != nil {
 		return fmt.Errorf("create key file: %w", err)
 	}
-	defer keyFile.Close()
+	defer func() { _ = keyFile.Close() }()
 
 	keyDER, err := x509.MarshalECPrivateKey(privateKey)
 	if err != nil {

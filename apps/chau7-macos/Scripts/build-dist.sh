@@ -93,8 +93,10 @@ end tell
 APPLESCRIPT
 }
 
-rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
+# Clean only this variant's artifacts (not other variants' DMGs/ZIPs)
+rm -f "$DMG_PATH" "$DIST_DIR/$DMG_BASENAME.zip"
+rm -rf "$DIST_DIR/dmg-staging"
 
 # ── 1. Go proxy (with -trimpath to remove /Users/... paths) ──
 info "Building Go proxy..."
@@ -127,11 +129,11 @@ info "Remote agent built"
 # that survive strip (they live in .rodata, not debug sections).
 info "Building Rust components..."
 export RUSTFLAGS="--remap-path-prefix=$HOME=~ ${RUSTFLAGS:-}"
-RUST_FLAGS="--release"
+RUST_FLAGS=(--release)
 if $UNIVERSAL; then
-    RUST_FLAGS="--release --universal"
+    RUST_FLAGS=(--release --universal)
 fi
-"$ROOT_DIR/Scripts/build-rust.sh" $RUST_FLAGS
+"$ROOT_DIR/Scripts/build-rust.sh" "${RUST_FLAGS[@]}"
 unset RUSTFLAGS
 info "Rust components built"
 
@@ -261,12 +263,20 @@ rm -rf "$DMG_STAGING"
 DMG_SIZE=$(du -sh "$DMG_PATH" | cut -f1)
 info "Distribution ready: $DMG_PATH ($DMG_SIZE)"
 
+# ── 9. Create ZIP archive ──
+# Uses ditto (not zip) to preserve macOS extended attributes and code signatures
+ZIP_PATH="$DIST_DIR/$DMG_BASENAME.zip"
+info "Creating ZIP archive..."
+ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$ZIP_PATH"
+ZIP_SIZE=$(du -sh "$ZIP_PATH" | cut -f1)
+info "ZIP archive ready: $ZIP_PATH ($ZIP_SIZE)"
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  $DMG_BASENAME.dmg is ready to share!"
+echo "  $DMG_BASENAME.dmg ($DMG_SIZE) + .zip ($ZIP_SIZE) ready to share!"
 echo ""
-echo "  This is a pre-release DMG for testing."
-echo "  Install by dragging Chau7.app to Applications."
+echo "  DMG: Drag Chau7.app to Applications."
+echo "  ZIP: Extract and move to Applications."
 echo "  If Gatekeeper blocks first launch, use Finder: Control-click -> Open."
 echo ""
 if ! $UNIVERSAL; then

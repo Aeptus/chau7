@@ -1,8 +1,8 @@
 /** Placeholder values that are rejected at runtime to prevent misconfigured deployments. */
-const RELAY_SECRET_PLACEHOLDERS = new Set(["CHANGE_ME_IN_PRODUCTION"]);
+const RELAY_SECRET_PLACEHOLDERS = new Set(['CHANGE_ME_IN_PRODUCTION']);
 
 export function isRelaySecretConfigured(secret) {
-  if (typeof secret !== "string") {
+  if (typeof secret !== 'string') {
     return false;
   }
 

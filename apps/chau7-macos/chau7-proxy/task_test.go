@@ -6,28 +6,20 @@ import (
 	"time"
 )
 
-// mockIPCNotifier is a no-op IPC notifier for testing
-type mockIPCNotifier struct{}
-
-func (m *mockIPCNotifier) NotifyTaskCandidate(candidate *TaskCandidate) error             { return nil }
-func (m *mockIPCNotifier) NotifyTaskStarted(task *Task) error                             { return nil }
-func (m *mockIPCNotifier) NotifyTaskCandidateDismissed(c *TaskCandidate, m2 string) error { return nil }
-func (m *mockIPCNotifier) NotifyTaskAssessment(task *Task, a *TaskAssessment) error       { return nil }
-
 // testDB creates a temporary database for testing
 func testDB(t *testing.T) *Database {
 	tmpFile, err := os.CreateTemp("", "chau7_test_*.db")
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	tmpFile.Close()
-	t.Cleanup(func() { os.Remove(tmpFile.Name()) })
+	_ = tmpFile.Close()
+	t.Cleanup(func() { _ = os.Remove(tmpFile.Name()) })
 
 	db, err := NewDatabase(tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	return db
 }
@@ -208,7 +200,7 @@ func TestTaskManager_IdleGapTrigger(t *testing.T) {
 		SessionID: "sess_1",
 		Project:   "/test/project",
 	}
-	tm.ProcessAPICall(headers, "first call")
+	_, _ = tm.ProcessAPICall(headers, "first call")
 
 	// Manually confirm the candidate
 	_, err := tm.confirmCandidate("tab_1", "", StartMethodAutoConfirmed)
@@ -247,8 +239,8 @@ func TestTaskManager_RepoSwitchTrigger(t *testing.T) {
 		SessionID: "sess_1",
 		Project:   "/test/projectA",
 	}
-	tm.ProcessAPICall(headers, "first call")
-	tm.confirmCandidate("tab_1", "", StartMethodAutoConfirmed)
+	_, _ = tm.ProcessAPICall(headers, "first call")
+	_, _ = tm.confirmCandidate("tab_1", "", StartMethodAutoConfirmed)
 
 	// Second call with project B
 	headers.Project = "/test/projectB"
@@ -279,7 +271,7 @@ func TestTaskManager_CandidateConfirmation(t *testing.T) {
 		SessionID: "sess_1",
 		Project:   "/test/project",
 	}
-	tm.ProcessAPICall(headers, "test prompt")
+	_, _ = tm.ProcessAPICall(headers, "test prompt")
 
 	candidate := tm.GetCandidate("tab_1")
 	if candidate == nil {
@@ -320,7 +312,7 @@ func TestTaskManager_CandidateDismissal(t *testing.T) {
 		SessionID: "sess_1",
 		Project:   "/test/project",
 	}
-	tm.ProcessAPICall(headers, "test prompt")
+	_, _ = tm.ProcessAPICall(headers, "test prompt")
 
 	candidate := tm.GetCandidate("tab_1")
 	if candidate == nil {
@@ -368,7 +360,7 @@ func TestTaskManager_DismissWrongID(t *testing.T) {
 		SessionID: "sess_1",
 		Project:   "/test/project",
 	}
-	tm.ProcessAPICall(headers, "test prompt")
+	_, _ = tm.ProcessAPICall(headers, "test prompt")
 
 	// Try to dismiss with wrong ID
 	dismissed, _ := tm.DismissCandidate("tab_1", "wrong_id", "test")
@@ -468,7 +460,7 @@ func TestTaskManager_MultipleTabsIndependent(t *testing.T) {
 		Project:   "/test/project1",
 		NewTask:   true,
 	}
-	tm.ProcessAPICall(headers1, "task 1")
+	_, _ = tm.ProcessAPICall(headers1, "task 1")
 
 	// Create task in tab 2
 	headers2 := &CorrelationHeaders{
@@ -477,7 +469,7 @@ func TestTaskManager_MultipleTabsIndependent(t *testing.T) {
 		Project:   "/test/project2",
 		NewTask:   true,
 	}
-	tm.ProcessAPICall(headers2, "task 2")
+	_, _ = tm.ProcessAPICall(headers2, "task 2")
 
 	task1 := tm.GetCurrentTask("tab_1")
 	task2 := tm.GetCurrentTask("tab_2")

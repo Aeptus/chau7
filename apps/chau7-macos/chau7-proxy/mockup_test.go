@@ -41,7 +41,7 @@ func TestMockupClient_SendEvent(t *testing.T) {
 		var payload struct {
 			Events []MockupEvent `json:"events"`
 		}
-		json.Unmarshal(body, &payload)
+		_ = json.Unmarshal(body, &payload)
 
 		mu.Lock()
 		received = append(received, payload.Events...)
@@ -55,7 +55,7 @@ func TestMockupClient_SendEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected client init error: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	event := &MockupEvent{
 		SchemaVersion: "1.0.0",
@@ -92,7 +92,7 @@ func TestMockupClient_SendAPICallEvent(t *testing.T) {
 		var payload struct {
 			Events []MockupEvent `json:"events"`
 		}
-		json.Unmarshal(body, &payload)
+		_ = json.Unmarshal(body, &payload)
 		if len(payload.Events) > 0 {
 			receivedEvent = payload.Events[0]
 		}
@@ -104,7 +104,7 @@ func TestMockupClient_SendAPICallEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected client init error: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	record := &APICallRecord{
 		SessionID:    "sess_123",
@@ -139,7 +139,7 @@ func TestMockupClient_SendAPICallEvent(t *testing.T) {
 		t.Fatalf("SendAPICallEvent error: %v", err)
 	}
 
-	client.Flush()
+	_ = client.Flush()
 
 	if receivedEvent.Type != "api_call" {
 		t.Errorf("Event type = %q, want api_call", receivedEvent.Type)
@@ -172,11 +172,11 @@ func TestMockupClient_BatchFlush(t *testing.T) {
 		t.Fatalf("Unexpected client init error: %v", err)
 	}
 	client.batchSize = 5 // Small batch for testing
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Send 10 events
 	for i := 0; i < 10; i++ {
-		client.SendEvent(&MockupEvent{
+		_ = client.SendEvent(&MockupEvent{
 			Type:      "test",
 			Timestamp: time.Now(),
 		})
@@ -197,11 +197,11 @@ func TestMockupClient_Stats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected client init error: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Send some events
 	for i := 0; i < 5; i++ {
-		client.SendEvent(&MockupEvent{
+		_ = client.SendEvent(&MockupEvent{
 			Type:      "test",
 			Timestamp: time.Now(),
 		})
@@ -232,7 +232,7 @@ func TestMockupClient_Health(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected client init error: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	err = client.Health()
 	if err != nil {
@@ -278,7 +278,7 @@ func TestMockupClient_TaskEvent(t *testing.T) {
 		var payload struct {
 			Events []MockupEvent `json:"events"`
 		}
-		json.Unmarshal(body, &payload)
+		_ = json.Unmarshal(body, &payload)
 		if len(payload.Events) > 0 {
 			receivedEvent = payload.Events[0]
 		}
@@ -290,7 +290,7 @@ func TestMockupClient_TaskEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected client init error: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	task := &Task{
 		ID:          "task_123",
@@ -318,7 +318,7 @@ func TestMockupClient_TaskEvent(t *testing.T) {
 		t.Fatalf("SendTaskEvent error: %v", err)
 	}
 
-	client.Flush()
+	_ = client.Flush()
 
 	if receivedEvent.Type != "task_started" {
 		t.Errorf("Event type = %q, want task_started", receivedEvent.Type)

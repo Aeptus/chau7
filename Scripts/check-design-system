@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# Design-system guard. Blocks commits that ADD a new Swift view file with
+# design-system violations. Existing files (modified or renamed) are
+# grandfathered — the existing tree is cleaned up opportunistically. The
+# intent: prevent NEW slop from entering, accept the debt already on disk.
+#
+# Canonical color source of truth: apps/chau7-macos/Sources/Chau7/Appearance/
+# Net-new files outside Appearance/Tests/Chau7Core must use tokens defined there.
+#
+# Escape hatch: CHAU7_SKIP_DS_CHECK=1 git commit ...  (please justify in message)
+
+set -euo pipefail
+
+if [[ -n "${CHAU7_SKIP_DS_CHECK:-}" ]]; then
+  printf 'check-design-system: bypassed via CHAU7_SKIP_DS_CHECK=1\n' >&2
+  exit 0
+fi
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Only inspect NET-NEW files (diff-filter=A). Modified/renamed/copied files
+# are grandfathered — the previous "touch a file, own its DS debt" ratchet
+# was relaxed to avoid forcing legacy cleanup on every edit.
+staged_files="$(git -C "$REPO_ROOT" diff --cached --name-only --diff-filter=A || true)"
+if [[ -z "$staged_files" ]]; then
+  exit 0
+fi
+
+# File paths that are exempt from DS enforcement entirely.
+is_exempt() {
+  local path="$1"
+  case "$path" in
+    # Canonical token source of truth.
+    apps/chau7-macos/Sources/Chau7/Appearance/*) return 0 ;;
+    # No UI in Chau7Core.
+    apps/chau7-macos/Sources/Chau7Core/*) return 0 ;;
+    # Tests may hold literal colors in fixtures.
+    apps/chau7-macos/Tests/*) return 0 ;;
+    # Resource bundles (.strings, assets, etc.)
+    apps/chau7-macos/Sources/Chau7/Resources/*) return 0 ;;
+    # iOS app — out of scope for the macOS DS ratchet until DS is extracted.
+    apps/chau7-ios/*) return 0 ;;
+  esac
+  return 1
+}
+
+# Read the staged (index) content of a path.
+staged_content() {
+  local path="$1"
+  git -C "$REPO_ROOT" show ":0:$path" 2>/dev/null || true
+}
+
+total_files_with_violations=0
+total_violations=0
+
+report_file_header() {
+  local path="$1"
+  printf '\n  %s\n' "$path" >&2
+}
+
+report_violation() {
+  local lineno="$1"
+  local rule="$2"
+  local snippet="$3"
+  printf '    %4s  [%s]  %s\n' "$lineno" "$rule" "$snippet" >&2
+  total_violations=$((total_violations + 1))
+}
+
+scan_swift_file() {
+  local path="$1"
+  local content
+  content="$(staged_content "$path")"
+  [[ -z "$content" ]] && return 0
+
+  local file_violations=0
+  local lineno=0
+
+  while IFS= read -r line; do
+    lineno=$((lineno + 1))
+
+    # Skip comment-only lines to avoid flagging documentation references.
+    local trimmed="${line#"${line%%[![:space:]]*}"}"
+    case "$trimmed" in
+      "//"*|"/*"*|"*"*) continue ;;
+    esac
+
+    # Rule 1: named-color literals used as Color/NSColor values.
+    #   .foregroundColor(.red), Color.red, .background(.blue)
+    if [[ "$line" =~ (Color|NSColor)\.(red|blue|green|orange|yellow|purple|pink|gray|grey|white|black|cyan|mint|indigo|teal|brown)([^_[:alnum:]]|$) ]]; then
+      if (( file_violations == 0 )); then report_file_header "$path"; fi
+      report_violation "$lineno" "ds/named-color" "${line:0:120}"
+      file_violations=$((file_violations + 1))
+      continue
+    fi
+    # `.foregroundColor(.red)` / `.background(.blue)` — leading `.` before
+    # the color name, inside a SwiftUI color-taking modifier.
+    if [[ "$line" =~ \.(foregroundColor|foregroundStyle|background|accentColor|tint|fill|stroke|shadow)\([[:space:]]*\.(red|blue|green|orange|yellow|purple|pink|gray|grey|white|black|cyan|mint|indigo|teal|brown)([^_[:alnum:]]|$) ]]; then
+      if (( file_violations == 0 )); then report_file_header "$path"; fi
+      report_violation "$lineno" "ds/modifier-named-color" "${line:0:120}"
+      file_violations=$((file_violations + 1))
+      continue
+    fi
+
+    # Rule 2: Color/NSColor constructor literals.
+    if [[ "$line" =~ (Color|NSColor)\((red|hex|white|srgbRed|srgb|deviceRed|calibratedRed|displayP3Red): ]]; then
+      if (( file_violations == 0 )); then report_file_header "$path"; fi
+      report_violation "$lineno" "ds/color-literal" "${line:0:120}"
+      file_violations=$((file_violations + 1))
+      continue
+    fi
+
+    # Rule 3: Inline hex literals on a line that mentions Color/NSColor.
+    if [[ "$line" =~ (Color|NSColor) ]] && [[ "$line" =~ 0x[0-9a-fA-F]{6,8} ]]; then
+      if (( file_violations == 0 )); then report_file_header "$path"; fi
+      report_violation "$lineno" "ds/inline-hex" "${line:0:120}"
+      file_violations=$((file_violations + 1))
+      continue
+    fi
+
+    # Rule 4: AnyView — fake extensibility.
+    if [[ "$line" =~ AnyView[[:space:]]*\( ]]; then
+      if (( file_violations == 0 )); then report_file_header "$path"; fi
+      report_violation "$lineno" "ds/anyview" "${line:0:120}"
+      file_violations=$((file_violations + 1))
+      continue
+    fi
+
+    # Rule 5: `.font(.system(size: LITERAL))` — typography tokens should be
+    # the source of truth. Literal numeric size is the violation.
+    if [[ "$line" =~ \.font\([[:space:]]*\.system\([[:space:]]*size:[[:space:]]*[0-9]+(\.[0-9]+)? ]]; then
+      if (( file_violations == 0 )); then report_file_header "$path"; fi
+      report_violation "$lineno" "ds/font-literal-size" "${line:0:120}"
+      file_violations=$((file_violations + 1))
+      continue
+    fi
+  done <<< "$content"
+
+  if (( file_violations > 0 )); then
+    total_files_with_violations=$((total_files_with_violations + 1))
+  fi
+}
+
+while IFS= read -r file; do
+  [[ -z "$file" ]] && continue
+  case "$file" in
+    *.swift) ;;
+    *) continue ;;
+  esac
+  if is_exempt "$file"; then
+    continue
+  fi
+  scan_swift_file "$file"
+done <<< "$staged_files"
+
+if (( total_violations > 0 )); then
+  printf '\n' >&2
+  printf '╭─ Design-system violations in new Swift file ────────────────╮\n' >&2
+  printf '│                                                             │\n' >&2
+  printf '│  Net-new Swift view files must be clean of DS violations.   │\n' >&2
+  printf '│                                                             │\n' >&2
+  printf '│  %d violation(s) across %d file(s) above.                    │\n' "$total_violations" "$total_files_with_violations" >&2
+  printf '│                                                             │\n' >&2
+  printf '│  Fix with tokens from:                                      │\n' >&2
+  printf '│    apps/chau7-macos/Sources/Chau7/Appearance/               │\n' >&2
+  printf '│                                                             │\n' >&2
+  printf '│  Bypass (requires justification in commit message):         │\n' >&2
+  printf '│    CHAU7_SKIP_DS_CHECK=1 git commit                         │\n' >&2
+  printf '│                                                             │\n' >&2
+  printf '╰─────────────────────────────────────────────────────────────╯\n' >&2
+  printf '\n' >&2
+  exit 1
+fi
+
+exit 0

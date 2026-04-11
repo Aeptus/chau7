@@ -298,7 +298,7 @@ func (c *MockupClient) sendBatch(events []*MockupEvent) error {
 	if err != nil {
 		return fmt.Errorf("mockup: failed to send events: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -358,7 +358,7 @@ func (c *MockupClient) Health() error {
 	if err != nil {
 		return fmt.Errorf("mockup: health check failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

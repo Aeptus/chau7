@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_GATE = "advisory"
 DEFAULT_TIMEOUT_MS = 45_000
 DEFAULT_STARTUP_TIMEOUT_MS = 20_000
@@ -22,12 +21,39 @@ CHAU7_BUNDLE_ID = "com.aeptus.Chau7"
 SCRIPTING_FLAG_KEY = "feature.scriptingAPI"
 
 REVIEWABLE_EXTENSIONS = {
-    ".c", ".cc", ".cpp", ".cs", ".go", ".h", ".hpp", ".java", ".js", ".json",
-    ".jsx", ".kt", ".m", ".mm", ".php", ".py", ".rb", ".rs", ".sh", ".sql",
-    ".swift", ".toml", ".ts", ".tsx", ".yaml", ".yml",
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cs",
+    ".go",
+    ".h",
+    ".hpp",
+    ".java",
+    ".js",
+    ".json",
+    ".jsx",
+    ".kt",
+    ".m",
+    ".mm",
+    ".php",
+    ".py",
+    ".rb",
+    ".rs",
+    ".sh",
+    ".sql",
+    ".swift",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".yaml",
+    ".yml",
 }
 REVIEWABLE_FILENAMES = {
-    "Package.swift", "Makefile", "Dockerfile", ".swiftformat", ".swiftlint.yml",
+    "Package.swift",
+    "Makefile",
+    "Dockerfile",
+    ".swiftformat",
+    ".swiftlint.yml",
 }
 
 
@@ -147,9 +173,7 @@ def is_reviewable(path: str) -> bool:
     pure = Path(path)
     if pure.name in REVIEWABLE_FILENAMES:
         return True
-    if pure.suffix.lower() in REVIEWABLE_EXTENSIONS:
-        return True
-    return False
+    return pure.suffix.lower() in REVIEWABLE_EXTENSIONS
 
 
 def staged_diff(root: Path, files: list[str]) -> str:
@@ -196,7 +220,33 @@ def socket_call(method: str, params: dict[str, Any]) -> dict[str, Any]:
     return json.loads(line)
 
 
-def print_skip(reason: str) -> None:
+_LOUD_SKIP_CODES = {
+    "app_down",
+    "scripting_disabled",
+    "socket_timeout",
+    "socket_connection_refused",
+    "socket_permission_denied",
+}
+
+
+def _loud_skip_enabled() -> bool:
+    value = os.environ.get("CHAU7_PRE_COMMIT_REVIEW_QUIET", "")
+    return value.strip().lower() not in {"1", "true", "yes", "on"}
+
+
+def print_skip(reason: str, code: str | None = None) -> None:
+    if code in _LOUD_SKIP_CODES and _loud_skip_enabled():
+        banner = "⚠ pre-commit review SKIPPED — Chau7 app not reachable"
+        bar = "=" * max(len(banner), len(reason))
+        print(bar, file=sys.stderr)
+        print(banner, file=sys.stderr)
+        print(reason, file=sys.stderr)
+        print(
+            "  (silence with CHAU7_PRE_COMMIT_REVIEW_QUIET=1; disable with CHAU7_PRE_COMMIT_REVIEW_ENABLED=0)",
+            file=sys.stderr,
+        )
+        print(bar, file=sys.stderr)
+        return
     print(f"pre-commit review: {reason}", file=sys.stderr)
 
 
@@ -251,38 +301,44 @@ def read_scripting_flag() -> bool | None:
     return None
 
 
-def describe_scripting_unavailable(exc: Exception) -> str:
+def describe_scripting_unavailable(exc: Exception) -> tuple[str, str]:
     if isinstance(exc, ConnectionRefusedError):
         return (
+            "socket_connection_refused",
             f"unable to reach Chau7 scripting API ({exc}); the socket exists but no server is accepting "
-            "connections; Chau7 may have left behind a stale socket or the scripting server failed to start; skipping"
+            "connections; Chau7 may have left behind a stale socket or the scripting server failed to start; skipping",
         )
     if isinstance(exc, TimeoutError):
         return (
+            "socket_timeout",
             f"unable to reach Chau7 scripting API ({exc}); the scripting socket did not respond before the client timeout; "
-            "skipping"
+            "skipping",
         )
     if isinstance(exc, PermissionError):
         return (
+            "socket_permission_denied",
             f"unable to reach Chau7 scripting API ({exc}); the socket exists but this process was denied access; "
-            "check local macOS permissions or sandboxing; skipping"
+            "check local macOS permissions or sandboxing; skipping",
         )
     if not chau7_is_running():
-        return f"unable to reach Chau7 scripting API ({exc}); Chau7 is not running; skipping"
+        return ("app_down", f"unable to reach Chau7 scripting API ({exc}); Chau7 is not running; skipping")
 
     flag = read_scripting_flag()
     if flag is False:
         return (
-            f"unable to reach Chau7 scripting API ({exc}); Chau7 is running but {SCRIPTING_FLAG_KEY} is disabled; skipping"
+            "scripting_disabled",
+            f"unable to reach Chau7 scripting API ({exc}); Chau7 is running but {SCRIPTING_FLAG_KEY} is disabled; skipping",
         )
     if flag is True:
         return (
+            "socket_unavailable",
             f"unable to reach Chau7 scripting API ({exc}); Chau7 is running and scripting is enabled, "
-            "but the socket is unavailable; skipping"
+            "but the socket is unavailable; skipping",
         )
     return (
+        "socket_unavailable",
         f"unable to reach Chau7 scripting API ({exc}); Chau7 is running, but scripting may still be starting "
-        "or failed to start; skipping"
+        "or failed to start; skipping",
     )
 
 
@@ -406,7 +462,8 @@ def main() -> int:
                 },
             )
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-            print_skip(describe_scripting_unavailable(exc))
+            code, reason = describe_scripting_unavailable(exc)
+            print_skip(reason, code)
             return 0
 
         if is_unknown_method(create_response, "create_session"):
@@ -440,7 +497,8 @@ def main() -> int:
                 ],
             )
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-            print_skip(describe_scripting_unavailable(exc))
+            code, reason = describe_scripting_unavailable(exc)
+            print_skip(reason, code)
             return 0
         if is_unknown_method(ready_response, "get_session_events"):
             print_skip(
@@ -460,7 +518,11 @@ def main() -> int:
             else:
                 print_skip(f"review did not become ready (state={state or 'unknown'}); skipping")
             return 0
-        if any(str(event.get("type")) in {"session_stopped", "session_error"} for event in ready_events if isinstance(event, dict)):
+        if any(
+            str(event.get("type")) in {"session_stopped", "session_error"}
+            for event in ready_events
+            if isinstance(event, dict)
+        ):
             state = str(ready_response.get("session_state", "unknown")).lower()
             print_skip(f"review stopped during startup (state={state}); skipping")
             return 0
@@ -468,7 +530,8 @@ def main() -> int:
         try:
             send_response = socket_call("submit_session_turn", {"session_id": session_id})
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-            print_skip(describe_scripting_unavailable(exc))
+            code, reason = describe_scripting_unavailable(exc)
+            print_skip(reason, code)
             return 0
         if is_unknown_method(send_response, "submit_session_turn"):
             print_skip(
@@ -493,7 +556,8 @@ def main() -> int:
                 ],
             )
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-            print_skip(describe_scripting_unavailable(exc))
+            code, reason = describe_scripting_unavailable(exc)
+            print_skip(reason, code)
             return 0
         if "error" in wait_response:
             print_skip(f"review completion failed ({wait_response['error']}); skipping")
@@ -515,13 +579,22 @@ def main() -> int:
                     ],
                 )
             except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-                print_skip(describe_scripting_unavailable(exc))
+                code, reason = describe_scripting_unavailable(exc)
+                print_skip(reason, code)
                 return 0
             completion_events = wait_response.get("events")
-            if wait_response.get("timed_out") is True or not isinstance(completion_events, list) or not completion_events:
+            if (
+                wait_response.get("timed_out") is True
+                or not isinstance(completion_events, list)
+                or not completion_events
+            ):
                 print_skip(f"review timed out after {timeout_ms}ms; skipping")
                 return 0
-        if any(str(event.get("type")) in {"turn_failed", "session_stopped", "session_error"} for event in completion_events if isinstance(event, dict)):
+        if any(
+            str(event.get("type")) in {"turn_failed", "session_stopped", "session_error"}
+            for event in completion_events
+            if isinstance(event, dict)
+        ):
             state = str(wait_response.get("session_state", "unknown")).lower()
             print_skip(f"review did not complete successfully (state={state}); skipping")
             return 0
@@ -529,7 +602,8 @@ def main() -> int:
         try:
             result_response = socket_call("get_session_result", {"session_id": session_id})
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-            print_skip(describe_scripting_unavailable(exc))
+            code, reason = describe_scripting_unavailable(exc)
+            print_skip(reason, code)
             return 0
         if "error" in result_response:
             print_skip(f"review did not produce a result ({result_response['error']}); skipping")

@@ -10,8 +10,8 @@
  * Authentication: HMAC-SHA256 bearer tokens with 5-minute window.
  * Rate limiting: 5 issue reports per hour per IP, enforced via Durable Objects.
  */
-import { SessionDO } from "./session";
-import { isRelaySecretConfigured } from "./auth.js";
+import { SessionDO } from './session';
+import { isRelaySecretConfigured } from './auth.js';
 
 export { SessionDO };
 
@@ -39,7 +39,6 @@ const LANDING_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
-
 interface Env {
   SESSION: DurableObjectNamespace;
   RELAY_SECRET?: string;
@@ -60,7 +59,7 @@ async function verifyToken(
   role: string,
   secret: string
 ): Promise<boolean> {
-  const parts = token.split(".");
+  const parts = token.split('.');
   if (parts.length !== 2) return false;
   const [timestamp, signature] = parts;
   const ts = parseInt(timestamp, 10);
@@ -70,27 +69,27 @@ async function verifyToken(
 
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
-    "raw",
+    'raw',
     encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
+    { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ["sign"]
+    ['sign']
   );
   const message = `${deviceId}:${role}:${timestamp}`;
-  const mac = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
   const expected = btoa(String.fromCharCode(...new Uint8Array(mac)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
   return expected === signature;
 }
 
 function extractBearerToken(request: Request): string | null {
-  const header = request.headers.get("Authorization") ?? "";
-  if (!header.startsWith("Bearer ")) {
+  const header = request.headers.get('Authorization') ?? '';
+  if (!header.startsWith('Bearer ')) {
     return null;
   }
-  return header.slice("Bearer ".length).trim() || null;
+  return header.slice('Bearer '.length).trim() || null;
 }
 
 async function authenticateRequest(
@@ -100,15 +99,15 @@ async function authenticateRequest(
   role: string
 ): Promise<Response | null> {
   if (!isRelaySecretConfigured(env.RELAY_SECRET)) {
-    return new Response("Relay secret not configured", { status: 503 });
+    return new Response('Relay secret not configured', { status: 503 });
   }
-  const token = extractBearerToken(request) ?? new URL(request.url).searchParams.get("token");
+  const token = extractBearerToken(request) ?? new URL(request.url).searchParams.get('token');
   if (!token) {
-    return new Response("Missing token", { status: 401 });
+    return new Response('Missing token', { status: 401 });
   }
-  const valid = await verifyToken(token, deviceId, role, env.RELAY_SECRET);
+  const valid = await verifyToken(token, deviceId, role, env.RELAY_SECRET!);
   if (!valid) {
-    return new Response("Invalid token", { status: 403 });
+    return new Response('Invalid token', { status: 403 });
   }
   return null;
 }
@@ -116,48 +115,48 @@ async function authenticateRequest(
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const parts = url.pathname.split("/").filter(Boolean);
+    const parts = url.pathname.split('/').filter(Boolean);
 
     // Root: issue submission (POST) or landing page (GET)
     // This is the primary endpoint for issues.chau7.sh
-    if (parts.length === 0 || (parts.length === 1 && parts[0] === "issue")) {
-      if (request.method === "GET") {
+    if (parts.length === 0 || (parts.length === 1 && parts[0] === 'issue')) {
+      if (request.method === 'GET') {
         return new Response(LANDING_HTML, {
           status: 200,
-          headers: { "Content-Type": "text/html; charset=utf-8" },
+          headers: { 'Content-Type': 'text/html; charset=utf-8' }
         });
       }
-      if (request.method === "OPTIONS") {
+      if (request.method === 'OPTIONS') {
         return new Response(null, {
           status: 204,
           headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-            "Access-Control-Max-Age": "86400",
-          },
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Max-Age': '86400'
+          }
         });
       }
-      if (request.method === "POST") {
+      if (request.method === 'POST') {
         return handleIssueCreate(request, env);
       }
-      return new Response("Method Not Allowed", { status: 405 });
+      return new Response('Method Not Allowed', { status: 405 });
     }
 
     if (parts.length < 2) {
-      return new Response("Not Found", { status: 404 });
+      return new Response('Not Found', { status: 404 });
     }
 
     const action = parts[0];
 
-    if (action === "connect") {
+    if (action === 'connect') {
       const deviceId = parts[1];
       if (!deviceId) {
-        return new Response("Missing device id", { status: 400 });
+        return new Response('Missing device id', { status: 400 });
       }
-      const role = url.searchParams.get("role");
-      if (role !== "mac" && role !== "ios") {
-        return new Response("Missing role", { status: 400 });
+      const role = url.searchParams.get('role');
+      if (role !== 'mac' && role !== 'ios') {
+        return new Response('Missing role', { status: 400 });
       }
       const authFailure = await authenticateRequest(request, env, deviceId, role);
       if (authFailure) {
@@ -168,9 +167,9 @@ export default {
       return stub.fetch(request);
     }
 
-    if (action === "push" && parts.length === 3) {
+    if (action === 'push' && parts.length === 3) {
       const targetDeviceID = parts[2];
-      const authFailure = await authenticateRequest(request, env, targetDeviceID, "mac");
+      const authFailure = await authenticateRequest(request, env, targetDeviceID, 'mac');
       if (authFailure) {
         return authFailure;
       }
@@ -179,8 +178,7 @@ export default {
       return stub.fetch(request);
     }
 
-
-    return new Response("Not Found", { status: 404 });
+    return new Response('Not Found', { status: 404 });
   }
 };
 
@@ -194,45 +192,42 @@ const ISSUE_RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
  * Validates body (title ≤256, body ≤65535), enforces rate limits via Durable Object,
  * and creates a GitHub issue using a fine-grained PAT.
  */
-async function handleIssueCreate(
-  request: Request,
-  env: Env
-): Promise<Response> {
+async function handleIssueCreate(request: Request, env: Env): Promise<Response> {
   // Validate secrets
   if (!env.GITHUB_ISSUE_PAT || !env.GITHUB_ISSUE_REPO) {
-    return jsonResponse(
-      { error: "Issue reporting not configured on this relay." },
-      503
-    );
+    return jsonResponse({ error: 'Issue reporting not configured on this relay.' }, 503);
   }
 
   // Sanitize repo path — must be "owner/repo" format
   const repo = env.GITHUB_ISSUE_REPO;
   if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(repo)) {
     console.error(`Invalid GITHUB_ISSUE_REPO format: ${repo}`);
-    return jsonResponse({ error: "Issue reporting misconfigured." }, 503);
+    return jsonResponse({ error: 'Issue reporting misconfigured.' }, 503);
   }
 
   // Rate limit by IP using Durable Object storage (survives Worker restarts)
-  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
-  const rateLimitId = env.SESSION.idFromName("issue-ratelimit");
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  const rateLimitId = env.SESSION.idFromName('issue-ratelimit');
   const rateLimitDO = env.SESSION.get(rateLimitId);
   let rlCheck: Response;
   try {
     rlCheck = await rateLimitDO.fetch(
-      new Request("https://internal/ratelimit/check", {
-        method: "POST",
-        body: JSON.stringify({ ip, max: ISSUE_RATE_MAX, windowMs: ISSUE_RATE_WINDOW_MS }),
+      new Request('https://internal/ratelimit/check', {
+        method: 'POST',
+        body: JSON.stringify({ ip, max: ISSUE_RATE_MAX, windowMs: ISSUE_RATE_WINDOW_MS })
       })
     );
   } catch (e) {
-    console.error("Rate limit DO error:", e);
-    return jsonResponse({ error: "Rate limit check failed. Try again." }, 503);
+    console.error('Rate limit DO error:', e);
+    return jsonResponse({ error: 'Rate limit check failed. Try again.' }, 503);
   }
   if (rlCheck.status !== 200) {
     const code = rlCheck.status === 429 ? 429 : 503;
     return jsonResponse(
-      { error: code === 429 ? "Rate limited. Maximum 5 reports per hour." : "Rate limit check failed." },
+      {
+        error:
+          code === 429 ? 'Rate limited. Maximum 5 reports per hour.' : 'Rate limit check failed.'
+      },
       code
     );
   }
@@ -242,11 +237,11 @@ async function handleIssueCreate(
   try {
     body = await request.json();
   } catch {
-    return jsonResponse({ error: "Invalid JSON body." }, 400);
+    return jsonResponse({ error: 'Invalid JSON body.' }, 400);
   }
 
-  const title = typeof body.title === "string" ? body.title.trim() : "";
-  const issueBody = typeof body.body === "string" ? body.body.trim() : "";
+  const title = typeof body.title === 'string' ? body.title.trim() : '';
+  const issueBody = typeof body.body === 'string' ? body.body.trim() : '';
 
   if (!title || !issueBody) {
     return jsonResponse(
@@ -256,22 +251,16 @@ async function handleIssueCreate(
   }
 
   if (title.length > 256) {
-    return jsonResponse(
-      { error: `Title too long (${title.length} chars, max 256).` },
-      400
-    );
+    return jsonResponse({ error: `Title too long (${title.length} chars, max 256).` }, 400);
   }
 
   if (issueBody.length > 65535) {
-    return jsonResponse(
-      { error: `Body too long (${issueBody.length} chars, max 65535).` },
-      400
-    );
+    return jsonResponse({ error: `Body too long (${issueBody.length} chars, max 65535).` }, 400);
   }
 
   // Validate labels if provided
   const labels = Array.isArray(body.labels)
-    ? body.labels.filter((l): l is string => typeof l === "string").slice(0, 5)
+    ? body.labels.filter((l): l is string => typeof l === 'string').slice(0, 5)
     : [];
 
   // Create GitHub issue
@@ -280,36 +269,28 @@ async function handleIssueCreate(
     ghBody.labels = labels;
   }
 
-  const ghResponse = await fetch(
-    `https://api.github.com/repos/${env.GITHUB_ISSUE_REPO}/issues`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.GITHUB_ISSUE_PAT}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "chau7-relay",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      body: JSON.stringify(ghBody),
-    }
-  );
+  const ghResponse = await fetch(`https://api.github.com/repos/${env.GITHUB_ISSUE_REPO}/issues`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.GITHUB_ISSUE_PAT}`,
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'chau7-relay',
+      'X-GitHub-Api-Version': '2022-11-28'
+    },
+    body: JSON.stringify(ghBody)
+  });
 
   if (!ghResponse.ok) {
     const errText = await ghResponse.text();
-    console.error(
-      `GitHub API error: ${ghResponse.status} ${errText.slice(0, 500)}`
-    );
-    return jsonResponse(
-      { error: `GitHub API error (${ghResponse.status}).` },
-      502
-    );
+    console.error(`GitHub API error: ${ghResponse.status} ${errText.slice(0, 500)}`);
+    return jsonResponse({ error: `GitHub API error (${ghResponse.status}).` }, 502);
   }
 
   const ghData = (await ghResponse.json()) as { number?: number };
 
   return jsonResponse({
     ok: true,
-    issue_number: ghData.number ?? 0,
+    issue_number: ghData.number ?? 0
   });
 }
 
@@ -317,10 +298,10 @@ function jsonResponse(data: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    }
   });
 }

@@ -15,26 +15,41 @@ ci_require_cmd swiftlint "Install SwiftLint (for example: brew install swiftlint
 ci_require_cmd cargo "Install Rust via rustup."
 ci_require_cmd go "Install Go 1.25+."
 ci_require_cmd npm "Install Node.js and npm."
+ci_require_cmd_strict shellcheck "Install shellcheck (for example: brew install shellcheck)."
+ci_require_cmd_strict ruff "Install ruff (for example: brew install ruff)."
+ci_require_cmd_strict golangci-lint "Install golangci-lint (for example: brew install golangci-lint)."
+ci_require_cmd_strict periphery "Install periphery (for example: brew install periphery)."
+ci_require_cmd_strict jscpd "Install jscpd (for example: npm install -g jscpd)."
+ci_require_cmd_strict cargo-deny "Install cargo-deny (for example: cargo install cargo-deny)."
 
 ci_run_in "Swift format check" "apps/chau7-macos" swiftformat Sources Tests --lint
-ci_run_in "Swift lint" "apps/chau7-macos" swiftlint lint --strict --quiet
+ci_run_in "Swift lint" "apps/chau7-macos" swiftlint lint --strict
 ci_run_in "Swift build" "apps/chau7-macos" "$SWIFT_BIN" build -Xswiftc -warnings-as-errors
 ci_run_in "Swift test" "apps/chau7-macos" "$SWIFT_BIN" test -Xswiftc -warnings-as-errors
+ci_run_in "Swift dead-code (periphery)" "apps/chau7-macos" periphery scan --config .periphery.yml --strict
 
 ci_run_in "Rust format check" "apps/chau7-macos/rust" cargo fmt --all --check
 ci_run_in "Rust clippy" "apps/chau7-macos/rust" cargo clippy --workspace --all-targets --all-features -- -D warnings
 ci_run_in "Rust test" "apps/chau7-macos/rust" cargo test --workspace --all-features
+ci_run_in "Rust dependency audit (cargo deny)" "apps/chau7-macos/rust" cargo deny --all-features check
 
 ci_gofmt_check_dir "apps/chau7-macos/chau7-proxy" "Go format check (chau7-proxy)"
 ci_go_vet_dir "apps/chau7-macos/chau7-proxy" "Go vet (chau7-proxy)"
+ci_golangci_lint_dir "apps/chau7-macos/chau7-proxy" "Go lint (chau7-proxy)"
 ci_go_test_dir "apps/chau7-macos/chau7-proxy" "Go test (chau7-proxy)"
 
 ci_gofmt_check_dir "services/chau7-remote" "Go format check (chau7-remote)"
 ci_go_vet_dir "services/chau7-remote" "Go vet (chau7-remote)"
+ci_golangci_lint_dir "services/chau7-remote" "Go lint (chau7-remote)"
 ci_go_test_dir "services/chau7-remote" "Go test (chau7-remote)"
 
 ci_relay_ensure_deps
 ci_run_in "Relay test" "services/chau7-relay" npm test
 ci_run_in "Relay build" "services/chau7-relay" npm run build
+"$SCRIPT_DIR/ci-local-relay-ts"
+
+ci_ruff_check_dir "Scripts" "Ruff (Scripts/)"
+ci_shellcheck_tracked "Shellcheck (all tracked .sh)"
+ci_run_in "Duplication (jscpd)" "." jscpd --config Scripts/.jscpd.json
 
 ci_success "Full local CI passed."

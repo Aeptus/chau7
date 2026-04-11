@@ -42,19 +42,19 @@ func NewDatabase(dbPath string) (*Database, error) {
 
 	// Enable WAL mode for better concurrent access
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 
 	// Set busy timeout to handle concurrent writes gracefully
 	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 
 	// Create tables
 	if err := initSchema(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 
@@ -143,7 +143,7 @@ func (d *Database) GetRecentCalls(limit int) ([]APICallRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []APICallRecord
 	for rows.Next() {
@@ -320,7 +320,7 @@ func runMigrations(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	hasTaskID := false
 	hasCacheTokens := false
@@ -350,7 +350,7 @@ func runMigrations(db *sql.DB) error {
 			"ALTER TABLE api_calls ADD COLUMN project_path TEXT",
 		}
 		for _, m := range migrations {
-			db.Exec(m) // Ignore errors for columns that may already exist
+			_, _ = db.Exec(m) // Ignore errors for columns that may already exist
 		}
 	}
 
@@ -361,12 +361,12 @@ func runMigrations(db *sql.DB) error {
 			"ALTER TABLE api_calls ADD COLUMN reasoning_output_tokens INTEGER DEFAULT 0",
 		}
 		for _, m := range cacheTokenMigrations {
-			db.Exec(m) // Ignore errors for columns that may already exist
+			_, _ = db.Exec(m) // Ignore errors for columns that may already exist
 		}
 	}
 
 	if !hasTTFT {
-		db.Exec("ALTER TABLE api_calls ADD COLUMN ttft_ms INTEGER DEFAULT 0")
+		_, _ = db.Exec("ALTER TABLE api_calls ADD COLUMN ttft_ms INTEGER DEFAULT 0")
 	}
 
 	// v1.2 migrations: Add baseline fields to api_calls
@@ -379,7 +379,7 @@ func runMigrations(db *sql.DB) error {
 		"ALTER TABLE api_calls ADD COLUMN tokens_saved INTEGER",
 	}
 	for _, m := range baselineMigrations {
-		db.Exec(m) // Ignore errors for columns that may already exist
+		_, _ = db.Exec(m) // Ignore errors for columns that may already exist
 	}
 
 	// v1.2: Add baseline fields to task_assessments
@@ -389,11 +389,11 @@ func runMigrations(db *sql.DB) error {
 		"ALTER TABLE task_assessments ADD COLUMN baseline_method TEXT",
 	}
 	for _, m := range assessmentMigrations {
-		db.Exec(m) // Ignore errors for columns that may already exist
+		_, _ = db.Exec(m) // Ignore errors for columns that may already exist
 	}
 
 	// Create model_output_stats table if it doesn't exist (for older databases)
-	db.Exec(`
+	_, _ = db.Exec(`
 		CREATE TABLE IF NOT EXISTS model_output_stats (
 			model TEXT PRIMARY KEY,
 			total_calls INTEGER DEFAULT 0,
@@ -624,7 +624,7 @@ func (d *Database) GetEvents(limit, offset int) ([]Event, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []Event
 	for rows.Next() {
@@ -634,7 +634,7 @@ func (d *Database) GetEvents(limit, offset int) ([]Event, int, error) {
 		}
 
 		var eventData interface{}
-		json.Unmarshal([]byte(data), &eventData)
+		_ = json.Unmarshal([]byte(data), &eventData)
 
 		events = append(events, Event{
 			Type:      eventType,
@@ -672,7 +672,7 @@ func (d *Database) GetModelOutputStats() ([]*ModelOutputStats, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stats []*ModelOutputStats
 	for rows.Next() {

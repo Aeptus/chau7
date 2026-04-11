@@ -233,7 +233,7 @@ func (tm *TaskManager) createCandidateLocked(tabID string, headers *CorrelationH
 	tm.candidates[tabID] = candidate
 
 	// Emit task_candidate event
-	tm.ipc.NotifyTaskCandidate(candidate)
+	_ = tm.ipc.NotifyTaskCandidate(candidate)
 
 	return candidate
 }
@@ -246,7 +246,7 @@ func (tm *TaskManager) createTaskLocked(tabID string, headers *CorrelationHeader
 	if existingTask := tm.tasks[tabID]; existingTask != nil && existingTask.State == TaskStateActive {
 		existingTask.State = TaskStateAbandoned
 		existingTask.CompletedAt = &now
-		tm.db.UpdateTask(existingTask)
+		_ = tm.db.UpdateTask(existingTask)
 	}
 
 	// Clear any pending candidate
@@ -268,10 +268,10 @@ func (tm *TaskManager) createTaskLocked(tabID string, headers *CorrelationHeader
 	tm.tasks[tabID] = task
 
 	// Save to database
-	tm.db.InsertTask(task)
+	_ = tm.db.InsertTask(task)
 
 	// Emit task_started event
-	tm.ipc.NotifyTaskStarted(task)
+	_ = tm.ipc.NotifyTaskStarted(task)
 
 	return task
 }
@@ -302,7 +302,7 @@ func (tm *TaskManager) confirmCandidate(tabID string, candidateID string, startM
 
 	// Update any pending calls to point to this task
 	for _, callID := range candidate.PendingCallIDs {
-		tm.db.UpdateCallTaskID(callID, task.ID)
+		_ = tm.db.UpdateCallTaskID(callID, task.ID)
 	}
 
 	// Complete any existing task
@@ -310,17 +310,17 @@ func (tm *TaskManager) confirmCandidate(tabID string, candidateID string, startM
 	if existingTask := tm.tasks[tabID]; existingTask != nil && existingTask.State == TaskStateActive {
 		existingTask.State = TaskStateAbandoned
 		existingTask.CompletedAt = &now
-		tm.db.UpdateTask(existingTask)
+		_ = tm.db.UpdateTask(existingTask)
 	}
 
 	tm.tasks[tabID] = task
 	delete(tm.candidates, tabID)
 
 	// Save to database
-	tm.db.InsertTask(task)
+	_ = tm.db.InsertTask(task)
 
 	// Emit task_started event
-	tm.ipc.NotifyTaskStarted(task)
+	_ = tm.ipc.NotifyTaskStarted(task)
 
 	return task, nil
 }
@@ -336,12 +336,12 @@ func (tm *TaskManager) dismissCandidateLocked(tabID, candidateID, method string)
 	reassigned := len(candidate.PendingCallIDs)
 	if prevTask := tm.tasks[tabID]; prevTask != nil && prevTask.State == TaskStateActive {
 		for _, callID := range candidate.PendingCallIDs {
-			tm.db.UpdateCallTaskID(callID, prevTask.ID)
+			_ = tm.db.UpdateCallTaskID(callID, prevTask.ID)
 		}
 	}
 
 	// Emit dismissed event
-	tm.ipc.NotifyTaskCandidateDismissed(candidate, method)
+	_ = tm.ipc.NotifyTaskCandidateDismissed(candidate, method)
 
 	delete(tm.candidates, tabID)
 	return reassigned
@@ -406,11 +406,11 @@ func (tm *TaskManager) AssessTask(taskID string, approved bool, note string) err
 
 	// v1.2: Get baseline metrics and save with assessment
 	baselineMetrics, _ := tm.db.GetTaskBaselineMetrics(taskID)
-	tm.db.InsertTaskAssessmentWithBaseline(assessment, baselineMetrics)
-	tm.db.UpdateTask(task)
+	_ = tm.db.InsertTaskAssessmentWithBaseline(assessment, baselineMetrics)
+	_ = tm.db.UpdateTask(task)
 
 	// Emit assessment event via IPC
-	tm.ipc.NotifyTaskAssessmentWithBaseline(task, assessment, baselineMetrics)
+	_ = tm.ipc.NotifyTaskAssessmentWithBaseline(task, assessment, baselineMetrics)
 
 	// v1.2: Forward to Mockup analytics
 	if tm.mockup != nil && baselineMetrics != nil {
@@ -426,7 +426,7 @@ func (tm *TaskManager) AssessTask(taskID string, approved bool, note string) err
 			TabID:     task.TabID,
 			Project:   task.ProjectPath,
 		}
-		tm.mockup.SendTaskAssessmentEvent(assessment, task, baseline, headers)
+		_ = tm.mockup.SendTaskAssessmentEvent(assessment, task, baseline, headers)
 	}
 
 	return nil
@@ -531,22 +531,22 @@ func (tm *TaskManager) checkGracePeriods() {
 
 			// Update pending calls
 			for _, callID := range candidate.PendingCallIDs {
-				tm.db.UpdateCallTaskID(callID, task.ID)
+				_ = tm.db.UpdateCallTaskID(callID, task.ID)
 			}
 
 			// Complete existing task
 			if existingTask := tm.tasks[tabID]; existingTask != nil && existingTask.State == TaskStateActive {
 				existingTask.State = TaskStateAbandoned
 				existingTask.CompletedAt = &now
-				tm.db.UpdateTask(existingTask)
+				_ = tm.db.UpdateTask(existingTask)
 			}
 
 			tm.tasks[tabID] = task
 			delete(tm.candidates, tabID)
 
 			// Save and notify
-			tm.db.InsertTask(task)
-			tm.ipc.NotifyTaskStarted(task)
+			_ = tm.db.InsertTask(task)
+			_ = tm.ipc.NotifyTaskStarted(task)
 		}
 	}
 }

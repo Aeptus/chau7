@@ -161,7 +161,7 @@ final class GitDiffTracker {
         }
 
         var result: [String: Date] = [:]
-        let ignoredDirectories: Set<String> = [".git", ".build", "node_modules", "DerivedData"]
+        let ignoredDirectories: Set = [".git", ".build", "node_modules", "DerivedData"]
 
         for case let url as URL in enumerator {
             if ignoredDirectories.contains(url.lastPathComponent) {

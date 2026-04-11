@@ -25,10 +25,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/coder/websocket"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
-	"nhooyr.io/websocket"
 
 	"chau7-remote/internal/protocol"
 )
@@ -317,7 +317,7 @@ func (a *Agent) readIPC(ctx context.Context, conn *net.UnixConn) {
 	// setting a past deadline on the connection.
 	go func() {
 		<-ctx.Done()
-		conn.SetReadDeadline(time.Now())
+		_ = conn.SetReadDeadline(time.Now())
 	}()
 
 	reader := bufio.NewReader(conn)
@@ -1024,7 +1024,7 @@ func (a *Agent) relayHTTPPost(path string, payload any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("relay http %s: %s %s", path, resp.Status, strings.TrimSpace(string(body)))

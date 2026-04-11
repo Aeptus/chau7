@@ -30,7 +30,7 @@ public struct TrackedFileActivity: Equatable, Sendable {
 }
 
 public enum FileTrackingParser {
-    private static let commonExtensionlessFileNames: Set<String> = [
+    private static let commonExtensionlessFileNames: Set = [
         "Dockerfile", "Containerfile", "Makefile", "Justfile", "Brewfile",
         "Gemfile", "Podfile", "Procfile", "Vagrantfile", "Rakefile",
         "Guardfile", "Fastfile", "Appfile", "Cartfile", "Mintfile",

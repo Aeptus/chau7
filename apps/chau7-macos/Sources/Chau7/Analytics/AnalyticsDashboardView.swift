@@ -96,8 +96,10 @@ final class APIAnalyticsDashboardModel {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self, Date().timeIntervalSince(lastRefreshDate) > 2 else { return }
-            refresh()
+            Task { @MainActor [weak self] in
+                guard let self, Date().timeIntervalSince(lastRefreshDate) > 2 else { return }
+                refresh()
+            }
         }
     }
 

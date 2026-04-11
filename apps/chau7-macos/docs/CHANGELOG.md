@@ -5,6 +5,19 @@ All notable changes to Chau7 will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Local Quality Pipeline**: lefthook routes a glob-scoped pre-commit suite (gitleaks secret scan, forbidden-file + large-file guard, anti-slop regex, design-system guard on net-new Swift, shellcheck / ruff / tsc+prettier scoped to staged files) and a full `./Scripts/ci-local` local CI that runs periphery dead-code, jscpd duplication, cargo-deny, golangci-lint, and all Swift/Rust/Go/relay tests. Escape hatches documented in CONTRIBUTING.md.
+
+### Fixed
+- **AnalyticsDashboardView Actor Isolation**: Wrapped the `apiCallRecorded` observer body in an `@MainActor` Task so `refresh()` no longer triggers `-warnings-as-errors` compile failures.
+- **Relay Type Narrowing**: `env.RELAY_SECRET` now survives the `isRelaySecretConfigured` guard into `verifyToken` without compile errors (the predicate lives in an untyped .js module, so the guarded call uses an explicit narrowing assertion).
+- **chau7-proxy + chau7-remote Go Hygiene**: Migrated chau7-remote from deprecated `nhooyr.io/websocket` to `github.com/coder/websocket`; eliminated 58 errcheck + 8 unused findings in chau7-proxy and 11 findings in chau7-remote; repo-wide baseline is green under `golangci-lint run`.
+
+### Changed
+- **Chau7Core Public API Signatures**: Renamed unused parameters (`gitBranch`, `event`, `fileManager`, `toolName`) to underscore-bound internals in `ProfileSwitchRule.matches`, `AINotificationSettingsBridge.preference/updatedActions`, `RuntimeIsolation.homeDirectory`, and `RuntimeToolEventMetadata.inferResult`. Call-site labels are unchanged.
+
 ## [0.2.1] - 2026-04-10
 
 ### Added

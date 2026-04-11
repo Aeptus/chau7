@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+# Pre-commit guard: block common AI-agent slop patterns on *added* diff lines.
+# Scope: added lines in the staged diff only. Untouched code is grandfathered.
+# Escape hatch: CHAU7_SKIP_ANTISLOP=1 git commit ...
+# shellcheck disable=SC2329 # check_* callbacks are invoked indirectly via walk_added_lines
+
+set -euo pipefail
+
+if [[ -n "${CHAU7_SKIP_ANTISLOP:-}" ]]; then
+  exit 0
+fi
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+staged_files="$(git -C "$REPO_ROOT" diff --cached --name-only --diff-filter=ACMR || true)"
+if [[ -z "$staged_files" ]]; then
+  exit 0
+fi
+
+hits_total=0
+
+report() {
+  local file="$1"
+  local lineno="$2"
+  local rule="$3"
+  local line="$4"
+  printf '  %s:%s  [%s]\n' "$file" "$lineno" "$rule" >&2
+  printf '    %s\n' "$line" >&2
+  hits_total=$((hits_total + 1))
+}
+
+# Return 0 (true) if the added line is a comment-only line and therefore safe
+# to skip for string-literal patterns (prevents false positives on "don't use
+# console.log" style comments).
+is_comment_line() {
+  local content="$1"
+  # Strip leading whitespace.
+  local trimmed="${content#"${content%%[![:space:]]*}"}"
+  case "$trimmed" in
+    "//"*) return 0 ;;
+    "/*"*) return 0 ;;
+    "*"*) return 0 ;;
+    "#"*) return 0 ;;
+    "--"*) return 0 ;;
+  esac
+  return 1
+}
+
+# Walk every hunk of the staged diff for a single file and invoke a per-line
+# callback with (lineno, content). Uses unified=0 so we get exact line numbers.
+walk_added_lines() {
+  local file="$1"
+  local callback="$2"
+  local lineno=0
+  local in_hunk=0
+
+  while IFS= read -r line; do
+    if [[ "$line" == "@@"* ]]; then
+      # Parse hunk header: @@ -old +newstart,newcount @@
+      local header="${line#@@ }"
+      header="${header%% @@*}"
+      local newpart
+      newpart="$(awk '{for (i=1;i<=NF;i++) if ($i ~ /^\+/) print $i}' <<<"$header")"
+      newpart="${newpart#+}"
+      lineno="${newpart%%,*}"
+      in_hunk=1
+      continue
+    fi
+    (( in_hunk )) || continue
+    case "$line" in
+      "+++"*) continue ;;
+      "---"*) continue ;;
+      "+"*)
+        "$callback" "$file" "$lineno" "${line:1}"
+        lineno=$((lineno + 1))
+        ;;
+      " "*)
+        lineno=$((lineno + 1))
+        ;;
+      "-"*)
+        : # deletion — no line-number advance on the + side
+        ;;
+    esac
+  done < <(git -C "$REPO_ROOT" diff --cached --unified=0 -- "$file" 2>/dev/null || true)
+}
+
+check_swift_line() {
+  local file="$1"
+  local lineno="$2"
+  local content="$3"
+
+  is_comment_line "$content" && {
+    # Even in comments, catch AI ghost phrases.
+    if [[ "$content" =~ (Auto-generated|auto-generated|Generated[[:space:]]by|AI-generated|AI[[:space:]]generated) ]]; then
+      report "$file" "$lineno" "swift/ai-ghost-comment" "$content"
+    fi
+    if [[ "$content" =~ (This[[:space:]]is[[:space:]]a[[:space:]]helper[[:space:]](function|method)|Utility[[:space:]](function|method)[[:space:]](to|for)|Helper[[:space:]](function|method)[[:space:]](to|for)) ]]; then
+      report "$file" "$lineno" "swift/ghost-helper-comment" "$content"
+    fi
+    if [[ "$content" =~ TODO:[[:space:]]*(implement|placeholder|stub|FIXME[[:space:]]later) ]]; then
+      report "$file" "$lineno" "swift/placeholder-todo" "$content"
+    fi
+    return
+  }
+
+  # Skip test files for force-unwrap / try! / as! checks.
+  case "$file" in
+    */Tests/*|Tests/*|*/test/*)
+      ;;
+    *)
+      if [[ "$content" =~ (^|[^/!])try![[:space:]] ]]; then
+        report "$file" "$lineno" "swift/force-try" "$content"
+      fi
+      if [[ "$content" =~ [[:space:]]as![[:space:]] ]]; then
+        report "$file" "$lineno" "swift/force-cast" "$content"
+      fi
+      # Force-unwrap detection. Match identifier/paren/bracket followed by `!`
+      # followed by end-of-line or non-`=` char (to skip `!=`).
+      if [[ "$content" =~ []\)_[:alnum:]]!$ ]] || \
+         [[ "$content" =~ []\)_[:alnum:]]![^=] ]]; then
+        report "$file" "$lineno" "swift/force-unwrap" "$content"
+      fi
+      ;;
+  esac
+
+  # print() anywhere in Sources/, never in Tests/ or Logging/ (Log.swift intentional).
+  case "$file" in
+    */Tests/*|Tests/*|*/Logging/Log.swift|*/Logging/LogEnhanced.swift)
+      ;;
+    */Sources/*|Sources/*)
+      if [[ "$content" =~ ^[[:space:]]*print[[:space:]]*\( ]]; then
+        report "$file" "$lineno" "swift/print-statement" "$content"
+      fi
+      ;;
+  esac
+
+  # AnyView — fake extensibility / protocol overuse.
+  case "$file" in
+    */Tests/*|Tests/*)
+      ;;
+    *)
+      if [[ "$content" =~ AnyView[[:space:]]*\( ]]; then
+        report "$file" "$lineno" "swift/anyview" "$content"
+      fi
+      ;;
+  esac
+}
+
+check_ts_line() {
+  local file="$1"
+  local lineno="$2"
+  local content="$3"
+
+  if is_comment_line "$content"; then
+    return
+  fi
+
+  if [[ "$content" =~ ^[[:space:]]*console\.(log|debug|info|trace) ]]; then
+    report "$file" "$lineno" "ts/console-log" "$content"
+  fi
+  if [[ "$content" =~ ^[[:space:]]*debugger[[:space:]]*\;? ]]; then
+    report "$file" "$lineno" "ts/debugger" "$content"
+  fi
+  if [[ "$content" =~ as[[:space:]]+any([[:space:]]|\;|,|\)|$) ]]; then
+    report "$file" "$lineno" "ts/as-any" "$content"
+  fi
+  if [[ "$content" =~ @ts-(ignore|nocheck) ]]; then
+    report "$file" "$lineno" "ts/type-suppression" "$content"
+  fi
+}
+
+check_go_line() {
+  local file="$1"
+  local lineno="$2"
+  local content="$3"
+
+  case "$file" in
+    *_test.go) return ;;
+  esac
+
+  if is_comment_line "$content"; then
+    return
+  fi
+
+  if [[ "$content" =~ ^[[:space:]]*fmt\.Println\( ]]; then
+    report "$file" "$lineno" "go/fmt-println" "$content"
+  fi
+  if [[ "$content" =~ ^[[:space:]]*panic\( ]]; then
+    report "$file" "$lineno" "go/panic" "$content"
+  fi
+}
+
+check_py_line() {
+  local file="$1"
+  local lineno="$2"
+  local content="$3"
+
+  if is_comment_line "$content"; then
+    return
+  fi
+
+  if [[ "$content" =~ ^[[:space:]]*except[[:space:]]*: ]]; then
+    report "$file" "$lineno" "py/bare-except" "$content"
+  fi
+  # Intentionally no generic `print(` rule — CLI helper scripts in Scripts/
+  # legitimately use print for user-facing output. Ruff catches real issues.
+}
+
+while IFS= read -r file; do
+  [[ -z "$file" ]] && continue
+  case "$file" in
+    *.swift)  walk_added_lines "$file" check_swift_line ;;
+    *.ts|*.tsx|*.js|*.jsx|*.mjs) walk_added_lines "$file" check_ts_line ;;
+    *.go)     walk_added_lines "$file" check_go_line ;;
+    *.py)     walk_added_lines "$file" check_py_line ;;
+  esac
+done <<< "$staged_files"
+
+if (( hits_total > 0 )); then
+  printf '\n' >&2
+  printf 'anti-slop: %d violations on added lines\n' "$hits_total" >&2
+  printf '  Bypass with CHAU7_SKIP_ANTISLOP=1 git commit ... (please justify in the commit message).\n' >&2
+  printf '\n' >&2
+  exit 1
+fi
+
+exit 0

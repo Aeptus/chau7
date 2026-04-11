@@ -30,7 +30,7 @@ if ci_should_run_for_paths "apps/chau7-macos/"; then
   ci_require_cmd swiftlint "Install SwiftLint (for example: brew install swiftlint)."
 
   ci_run_in "Swift format check" "apps/chau7-macos" swiftformat Sources Tests --lint
-  ci_run_in "Swift lint" "apps/chau7-macos" swiftlint lint --strict --quiet
+  ci_run_in "Swift lint" "apps/chau7-macos" swiftlint lint --strict
   ci_run_in "Swift build" "apps/chau7-macos" "$SWIFT_BIN" build -Xswiftc -warnings-as-errors
 fi
 
@@ -47,6 +47,8 @@ if ci_should_run_for_paths "apps/chau7-macos/chau7-proxy/"; then
   ci_require_cmd go "Install Go 1.25+."
 
   ci_gofmt_check_dir "apps/chau7-macos/chau7-proxy" "Go format check (chau7-proxy)"
+  ci_go_vet_dir "apps/chau7-macos/chau7-proxy" "Go vet (chau7-proxy)"
+  ci_golangci_lint_dir "apps/chau7-macos/chau7-proxy" "Go lint (chau7-proxy)"
   ci_go_test_dir "apps/chau7-macos/chau7-proxy" "Go test (chau7-proxy)"
 fi
 
@@ -55,6 +57,8 @@ if ci_should_run_for_paths "services/chau7-remote/"; then
   ci_require_cmd go "Install Go 1.25+."
 
   ci_gofmt_check_dir "services/chau7-remote" "Go format check (chau7-remote)"
+  ci_go_vet_dir "services/chau7-remote" "Go vet (chau7-remote)"
+  ci_golangci_lint_dir "services/chau7-remote" "Go lint (chau7-remote)"
   ci_go_test_dir "services/chau7-remote" "Go test (chau7-remote)"
 fi
 

@@ -109,7 +109,7 @@ func (c *AethymeClient) GetContextPack(packID string) (*ContextPack, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil
@@ -155,7 +155,7 @@ func (c *AethymeClient) GetSkillPack(packID string) (*SkillPack, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil
@@ -201,7 +201,7 @@ func (c *AethymeClient) GetRepoScorecard(repoID string) (*RepoScorecard, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil
@@ -238,7 +238,7 @@ func (c *AethymeClient) ListContextPacks(repoID string) ([]*ContextPack, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("aethyme: unexpected status %d", resp.StatusCode)
@@ -278,7 +278,7 @@ func (c *AethymeClient) Health() error {
 	if err != nil {
 		return fmt.Errorf("aethyme: health check failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

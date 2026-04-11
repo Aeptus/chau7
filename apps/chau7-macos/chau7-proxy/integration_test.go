@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -38,7 +36,7 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create mock upstream Anthropic server
 	mockAnthropic := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +47,7 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 
 		// Return mock response
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":    "msg_123",
 			"type":  "message",
 			"model": "claude-sonnet-4-20250514",
@@ -150,7 +148,7 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 		}
 
 		var resp StartTaskResponse
-		json.NewDecoder(rr.Body).Decode(&resp)
+		_ = json.NewDecoder(rr.Body).Decode(&resp)
 		taskID = resp.TaskID
 		t.Logf("Task started: %s - %s", resp.TaskID, resp.TaskName)
 
@@ -211,7 +209,7 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 		}
 
 		var resp CurrentTaskResponse
-		json.NewDecoder(rr.Body).Decode(&resp)
+		_ = json.NewDecoder(rr.Body).Decode(&resp)
 		if !resp.HasTask {
 			t.Fatal("Expected has_task=true")
 		}
@@ -241,7 +239,7 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 		}
 
 		var resp AssessResponse
-		json.NewDecoder(rr.Body).Decode(&resp)
+		_ = json.NewDecoder(rr.Body).Decode(&resp)
 		if !resp.Success {
 			t.Error("Expected success=true")
 		}
@@ -256,7 +254,7 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 		taskEndpoints.HandleGetCurrentTask(rr, req)
 
 		var resp CurrentTaskResponse
-		json.NewDecoder(rr.Body).Decode(&resp)
+		_ = json.NewDecoder(rr.Body).Decode(&resp)
 		if resp.HasTask {
 			t.Error("Expected no active task after assessment")
 		}
@@ -294,11 +292,11 @@ func TestIntegration_ManualTaskTrigger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mockAnthropic := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":    "msg_456",
 			"type":  "message",
 			"model": "claude-sonnet-4-20250514",
@@ -378,11 +376,11 @@ func TestIntegration_CandidateDismissal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mockAnthropic := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":    "msg_789",
 			"type":  "message",
 			"model": "claude-sonnet-4-20250514",
@@ -457,7 +455,7 @@ func TestIntegration_CandidateDismissal(t *testing.T) {
 	}
 
 	var resp DismissResponse
-	json.NewDecoder(rr.Body).Decode(&resp)
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
 	if !resp.Dismissed {
 		t.Error("Expected dismissed=true")
 	}
@@ -486,13 +484,13 @@ func TestIntegration_HeaderBasedDismiss(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	callCount := 0
 	mockAnthropic := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":    fmt.Sprintf("msg_%d", callCount),
 			"type":  "message",
 			"model": "claude-sonnet-4-20250514",
@@ -585,12 +583,12 @@ func TestIntegration_MultipleProviders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Anthropic
 	mockAnthropic := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":    "anthropic_msg",
 			"type":  "message",
 			"model": "claude-sonnet-4-20250514",
@@ -606,7 +604,7 @@ func TestIntegration_MultipleProviders(t *testing.T) {
 	// Mock OpenAI
 	mockOpenAI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":    "openai_msg",
 			"model": "gpt-4o",
 			"choices": []map[string]interface{}{
@@ -722,7 +720,7 @@ func TestIntegration_EventsEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ipc := NewIPCNotifier("")
 	ipc.SetDatabase(db)
@@ -757,16 +755,4 @@ func TestIntegration_EventsEndpoint(t *testing.T) {
 	for i, e := range resp.Events {
 		t.Logf("  [%d] %s at %s", i, e.Type, e.Timestamp)
 	}
-}
-
-// Helper to read response body
-func readBody(r io.Reader) string {
-	body, _ := io.ReadAll(r)
-	return string(body)
-}
-
-// Helper to check file exists
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

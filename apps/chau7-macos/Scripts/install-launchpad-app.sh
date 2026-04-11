@@ -12,6 +12,7 @@ export CHAU7_LOG_ROOT="$ROOT_DIR"
 CHAU7_LOG_NAME="install-launchpad-app"
 export CHAU7_LOG_NAME
 
+# shellcheck source=apps/chau7-macos/Scripts/logging.sh
 source "$ROOT_DIR/Scripts/logging.sh"
 
 log_init "Install Launchpad App"

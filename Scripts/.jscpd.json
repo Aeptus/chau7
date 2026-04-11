@@ -1,0 +1,27 @@
+{
+  "minTokens": 60,
+  "minLines": 8,
+  "threshold": 2,
+  "reporters": ["console", "json"],
+  "output": "./.jscpd-report",
+  "format": ["swift", "rust", "go", "typescript", "javascript", "python"],
+  "ignore": [
+    "**/.build/**",
+    "**/target/**",
+    "**/node_modules/**",
+    "**/Libraries/**",
+    "**/.swiftpm/**",
+    "**/.git/**",
+    "**/Tests/**",
+    "**/test/**",
+    "**/*.test.*",
+    "**/Package.resolved",
+    "**/Cargo.lock",
+    "**/package-lock.json",
+    "**/.jscpd-report/**",
+    "**/BuildArtifacts/**",
+    "**/docs/**"
+  ],
+  "absolute": false,
+  "gitignore": true
+}

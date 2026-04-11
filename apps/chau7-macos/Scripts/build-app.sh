@@ -15,6 +15,7 @@ export CHAU7_LOG_ROOT="$ROOT_DIR"
 CHAU7_LOG_NAME="build-app"
 export CHAU7_LOG_NAME
 
+# shellcheck source=apps/chau7-macos/Scripts/logging.sh
 source "$ROOT_DIR/Scripts/logging.sh"
 
 BIN="$BUILD_DIR/$APP_NAME"

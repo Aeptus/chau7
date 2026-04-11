@@ -201,19 +201,10 @@ func (n *IPCNotifier) sendEvent(msg *IPCEventMessage) error {
 
 	// Store event in database if available
 	if n.db != nil {
-		n.db.InsertEvent(msg.Type, data)
+		_ = n.db.InsertEvent(msg.Type, data)
 	}
 
 	// Send via socket
-	return n.sendBytes(data)
-}
-
-// send sends a legacy message to the host application (for backward compatibility)
-func (n *IPCNotifier) send(msg *IPCMessage) error {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
 	return n.sendBytes(data)
 }
 
@@ -233,9 +224,9 @@ func (n *IPCNotifier) sendBytes(data []byte) error {
 			n.conn = conn
 		}
 
-		n.conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		_ = n.conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 		if _, err := n.conn.Write(msg); err != nil {
-			n.conn.Close()
+			_ = n.conn.Close()
 			n.conn = nil
 			if attempt == 0 {
 				continue // retry once with a fresh connection

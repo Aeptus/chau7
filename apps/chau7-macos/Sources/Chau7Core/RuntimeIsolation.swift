@@ -22,7 +22,7 @@ public enum RuntimeIsolation {
     }
 
     public static func homeDirectory(
-        fileManager: FileManager = .default,
+        fileManager _: FileManager = .default,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> URL {
         if let override = normalizedHomeRoot(from: environment) {

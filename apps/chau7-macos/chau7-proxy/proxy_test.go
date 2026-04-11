@@ -68,7 +68,7 @@ func TestProxyHandler_BasicPassthrough(t *testing.T) {
 			"stop_reason": "end_turn",
 			"content":     []map[string]string{{"text": "Hello!"}},
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	defer upstream.Close()
 
@@ -82,7 +82,7 @@ func TestProxyHandler_BasicPassthrough(t *testing.T) {
 	}()
 
 	proxy, db, _ := setupTestProxy(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create test request
 	reqBody := `{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"Hi"}],"max_tokens":100}`
@@ -126,7 +126,7 @@ func TestProxyHandler_HeaderPassthrough(t *testing.T) {
 	upstream := mockUpstream(t, func(w http.ResponseWriter, r *http.Request) {
 		capturedHeaders = r.Header.Clone()
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"model":"gpt-4o","usage":{"prompt_tokens":10,"completion_tokens":20}}`))
+		_, _ = w.Write([]byte(`{"model":"gpt-4o","usage":{"prompt_tokens":10,"completion_tokens":20}}`))
 	})
 	defer upstream.Close()
 
@@ -139,7 +139,7 @@ func TestProxyHandler_HeaderPassthrough(t *testing.T) {
 	}()
 
 	proxy, db, _ := setupTestProxy(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewBufferString(`{"model":"gpt-4o"}`))
 	req.Header.Set("Authorization", "Bearer sk-test-key-secret")
@@ -167,7 +167,7 @@ func TestProxyHandler_HopByHopHeadersFiltered(t *testing.T) {
 	upstream := mockUpstream(t, func(w http.ResponseWriter, r *http.Request) {
 		capturedHeaders = r.Header.Clone()
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	})
 	defer upstream.Close()
 
@@ -176,7 +176,7 @@ func TestProxyHandler_HopByHopHeadersFiltered(t *testing.T) {
 	defer func() { ProviderConfigs[ProviderOpenAI] = originalConfig }()
 
 	proxy, db, _ := setupTestProxy(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewBufferString(`{}`))
 	req.Header.Set("Connection", "keep-alive")
@@ -204,7 +204,7 @@ func TestProxyHandler_UpstreamError(t *testing.T) {
 	// Create upstream that returns error
 	upstream := mockUpstream(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error":"internal server error"}`))
+		_, _ = w.Write([]byte(`{"error":"internal server error"}`))
 	})
 	defer upstream.Close()
 
@@ -213,7 +213,7 @@ func TestProxyHandler_UpstreamError(t *testing.T) {
 	defer func() { ProviderConfigs[ProviderAnthropic] = originalConfig }()
 
 	proxy, db, _ := setupTestProxy(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewBufferString(`{"model":"claude"}`))
 	req.Header.Set("anthropic-version", "2023-06-01")
@@ -230,7 +230,7 @@ func TestProxyHandler_UpstreamError(t *testing.T) {
 func TestProxyHandler_NoSessionHeader(t *testing.T) {
 	upstream := mockUpstream(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"model":"gpt-4o","usage":{"prompt_tokens":5,"completion_tokens":10}}`))
+		_, _ = w.Write([]byte(`{"model":"gpt-4o","usage":{"prompt_tokens":5,"completion_tokens":10}}`))
 	})
 	defer upstream.Close()
 
@@ -239,7 +239,7 @@ func TestProxyHandler_NoSessionHeader(t *testing.T) {
 	defer func() { ProviderConfigs[ProviderOpenAI] = originalConfig }()
 
 	proxy, db, _ := setupTestProxy(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewBufferString(`{}`))
 	// No X-Chau7-Session header
@@ -267,7 +267,7 @@ func TestProxyHandler_GeminiPathExtraction(t *testing.T) {
 			"usageMetadata": {"promptTokenCount": 25, "candidatesTokenCount": 75},
 			"modelVersion": "gemini-1.5-pro"
 		}`
-		w.Write([]byte(response))
+		_, _ = w.Write([]byte(response))
 	})
 	defer upstream.Close()
 
@@ -276,7 +276,7 @@ func TestProxyHandler_GeminiPathExtraction(t *testing.T) {
 	defer func() { ProviderConfigs[ProviderGemini] = originalConfig }()
 
 	proxy, db, _ := setupTestProxy(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	req := httptest.NewRequest("POST", "/v1beta/models/gemini-1.5-pro:generateContent",
 		bytes.NewBufferString(`{"contents":[{"parts":[{"text":"Hi"}]}]}`))
@@ -314,7 +314,7 @@ func TestProxyHandler_StreamingResponse(t *testing.T) {
 			`data: {"model":"claude-3-sonnet","usage":{"input_tokens":30,"output_tokens":60},"stop_reason":"end_turn"}`,
 		}
 		for _, chunk := range chunks {
-			w.Write([]byte(chunk + "\n\n"))
+			_, _ = w.Write([]byte(chunk + "\n\n"))
 		}
 	})
 	defer upstream.Close()
@@ -324,7 +324,7 @@ func TestProxyHandler_StreamingResponse(t *testing.T) {
 	defer func() { ProviderConfigs[ProviderAnthropic] = originalConfig }()
 
 	proxy, db, _ := setupTestProxy(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	reqBody := `{"model":"claude-3-sonnet","messages":[],"stream":true}`
 	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewBufferString(reqBody))
@@ -350,7 +350,7 @@ func TestProxyHandler_ResponseHeadersCopied(t *testing.T) {
 		w.Header().Set("X-RateLimit-Remaining", "100")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	})
 	defer upstream.Close()
 
@@ -359,7 +359,7 @@ func TestProxyHandler_ResponseHeadersCopied(t *testing.T) {
 	defer func() { ProviderConfigs[ProviderOpenAI] = originalConfig }()
 
 	proxy, db, _ := setupTestProxy(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewBufferString(`{}`))
 
@@ -458,7 +458,7 @@ func TestProxyHandler_LargeRequestBody(t *testing.T) {
 	upstream := mockUpstream(t, func(w http.ResponseWriter, r *http.Request) {
 		receivedBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"model":"claude-3-opus","usage":{"input_tokens":5000,"output_tokens":1000}}`))
+		_, _ = w.Write([]byte(`{"model":"claude-3-opus","usage":{"input_tokens":5000,"output_tokens":1000}}`))
 	})
 	defer upstream.Close()
 
@@ -467,7 +467,7 @@ func TestProxyHandler_LargeRequestBody(t *testing.T) {
 	defer func() { ProviderConfigs[ProviderAnthropic] = originalConfig }()
 
 	proxy, db, _ := setupTestProxy(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewBuffer(reqBody))
 	req.Header.Set("anthropic-version", "2023-06-01")

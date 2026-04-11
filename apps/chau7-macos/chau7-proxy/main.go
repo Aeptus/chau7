@@ -26,12 +26,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Initialize IPC notifier
 	ipc := NewIPCNotifier(config.IPCSocketPath)
 	ipc.SetDatabase(db) // Enable event storage
-	defer ipc.Close()
+	defer func() { _ = ipc.Close() }()
 
 	// v1.2: Initialize Aethyme client (optional)
 	var aethymeClient *AethymeClient
@@ -54,7 +54,7 @@ func main() {
 		} else {
 			mockupClient = client
 			log.Printf("[INFO] Mockup analytics enabled: %s", client.baseURL)
-			defer mockupClient.Close()
+			defer func() { _ = mockupClient.Close() }()
 		}
 	}
 
@@ -183,13 +183,13 @@ func handleHealth(db *Database) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := db.Ping(); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(`{"status":"unhealthy","error":"database unavailable"}`))
+			_, _ = w.Write([]byte(`{"status":"unhealthy","error":"database unavailable"}`))
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}
 }
 
@@ -199,13 +199,13 @@ func handleStats(db *Database) http.HandlerFunc {
 		stats, err := db.GetDailyStats()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"error":"failed to get stats"}`))
+			_, _ = w.Write([]byte(`{"error":"failed to get stats"}`))
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"calls_today":%d,"input_tokens_today":%d,"output_tokens_today":%d,"cost_today":%.4f,"avg_latency_ms":%.1f}`,
+		_, _ = fmt.Fprintf(w, `{"calls_today":%d,"input_tokens_today":%d,"output_tokens_today":%d,"cost_today":%.4f,"avg_latency_ms":%.1f}`,
 			stats.CallCount,
 			stats.TotalInputTokens,
 			stats.TotalOutputTokens,

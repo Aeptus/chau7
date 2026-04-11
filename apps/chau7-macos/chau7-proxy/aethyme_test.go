@@ -45,7 +45,7 @@ func TestAethymeClient_GetContextPack(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(pack)
+		_ = json.NewEncoder(w).Encode(pack)
 	}))
 	defer server.Close()
 
@@ -98,7 +98,7 @@ func TestAethymeClient_Caching(t *testing.T) {
 			TokensSaved: 1000,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(pack)
+		_ = json.NewEncoder(w).Encode(pack)
 	}))
 	defer server.Close()
 
@@ -141,7 +141,7 @@ func TestAethymeClient_GetRepoScorecard(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(scorecard)
+		_ = json.NewEncoder(w).Encode(scorecard)
 	}))
 	defer server.Close()
 
@@ -165,7 +165,7 @@ func TestAethymeClient_ClearCache(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		pack := ContextPack{ID: "pack_123"}
-		json.NewEncoder(w).Encode(pack)
+		_ = json.NewEncoder(w).Encode(pack)
 	}))
 	defer server.Close()
 
@@ -175,13 +175,13 @@ func TestAethymeClient_ClearCache(t *testing.T) {
 	}
 
 	// First call
-	client.GetContextPack("pack_123")
+	_, _ = client.GetContextPack("pack_123")
 
 	// Clear cache
 	client.ClearCache()
 
 	// Second call (should hit API again)
-	client.GetContextPack("pack_123")
+	_, _ = client.GetContextPack("pack_123")
 
 	if callCount != 2 {
 		t.Errorf("Expected 2 API calls after cache clear, got %d", callCount)

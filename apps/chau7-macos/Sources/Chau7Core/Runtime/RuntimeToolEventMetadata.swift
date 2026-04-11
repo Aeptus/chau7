@@ -23,7 +23,7 @@ public enum RuntimeToolEventMetadata {
         truncatedPreview(message, maxLength: maxLength)
     }
 
-    public static func inferResult(toolName: String, message: String) -> ToolResultMetadata {
+    public static func inferResult(toolName _: String, message: String) -> ToolResultMetadata {
         let preview = outputPreview(from: message)
         let exitCode = extractExitCode(from: message)
         let lowercase = message.lowercased()

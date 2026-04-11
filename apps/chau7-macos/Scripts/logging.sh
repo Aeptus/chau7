@@ -149,7 +149,7 @@ run_cmd() {
         printf '%s\n' "$line"
       fi
     done
-    return ${PIPESTATUS[0]}
+    return "${PIPESTATUS[0]}"
   else
     "$@" >> "$LOG_FILE" 2>&1
   fi
