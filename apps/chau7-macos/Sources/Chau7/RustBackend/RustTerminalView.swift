@@ -1975,6 +1975,14 @@ final class RustTerminalView: NSView {
     /// git access via TCC-granted bookmarks.
     var onRepoRootChanged: ((String) -> Void)?
 
+    /// Callback for OSC 9 desktop notifications emitted by foreign programs
+    /// (not Chau7's own chau7;KEY=VALUE payloads). The Codex CLI TUI is the
+    /// main current producer — it writes ESC]9;<message>BEL for every
+    /// notification kind (approval, user input, plan mode, elicitation,
+    /// agent turn complete). Classification by message prefix happens in
+    /// `TerminalSessionModel.handleForeignDesktopNotification`.
+    var onForeignDesktopNotification: ((String) -> Void)?
+
     /// Callback when OSC 133 shell integration events arrive (prompt/command lifecycle)
     var onShellIntegrationEvent: ((ShellIntegrationEvent) -> Void)?
 

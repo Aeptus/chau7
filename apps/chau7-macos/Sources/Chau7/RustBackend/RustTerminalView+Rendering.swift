@@ -299,6 +299,11 @@ extension RustTerminalView {
             parseChau7Branch(from: outputData)
             parseChau7RepoRoot(from: outputData)
 
+            // Parse OSC 9 desktop notifications emitted by foreign programs
+            // (e.g. Codex CLI TUI). Format: ESC ] 9 ; <message> BEL where the
+            // message does NOT start with "chau7;" (those are handled above).
+            parseForeignDesktopNotifications(from: outputData)
+
             // Smart Scroll: Save state before feeding data to the renderer
             // If user had scrolled up and smart scroll is enabled, we'll restore their position
             let smartScrollEnabled = FeatureSettings.shared.isSmartScrollEnabled
@@ -850,6 +855,74 @@ extension RustTerminalView {
     func parseChau7RepoRoot(from data: Data) {
         parseChau7Marker(data: data, prefix: Self.repoRootMarkerPrefix) { [weak self] value in
             self?.onRepoRootChanged?(value)
+        }
+    }
+
+    private static let osc9Prefix: [UInt8] = [0x1B, 0x5D, 0x39, 0x3B] // ESC ] 9 ;
+    private static let chau7PrefixWithinOsc9 = Array("chau7;".utf8)
+
+    /// Extract desktop-notification payloads from OSC 9 sequences emitted by programs
+    /// OTHER than Chau7's own shell integration. Format: `ESC ] 9 ; <message> BEL`.
+    ///
+    /// Messages that start with `chau7;` are produced by Chau7's shell hooks and are
+    /// handled by `parseChau7Branch` / `parseChau7RepoRoot`; this parser skips them.
+    /// The Codex CLI TUI is the main current source — it emits OSC 9 for every
+    /// notification kind (approval requested, user input requested, plan mode prompt,
+    /// elicitation requested, edit approval, agent turn complete) with a short
+    /// human-readable message as the payload.
+    func parseForeignDesktopNotifications(from data: Data) {
+        let bytes = Array(data)
+        let prefix = Self.osc9Prefix
+        let chau7Prefix = Self.chau7PrefixWithinOsc9
+        guard bytes.count > prefix.count else { return }
+
+        var i = 0
+        while i <= bytes.count - prefix.count {
+            var matched = true
+            for j in 0 ..< prefix.count {
+                if bytes[i + j] != prefix[j] {
+                    matched = false
+                    break
+                }
+            }
+            if !matched {
+                i += 1
+                continue
+            }
+
+            let start = i + prefix.count
+
+            // Skip our own chau7;KEY=VALUE payloads — those are handled elsewhere.
+            if start + chau7Prefix.count <= bytes.count {
+                var isChau7 = true
+                for j in 0 ..< chau7Prefix.count {
+                    if bytes[start + j] != chau7Prefix[j] {
+                        isChau7 = false
+                        break
+                    }
+                }
+                if isChau7 {
+                    i = start + chau7Prefix.count
+                    continue
+                }
+            }
+
+            // Find terminator: BEL (0x07) or ST (ESC \)
+            var end = start
+            while end < bytes.count, bytes[end] != Self.belTerminator {
+                if bytes[end] == 0x1B, end + 1 < bytes.count, bytes[end + 1] == 0x5C { break }
+                end += 1
+            }
+
+            if end > start, let message = String(bytes: bytes[start ..< end], encoding: .utf8) {
+                let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onForeignDesktopNotification?(trimmed)
+                    }
+                }
+            }
+            i = max(end + 1, i + 1)
         }
     }
 
