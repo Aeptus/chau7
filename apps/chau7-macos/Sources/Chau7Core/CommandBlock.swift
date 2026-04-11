@@ -18,6 +18,8 @@ public struct CommandBlock: Identifiable, Codable, Equatable, Sendable {
     /// Files changed during this command execution (populated via git diff snapshot).
     /// Empty if not a git repo, or if the command hasn't finished yet.
     public var changedFiles: [String] = []
+    /// Whether change detection completed but could not determine the diff reliably.
+    public var changedFilesUnavailable: Bool = false
 
     /// Whether the command is still executing (neither end line nor end time recorded)
     public var isRunning: Bool {

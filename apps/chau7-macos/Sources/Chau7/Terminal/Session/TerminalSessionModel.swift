@@ -870,11 +870,9 @@ final class TerminalSessionModel {
             case .commandExecuted:
                 shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
                 notifyCommandBlockStarted()
-                if isGitRepo {
-                    let dir = currentDirectory
-                    let tracker = gitDiffTracker
-                    DispatchQueue.global(qos: .utility).async { tracker.snapshot(directory: dir) }
-                }
+                let dir = currentDirectory
+                let tracker = gitDiffTracker
+                DispatchQueue.global(qos: .utility).async { tracker.snapshot(directory: dir) }
             case .commandFinished(let exitCode):
                 guard !commandFinishedNotified else { return }
                 commandFinishedNotified = true
@@ -882,17 +880,19 @@ final class TerminalSessionModel {
                 promptSeenForPendingCommand = true
                 shellEventDetector.commandFinished(exitCode: Int(exitCode), command: pendingCommandLine)
                 notifyCommandBlockFinished(exitCode: Int(exitCode))
-                if isGitRepo {
-                    let dir = currentDirectory
-                    let tabID = ownerTabID?.uuidString
-                    let tracker = gitDiffTracker
-                    DispatchQueue.global(qos: .utility).async {
-                        let changed = tracker.changedFiles(directory: dir)
-                        guard !changed.isEmpty, let tabID else { return }
-                        DispatchQueue.main.async {
-                            CommandBlockManager.shared.setChangedFiles(changed, forLastBlockIn: tabID)
-                            ConflictDetector.shared.checkForConflicts()
-                        }
+                let dir = currentDirectory
+                let tabID = ownerTabID?.uuidString
+                let tracker = gitDiffTracker
+                DispatchQueue.global(qos: .utility).async {
+                    let result = tracker.changedFilesResult(directory: dir)
+                    guard let tabID else { return }
+                    DispatchQueue.main.async {
+                        CommandBlockManager.shared.setChangedFiles(
+                            result.files,
+                            unavailable: result.diffUnavailable,
+                            forLastBlockIn: tabID
+                        )
+                        ConflictDetector.shared.checkForConflicts()
                     }
                 }
             }

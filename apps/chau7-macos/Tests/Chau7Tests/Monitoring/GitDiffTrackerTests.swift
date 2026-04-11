@@ -25,5 +25,22 @@ final class GitDiffTrackerTests: XCTestCase {
 
         XCTAssertEqual(GitDiffTracker.firstChangedPath(inStatusPorcelain: porcelain), "new/name.swift")
     }
+
+    func testChangedFilesResultFallsBackToFilesystemOutsideGit() throws {
+        let tracker = GitDiffTracker()
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("git-diff-fallback-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        tracker.snapshot(directory: directory.path)
+        let file = directory.appendingPathComponent("example.txt")
+        try "hello".write(to: file, atomically: true, encoding: .utf8)
+
+        let result = tracker.changedFilesResult(directory: directory.path)
+        XCTAssertTrue(result.usedFallback)
+        XCTAssertEqual(result.files, ["example.txt"])
+        XCTAssertFalse(result.diffUnavailable)
+    }
 }
 #endif

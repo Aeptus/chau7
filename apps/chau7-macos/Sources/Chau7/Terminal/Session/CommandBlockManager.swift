@@ -77,12 +77,15 @@ final class CommandBlockManager {
     }
 
     /// Attach the list of changed files to the most recently finished block in a tab.
-    func setChangedFiles(_ files: [String], forLastBlockIn tabID: String) {
+    func setChangedFiles(_ files: [String], unavailable: Bool = false, forLastBlockIn tabID: String) {
         guard var blocks = blocksByTab[tabID],
               let index = blocks.lastIndex(where: { !$0.isRunning }) else { return }
         blocks[index].changedFiles = files
+        blocks[index].changedFilesUnavailable = unavailable
         blocksByTab[tabID] = blocks
-        Log.info("CommandBlock: \(files.count) files changed in '\(blocks[index].command.prefix(40))' (tab \(tabID.prefix(8)))")
+        Log.info(
+            "CommandBlock: \(files.count) files changed in '\(blocks[index].command.prefix(40))' (tab \(tabID.prefix(8))) unavailable=\(unavailable)"
+        )
     }
 
     /// Returns changed files from the most recent finished block in a tab.
