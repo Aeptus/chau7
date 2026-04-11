@@ -460,6 +460,173 @@ final class TerminalSessionModelTests: XCTestCase {
         )
     }
 
+    // MARK: - Shell integration OSC reports
+
+    func testHandleShellRepoRootReportPopulatesUnknownRepo() {
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
+        KnownRepoIdentityStore.shared.reset()
+
+        let appModel = AppModel()
+        let session = TerminalSessionModel(appModel: appModel)
+        let repoRoot = "/tmp/Downloads/Repositories/brand-new-repo"
+
+        // Simulate the protected-path .blocked resolve: session thinks it's not a repo.
+        session.currentDirectory = repoRoot + "/src"
+        session.isGitRepo = false
+        session.gitRootPath = nil
+        session.gitBranch = nil
+        session.repositoryModel = nil
+
+        // Shell reports the repo root via OSC 9.
+        session.handleShellRepoRootReport(repoRoot)
+
+        XCTAssertTrue(session.isGitRepo)
+        XCTAssertEqual(session.gitRootPath, repoRoot)
+        XCTAssertEqual(session.displayGitRootPath, repoRoot)
+        XCTAssertTrue(session.hasRepositoryIdentity)
+
+        // Identity store should have the new root.
+        let identity = KnownRepoIdentityStore.shared.identity(forRootPath: repoRoot)
+        XCTAssertNotNil(identity, "Shell-reported root should be recorded in the identity store")
+        XCTAssertEqual(identity?.rootPath, repoRoot)
+
+        // A cached RepositoryModel should have been created.
+        XCTAssertNotNil(session.repositoryModel, "Should create a cached model when none existed")
+        XCTAssertEqual(session.repositoryModel?.rootPath, repoRoot)
+        XCTAssertEqual(session.repositoryModel?.accessLevel, .cached)
+    }
+
+    func testHandleShellRepoRootReportRecordsBranchIfKnown() {
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
+        KnownRepoIdentityStore.shared.reset()
+
+        let appModel = AppModel()
+        let session = TerminalSessionModel(appModel: appModel)
+        let repoRoot = "/tmp/Downloads/Repositories/aegowlg"
+
+        // The branch was reported BEFORE the root (e.g. the parser processed events
+        // in order but the handler fired branch first because of dispatch scheduling).
+        session.gitBranch = "main"
+        session.currentDirectory = repoRoot
+
+        session.handleShellRepoRootReport(repoRoot)
+
+        let identity = KnownRepoIdentityStore.shared.identity(forRootPath: repoRoot)
+        XCTAssertEqual(
+            identity?.lastKnownBranch,
+            "main",
+            "Repo-root handler should persist the already-known branch to the identity store"
+        )
+        XCTAssertEqual(session.repositoryModel?.branch, "main")
+    }
+
+    func testHandleShellRepoRootReportIgnoresEmptyPath() {
+        let appModel = AppModel()
+        let session = TerminalSessionModel(appModel: appModel)
+        session.isGitRepo = false
+        session.gitRootPath = nil
+
+        session.handleShellRepoRootReport("")
+        session.handleShellRepoRootReport("   ")
+
+        XCTAssertFalse(session.isGitRepo, "Empty paths must be ignored")
+        XCTAssertNil(session.gitRootPath)
+    }
+
+    func testHandleShellRepoRootReportNormalizesPath() {
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
+        KnownRepoIdentityStore.shared.reset()
+
+        let appModel = AppModel()
+        let session = TerminalSessionModel(appModel: appModel)
+
+        // A path with ./ and // segments should be normalized.
+        session.handleShellRepoRootReport("/tmp/Downloads//Repositories/./aegowlg")
+
+        XCTAssertEqual(session.gitRootPath, "/tmp/Downloads/Repositories/aegowlg")
+    }
+
+    func testHandleShellRepoRootReportIsIdempotent() {
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
+        KnownRepoIdentityStore.shared.reset()
+
+        let appModel = AppModel()
+        let session = TerminalSessionModel(appModel: appModel)
+        let repoRoot = "/tmp/Downloads/Repositories/stable"
+
+        session.handleShellRepoRootReport(repoRoot)
+        let firstModel = session.repositoryModel
+
+        session.handleShellRepoRootReport(repoRoot)
+        let secondModel = session.repositoryModel
+
+        XCTAssertTrue(
+            firstModel === secondModel,
+            "Repeated reports for the same root must reuse the same model instance"
+        )
+        XCTAssertEqual(session.gitRootPath, repoRoot)
+    }
+
+    func testHandleShellBranchReportUpdatesRepositoryModel() {
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
+        KnownRepoIdentityStore.shared.reset()
+
+        let appModel = AppModel()
+        let session = TerminalSessionModel(appModel: appModel)
+        let repoRoot = "/tmp/Downloads/Repositories/existing"
+
+        // Pre-existing cached model without a branch
+        let model = RepositoryModel(rootPath: repoRoot, branch: nil, accessLevel: .cached)
+        session.repositoryModel = model
+        session.gitRootPath = repoRoot
+        session.isGitRepo = true
+        session.currentDirectory = repoRoot
+
+        session.handleShellBranchReport("feature/x")
+
+        XCTAssertEqual(session.gitBranch, "feature/x")
+        XCTAssertEqual(model.branch, "feature/x", "Branch report should update the model")
+
+        let identity = KnownRepoIdentityStore.shared.identity(forRootPath: repoRoot)
+        XCTAssertEqual(identity?.lastKnownBranch, "feature/x")
+    }
+
+    func testShellRepoRootThenBranchFullyPopulatesState() {
+        // Integration test: simulate the real OSC sequence ordering from the shell.
+        // The app receives `repo-root=/path` first, then `branch=main` (order from
+        // the precmd hook in the zsh/bash/fish implementations).
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
+        KnownRepoIdentityStore.shared.reset()
+
+        let appModel = AppModel()
+        let session = TerminalSessionModel(appModel: appModel)
+        let repoRoot = "/tmp/Downloads/Repositories/aegowlg"
+
+        session.currentDirectory = repoRoot
+        session.isGitRepo = false
+        session.gitRootPath = nil
+        session.gitBranch = nil
+        session.repositoryModel = nil
+
+        session.handleShellRepoRootReport(repoRoot)
+        session.handleShellBranchReport("main")
+
+        XCTAssertTrue(session.isGitRepo)
+        XCTAssertEqual(session.gitRootPath, repoRoot)
+        XCTAssertEqual(session.gitBranch, "main")
+        XCTAssertTrue(session.hasRepositoryIdentity)
+        XCTAssertEqual(session.displayGitBranch, "main")
+
+        let identity = KnownRepoIdentityStore.shared.identity(forRootPath: repoRoot)
+        XCTAssertEqual(identity?.lastKnownBranch, "main")
+    }
+
     func testRestoreAIMetadata() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
