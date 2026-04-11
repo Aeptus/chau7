@@ -50,7 +50,7 @@ final class DangerousCommandGuardTests: XCTestCase {
         let guard_ = makeGuard()
         let result = guard_.check(commandLine: "rm -rf /tmp/stuff")
         switch result {
-        case .needsConfirmation(let command, let pattern):
+        case .needsConfirmation(let command, let pattern, _):
             XCTAssertEqual(command, "rm -rf /tmp/stuff")
             XCTAssertEqual(pattern, "rm -rf")
         default:
@@ -62,7 +62,7 @@ final class DangerousCommandGuardTests: XCTestCase {
         let guard_ = makeGuard()
         let result = guard_.check(commandLine: "dd if=/dev/zero of=/dev/sda")
         switch result {
-        case .needsConfirmation(let command, let pattern):
+        case .needsConfirmation(let command, let pattern, _):
             XCTAssertEqual(command, "dd if=/dev/zero of=/dev/sda")
             XCTAssertEqual(pattern, "dd if=")
         default:
@@ -74,7 +74,7 @@ final class DangerousCommandGuardTests: XCTestCase {
         let guard_ = makeGuard()
         let result = guard_.check(commandLine: "mkfs.ext4 /dev/sda1")
         switch result {
-        case .needsConfirmation(let command, _):
+        case .needsConfirmation(let command, _, _):
             XCTAssertEqual(command, "mkfs.ext4 /dev/sda1")
         default:
             XCTFail("Expected .needsConfirmation, got \(result)")
@@ -178,7 +178,7 @@ final class DangerousCommandGuardTests: XCTestCase {
         let guard_ = makeGuard()
         let result = guard_.check(commandLine: "  rm -rf /tmp  ")
         switch result {
-        case .needsConfirmation(let command, _):
+        case .needsConfirmation(let command, _, _):
             XCTAssertEqual(command, "rm -rf /tmp")
         default:
             XCTFail("Expected .needsConfirmation, got \(result)")

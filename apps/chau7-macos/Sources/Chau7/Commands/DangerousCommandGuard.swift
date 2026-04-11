@@ -45,11 +45,68 @@ final class DangerousCommandGuard {
         FeatureSettings.shared.dangerousCommandPatterns
     }
 
+    /// Categorises why a command needs confirmation. Drives the explanation
+    /// string shown to the user so they understand *why* a warning fired, not
+    /// just *what* rule matched.
+    enum ConfirmationReason: Equatable {
+        /// Text contained an embedded newline, i.e. multiple commands.
+        case multilinePaste
+        /// Text contained non-ASCII lookalikes of shell characters.
+        case unicodeHomoglyph
+        /// Self-protection policy matched (Chau7's own files/processes).
+        case selfProtection(detail: String)
+        /// A user- or default-configured risky-pattern regex matched.
+        case riskyPattern(pattern: String)
+
+        /// Short one-liner shown next to the "Matched:" label.
+        var shortLabel: String {
+            switch self {
+            case .multilinePaste:
+                return L("dangerousGuard.reason.multiline.short", "Multiline paste")
+            case .unicodeHomoglyph:
+                return L("dangerousGuard.reason.homoglyph.short", "Unicode lookalike characters")
+            case .selfProtection(let detail):
+                return L("dangerousGuard.reason.selfProtect.short", "Protects Chau7: %@", detail)
+            case .riskyPattern(let pattern):
+                return pattern
+            }
+        }
+
+        /// One-paragraph explanation of *why* this is risky, shown as the
+        /// alert's informative text so the user understands the threat model.
+        var explanation: String {
+            switch self {
+            case .multilinePaste:
+                return L(
+                    "dangerousGuard.reason.multiline.explanation",
+                    "The pasted text contains a newline, which means it will run more than one command as soon as you press Enter. Unexpected newlines are a common way malicious snippets slip past a quick visual review."
+                )
+            case .unicodeHomoglyph:
+                return L(
+                    "dangerousGuard.reason.homoglyph.explanation",
+                    "The text contains Unicode characters that visually resemble ASCII letters (for example, Cyrillic \u{0430} or \u{043E}). Attackers use these lookalikes to disguise malicious commands as safe ones. Compare each character carefully before executing."
+                )
+            case .selfProtection(let detail):
+                return L(
+                    "dangerousGuard.reason.selfProtect.explanation",
+                    "This command targets Chau7 itself or its managed runtime: %@. Running it could corrupt the app's state, disable running agents, or delete data Chau7 is actively using.",
+                    detail
+                )
+            case .riskyPattern(let pattern):
+                return L(
+                    "dangerousGuard.reason.risky.explanation",
+                    "The command matches the risky-pattern rule \u{201C}%@\u{201D}. Matching commands typically remove files, modify permissions, or write to the network in ways that are hard to undo. Make sure this is what you intended.",
+                    pattern
+                )
+            }
+        }
+    }
+
     /// Result of checking a command
     enum CheckResult: Equatable {
         case safe // Not risky, proceed
         case allowed // Risky but in allow list
-        case needsConfirmation(command: String, matchedPattern: String) // Needs user confirmation
+        case needsConfirmation(command: String, matchedPattern: String, reason: ConfirmationReason) // Needs user confirmation
         case blocked(reason: String) // Hard blocked by policy
     }
 
@@ -108,13 +165,15 @@ final class DangerousCommandGuard {
         // of common shell characters (e.g. Cyrillic а/о/е that look like Latin a/o/e)
         if containsHomoglyphs(trimmed) {
             Log.warn("DangerousCommandGuard: homoglyph detected '\(trimmed.prefix(60))'")
-            return .needsConfirmation(command: trimmed, matchedPattern: "Unicode homoglyph characters detected")
+            let reason = ConfirmationReason.unicodeHomoglyph
+            return .needsConfirmation(command: trimmed, matchedPattern: reason.shortLabel, reason: reason)
         }
 
         // Multiline paste protection: flag pasted commands spanning multiple lines
         if trimmed.contains("\n") {
             Log.warn("DangerousCommandGuard: multiline paste '\(trimmed.prefix(60))'")
-            return .needsConfirmation(command: trimmed, matchedPattern: "Multiline paste detected")
+            let reason = ConfirmationReason.multilinePaste
+            return .needsConfirmation(command: trimmed, matchedPattern: reason.shortLabel, reason: reason)
         }
 
         let effectiveSelfProtectionContext = selfProtectionContext ?? FeatureSettings.shared.dangerousCommandSelfProtectionContext()
@@ -126,7 +185,8 @@ final class DangerousCommandGuard {
                 return .safe
             case .warning:
                 Log.warn("DangerousCommandGuard: self-protection warn '\(trimmed)' (\(match.reason))")
-                return .needsConfirmation(command: trimmed, matchedPattern: "Protect Chau7: \(match.reason)")
+                let reason = ConfirmationReason.selfProtection(detail: match.reason)
+                return .needsConfirmation(command: trimmed, matchedPattern: reason.shortLabel, reason: reason)
             case .blocking:
                 Log.warn("DangerousCommandGuard: self-protection blocked '\(trimmed)' (\(match.reason))")
                 return .blocked(reason: match.reason)
@@ -159,7 +219,8 @@ final class DangerousCommandGuard {
         if CommandRiskDetection.isRisky(commandLine: trimmed, patterns: resolvedPatterns) {
             Log.warn("DangerousCommandGuard: needs confirmation '\(trimmed)'")
             let matched = findMatchedPattern(trimmed)
-            return .needsConfirmation(command: trimmed, matchedPattern: matched)
+            let reason = ConfirmationReason.riskyPattern(pattern: matched)
+            return .needsConfirmation(command: trimmed, matchedPattern: matched, reason: reason)
         }
 
         return .safe
@@ -193,12 +254,21 @@ final class DangerousCommandGuard {
     /// rather than the alert's informativeText so that very long or multi-line
     /// commands don't stretch the alert past the screen edge and push the
     /// Execute/Cancel/Always Allow buttons out of view.
-    func showConfirmation(command: String, matchedPattern: String) -> Bool {
+    ///
+    /// If a `ConfirmationReason` is supplied, its `explanation` replaces the
+    /// generic alert body with category-specific text telling the user *why*
+    /// this input was flagged (not just which pattern matched).
+    func showConfirmation(command: String, matchedPattern: String, reason: ConfirmationReason? = nil) -> Bool {
         let alert = NSAlert()
         alert.messageText = L("dangerousGuard.alert.title", "Dangerous Command Detected")
+        let explanation = reason?.explanation ?? L(
+            "dangerousGuard.alert.body.generic",
+            "This input matches a risky pattern. Review the command below and confirm whether to execute it."
+        )
         alert.informativeText = L(
             "dangerousGuard.alert.body",
-            "This input matches a risky pattern:\n\nMatched: %@\n\nReview the command below and confirm whether to execute it.",
+            "%@\n\nMatched: %@",
+            explanation,
             matchedPattern
         )
         alert.alertStyle = .warning

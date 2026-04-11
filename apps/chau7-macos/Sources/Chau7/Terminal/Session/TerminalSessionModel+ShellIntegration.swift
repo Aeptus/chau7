@@ -80,9 +80,13 @@ extension TerminalSessionModel {
         switch result {
         case .safe, .allowed:
             return true
-        case .needsConfirmation(let command, let matchedPattern):
+        case .needsConfirmation(let command, let matchedPattern, let reason):
             return MainActor.assumeIsolated {
-                DangerousCommandGuard.shared.showConfirmation(command: command, matchedPattern: matchedPattern)
+                DangerousCommandGuard.shared.showConfirmation(
+                    command: command,
+                    matchedPattern: matchedPattern,
+                    reason: reason
+                )
             }
         case .blocked(let reason):
             let sanitizedText = sanitizeInputForBuffer(text)
