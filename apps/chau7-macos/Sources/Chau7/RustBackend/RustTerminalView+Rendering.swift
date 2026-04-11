@@ -291,9 +291,11 @@ extension RustTerminalView {
             // OSC 7 format: ESC ] 7 ; file://hostname/path BEL
             parseOSC7(from: outputData)
 
-            // Parse OSC 9 chau7 branch report (git branch from shell integration)
+            // Parse OSC 9 chau7 shell integration reports (git branch + repo root)
             // Format: ESC ] 9 ; chau7;branch=NAME BEL
+            //         ESC ] 9 ; chau7;repo-root=PATH BEL
             parseChau7Branch(from: outputData)
+            parseChau7RepoRoot(from: outputData)
 
             // Smart Scroll: Save state before feeding data to the renderer
             // If user had scrolled up and smart scroll is enabled, we'll restore their position
@@ -826,16 +828,34 @@ extension RustTerminalView {
         }
     }
 
-    // MARK: - OSC 9 chau7;branch= parsing
+    // MARK: - OSC 9 chau7;... parsing
 
     private static let branchMarkerPrefix = Array("\u{1b}]9;chau7;branch=".utf8)
+    private static let repoRootMarkerPrefix = Array("\u{1b}]9;chau7;repo-root=".utf8)
     private static let belTerminator: UInt8 = 0x07
 
     /// Extract git branch name from OSC 9;chau7;branch=NAME sequences in terminal output.
     /// The shell integration precmd hook emits this on every prompt when inside a git repo.
     func parseChau7Branch(from data: Data) {
+        parseChau7Marker(data: data, prefix: Self.branchMarkerPrefix) { [weak self] value in
+            self?.onBranchChanged?(value)
+        }
+    }
+
+    /// Extract git repo root path from OSC 9;chau7;repo-root=PATH sequences.
+    /// Emitted by the shell integration precmd hook alongside the branch, so the app
+    /// learns the repo root even in protected directories where live git probing is blocked.
+    func parseChau7RepoRoot(from data: Data) {
+        parseChau7Marker(data: data, prefix: Self.repoRootMarkerPrefix) { [weak self] value in
+            self?.onRepoRootChanged?(value)
+        }
+    }
+
+    /// Generic OSC 9 chau7;KEY=VALUE BEL parser. Scans `data` for every occurrence of
+    /// `prefix` (ending in `=`), captures the value up to the BEL or ESC\ terminator,
+    /// trims whitespace, and dispatches the non-empty result to `handler` on the main queue.
+    private func parseChau7Marker(data: Data, prefix: [UInt8], handler: @escaping (String) -> Void) {
         let bytes = Array(data)
-        let prefix = Self.branchMarkerPrefix
         guard bytes.count > prefix.count else { return }
 
         var i = 0
@@ -854,11 +874,11 @@ extension RustTerminalView {
                     if bytes[end] == 0x1B, end + 1 < bytes.count, bytes[end + 1] == 0x5C { break }
                     end += 1
                 }
-                if end > start, let branch = String(bytes: bytes[start ..< end], encoding: .utf8) {
-                    let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+                if end > start, let value = String(bytes: bytes[start ..< end], encoding: .utf8) {
+                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty {
-                        DispatchQueue.main.async { [weak self] in
-                            self?.onBranchChanged?(trimmed)
+                        DispatchQueue.main.async {
+                            handler(trimmed)
                         }
                     }
                 }

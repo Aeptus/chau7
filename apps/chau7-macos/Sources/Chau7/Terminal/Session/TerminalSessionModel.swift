@@ -844,6 +844,14 @@ final class TerminalSessionModel {
             handleShellBranchReport(branch)
         }
 
+        // Wire up shell-reported git repo root (from OSC 9;chau7;repo-root=PATH).
+        // This is how the app learns protected-path repos the first time — the shell
+        // can run git even when TCC blocks the parent process from spawning it.
+        view.onRepoRootChanged = { [weak self] root in
+            guard let self else { return }
+            handleShellRepoRootReport(root)
+        }
+
         view.onShellIntegrationEvent = { [weak self] event in
             guard let self = self else { return }
             hasShellIntegration = true
@@ -1002,8 +1010,13 @@ final class TerminalSessionModel {
         }
         smartoverlay_precmd() {
           print -Pn "\\e]7;file://$HOSTNAME$PWD\\a"
-          local __b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-          [ -n "$__b" ] && print -Pn "\\e]9;chau7;branch=${__b}\\a"
+          local __g=$(git rev-parse --show-toplevel --abbrev-ref HEAD 2>/dev/null)
+          if [ -n "$__g" ]; then
+            local __r=${__g%%$'\\n'*}
+            local __b=${__g##*$'\\n'}
+            [ -n "$__r" ] && print -Pn "\\e]9;chau7;repo-root=${__r}\\a"
+            [ -n "$__b" ] && [ "$__b" != "$__r" ] && print -Pn "\\e]9;chau7;branch=${__b}\\a"
+          fi
         }
         autoload -Uz add-zsh-hook 2>/dev/null
         if command -v add-zsh-hook >/dev/null 2>&1; then
@@ -1043,8 +1056,14 @@ final class TerminalSessionModel {
         # Chau7 shell integration
         smartoverlay_precmd() {
           printf '\\e]7;file://%s%s\\a' "$HOSTNAME" "$PWD"
-          local __b; __b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-          [ -n "$__b" ] && printf '\\e]9;chau7;branch=%s\\a' "$__b"
+          local __g
+          __g=$(git rev-parse --show-toplevel --abbrev-ref HEAD 2>/dev/null)
+          if [ -n "$__g" ]; then
+            local __r=${__g%%$'\\n'*}
+            local __b=${__g##*$'\\n'}
+            [ -n "$__r" ] && printf '\\e]9;chau7;repo-root=%s\\a' "$__r"
+            [ -n "$__b" ] && [ "$__b" != "$__r" ] && printf '\\e]9;chau7;branch=%s\\a' "$__b"
+          fi
         }
         chau7_emit_exit_status() {
           local code=$?
@@ -1094,9 +1113,18 @@ final class TerminalSessionModel {
           set -l code $status
           printf '\\e]9;chau7;exit=%s\\a' $code
           printf '\\e]7;file://%s%s\\a' (hostname) (pwd)
-          set -l __b (git rev-parse --abbrev-ref HEAD 2>/dev/null)
-          if test -n "$__b"
-            printf '\\e]9;chau7;branch=%s\\a' $__b
+          set -l __g (git rev-parse --show-toplevel --abbrev-ref HEAD 2>/dev/null)
+          if test (count $__g) -ge 1
+            set -l __r $__g[1]
+            if test -n "$__r"
+              printf '\\e]9;chau7;repo-root=%s\\a' $__r
+            end
+            if test (count $__g) -ge 2
+              set -l __b $__g[2]
+              if test -n "$__b"; and test "$__b" != "$__r"
+                printf '\\e]9;chau7;branch=%s\\a' $__b
+              end
+            end
           end
         end
         # Chau7 CLI header injection for Claude Code
@@ -2345,6 +2373,10 @@ final class TerminalSessionModel {
     /// in protected directories where the app cannot spawn git directly.
     /// Also keeps branch data fresh for live repos between refreshBranch() calls.
     func handleShellBranchReport(_ branch: String) {
+        // Bump generation so any pending refreshGitStatus completion (which
+        // may have returned .blocked) doesn't clobber authoritative shell data.
+        gitStatusGeneration &+= 1
+
         let changed = gitBranch != branch
         gitBranch = branch
         repositoryModel?.branch = branch
@@ -2370,6 +2402,58 @@ final class TerminalSessionModel {
 
         if changed {
             shellEventDetector.gitBranchChanged(to: branch)
+        }
+    }
+
+    /// Called when the shell integration reports the current git repo root via
+    /// OSC 9;chau7;repo-root=PATH. This is the ONLY path by which the app learns
+    /// protected-directory repos it has never seen before — TCC blocks the app from
+    /// running `git rev-parse --show-toplevel`, but the user's shell can, and the
+    /// precmd hook pipes the result back via this OSC sequence.
+    ///
+    /// Populates gitRootPath, marks the session as a git repo, records the identity
+    /// (with branch if already known), creates a cached RepositoryModel if none exists,
+    /// and bumps the refreshGitStatus generation counter so any in-flight .blocked
+    /// resolves don't overwrite the authoritative state.
+    func handleShellRepoRootReport(_ root: String) {
+        let normalized = URL(fileURLWithPath: root).standardized.path
+        guard !normalized.isEmpty else { return }
+
+        // Cancel pending refreshGitStatus completions that would clobber our state.
+        gitStatusGeneration &+= 1
+
+        let changed = gitRootPath != normalized
+        gitRootPath = normalized
+        isGitRepo = true
+
+        // Record identity immediately so subsequent tabs, restores, and settings
+        // exports all have the root + whatever branch we currently know about.
+        KnownRepoIdentityStore.shared.record(rootPath: normalized, branch: gitBranch)
+
+        // If resolveDetailed returned .blocked (no prior identity), we have no model.
+        // Create a cached one so the UI has a live object to observe. Shell branch
+        // reports will keep it fresh; promoteToLive() can upgrade it later.
+        if repositoryModel == nil {
+            let model = RepositoryModel(
+                rootPath: normalized,
+                branch: gitBranch,
+                accessLevel: .cached
+            )
+            repositoryModel = model
+            model.onBranchChange = { [weak self] newBranch in
+                DispatchQueue.main.async {
+                    guard let self, self.gitBranch != newBranch else { return }
+                    self.gitBranch = newBranch
+                    if let rootPath = self.gitRootPath {
+                        KnownRepoIdentityStore.shared.record(rootPath: rootPath, branch: newBranch)
+                    }
+                    self.shellEventDetector.gitBranchChanged(to: newBranch)
+                }
+            }
+        }
+
+        if changed {
+            onGitRootPathChanged?(normalized)
         }
     }
 }
