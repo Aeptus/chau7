@@ -11,6 +11,8 @@ public struct RuntimeEvent: Codable, Sendable {
     public let sessionID: String
     /// Turn within the session (nil for session-level events).
     public let turnID: String?
+    /// Correlation chain identifier linking related events such as tool use/results and approvals.
+    public let correlationID: String?
     /// When the event occurred.
     public let timestamp: Date
     /// Event category. Uses the `RuntimeEventType` constants.
@@ -18,10 +20,19 @@ public struct RuntimeEvent: Codable, Sendable {
     /// Arbitrary key-value payload (tool name, summary, token count, etc.)
     public let data: [String: String]
 
-    public init(seq: UInt64, sessionID: String, turnID: String?, timestamp: Date, type: String, data: [String: String]) {
+    public init(
+        seq: UInt64,
+        sessionID: String,
+        turnID: String?,
+        correlationID: String? = nil,
+        timestamp: Date,
+        type: String,
+        data: [String: String]
+    ) {
         self.seq = seq
         self.sessionID = sessionID
         self.turnID = turnID
+        self.correlationID = correlationID
         self.timestamp = timestamp
         self.type = type
         self.data = data
@@ -49,6 +60,7 @@ public struct RuntimeEventType: RawRepresentable, Equatable, Hashable, Sendable 
     public static let turnCompleted = RuntimeEventType(rawValue: "turn_completed")
     public static let turnFailed = RuntimeEventType(rawValue: "turn_failed")
     public static let turnResult = RuntimeEventType(rawValue: "turn_result")
+    public static let userInput = RuntimeEventType(rawValue: "user_input")
 
     // Agent activity
     public static let agentResponding = RuntimeEventType(rawValue: "agent_responding")

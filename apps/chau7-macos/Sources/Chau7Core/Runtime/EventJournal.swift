@@ -28,13 +28,20 @@ public final class EventJournal: @unchecked Sendable {
 
     /// Append a new event. Returns the created event with its sequence number.
     @discardableResult
-    public func append(sessionID: String, turnID: String?, type: String, data: [String: String] = [:]) -> RuntimeEvent {
+    public func append(
+        sessionID: String,
+        turnID: String?,
+        type: String,
+        correlationID: String? = nil,
+        data: [String: String] = [:]
+    ) -> RuntimeEvent {
         lock.lock()
         totalAppended += 1
         let event = RuntimeEvent(
             seq: totalAppended,
             sessionID: sessionID,
             turnID: turnID,
+            correlationID: correlationID,
             timestamp: Date(),
             type: type,
             data: data
@@ -127,6 +134,29 @@ public final class EventJournal: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return buffer.count
+    }
+
+    /// Returns all currently retained events for a given turn in chronological order.
+    public func events(forTurn turnID: String) -> [RuntimeEvent] {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !buffer.isEmpty else { return [] }
+
+        let count = buffer.count
+        let startReadIndex = wrapped ? writeIndex : 0
+        var result: [RuntimeEvent] = []
+        result.reserveCapacity(count)
+
+        for i in 0 ..< count {
+            let idx = (startReadIndex + i) % count
+            let event = buffer[idx]
+            if event.turnID == turnID {
+                result.append(event)
+            }
+        }
+
+        return result
     }
 
     // MARK: - Private

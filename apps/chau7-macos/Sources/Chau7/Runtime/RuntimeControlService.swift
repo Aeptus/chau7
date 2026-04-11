@@ -449,6 +449,8 @@ final class RuntimeControlService {
             return jsonError("Failed to start turn in session \(session.id)")
         }
 
+        session.journalUserInput(prompt: prompt)
+
         // Format and send to PTY
         let input = session.backend.formatPromptInput(prompt, context: context)
         let sendResult = controlService.sendInput(tabID: session.tabID.uuidString, input: input)
@@ -576,6 +578,9 @@ final class RuntimeControlService {
             ]
             if let turnID = event.turnID {
                 dict["turn_id"] = turnID
+            }
+            if let correlationID = event.correlationID {
+                dict["correlation_id"] = correlationID
             }
             if !event.data.isEmpty {
                 dict["data"] = event.data

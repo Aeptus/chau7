@@ -13,11 +13,54 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
         session.transition(.backendReady)
         XCTAssertNotNil(session.startTurn(prompt: "Hello"))
 
-        _ = session.completeTurn(summary: "done", terminalOutput: nil)
+        let first = session.completeTurn(summary: "done", terminalOutput: nil)
+        XCTAssertNotNil(first)
         XCTAssertEqual(session.state, .ready)
 
-        _ = session.completeTurn(summary: "duplicate", terminalOutput: nil)
+        let second = session.completeTurn(summary: "duplicate", terminalOutput: nil)
+        XCTAssertNil(second)
         XCTAssertEqual(session.state, .ready)
+    }
+
+    func testTurnCompletedIncludesMatchingTurnStartedAndDuration() throws {
+        let session = RuntimeSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: "/tmp/runtime-turn-duration", provider: "claude")
+        )
+
+        session.transition(.backendReady)
+        let turnID = try XCTUnwrap(session.startTurn(prompt: "Hello"))
+        let result = session.completeTurn(summary: "done", terminalOutput: nil)
+
+        XCTAssertNotNil(result)
+        let events = session.journal.events(forTurn: turnID)
+        let started = events.first { $0.type == RuntimeEventType.turnStarted.rawValue }
+        let completed = events.first { $0.type == RuntimeEventType.turnCompleted.rawValue }
+        XCTAssertNotNil(started)
+        XCTAssertNotNil(completed)
+        XCTAssertEqual(completed?.turnID, started?.turnID)
+        XCTAssertNotNil(completed?.data["turn_duration_ms"])
+    }
+
+    func testJournalUserInputCapturesCurrentTurnAndPromptPreview() throws {
+        let session = RuntimeSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: "/tmp/runtime-user-input", provider: "claude")
+        )
+
+        session.transition(.backendReady)
+        let turnID = try XCTUnwrap(session.startTurn(prompt: "Hello"))
+        session.journalUserInput(prompt: String(repeating: "x", count: 520), correlationID: "corr-user-input")
+
+        let userInput = try XCTUnwrap(
+            session.journal.events(forTurn: turnID).first { $0.type == RuntimeEventType.userInput.rawValue }
+        )
+        XCTAssertEqual(userInput.turnID, turnID)
+        XCTAssertEqual(userInput.correlationID, "corr-user-input")
+        XCTAssertEqual(userInput.data["prompt_length"], "520")
+        XCTAssertEqual(userInput.data["prompt_preview"]?.count, 500)
     }
 
     func testDuplicateApprovalRequestWithoutActiveTurnIsIgnored() {

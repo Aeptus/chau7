@@ -253,7 +253,7 @@ final class RuntimeSession: @unchecked Sendable {
     /// Mark the current turn as complete with enriched stats and exit classification.
     /// Returns a snapshot of the turn's stats and exit reason for the caller.
     @discardableResult
-    func completeTurn(summary: String? = nil, terminalOutput: String? = nil) -> TurnCompletionResult {
+    func completeTurn(summary: String? = nil, terminalOutput: String? = nil) -> TurnCompletionResult? {
         lock.lock()
         let turnID = _currentTurnID
         let stats = _currentTurnStats
@@ -261,7 +261,14 @@ final class RuntimeSession: @unchecked Sendable {
         let interrupted = _wasInterrupted
         let sessionState = stateMachine.state
         let resultSchema = _currentResultSchema
+        let turnStartedAt = _lastTurnSubmittedAt
         lock.unlock()
+
+        guard let turnID else {
+            Log.error("RuntimeSession \(id): completeTurn rejected because there is no active turn")
+            return nil
+        }
+        let effectiveTurnStartedAt = turnStartedAt ?? Date()
 
         let exitReason = ExitClassifier.classify(
             sessionState: sessionState,
@@ -273,6 +280,7 @@ final class RuntimeSession: @unchecked Sendable {
         var data = stats.summary()
         data["exit_reason"] = exitReason.rawValue
         if let summary { data["summary"] = summary }
+        data["turn_duration_ms"] = "\(max(0, Int(Date().timeIntervalSince(effectiveTurnStartedAt) * 1000)))"
 
         journal.append(
             sessionID: id,
@@ -281,14 +289,13 @@ final class RuntimeSession: @unchecked Sendable {
             data: data
         )
 
-        if let turnID,
-           let result = StructuredResultExtractor.capture(
-               sessionID: id,
-               turnID: turnID,
-               summary: summary,
-               output: terminalOutput,
-               schema: resultSchema
-           ) {
+        if let result = StructuredResultExtractor.capture(
+            sessionID: id,
+            turnID: turnID,
+            summary: summary,
+            output: terminalOutput,
+            schema: resultSchema
+        ) {
             storeTurnResult(result)
         }
 
@@ -310,6 +317,20 @@ final class RuntimeSession: @unchecked Sendable {
         lock.unlock()
 
         return TurnCompletionResult(stats: stats, exitReason: exitReason)
+    }
+
+    func journalUserInput(prompt: String, correlationID: String? = nil) {
+        let preview = String(prompt.prefix(500))
+        journal.append(
+            sessionID: id,
+            turnID: currentTurnID,
+            type: RuntimeEventType.userInput.rawValue,
+            correlationID: correlationID,
+            data: [
+                "prompt_length": "\(prompt.count)",
+                "prompt_preview": preview
+            ]
+        )
     }
 
     /// Mark the current turn as failed. Transitions back to `.ready` via `.turnCompleted`.
@@ -381,12 +402,13 @@ final class RuntimeSession: @unchecked Sendable {
     // MARK: - Approval Management
 
     /// Record that an approval is needed. Transitions to `.awaitingApproval`.
-    func requestApproval(tool: String, description: String) -> PendingApproval? {
+    func requestApproval(tool: String, description: String, correlationID: String? = nil) -> PendingApproval? {
         let approval = PendingApproval(
             id: UUID().uuidString,
             sessionID: id,
             tool: tool,
             description: description,
+            correlationID: correlationID,
             requestedAt: Date()
         )
 
@@ -412,6 +434,7 @@ final class RuntimeSession: @unchecked Sendable {
             sessionID: id,
             turnID: turnID,
             type: RuntimeEventType.approvalNeeded.rawValue,
+            correlationID: correlationID,
             data: ["approval_id": approval.id, "tool": tool, "description": description]
         )
 
@@ -491,8 +514,9 @@ final class RuntimeSession: @unchecked Sendable {
         approvalTimeoutWork?.cancel()
         approvalTimeoutWork = nil
         lock.lock()
-        guard _pendingApproval?.id == approvalID else {
-            let actual = _pendingApproval?.id ?? "none"
+        let approval = _pendingApproval
+        guard approval?.id == approvalID else {
+            let actual = approval?.id ?? "none"
             lock.unlock()
             Log.warn("RuntimeSession \(id): resolveApproval mismatch, expected=\(actual) got=\(approvalID)")
             return false
@@ -513,6 +537,7 @@ final class RuntimeSession: @unchecked Sendable {
             sessionID: id,
             turnID: turnID,
             type: RuntimeEventType.approvalResolved.rawValue,
+            correlationID: approval?.correlationID,
             data: [
                 "approval_id": approvalID,
                 "approved": approved ? "true" : "false",
@@ -657,5 +682,6 @@ struct PendingApproval: Sendable {
     let sessionID: String
     let tool: String
     let description: String
+    let correlationID: String?
     let requestedAt: Date
 }

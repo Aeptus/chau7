@@ -124,11 +124,33 @@ final class EventJournalTests: XCTestCase {
             sessionID: "s1",
             turnID: "t1",
             type: "tool_use",
+            correlationID: "corr-1",
             data: ["tool": "Write", "file": "main.swift"]
         )
         XCTAssertEqual(event.data["tool"], "Write")
         XCTAssertEqual(event.data["file"], "main.swift")
         XCTAssertEqual(event.turnID, "t1")
+        XCTAssertEqual(event.correlationID, "corr-1")
+    }
+
+    func testEventsForTurnReturnsOnlyMatchingTurnInChronologicalOrder() {
+        let journal = EventJournal()
+        journal.append(sessionID: "s1", turnID: "t1", type: RuntimeEventType.turnStarted.rawValue)
+        journal.append(sessionID: "s1", turnID: "t2", type: RuntimeEventType.turnStarted.rawValue)
+        journal.append(sessionID: "s1", turnID: "t1", type: RuntimeEventType.toolUse.rawValue)
+        journal.append(sessionID: "s1", turnID: nil, type: RuntimeEventType.sessionReady.rawValue)
+        journal.append(sessionID: "s1", turnID: "t1", type: RuntimeEventType.turnCompleted.rawValue)
+
+        let events = journal.events(forTurn: "t1")
+        XCTAssertEqual(
+            events.map(\.type),
+            [
+                RuntimeEventType.turnStarted.rawValue,
+                RuntimeEventType.toolUse.rawValue,
+                RuntimeEventType.turnCompleted.rawValue
+            ]
+        )
+        XCTAssertTrue(events.allSatisfy { $0.turnID == "t1" })
     }
 
     // MARK: - Thread Safety
