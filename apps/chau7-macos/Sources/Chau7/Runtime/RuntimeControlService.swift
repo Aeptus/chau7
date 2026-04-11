@@ -449,12 +449,16 @@ final class RuntimeControlService {
             return jsonError("Failed to start turn in session \(session.id)")
         }
 
-        session.journalUserInput(prompt: prompt)
-
         // Format and send to PTY
         let input = session.backend.formatPromptInput(prompt, context: context)
         let sendResult = controlService.sendInput(tabID: session.tabID.uuidString, input: input)
         Log.info("MCP runtime_turn_send: session=\(session.id) turn=\(turnID) inputLen=\(input.count) sendResult=\(sendResult.prefix(100))")
+        guard sendSucceeded(sendResult) else {
+            session.failTurn(reason: "send_input_failed")
+            return jsonError("Failed to deliver input to session \(session.id)")
+        }
+
+        session.journalUserInput(prompt: prompt)
 
         var response: [String: Any] = [
             "turn_id": turnID,
@@ -466,6 +470,17 @@ final class RuntimeControlService {
             response["result_schema"] = effectiveSchema.foundationValue
         }
         return encodeAny(response)
+    }
+
+    private func sendSucceeded(_ response: String) -> Bool {
+        guard let data = response.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return false
+        }
+        if json["error"] != nil {
+            return false
+        }
+        return (json["ok"] as? Bool) == true
     }
 
     private func turnStatus(_ args: [String: Any]) -> String {

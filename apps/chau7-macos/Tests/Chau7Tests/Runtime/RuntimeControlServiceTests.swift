@@ -76,6 +76,34 @@ final class RuntimeControlServiceTests: XCTestCase {
         XCTAssertEqual(adoptedSession.state, .busy)
     }
 
+    func testRuntimeTurnSendDoesNotJournalUserInputWhenSendIsRejected() throws {
+        let adoptedSession = RuntimeSessionManager.shared.adoptSession(
+            tabID: overlayModel.selectedTabID,
+            backend: ClaudeCodeBackend(),
+            cwd: "/tmp/runtime-send-reject-\(UUID().uuidString)"
+        )
+        TerminalControlService.shared.unregister(overlayModel)
+        defer { TerminalControlService.shared.register(overlayModel) }
+
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_turn_send",
+            arguments: [
+                "session_id": adoptedSession.id,
+                "prompt": "status"
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        XCTAssertNotNil(json["error"])
+        XCTAssertEqual(adoptedSession.state, .ready)
+        XCTAssertNil(adoptedSession.currentTurnID)
+        XCTAssertFalse(
+            adoptedSession.journal.events(after: 0, limit: 100).events.contains {
+                $0.type == RuntimeEventType.userInput.rawValue
+            }
+        )
+    }
+
     func testRuntimeSessionCreateStartsReadySession() throws {
         let response = RuntimeControlService.shared.handleToolCall(
             name: "runtime_session_create",

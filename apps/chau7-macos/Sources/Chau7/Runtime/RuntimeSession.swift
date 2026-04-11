@@ -43,6 +43,7 @@ final class RuntimeSession: @unchecked Sendable {
     private var _lastExitReason: TurnExitReason?
     private var _lastTurnSubmittedAt: Date?
     private var _lastPrompt: String?
+    private var _awaitingProviderUserPromptEcho = false
     private var _pendingInitialPrompt: String?
     private var _lastCompletedTurnID: String?
     private var _currentResultSchema: JSONValue?
@@ -206,6 +207,7 @@ final class RuntimeSession: @unchecked Sendable {
         _currentTurnID = turnID
         _lastTurnSubmittedAt = Date()
         _lastPrompt = prompt
+        _awaitingProviderUserPromptEcho = !adopted
         _pendingInitialPrompt = nil
         _currentResultSchema = resultSchema ?? config.resultSchema
         _currentTurnStats = TurnStats()
@@ -314,6 +316,7 @@ final class RuntimeSession: @unchecked Sendable {
         _currentResultSchema = nil
         _lastCompletedTurnID = turnID
         _lastExitReason = exitReason
+        _awaitingProviderUserPromptEcho = false
         lock.unlock()
 
         return TurnCompletionResult(stats: stats, exitReason: exitReason)
@@ -339,6 +342,7 @@ final class RuntimeSession: @unchecked Sendable {
         let turnID = _currentTurnID
         _currentTurnID = nil
         _currentResultSchema = nil
+        _awaitingProviderUserPromptEcho = false
         lock.unlock()
 
         journal.append(
@@ -357,6 +361,18 @@ final class RuntimeSession: @unchecked Sendable {
                 Log.warn("RuntimeSession \(id): failTurn transition rejected, state=\(currentState.rawValue)")
             }
         }
+    }
+
+    func shouldSuppressProviderUserPromptEcho(prompt: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard _awaitingProviderUserPromptEcho,
+              _currentTurnID != nil,
+              _lastPrompt == prompt else {
+            return false
+        }
+        _awaitingProviderUserPromptEcho = false
+        return true
     }
 
     // MARK: - Turn Stats Recording

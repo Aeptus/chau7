@@ -63,6 +63,21 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
         XCTAssertEqual(userInput.data["prompt_preview"]?.count, 500)
     }
 
+    func testSuppressProviderUserPromptEchoConsumesOnlyMatchingRuntimePrompt() throws {
+        let session = RuntimeSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: "/tmp/runtime-user-echo", provider: "claude")
+        )
+
+        session.transition(.backendReady)
+        _ = try XCTUnwrap(session.startTurn(prompt: "status"))
+
+        XCTAssertTrue(session.shouldSuppressProviderUserPromptEcho(prompt: "status"))
+        XCTAssertFalse(session.shouldSuppressProviderUserPromptEcho(prompt: "status"))
+        XCTAssertFalse(session.shouldSuppressProviderUserPromptEcho(prompt: "different"))
+    }
+
     func testDuplicateApprovalRequestWithoutActiveTurnIsIgnored() {
         let session = RuntimeSession(
             tabID: UUID(),
