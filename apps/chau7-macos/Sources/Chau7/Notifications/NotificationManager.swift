@@ -103,7 +103,7 @@ final class NotificationManager {
     private func ingestEvent(_ event: AIEvent) {
         switch NotificationIngress.ingest(event) {
         case .drop(let reason):
-            Log.trace("Notification ingress dropped: \(reason) id=\(event.id.uuidString) type=\(event.type) tool=\(event.tool)")
+            Log.info("Notification ingress dropped: \(reason) id=\(event.id.uuidString) type=\(event.type) tool=\(event.tool)")
             return
         case .accept(let accepted):
             ingestAcceptedEvent(accepted)
@@ -175,7 +175,7 @@ final class NotificationManager {
             tabResolver: tabResolver
         ) {
         case .drop(let reason):
-            Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
+            Log.info("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
             history.markDropped(eventID: event.id, reason: reason)
             return
         case .proceed(let prepared):
@@ -219,7 +219,7 @@ final class NotificationManager {
             recentlyClosedEvents: recentClosedSessionEvents
         ) {
             let reason = "Suppressed stale post-close notification for an already-finished session"
-            Log.trace("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
+            Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
             history.markDropped(eventID: preparedEvent.id, reason: reason)
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
             return
@@ -230,7 +230,7 @@ final class NotificationManager {
             authoritativeEvents: recentAuthoritativeEvents
         ) {
             let reason = "Suppressed fallback event shadowed by authoritative delivery"
-            Log.trace("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
+            Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
             history.markDropped(eventID: preparedEvent.id, reason: reason)
             return
         }
@@ -240,7 +240,7 @@ final class NotificationManager {
             recentRepeatEvents: recentRepeatedAttentionEvents
         ) {
             let reason = "Suppressed repeated interactive-attention notification for unchanged session state"
-            Log.trace("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
+            Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
             history.markDropped(eventID: preparedEvent.id, reason: reason)
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
             return
@@ -265,7 +265,7 @@ final class NotificationManager {
 
         switch decision {
         case .drop(let reason):
-            Log.trace("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
+            Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
             history.markDropped(eventID: preparedEvent.id, reason: reason)
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
 
