@@ -16,7 +16,6 @@ public enum Chau7CoreLocalization {
 }
 
 /// Short helper used inside Core to call the injected localizer.
-@usableFromInline
 func LCore(_ key: String, _ defaultValue: String) -> String {
     Chau7CoreLocalization.localize(key, defaultValue)
 }
