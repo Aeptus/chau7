@@ -21,6 +21,9 @@ final class RemoteControlManager {
     @ObservationIgnored private var outputPipe: Pipe?
     @ObservationIgnored private var errorPipe: Pipe?
     @ObservationIgnored private let logger = Logger(subsystem: "com.chau7.remote", category: "RemoteManager")
+    /// Last tab-list count emitted to the remote client, used to throttle
+    /// the noisy "sent tab list with N tabs" log so it only fires on change.
+    @ObservationIgnored private var lastSentTabListCount: Int?
     @ObservationIgnored private weak var overlayModel: OverlayTabsModel?
 
     @ObservationIgnored private var tabRegistry = RemoteTabRegistry()
@@ -779,7 +782,14 @@ final class RemoteControlManager {
         do {
             let payload = try JSONEncoder().encode(RemoteTabListPayload(tabs: tabPayloads))
             sendFrame(type: .tabList, tabID: 0, payload: payload)
-            logger.info("Remote: sent tab list with \(tabPayloads.count, privacy: .public) tabs")
+            // Only log at .info on tab-count change; steady-state refreshes are
+            // ~1 per second and drown out every other chau7 log entry.
+            if lastSentTabListCount != tabPayloads.count {
+                logger.info("Remote: sent tab list with \(tabPayloads.count, privacy: .public) tabs")
+                lastSentTabListCount = tabPayloads.count
+            } else {
+                logger.debug("Remote: resent tab list (\(tabPayloads.count, privacy: .public) tabs, unchanged)")
+            }
             sendRemoteActivity()
             sendInteractivePrompts()
         } catch {
