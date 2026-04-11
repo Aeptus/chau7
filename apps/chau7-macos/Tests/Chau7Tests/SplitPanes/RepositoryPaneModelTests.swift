@@ -556,6 +556,86 @@ final class RepositoryPaneModelTests: XCTestCase {
         tracker.update(from: journal)
         XCTAssertEqual(tracker.touchedFiles, ["a.swift", "b.swift"])
     }
+
+    func testSessionFilesTrackerTracksCurrentTurnAndTimeline() {
+        let tracker = SessionFilesTracker()
+        tracker.gitRoot = "/repo"
+        let journal = EventJournal(capacity: 100)
+        let timestamp = Date()
+
+        journal.append(sessionID: "test", turnID: "t1", type: RuntimeEventType.turnStarted.rawValue)
+        journal.append(
+            sessionID: "test",
+            turnID: "t1",
+            type: RuntimeEventType.toolUse.rawValue,
+            data: [
+                "tool": "Edit",
+                "file": "/repo/Sources/App.swift"
+            ]
+        )
+        journal.append(sessionID: "test", turnID: "t2", type: RuntimeEventType.turnStarted.rawValue)
+        journal.append(
+            sessionID: "test",
+            turnID: "t2",
+            type: RuntimeEventType.toolUse.rawValue,
+            data: [
+                "tool": "Read",
+                "file": "/repo/Tests/AppTests.swift"
+            ]
+        )
+
+        tracker.update(from: journal)
+
+        XCTAssertEqual(tracker.currentTurnID, "t2")
+        XCTAssertEqual(tracker.currentTurnFiles, ["Tests/AppTests.swift"])
+        XCTAssertEqual(tracker.filesByTurn["t1"], ["Sources/App.swift"])
+        XCTAssertEqual(tracker.filesByTurn["t2"], ["Tests/AppTests.swift"])
+        XCTAssertEqual(tracker.fileActions["Sources/App.swift"], [.modified])
+        XCTAssertEqual(tracker.fileActions["Tests/AppTests.swift"], [.read])
+        XCTAssertEqual(tracker.fileTimeline["Sources/App.swift"]?.count, 1)
+        XCTAssertEqual(tracker.fileTimeline["Tests/AppTests.swift"]?.count, 1)
+        XCTAssertTrue((tracker.fileTimeline["Tests/AppTests.swift"]?.first?.timestamp ?? .distantPast) >= timestamp.addingTimeInterval(-1))
+    }
+
+    func testSessionFilesTrackerMergesCommandBlockFallbackFiles() {
+        let tracker = SessionFilesTracker()
+        tracker.gitRoot = "/repo"
+        let journal = EventJournal(capacity: 100)
+        journal.append(sessionID: "test", turnID: "t1", type: RuntimeEventType.turnStarted.rawValue)
+
+        var block = CommandBlock(command: "touch Sources/Generated.swift", startLine: 1, directory: "/repo")
+        block.endLine = 3
+        block.endTime = Date()
+        block.exitCode = 0
+        block.changedFiles = ["/repo/Sources/Generated.swift"]
+
+        tracker.update(from: journal, commandBlocks: [block])
+
+        XCTAssertEqual(tracker.touchedFiles, ["Sources/Generated.swift"])
+        XCTAssertEqual(tracker.currentTurnFiles, ["Sources/Generated.swift"])
+        XCTAssertEqual(tracker.fileActions["Sources/Generated.swift"], [.created])
+    }
+
+    func testSessionFilesTrackerAttributesFallbackBlockToNearestTurnStart() {
+        let tracker = SessionFilesTracker()
+        tracker.gitRoot = "/repo"
+        let journal = EventJournal(capacity: 100)
+        journal.append(sessionID: "test", turnID: "t1", type: RuntimeEventType.turnStarted.rawValue)
+        let firstTurnTime = Date()
+        usleep(10_000)
+        journal.append(sessionID: "test", turnID: "t2", type: RuntimeEventType.turnStarted.rawValue)
+
+        var block = CommandBlock(command: "touch Sources/OldTurn.swift", startLine: 1, directory: "/repo")
+        block.endLine = 2
+        block.endTime = firstTurnTime
+        block.exitCode = 0
+        block.changedFiles = ["/repo/Sources/OldTurn.swift"]
+
+        tracker.update(from: journal, commandBlocks: [block])
+
+        XCTAssertEqual(tracker.filesByTurn["t1"], ["Sources/OldTurn.swift"])
+        XCTAssertNil(tracker.filesByTurn["t2"])
+    }
 }
 
 private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) {

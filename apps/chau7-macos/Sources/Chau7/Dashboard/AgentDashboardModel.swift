@@ -24,6 +24,7 @@ final class AgentDashboardModel: Identifiable {
     // MARK: - Internal Tracking
 
     @ObservationIgnored private var fileTrackers: [String: SessionFilesTracker] = [:]
+    @ObservationIgnored private let fleetFileIndex = FleetFileIndex()
     @ObservationIgnored private var journalCursors: [String: UInt64] = [:]
     @ObservationIgnored private var refreshTimer: DispatchSourceTimer?
     @ObservationIgnored private var sessionCosts: [String: Double] = [:] // sessionID -> accumulated cost
@@ -104,6 +105,7 @@ final class AgentDashboardModel: Identifiable {
         var allCost: Double = 0
         var hasApprovals = false
         var hasActive = false
+        fleetFileIndex.reset()
 
         for session in matching {
             let stats = session.currentTurnStats
@@ -111,8 +113,13 @@ final class AgentDashboardModel: Identifiable {
             // Update file tracker for this session
             let tracker = fileTrackers[session.id] ?? SessionFilesTracker()
             tracker.gitRoot = repoGroupID
-            tracker.update(from: session.journal)
+            let commandBlocks = fetchCommandBlocks(for: session.tabID.uuidString)
+            tracker.update(
+                from: session.journal,
+                commandBlocks: commandBlocks
+            )
             fileTrackers[session.id] = tracker
+            fleetFileIndex.publish(agentID: session.id, files: tracker.touchedFiles)
 
             // Extract last tool from journal
             let lastTool = extractLastTool(from: session.journal)
@@ -138,6 +145,7 @@ final class AgentDashboardModel: Identifiable {
                 cacheCreationTokens: stats.cacheCreationTokens,
                 cacheReadTokens: stats.cacheReadTokens,
                 touchedFiles: tracker.touchedFiles,
+                currentTurnFiles: tracker.currentTurnFiles,
                 pendingApproval: session.pendingApproval,
                 lastToolUsed: lastTool,
                 latestResult: session.turnResult(),
@@ -220,26 +228,31 @@ final class AgentDashboardModel: Identifiable {
         }
     }
 
+    private func fetchCommandBlocks(for tabID: String) -> [CommandBlock] {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated {
+                CommandBlockManager.shared.blocksForTab(tabID)
+            }
+        }
+        return DispatchQueue.main.sync {
+            CommandBlockManager.shared.blocksForTab(tabID)
+        }
+    }
+
     // MARK: - Conflict Detection
 
     private func detectConflicts(from sessions: [RuntimeSession]) -> [DashboardConflict] {
-        var fileToAgents: [String: [(sessionID: String, backendName: String)]] = [:]
+        let backendBySession = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.backend.name) })
 
-        for session in sessions {
-            guard let tracker = fileTrackers[session.id] else { continue }
-            for file in tracker.touchedFiles {
-                fileToAgents[file, default: []].append(
-                    (sessionID: session.id, backendName: session.backend.name)
-                )
-            }
-        }
-
-        return fileToAgents
+        return fleetFileIndex.overlappingFiles()
             .filter { $0.value.count >= 2 }
-            .map { path, agents in
+            .map { path, agentIDs in
                 DashboardConflict(
                     filePath: path,
-                    agents: agents.map { .init(sessionID: $0.sessionID, backendName: $0.backendName) },
+                    agents: agentIDs.sorted().compactMap { sessionID in
+                        guard let backend = backendBySession[sessionID] else { return nil }
+                        return .init(sessionID: sessionID, backendName: backend)
+                    },
                     severity: .warning
                 )
             }
@@ -496,6 +509,7 @@ struct AgentCardData: Identifiable {
     let cacheCreationTokens: Int
     let cacheReadTokens: Int
     let touchedFiles: Set<String>
+    let currentTurnFiles: Set<String>
     let pendingApproval: PendingApproval?
     let lastToolUsed: String?
     let latestResult: RuntimeTurnResult?

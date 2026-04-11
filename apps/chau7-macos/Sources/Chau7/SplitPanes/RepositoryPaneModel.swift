@@ -42,6 +42,14 @@ final class RepositoryPaneModel: Identifiable {
     var forceGitMode = false
     /// Files the agent touched across all turns (accumulated from journal).
     var sessionTouchedFiles: Set<String> = []
+    /// Files the agent touched in the current turn.
+    var turnTouchedFiles: Set<String> = []
+    /// Per-file action set derived from tool journaling and command fallbacks.
+    var sessionFileActions: [String: Set<FileTrackingAction>] = [:]
+    /// Per-file timeline of touches across turns.
+    var sessionFileTimeline: [String: [FileTouchRecord]] = [:]
+    /// Files touched partitioned by turn ID.
+    var sessionFilesByTurn: [String: Set<String>] = [:]
     /// Per-file diff stats: additions and deletions.
     var diffStats: [String: DiffStat] = [:]
     /// Turn summary for display.
@@ -50,6 +58,8 @@ final class RepositoryPaneModel: Identifiable {
     /// Tracks files across turns by reading the EventJournal.
     @ObservationIgnored
     private let sessionTracker = SessionFilesTracker()
+    @ObservationIgnored
+    private var cachedDiffStats: (directory: String, fetchedAt: Date, stats: [String: DiffStat])?
 
     // MARK: - Session File Partitioning
 
@@ -79,6 +89,12 @@ final class RepositoryPaneModel: Identifiable {
 
     var sessionChangeCount: Int {
         sessionStagedFiles.count + sessionUnstagedFiles.count + sessionUntrackedFiles.count
+    }
+
+    var turnChangeCount: Int {
+        stagedFiles.filter { turnTouchedFiles.contains($0.path) }.count
+            + unstagedFiles.filter { turnTouchedFiles.contains($0.path) }.count
+            + untrackedFiles.filter { turnTouchedFiles.contains($0) }.count
     }
 
     var otherChangeCount: Int {
@@ -251,8 +267,18 @@ final class RepositoryPaneModel: Identifiable {
             let stashOutput = gitRunner(["stash", "list"], dir)
 
             // Diff stats for per-file +N -M display
-            let numstatUnstaged = gitRunner(["diff", "--numstat"], dir)
-            let numstatStaged = gitRunner(["diff", "--cached", "--numstat"], dir)
+            let parsedDiffStats: [String: DiffStat]
+            if let cache = cachedDiffStats,
+               cache.directory == dir,
+               Date().timeIntervalSince(cache.fetchedAt) < 2 {
+                parsedDiffStats = cache.stats
+            } else {
+                let numstatUnstaged = gitRunner(["diff", "--numstat"], dir)
+                let numstatStaged = gitRunner(["diff", "--cached", "--numstat"], dir)
+                let stats = Self.parseDiffNumstat(numstatUnstaged, numstatStaged)
+                cachedDiffStats = (dir, Date(), stats)
+                parsedDiffStats = stats
+            }
 
             let parsed = Self.parseStatus(statusOutput)
             let (parsedBranches, parsedDetails) = Self.parseBranchesVerbose(branchOutput)
@@ -260,11 +286,13 @@ final class RepositoryPaneModel: Identifiable {
             let parsedAheadBehind = Self.parseAheadBehind(aheadBehindOutput)
             let parsedCommits = Self.parseCommitLog(logOutput)
             let parsedStashes = Self.parseStashList(stashOutput)
-            let parsedDiffStats = Self.parseDiffNumstat(numstatUnstaged, numstatStaged)
-
             // Session tracking: check for RuntimeSession on this tab
             let tabID = tabID
             var sessionFiles: Set<String> = []
+            var turnFiles: Set<String> = []
+            var fileActions: [String: Set<FileTrackingAction>] = [:]
+            var fileTimeline: [String: [FileTouchRecord]] = [:]
+            var filesByTurn: [String: Set<String>] = [:]
             var summary: TurnSummaryInfo?
             var hasSession = false
 
@@ -273,8 +301,15 @@ final class RepositoryPaneModel: Identifiable {
                 if let session {
                     hasSession = true
                     sessionTracker.gitRoot = dir
-                    sessionTracker.update(from: session.journal)
+                    let commandBlocks = DispatchQueue.main.sync {
+                        CommandBlockManager.shared.blocksForTab(tabID.uuidString)
+                    }
+                    sessionTracker.update(from: session.journal, commandBlocks: commandBlocks)
                     sessionFiles = sessionTracker.touchedFiles
+                    turnFiles = sessionTracker.currentTurnFiles
+                    fileActions = sessionTracker.fileActions
+                    fileTimeline = sessionTracker.fileTimeline
+                    filesByTurn = sessionTracker.filesByTurn
                     summary = Self.buildTurnSummary(from: session)
                 }
             }
@@ -293,6 +328,10 @@ final class RepositoryPaneModel: Identifiable {
                 self.stashes = parsedStashes
                 self.diffStats = parsedDiffStats
                 self.sessionTouchedFiles = sessionFiles
+                self.turnTouchedFiles = turnFiles
+                self.sessionFileActions = fileActions
+                self.sessionFileTimeline = fileTimeline
+                self.sessionFilesByTurn = filesByTurn
                 self.turnSummary = summary
                 self.isSessionMode = hasSession && !self.forceGitMode
                 self.isLoading = false
