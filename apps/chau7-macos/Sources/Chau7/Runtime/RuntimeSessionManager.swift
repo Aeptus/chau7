@@ -389,6 +389,9 @@ final class RuntimeSessionManager {
             moveToStopped(session)
 
         case .userPrompt:
+            if session.shouldSuppressProviderUserPromptEcho(prompt: event.message) {
+                return
+            }
             if session.currentTurnID == nil, session.canAcceptTurn {
                 _ = session.startTurn(prompt: event.message)
             }
@@ -785,7 +788,11 @@ final class RuntimeSessionManager {
     /// Capture recent terminal output for a session's tab.
     private func captureOutput(for session: RuntimeSession) -> String? {
         let controlService = TerminalControlService.shared
-        let result = controlService.tabOutput(tabID: session.tabID.uuidString, lines: 50)
+        let result = controlService.tabOutput(
+            tabID: session.tabID.uuidString,
+            lines: max(FeatureSettings.shared.scrollbackLines, 5000),
+            source: "pty_log"
+        )
         guard let data = result.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let output = json["output"] as? String else {

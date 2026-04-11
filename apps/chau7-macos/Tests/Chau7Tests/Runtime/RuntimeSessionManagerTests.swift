@@ -356,6 +356,36 @@ final class RuntimeSessionManagerTests: XCTestCase {
         XCTAssertNotNil(session.currentTurnID)
     }
 
+    func testUserPromptDoesNotDuplicateRuntimeSubmittedInputForManagedSession() throws {
+        let manager = RuntimeSessionManager.shared
+        let cwd = "/tmp/runtime-managed-user-prompt-\(UUID().uuidString)"
+        let tabID = UUID()
+
+        let session = manager.createSession(
+            tabID: tabID,
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: cwd, provider: "claude")
+        )
+        let turnID = try XCTUnwrap(session.startTurn(prompt: "Please continue"))
+        session.journalUserInput(prompt: "Please continue")
+
+        manager.handleClaudeEvent(
+            ClaudeCodeEvent(
+                type: .userPrompt,
+                hook: "UserPrompt",
+                sessionId: "claude-session-managed",
+                transcriptPath: "",
+                toolName: "",
+                message: "Please continue",
+                cwd: cwd,
+                timestamp: Date()
+            )
+        )
+
+        let userInputs = session.journal.events(forTurn: turnID).filter { $0.type == RuntimeEventType.userInput.rawValue }
+        XCTAssertEqual(userInputs.count, 1)
+    }
+
     func testNotificationEventWithExactSessionDoesNotCreateDuplicateRuntimeSession() {
         let manager = RuntimeSessionManager.shared
         let cwd = "/tmp/runtime-existing-\(UUID().uuidString)"
