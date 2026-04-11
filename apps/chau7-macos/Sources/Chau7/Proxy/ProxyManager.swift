@@ -197,17 +197,20 @@ final class ProxyManager {
         self.outputPipe = outputPipe
         self.errorPipe = errorPipe
 
-        // Handle output asynchronously
+        // Handle output asynchronously.
+        // The Go proxy writes `[INFO] ...`, `[WARN] ...`, and `[ERROR] ...` to stderr.
+        // Classify each line by its prefix so normal request logs don't pollute the
+        // warning stream, and mark the content as .public so OSLog doesn't redact it.
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
-            self?.logger.debug("Proxy stdout: \(output)")
+            self?.handleProxyOutput(output, isStderr: false)
         }
 
         errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
-            self?.logger.warning("Proxy stderr: \(output)")
+            self?.handleProxyOutput(output, isStderr: true)
         }
 
         // Handle process termination with auto-restart on unexpected exit
@@ -219,7 +222,7 @@ final class ProxyManager {
 
                 if proc.terminationStatus != 0, !self.isStopping {
                     let error = "Proxy exited with status \(proc.terminationStatus)"
-                    self.logger.error("\(error)")
+                    self.logger.error("\(error, privacy: .public)")
                     self.lastError = error
                     NotificationCenter.default.post(name: .proxyStatusChanged, object: nil, userInfo: ["status": "stopped", "error": error])
 
@@ -249,10 +252,66 @@ final class ProxyManager {
 
         } catch {
             let errorMessage = "Failed to start proxy: \(error.localizedDescription)"
-            logger.error("\(errorMessage)")
+            logger.error("\(errorMessage, privacy: .public)")
             lastError = errorMessage
             NotificationCenter.default.post(name: .proxyStatusChanged, object: nil, userInfo: ["status": "error", "message": errorMessage])
         }
+    }
+
+    /// Routes a chunk of proxy stdout/stderr output to the appropriate log level.
+    /// The Go proxy uses Go's standard log package which writes to stderr and prefixes
+    /// each line with `[INFO]`, `[WARN]`, or `[ERROR]`. We parse that prefix so normal
+    /// request logs (overwhelmingly `[INFO]`) land at .debug/.info level instead of
+    /// drowning the .warning stream.
+    ///
+    /// `nonisolated` because readabilityHandler fires on a background queue and this
+    /// method only touches `logger` (which is Sendable and thread-safe).
+    private nonisolated func handleProxyOutput(_ output: String, isStderr: Bool) {
+        let lines = output.split(whereSeparator: \.isNewline)
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+
+            // Strip Go's default log prefix (date + time) e.g. "2026/04/11 16:20:05 "
+            // Format is always YYYY/MM/DD HH:MM:SS followed by a space.
+            let content: String
+            if trimmed.count > 20,
+               trimmed[trimmed.index(trimmed.startIndex, offsetBy: 4)] == "/",
+               trimmed[trimmed.index(trimmed.startIndex, offsetBy: 10)] == " ",
+               trimmed[trimmed.index(trimmed.startIndex, offsetBy: 13)] == ":",
+               trimmed[trimmed.index(trimmed.startIndex, offsetBy: 19)] == " " {
+                content = String(trimmed.dropFirst(20))
+            } else {
+                content = trimmed
+            }
+
+            let level: LogLevel
+            if content.hasPrefix("[ERROR]") {
+                level = .error
+            } else if content.hasPrefix("[WARN]") {
+                level = .warning
+            } else if content.hasPrefix("[INFO]") {
+                level = .info
+            } else {
+                level = isStderr ? .info : .debug
+            }
+
+            let message = String(content)
+            switch level {
+            case .error:
+                logger.error("\(message, privacy: .public)")
+            case .warning:
+                logger.warning("\(message, privacy: .public)")
+            case .info:
+                logger.info("\(message, privacy: .public)")
+            case .debug:
+                logger.debug("\(message, privacy: .public)")
+            }
+        }
+    }
+
+    private enum LogLevel {
+        case debug, info, warning, error
     }
 
     /// Stops the proxy server
