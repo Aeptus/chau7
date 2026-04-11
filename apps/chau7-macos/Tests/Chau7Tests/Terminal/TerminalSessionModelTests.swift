@@ -627,6 +627,91 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(identity?.lastKnownBranch, "main")
     }
 
+    // MARK: - Foreign OSC 9 Notification Classification
+
+    func testForeignNotification_execApprovalRequested_mapsToPermission() {
+        let result = TerminalSessionModel.classifyForeignDesktopNotification(
+            "Approval requested: rm -rf /tmp/foo"
+        )
+        XCTAssertEqual(result.source, .codex)
+        XCTAssertEqual(result.type, "permission")
+        XCTAssertEqual(result.tool, "Codex")
+    }
+
+    func testForeignNotification_elicitationRequested_mapsToPermission() {
+        let result = TerminalSessionModel.classifyForeignDesktopNotification(
+            "Approval requested by github_mcp_server"
+        )
+        XCTAssertEqual(result.type, "permission")
+    }
+
+    func testForeignNotification_editApproval_mapsToPermission() {
+        let result = TerminalSessionModel.classifyForeignDesktopNotification(
+            "Codex wants to edit src/foo.rs"
+        )
+        XCTAssertEqual(result.type, "permission")
+    }
+
+    func testForeignNotification_editApprovalMultipleFiles_mapsToPermission() {
+        let result = TerminalSessionModel.classifyForeignDesktopNotification(
+            "Codex wants to edit 3 files"
+        )
+        XCTAssertEqual(result.type, "permission")
+    }
+
+    func testForeignNotification_questionRequested_mapsToWaitingInput() {
+        let result = TerminalSessionModel.classifyForeignDesktopNotification(
+            "Question requested: Which branch?"
+        )
+        XCTAssertEqual(result.type, "waiting_input")
+    }
+
+    func testForeignNotification_questionsRequestedPlural_mapsToWaitingInput() {
+        let result = TerminalSessionModel.classifyForeignDesktopNotification(
+            "Questions requested: 3"
+        )
+        XCTAssertEqual(result.type, "waiting_input")
+    }
+
+    func testForeignNotification_questionRequestedNoColon_mapsToWaitingInput() {
+        let result = TerminalSessionModel.classifyForeignDesktopNotification(
+            "Question requested"
+        )
+        XCTAssertEqual(result.type, "waiting_input")
+    }
+
+    func testForeignNotification_planModePrompt_mapsToAttentionRequired() {
+        let result = TerminalSessionModel.classifyForeignDesktopNotification(
+            "Plan mode prompt: Choose an approach"
+        )
+        XCTAssertEqual(result.type, "attention_required")
+    }
+
+    func testForeignNotification_agentTurnComplete_defaultsToFinished() {
+        // AgentTurnComplete has no distinguishing prefix — it's just the first
+        // ~200 chars of the assistant response. Default bucket = finished.
+        let result = TerminalSessionModel.classifyForeignDesktopNotification(
+            "Committed the refactor as abc123 and pushed to main"
+        )
+        XCTAssertEqual(result.type, "finished")
+        XCTAssertEqual(result.source, .codex)
+    }
+
+    func testForeignNotification_emptyMessage_defaultsToFinished() {
+        // AgentTurnComplete fallback when response is empty: "Agent turn complete"
+        let result = TerminalSessionModel.classifyForeignDesktopNotification(
+            "Agent turn complete"
+        )
+        XCTAssertEqual(result.type, "finished")
+    }
+
+    func testForeignNotification_trimsWhitespaceBeforeClassifying() {
+        let result = TerminalSessionModel.classifyForeignDesktopNotification(
+            "   Approval requested: git reset --hard   "
+        )
+        XCTAssertEqual(result.type, "permission")
+    }
+
     func testRestoreAIMetadata() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
