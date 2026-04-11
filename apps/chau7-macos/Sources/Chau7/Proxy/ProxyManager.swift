@@ -3,6 +3,49 @@ import os.log
 import Darwin
 import Chau7Core
 
+/// Typed payload for `.proxyStatusChanged` notifications. Previously every
+/// post site in ProxyManager used an ad-hoc userInfo dictionary with
+/// inconsistent keys (`message` vs `error`) and observers had no way to
+/// destructure the values safely.
+///
+/// The payload is posted via the `object:` slot; observers can retrieve it
+/// with `notification.object as? ProxyStatusEvent`. Legacy observers that
+/// only care about "something changed" (the common case today) don't need
+/// to look at the object at all.
+public struct ProxyStatusEvent: Equatable, Sendable {
+    public enum State: String, Sendable {
+        case running
+        case stopped
+        case error
+    }
+
+    public let state: State
+    /// Listening port when state is `.running`, otherwise nil.
+    public let port: Int?
+    /// Human-readable message when state is `.error` or a non-clean `.stopped`.
+    public let message: String?
+
+    public init(state: State, port: Int? = nil, message: String? = nil) {
+        self.state = state
+        self.port = port
+        self.message = message
+    }
+
+    public static let stoppedClean = ProxyStatusEvent(state: .stopped)
+
+    public static func running(port: Int) -> ProxyStatusEvent {
+        ProxyStatusEvent(state: .running, port: port)
+    }
+
+    public static func stopped(error: String) -> ProxyStatusEvent {
+        ProxyStatusEvent(state: .stopped, message: error)
+    }
+
+    public static func error(_ message: String) -> ProxyStatusEvent {
+        ProxyStatusEvent(state: .error, message: message)
+    }
+}
+
 /// ProxyManager handles the lifecycle of the chau7-proxy Go binary.
 /// It starts the proxy when API analytics is enabled and stops it when disabled.
 /// The proxy runs as a subprocess, communicating back via Unix socket IPC.
@@ -152,9 +195,9 @@ final class ProxyManager {
 
         guard let binaryPath = proxyBinaryPath else {
             let error = "Proxy binary not found. Please build chau7-proxy first."
-            logger.error("\(error)")
+            logger.error("\(error, privacy: .public)")
             lastError = error
-            NotificationCenter.default.post(name: .proxyStatusChanged, object: nil, userInfo: ["status": "error", "message": error])
+            NotificationCenter.default.post(name: .proxyStatusChanged, object: ProxyStatusEvent.error(error))
             return
         }
 
@@ -224,7 +267,10 @@ final class ProxyManager {
                     let error = "Proxy exited with status \(proc.terminationStatus)"
                     self.logger.error("\(error, privacy: .public)")
                     self.lastError = error
-                    NotificationCenter.default.post(name: .proxyStatusChanged, object: nil, userInfo: ["status": "stopped", "error": error])
+                    NotificationCenter.default.post(
+                        name: .proxyStatusChanged,
+                        object: ProxyStatusEvent.stopped(error: error)
+                    )
 
                     // Auto-restart after unexpected termination (e.g. killed by agent)
                     let restartPort = self.port
@@ -235,7 +281,10 @@ final class ProxyManager {
                     }
                 } else {
                     self.logger.info("Proxy stopped cleanly")
-                    NotificationCenter.default.post(name: .proxyStatusChanged, object: nil, userInfo: ["status": "stopped"])
+                    NotificationCenter.default.post(
+                        name: .proxyStatusChanged,
+                        object: ProxyStatusEvent.stoppedClean
+                    )
                 }
             }
         }
@@ -247,14 +296,20 @@ final class ProxyManager {
             isRunning = true
             lastError = nil
 
-            logger.info("Proxy started on port \(port)")
-            NotificationCenter.default.post(name: .proxyStatusChanged, object: nil, userInfo: ["status": "running", "port": port])
+            logger.info("Proxy started on port \(port, privacy: .public)")
+            NotificationCenter.default.post(
+                name: .proxyStatusChanged,
+                object: ProxyStatusEvent.running(port: port)
+            )
 
         } catch {
             let errorMessage = "Failed to start proxy: \(error.localizedDescription)"
             logger.error("\(errorMessage, privacy: .public)")
             lastError = errorMessage
-            NotificationCenter.default.post(name: .proxyStatusChanged, object: nil, userInfo: ["status": "error", "message": errorMessage])
+            NotificationCenter.default.post(
+                name: .proxyStatusChanged,
+                object: ProxyStatusEvent.error(errorMessage)
+            )
         }
     }
 
