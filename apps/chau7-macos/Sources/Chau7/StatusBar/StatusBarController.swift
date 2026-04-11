@@ -82,7 +82,7 @@ final class StatusBarController: NSObject {
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(updateIcon),
-            name: NSNotification.Name("MonitoringStateChanged"),
+            name: .monitoringStateChanged,
             object: nil
         )
 
@@ -946,7 +946,7 @@ struct StatusBarPanelView: View {
                     set: { newValue in
                         model.isMonitoring = newValue
                         model.applyMonitoringState()
-                        NotificationCenter.default.post(name: NSNotification.Name("MonitoringStateChanged"), object: nil)
+                        NotificationCenter.default.post(name: .monitoringStateChanged, object: nil)
                     }
                 )
             )

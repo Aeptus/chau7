@@ -1372,7 +1372,7 @@ final class FeatureSettings {
     var windowFloating: Bool {
         didSet {
             UserDefaults.standard.set(windowFloating, forKey: "window.floating")
-            NotificationCenter.default.post(name: .init("windowFloatingChanged"), object: nil)
+            NotificationCenter.default.post(name: .windowFloatingChanged, object: nil)
         }
     }
 
