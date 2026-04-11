@@ -18,27 +18,33 @@ final class TurnFilesTracker {
     var gitRoot: String?
 
     func update(from journal: EventJournal, commandBlocks: [CommandBlock] = []) {
-        let (events, newCursor, _) = journal.events(after: cursor, limit: 500)
-        cursor = newCursor
+        while true {
+            let (events, newCursor, hasMore) = journal.events(after: cursor, limit: 500)
+            cursor = newCursor
 
-        for event in events {
-            if event.type == RuntimeEventType.turnStarted.rawValue,
-               let turnID = event.turnID,
-               turnID != currentTurnID {
-                turnStartTimes[turnID] = event.timestamp
-                currentTurnID = turnID
-                currentTurnFiles.removeAll()
-            } else if let turnID = event.turnID, currentTurnID == nil {
-                currentTurnID = turnID
+            for event in events {
+                if event.type == RuntimeEventType.turnStarted.rawValue,
+                   let turnID = event.turnID,
+                   turnID != currentTurnID {
+                    turnStartTimes[turnID] = event.timestamp
+                    currentTurnID = turnID
+                    currentTurnFiles.removeAll()
+                } else if let turnID = event.turnID, currentTurnID == nil {
+                    currentTurnID = turnID
+                }
+
+                if let turnID = event.turnID {
+                    lastSeenTurnID = turnID
+                }
+
+                let activities = FileTrackingParser.activities(from: event, gitRoot: gitRoot)
+                for activity in activities {
+                    record(activity: activity, turnID: event.turnID, timestamp: event.timestamp)
+                }
             }
 
-            if let turnID = event.turnID {
-                lastSeenTurnID = turnID
-            }
-
-            let activities = FileTrackingParser.activities(from: event, gitRoot: gitRoot)
-            for activity in activities {
-                record(activity: activity, turnID: event.turnID, timestamp: event.timestamp)
+            guard hasMore else {
+                break
             }
         }
 

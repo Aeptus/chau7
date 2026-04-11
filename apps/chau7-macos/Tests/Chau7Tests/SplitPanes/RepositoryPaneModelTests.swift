@@ -636,6 +636,27 @@ final class RepositoryPaneModelTests: XCTestCase {
         XCTAssertEqual(tracker.filesByTurn["t1"], ["Sources/OldTurn.swift"])
         XCTAssertNil(tracker.filesByTurn["t2"])
     }
+
+    func testSessionFilesTrackerDrainsLargeJournalBursts() {
+        let tracker = SessionFilesTracker()
+        let journal = EventJournal(capacity: 1200)
+        for index in 0..<650 {
+            journal.append(
+                sessionID: "test",
+                turnID: "t\(index / 10)",
+                type: RuntimeEventType.toolUse.rawValue,
+                data: [
+                    "tool": "Read",
+                    "file": "Sources/File\(index).swift"
+                ]
+            )
+        }
+
+        tracker.update(from: journal)
+
+        XCTAssertEqual(tracker.touchedFiles.count, 650)
+        XCTAssertTrue(tracker.touchedFiles.contains("Sources/File649.swift"))
+    }
 }
 
 private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) {
