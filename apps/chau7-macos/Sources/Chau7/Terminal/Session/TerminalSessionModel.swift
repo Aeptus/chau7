@@ -577,6 +577,7 @@ final class TerminalSessionModel {
     @ObservationIgnored let searchQueue = DispatchQueue(label: "com.chau7.search", qos: .utility)
     @ObservationIgnored var searchQuery = ""
     @ObservationIgnored var cachedBufferData: Data? // Cached buffer data for search
+    @ObservationIgnored var cachedRemoteOutputText = "" // Background-safe fallback when no live view is attached
     @ObservationIgnored var bufferNeedsRefresh = true // Flag to invalidate cache on output
     @ObservationIgnored var bufferLineCount = 0
     @ObservationIgnored var pendingInputLatencyAt: CFAbsoluteTime?

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Spanish Language Support**: Full Spanish (es) locale with 2,612 translated keys and 41 .stringsdict plural entries. Informal "tú" form, standard Spanish computing vocabulary. Accessible from Settings > General > Language.
 - **Verbose Pre-Commit Review Flow**: `Scripts/pre-commit-review` now traces each tab/scripting step, retries transient socket reads, confirms prompt visibility before submit, and falls back to raw newline submission when needed.
+- **Background Transcript Restore Fallback**: Background tabs can reuse cached remote transcript text when no live terminal view is attached, and interactive notification planning now covers elicitation and explicit tool/response failures consistently.
 
 ### Fixed
 - **Power Efficiency**: Adaptive clipboard polling (1s foreground, 5s background), shared background drain timer (1 timer for N tabs instead of N timers), event-driven focus/DND detection (zero polling), timer leeway on all fixed timers, and wakeup stats logging every 5 minutes.

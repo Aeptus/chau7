@@ -148,6 +148,32 @@ final class NotificationDeliverySemanticsTests: XCTestCase {
         )
     }
 
+    func testRepeatSuppressionCoalescesElicitationWithInteractiveAttention() {
+        let elicitation = AIEvent(
+            source: .claudeCode,
+            type: "elicitation",
+            tool: "Claude",
+            message: "Need MCP input",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "session-1",
+            reliability: .authoritative
+        )
+        let attention = AIEvent(
+            source: .claudeCode,
+            type: "attention_required",
+            tool: "Claude",
+            message: "Need MCP input",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "session-1",
+            reliability: .authoritative
+        )
+
+        XCTAssertEqual(
+            NotificationDeliverySemantics.repeatSuppressionKey(for: elicitation),
+            NotificationDeliverySemantics.repeatSuppressionKey(for: attention)
+        )
+    }
+
     func testRegistersClosedIdentityForFinishedAndSuppressesLateAttention() {
         let finished = AIEvent(
             source: .claudeCode,

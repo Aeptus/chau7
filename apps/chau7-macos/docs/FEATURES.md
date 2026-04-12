@@ -590,5 +590,6 @@ Key patterns:
 # Features
 
 - SwiftPM package metadata excludes `Performance/SIMDTerminalParser.swift` from doc/resource scanning so builds keep the SIMD parser as source instead of trying to bundle it as documentation.
+- Background terminal snapshots can fall back to cached remote transcript text when the live terminal view is detached, and notification trigger/style logic now treats elicitation plus tool/response failures as first-class interactive events.
 - `tab_output` can read a fresher active AI PTY log tail for MCP-driven tabs, improving retrieval of live Codex and Claude responses.
 - PTY log tail parsing normalizes terminal control sequences and backspaces before downstream consumers read the transcript.

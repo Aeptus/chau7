@@ -80,4 +80,32 @@ final class NotificationStylePlannerTests: XCTestCase {
             NotificationStylePlanner.supplementalStyleAction(for: event, from: [explicitStyle])
         )
     }
+
+    func testDefaultStyleActionCoversNewInteractiveAndFailureEvents() {
+        let elicitation = AIEvent(
+            source: .codex,
+            type: "elicitation",
+            tool: "Codex",
+            message: "input requested",
+            ts: "2026-03-31T00:00:00Z"
+        )
+        let toolFailed = AIEvent(
+            source: .codex,
+            type: "tool_failed",
+            tool: "Codex",
+            message: "tool crashed",
+            ts: "2026-03-31T00:00:00Z"
+        )
+        let waiting = AIEvent(
+            source: .codex,
+            type: "waiting_input",
+            tool: "Codex",
+            message: "waiting",
+            ts: "2026-03-31T00:00:00Z"
+        )
+
+        XCTAssertEqual(NotificationStylePlanner.defaultStyleAction(for: elicitation)?.config["style"], "attention")
+        XCTAssertEqual(NotificationStylePlanner.defaultStyleAction(for: toolFailed)?.config["style"], "error")
+        XCTAssertEqual(NotificationStylePlanner.defaultStyleAction(for: waiting)?.config["style"], "waiting")
+    }
 }

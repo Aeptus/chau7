@@ -83,6 +83,19 @@ final class NotificationTriggerCatalogTests: XCTestCase {
         XCTAssertTrue(trigger?.defaultEnabled ?? false)
     }
 
+    func testTriggerDirectLookupCoversNewInteractiveAndFailureTypes() {
+        let toolFailed = NotificationTriggerCatalog.trigger(source: .codex, type: "tool_failed")
+        let responseFailed = NotificationTriggerCatalog.trigger(source: .codex, type: "response_failed")
+        let elicitation = NotificationTriggerCatalog.trigger(source: .codex, type: "elicitation")
+
+        XCTAssertEqual(toolFailed?.type, "tool_failed")
+        XCTAssertEqual(responseFailed?.type, "response_failed")
+        XCTAssertEqual(elicitation?.type, "elicitation")
+        XCTAssertTrue(toolFailed?.defaultEnabled ?? false)
+        XCTAssertTrue(responseFailed?.defaultEnabled ?? false)
+        XCTAssertTrue(elicitation?.defaultEnabled ?? false)
+    }
+
     func testTriggerDirectLookupCaseInsensitive() {
         let trigger = NotificationTriggerCatalog.trigger(source: .claudeCode, type: "FINISHED")
         XCTAssertNotNil(trigger)
@@ -385,8 +398,8 @@ final class NotificationTriggerCatalogTests: XCTestCase {
         XCTAssertTrue(state.isEnabled(for: finishedTrigger))
         // "failed" defaults to true
         XCTAssertTrue(state.isEnabled(for: failedTrigger))
-        // "idle" defaults to false
-        XCTAssertFalse(state.isEnabled(for: idleTrigger))
+        // "idle" defaults to true (changed from false — idle is a real signal)
+        XCTAssertTrue(state.isEnabled(for: idleTrigger))
     }
 
     func testPerTriggerFalseOverridesGroupTrue() {

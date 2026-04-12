@@ -734,6 +734,27 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertNil(session.lastAISessionId)
     }
 
+    func testCaptureRemoteSnapshotFallsBackToCachedRemoteOutputText() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.cachedRemoteOutputText = "cached transcript line\nnext line"
+
+        let snapshot = session.captureRemoteSnapshot()
+
+        XCTAssertEqual(snapshot.flatMap { String(data: $0, encoding: .utf8) }, "cached transcript line\nnext line")
+        XCTAssertEqual(session.bufferLineCount, 2)
+    }
+
+    func testCaptureRemoteSnapshotFallsBackToCachedBufferDataWhenTranscriptMissing() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.cachedBufferData = Data("cached buffer".utf8)
+
+        let snapshot = session.captureRemoteSnapshot()
+
+        XCTAssertEqual(snapshot.flatMap { String(data: $0, encoding: .utf8) }, "cached buffer")
+    }
+
     func testSessionTabIdentifierIsUnique() {
         let model = AppModel()
         let session1 = TerminalSessionModel(appModel: model)

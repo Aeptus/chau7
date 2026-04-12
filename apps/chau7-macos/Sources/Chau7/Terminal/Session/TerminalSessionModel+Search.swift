@@ -24,12 +24,29 @@ extension TerminalSessionModel {
     }
 
     func captureRemoteSnapshot() -> Data? {
-        guard let view = activeTerminalView else { return nil }
-        let data = view.getBufferAsData()
-        cachedBufferData = data
-        bufferNeedsRefresh = false
-        if let data { updateBufferLineCount(from: data) }
-        return data
+        if let view = activeTerminalView,
+           let data = view.getBufferAsData(),
+           !data.isEmpty {
+            cachedBufferData = data
+            bufferNeedsRefresh = false
+            updateBufferLineCount(from: data)
+            return data
+        }
+
+        if !cachedRemoteOutputText.isEmpty {
+            let data = Data(cachedRemoteOutputText.utf8)
+            cachedBufferData = data
+            bufferNeedsRefresh = false
+            updateBufferLineCount(from: data)
+            return data
+        }
+
+        if let data = cachedBufferData, !data.isEmpty {
+            updateBufferLineCount(from: data)
+            return data
+        }
+
+        return nil
     }
 
     func captureRemoteGridSnapshot() -> Data? {

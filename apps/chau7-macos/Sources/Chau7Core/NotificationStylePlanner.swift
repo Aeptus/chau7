@@ -4,11 +4,11 @@ public enum NotificationStylePlanner {
     public static func defaultStyleAction(for event: AIEvent) -> NotificationActionConfig? {
         let preset: String
         switch event.type.lowercased() {
-        case "error", "failed", "context_limit":
+        case "error", "failed", "context_limit", "tool_failed", "response_failed":
             preset = "error"
-        case "permission", "attention_required":
+        case "permission", "attention_required", "elicitation":
             preset = "attention"
-        case "finished", "idle":
+        case "finished", "waiting_input", "idle":
             preset = "waiting"
         default:
             return nil

@@ -136,7 +136,7 @@ public enum NotificationDeliverySemantics {
 
     private static func repeatSuppressionFamily(for event: AIEvent) -> String? {
         switch event.normalizedType {
-        case "permission", "waiting_input", "attention_required", "idle":
+        case "permission", "waiting_input", "attention_required", "idle", "elicitation":
             return "interactive_attention"
         default:
             return nil
