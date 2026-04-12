@@ -52,8 +52,11 @@ enum AppConstants {
         /// Idle check interval (seconds)
         static let idleCheck: TimeInterval = 1.0
 
-        /// Clipboard poll interval (seconds)
+        /// Clipboard poll interval when app is frontmost (seconds)
         static let clipboardPoll: TimeInterval = 1.0
+
+        /// Clipboard poll interval when app is in the background (seconds)
+        static let clipboardPollBackground: TimeInterval = 5.0
 
         /// Session cleanup interval (seconds)
         static let sessionCleanup: TimeInterval = 60.0

@@ -38,7 +38,6 @@ final class NotificationManager {
     // MARK: - Focus/DND State (push-based)
 
     private var isFocusModeActive = false
-    private var focusRefreshTimer: Timer?
 
     // MARK: - Notification coalescing
 
@@ -697,17 +696,40 @@ final class NotificationManager {
         }
     }
 
-    // MARK: - Focus/DND Detection (timer-based, push model)
+    // MARK: - Focus/DND Detection (event-driven via NSWorkspace + distributed notifications)
+
+    private var focusObservers: [NSObjectProtocol] = []
 
     private func startFocusRefreshTimer() {
-        // Refresh every 30 seconds — non-blocking, push-based
-        focusRefreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            // Timer fires on main run loop, but compiler doesn't model this — dispatch explicitly
-            DispatchQueue.main.async {
-                self?.refreshFocusState()
+        // Event-driven focus detection — zero polling.
+        // NSWorkspace notifications fire on app activation changes.
+        // Distributed notifications fire on screen lock/unlock.
+        let workspace = NSWorkspace.shared.notificationCenter
+        let distributed = DistributedNotificationCenter.default()
+
+        // Use queue: nil + explicit MainActor dispatch to satisfy actor isolation
+        focusObservers.append(
+            workspace.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: nil) { [weak self] _ in
+                DispatchQueue.main.async { self?.refreshFocusState() }
             }
-        }
-        // Also refresh immediately
+        )
+        focusObservers.append(
+            workspace.addObserver(forName: NSWorkspace.didDeactivateApplicationNotification, object: nil, queue: nil) { [weak self] _ in
+                DispatchQueue.main.async { self?.refreshFocusState() }
+            }
+        )
+        focusObservers.append(
+            distributed.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: nil) { [weak self] _ in
+                DispatchQueue.main.async { self?.refreshFocusState() }
+            }
+        )
+        focusObservers.append(
+            distributed.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: nil) { [weak self] _ in
+                DispatchQueue.main.async { self?.refreshFocusState() }
+            }
+        )
+
+        // Initial state check
         refreshFocusState()
     }
 
@@ -722,8 +744,6 @@ final class NotificationManager {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.isFocusModeActive = (settings.notificationCenterSetting == .disabled) || screenLocked
-
-                // Periodically re-check native notification authorization to recover from transient errors
                 self.updateAuthorizationStatus(settings.authorizationStatus)
             }
         }

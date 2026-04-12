@@ -436,6 +436,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Git branch change notifications.
 - Shell event pattern matching with custom regex.
 - Directory change detection.
+- Power efficiency: adaptive clipboard polling, shared background drain timer, event-driven focus/DND detection, timer leeway coalescing, 5-minute wakeup stats logging.
 
 ## Keyboard Shortcuts
 

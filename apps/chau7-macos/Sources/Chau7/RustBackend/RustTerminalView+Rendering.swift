@@ -108,19 +108,81 @@ extension RustTerminalView {
         pollAndSync()
     }
 
-    /// Start slow-rate PTY drain for background tabs (500ms interval).
-    /// This prevents the shell process from blocking on a full PTY buffer
-    /// while using negligible CPU.
+    /// Register this view for shared background PTY drain.
+    /// A single timer serves all background views instead of one per view.
     func startBackgroundDrain() {
         guard backgroundDrainTimer == nil else { return }
-        backgroundDrainTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.backgroundDrain()
-        }
+        // Set a sentinel so the guard above prevents double-registration.
+        // The actual timer is shared — see SharedBackgroundDrain.
+        backgroundDrainTimer = Timer() // placeholder, never scheduled
+        SharedBackgroundDrain.register(self)
     }
 
     func stopBackgroundDrain() {
-        backgroundDrainTimer?.invalidate()
+        guard backgroundDrainTimer != nil else { return }
         backgroundDrainTimer = nil
+        SharedBackgroundDrain.unregister(self)
+    }
+
+    // MARK: - Shared Background Drain
+
+    /// Single timer that drains PTY buffers for ALL background tabs.
+    /// Reduces N timers (one per background view) to 1 timer total.
+    enum SharedBackgroundDrain {
+        private static var views: [ObjectIdentifier: WeakViewRef] = [:]
+        private static var timer: DispatchSourceTimer?
+        private static let interval: TimeInterval = 0.5
+        private static let queue = DispatchQueue.main
+
+        private struct WeakViewRef {
+            weak var view: RustTerminalView?
+        }
+
+        static func register(_ view: RustTerminalView) {
+            let id = ObjectIdentifier(view)
+            views[id] = WeakViewRef(view: view)
+            if timer == nil {
+                startTimer()
+            }
+        }
+
+        static func unregister(_ view: RustTerminalView) {
+            views.removeValue(forKey: ObjectIdentifier(view))
+            if views.isEmpty {
+                stopTimer()
+            }
+        }
+
+        private static func startTimer() {
+            let source = DispatchSource.makeTimerSource(queue: queue)
+            source.schedule(deadline: .now() + interval, repeating: interval, leeway: .milliseconds(250))
+            source.setEventHandler {
+                Log.wakeup("bgDrain")
+                tick()
+            }
+            source.resume()
+            timer = source
+        }
+
+        private static func stopTimer() {
+            timer?.cancel()
+            timer = nil
+        }
+
+        private static func tick() {
+            // Purge deallocated views and drain survivors
+            var alive: [ObjectIdentifier: WeakViewRef] = [:]
+            for (id, ref) in views {
+                if let view = ref.view {
+                    view.backgroundDrain()
+                    alive[id] = ref
+                }
+            }
+            views = alive
+            if views.isEmpty {
+                stopTimer()
+            }
+        }
     }
 
     /// Minimal PTY drain for background tabs — no rendering, no UI sync.

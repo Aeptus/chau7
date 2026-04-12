@@ -39,10 +39,43 @@ final class ClipboardHistoryManager {
 
     private static let persistenceKey = "clipboard.history"
 
+    private var appActiveObservers: [NSObjectProtocol] = []
+    private var isAppActive = true
+
     private init() {
         self.lastChangeCount = NSPasteboard.general.changeCount
+        self.isAppActive = NSApp?.isActive ?? true
         loadFromDisk()
+        observeAppActivation()
         startPolling()
+    }
+
+    private func observeAppActivation() {
+        let center = NotificationCenter.default
+        appActiveObservers.append(
+            center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                guard let self, !self.isAppActive else { return }
+                isAppActive = true
+                restartPollingWithCurrentInterval()
+            }
+        )
+        appActiveObservers.append(
+            center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                guard let self, isAppActive else { return }
+                isAppActive = false
+                restartPollingWithCurrentInterval()
+            }
+        )
+    }
+
+    private var currentPollInterval: TimeInterval {
+        isAppActive
+            ? AppConstants.Intervals.clipboardPoll
+            : AppConstants.Intervals.clipboardPollBackground
+    }
+
+    private var currentPollLeeway: DispatchTimeInterval {
+        isAppActive ? .milliseconds(500) : .seconds(2)
     }
 
     func startPolling() {
@@ -50,14 +83,18 @@ final class ClipboardHistoryManager {
             stopPolling()
             return
         }
+        restartPollingWithCurrentInterval()
+    }
 
+    private func restartPollingWithCurrentInterval() {
+        guard FeatureSettings.shared.isClipboardHistoryEnabled else { return }
         pollTimer?.cancel()
+        let interval = currentPollInterval
+        let leeway = currentPollLeeway
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
-        timer.schedule(
-            deadline: .now() + AppConstants.Intervals.clipboardPoll,
-            repeating: AppConstants.Intervals.clipboardPoll
-        )
+        timer.schedule(deadline: .now() + interval, repeating: interval, leeway: leeway)
         timer.setEventHandler { [weak self] in
+            Log.wakeup("clipboard")
             self?.checkClipboard()
         }
         timer.resume()
@@ -73,8 +110,6 @@ final class ClipboardHistoryManager {
         let pasteboard = NSPasteboard.general
         let currentCount = pasteboard.changeCount
 
-        // Thread-safe check and update of lastChangeCount
-        // Keep lock held during comparison to prevent TOCTOU race condition
         lock.lock()
         guard currentCount != lastChangeCount else {
             lock.unlock()

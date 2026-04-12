@@ -95,6 +95,49 @@ enum Log {
         emit(level: "TRACE", message: message)
     }
 
+    // MARK: - Wakeup Tracking
+
+    private static var wakeupCounts: [String: Int] = [:]
+    private static var wakeupFlushTimer: DispatchSourceTimer?
+    private static let wakeupFlushInterval: TimeInterval = 300 // 5 minutes
+    private static let wakeupQueue = DispatchQueue(label: "com.chau7.wakeup", qos: .utility)
+
+    /// Increment a named wakeup counter. Call from any timer/poll callback.
+    /// Summaries are logged every 5 minutes.
+    static func wakeup(_ source: String) {
+        wakeupQueue.async {
+            wakeupCounts[source, default: 0] += 1
+            if wakeupFlushTimer == nil {
+                startWakeupFlushTimer()
+            }
+        }
+    }
+
+    private static func startWakeupFlushTimer() {
+        let timer = DispatchSource.makeTimerSource(queue: wakeupQueue)
+        timer.schedule(
+            deadline: .now() + wakeupFlushInterval,
+            repeating: wakeupFlushInterval,
+            leeway: .seconds(30)
+        )
+        timer.setEventHandler {
+            flushWakeupStats()
+        }
+        timer.resume()
+        wakeupFlushTimer = timer
+    }
+
+    private static func flushWakeupStats() {
+        guard !wakeupCounts.isEmpty else { return }
+        let snapshot = wakeupCounts
+        wakeupCounts.removeAll(keepingCapacity: true)
+        let total = snapshot.values.reduce(0, +)
+        let breakdown = snapshot.sorted(by: { $0.key < $1.key })
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: " ")
+        info("Wakeup stats (5m): \(breakdown) total=\(total)")
+    }
+
     private static func emit(level: String, message: String) {
         let ts = formatter.string(from: Date())
         let line = "[Chau7][\(level)] \(ts) \(message)"

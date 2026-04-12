@@ -158,8 +158,9 @@ final class DevServerMonitor {
     private func startLivenessTimer() {
         livenessTimer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + Self.livenessInterval, repeating: Self.livenessInterval)
+        timer.schedule(deadline: .now() + Self.livenessInterval, repeating: Self.livenessInterval, leeway: .seconds(5))
         timer.setEventHandler { [weak self] in
+            Log.wakeup("devServerLiveness")
             self?.checkForListeningPorts()
         }
         timer.resume()

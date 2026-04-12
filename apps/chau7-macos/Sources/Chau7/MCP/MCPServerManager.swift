@@ -461,8 +461,9 @@ final class MCPServerManager {
     private func startHealthChecks() {
         healthCheckSource?.cancel()
         let source = DispatchSource.makeTimerSource(queue: queue)
-        source.schedule(deadline: .now() + 15, repeating: 15)
+        source.schedule(deadline: .now() + 15, repeating: 15, leeway: .seconds(3))
         source.setEventHandler { [weak self] in
+            Log.wakeup("mcpHealth")
             self?.ensureHealthy(reason: "periodic")
         }
         source.resume()

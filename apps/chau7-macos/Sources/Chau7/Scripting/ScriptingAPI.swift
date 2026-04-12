@@ -198,8 +198,9 @@ final class ScriptingAPI {
     private func startHealthChecks() {
         healthCheckSource?.cancel()
         let source = DispatchSource.makeTimerSource(queue: socketQueue)
-        source.schedule(deadline: .now() + 15, repeating: 15)
+        source.schedule(deadline: .now() + 15, repeating: 15, leeway: .seconds(3))
         source.setEventHandler { [weak self] in
+            Log.wakeup("scriptingHealth")
             self?.ensureServerHealthy(reason: "periodic")
         }
         source.resume()

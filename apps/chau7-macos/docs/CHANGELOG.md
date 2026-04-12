@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Spanish Language Support**: Full Spanish (es) locale with 2,612 translated keys and 41 .stringsdict plural entries. Informal "tú" form, standard Spanish computing vocabulary. Accessible from Settings > General > Language.
 
 ### Fixed
+- **Power Efficiency**: Adaptive clipboard polling (1s foreground, 5s background), shared background drain timer (1 timer for N tabs instead of N timers), event-driven focus/DND detection (zero polling), timer leeway on all fixed timers, and wakeup stats logging every 5 minutes.
 - **Dev Server Detection Reliability**: Fixed 6 issues — server restarts now re-detected (removed early bail), extended burst timing to 25s for slow Docker starts, commandDidFinish discovers new servers, added 30s liveness polling, and dynamic netstat PID column parsing.
 - **Pre-Commit Review Hook Context Flow**: `Scripts/pre-commit-review` now drives the real tab/app lifecycle through the scripting socket — create tab, wait for shell, launch Codex, wait for interactive readiness, send the staged-diff prompt, submit it, poll PTY output for the final JSON block, and close the tab. The hook no longer depends on the brittle delegated-session shortcut path for staged reviews.
 - **Shortcut Helper Positioning**: Moved helper hint box closer to tab bar — 4pt gap from both tab bar bottom and window right edge for consistent spacing.
