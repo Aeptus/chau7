@@ -100,10 +100,31 @@ final class NotificationManager {
         ingestAcceptedEvent(acceptedEvent)
     }
 
+    // MARK: - Drop Log Coalescing
+
+    private var dropCounts: [String: Int] = [:]
+    private var lastDropFlush = Date()
+    private static let dropFlushInterval: TimeInterval = 10
+
+    private func logCoalescedDrop(reason: String) {
+        dropCounts[reason, default: 0] += 1
+        let now = Date()
+        guard now.timeIntervalSince(lastDropFlush) >= Self.dropFlushInterval else { return }
+        for (coalescedReason, count) in dropCounts.sorted(by: { $0.key < $1.key }) {
+            if count == 1 {
+                Log.info("Notification ingress dropped: \(coalescedReason)")
+            } else {
+                Log.info("Notification ingress dropped: \(coalescedReason) (\(count)x in last \(Int(Self.dropFlushInterval))s)")
+            }
+        }
+        dropCounts.removeAll()
+        lastDropFlush = now
+    }
+
     private func ingestEvent(_ event: AIEvent) {
         switch NotificationIngress.ingest(event) {
         case .drop(let reason):
-            Log.info("Notification ingress dropped: \(reason) id=\(event.id.uuidString) type=\(event.type) tool=\(event.tool)")
+            logCoalescedDrop(reason: reason)
             return
         case .accept(let accepted):
             ingestAcceptedEvent(accepted)
