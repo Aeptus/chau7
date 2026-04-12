@@ -100,7 +100,7 @@ final class ScriptingClientHandler {
             let handler = onRequest
             let clientFD = fd
             let method = json["method"] as? String ?? "(unknown)"
-            Task { @MainActor [weak self] in
+            Task { [weak self] in
                 let response = await handler(json)
 
                 // Attach the request id to the response if provided

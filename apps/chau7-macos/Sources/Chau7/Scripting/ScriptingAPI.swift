@@ -99,40 +99,57 @@ final class ScriptingAPI {
         let path = socketPath
         let dir = URL(fileURLWithPath: path).deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        unlink(path)
+        let maxBindAttempts = 3
+        var startSucceeded = false
 
-        socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard socketFD >= 0 else {
-            Log.error("ScriptingAPI: failed to create socket: \(String(cString: strerror(errno)))")
-            return
-        }
-
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        let maxLen = MemoryLayout.size(ofValue: addr.sun_path) - 1
-        withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
-            let buf = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: CChar.self)
-            _ = path.withCString { strncpy(buf, $0, maxLen) }
-        }
-
-        let bindResult = withUnsafePointer(to: &addr) { addrPtr in
-            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                bind(socketFD, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+        for attempt in 0 ..< maxBindAttempts {
+            guard prepareSocketPathForBinding(path) else {
+                return
             }
-        }
 
-        guard bindResult >= 0 else {
-            Log.error("ScriptingAPI: bind failed: \(String(cString: strerror(errno)))")
+            socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
+            guard socketFD >= 0 else {
+                Log.error("ScriptingAPI: failed to create socket: \(String(cString: strerror(errno)))")
+                return
+            }
+
+            var addr = sockaddr_un()
+            addr.sun_family = sa_family_t(AF_UNIX)
+            let maxLen = MemoryLayout.size(ofValue: addr.sun_path) - 1
+            withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
+                let buf = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: CChar.self)
+                _ = path.withCString { strncpy(buf, $0, maxLen) }
+            }
+
+            let bindResult = withUnsafePointer(to: &addr) { addrPtr in
+                addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                    bind(socketFD, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+                }
+            }
+
+            if bindResult >= 0, listen(socketFD, 5) >= 0 {
+                startSucceeded = true
+                break
+            }
+
+            let startErrno = errno
+            Log.warn(
+                "ScriptingAPI: socket start attempt \(attempt + 1)/\(maxBindAttempts) failed: " +
+                    "\(String(cString: strerror(startErrno)))"
+            )
             close(socketFD)
             socketFD = -1
-            return
+            if bindResult >= 0 {
+                unlink(path)
+            }
+
+            guard attempt < maxBindAttempts - 1, shouldRetryStart(after: startErrno) else {
+                break
+            }
+            usleep(useconds_t((attempt + 1) * 200_000))
         }
 
-        guard listen(socketFD, 5) >= 0 else {
-            Log.error("ScriptingAPI: listen failed: \(String(cString: strerror(errno)))")
-            close(socketFD)
-            socketFD = -1
-            unlink(path)
+        guard startSucceeded else {
             return
         }
 
@@ -180,7 +197,7 @@ final class ScriptingAPI {
 
     private func startHealthChecks() {
         healthCheckSource?.cancel()
-        let source = DispatchSource.makeTimerSource(queue: .main)
+        let source = DispatchSource.makeTimerSource(queue: socketQueue)
         source.schedule(deadline: .now() + 15, repeating: 15)
         source.setEventHandler { [weak self] in
             self?.ensureServerHealthy(reason: "periodic")
@@ -230,7 +247,7 @@ final class ScriptingAPI {
             guard let self else { return ["error": "server gone"] }
             return await handleRequest(json)
         } onDisconnect: { [weak self] fd in
-            DispatchQueue.main.async {
+            Task { @MainActor [weak self] in
                 self?.clientHandlers.removeValue(forKey: fd)
                 self?.connectedClients = self?.clientHandlers.count ?? 0
                 Log.info("ScriptingAPI: client disconnected (fd=\(fd))")
@@ -554,5 +571,50 @@ final class ScriptingAPI {
 
     private func controlPlaneCall(name: String, arguments: [String: Any]) -> [String: Any]? {
         parseJSONResponse(controlPlane.call(name: name, arguments: arguments))
+    }
+
+    private func prepareSocketPathForBinding(_ path: String) -> Bool {
+        guard FileManager.default.fileExists(atPath: path) else {
+            return true
+        }
+
+        if canConnectToSocket(at: path) {
+            Log.error("ScriptingAPI: refusing to replace active socket at \(path)")
+            return false
+        }
+
+        unlink(path)
+        return true
+    }
+
+    private func canConnectToSocket(at path: String) -> Bool {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else {
+            return false
+        }
+        defer { close(fd) }
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let maxLen = MemoryLayout.size(ofValue: addr.sun_path) - 1
+        withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
+            let buf = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: CChar.self)
+            _ = path.withCString { strncpy(buf, $0, maxLen) }
+        }
+
+        return withUnsafePointer(to: &addr) { addrPtr in
+            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+            }
+        }
+    }
+
+    private func shouldRetryStart(after error: Int32) -> Bool {
+        switch error {
+        case EADDRINUSE, EAGAIN, EINTR:
+            return true
+        default:
+            return false
+        }
     }
 }
