@@ -192,6 +192,10 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Start centralized autosave timer (replaces per-window timers)
         startMultiWindowAutoSaveTimer()
 
+        // Eagerly initialize clipboard history so polling starts immediately
+        // (not lazily on first UI open). No-op if feature is disabled.
+        _ = ClipboardHistoryManager.shared
+
         // Initialize debug console and bug report controllers
         DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
         BugReportWindowController.shared.configure(appModel: model, overlayModel: overlayModel)
@@ -357,9 +361,16 @@ private final class OverlayBlurView: NSVisualEffectView {
             return
         }
 
-        // Create the settings view with its own state
+        // Create the settings view with its own state.
+        //
+        // Use NSHostingController (not NSHostingView as window.contentView):
+        // NSHostingView forwards NSScrollView wheel events through the default
+        // NSResponder chain, which loses macOS's pixel-smooth scroll deltas and
+        // makes SwiftUI ScrollViews feel page-chunked. NSHostingController
+        // bridges the event routing through AppKit's view-controller machinery
+        // so SwiftUI gets continuous scroll deltas.
         let settingsView = SettingsWindowView(model: model, overlayModel: overlayModel)
-        let hostingView = NSHostingView(rootView: settingsView.localized())
+        let hostingController = NSHostingController(rootView: settingsView.localized())
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 860, height: 680),
@@ -370,8 +381,12 @@ private final class OverlayBlurView: NSVisualEffectView {
         window.minSize = NSSize(width: 820, height: 650)
 
         window.title = L("window.settings.title", "Chau7 Settings")
+        window.contentViewController = hostingController
+        // setContentSize after assigning the controller, because the controller's
+        // preferredContentSize would otherwise override our 860x680 default with
+        // SwiftUI's intrinsic fitting size (often taller than the viewport).
+        window.setContentSize(NSSize(width: 860, height: 680))
         window.center()
-        window.contentView = hostingView
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -983,8 +998,9 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// Replaces the per-window autosave that caused race conditions on the same UserDefaults key.
     private func startMultiWindowAutoSaveTimer() {
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 30, repeating: 30)
+        timer.schedule(deadline: .now() + 30, repeating: 30, leeway: .seconds(5))
         timer.setEventHandler { [weak self] in
+            Log.wakeup("autosave")
             self?.saveAllWindowStates(reason: .autosave)
         }
         timer.resume()

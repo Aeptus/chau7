@@ -39,4 +39,31 @@ final class AITerminalLogSessionTests: XCTestCase {
         let contents = try String(contentsOf: logURL, encoding: .utf8)
         XCTAssertEqual(contents, "[INPUT] curl \(SensitiveInputGuard.redactedPlaceholder)\n")
     }
+
+    func testSyncDrainsQueuedOutputBeforeRead() throws {
+        let logURL = tempDir.appendingPathComponent("pty.log")
+        let session = AITerminalLogSession(toolName: "Codex", logPath: logURL.path)
+
+        session.recordOutput(Data("Working...\n{\"summary\":\"ok\",\"findings\":[],\"recommendations\":[],\"confidence\":\"high\"}\n".utf8))
+        session.sync()
+
+        let tail = try XCTUnwrap(TelemetryRecorder.readPTYLogTail(path: logURL.path))
+        XCTAssertTrue(tail.contains("Working..."))
+        XCTAssertTrue(tail.contains("\"summary\":\"ok\""))
+    }
+
+    func testReadPTYLogTailNormalizesAnsiAndBackspaces() throws {
+        let logURL = tempDir.appendingPathComponent("pty.log")
+        let session = AITerminalLogSession(toolName: "Codex", logPath: logURL.path)
+        let raw = "\u{1B}[32mWaitix\u{08}ng...\u{1B}[0m\n{\"summary\":\"ok\",\"findings\":[],\"recommendations\":[],\"confidence\":\"high\"}\n"
+
+        session.recordOutput(Data(raw.utf8))
+        session.sync()
+
+        let tail = try XCTUnwrap(TelemetryRecorder.readPTYLogTail(path: logURL.path))
+        XCTAssertTrue(tail.contains("Waiting..."))
+        XCTAssertFalse(tail.contains("\u{1B}[32m"))
+        XCTAssertFalse(tail.contains("\u{08}"))
+        XCTAssertTrue(tail.contains("\"summary\":\"ok\""))
+    }
 }
