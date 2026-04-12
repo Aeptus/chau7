@@ -51,7 +51,7 @@ final class TurnFilesTracker {
         for block in commandBlocks where !block.isRunning && processedCommandBlocks.insert(block.id).inserted {
             let activities = FileTrackingParser.activities(from: block, gitRoot: gitRoot)
             let timestamp = block.endTime ?? block.startTime
-            let fallbackTurnID = resolvedTurnID(for: timestamp)
+            let fallbackTurnID = block.turnID ?? resolvedTurnID(for: timestamp)
             for activity in activities {
                 record(activity: activity, turnID: fallbackTurnID, timestamp: timestamp)
             }

@@ -408,6 +408,7 @@ struct SavedTabState: Codable {
     let agentStartedAt: Date?
     let lastExitCode: Int?
     let lastExitAt: Date?
+    let commandBlocks: [CommandBlock]?
 
     static let userDefaultsKey = "com.chau7.savedTabState"
 
@@ -436,7 +437,8 @@ struct SavedTabState: Codable {
         agentLaunchCommand: String? = nil,
         agentStartedAt: Date? = nil,
         lastExitCode: Int? = nil,
-        lastExitAt: Date? = nil
+        lastExitAt: Date? = nil,
+        commandBlocks: [CommandBlock]? = nil
     ) {
         self.tabID = tabID
         self.selectedTabID = selectedTabID
@@ -463,6 +465,7 @@ struct SavedTabState: Codable {
         self.agentStartedAt = agentStartedAt
         self.lastExitCode = lastExitCode
         self.lastExitAt = lastExitAt
+        self.commandBlocks = commandBlocks
     }
 }
 
@@ -916,7 +919,10 @@ final class OverlayTabsModel {
                 agentLaunchCommand: paneStates.first?.agentLaunchCommand,
                 agentStartedAt: paneStates.first?.agentStartedAt,
                 lastExitCode: paneStates.first?.lastExitCode,
-                lastExitAt: paneStates.first?.lastExitAt
+                lastExitAt: paneStates.first?.lastExitAt,
+                commandBlocks: MainActor.assumeIsolated {
+                    CommandBlockManager.shared.blocksForTab(tab.id.uuidString)
+                }
             ))
         }
         return states
@@ -1007,7 +1013,10 @@ final class OverlayTabsModel {
             agentLaunchCommand: paneStates.first?.agentLaunchCommand,
             agentStartedAt: paneStates.first?.agentStartedAt,
             lastExitCode: paneStates.first?.lastExitCode,
-            lastExitAt: paneStates.first?.lastExitAt
+            lastExitAt: paneStates.first?.lastExitAt,
+            commandBlocks: MainActor.assumeIsolated {
+                CommandBlockManager.shared.blocksForTab(tab.id.uuidString)
+            }
         )
 
         closedTabStack.append(ClosedTabEntry(
@@ -1325,7 +1334,8 @@ final class OverlayTabsModel {
                 agentLaunchCommand: state.agentLaunchCommand,
                 agentStartedAt: state.agentStartedAt,
                 lastExitCode: state.lastExitCode,
-                lastExitAt: state.lastExitAt
+                lastExitAt: state.lastExitAt,
+                commandBlocks: state.commandBlocks
             )
         }
     }
@@ -2503,6 +2513,26 @@ final class OverlayTabsModel {
         let tab = tabs.remove(at: source)
         tabs.insert(tab, at: destination)
         Log.info("Moved tab from index \(source) to \(destination)")
+    }
+
+    /// Moves a contiguous group of tabs from `range` so that the first tab
+    /// of the group lands at `destination`. Used for within-window group drag.
+    func moveGroup(fromRange range: Range<Int>, toIndex destination: Int) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard !range.isEmpty,
+              range.lowerBound >= 0,
+              range.upperBound <= tabs.count,
+              destination >= 0,
+              destination <= tabs.count - range.count,
+              destination != range.lowerBound else { return }
+        let group = Array(tabs[range])
+        tabs.removeSubrange(range)
+        // groupDestinationIndex already accounts for group removal:
+        // rightward returns (neighbor - count + 1), leftward returns
+        // the raw index. Either way, destination is the correct
+        // post-removal insertion point.
+        tabs.insert(contentsOf: group, at: destination)
+        Log.info("Moved group (\(range.count) tabs) from \(range.lowerBound) to \(destination)")
     }
 
     func moveCurrentTabRight() {

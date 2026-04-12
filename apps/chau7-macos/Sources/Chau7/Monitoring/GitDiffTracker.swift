@@ -1,4 +1,5 @@
 import Foundation
+import Chau7Core
 
 /// Tracks files changed between two points in time using git diff.
 ///
@@ -10,6 +11,7 @@ final class GitDiffTracker {
         let files: [String]
         let unavailableReason: String?
         let usedFallback: Bool
+        let status: CommandBlockChangedFilesStatus
 
         var diffUnavailable: Bool {
             unavailableReason != nil && files.isEmpty
@@ -68,25 +70,34 @@ final class GitDiffTracker {
         snapshotDirectory = nil
         lock.unlock()
         guard let baseline else {
+            let files = snapshotFiles(from: current)
             return ChangedFilesResult(
-                files: snapshotFiles(from: current),
+                files: files,
                 unavailableReason: unavailableReason(from: current),
-                usedFallback: isFallback(current)
+                usedFallback: isFallback(current),
+                status: status(for: current, files: files)
             )
         }
 
         switch (baseline, current) {
         case let (.git(before), .git(after)):
             let changed = Array(after.symmetricDifference(before)).sorted()
-            return ChangedFilesResult(files: changed, unavailableReason: nil, usedFallback: false)
+            return ChangedFilesResult(files: changed, unavailableReason: nil, usedFallback: false, status: .loaded)
         case let (.fileSystem(before, _), .fileSystem(after, _)):
             let changed = Array(changedPaths(from: before, to: after)).sorted()
-            return ChangedFilesResult(files: changed, unavailableReason: nil, usedFallback: true)
-        default:
             return ChangedFilesResult(
-                files: snapshotFiles(from: current),
+                files: changed,
                 unavailableReason: unavailableReason(from: current),
-                usedFallback: isFallback(current)
+                usedFallback: true,
+                status: status(for: current, files: changed)
+            )
+        default:
+            let files = snapshotFiles(from: current)
+            return ChangedFilesResult(
+                files: files,
+                unavailableReason: unavailableReason(from: current),
+                usedFallback: isFallback(current),
+                status: status(for: current, files: files)
             )
         }
     }
@@ -132,6 +143,19 @@ final class GitDiffTracker {
     private func isFallback(_ snapshot: SnapshotMode) -> Bool {
         if case .fileSystem = snapshot { return true }
         return false
+    }
+
+    private func status(for snapshot: SnapshotMode, files: [String]) -> CommandBlockChangedFilesStatus {
+        switch snapshot {
+        case .git:
+            return .loaded
+        case .fileSystem(_, let reason):
+            guard let reason else { return .loaded }
+            if reason.localizedCaseInsensitiveContains("not a git repository") {
+                return .notGitRepo
+            }
+            return files.isEmpty ? .failed : .loaded
+        }
     }
 
     private func currentDirtyFilesResult(in directory: String) -> (files: Set<String>, succeeded: Bool, reason: String?) {

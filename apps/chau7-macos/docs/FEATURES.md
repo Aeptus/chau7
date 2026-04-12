@@ -256,6 +256,7 @@ Runtime sessions keep pending `initial_prompt` work attached to real terminal re
 - Repository tab grouping: group tabs by git repo (Off/Auto/Manual). Shows inline repo-name tag chip with connecting line. Suppresses redundant repo path in tab titles, and inherited group membership auto-detaches when a tab moves to a different repo, including tabs opened directly at another directory.
 - Protected repo identity fallback: tabs keep their known repo root and last-known branch even when macOS protected-folder access blocks live git probing, so passive repo-aware UI does not collapse to “not a repo.”
 - Protected-folder prompt cooldown: user-triggered live git actions remember a recent cancel or failed grant per protected root, so Chau7 does not reopen the same permission panel in a tight loop when nothing changed.
+- Command-block restore persistence: restored tabs keep per-command changed-file metadata and load state, so the repository pane does not forget which files a prior command touched just because Chau7 restarted.
 - Repo dashboard overlay: clicking a repo badge opens its dashboard, the active repo badge highlights like a selected tab while the dashboard is open, and clicking any tab closes the dashboard again, including the currently selected tab.
 - Split pane file preview: read-only viewer with syntax highlighting and image support (Cmd+Opt+P).
 - Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D). Prompts for protected-folder access on demand before loading live diffs.

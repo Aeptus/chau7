@@ -761,6 +761,16 @@ extension OverlayTabsModel {
                 return
             }
 
+            if let restoredBlocks = state.commandBlocks {
+                MainActor.assumeIsolated {
+                    CommandBlockManager.shared.restoreBlocks(restoredBlocks, for: targetTabID.uuidString)
+                }
+            } else {
+                MainActor.assumeIsolated {
+                    CommandBlockManager.shared.clearBlocks(tabID: targetTabID.uuidString)
+                }
+            }
+
             let currentSessions = restoredTab.splitController.terminalSessions
             guard !currentSessions.isEmpty else {
                 Log.warn("restoreTabState: tab \(targetTabID) has no terminal sessions")

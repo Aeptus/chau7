@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Heuristic Shell Exit Codes**: Prompt-return command completion now consumes the shell-reported `OSC 9;chau7;exit=<code>` marker, so non-OSC command blocks no longer drop exit codes to `nil` unless the shell truly reported nothing.
+- **Per-Command Changed File State**: Command blocks now retain changed-file load state (`loading`, `loaded`, `failed`, `notGitRepo`), retry git timeouts through the existing fallback path, and restore their file metadata after a session reload instead of collapsing back to an empty “no files changed” view.
 - **Live Cost Threshold Events**: Runtime sessions now actually journal `cost_threshold` events when cumulative estimated cost crosses configured limits, instead of only consuming the thresholds internally with no emitted signal.
 - **Completed Turn Summary Persistence**: Repository turn summaries now preserve the last completed turn’s tokens, tools, duration, exit reason, and estimated cost after the session goes idle instead of falling back to a zeroed in-flight accumulator.
 - **Provider-Fallback Cost Estimates**: Sessions and SQLite-backed telemetry without an explicit model now fall back to provider-default pricing families (`claude`, `codex`, `gemini`) so estimated USD cost no longer silently disappears on model-less runs.
