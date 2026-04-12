@@ -1,9 +1,17 @@
+<<<<<<< Updated upstream
 import importlib.util
 import importlib.machinery
 import pathlib
 import unittest
 
 
+=======
+import importlib.machinery
+import importlib.util
+import pathlib
+import unittest
+
+>>>>>>> Stashed changes
 SCRIPT_PATH = pathlib.Path(__file__).resolve().parents[1] / "pre-commit-review"
 
 
