@@ -2035,8 +2035,9 @@ final class RustTerminalView: NSView {
         }
     }
 
-    /// Slow PTY drain timer for background tabs (prevents shell blocking)
-    var backgroundDrainTimer: Timer?
+    /// Whether this view is registered for shared background PTY drain.
+    /// Replaces the per-view Timer with a shared drain (see SharedBackgroundDrain).
+    var isBackgroundDrainRegistered = false
 
     // MARK: - Properties
 

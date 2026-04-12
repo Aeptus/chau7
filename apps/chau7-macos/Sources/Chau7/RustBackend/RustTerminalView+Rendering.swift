@@ -111,16 +111,14 @@ extension RustTerminalView {
     /// Register this view for shared background PTY drain.
     /// A single timer serves all background views instead of one per view.
     func startBackgroundDrain() {
-        guard backgroundDrainTimer == nil else { return }
-        // Set a sentinel so the guard above prevents double-registration.
-        // The actual timer is shared — see SharedBackgroundDrain.
-        backgroundDrainTimer = Timer() // placeholder, never scheduled
+        guard !isBackgroundDrainRegistered else { return }
+        isBackgroundDrainRegistered = true
         SharedBackgroundDrain.register(self)
     }
 
     func stopBackgroundDrain() {
-        guard backgroundDrainTimer != nil else { return }
-        backgroundDrainTimer = nil
+        guard isBackgroundDrainRegistered else { return }
+        isBackgroundDrainRegistered = false
         SharedBackgroundDrain.unregister(self)
     }
 

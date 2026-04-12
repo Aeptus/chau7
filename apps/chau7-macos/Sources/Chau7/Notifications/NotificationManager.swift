@@ -728,6 +728,12 @@ final class NotificationManager {
                 DispatchQueue.main.async { self?.refreshFocusState() }
             }
         )
+        // Focus/DND preference changes (covers scheduled Focus mode activation/deactivation)
+        focusObservers.append(
+            distributed.addObserver(forName: .init("com.apple.notificationcenterui.dndprefs_changed"), object: nil, queue: nil) { [weak self] _ in
+                DispatchQueue.main.async { self?.refreshFocusState() }
+            }
+        )
 
         // Initial state check
         refreshFocusState()

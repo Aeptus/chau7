@@ -177,7 +177,7 @@ final class MCPServerManager {
                 Log.warn("MCPServer: failed to parse Claude settings.json for hook upsert")
                 return
             }
-            try updated.write(to: URL(fileURLWithPath: path))
+            try updated.write(to: URL(fileURLWithPath: path), options: .atomic)
             Log.info("MCPServer: registered hooks in Claude settings.json (\(ClaudeCodeHookConfiguration.hookEvents.count) events)")
         } catch {
             Log.error("MCPServer: failed to register Claude hooks: \(error)")

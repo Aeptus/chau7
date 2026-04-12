@@ -128,7 +128,12 @@ enum Log {
     }
 
     private static func flushWakeupStats() {
-        guard !wakeupCounts.isEmpty else { return }
+        guard !wakeupCounts.isEmpty else {
+            // No activity since last flush — stop the timer to avoid idle wakeups
+            wakeupFlushTimer?.cancel()
+            wakeupFlushTimer = nil
+            return
+        }
         let snapshot = wakeupCounts
         wakeupCounts.removeAll(keepingCapacity: true)
         let total = snapshot.values.reduce(0, +)
