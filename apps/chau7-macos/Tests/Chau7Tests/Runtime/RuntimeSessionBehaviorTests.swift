@@ -143,5 +143,54 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
         XCTAssertEqual(sessionErrors.first?.data?["reason"], "approval_timeout_stuck")
         XCTAssertEqual(sessionErrors.first?.data?["approval_timeout_count"], "3")
     }
+
+    func testCompleteTurnAccumulatesLiveUsageAndEstimatedCost() throws {
+        let session = RuntimeSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(
+                directory: "/tmp/runtime-live-usage",
+                provider: "claude",
+                model: "claude-sonnet-4"
+            )
+        )
+
+        session.transition(.backendReady)
+        _ = try XCTUnwrap(session.startTurn(prompt: "Hello"))
+        session.addTokens(input: 1_000_000, output: 200_000, cacheCreation: 100_000, cacheRead: 300_000, reasoningOutput: 50_000)
+
+        let result = try XCTUnwrap(session.completeTurn(summary: "done", terminalOutput: nil))
+
+        XCTAssertGreaterThanOrEqual(result.durationMs, 0)
+        XCTAssertEqual(session.completedTurnCount, 1)
+        XCTAssertEqual(session.cumulativeTokenUsage.inputTokens, 1_000_000)
+        XCTAssertEqual(session.cumulativeTokenUsage.cachedInputTokens, 400_000)
+        XCTAssertEqual(session.cumulativeTokenUsage.outputTokens, 200_000)
+        XCTAssertEqual(session.cumulativeTokenUsage.reasoningOutputTokens, 50_000)
+        XCTAssertEqual(try XCTUnwrap(result.estimatedCostUSD), 7.215, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(session.estimatedCostUSD), 7.215, accuracy: 0.0001)
+        XCTAssertNotNil(session.lastTurnCompletedAt)
+        XCTAssertGreaterThan(session.activeDurationMs, -1)
+    }
+
+    func testCostThresholdsOnlyEmitOncePerSession() {
+        let session = RuntimeSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(
+                directory: "/tmp/runtime-thresholds",
+                provider: "claude",
+                model: "claude-sonnet-4"
+            )
+        )
+
+        session.transition(.backendReady)
+        _ = session.startTurn(prompt: "Hello")
+        session.addTokens(input: 500_000, output: 0, cacheCreation: 0, cacheRead: 0)
+        _ = session.completeTurn(summary: "done", terminalOutput: nil)
+
+        XCTAssertEqual(session.consumeCrossedCostThresholds([1, 5, 10]), [1])
+        XCTAssertTrue(session.consumeCrossedCostThresholds([1, 5, 10]).isEmpty)
+    }
 }
 #endif

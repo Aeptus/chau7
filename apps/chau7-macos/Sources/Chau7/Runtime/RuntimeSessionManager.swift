@@ -248,16 +248,6 @@ final class RuntimeSessionManager {
                 correlationID: correlationID,
                 data: toolData
             )
-
-            // Emit tool_called notification
-            emitNotification(session: session, type: "tool_called", message: "\(event.toolName)")
-
-            // Check if this is a file-editing tool
-            let editTools = ["Write", "Edit", "NotebookEdit", "Bash"]
-            if editTools.contains(event.toolName) {
-                emitNotification(session: session, type: "file_edited", message: file ?? event.toolName)
-            }
-
         case .toolComplete:
             journalOutputDeltaIfNeeded(for: session)
             let toolInvocation = completePendingToolInvocation(
@@ -366,14 +356,22 @@ final class RuntimeSessionManager {
                     )
                 }
 
-                // Check token threshold (emit if > 100k total tokens)
-                if result.stats.totalTokens > 100_000 {
-                    emitNotification(
-                        session: session,
-                        type: "token_threshold",
-                        message: "Turn used \(result.stats.totalTokens) tokens"
-                    )
-                }
+                // Consume crossed cost thresholds so the session tracks them,
+                // but don't emit into the notification pipeline — these are
+                // telemetry-level signals, not user-facing notifications.
+                _ = session.consumeCrossedCostThresholds(FeatureSettings.shared.runtimeCostThresholdsUSD)
+
+                TelemetryRecorder.shared.updateLiveMetrics(
+                    tabID: session.tabID.uuidString,
+                    model: session.config.model,
+                    tokenUsage: result.cumulativeUsage,
+                    turnCount: session.turnCount,
+                    costUSD: result.estimatedCostUSD,
+                    tokenUsageSource: .transcriptDelta,
+                    tokenUsageState: result.cumulativeUsage.hasAnyTokens ? .estimated : .missing,
+                    costSource: result.estimatedCostUSD != nil ? .estimated : .unavailable,
+                    costState: result.estimatedCostUSD != nil ? .estimated : .missing
+                )
 
                 // Emit exit classification if not success
                 if result.exitReason != .success {
@@ -844,12 +842,13 @@ final class RuntimeSessionManager {
         // Read tokens outside the lock (reader does file I/O)
         guard let reader else { return }
         let tokens = reader.readNewTokens()
-        if tokens.input > 0 || tokens.output > 0 || tokens.cacheCreation > 0 || tokens.cacheRead > 0 {
+        if tokens.input > 0 || tokens.output > 0 || tokens.cacheCreation > 0 || tokens.cacheRead > 0 || tokens.reasoningOutput > 0 {
             session.addTokens(
                 input: tokens.input,
                 output: tokens.output,
                 cacheCreation: tokens.cacheCreation,
-                cacheRead: tokens.cacheRead
+                cacheRead: tokens.cacheRead,
+                reasoningOutput: tokens.reasoningOutput
             )
         }
     }

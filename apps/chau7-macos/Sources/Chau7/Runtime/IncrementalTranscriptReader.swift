@@ -16,6 +16,7 @@ final class IncrementalTranscriptReader {
     /// Cumulative totals across all reads.
     private(set) var cumulativeInput = 0
     private(set) var cumulativeOutput = 0
+    private(set) var cumulativeReasoningOutput = 0
     private(set) var cumulativeCacheCreation = 0
     private(set) var cumulativeCacheRead = 0
 
@@ -36,16 +37,17 @@ final class IncrementalTranscriptReader {
     }
 
     /// Read new lines since last call. Returns the incremental token deltas.
-    func readNewTokens() -> (input: Int, output: Int, cacheCreation: Int, cacheRead: Int) {
+    func readNewTokens() -> (input: Int, output: Int, cacheCreation: Int, cacheRead: Int, reasoningOutput: Int) {
         let subagentsDir = sessionDir.appendingPathComponent("subagents")
         guard let jsonlFiles = try? FileManager.default.contentsOfDirectory(
             at: subagentsDir, includingPropertiesForKeys: nil
         ).filter({ $0.pathExtension == "jsonl" }) else {
-            return (0, 0, 0, 0)
+            return (0, 0, 0, 0, 0)
         }
 
         var deltaInput = 0
         var deltaOutput = 0
+        var deltaReasoningOutput = 0
         var deltaCacheCreation = 0
         var deltaCacheRead = 0
 
@@ -94,9 +96,11 @@ final class IncrementalTranscriptReader {
                 let cacheCreation = (usage["cache_creation_input_tokens"] as? Int) ?? 0
                 let cacheRead = (usage["cache_read_input_tokens"] as? Int) ?? 0
                 let output = (usage["output_tokens"] as? Int) ?? 0
+                let reasoningOutput = (usage["reasoning_output_tokens"] as? Int) ?? 0
 
                 deltaInput += input
                 deltaOutput += output
+                deltaReasoningOutput += reasoningOutput
                 deltaCacheCreation += cacheCreation
                 deltaCacheRead += cacheRead
             }
@@ -104,10 +108,11 @@ final class IncrementalTranscriptReader {
 
         cumulativeInput += deltaInput
         cumulativeOutput += deltaOutput
+        cumulativeReasoningOutput += deltaReasoningOutput
         cumulativeCacheCreation += deltaCacheCreation
         cumulativeCacheRead += deltaCacheRead
 
-        return (deltaInput, deltaOutput, deltaCacheCreation, deltaCacheRead)
+        return (deltaInput, deltaOutput, deltaCacheCreation, deltaCacheRead, deltaReasoningOutput)
     }
 
     // MARK: - Path Resolution (mirrors ClaudeCodeContentProvider)

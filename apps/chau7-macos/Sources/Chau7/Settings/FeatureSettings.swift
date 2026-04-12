@@ -1855,6 +1855,17 @@ final class FeatureSettings {
         }
     }
 
+    var runtimeCostThresholdsUSD: [Double] {
+        get {
+            let raw = UserDefaults.standard.array(forKey: Keys.runtimeCostThresholdsUSD) as? [Double] ?? [1, 5, 10]
+            return Array(Set(raw.filter { $0 > 0 })).sorted()
+        }
+        set {
+            let normalized = Array(Set(newValue.filter { $0 > 0 })).sorted()
+            UserDefaults.standard.set(normalized, forKey: Keys.runtimeCostThresholdsUSD)
+        }
+    }
+
     var bellEnabled: Bool {
         didSet { UserDefaults.standard.set(bellEnabled, forKey: Keys.bellEnabled) }
     }
@@ -2337,6 +2348,7 @@ final class FeatureSettings {
         static let restoredScrollbackLines = "terminal.restoredScrollbackLines"
         static let runtimeEventJournalCapacity = "runtime.eventJournalCapacity"
         static let runtimeOutputChunkLimit = "runtime.outputChunkLimit"
+        static let runtimeCostThresholdsUSD = "runtime.costThresholdsUSD"
         static let bellEnabled = "terminal.bellEnabled"
         static let bellSound = "terminal.bellSound"
         static let dangerousCommandHighlightEnabled = "terminal.dangerousCommandHighlightEnabled"

@@ -38,16 +38,22 @@ final class RuntimeSession: @unchecked Sendable {
     private var _turnCount = 0
     private var _pendingApproval: PendingApproval?
     private var _currentTurnStats = TurnStats()
+    private var _cumulativeTokenUsage = TokenUsage()
+    private var _estimatedCostUSD: Double?
     private var _lastDeniedApproval = false
     private var _wasInterrupted = false
     private var _lastExitReason: TurnExitReason?
     private var _lastTurnSubmittedAt: Date?
+    private var _lastTurnCompletedAt: Date?
+    private var _completedTurnCount = 0
+    private var _activeDurationMs = 0
     private var _lastPrompt: String?
     private var _awaitingProviderUserPromptEcho = false
     private var _pendingInitialPrompt: String?
     private var _lastCompletedTurnID: String?
     private var _currentResultSchema: JSONValue?
     private var _turnResults: [String: RuntimeTurnResult] = [:]
+    private var _emittedCostThresholdCents: Set<Int> = []
     private var approvalTimeoutWork: DispatchWorkItem?
     private var consecutiveApprovalTimeouts = 0
     private var lastApprovalTimeoutAt: Date?
@@ -118,6 +124,43 @@ final class RuntimeSession: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return _lastPrompt
+    }
+
+    var cumulativeTokenUsage: TokenUsage {
+        lock.lock()
+        defer { lock.unlock() }
+        return _cumulativeTokenUsage
+    }
+
+    var estimatedCostUSD: Double? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _estimatedCostUSD
+    }
+
+    var lastTurnCompletedAt: Date? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastTurnCompletedAt
+    }
+
+    var completedTurnCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return _completedTurnCount
+    }
+
+    var activeDurationMs: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return _activeDurationMs
+    }
+
+    var averageVisibleTokensPerCompletedTurn: Double {
+        lock.lock()
+        defer { lock.unlock() }
+        guard _completedTurnCount > 0 else { return 0 }
+        return Double(_cumulativeTokenUsage.totalVisibleTokens) / Double(_completedTurnCount)
     }
 
     var pendingInitialPrompt: String? {
@@ -213,8 +256,16 @@ final class RuntimeSession: @unchecked Sendable {
         _currentTurnStats = TurnStats()
         _lastDeniedApproval = false
         _wasInterrupted = false
-        consecutiveApprovalTimeouts = 0
-        lastApprovalTimeoutAt = nil
+        // Only reset the approval timeout counter if we're outside the 300s
+        // escalation window. Within the window, keep the accumulated count so
+        // repeated timeouts escalate from 1/3 → 2/3 → 3/3 across turns.
+        if let previousTimeout = lastApprovalTimeoutAt,
+           Date().timeIntervalSince(previousTimeout) <= Self.approvalTimeoutResetWindowSeconds {
+            // Keep accumulated timeout count — still within escalation window
+        } else {
+            consecutiveApprovalTimeouts = 0
+            lastApprovalTimeoutAt = nil
+        }
         lock.unlock()
 
         // Journal writes are self-locked
@@ -250,6 +301,9 @@ final class RuntimeSession: @unchecked Sendable {
     struct TurnCompletionResult {
         let stats: TurnStats
         let exitReason: TurnExitReason
+        let durationMs: Int
+        let cumulativeUsage: TokenUsage
+        let estimatedCostUSD: Double?
     }
 
     /// Mark the current turn as complete with enriched stats and exit classification.
@@ -270,7 +324,8 @@ final class RuntimeSession: @unchecked Sendable {
             Log.error("RuntimeSession \(id): completeTurn rejected because there is no active turn")
             return nil
         }
-        let effectiveTurnStartedAt = turnStartedAt ?? Date()
+        let completedAt = Date()
+        let effectiveTurnStartedAt = turnStartedAt ?? completedAt
 
         let exitReason = ExitClassifier.classify(
             sessionState: sessionState,
@@ -278,11 +333,12 @@ final class RuntimeSession: @unchecked Sendable {
             terminalOutput: terminalOutput,
             wasInterrupted: interrupted
         )
+        let durationMs = max(0, Int(completedAt.timeIntervalSince(effectiveTurnStartedAt) * 1000))
 
         var data = stats.summary()
         data["exit_reason"] = exitReason.rawValue
         if let summary { data["summary"] = summary }
-        data["turn_duration_ms"] = "\(max(0, Int(Date().timeIntervalSince(effectiveTurnStartedAt) * 1000)))"
+        data["turn_duration_ms"] = "\(durationMs)"
 
         journal.append(
             sessionID: id,
@@ -311,15 +367,36 @@ final class RuntimeSession: @unchecked Sendable {
             }
         }
 
+        let turnCostUSD = ModelPricingTable.estimatedCostUSD(
+            for: stats,
+            modelID: config.model,
+            providerHint: backend.name
+        )
+
         lock.lock()
+        _cumulativeTokenUsage.add(stats.tokenUsage)
+        if let turnCostUSD {
+            _estimatedCostUSD = (_estimatedCostUSD ?? 0) + turnCostUSD
+        }
+        _completedTurnCount += 1
+        _activeDurationMs += durationMs
         _currentTurnID = nil
         _currentResultSchema = nil
         _lastCompletedTurnID = turnID
         _lastExitReason = exitReason
+        _lastTurnCompletedAt = completedAt
         _awaitingProviderUserPromptEcho = false
+        let cumulativeUsage = _cumulativeTokenUsage
+        let estimatedCostUSD = _estimatedCostUSD
         lock.unlock()
 
-        return TurnCompletionResult(stats: stats, exitReason: exitReason)
+        return TurnCompletionResult(
+            stats: stats,
+            exitReason: exitReason,
+            durationMs: durationMs,
+            cumulativeUsage: cumulativeUsage,
+            estimatedCostUSD: estimatedCostUSD
+        )
     }
 
     func journalUserInput(prompt: String, correlationID: String? = nil) {
@@ -385,10 +462,32 @@ final class RuntimeSession: @unchecked Sendable {
     }
 
     /// Add token counts observed during the current turn.
-    func addTokens(input: Int, output: Int, cacheCreation: Int, cacheRead: Int) {
+    func addTokens(input: Int, output: Int, cacheCreation: Int, cacheRead: Int, reasoningOutput: Int = 0) {
         lock.lock()
-        _currentTurnStats.addTokens(input: input, output: output, cacheCreation: cacheCreation, cacheRead: cacheRead)
+        _currentTurnStats.addTokens(
+            input: input,
+            output: output,
+            cacheCreation: cacheCreation,
+            cacheRead: cacheRead,
+            reasoningOutput: reasoningOutput
+        )
         lock.unlock()
+    }
+
+    func consumeCrossedCostThresholds(_ thresholdsUSD: [Double]) -> [Double] {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let estimatedCostUSD = _estimatedCostUSD, estimatedCostUSD > 0 else { return [] }
+        var crossed: [Double] = []
+        for threshold in thresholdsUSD.sorted() {
+            guard threshold > 0 else { continue }
+            let cents = Int((threshold * 100).rounded())
+            guard !_emittedCostThresholdCents.contains(cents), estimatedCostUSD >= threshold else { continue }
+            _emittedCostThresholdCents.insert(cents)
+            crossed.append(threshold)
+        }
+        return crossed
     }
 
     /// Mark that an interrupt occurred during this turn.
@@ -586,8 +685,17 @@ final class RuntimeSession: @unchecked Sendable {
             "adopted": adopted,
             "auto_approve": autoApprove,
             "created_at": DateFormatters.iso8601.string(from: createdAt),
-            "cursor": journal.latestCursor
+            "cursor": journal.latestCursor,
+            "token_usage": cumulativeTokenUsage.foundationDictionary,
+            "active_duration_ms": activeDurationMs,
+            "completed_turn_count": completedTurnCount
         ]
+        if let estimatedCostUSD {
+            result["estimated_cost_usd"] = estimatedCostUSD
+        }
+        if let lastTurnCompletedAt {
+            result["last_turn_completed_at"] = DateFormatters.iso8601.string(from: lastTurnCompletedAt)
+        }
         if let purpose = config.purpose {
             result["purpose"] = purpose
         }
@@ -700,4 +808,17 @@ struct PendingApproval: Sendable {
     let description: String
     let correlationID: String?
     let requestedAt: Date
+}
+
+private extension TokenUsage {
+    var foundationDictionary: [String: Any] {
+        [
+            "input_tokens": inputTokens,
+            "cached_input_tokens": cachedInputTokens,
+            "output_tokens": outputTokens,
+            "reasoning_output_tokens": reasoningOutputTokens,
+            "total_tokens": totalTokens,
+            "total_billable_tokens": totalBillableTokens
+        ]
+    }
 }

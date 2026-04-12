@@ -288,6 +288,22 @@ final class FeatureSettingsTests: XCTestCase {
         XCTAssertLessThanOrEqual(settings.restoredScrollbackLines, 10000)
     }
 
+    func testDefaultRuntimeCostThresholds() {
+        let key = "runtime.costThresholdsUSD"
+        let defaults = UserDefaults.standard
+        let original = defaults.array(forKey: key)
+        defer {
+            if let original {
+                defaults.set(original, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        defaults.removeObject(forKey: key)
+        let settings = FeatureSettings.shared
+        XCTAssertEqual(settings.runtimeCostThresholdsUSD, [1, 5, 10])
+    }
+
     func testDefaultClipboardHistoryMaxItems() {
         let settings = FeatureSettings.shared
         XCTAssertGreaterThanOrEqual(settings.clipboardHistoryMaxItems, 1)
@@ -304,6 +320,16 @@ final class FeatureSettingsTests: XCTestCase {
         let settings = FeatureSettings.shared
         XCTAssertGreaterThanOrEqual(settings.apiAnalyticsPort, 1024)
         XCTAssertLessThanOrEqual(settings.apiAnalyticsPort, 65535)
+    }
+
+    func testRuntimeCostThresholdsNormalizeAndPersist() {
+        let settings = FeatureSettings.shared
+        let original = settings.runtimeCostThresholdsUSD
+        defer { settings.runtimeCostThresholdsUSD = original }
+
+        settings.runtimeCostThresholdsUSD = [10, 1, -3, 5, 5]
+
+        XCTAssertEqual(settings.runtimeCostThresholdsUSD, [1, 5, 10])
     }
 
     // MARK: - String Defaults

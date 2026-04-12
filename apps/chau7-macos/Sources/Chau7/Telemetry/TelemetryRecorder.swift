@@ -48,6 +48,7 @@ final class TelemetryRecorder {
             previousRun.exitStatus = nil
             previousRun.durationMs = Int(Date().timeIntervalSince(previousRun.startedAt) * 1000)
             store.finalizeRun(previousRun, turns: [], toolCalls: [])
+            removeLiveRun(runID: previousRun.id)
             Log.info("TelemetryRecorder: auto-ended orphaned run \(previousRunID) for tab \(tabID)")
         } else {
             lock.unlock()
@@ -72,6 +73,7 @@ final class TelemetryRecorder {
         lock.unlock()
 
         store.insertRun(run)
+        publishLiveRun(run)
         Log.info("TelemetryRecorder: run started \(runID) provider=\(provider) cwd=\(cwd)")
     }
 
@@ -184,6 +186,7 @@ final class TelemetryRecorder {
         // Atomic: UPDATE the run row + INSERT turns + INSERT tool calls in one transaction.
         // This avoids the INSERT OR REPLACE cascade-delete problem.
         store.finalizeRun(run, turns: turns, toolCalls: toolCalls)
+        removeLiveRun(runID: run.id)
         Log.info("TelemetryRecorder: run ended \(runID) exit=\(exitStatus ?? -1) duration=\(run.durationMs ?? 0)ms turns=\(run.turnCount)")
     }
 
@@ -195,10 +198,14 @@ final class TelemetryRecorder {
             return
         }
         inProgressRuns[runID]?.sessionID = sessionID
+        let liveRun = inProgressRuns[runID]
         lock.unlock()
 
         // Update just the session_id column in SQLite
         store.updateRunSessionID(runID, sessionID: sessionID)
+        if let liveRun {
+            publishLiveRun(liveRun)
+        }
     }
 
     /// Update session ID for an active run matched by provider and working directory.
@@ -221,8 +228,12 @@ final class TelemetryRecorder {
         }
         if matches.count == 1, let run = matches.first {
             inProgressRuns[run.id]?.sessionID = sessionID
+            let liveRun = inProgressRuns[run.id]
             lock.unlock()
             store.updateRunSessionID(run.id, sessionID: sessionID)
+            if let liveRun {
+                publishLiveRun(liveRun)
+            }
             Log.info("TelemetryRecorder: session ID updated via cwd match: \(sessionID.prefix(8)) → run \(run.id.prefix(8))")
         } else {
             lock.unlock()
@@ -254,6 +265,40 @@ final class TelemetryRecorder {
         let runs = Array(inProgressRuns.values)
         lock.unlock()
         return runs
+    }
+
+    func updateLiveMetrics(
+        tabID: String,
+        model: String?,
+        tokenUsage: TokenUsage,
+        turnCount: Int,
+        costUSD: Double?,
+        tokenUsageSource: TokenUsageSource,
+        tokenUsageState: TelemetryMetricState,
+        costSource: CostSource?,
+        costState: TelemetryMetricState
+    ) {
+        lock.lock()
+        guard let runID = activeRuns[tabID], var run = inProgressRuns[runID] else {
+            lock.unlock()
+            return
+        }
+        run.model = model ?? run.model
+        run.totalInputTokens = tokenUsage.inputTokens > 0 ? tokenUsage.inputTokens : nil
+        run.totalCachedInputTokens = tokenUsage.cachedInputTokens > 0 ? tokenUsage.cachedInputTokens : nil
+        run.totalOutputTokens = tokenUsage.outputTokens > 0 ? tokenUsage.outputTokens : nil
+        run.totalReasoningOutputTokens = tokenUsage.reasoningOutputTokens > 0 ? tokenUsage.reasoningOutputTokens : nil
+        run.costUSD = costUSD
+        run.tokenUsageSource = tokenUsageSource
+        run.tokenUsageState = tokenUsageState
+        run.costSource = costSource
+        run.costState = costState
+        run.turnCount = turnCount
+        inProgressRuns[runID] = run
+        lock.unlock()
+
+        store.updateRunLiveMetrics(run)
+        publishLiveRun(run)
     }
 
     // MARK: - PTY Log Reading
@@ -300,5 +345,32 @@ final class TelemetryRecorder {
         let text = result.joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : text
+    }
+
+    private func publishLiveRun(_ run: TelemetryRun) {
+        let live = TelemetryRunLive(
+            runID: run.id,
+            tabID: run.tabID,
+            sessionID: run.sessionID,
+            provider: run.provider,
+            model: run.model,
+            tokenUsage: run.tokenUsage,
+            turnCount: run.turnCount,
+            estimatedCostUSD: run.costUSD,
+            tokenUsageSource: run.tokenUsageSource,
+            tokenUsageState: run.tokenUsageState,
+            costSource: run.costSource,
+            costState: run.costState,
+            updatedAt: Date()
+        )
+        DispatchQueue.main.async {
+            TelemetryRunLiveStore.shared.upsert(live)
+        }
+    }
+
+    private func removeLiveRun(runID: String) {
+        DispatchQueue.main.async {
+            TelemetryRunLiveStore.shared.remove(runID: runID)
+        }
     }
 }

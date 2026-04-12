@@ -494,6 +494,37 @@ final class TelemetryStore {
         }
     }
 
+    func updateRunLiveMetrics(_ run: TelemetryRun) {
+        queue.async { [weak self] in
+            guard let self, let db = db else { return }
+            let sql = """
+            UPDATE runs SET
+                model = ?, total_input_tokens = ?, total_cached_input_tokens = ?,
+                total_output_tokens = ?, total_reasoning_output_tokens = ?, cost_usd = ?,
+                token_usage_source = ?, token_usage_state = ?, cost_source = ?, cost_state = ?,
+                turn_count = ?, error_message = ?
+            WHERE run_id = ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, run.model)
+            bindInt(stmt, 2, run.totalInputTokens)
+            bindInt(stmt, 3, run.totalCachedInputTokens)
+            bindInt(stmt, 4, run.totalOutputTokens)
+            bindInt(stmt, 5, run.totalReasoningOutputTokens)
+            bindDouble(stmt, 6, run.costUSD)
+            bindText(stmt, 7, run.tokenUsageSource?.rawValue)
+            bindText(stmt, 8, run.tokenUsageState.rawValue)
+            bindText(stmt, 9, run.costSource?.rawValue)
+            bindText(stmt, 10, run.costState.rawValue)
+            bindInt(stmt, 11, run.turnCount)
+            bindText(stmt, 12, run.errorMessage)
+            bindText(stmt, 13, run.id)
+            sqlite3_step(stmt)
+        }
+    }
+
     func rewriteCompletedRun(_ run: TelemetryRun, turns: [TelemetryTurn], toolCalls: [TelemetryToolCall]) {
         queue.sync {
             guard let db else { return }
