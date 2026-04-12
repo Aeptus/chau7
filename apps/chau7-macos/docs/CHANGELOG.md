@@ -415,5 +415,6 @@ Initial development release
 | 0.1.0 | 2026-01-11 | Initial release with core features |
 # Unreleased
 
+- SwiftPM now excludes `Sources/Chau7/Performance/SIMDTerminalParser.swift` from the docs/package resource scan so local package builds do not treat the performance source file as a bundled document.
 - MCP `tab_output(source: "pty_log")` now flushes the active AI PTY log before reading so live Codex/Claude transcripts are less likely to miss the final output tail.
 - PTY log tail reads now normalize ANSI redraws and backspaces before parsing, improving extraction of structured Codex/Claude output from interactive transcripts.

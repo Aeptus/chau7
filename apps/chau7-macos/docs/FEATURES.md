@@ -588,5 +588,6 @@ Key patterns:
 - MCP server with thread-safe main-thread dispatch.
 # Features
 
+- SwiftPM package metadata excludes `Performance/SIMDTerminalParser.swift` from doc/resource scanning so builds keep the SIMD parser as source instead of trying to bundle it as documentation.
 - `tab_output` can read a fresher active AI PTY log tail for MCP-driven tabs, improving retrieval of live Codex and Claude responses.
 - PTY log tail parsing normalizes terminal control sequences and backspaces before downstream consumers read the transcript.

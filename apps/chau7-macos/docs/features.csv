@@ -376,3 +376,4 @@ Overlay,Shortcut Helper Hint,"Floating hint box showing keyboard shortcuts (⌘/
 Performance,Power Efficiency,"Adaptive clipboard polling, shared background drain, event-driven focus detection, timer leeway coalescing, wakeup stats logging",Shipped,Yes
 pty_log_output_flush,macos,mcp,active AI PTY log is flushed before tab_output reads it,shipped
 pty_log_tail_normalization,macos,telemetry,PTY log tails are terminal-normalized before transcript parsing,shipped
+swiftpm_simd_parser_exclusion,macos,build,SwiftPM excludes Performance/SIMDTerminalParser.swift from doc and resource scanning so local builds keep it as source,shipped
