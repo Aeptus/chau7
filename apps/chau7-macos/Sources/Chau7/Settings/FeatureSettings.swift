@@ -2621,7 +2621,7 @@ final class FeatureSettings {
         // Tab Display (defaults: all visible)
         self.showTabIcons = defaults.object(forKey: Keys.showTabIcons) as? Bool ?? true
         self.showTabPath = defaults.object(forKey: Keys.showTabPath) as? Bool ?? true
-        self.showTabGitIndicator = defaults.object(forKey: Keys.showTabGitIndicator) as? Bool ?? true
+        self.showTabGitIndicator = defaults.object(forKey: Keys.showTabGitIndicator) as? Bool ?? false
         self.showTabCTOIndicator = defaults.object(forKey: Keys.showTabCTOIndicator) as? Bool ?? true
         self.allowTabCTOToggle = defaults.object(forKey: Keys.allowTabCTOToggle) as? Bool ?? true
         self.showTabBroadcastIndicator = defaults.object(forKey: Keys.showTabBroadcastIndicator) as? Bool ?? true
