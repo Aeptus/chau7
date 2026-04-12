@@ -948,22 +948,26 @@ final class AppModel {
     private func startIdleMonitors() {
         stopIdleMonitors()
 
-        var monitors: [HistoryIdleMonitor] = []
+        let sources: [(tool: String, path: String)] = [
+            ("Codex", codexHistoryPath),
+            ("Claude", claudeHistoryPath)
+        ]
 
-        let codexPath = codexHistoryPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !codexPath.isEmpty {
-            Log.info("Starting Codex history monitor at \(codexPath)")
-            let monitor = HistoryIdleMonitor(
-                fileURL: URL(fileURLWithPath: codexPath),
+        idleMonitors = sources.compactMap { source in
+            let path = source.path.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !path.isEmpty else { return nil }
+            Log.info("Starting \(source.tool) history monitor at \(path)")
+            return HistoryIdleMonitor(
+                fileURL: URL(fileURLWithPath: path),
                 idleSecondsProvider: { [weak self] in self?.idleSeconds ?? 5.0 },
                 staleSecondsProvider: { [weak self] in self?.staleSeconds ?? 180.0 },
                 onEntry: { [weak self] entry in
-                    self?.handleHistoryEntry(entry, toolName: "Codex")
+                    self?.handleHistoryEntry(entry, toolName: source.tool)
                 },
                 onStateChange: { [weak self] sessionId, state, lastSeen, idleFor, lastEntry in
                     self?.updateSessionStatus(
                         sessionId: sessionId,
-                        toolName: "Codex",
+                        toolName: source.tool,
                         state: state,
                         lastSeen: lastSeen,
                         idleFor: idleFor,
@@ -971,40 +975,10 @@ final class AppModel {
                     )
                 },
                 onIdle: { [weak self] entry, idleFor in
-                    self?.notifyIdle(entry: entry, idleFor: idleFor, toolName: "Codex")
+                    self?.notifyIdle(entry: entry, idleFor: idleFor, toolName: source.tool)
                 }
             )
-            monitors.append(monitor)
         }
-
-        let claudePath = claudeHistoryPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !claudePath.isEmpty {
-            Log.info("Starting Claude history monitor at \(claudePath)")
-            let monitor = HistoryIdleMonitor(
-                fileURL: URL(fileURLWithPath: claudePath),
-                idleSecondsProvider: { [weak self] in self?.idleSeconds ?? 5.0 },
-                staleSecondsProvider: { [weak self] in self?.staleSeconds ?? 180.0 },
-                onEntry: { [weak self] entry in
-                    self?.handleHistoryEntry(entry, toolName: "Claude")
-                },
-                onStateChange: { [weak self] sessionId, state, lastSeen, idleFor, lastEntry in
-                    self?.updateSessionStatus(
-                        sessionId: sessionId,
-                        toolName: "Claude",
-                        state: state,
-                        lastSeen: lastSeen,
-                        idleFor: idleFor,
-                        lastEntry: lastEntry
-                    )
-                },
-                onIdle: { [weak self] entry, idleFor in
-                    self?.notifyIdle(entry: entry, idleFor: idleFor, toolName: "Claude")
-                }
-            )
-            monitors.append(monitor)
-        }
-
-        idleMonitors = monitors
         idleMonitors.forEach { $0.start() }
     }
 

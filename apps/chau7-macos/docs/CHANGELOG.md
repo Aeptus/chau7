@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Chau7Core Public API Signatures**: Renamed unused parameters (`gitBranch`, `event`, `fileManager`, `toolName`) to underscore-bound internals in `ProfileSwitchRule.matches`, `AINotificationSettingsBridge.preference/updatedActions`, `RuntimeIsolation.homeDirectory`, and `RuntimeToolEventMetadata.inferResult`. Call-site labels are unchanged.
+- **Idle History Monitor Wiring**: Codex and Claude history idle monitors now start from one shared source list instead of duplicated setup blocks, keeping per-provider idle detection behavior aligned while reducing drift in future monitor changes.
 
 ## [0.2.1] - 2026-04-10
 

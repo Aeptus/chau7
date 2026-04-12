@@ -68,8 +68,17 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
 
     // MARK: - AI Coding Apps
 
+    // Sources with active event producers (hooks, OSC 9 parser, or runtime)
     public static let claudeCode = AIEventSource(rawValue: "claude_code")
     public static let codex = AIEventSource(rawValue: "codex")
+
+    // MARK: - Detection-Only Sources (no active event producers)
+
+    // Referenced by AIToolRegistry for tab detection, auto-theming, and UI labels.
+    // No code currently creates AIEvents with these sources. They become active
+    // when a history monitor, hook, or OSC 9 parser is wired for the tool.
+    // The aiEventSource(for:) lookup in AppModel uses these via the registry,
+    // so they must remain defined even without active producers.
     public static let gemini = AIEventSource(rawValue: "gemini")
     public static let chatgpt = AIEventSource(rawValue: "chatgpt")
     public static let cursor = AIEventSource(rawValue: "cursor")
