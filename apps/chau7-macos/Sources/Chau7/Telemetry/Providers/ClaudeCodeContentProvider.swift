@@ -51,6 +51,7 @@ final class ClaudeCodeContentProvider: RunContentProvider {
         }
 
         guard !state.turns.isEmpty else { return nil }
+        let estimatedCost = ModelPricingTable.estimatedCostUSD(for: state.tokenUsage, modelID: state.model, providerHint: providerName)
 
         return ExtractedRunContent(
             model: state.model,
@@ -59,10 +60,11 @@ final class ClaudeCodeContentProvider: RunContentProvider {
             totalCachedInputTokens: state.tokenUsage.cachedInputTokens > 0 ? state.tokenUsage.cachedInputTokens : nil,
             totalOutputTokens: state.tokenUsage.outputTokens > 0 ? state.tokenUsage.outputTokens : nil,
             totalReasoningOutputTokens: state.tokenUsage.reasoningOutputTokens > 0 ? state.tokenUsage.reasoningOutputTokens : nil,
+            costUSD: estimatedCost,
             tokenUsageSource: .transcriptDelta,
             tokenUsageState: .complete,
-            costSource: .unavailable,
-            costState: .missing,
+            costSource: estimatedCost != nil ? .estimated : .unavailable,
+            costState: estimatedCost != nil ? .estimated : .missing,
             rawTranscriptRef: sessionDir.path,
             toolCalls: state.toolCalls
         )

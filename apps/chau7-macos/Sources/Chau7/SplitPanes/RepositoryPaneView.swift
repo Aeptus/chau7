@@ -386,12 +386,21 @@ struct RepositoryPaneView: View {
                             .font(.system(size: 9, design: .monospaced))
                         Text(String(format: L("repo.tokensOut", "%@ out"), formatTokenCount(summary.outputTokens)))
                             .font(.system(size: 9, design: .monospaced))
+                        if summary.reasoningOutputTokens > 0 {
+                            Text(String(format: L("repo.tokensReasoning", "%@ reasoning"), formatTokenCount(summary.reasoningOutputTokens)))
+                                .font(.system(size: 9, design: .monospaced))
+                        }
                     }
 
-                    // Duration + exit
+                    // Duration + active duration + exit
                     HStack(spacing: 8) {
                         if let duration = summary.formattedDuration {
                             Text(String(format: L("repo.duration", "Duration: %@"), duration))
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                        if let activeDuration = summary.formattedActiveDuration {
+                            Text(String(format: L("repo.activeDuration", "Active: %@"), activeDuration))
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                         }
@@ -402,10 +411,21 @@ struct RepositoryPaneView: View {
                         }
                     }
 
-                    // Turn count
-                    Text(String(format: L("repo.turnCount", "Turns: %d"), summary.turnCount))
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text(String(format: L("repo.turnCount", "Turns: %d"), summary.turnCount))
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        if let avgTokens = summary.formattedAverageTokensPerTurn {
+                            Text(String(format: L("repo.avgTokensPerTurn", "Avg/turn: %@"), avgTokens))
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                        if let cost = summary.formattedCostEstimate {
+                            Text(String(format: L("repo.costEstimate", "Cost: %@"), cost))
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
         }

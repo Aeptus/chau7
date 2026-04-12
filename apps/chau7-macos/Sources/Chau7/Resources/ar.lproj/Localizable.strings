@@ -3050,6 +3050,10 @@
 // MARK: - Repository Tokens
 "repo.tokensIn" = "%@ واردة";
 "repo.tokensOut" = "%@ صادرة";
+"repo.tokensReasoning" = "%@ استدلال";
+"repo.activeDuration" = "النشاط: %@";
+"repo.avgTokensPerTurn" = "المتوسط/الدور: %@";
+"repo.costEstimate" = "التكلفة: %@";
 
 // MARK: - Accessibility
 "a11y.openUrl" = "فتح %@";

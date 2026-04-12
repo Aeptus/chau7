@@ -46,6 +46,7 @@ final class CodexContentProvider: RunContentProvider {
 
         let parsed = CodexRolloutParser.parse(jsonl: text, runID: runID, startedAt: startedAt)
         guard !parsed.turns.isEmpty else { return nil }
+        let estimatedCost = ModelPricingTable.estimatedCostUSD(for: parsed.tokenUsage, modelID: parsed.model, providerHint: providerName)
 
         return ExtractedRunContent(
             model: parsed.model,
@@ -54,10 +55,11 @@ final class CodexContentProvider: RunContentProvider {
             totalCachedInputTokens: parsed.tokenUsage.cachedInputTokens > 0 ? parsed.tokenUsage.cachedInputTokens : nil,
             totalOutputTokens: parsed.tokenUsage.outputTokens > 0 ? parsed.tokenUsage.outputTokens : nil,
             totalReasoningOutputTokens: parsed.tokenUsage.reasoningOutputTokens > 0 ? parsed.tokenUsage.reasoningOutputTokens : nil,
+            costUSD: estimatedCost,
             tokenUsageSource: .transcriptDelta,
             tokenUsageState: .complete,
-            costSource: .unavailable,
-            costState: .missing,
+            costSource: estimatedCost != nil ? .estimated : .unavailable,
+            costState: estimatedCost != nil ? .estimated : .missing,
             rawTranscriptRef: file.path,
             toolCalls: parsed.toolCalls
         )
@@ -106,13 +108,17 @@ final class CodexContentProvider: RunContentProvider {
             ))
         }
 
+        let usage = TokenUsage(inputTokens: tokensUsed)
+        let estimatedCost = ModelPricingTable.estimatedCostUSD(for: usage, modelID: nil, providerHint: providerName)
+
         return ExtractedRunContent(
             turns: turns,
             totalInputTokens: tokensUsed > 0 ? tokensUsed : nil,
+            costUSD: estimatedCost,
             tokenUsageSource: tokensUsed > 0 ? .transcriptSnapshot : nil,
             tokenUsageState: tokensUsed > 0 ? .estimated : .missing,
-            costSource: .unavailable,
-            costState: .missing,
+            costSource: estimatedCost != nil ? .estimated : .unavailable,
+            costState: estimatedCost != nil ? .estimated : .missing,
             rawTranscriptRef: rolloutPath
         )
     }

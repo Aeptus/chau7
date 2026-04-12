@@ -3130,6 +3130,10 @@
 // MARK: - Repository Tokens
 "repo.tokensIn" = "%@ entrada";
 "repo.tokensOut" = "%@ salida";
+"repo.tokensReasoning" = "%@ razonamiento";
+"repo.activeDuration" = "Activo: %@";
+"repo.avgTokensPerTurn" = "Prom./turno: %@";
+"repo.costEstimate" = "Costo: %@";
 
 // MARK: - Accessibility
 "a11y.openUrl" = "Abrir %@";

@@ -446,14 +446,21 @@ final class RepositoryPaneModel: Identifiable {
         for (name, tally) in stats.toolTallies {
             toolsUsed[name] = tally.count
         }
-        // Session duration from creation, not last turn (avoids growing while idle)
-        let duration = Date().timeIntervalSince(session.createdAt)
+        let duration = session.lastTurnCompletedAt.map { $0.timeIntervalSince(session.createdAt) }
         return TurnSummaryInfo(
             turnCount: session.turnCount,
             toolsUsed: toolsUsed,
             totalTokens: stats.totalTokens,
             inputTokens: stats.inputTokens,
             outputTokens: stats.outputTokens,
+            reasoningOutputTokens: stats.reasoningOutputTokens,
+            costEstimateUSD: ModelPricingTable.estimatedCostUSD(
+                for: stats,
+                modelID: session.config.model,
+                providerHint: session.backend.name
+            ),
+            averageTokensPerTurn: session.averageVisibleTokensPerCompletedTurn,
+            activeDuration: session.activeDurationMs > 0 ? TimeInterval(session.activeDurationMs) / 1000 : nil,
             exitReason: session.lastExitReason,
             backendName: session.backend.name,
             sessionState: session.state,
@@ -974,6 +981,10 @@ struct TurnSummaryInfo {
     let totalTokens: Int
     let inputTokens: Int
     let outputTokens: Int
+    let reasoningOutputTokens: Int
+    let costEstimateUSD: Double?
+    let averageTokensPerTurn: Double?
+    let activeDuration: TimeInterval?
     let exitReason: TurnExitReason?
     let backendName: String
     let sessionState: RuntimeSessionStateMachine.State
@@ -995,5 +1006,30 @@ struct TurnSummaryInfo {
         let hours = mins / 60
         let remMins = mins % 60
         return "\(hours)h \(remMins)m"
+    }
+
+    var formattedActiveDuration: String? {
+        guard let activeDuration, activeDuration > 0 else { return nil }
+        if activeDuration < 60 { return String(format: "%.0fs", activeDuration) }
+        let mins = Int(activeDuration) / 60
+        let secs = Int(activeDuration) % 60
+        if activeDuration < 3600 { return "\(mins)m \(secs)s" }
+        let hours = mins / 60
+        let remMins = mins % 60
+        return "\(hours)h \(remMins)m"
+    }
+
+    var formattedAverageTokensPerTurn: String? {
+        guard let averageTokensPerTurn, averageTokensPerTurn > 0 else { return nil }
+        let rounded = Int(averageTokensPerTurn.rounded())
+        if rounded > 1000 {
+            return String(format: "%.1fk", Double(rounded) / 1000)
+        }
+        return "\(rounded)"
+    }
+
+    var formattedCostEstimate: String? {
+        guard let costEstimateUSD, costEstimateUSD > 0 else { return nil }
+        return LocalizedFormatters.formatCostPrecise(costEstimateUSD)
     }
 }

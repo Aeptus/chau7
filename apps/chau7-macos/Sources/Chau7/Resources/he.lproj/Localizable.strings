@@ -3050,6 +3050,10 @@
 // MARK: - Repository Tokens
 "repo.tokensIn" = "%@ נכנסים";
 "repo.tokensOut" = "%@ יוצאים";
+"repo.tokensReasoning" = "%@ חשיבה";
+"repo.activeDuration" = "פעיל: %@";
+"repo.avgTokensPerTurn" = "ממוצע/תור: %@";
+"repo.costEstimate" = "עלות: %@";
 
 // MARK: - Accessibility
 "a11y.openUrl" = "פתח %@";

@@ -108,7 +108,7 @@ final class AgentDashboardModel: Identifiable {
         fleetFileIndex.reset()
 
         for session in matching {
-            let stats = session.currentTurnStats
+            let cumulativeUsage = session.cumulativeTokenUsage
 
             // Update file tracker for this session
             let tracker = fileTrackers[session.id] ?? SessionFilesTracker()
@@ -128,7 +128,7 @@ final class AgentDashboardModel: Identifiable {
             let sessionCost: Double = {
                 costLock.lock()
                 defer { costLock.unlock() }
-                return sessionCosts[session.id] ?? 0
+                return sessionCosts[session.id] ?? session.estimatedCostUSD ?? 0
             }()
 
             cards.append(AgentCardData(
@@ -140,10 +140,10 @@ final class AgentDashboardModel: Identifiable {
                 delegationDepth: session.config.delegationDepth,
                 state: session.state,
                 turnCount: session.turnCount,
-                inputTokens: stats.inputTokens,
-                outputTokens: stats.outputTokens,
-                cacheCreationTokens: stats.cacheCreationTokens,
-                cacheReadTokens: stats.cacheReadTokens,
+                inputTokens: cumulativeUsage.inputTokens,
+                outputTokens: cumulativeUsage.outputTokens + cumulativeUsage.reasoningOutputTokens,
+                cacheCreationTokens: 0,
+                cacheReadTokens: cumulativeUsage.cachedInputTokens,
                 touchedFiles: tracker.touchedFiles,
                 currentTurnFiles: tracker.currentTurnFiles,
                 pendingApproval: session.pendingApproval,
@@ -154,7 +154,7 @@ final class AgentDashboardModel: Identifiable {
                 costUSD: sessionCost
             ))
 
-            allTokens += stats.inputTokens + stats.outputTokens + stats.cacheCreationTokens + stats.cacheReadTokens
+            allTokens += cumulativeUsage.totalBillableTokens
             allCost += sessionCost
             if session.state == .awaitingApproval { hasApprovals = true }
             if session.state == .busy { hasActive = true }

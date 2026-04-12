@@ -373,6 +373,10 @@ final class RepositoryPaneModelTests: XCTestCase {
             totalTokens: 45200,
             inputTokens: 33000,
             outputTokens: 12200,
+            reasoningOutputTokens: 900,
+            costEstimateUSD: 1.234,
+            averageTokensPerTurn: 15066.7,
+            activeDuration: 120,
             exitReason: nil,
             backendName: "claude",
             sessionState: .ready,
@@ -380,6 +384,9 @@ final class RepositoryPaneModelTests: XCTestCase {
         )
         XCTAssertEqual(summary.formattedTokens, "45.2k")
         XCTAssertEqual(summary.formattedDuration, "2m 34s")
+        XCTAssertEqual(summary.formattedActiveDuration, "2m 0s")
+        XCTAssertEqual(summary.formattedAverageTokensPerTurn, "15.1k")
+        XCTAssertEqual(summary.formattedCostEstimate, LocalizedFormatters.formatCostPrecise(1.234))
     }
 
     func testPushResetsSessionTracking() {
@@ -390,7 +397,8 @@ final class RepositoryPaneModelTests: XCTestCase {
         model.sessionTouchedFiles = ["a.swift", "b.swift"]
         model.turnSummary = TurnSummaryInfo(
             turnCount: 1, toolsUsed: [:], totalTokens: 0,
-            inputTokens: 0, outputTokens: 0, exitReason: nil,
+            inputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0,
+            costEstimateUSD: nil, averageTokensPerTurn: nil, activeDuration: nil, exitReason: nil,
             backendName: "claude", sessionState: .ready, duration: nil
         )
 
