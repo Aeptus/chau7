@@ -2467,18 +2467,16 @@ final class TerminalSessionModel {
     }
 
     /// Called when the terminal received an OSC 9 desktop-notification sequence
-    /// (ESC]9;<message>BEL) emitted by a foreign program (currently: the Codex
-    /// CLI TUI). These correspond to the six notification kinds Codex fires:
-    /// agent-turn-complete, ExecApprovalRequested, EditApprovalRequested,
-    /// ElicitationRequested, PlanModePrompt, UserInputRequested.
-    ///
-    /// Codex always writes a short human-readable message as the OSC 9 payload.
-    /// We classify by message prefix (source:
-    /// openai/codex/codex-rs/tui/src/chatwidget.rs Notification::display) and
-    /// route to the standard AIEvent pipeline so the notification, tab style,
-    /// and history-log paths all work without any Codex-specific plumbing.
+    /// Handles a foreign OSC 9 desktop notification (ESC]9;<message>BEL)
+    /// emitted by any AI CLI tool running in this terminal. The classifier
+    /// uses the session's detected AI tool for source attribution, falling
+    /// back to Codex (the most common OSC 9 producer) if no tool is detected.
     func handleForeignDesktopNotification(_ message: String) {
-        let classification = Self.classifyForeignDesktopNotification(message)
+        let activeSource = AIEventSource.forProvider(effectiveAIProvider) ?? .codex
+        let activeTool = aiDisplayAppName ?? lastDetectedAppName ?? "Codex"
+        let classification = Self.classifyForeignDesktopNotification(
+            message, source: activeSource, tool: activeTool
+        )
         appModel?.recordEvent(
             source: classification.source,
             type: classification.type,
@@ -2500,57 +2498,52 @@ final class TerminalSessionModel {
         let tool: String
     }
 
-    /// Maps a Codex OSC 9 notification message to an AIEvent type by prefix.
-    /// Codex's TUI produces strings like:
-    ///   - "Approval requested: <command>"        → ExecApprovalRequested
-    ///   - "Approval requested by <server>"       → ElicitationRequested
-    ///   - "Codex wants to edit <file>"           → EditApprovalRequested
-    ///   - "Plan mode prompt: <title>"            → PlanModePrompt
-    ///   - "Question requested: <summary>" /
-    ///     "Questions requested: <n>"             → UserInputRequested
-    ///   - anything else                          → AgentTurnComplete (preview
-    ///                                              of the assistant response)
+    /// Classifies a foreign OSC 9 desktop notification message.
+    ///
+    /// Uses Codex-specific prefix matching first (the most common OSC 9 producer),
+    /// then generic patterns that work for any CLI tool. The `source` and `tool`
+    /// parameters come from the session's detected AI tool context.
+    ///
     /// Exposed as `static` so it's trivially testable without a session.
-    static func classifyForeignDesktopNotification(_ message: String) -> ForeignNotificationClassification {
+    static func classifyForeignDesktopNotification(
+        _ message: String,
+        source: AIEventSource = .codex,
+        tool: String = "Codex"
+    ) -> ForeignNotificationClassification {
         let trimmed = message.trimmingCharacters(in: .whitespaces)
+        let lowered = trimmed.lowercased()
 
-        // Permission requests: exec approval, edit approval, elicitation
+        // Codex-specific prefix matching (most common OSC 9 producer)
         if trimmed.hasPrefix("Approval requested:")
             || trimmed.hasPrefix("Approval requested by")
             || trimmed.hasPrefix("Codex wants to edit") {
-            return ForeignNotificationClassification(
-                source: .codex,
-                type: "permission",
-                tool: "Codex"
-            )
+            return ForeignNotificationClassification(source: source, type: "permission", tool: tool)
         }
 
-        // User-input request (TUI asks a question)
         if trimmed.hasPrefix("Question requested:")
             || trimmed.hasPrefix("Questions requested:")
             || trimmed == "Question requested" {
-            return ForeignNotificationClassification(
-                source: .codex,
-                type: "waiting_input",
-                tool: "Codex"
-            )
+            return ForeignNotificationClassification(source: source, type: "waiting_input", tool: tool)
         }
 
-        // Plan-mode prompt (user needs to review/choose a plan)
         if trimmed.hasPrefix("Plan mode prompt:") {
-            return ForeignNotificationClassification(
-                source: .codex,
-                type: "attention_required",
-                tool: "Codex"
-            )
+            return ForeignNotificationClassification(source: source, type: "attention_required", tool: tool)
         }
 
-        // Default: AgentTurnComplete, which emits the first ~200 chars of the
-        // assistant response as the message body with no distinguishing prefix.
-        return ForeignNotificationClassification(
-            source: .codex,
-            type: "finished",
-            tool: "Codex"
-        )
+        // Generic patterns for any AI CLI
+        if lowered.contains("permission") || lowered.contains("approval") || lowered.contains("wants to") {
+            return ForeignNotificationClassification(source: source, type: "permission", tool: tool)
+        }
+
+        if lowered.contains("waiting for") || lowered.contains("needs your input") || lowered.contains("input requested") {
+            return ForeignNotificationClassification(source: source, type: "waiting_input", tool: tool)
+        }
+
+        if lowered.contains("needs your attention") || lowered.contains("elicitation") {
+            return ForeignNotificationClassification(source: source, type: "attention_required", tool: tool)
+        }
+
+        // Default: turn complete
+        return ForeignNotificationClassification(source: source, type: "finished", tool: tool)
     }
 }
