@@ -742,12 +742,59 @@ private struct ToolbarTabBarView: View {
 
     // MARK: - Group Bracket Drag
 
-    private func handleGroupDrag(groupID: String) {
+    private func handleGroupDrag(groupID: String, translation: CGSize) {
         overlayModel.dismissHoverCard()
+        // Prevent dual drag: single-tab drag takes priority
+        guard draggingTabID == nil else { return }
+        let snapshot = overlayModel.tabs
+
         if draggingGroupID == nil {
+            // Find contiguous range of tabs belonging to this group
+            guard let first = snapshot.firstIndex(where: { $0.repoGroupID == groupID }) else { return }
+            var end = first
+            while end + 1 < snapshot.count, snapshot[end + 1].repoGroupID == groupID {
+                end += 1
+            }
             draggingGroupID = groupID
-            Log.info("Group drag started: \(URL(fileURLWithPath: groupID).lastPathComponent)")
+            groupDragHomeRange = first ..< (end + 1)
+            groupDragCurrentSlot = first
+            groupDragOffset = 0
+            Log.info("Group drag started: \(URL(fileURLWithPath: groupID).lastPathComponent) range=\(first)..<\(end + 1)")
         }
+
+        guard draggingGroupID == groupID else { return }
+
+        // Abort if tabs were added/removed and the range is now invalid
+        guard groupDragHomeRange.upperBound <= snapshot.count else {
+            Log.warn("Group drag aborted: tab count shrank under range \(groupDragHomeRange)")
+            draggingGroupID = nil
+            groupDragOffset = 0
+            groupDragHomeRange = 0 ..< 0
+            groupDragCurrentSlot = 0
+            return
+        }
+
+        // Re-sync home range when tabs are inserted/removed before the group
+        // (mirrors the single-tab dragHomeIndex re-sync pattern)
+        if let liveFirst = snapshot[groupDragHomeRange].first,
+           let liveIndex = snapshot.firstIndex(where: { $0.id == liveFirst.id }),
+           liveIndex != groupDragHomeRange.lowerBound {
+            let delta = liveIndex - groupDragHomeRange.lowerBound
+            let newStart = groupDragHomeRange.lowerBound + delta
+            let newEnd = min(groupDragHomeRange.upperBound + delta, snapshot.count)
+            groupDragHomeRange = newStart ..< newEnd
+            groupDragCurrentSlot = max(0, min(groupDragCurrentSlot + delta, snapshot.count - groupDragHomeRange.count))
+        }
+
+        groupDragOffset = translation.width
+
+        let widths = snapshot.map { tabWidths[$0.id] ?? 100 }
+        groupDragCurrentSlot = TabDragLayout.groupDestinationIndex(
+            for: translation.width,
+            homeRange: groupDragHomeRange,
+            tabWidths: widths,
+            spacing: tabSpacing
+        )
     }
 
     private func handleGroupDragEnd(groupID: String, dropScreenPoint: CGPoint) {
@@ -755,21 +802,26 @@ private struct ToolbarTabBarView: View {
             Log.trace("Group drag end ignored: draggingGroupID mismatch")
             return
         }
-        Log.info("Group drag end: \(URL(fileURLWithPath: groupID).lastPathComponent) dropPoint=(\(Int(dropScreenPoint.x)),\(Int(dropScreenPoint.y)))")
-        defer {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                draggingGroupID = nil
+        let from = groupDragHomeRange
+        let to = groupDragCurrentSlot
+        Log.info("Group drag end: \(URL(fileURLWithPath: groupID).lastPathComponent) from=\(from.lowerBound) to=\(to) dropPoint=(\(Int(dropScreenPoint.x)),\(Int(dropScreenPoint.y)))")
+
+        // Try cross-window first
+        let movedAcrossWindows = AppDelegate.shared?.handleGroupDrop(
+            repoGroupID: groupID, from: overlayModel, atScreenPoint: dropScreenPoint
+        ) ?? false
+
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+            draggingGroupID = nil
+            groupDragOffset = 0
+            groupDragHomeRange = 0 ..< 0
+            groupDragCurrentSlot = 0
+            if !movedAcrossWindows, to != from.lowerBound {
+                overlayModel.moveGroup(fromRange: from, toIndex: to)
             }
         }
 
-        if let appDelegate = AppDelegate.shared {
-            let moved = appDelegate.handleGroupDrop(
-                repoGroupID: groupID, from: overlayModel, atScreenPoint: dropScreenPoint
-            )
-            Log.info("Group drag result: crossWindow=\(moved)")
-        } else {
-            Log.warn("Group drag end: AppDelegate not available")
-        }
+        Log.info("Group drag result: crossWindow=\(movedAcrossWindows) reorder=\(to != from.lowerBound && !movedAcrossWindows)")
     }
 
     /// Computes segments from visible tabs: contiguous runs of same repoGroupID become groups.
@@ -830,6 +882,9 @@ private struct ToolbarTabBarView: View {
 
     /// Group bracket drag state
     @State private var draggingGroupID: String?
+    @State private var groupDragOffset: CGFloat = 0
+    @State private var groupDragHomeRange: Range<Int> = 0 ..< 0
+    @State private var groupDragCurrentSlot: Int = 0
 
     var body: some View {
         let selected = overlayModel.selectedTab
@@ -875,14 +930,15 @@ private struct ToolbarTabBarView: View {
                                     )
                                     .gesture(
                                         DragGesture(minimumDistance: 10)
-                                            .onChanged { _ in
-                                                handleGroupDrag(groupID: groupID)
+                                            .onChanged { value in
+                                                handleGroupDrag(groupID: groupID, translation: value.translation)
                                             }
                                             .onEnded { _ in
                                                 handleGroupDragEnd(groupID: groupID, dropScreenPoint: NSEvent.mouseLocation)
                                             }
                                     )
                                     .opacity(draggingGroupID == groupID ? 0.5 : 1.0)
+                                    .offset(x: draggingGroupID == groupID ? groupDragOffset : 0)
 
                                     ForEach(Array(groupTabs.enumerated()), id: \.element.id) { idx, tab in
                                         let isFirst = idx == 0
@@ -1093,8 +1149,13 @@ private struct ToolbarTabBarView: View {
             }
         )
         // Visual offset: dragged tab follows cursor, displaced neighbors slide
-        .offset(x: tabDragOffset(for: tab))
+        .offset(x: tabDragOffset(for: tab) + groupTabDragOffset(for: tab))
         .animation(draggingTabID == tab.id ? nil : .spring(response: 0.25, dampingFraction: 0.85), value: dragCurrentSlot)
+        .animation(
+            (draggingGroupID != nil && tab.repoGroupID == draggingGroupID)
+                ? nil : .spring(response: 0.25, dampingFraction: 0.85),
+            value: groupDragCurrentSlot
+        )
         .zIndex(draggingTabID == tab.id ? 1 : 0)
         // Gesture-based tab reordering (more reliable than .onDrag in ScrollViews)
         .gesture(
@@ -1134,6 +1195,44 @@ private struct ToolbarTabBarView: View {
         } else if dragCurrentSlot < dragHomeIndex {
             // Dragging left: tabs in [currentSlot, home) shift right
             if i >= dragCurrentSlot, i < dragHomeIndex {
+                return shift
+            }
+        }
+        return 0
+    }
+
+    /// Returns the visual X offset for a tab during a group bracket drag.
+    /// - Tabs in the dragged group: follow the cursor via `groupDragOffset`
+    /// - Tabs displaced by the group: shift by the group's total width
+    /// - All others: no offset
+    private func groupTabDragOffset(for tab: OverlayTab) -> CGFloat {
+        guard draggingGroupID != nil, !groupDragHomeRange.isEmpty,
+              groupDragHomeRange.upperBound <= overlayModel.tabs.count else { return 0 }
+
+        guard let i = overlayModel.tabs.firstIndex(where: { $0.id == tab.id }) else { return 0 }
+
+        // Tabs inside the dragged group follow the cursor
+        if groupDragHomeRange.contains(i) {
+            return groupDragOffset
+        }
+
+        // Total visual width of the group (members + internal spacings)
+        let groupWidth: CGFloat = groupDragHomeRange.reduce(0) { $0 + (tabWidths[overlayModel.tabs[$1].id] ?? 100) }
+            + CGFloat(max(0, groupDragHomeRange.count - 1)) * tabSpacing
+        let shift = groupWidth + tabSpacing
+
+        let homeStart = groupDragHomeRange.lowerBound
+        let homeEnd = groupDragHomeRange.upperBound // exclusive
+
+        if groupDragCurrentSlot > homeStart {
+            // Group dragging right: tabs between homeEnd and the new end shift left
+            let newEnd = groupDragCurrentSlot + groupDragHomeRange.count
+            if i >= homeEnd, i < newEnd {
+                return -shift
+            }
+        } else if groupDragCurrentSlot < homeStart {
+            // Group dragging left: tabs between new start and homeStart shift right
+            if i >= groupDragCurrentSlot, i < homeStart {
                 return shift
             }
         }
