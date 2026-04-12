@@ -22,6 +22,7 @@ public struct TurnStats: Codable, Sendable {
     public private(set) var toolTallies: [String: ToolTally] = [:]
     public private(set) var inputTokens = 0
     public private(set) var outputTokens = 0
+    public private(set) var reasoningOutputTokens = 0
     public private(set) var cacheCreationTokens = 0
     public private(set) var cacheReadTokens = 0
 
@@ -29,12 +30,16 @@ public struct TurnStats: Codable, Sendable {
         inputTokens + outputTokens
     }
 
+    public var totalBillableTokens: Int {
+        inputTokens + outputTokens + reasoningOutputTokens + cacheCreationTokens + cacheReadTokens
+    }
+
     public var tokenUsage: TokenUsage {
         TokenUsage(
             inputTokens: inputTokens,
             cachedInputTokens: cacheCreationTokens + cacheReadTokens,
             outputTokens: outputTokens,
-            reasoningOutputTokens: 0
+            reasoningOutputTokens: reasoningOutputTokens
         )
     }
 
@@ -51,11 +56,18 @@ public struct TurnStats: Codable, Sendable {
     }
 
     /// Add token counts (cumulative — call once per API response chunk).
-    public mutating func addTokens(input: Int, output: Int, cacheCreation: Int, cacheRead: Int) {
+    public mutating func addTokens(
+        input: Int,
+        output: Int,
+        cacheCreation: Int,
+        cacheRead: Int,
+        reasoningOutput: Int = 0
+    ) {
         inputTokens += input
         outputTokens += output
         cacheCreationTokens += cacheCreation
         cacheReadTokens += cacheRead
+        reasoningOutputTokens += reasoningOutput
     }
 
     /// Flat dictionary suitable for `RuntimeEvent.data`.
@@ -70,9 +82,11 @@ public struct TurnStats: Codable, Sendable {
             "tools_used": toolNames,
             "input_tokens": "\(inputTokens)",
             "output_tokens": "\(outputTokens)",
+            "reasoning_output_tokens": "\(reasoningOutputTokens)",
             "cache_creation_tokens": "\(cacheCreationTokens)",
             "cache_read_tokens": "\(cacheReadTokens)",
             "total_tokens": "\(totalTokens)",
+            "total_billable_tokens": "\(totalBillableTokens)",
             "files_touched": "\(uniqueFiles.count)"
         ]
     }

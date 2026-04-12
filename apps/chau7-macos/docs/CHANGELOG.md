@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Local Quality Pipeline**: lefthook routes a glob-scoped pre-commit suite (gitleaks secret scan, forbidden-file + large-file guard, anti-slop regex, design-system guard on net-new Swift, shellcheck / ruff / tsc+prettier scoped to staged files) and a full `./Scripts/ci-local` local CI that runs periphery dead-code, jscpd duplication, cargo-deny, golangci-lint, and all Swift/Rust/Go/relay tests. Escape hatches documented in CONTRIBUTING.md.
+- **Live Runtime Cost & Token Accounting**: Runtime sessions now accumulate token usage and estimated USD cost as turns complete, expose reasoning-output tokens separately, emit configurable cost-threshold events, and surface estimated per-turn/session cost in telemetry and repository summaries while a run is still active.
 
 ### Fixed
 - **AnalyticsDashboardView Actor Isolation**: Wrapped the `apiCallRecorded` observer body in an `@MainActor` Task so `refresh()` no longer triggers `-warnings-as-errors` compile failures.
