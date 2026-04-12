@@ -224,6 +224,7 @@ Appearance,100+ Monospace Fonts,System fonts plus popular coding fonts — or us
 Appearance,Adjustable Font Size,"8–72pt with per-tab zoom (Cmd++/-, 50–200%)",Shipped,No
 Appearance,Line Spacing,Fine-tune line height for your preference,Shipped,No
 Appearance,Command Blocks,"Colored left-border gutter marks — green (success), red (fail), blue (running)",Shipped,Yes
+Appearance,Turn-Linked Command Blocks,"Command blocks carry runtime turn IDs and exact terminal row bounds so overlays and investigators can map shell work back to the active agent turn",Shipped,Yes
 Appearance,Line Timestamps,Optional timestamps on each terminal line in multiple formats,Shipped,No
 Appearance,JSON Pretty-Print,Optional auto-formatting of JSON output in terminal,Shipped,No
 Settings,Comprehensive Settings UI,Tabbed interface with fuzzy search across 100+ settings,Shipped,No
@@ -288,6 +289,7 @@ Terminal,File Drag & Drop,"Drop files to paste paths; Option+drop images for bas
 Terminal,Markdown Runbooks,"Open .md in editor pane with executable code blocks and Run All button",Shipped,Yes
 Terminal,Native Text Pane Edit Shortcuts,"Split-pane text editors preserve standard macOS cut, copy, and paste shortcuts before terminal-specific fallbacks run",Shipped,Yes
 Terminal,Show Changed Files,"Git diff snapshot per command (OSC 133) shows files modified by AI sessions (Cmd+Option+G)",Shipped,Yes
+Terminal,Heuristic Command Boundaries,"Without OSC 133, Chau7 still creates command blocks, consumes shell-reported exit status, records user/agent/system input rows, and restores changed-file status for prior commands",Shipped,Yes
 Terminal,Idle Tabs Dropdown,"Tabs idle beyond configurable threshold (default 10 min) grouped into a dropdown chip in the tab bar with hover card support",Shipped,Yes
 Terminal,Repository Tab Grouping,"Group tabs by git repo (Off/Auto/Manual). Inline repo-name tag chip with connecting line overlay. Suppresses redundant repo path in grouped tab titles, and inherited group membership auto-detaches when a tab moves to a different repo, including tabs opened directly at another directory.",Shipped,No
 Terminal,Split Pane File Preview,"Read-only file viewer with syntax highlighting and image support (Cmd+Opt+P). Lighter than full editor.",Shipped,No

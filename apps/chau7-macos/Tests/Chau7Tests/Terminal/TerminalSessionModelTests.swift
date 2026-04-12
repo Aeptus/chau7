@@ -5,6 +5,11 @@ import Chau7Core
 
 @MainActor
 final class TerminalSessionModelTests: XCTestCase {
+    private func flushMainQueue() async {
+        let expectation = expectation(description: "main queue flush")
+        DispatchQueue.main.async { expectation.fulfill() }
+        await fulfillment(of: [expectation], timeout: 1.0)
+    }
 
     // MARK: - CommandStatus Enum
 
@@ -993,6 +998,131 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(event?.type, "waiting_input")
         XCTAssertEqual(event?.tabID, tabID)
         RuntimeSessionManager.shared.resetForTesting()
+    }
+
+    func testHandleInputLineCreatesHeuristicCommandBlockWithCurrentRow() async {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let tabID = UUID()
+        session.ownerTabID = tabID
+        session.bufferRowProvider = { 42 }
+
+        CommandBlockManager.shared.clearBlocks(tabID: tabID.uuidString)
+        session.handleInputLine("ls -la")
+        await flushMainQueue()
+
+        let blocks = CommandBlockManager.shared.blocksForTab(tabID.uuidString)
+        XCTAssertEqual(blocks.count, 1)
+        XCTAssertEqual(blocks[0].command, "ls -la")
+        XCTAssertEqual(blocks[0].startLine, 42)
+        XCTAssertTrue(blocks[0].isRunning)
+    }
+
+    func testHandlePromptDetectedFinishesHeuristicCommandBlockWithoutExitCode() async {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let tabID = UUID()
+        session.ownerTabID = tabID
+        session.bufferRowProvider = { 64 }
+
+        CommandBlockManager.shared.clearBlocks(tabID: tabID.uuidString)
+        session.handleInputLine("continue")
+        await flushMainQueue()
+        session.handlePromptDetected()
+        await flushMainQueue()
+
+        let block = try XCTUnwrap(CommandBlockManager.shared.blocksForTab(tabID.uuidString).first)
+        XCTAssertFalse(block.isRunning)
+        XCTAssertEqual(block.endLine, 64)
+        XCTAssertNil(block.exitCode)
+    }
+
+    func testHandlePromptDetectedUsesShellReportedHeuristicExitCode() async {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let tabID = UUID()
+        session.ownerTabID = tabID
+        session.bufferRowProvider = { 65 }
+
+        CommandBlockManager.shared.clearBlocks(tabID: tabID.uuidString)
+        session.handleInputLine("false")
+        await flushMainQueue()
+        session.handleShellExitStatusReport(17)
+        await flushMainQueue()
+        session.handlePromptDetected()
+        await flushMainQueue()
+
+        let block = try XCTUnwrap(CommandBlockManager.shared.blocksForTab(tabID.uuidString).first)
+        XCTAssertFalse(block.isRunning)
+        XCTAssertEqual(block.endLine, 65)
+        XCTAssertEqual(block.exitCode, 17)
+    }
+
+    func testHeuristicFallbackTimeoutMarksSyntheticExitCode() async {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let tabID = UUID()
+        session.ownerTabID = tabID
+        session.bufferRowProvider = { 80 }
+
+        CommandBlockManager.shared.clearBlocks(tabID: tabID.uuidString)
+        session.handleInputLine("long-running")
+        await flushMainQueue()
+
+        session.status = .running
+        session.lastInputAt = Date.distantPast
+        session.lastOutputAt = Date.distantPast
+        session.commandStartedAt = Date.distantPast
+        session.markIdleIfNeeded()
+        await flushMainQueue()
+
+        let block = try XCTUnwrap(CommandBlockManager.shared.blocksForTab(tabID.uuidString).first)
+        XCTAssertEqual(block.exitCode, CommandBlock.syntheticTimeoutExitCode)
+        XCTAssertFalse(block.isRunning)
+    }
+
+    func testCommandBlockCapturesCurrentRuntimeTurnID() async {
+        RuntimeSessionManager.shared.resetForTesting()
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let tabID = UUID()
+        session.ownerTabID = tabID
+        session.bufferRowProvider = { 24 }
+
+        let runtimeSession = RuntimeSessionManager.shared.createSession(
+            tabID: tabID,
+            backend: CodexBackend(),
+            config: SessionConfig(directory: "/tmp/mockup", provider: "codex")
+        )
+        _ = runtimeSession.startTurn(prompt: "inspect", resultSchema: nil)
+
+        CommandBlockManager.shared.clearBlocks(tabID: tabID.uuidString)
+        session.handleInputLine("continue")
+        await flushMainQueue()
+
+        let block = try XCTUnwrap(CommandBlockManager.shared.blocksForTab(tabID.uuidString).first)
+        XCTAssertEqual(block.turnID, runtimeSession.currentTurnID)
+        RuntimeSessionManager.shared.resetForTesting()
+    }
+
+    func testUserInputTrackerCapturesUserAgentAndSystemSources() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.bufferRowProvider = { 9 }
+        session.handleInputLine("ls")
+
+        session.bufferRowProvider = { 10 }
+        session.activeAppName = "Codex"
+        session.handleInputLine("continue")
+
+        session.bufferRowProvider = { 11 }
+        session.activeAppName = nil
+        session.sendOrQueueSystemRestoreInput(" restore\n")
+        session.handleInputLine(" restore")
+
+        let records = session.userInputTracker.sortedRecords()
+        XCTAssertEqual(records.map(\.row), [9, 10, 11])
+        XCTAssertEqual(records.map(\.source), [.user, .agent, .system])
     }
 
     // MARK: - Default Current Directory

@@ -29,12 +29,14 @@ final class CommandBlockManager {
     ///   - command: The command text being executed
     ///   - line: The terminal line number where the command starts
     ///   - directory: The working directory at the time of execution
-    func commandStarted(tabID: String, command: String, line: Int, directory: String?) {
+    func commandStarted(tabID: String, command: String, line: Int, directory: String?, turnID: String?) -> UUID {
         let block = CommandBlock(
             command: command,
             startLine: line,
             startTime: Date(),
-            directory: directory
+            directory: directory,
+            turnID: turnID,
+            changedFilesStatus: .loading
         )
 
         if blocksByTab[tabID] == nil {
@@ -46,6 +48,7 @@ final class CommandBlockManager {
         trimBlocksIfNeeded(tabID: tabID)
 
         Log.trace("CommandBlock started: '\(command)' at line \(line) in tab \(tabID)")
+        return block.id
     }
 
     /// Records the completion of a command execution in a tab.
@@ -54,15 +57,18 @@ final class CommandBlockManager {
     ///   - tabID: The identifier of the terminal tab
     ///   - line: The terminal line number where the command output ends
     ///   - exitCode: The exit code of the completed command
-    func commandFinished(tabID: String, line: Int, exitCode: Int) {
+    func commandFinished(tabID: String, blockID: UUID, line: Int, exitCode: Int?) {
         guard var blocks = blocksByTab[tabID] else {
             Log.warn("CommandBlock finish called for unknown tab: \(tabID)")
             return
         }
 
-        // Find the last running block (most recent command without an end line)
-        guard let index = blocks.lastIndex(where: { $0.isRunning }) else {
-            Log.warn("CommandBlock finish called but no running block in tab: \(tabID)")
+        guard let index = blocks.firstIndex(where: { $0.id == blockID }) else {
+            Log.warn("CommandBlock finish called for unknown block \(blockID) in tab: \(tabID)")
+            return
+        }
+        guard blocks[index].isRunning else {
+            Log.warn("CommandBlock finish called for non-running block \(blockID) in tab: \(tabID)")
             return
         }
 
@@ -73,18 +79,25 @@ final class CommandBlockManager {
 
         let block = blocks[index]
         let durationStr = block.durationString
-        Log.info("CommandBlock finished: '\(block.command)' exit=\(exitCode) duration=\(durationStr) in tab \(tabID)")
+        Log.info("CommandBlock finished: '\(block.command)' exit=\(exitCode.map(String.init) ?? "nil") duration=\(durationStr) in tab \(tabID)")
     }
 
     /// Attach the list of changed files to the most recently finished block in a tab.
-    func setChangedFiles(_ files: [String], unavailable: Bool = false, forLastBlockIn tabID: String) {
+    func setChangedFiles(
+        _ files: [String],
+        unavailable: Bool = false,
+        status: CommandBlockChangedFilesStatus,
+        for blockID: UUID,
+        in tabID: String
+    ) {
         guard var blocks = blocksByTab[tabID],
-              let index = blocks.lastIndex(where: { !$0.isRunning }) else { return }
+              let index = blocks.firstIndex(where: { $0.id == blockID }) else { return }
         blocks[index].changedFiles = files
         blocks[index].changedFilesUnavailable = unavailable
+        blocks[index].changedFilesStatus = status
         blocksByTab[tabID] = blocks
         Log.info(
-            "CommandBlock: \(files.count) files changed in '\(blocks[index].command.prefix(40))' (tab \(tabID.prefix(8))) unavailable=\(unavailable)"
+            "CommandBlock: \(files.count) files changed in '\(blocks[index].command.prefix(40))' (tab \(tabID.prefix(8))) status=\(status.rawValue) unavailable=\(unavailable)"
         )
     }
 
@@ -136,6 +149,11 @@ final class CommandBlockManager {
         let count = blocksByTab[tabID]?.count ?? 0
         blocksByTab.removeValue(forKey: tabID)
         Log.info("CommandBlockManager cleared \(count) blocks for tab \(tabID)")
+    }
+
+    func restoreBlocks(_ blocks: [CommandBlock], for tabID: String) {
+        blocksByTab[tabID] = Array(blocks.suffix(Self.maxBlocksPerTab))
+        Log.info("CommandBlockManager restored \(blocks.count) blocks for tab \(tabID)")
     }
 
     // MARK: - Internal

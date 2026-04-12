@@ -18,6 +18,8 @@ final class CommandBlockTests: XCTestCase {
         XCTAssertNil(block.endTime)
         XCTAssertNil(block.exitCode)
         XCTAssertEqual(block.directory, "/tmp")
+        XCTAssertNil(block.turnID)
+        XCTAssertEqual(block.changedFilesStatus, .loading)
         XCTAssertTrue(block.isRunning)
         XCTAssertFalse(block.isSuccess)
         XCTAssertFalse(block.isFailed)
@@ -36,7 +38,11 @@ final class CommandBlockTests: XCTestCase {
             startTime: start,
             endTime: end,
             exitCode: 0,
-            directory: "/Users/dev/project"
+            directory: "/Users/dev/project",
+            turnID: "t_4",
+            changedFiles: ["Sources/App.swift"],
+            changedFilesUnavailable: false,
+            changedFilesStatus: .loaded
         )
 
         XCTAssertEqual(block.id, id)
@@ -45,6 +51,9 @@ final class CommandBlockTests: XCTestCase {
         XCTAssertEqual(block.endLine, 150)
         XCTAssertEqual(block.exitCode, 0)
         XCTAssertEqual(block.directory, "/Users/dev/project")
+        XCTAssertEqual(block.turnID, "t_4")
+        XCTAssertEqual(block.changedFiles, ["Sources/App.swift"])
+        XCTAssertEqual(block.changedFilesStatus, .loaded)
         XCTAssertFalse(block.isRunning)
         XCTAssertTrue(block.isSuccess)
         XCTAssertFalse(block.isFailed)
@@ -234,7 +243,11 @@ final class CommandBlockTests: XCTestCase {
             startTime: start,
             endTime: end,
             exitCode: 0,
-            directory: "/repo"
+            directory: "/repo",
+            turnID: "t_1",
+            changedFiles: ["README.md"],
+            changedFilesUnavailable: false,
+            changedFilesStatus: .loaded
         )
 
         let encoder = JSONEncoder()
@@ -249,6 +262,29 @@ final class CommandBlockTests: XCTestCase {
         XCTAssertEqual(decoded.endLine, original.endLine)
         XCTAssertEqual(decoded.exitCode, original.exitCode)
         XCTAssertEqual(decoded.directory, original.directory)
+        XCTAssertEqual(decoded.turnID, original.turnID)
+        XCTAssertEqual(decoded.changedFiles, original.changedFiles)
+        XCTAssertEqual(decoded.changedFilesStatus, .loaded)
+    }
+
+    func testLegacyCodableDefaultsMissingFields() throws {
+        let json = """
+        {
+          "id":"\(UUID().uuidString)",
+          "command":"git status",
+          "startLine":42,
+          "startTime":\(Date().timeIntervalSince1970)
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        let decoded = try decoder.decode(CommandBlock.self, from: Data(json.utf8))
+
+        XCTAssertNil(decoded.turnID)
+        XCTAssertEqual(decoded.changedFiles, [])
+        XCTAssertFalse(decoded.changedFilesUnavailable)
+        XCTAssertEqual(decoded.changedFilesStatus, .loading)
     }
 
     // MARK: - Lifecycle Simulation

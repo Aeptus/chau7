@@ -511,18 +511,49 @@ extension TerminalSessionModel {
         let tabID = ownerTabID?.uuidString
         let cmd = pendingCommandLine ?? ""
         let dir = currentDirectory
-        DispatchQueue.main.async {
-            guard let tabID else { return }
-            CommandBlockManager.shared.commandStarted(tabID: tabID, command: cmd, line: 0, directory: dir)
+        let line = currentBufferRow() ?? 0
+        let turnID = ownerTabID.flatMap { RuntimeSessionManager.shared.sessionForTab($0)?.currentTurnID }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                guard let tabID else { return }
+                self.currentCommandBlockID = CommandBlockManager.shared.commandStarted(
+                    tabID: tabID,
+                    command: cmd,
+                    line: line,
+                    directory: dir,
+                    turnID: turnID
+                )
+            }
+        } else {
+            DispatchQueue.main.async {
+                guard let tabID else { return }
+                self.currentCommandBlockID = CommandBlockManager.shared.commandStarted(
+                    tabID: tabID,
+                    command: cmd,
+                    line: line,
+                    directory: dir,
+                    turnID: turnID
+                )
+            }
         }
     }
 
-    func notifyCommandBlockFinished(exitCode: Int) {
+    func notifyCommandBlockFinished(exitCode: Int?) {
         let tabID = ownerTabID?.uuidString
-        DispatchQueue.main.async {
-            guard let tabID else { return }
-            CommandBlockManager.shared.commandFinished(tabID: tabID, line: 0, exitCode: exitCode)
+        let blockID = currentCommandBlockID
+        let line = currentBufferRow() ?? 0
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                guard let tabID, let blockID else { return }
+                CommandBlockManager.shared.commandFinished(tabID: tabID, blockID: blockID, line: line, exitCode: exitCode)
+            }
+        } else {
+            DispatchQueue.main.async {
+                guard let tabID, let blockID else { return }
+                CommandBlockManager.shared.commandFinished(tabID: tabID, blockID: blockID, line: line, exitCode: exitCode)
+            }
         }
+        currentCommandBlockID = nil
     }
 
     func clearActiveAppAfterPrompt() {
@@ -531,6 +562,13 @@ extension TerminalSessionModel {
         activeAppName = aiDetection.currentApp // nil after prompt return
         // finishAILogging is idempotent and has internal synchronization
         finishAILogging(exitCode: nil)
+    }
+
+    func handleShellExitStatusReport(_ exitCode: Int) {
+        DispatchQueue.main.async {
+            self.lastPromptExitCode = exitCode
+            self.lastPromptExitAt = Date()
+        }
     }
 
     func handlePromptDetected() {
@@ -555,8 +593,10 @@ extension TerminalSessionModel {
         guard hasPendingCommand, pendingCommandLine != nil else { return }
         promptSeenForPendingCommand = true
         if !commandFinishedNotified {
+            let heuristicExitCode = inferredHeuristicCommandExitCode()
             commandFinishedNotified = true
-            shellEventDetector.commandFinished(exitCode: nil, command: pendingCommandLine)
+            shellEventDetector.commandFinished(exitCode: heuristicExitCode, command: pendingCommandLine)
+            completeCommandBlockAndChangedFiles(exitCode: heuristicExitCode)
         }
     }
 
@@ -1082,6 +1122,9 @@ extension TerminalSessionModel {
         // Security: check if the PTY has echo disabled (password prompt, passphrase, etc.)
         // If so, mark as sensitive to prevent recording in history.
         let echoDisabled = activeTerminalView?.isPtyEchoDisabled ?? false
+        if !trimmed.isEmpty {
+            recordUserInputLineIfNeeded(isSystemRestoreInput: isSystemRestoreInput)
+        }
         if !isSystemRestoreInput {
             CommandHistoryManager.shared.recordCommand(trimmed, tabID: tabIdentifier, isSensitive: echoDisabled)
         }
@@ -1100,7 +1143,12 @@ extension TerminalSessionModel {
             promptSeenForPendingCommand = false
             commandFinishedNotified = false
             isAtPrompt = false
+            commandStartedAt = Date()
+            lastPromptExitCode = nil
+            lastPromptExitAt = nil
             shellEventDetector.commandStarted(command: persistedCommand, in: currentDirectory)
+            notifyCommandBlockStarted()
+            startCommandChangedFilesTracking()
             onPermissionResolved?()
         }
         trackAIResumeMetadata(from: trimmed)
@@ -1175,6 +1223,7 @@ extension TerminalSessionModel {
                         if !commandFinishedNotified {
                             commandFinishedNotified = true
                             shellEventDetector.commandFinished(exitCode: nil, command: pendingCommandLine)
+                            completeCommandBlockAndChangedFiles(exitCode: CommandBlock.syntheticTimeoutExitCode)
                         }
                         Log.info("Fallback completion after \(Int(latestIdleFor))s without prompt")
                     } else {
@@ -1597,7 +1646,65 @@ extension TerminalSessionModel {
         semanticDetector.commandStarted(persistedCommand, atRow: row)
     }
 
+    private func recordUserInputLineIfNeeded(isSystemRestoreInput: Bool) {
+        guard let row = currentBufferRow() else { return }
+        let source: TerminalInputSource
+        if isSystemRestoreInput {
+            source = .system
+        } else if activeAppName != nil {
+            source = .agent
+        } else {
+            source = .user
+        }
+        userInputTracker.record(row: row, source: source)
+    }
+
+    func startCommandChangedFilesTracking() {
+        let dir = currentDirectory
+        let tracker = gitDiffTracker
+        DispatchQueue.global(qos: .utility).async {
+            tracker.snapshot(directory: dir)
+        }
+    }
+
+    func completeCommandBlockAndChangedFiles(exitCode: Int?) {
+        let tabID = ownerTabID?.uuidString
+        let blockID = currentCommandBlockID
+        notifyCommandBlockFinished(exitCode: exitCode)
+        let dir = currentDirectory
+        let tracker = gitDiffTracker
+        DispatchQueue.global(qos: .utility).async {
+            let result = tracker.changedFilesResult(directory: dir)
+            guard let tabID, let blockID else { return }
+            DispatchQueue.main.async {
+                CommandBlockManager.shared.setChangedFiles(
+                    result.files,
+                    unavailable: result.diffUnavailable,
+                    status: result.status,
+                    for: blockID,
+                    in: tabID
+                )
+                ConflictDetector.shared.checkForConflicts()
+            }
+        }
+    }
+
+    private func inferredHeuristicCommandExitCode(now: Date = Date()) -> Int? {
+        guard !hasShellIntegration else { return nil }
+        guard let exitCode = lastPromptExitCode,
+              let exitAt = lastPromptExitAt else {
+            return nil
+        }
+
+        guard exitAt >= commandStartedAt.addingTimeInterval(-0.1) else { return nil }
+        guard now.timeIntervalSince(exitAt) <= 5 else { return nil }
+        return exitCode
+    }
+
     private func currentBufferRow() -> Int? {
+        if let provider = bufferRowProvider {
+            return provider()
+        }
         guard let view = activeTerminalView else { return nil }
         return view.currentAbsoluteRow
     }

@@ -289,6 +289,10 @@ extension RustTerminalView {
                 }
             }
 
+            // Parse Chau7 shell integration markers before prompt/CWD handling so
+            // downstream prompt detection can consume the reported exit status.
+            parseChau7Exit(from: outputData)
+
             // Parse OSC 7 (current working directory) before processing
             // OSC 7 format: ESC ] 7 ; file://hostname/path BEL
             parseOSC7(from: outputData)
@@ -838,8 +842,17 @@ extension RustTerminalView {
     // MARK: - OSC 9 chau7;... parsing
 
     private static let branchMarkerPrefix = Array("\u{1b}]9;chau7;branch=".utf8)
+    private static let exitMarkerPrefix = Array("\u{1b}]9;chau7;exit=".utf8)
     private static let repoRootMarkerPrefix = Array("\u{1b}]9;chau7;repo-root=".utf8)
     private static let belTerminator: UInt8 = 0x07
+
+    /// Extract last command exit status from OSC 9;chau7;exit=CODE sequences.
+    func parseChau7Exit(from data: Data) {
+        parseChau7Marker(data: data, prefix: Self.exitMarkerPrefix) { [weak self] value in
+            guard let exitCode = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+            self?.onExitStatusChanged?(exitCode)
+        }
+    }
 
     /// Extract git branch name from OSC 9;chau7;branch=NAME sequences in terminal output.
     /// The shell integration precmd hook emits this on every prompt when inside a git repo.

@@ -10,8 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Local Quality Pipeline**: lefthook routes a glob-scoped pre-commit suite (gitleaks secret scan, forbidden-file + large-file guard, anti-slop regex, design-system guard on net-new Swift, shellcheck / ruff / tsc+prettier scoped to staged files) and a full `./Scripts/ci-local` local CI that runs periphery dead-code, jscpd duplication, cargo-deny, golangci-lint, and all Swift/Rust/Go/relay tests. Escape hatches documented in CONTRIBUTING.md.
 - **Live Runtime Cost & Token Accounting**: Runtime sessions now accumulate token usage and estimated USD cost as turns complete, expose reasoning-output tokens separately, emit configurable cost-threshold events, and surface estimated per-turn/session cost in telemetry and repository summaries while a run is still active.
+- **Command Block Turn Boundaries**: Heuristic command tracking now creates real command blocks without OSC 133, records non-zero terminal rows, tags blocks with runtime turn IDs, captures all input rows as user/agent/system sources, and persists command blocks plus changed-file status across session restore.
 
 ### Fixed
+- **Heuristic Shell Exit Codes**: Prompt-return command completion now consumes the shell-reported `OSC 9;chau7;exit=<code>` marker, so non-OSC command blocks no longer drop exit codes to `nil` unless the shell truly reported nothing.
 - **Live Cost Threshold Events**: Runtime sessions now actually journal `cost_threshold` events when cumulative estimated cost crosses configured limits, instead of only consuming the thresholds internally with no emitted signal.
 - **Completed Turn Summary Persistence**: Repository turn summaries now preserve the last completed turn’s tokens, tools, duration, exit reason, and estimated cost after the session goes idle instead of falling back to a zeroed in-flight accumulator.
 - **Provider-Fallback Cost Estimates**: Sessions and SQLite-backed telemetry without an explicit model now fall back to provider-default pricing families (`claude`, `codex`, `gemini`) so estimated USD cost no longer silently disappears on model-less runs.

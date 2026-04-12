@@ -223,6 +223,7 @@ Runtime sessions keep pending `initial_prompt` work attached to real terminal re
 - **Richer tool results** — `tool_result` events include success/failure, exit code, error preview, output preview, duration, and file path metadata matched back to the originating tool invocation.
 - **Streaming output chunks** — `output_chunk` events are emitted during the active turn with `turn_id` and `chunk_index`, using an 8K default chunk size that can be tuned through runtime settings.
 - **Configurable journal retention** — per-session runtime event journal capacity and output chunk limits are configurable, so long-running orchestration sessions can trade memory for deeper history.
+- **Turn-linked command boundaries** — command blocks now carry runtime `turnID`, changed-file status, and exact terminal row bounds so investigators can map shell work back to one runtime turn without timestamp heuristics.
 
 ### Resources (4 endpoints)
 
@@ -250,6 +251,7 @@ Runtime sessions keep pending `initial_prompt` work attached to real terminal re
 - Markdown runbooks: open .md files in the editor pane with executable code blocks.
 - Native macOS cut/copy/paste shortcuts are preserved inside split-pane text editors before terminal-specific fallbacks run.
 - Show Changed Files (Cmd+Option+G): git diff snapshot per command shows which files were modified.
+- Heuristic command boundaries: when OSC 133 is unavailable, Chau7 still creates command blocks, records shell-reported exit status, captures user/agent/system input rows, and persists per-command changed-file state across restore.
 - Idle tabs dropdown: tabs idle beyond a configurable threshold (default 10 min) are grouped into a compact chip in the tab bar.
 - Repository tab grouping: group tabs by git repo (Off/Auto/Manual). Shows inline repo-name tag chip with connecting line. Suppresses redundant repo path in tab titles, and inherited group membership auto-detaches when a tab moves to a different repo, including tabs opened directly at another directory.
 - Protected repo identity fallback: tabs keep their known repo root and last-known branch even when macOS protected-folder access blocks live git probing, so passive repo-aware UI does not collapse to “not a repo.”

@@ -342,21 +342,25 @@ final class TerminalSessionModel {
     var lastAgentLaunchCommand: String?
     var lastExitCode: Int?
     var lastExitAt: Date?
+    var lastPromptExitCode: Int?
+    var lastPromptExitAt: Date?
 
-    /// Update the last detected app name and clear stale session metadata
-    /// when the provider changes. For example, if `lastAIProvider` is "claude"
-    /// (from a wrong restore) but output detection identifies "Codex",
-    /// the Claude session ID in `lastAISessionId` is invalid for Codex.
+    /// Update the last detected app name, provider, and clear stale session
+    /// metadata when the provider changes. For example, if `lastAIProvider`
+    /// is "claude" (from a prior session) but detection identifies "Codex",
+    /// the Claude session ID in `lastAISessionId` is invalid for Codex and
+    /// `lastAIProvider` must switch to "codex" so the persisted state is
+    /// correct even after `lastDetectedAppName` is cleared on next restore.
     func updateLastDetectedApp(_ app: String) {
         lastDetectedAppName = app
-        if let newProvider = AIResumeParser.normalizeProviderName(app),
-           let oldProvider = AIResumeParser.normalizeProviderName(lastAIProvider ?? ""),
-           newProvider != oldProvider {
-            lastAISessionId = nil
-            lastAISessionIdentitySource = nil
-            agentStartedAt = nil
-            lastAgentLaunchCommand = nil
-        }
+        guard let newProvider = AIResumeParser.normalizeProviderName(app) else { return }
+        let oldProvider = AIResumeParser.normalizeProviderName(lastAIProvider ?? "")
+        guard oldProvider == nil || newProvider != oldProvider else { return }
+        lastAIProvider = newProvider
+        lastAISessionId = nil
+        lastAISessionIdentitySource = nil
+        agentStartedAt = nil
+        lastAgentLaunchCommand = nil
     }
 
     var hasBackgroundRenderingAIContext: Bool {
@@ -656,7 +660,10 @@ final class TerminalSessionModel {
     @ObservationIgnored private var sigintSentAt: Date?
     @ObservationIgnored private var sigtermSentAt: Date?
     @ObservationIgnored private var forcedTerminationWorkItem: DispatchWorkItem?
-    @ObservationIgnored let dangerousCommandTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
+    @ObservationIgnored let dangerousCommandTracker = DangerousCommandLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
+    @ObservationIgnored let userInputTracker = UserInputTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
+    @ObservationIgnored var currentCommandBlockID: UUID?
+    @ObservationIgnored var bufferRowProvider: (() -> Int?)?
     @ObservationIgnored var dangerousOutputHighlightWorkItem: DispatchWorkItem?
     @ObservationIgnored var dangerousOutputHighlightLastRun = Date.distantPast
     /// Cached dangerous output rows from the most recent async scan (for in-grid tinting).
@@ -668,7 +675,7 @@ final class TerminalSessionModel {
     @ObservationIgnored let devServerMonitor = DevServerMonitor()
     @ObservationIgnored let processResourceMonitor = ProcessResourceMonitor()
     @ObservationIgnored lazy var shellEventDetector = ShellEventDetector(appModel: appModel)
-    @ObservationIgnored private let gitDiffTracker = GitDiffTracker()
+    @ObservationIgnored let gitDiffTracker = GitDiffTracker()
     static let osc7Prefix = Data([0x1B, 0x5D, 0x37, 0x3B])
     static let aiExitMarkerPrefix = Data("\u{001b}]9;chau7;exit=".utf8)
     static let aiExitMarkerSuffix = Data([0x07])
@@ -844,6 +851,12 @@ final class TerminalSessionModel {
             handleShellBranchReport(branch)
         }
 
+        // Wire up shell-reported prompt exit status (from OSC 9;chau7;exit=CODE).
+        view.onExitStatusChanged = { [weak self] exitCode in
+            guard let self else { return }
+            handleShellExitStatusReport(exitCode)
+        }
+
         // Wire up shell-reported git repo root (from OSC 9;chau7;repo-root=PATH).
         // This is how the app learns protected-path repos the first time — the shell
         // can run git even when TCC blocks the parent process from spawning it.
@@ -875,36 +888,21 @@ final class TerminalSessionModel {
                 commandStartedAt = Date()
                 commandFinishedNotified = false
                 promptSeenForPendingCommand = false
+                lastPromptExitCode = nil
+                lastPromptExitAt = nil
                 // Clear persistent permission border — user answered the prompt
                 onPermissionResolved?()
             case .commandExecuted:
                 shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
                 notifyCommandBlockStarted()
-                let dir = currentDirectory
-                let tracker = gitDiffTracker
-                DispatchQueue.global(qos: .utility).async { tracker.snapshot(directory: dir) }
+                startCommandChangedFilesTracking()
             case .commandFinished(let exitCode):
                 guard !commandFinishedNotified else { return }
                 commandFinishedNotified = true
                 hasPendingCommand = false
                 promptSeenForPendingCommand = true
                 shellEventDetector.commandFinished(exitCode: Int(exitCode), command: pendingCommandLine)
-                notifyCommandBlockFinished(exitCode: Int(exitCode))
-                let dir = currentDirectory
-                let tabID = ownerTabID?.uuidString
-                let tracker = gitDiffTracker
-                DispatchQueue.global(qos: .utility).async {
-                    let result = tracker.changedFilesResult(directory: dir)
-                    guard let tabID else { return }
-                    DispatchQueue.main.async {
-                        CommandBlockManager.shared.setChangedFiles(
-                            result.files,
-                            unavailable: result.diffUnavailable,
-                            forLastBlockIn: tabID
-                        )
-                        ConflictDetector.shared.checkForConflicts()
-                    }
-                }
+                completeCommandBlockAndChangedFiles(exitCode: Int(exitCode))
             }
         }
 
@@ -2173,6 +2171,7 @@ final class TerminalSessionModel {
 
     func resetDangerousHighlights() {
         dangerousCommandTracker.reset()
+        userInputTracker.reset()
         outputRiskCache.removeAll(keepingCapacity: true)
         cachedDangerousOutputRowSet = []
         dirtyOutputRange = nil

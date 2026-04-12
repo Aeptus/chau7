@@ -1969,6 +1969,10 @@ final class RustTerminalView: NSView {
     /// (via OSC 9;chau7;branch=NAME). Fires on every prompt in a git repo.
     var onBranchChanged: ((String) -> Void)?
 
+    /// Callback when shell integration reports the last command exit status
+    /// (via OSC 9;chau7;exit=CODE). Fires on every prompt.
+    var onExitStatusChanged: ((Int) -> Void)?
+
     /// Callback when shell integration reports the git repo root path
     /// (via OSC 9;chau7;repo-root=PATH). Fires on every prompt in a git repo and
     /// lets the app learn a protected-path repo's identity without needing direct
