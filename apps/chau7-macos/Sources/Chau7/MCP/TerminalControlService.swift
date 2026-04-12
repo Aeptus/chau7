@@ -260,11 +260,22 @@ final class TerminalControlService {
         // the main thread. The Rust terminal's sendInput → onInput callback
         // chain can re-enter pty_handle.lock() (via isPtyEchoDisabled),
         // which deadlocks if the poll thread holds that lock concurrently.
-        let validationResult: (isValid: Bool, error: String?, isLoading: Bool, isAtPrompt: Bool) = onMain {
+        let validationResult: (
+            isValid: Bool,
+            error: String?,
+            isLoading: Bool,
+            isAtPrompt: Bool,
+            detectedApp: String?
+        ) = onMain {
             guard let (_, session) = self.resolveTab(tabID) else {
-                return (false, self.jsonError("Tab not found: \(tabID)"), false, false)
+                return (false, self.jsonError("Tab not found: \(tabID)"), false, false, nil)
             }
-            return (true, nil, session.isShellLoading, session.isAtPrompt)
+            let detectedApp = CommandDetection.detectApp(from: command) ?? CommandDetection.detectLaunchableApp(
+                from: command,
+                currentDirectory: session.currentDirectory,
+                searchPath: session.launchPATHValue()
+            )
+            return (true, nil, session.isShellLoading, session.isAtPrompt, detectedApp)
         }
 
         guard validationResult.isValid else {
@@ -274,6 +285,11 @@ final class TerminalControlService {
         if validationResult.isLoading {
             DispatchQueue.main.async {
                 guard let (_, session) = self.resolveTab(tabID) else { return }
+                if let detectedApp = validationResult.detectedApp {
+                    session.activeAppName = detectedApp
+                    session.updateLastDetectedApp(detectedApp)
+                    session.startAILoggingIfNeeded(toolName: detectedApp, commandLine: command)
+                }
                 session.sendOrQueueInput(command + "\n")
             }
             Log.info("MCP: queued exec in \(tabID): \(command.prefix(80))")
@@ -286,6 +302,11 @@ final class TerminalControlService {
 
         DispatchQueue.main.async {
             guard let (_, session) = self.resolveTab(tabID) else { return }
+            if let detectedApp = validationResult.detectedApp {
+                session.activeAppName = detectedApp
+                session.updateLastDetectedApp(detectedApp)
+                session.startAILoggingIfNeeded(toolName: detectedApp, commandLine: command)
+            }
             session.sendInput(command + "\n")
         }
         Log.info("MCP: exec in \(tabID): \(command.prefix(80))")
@@ -497,7 +518,8 @@ final class TerminalControlService {
             guard let (_, session) = self.resolveTab(tabID) else {
                 return (nil, self.jsonError("Tab not found: \(tabID)"))
             }
-            return (session.lastPTYLogPath, nil)
+            session.syncCurrentPTYLog()
+            return (session.currentPTYLogPath(), nil)
         }
         if let error = result.error { return error }
         guard let path = result.path else {

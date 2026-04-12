@@ -413,3 +413,6 @@ Initial development release
 | 0.2.1 | 2026-01-15 | Shell integration, baseline metrics |
 | 0.2.0 | 2026-01-14 | API proxy, task lifecycle, terminal header |
 | 0.1.0 | 2026-01-11 | Initial release with core features |
+# Unreleased
+
+- MCP `tab_output(source: "pty_log")` now flushes the active AI PTY log before reading so live Codex/Claude transcripts are less likely to miss the final output tail.

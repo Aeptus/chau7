@@ -24,12 +24,15 @@ final class AITerminalLogSession {
         guard !data.isEmpty else { return }
         queue.async { [weak self] in
             guard let self else { return }
-            let ok = appendLocked(data)
-            writeCount += 1
-            // Trim every 200 writes, or immediately on write failure (disk full)
-            if !ok || writeCount.isMultiple(of: 200) {
-                trimLogIfNeeded()
-            }
+            recordOutputLocked(data)
+        }
+    }
+
+    func recordOutputSync(_ data: Data) {
+        guard !data.isEmpty else { return }
+        queue.sync { [weak self] in
+            guard let self else { return }
+            recordOutputLocked(data)
         }
     }
 
@@ -51,9 +54,22 @@ final class AITerminalLogSession {
         }
     }
 
+    func sync() {
+        queue.sync {}
+    }
+
     @discardableResult
     private func appendLocked(_ data: Data) -> Bool {
         FileOperations.appendData(data, to: URL(fileURLWithPath: logPath))
+    }
+
+    private func recordOutputLocked(_ data: Data) {
+        let ok = appendLocked(data)
+        writeCount += 1
+        // Trim every 200 writes, or immediately on write failure (disk full)
+        if !ok || writeCount.isMultiple(of: 200) {
+            trimLogIfNeeded()
+        }
     }
 
     private func trimLogIfNeeded() {

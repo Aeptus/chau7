@@ -152,20 +152,16 @@ extension TerminalSessionModel {
                 }
             }
 
-            // AI log processing: parse metadata under aiLogQueue.sync (fast, in-memory,
-            // but must be serialized with startAILogging/finishAILogging which access
-            // the same aiLogSession and aiLogPrefixBuffer state).
-            // Disk write (recordOutput) is deferred to async to avoid blocking output.
+            // AI log processing must stay serialized with startAILogging/finishAILogging
+            // so tab_output can flush and read a complete PTY log tail.
             var aiExitCode: Int?
             var logData: Data?
             aiLogQueue.sync {
                 let aiLogResult = self.processAILogOutput(data)
                 aiExitCode = aiLogResult.exitCode
                 logData = aiLogResult.loggable
-            }
-            if let logData, !logData.isEmpty {
-                aiLogQueue.async { [weak self] in
-                    self?.aiLogSession?.recordOutput(logData)
+                if let logData, !logData.isEmpty {
+                    self.aiLogSession?.recordOutputSync(logData)
                 }
             }
 
@@ -174,6 +170,10 @@ extension TerminalSessionModel {
                 guard let self = self else { return }
                 let mainToken = FeatureProfiler.shared.begin(.outputMainThread, bytes: data.count)
                 FeatureProfiler.shared.end(outputToken)
+
+                if let outputText {
+                    cacheRemoteOutputTranscript(outputText)
+                }
 
                 if let exitCode = aiExitCode {
                     finishAILogging(exitCode: exitCode)
@@ -210,6 +210,13 @@ extension TerminalSessionModel {
                 FeatureProfiler.shared.end(mainToken)
             }
         }
+    }
+
+    private func cacheRemoteOutputTranscript(_ rawText: String) {
+        guard !rawText.isEmpty else { return }
+        let sanitized = EscapeSequenceSanitizer.sanitize(rawText)
+        guard !sanitized.isEmpty else { return }
+        cachedRemoteOutputText = RemoteOutputTuning.trimRetainedText(cachedRemoteOutputText + sanitized)
     }
 
     private func maybeDetectDevServer(_ data: Data) {
@@ -366,6 +373,18 @@ extension TerminalSessionModel {
                 source: .terminalSession,
                 logPath: eventsLogPath()
             )
+        }
+    }
+
+    func currentPTYLogPath() -> String? {
+        aiLogQueue.sync {
+            aiLogContext?.logPath ?? lastPTYLogPath
+        }
+    }
+
+    func syncCurrentPTYLog() {
+        aiLogQueue.sync {
+            aiLogSession?.sync()
         }
     }
 

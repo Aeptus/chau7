@@ -120,6 +120,41 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertFalse(TerminalControlService.shared.isToolAtPrompt(toolName: "Codex", sessionID: "session-active"))
     }
 
+    func testRunCommandPrearmsAILoggingForKnownToolWithoutLaunchableLookup() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+        let session = try XCTUnwrap(tab.session)
+        session.currentDirectory = "/tmp"
+
+        let response = TerminalControlService.shared.execInTab(
+            tabID: tabID,
+            command: "codex --model gpt-5.3-codex"
+        )
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["ok"] as? Bool, true)
+        XCTAssertEqual(session.activeAppName, "Codex")
+        XCTAssertNotNil(session.currentPTYLogPath())
+    }
+
+    func testTabOutputPTYLogReadsActiveSessionOutputBeforeClose() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.startAILoggingIfNeeded(toolName: "Codex", commandLine: "codex --model gpt-5.3-codex")
+        session.aiLogSession?.recordOutput(Data("\u{1B}[32mWorking...\u{1B}[0m\n{\"summary\":\"ok\",\"findings\":[],\"recommendations\":[],\"confidence\":\"high\"}\n".utf8))
+
+        let response = TerminalControlService.shared.tabOutput(
+            tabID: TerminalControlService.shared.controlPlaneTabID(for: tab.id),
+            lines: 50,
+            source: "pty_log"
+        )
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["source"] as? String, "pty_log")
+        XCTAssertTrue((json["output"] as? String)?.contains("Working...") == true)
+        XCTAssertTrue((json["output"] as? String)?.contains("\"summary\":\"ok\"") == true)
+    }
+
     func testRenameTabPropagatesToAllSplitSessions() throws {
         overlayModel.splitCurrentTabHorizontally()
         let tab = try XCTUnwrap(overlayModel.tabs.first)

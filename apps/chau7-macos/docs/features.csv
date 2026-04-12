@@ -374,3 +374,4 @@ Repository,Turn Cost Summaries,"Repository pane turn summaries now show estimate
 Developer Experience,Local Quality Pipeline,"lefthook-driven pre-commit/pre-push/local-CI enforcement: gitleaks, forbidden-file + large-file guard, anti-slop regex, design-system guard on net-new Swift, shellcheck + ruff + tsc + prettier, periphery, jscpd, cargo-deny, golangci-lint, full test suite",Shipped,Yes
 Overlay,Shortcut Helper Hint,"Floating hint box showing keyboard shortcuts (⌘/) and report issue (⌥⌘I), positioned 4pt from tab bar and window edge",Shipped,No
 Performance,Power Efficiency,"Adaptive clipboard polling, shared background drain, event-driven focus detection, timer leeway coalescing, wakeup stats logging",Shipped,Yes
+pty_log_output_flush,macos,mcp,active AI PTY log is flushed before tab_output reads it,shipped
