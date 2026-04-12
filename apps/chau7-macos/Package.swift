@@ -20,7 +20,10 @@ let package = Package(
         .target(
             name: "Chau7Core",
             dependencies: [],
-            path: "Sources/Chau7Core"
+            path: "Sources/Chau7Core",
+            exclude: [
+                "README.md"
+            ]
         ),
         // Main executable
         .executableTarget(
