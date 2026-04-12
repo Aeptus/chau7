@@ -20,6 +20,10 @@ final class AgentDashboardModel: Identifiable {
     private(set) var totalCost: Double = 0
     private(set) var overallStatus: OverallStatus = .idle
     private(set) var proxyHealthy = true
+    private(set) var companionPlanPath: String?
+    private(set) var companionPlanProgress = PlanProgress(checked: 0, total: 0)
+    private(set) var detectedPlanFiles: [String] = []
+    private(set) var companionPlanLastLoadedAt: Date?
 
     // MARK: - Internal Tracking
 
@@ -32,6 +36,7 @@ final class AgentDashboardModel: Identifiable {
     @ObservationIgnored private var apiCallObserver: Any?
     @ObservationIgnored private var currentPollInterval: TimeInterval = 2
     @ObservationIgnored private var pollCount = 0
+    @ObservationIgnored private var lastCompanionPlanHash: String?
 
     var repoName: String {
         URL(fileURLWithPath: repoGroupID).lastPathComponent
@@ -55,6 +60,7 @@ final class AgentDashboardModel: Identifiable {
 
     func startPolling() {
         guard refreshTimer == nil else { return }
+        refreshCompanionPlan(trackerValues: Array(fileTrackers.values), sessionIDs: [])
         refresh()
         let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
         timer.schedule(deadline: .now() + currentPollInterval, repeating: currentPollInterval)
@@ -210,6 +216,8 @@ final class AgentDashboardModel: Identifiable {
             }
         }
 
+        refreshCompanionPlan(trackerValues: Array(fileTrackers.values), sessionIDs: matching.map(\.id))
+
         DispatchQueue.main.async { [weak self] in
             self?.agentCards = cards.sorted { lhs, rhs in
                 if lhs.delegationDepth != rhs.delegationDepth {
@@ -225,6 +233,43 @@ final class AgentDashboardModel: Identifiable {
             self?.totalTokens = allTokens
             self?.totalCost = allCost
             self?.overallStatus = status
+        }
+    }
+
+    private func refreshCompanionPlan(trackerValues: [SessionFilesTracker], sessionIDs: [String]) {
+        let touchedPlanFiles = Set(trackerValues.flatMap { tracker in
+            CompanionPlanLocator.detectedPlanCandidates(from: tracker.touchedFiles)
+        })
+        let preferredPath = CompanionPlanLocator.preferredPlanPath(
+            repoRoot: repoGroupID,
+            touchedFiles: touchedPlanFiles,
+            sessionIDs: sessionIDs
+        )
+        let fileManager = FileManager.default
+        if !fileManager.fileExists(atPath: preferredPath) {
+            let directory = (preferredPath as NSString).deletingLastPathComponent
+            try? fileManager.createDirectory(atPath: directory, withIntermediateDirectories: true)
+            let repoName = URL(fileURLWithPath: repoGroupID).lastPathComponent
+            try? CompanionPlanLocator.defaultSkeleton(repoName: repoName).write(
+                toFile: preferredPath,
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+        guard let content = try? String(contentsOfFile: preferredPath, encoding: .utf8) else {
+            return
+        }
+        let contentHash = String(content.hashValue)
+        guard contentHash != lastCompanionPlanHash || companionPlanPath != preferredPath || detectedPlanFiles.sorted() != Array(touchedPlanFiles).sorted() else {
+            return
+        }
+        let progress = computePlanProgress(from: content)
+        lastCompanionPlanHash = contentHash
+        DispatchQueue.main.async { [weak self] in
+            self?.companionPlanPath = preferredPath
+            self?.companionPlanProgress = progress
+            self?.detectedPlanFiles = Array(touchedPlanFiles).sorted()
+            self?.companionPlanLastLoadedAt = Date()
         }
     }
 

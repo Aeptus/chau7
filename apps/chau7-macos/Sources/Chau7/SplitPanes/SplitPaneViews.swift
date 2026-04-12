@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import Chau7Core
 
 // MARK: - Split Pane View
 
@@ -25,8 +26,8 @@ struct SplitPaneView: View {
                 controller.closePane(id: id)
             },
             onFilePathClicked: controller.onFilePathClicked,
-            onRunCommand: { [weak controller] command in
-                controller?.sendCommandToTerminal(command)
+            onRunCommand: { [weak controller] command, lineNumber, editor in
+                controller?.sendCommandToTerminal(command, sourceEditor: editor, sourceLineNumber: lineNumber)
             }
         )
     }
@@ -41,7 +42,7 @@ struct SplitNodeView: View {
     let onUpdateRatio: (UUID, CGFloat) -> Void
     let onClosePane: (UUID) -> Void
     var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
-    var onRunCommand: ((String) -> Void)? // Markdown runbook: send command to terminal
+    var onRunCommand: ((String, Int?, TextEditorModel?) -> Void)? // Markdown runbook: send command to terminal
 
     var body: some View {
         switch node {
@@ -93,7 +94,9 @@ struct SplitNodeView: View {
             )
 
         case .dashboard(_, let dashboard):
-            AgentDashboardView(model: dashboard)
+            AgentDashboardView(model: dashboard) { path in
+                onFilePathClicked?(path, nil, nil)
+            }
 
         case .split(let splitID, let direction, let first, let second, let ratio):
             SplitContainerView(
@@ -108,7 +111,8 @@ struct SplitNodeView: View {
                 onFocus: onFocus,
                 onUpdateRatio: onUpdateRatio,
                 onClosePane: onClosePane,
-                onFilePathClicked: onFilePathClicked
+                onFilePathClicked: onFilePathClicked,
+                onRunCommand: onRunCommand
             )
         }
     }
@@ -128,7 +132,7 @@ struct SplitContainerView: View {
     let onUpdateRatio: (UUID, CGFloat) -> Void
     let onClosePane: (UUID) -> Void
     var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
-    var onRunCommand: ((String) -> Void)? // Markdown runbook
+    var onRunCommand: ((String, Int?, TextEditorModel?) -> Void)? // Markdown runbook
 
     @State private var liveRatio: CGFloat = 0.5
 
@@ -250,14 +254,15 @@ struct TextEditorPaneView: View {
     let onFocus: () -> Void
     let onClose: () -> Void
     /// Callback to run a command in the terminal (for markdown runbooks)
-    var onRunCommand: ((String) -> Void)?
+    var onRunCommand: ((String, Int?, TextEditorModel?) -> Void)?
 
     @State private var showFilePicker = false
     @State private var isMarkdownMode = false
     @State private var showCopiedToast = false
 
     private var isMarkdownFile: Bool {
-        editor.filePath?.hasSuffix(".md") == true
+        guard let filePath = editor.filePath?.lowercased() else { return false }
+        return filePath.hasSuffix(".md") || filePath.hasSuffix(".markdown")
     }
 
     var body: some View {
@@ -288,10 +293,33 @@ struct TextEditorPaneView: View {
                         .transition(.opacity)
                 }
 
-                if editor.isDirty {
+                if editor.isAutoSaveEnabled, let autoSaveStatusMessage = editor.autoSaveStatusMessage {
+                    Text(autoSaveStatusMessage)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                } else if editor.isDirty {
                     Circle()
                         .fill(Color.orange)
                         .frame(width: 6, height: 6)
+                }
+
+                if editor.hasExternalChangeConflict {
+                    Button {
+                        editor.reloadFromDisk()
+                    } label: {
+                        Text(L("editor.reloadPrompt", "Reload?"))
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.orange)
+                    }
+                    .buttonStyle(.plain)
+                    .help(editor.externalConflictMessage ?? L("editor.externalChangeConflict", "File changed externally. Reload?"))
+                }
+
+                if isMarkdownFile, editor.planProgress.total > 0 {
+                    Text("\(editor.planProgress.checked)/\(editor.planProgress.total)")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .help(L("editor.planProgress", "Completed tasks"))
                 }
 
                 Spacer()
@@ -335,14 +363,14 @@ struct TextEditorPaneView: View {
                     if isMarkdownMode, onRunCommand != nil {
                         Button {
                             let blocks = parseMarkdown(editor.content)
-                                .compactMap { s -> String? in
-                                    if case .codeBlock(_, let code) = s.kind { return code }
+                                .compactMap { s -> (Int, String)? in
+                                    if case .codeBlock(_, let code, let lineNumber) = s.kind { return (lineNumber, code) }
                                     return nil
                                 }
                             // Stagger block execution so the shell processes each sequentially
                             for (i, block) in blocks.enumerated() {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.5) { [onRunCommand] in
-                                    onRunCommand?(block + "\n")
+                                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.5) { [onRunCommand, editor] in
+                                    onRunCommand?("\(block.1)\n", block.0, editor)
                                 }
                             }
                         } label: {
@@ -378,18 +406,26 @@ struct TextEditorPaneView: View {
                 MarkdownRunbookView(
                     content: editor.content,
                     fileName: editor.fileName,
-                    onRunBlock: { code in onRunCommand?(code + "\n") },
-                    onRunAll: { [onRunCommand] in
+                    onRunBlock: { code, lineNumber in
+                        onRunCommand?("\(code)\n", lineNumber, editor)
+                    },
+                    onRunAll: { [onRunCommand, editor] in
                         let blocks = parseMarkdown(editor.content)
-                            .compactMap { section -> String? in
-                                if case .codeBlock(_, let code) = section.kind { return code }
+                            .compactMap { section -> (Int, String)? in
+                                if case .codeBlock(_, let code, let lineNumber) = section.kind { return (lineNumber, code) }
                                 return nil
                             }
                         for (i, block) in blocks.enumerated() {
                             DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.5) {
-                                onRunCommand?(block + "\n")
+                                onRunCommand?("\(block.1)\n", block.0, editor)
                             }
                         }
+                    },
+                    codeBlockState: { code, lineNumber in
+                        editor.codeBlockState(for: code, lineNumber: lineNumber)
+                    },
+                    onToggleCheckbox: { lineNumber in
+                        editor.toggleCheckbox(lineNumber: lineNumber)
                     },
                     onContentChange: { newContent in
                         editor.updateContent(newContent)
@@ -407,11 +443,14 @@ struct TextEditorPaneView: View {
             }
         }
         .contentShape(Rectangle())
+        .onAppear {
+            isMarkdownMode = isMarkdownFile
+        }
         .onTapGesture {
             onFocus()
         }
         .onChange(of: editor.filePath) {
-            isMarkdownMode = editor.filePath?.hasSuffix(".md") == true
+            isMarkdownMode = isMarkdownFile
         }
         .fileImporter(
             isPresented: $showFilePicker,

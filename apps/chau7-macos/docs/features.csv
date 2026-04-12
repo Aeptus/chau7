@@ -287,6 +287,7 @@ Networking,Custom API Pricing,~/.chau7/pricing.json overrides built-in model pri
 Terminal,OSC 133 Shell Integration,"FinalTerm shell integration: prompt/command/output region markers with exit codes, parsed in Rust. Suppresses heuristic fallbacks when present.",Shipped,Yes
 Terminal,File Drag & Drop,"Drop files to paste paths; Option+drop images for base64 data URIs for AI CLIs",Shipped,Yes
 Terminal,Markdown Runbooks,"Open .md in editor pane with executable code blocks and Run All button",Shipped,Yes
+Terminal,Session Companion Plans,"PM/dashboard sessions prefer .chau7/sessions/<session-id>/plan.md, keep autosave scoped to Chau7-managed plan files, and track duplicate code-block runs by block position",Shipped,Yes
 Terminal,Native Text Pane Edit Shortcuts,"Split-pane text editors preserve standard macOS cut, copy, and paste shortcuts before terminal-specific fallbacks run",Shipped,Yes
 Terminal,Show Changed Files,"Git diff snapshot per command (OSC 133) shows files modified by AI sessions (Cmd+Option+G)",Shipped,Yes
 Terminal,Heuristic Command Boundaries,"Without OSC 133, Chau7 still creates command blocks, consumes shell-reported exit status, records user/agent/system input rows, and restores changed-file status for prior commands",Shipped,Yes

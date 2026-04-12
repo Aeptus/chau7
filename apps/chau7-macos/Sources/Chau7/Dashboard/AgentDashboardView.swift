@@ -7,7 +7,9 @@ import SwiftUI
 /// Polls adaptively (2s active, 5s idle, 10s no agents). Lives inside a non-terminal tab.
 struct AgentDashboardView: View {
     @Bindable var model: AgentDashboardModel
+    var onOpenCompanionPlan: ((String) -> Void)?
     @State private var timelineLimit = 50
+    @State private var didAutoOpenPlan = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,6 +35,18 @@ struct AgentDashboardView: View {
         }
         .background(Color(nsColor: .controlBackgroundColor))
         .onAppear { model.startPolling() }
+        .onAppear {
+            if !didAutoOpenPlan, let companionPlanPath = model.companionPlanPath {
+                didAutoOpenPlan = true
+                onOpenCompanionPlan?(companionPlanPath)
+            }
+        }
+        .onChange(of: model.companionPlanPath) {
+            if !didAutoOpenPlan, let companionPlanPath = model.companionPlanPath {
+                didAutoOpenPlan = true
+                onOpenCompanionPlan?(companionPlanPath)
+            }
+        }
         .onDisappear { model.stopPolling() }
         .sheet(isPresented: $model.showStartAgentSheet) {
             StartAgentSheet(model: model)
@@ -69,6 +83,23 @@ struct AgentDashboardView: View {
 
             if model.totalCost > 0 {
                 statPill(formatCost(model.totalCost), color: .secondary)
+            }
+
+            if let companionPlanPath = model.companionPlanPath {
+                let planLabel = model.companionPlanProgress.total > 0
+                    ? "Plan \(model.companionPlanProgress.summaryText)"
+                    : "Plan"
+                Button {
+                    onOpenCompanionPlan?(companionPlanPath)
+                } label: {
+                    Text(planLabel)
+                        .font(.system(size: 10, weight: .medium))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(companionPlanPath)
             }
 
             // Proxy health warning

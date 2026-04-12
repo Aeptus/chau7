@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Chau7Core
+import CryptoKit
 
 // MARK: - F02: Native Split Panes with Text Editor Support
 
@@ -519,6 +520,11 @@ extension SplitNode {
 /// Model for a text editor pane
 @Observable
 final class TextEditorModel: Identifiable {
+    struct RunbookCodeBlockKey: Hashable {
+        let lineNumber: Int
+        let normalizedCommand: String
+    }
+
     let id = UUID()
 
     var content = ""
@@ -526,7 +532,13 @@ final class TextEditorModel: Identifiable {
     var isDirty = false
     var isLoading = false
     var lastError: String?
+    var autoSaveStatusMessage: String?
+    var hasExternalChangeConflict = false
+    var hasSaveConflict = false
+    var externalConflictMessage: String?
+    var isAutoSaveEnabled = false
     var scrollToLine: Int? // F03: Line to scroll to after loading (set after content loads)
+    var codeBlockRunStates: [RunbookCodeBlockKey: RunbookCodeBlockState] = [:]
 
     /// Pending line to scroll to after next load completes
     @ObservationIgnored
@@ -535,6 +547,20 @@ final class TextEditorModel: Identifiable {
     /// Token to track current loading operation (prevents race conditions)
     @ObservationIgnored
     private var loadingToken: UUID?
+    @ObservationIgnored
+    private var autoSaveWorkItem: DispatchWorkItem?
+    @ObservationIgnored
+    private var autoSaveClearWorkItem: DispatchWorkItem?
+    @ObservationIgnored
+    private var fileMonitor: FileMonitor?
+    @ObservationIgnored
+    private var loadedContentHash: String?
+    @ObservationIgnored
+    private var isApplyingExternalReload = false
+    @ObservationIgnored
+    private var pendingRunbookPollWorkItems: [RunbookCodeBlockKey: DispatchWorkItem] = [:]
+    @ObservationIgnored
+    private var runbookExecutionGenerations: [RunbookCodeBlockKey: Int] = [:]
 
     /// The file name for display
     var fileName: String {
@@ -542,6 +568,15 @@ final class TextEditorModel: Identifiable {
             return (path as NSString).lastPathComponent
         }
         return L("tab.untitled", "Untitled")
+    }
+
+    var planProgress: PlanProgress {
+        computePlanProgress(from: content)
+    }
+
+    var isCompanionPlan: Bool {
+        guard let path = filePath else { return false }
+        return Self.shouldAutoEnableAutoSave(for: path)
     }
 
     /// Load content from a file
@@ -554,11 +589,15 @@ final class TextEditorModel: Identifiable {
         loadingToken = token
         isLoading = true
         lastError = nil
+        hasExternalChangeConflict = false
+        hasSaveConflict = false
+        externalConflictMessage = nil
         pendingScrollToLine = line // Store for after load completes
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
                 let contents = try String(contentsOfFile: path, encoding: .utf8)
+                let hash = Self.contentHash(contents)
                 DispatchQueue.main.async {
                     // Only apply if this is still the current load operation
                     guard self?.loadingToken == token else {
@@ -569,6 +608,10 @@ final class TextEditorModel: Identifiable {
                     self?.filePath = path
                     self?.isDirty = false
                     self?.isLoading = false
+                    self?.loadedContentHash = hash
+                    self?.isAutoSaveEnabled = Self.shouldAutoEnableAutoSave(for: path)
+                    self?.setAutoSaveStatusMessage(nil)
+                    self?.startWatchingCurrentFile()
                     // F03: Set scrollToLine AFTER content is loaded
                     if let pending = self?.pendingScrollToLine {
                         self?.scrollToLine = pending
@@ -589,12 +632,13 @@ final class TextEditorModel: Identifiable {
     }
 
     /// Save content to the current file
-    func save() {
+    @discardableResult
+    func save() -> Bool {
         guard let path = filePath else {
             Log.warn("No file path set, cannot save")
-            return
+            return false
         }
-        saveAs(to: path)
+        return saveAs(to: path)
     }
 
     /// Save content to a specific path
@@ -602,13 +646,34 @@ final class TextEditorModel: Identifiable {
     @discardableResult
     func saveAs(to path: String) -> Bool {
         lastError = nil
+        hasSaveConflict = false
+        externalConflictMessage = nil
+        if !canSaveOverCurrentDiskVersion(path: path) {
+            hasSaveConflict = true
+            hasExternalChangeConflict = true
+            externalConflictMessage = L("editor.externalChangeConflict", "File changed externally. Reload?")
+            lastError = L("editor.saveConflict", "Save blocked because the file changed on disk. Reload and merge first.")
+            return false
+        }
+
         do {
+            stopWatchingCurrentFile()
             try content.write(toFile: path, atomically: true, encoding: .utf8)
             filePath = path
             isDirty = false
+            loadedContentHash = Self.contentHash(content)
+            isAutoSaveEnabled = isAutoSaveEnabled || Self.shouldAutoEnableAutoSave(for: path)
+            hasExternalChangeConflict = false
+            hasSaveConflict = false
+            externalConflictMessage = nil
+            if isAutoSaveEnabled {
+                setAutoSaveStatusMessage(L("editor.autoSaved", "Auto-saved"))
+            }
+            startWatchingCurrentFile()
             Log.info("Saved file: \(path)")
             return true
         } catch {
+            startWatchingCurrentFile()
             lastError = "Failed to save file: \(error.localizedDescription)"
             Log.error("Failed to save file: \(error.localizedDescription)")
             return false
@@ -628,6 +693,7 @@ final class TextEditorModel: Identifiable {
             content += "\n" + trimmedText
         }
         isDirty = true
+        scheduleAutoSaveIfNeeded()
         Log.info("Appended text to editor: \(trimmedText.prefix(50))...")
     }
 
@@ -636,8 +702,222 @@ final class TextEditorModel: Identifiable {
         if content != newContent {
             content = newContent
             isDirty = true
+            hasSaveConflict = false
+            scheduleAutoSaveIfNeeded()
         }
     }
+
+    func reloadFromDisk() {
+        guard let path = filePath else { return }
+        loadFile(at: path, scrollToLine: nil)
+    }
+
+    func toggleCheckbox(lineNumber: Int) {
+        guard let path = filePath, !isDirty else {
+            updateContent(toggleCheckboxInContent(content, lineNumber: lineNumber))
+            return
+        }
+        stopWatchingCurrentFile()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let currentDiskContent = try String(contentsOfFile: path, encoding: .utf8)
+                let updated = toggleCheckboxInContent(currentDiskContent, lineNumber: lineNumber)
+                try updated.write(toFile: path, atomically: true, encoding: .utf8)
+                let hash = Self.contentHash(updated)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.content = updated
+                    self.loadedContentHash = hash
+                    self.isDirty = false
+                    self.hasExternalChangeConflict = false
+                    self.hasSaveConflict = false
+                    self.externalConflictMessage = nil
+                    self.setAutoSaveStatusMessage(L("editor.autoSaved", "Auto-saved"))
+                    self.startWatchingCurrentFile()
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.startWatchingCurrentFile()
+                    self?.lastError = "Failed to toggle checkbox: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func markCodeBlockQueued(_ code: String, lineNumber: Int, tabID: String) {
+        let key = Self.runbookCodeBlockKey(for: code, lineNumber: lineNumber)
+        codeBlockRunStates[key] = .running
+        pendingRunbookPollWorkItems[key]?.cancel()
+        let generation = (runbookExecutionGenerations[key] ?? 0) + 1
+        runbookExecutionGenerations[key] = generation
+        let submittedAt = Date()
+        pollForCommandCompletion(
+            command: code,
+            key: key,
+            generation: generation,
+            tabID: tabID,
+            submittedAt: submittedAt,
+            attemptsRemaining: 120
+        )
+    }
+
+    func codeBlockState(for code: String, lineNumber: Int) -> RunbookCodeBlockState? {
+        codeBlockRunStates[Self.runbookCodeBlockKey(for: code, lineNumber: lineNumber)]
+    }
+
+    deinit {
+        autoSaveWorkItem?.cancel()
+        autoSaveClearWorkItem?.cancel()
+        stopWatchingCurrentFile()
+        for workItem in pendingRunbookPollWorkItems.values {
+            workItem.cancel()
+        }
+    }
+
+    private func scheduleAutoSaveIfNeeded() {
+        guard isAutoSaveEnabled, filePath != nil else { return }
+        autoSaveWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, isDirty else { return }
+            _ = save()
+        }
+        autoSaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: workItem)
+    }
+
+    private func startWatchingCurrentFile() {
+        guard let path = filePath, !path.isEmpty else { return }
+        stopWatchingCurrentFile()
+        fileMonitor = FileMonitor(url: URL(fileURLWithPath: path)) { [weak self] in
+            DispatchQueue.main.async {
+                self?.handleExternalFileChange()
+            }
+        }
+        fileMonitor?.start()
+    }
+
+    private func stopWatchingCurrentFile() {
+        fileMonitor?.stop()
+        fileMonitor = nil
+    }
+
+    private func handleExternalFileChange() {
+        guard !isApplyingExternalReload else { return }
+        guard let path = filePath,
+              let diskContent = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return
+        }
+        let diskHash = Self.contentHash(diskContent)
+        guard diskHash != loadedContentHash else { return }
+        if isDirty {
+            hasExternalChangeConflict = true
+            externalConflictMessage = L("editor.externalChangeConflict", "File changed externally. Reload?")
+            return
+        }
+        isApplyingExternalReload = true
+        content = diskContent
+        loadedContentHash = diskHash
+        isDirty = false
+        hasExternalChangeConflict = false
+        hasSaveConflict = false
+        externalConflictMessage = nil
+        isApplyingExternalReload = false
+    }
+
+    private func canSaveOverCurrentDiskVersion(path: String) -> Bool {
+        guard let existingContent = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return !FileManager.default.fileExists(atPath: path)
+        }
+        guard let loadedContentHash else { return true }
+        return Self.contentHash(existingContent) == loadedContentHash
+    }
+
+    private func setAutoSaveStatusMessage(_ message: String?) {
+        autoSaveStatusMessage = message
+        autoSaveClearWorkItem?.cancel()
+        guard message != nil else { return }
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.autoSaveStatusMessage = nil
+        }
+        autoSaveClearWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
+    }
+
+    private func pollForCommandCompletion(
+        command: String,
+        key: RunbookCodeBlockKey,
+        generation: Int,
+        tabID: String,
+        submittedAt: Date,
+        attemptsRemaining: Int
+    ) {
+        guard attemptsRemaining > 0 else {
+            codeBlockRunStates[key] = .failed
+            pendingRunbookPollWorkItems.removeValue(forKey: key)
+            return
+        }
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let block = MainActor.assumeIsolated {
+                CommandBlockManager.shared.blocksForTab(tabID)
+            }.reversed().first { candidate in
+                candidate.startTime >= submittedAt.addingTimeInterval(-1)
+                    && Self.normalizedRunbookKey(for: candidate.command) == key.normalizedCommand
+            }
+            guard runbookExecutionGenerations[key] == generation else {
+                pendingRunbookPollWorkItems.removeValue(forKey: key)
+                return
+            }
+            if let block, !block.isRunning {
+                codeBlockRunStates[key] = block.isSuccess ? .succeeded : .failed
+                pendingRunbookPollWorkItems.removeValue(forKey: key)
+                return
+            }
+            pollForCommandCompletion(
+                command: command,
+                key: key,
+                generation: generation,
+                tabID: tabID,
+                submittedAt: submittedAt,
+                attemptsRemaining: attemptsRemaining - 1
+            )
+        }
+        pendingRunbookPollWorkItems[key] = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+    }
+
+    private static func contentHash(_ content: String) -> String {
+        let digest = SHA256.hash(data: Data(content.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func normalizedRunbookKey(for command: String) -> String {
+        command.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func runbookCodeBlockKey(for command: String, lineNumber: Int) -> RunbookCodeBlockKey {
+        RunbookCodeBlockKey(
+            lineNumber: lineNumber,
+            normalizedCommand: normalizedRunbookKey(for: command)
+        )
+    }
+
+    private static func shouldAutoEnableAutoSave(for path: String) -> Bool {
+        let normalized = path.replacingOccurrences(of: "\\", with: "/")
+        if normalized.hasSuffix("/.chau7/plan.md") {
+            return true
+        }
+        if normalized.contains("/.chau7/sessions/"), normalized.hasSuffix("/plan.md") {
+            return true
+        }
+        return false
+    }
+}
+
+enum RunbookCodeBlockState {
+    case running
+    case succeeded
+    case failed
 }
 
 // MARK: - File Preview Model
@@ -1067,7 +1347,7 @@ final class SplitPaneController {
     }
 
     /// Send a command to the first terminal session in this split tree (for markdown runbooks).
-    func sendCommandToTerminal(_ command: String) {
+    func sendCommandToTerminal(_ command: String, sourceEditor: TextEditorModel? = nil, sourceLineNumber: Int? = nil) {
         func findSession(_ node: SplitNode) -> TerminalSessionModel? {
             switch node {
             case .terminal(_, let session): return session
@@ -1076,7 +1356,11 @@ final class SplitPaneController {
                 return findSession(first) ?? findSession(second)
             }
         }
-        findSession(root)?.sendInput(command)
+        guard let session = findSession(root) else { return }
+        session.sendInput(command)
+        if let sourceEditor, let sourceLineNumber, let tabID = session.ownerTabID?.uuidString {
+            sourceEditor.markCodeBlockQueued(command, lineNumber: sourceLineNumber, tabID: tabID)
+        }
     }
 
     /// F03: Callback for terminal Cmd+Click on file paths - opens in internal editor

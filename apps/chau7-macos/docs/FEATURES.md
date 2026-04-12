@@ -249,6 +249,7 @@ Runtime sessions keep pending `initial_prompt` work attached to real terminal re
 - OSC 133 (FinalTerm) shell integration: prompt start (A), command start (B), output start (C), command finished with exit code (D). Parsed in Rust interceptor, feeds ShellEventDetector. When present, heuristic fallbacks are suppressed.
 - File drag-and-drop: drop files to paste shell-escaped paths; Option+drop images for base64 data URIs.
 - Markdown runbooks: open .md files in the editor pane with executable code blocks.
+- Session companion plans: PM/dashboard sessions prefer `.chau7/sessions/<session-id>/plan.md`; autosave stays limited to Chau7-managed companion plans instead of every repo-level `plan.md`.
 - Native macOS cut/copy/paste shortcuts are preserved inside split-pane text editors before terminal-specific fallbacks run.
 - Show Changed Files (Cmd+Option+G): git diff snapshot per command shows which files were modified.
 - Heuristic command boundaries: when OSC 133 is unavailable, Chau7 still creates command blocks, records shell-reported exit status, captures user/agent/system input rows, and persists per-command changed-file state across restore.

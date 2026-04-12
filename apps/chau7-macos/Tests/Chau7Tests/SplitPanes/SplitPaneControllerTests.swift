@@ -1,6 +1,7 @@
 import XCTest
 #if !SWIFT_PACKAGE
 @testable import Chau7
+import Chau7Core
 
 // MARK: - SplitNode Tests
 
@@ -725,6 +726,25 @@ final class SplitPaneControllerTests: XCTestCase {
 
 final class TextEditorModelTests: XCTestCase {
 
+    private func waitUntil(
+        timeout: TimeInterval = 2,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        condition: @escaping () -> Bool
+    ) {
+        let expectation = expectation(description: "condition")
+        func poll() {
+            if condition() {
+                expectation.fulfill()
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: poll)
+            }
+        }
+        DispatchQueue.main.async(execute: poll)
+        waitForExpectations(timeout: timeout)
+        XCTAssertTrue(condition(), file: file, line: line)
+    }
+
     // MARK: - Initial State
 
     func testInitialState() {
@@ -837,12 +857,169 @@ final class TextEditorModelTests: XCTestCase {
         // No crash = success
     }
 
+    func testLoadPlanFileEnablesAutoSave() throws {
+        let model = TextEditorModel()
+        let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+        let fileURL = tempDir.appendingPathComponent(".chau7/plan.md")
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "# Plan\n- [ ] Task\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        model.loadFile(at: fileURL.path)
+
+        waitUntil {
+            model.filePath == fileURL.path && !model.isLoading
+        }
+        XCTAssertTrue(model.isAutoSaveEnabled)
+        XCTAssertEqual(model.planProgress, PlanProgress(checked: 0, total: 1))
+    }
+
+    func testLoadGeneralPlanFileDoesNotEnableAutoSave() throws {
+        let model = TextEditorModel()
+        let fileURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("plan-\(UUID().uuidString)/plan.md")
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "# Plan\n- [ ] Task\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+
+        model.loadFile(at: fileURL.path)
+
+        waitUntil {
+            model.filePath == fileURL.path && !model.isLoading
+        }
+        XCTAssertFalse(model.isAutoSaveEnabled)
+    }
+
+    func testToggleCheckboxOnCleanFilePersistsToDisk() throws {
+        let model = TextEditorModel()
+        let fileURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("chau7-runbook-\(UUID().uuidString).md")
+        try "- [ ] Ship fix\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        model.loadFile(at: fileURL.path)
+        waitUntil {
+            model.filePath == fileURL.path && !model.isLoading
+        }
+
+        model.toggleCheckbox(lineNumber: 0)
+
+        waitUntil {
+            model.content.contains("[x]") && !model.isDirty
+        }
+        let saved = try String(contentsOf: fileURL, encoding: .utf8)
+        XCTAssertTrue(saved.contains("[x] Ship fix"))
+    }
+
+    func testSaveDetectsExternalConflict() throws {
+        let model = TextEditorModel()
+        let fileURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("chau7-editor-\(UUID().uuidString).txt")
+        try "first\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        model.loadFile(at: fileURL.path)
+        waitUntil {
+            model.filePath == fileURL.path && !model.isLoading
+        }
+
+        try "external\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        model.updateContent("local\n")
+
+        XCTAssertFalse(model.save())
+        XCTAssertTrue(model.hasExternalChangeConflict)
+        XCTAssertTrue(model.hasSaveConflict)
+    }
+
     // MARK: - Unique IDs
 
     func testEachModelHasUniqueID() {
         let m1 = TextEditorModel()
         let m2 = TextEditorModel()
         XCTAssertNotEqual(m1.id, m2.id)
+    }
+}
+
+final class MarkdownRunbookInfrastructureTests: XCTestCase {
+
+    func testParseMarkdownSupportsBulletsNumbersAndRules() {
+        let markdown = """
+        # Plan
+        - bullet item
+        1. first task
+        ---
+        - [x] done
+        """
+
+        let sections = parseMarkdown(markdown)
+
+        XCTAssertTrue(sections.contains { section in
+            if case .bulletItem("bullet item", _) = section.kind { return true }
+            return false
+        })
+        XCTAssertTrue(sections.contains { section in
+            if case .numberedItem(1, "first task", _) = section.kind { return true }
+            return false
+        })
+        XCTAssertTrue(sections.contains { section in
+            if case .horizontalRule = section.kind { return true }
+            return false
+        })
+    }
+
+    func testComputePlanProgressCountsCheckboxes() {
+        let markdown = """
+        - [x] done
+        - [ ] next
+        """
+
+        XCTAssertEqual(computePlanProgress(from: markdown), PlanProgress(checked: 1, total: 2))
+    }
+
+    func testCompanionPlanLocatorPrefersTouchedPlanFile() throws {
+        let repoRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("repo-\(UUID().uuidString)")
+        let touchedPlan = repoRoot.appendingPathComponent("PLAN.md")
+        try FileManager.default.createDirectory(at: repoRoot, withIntermediateDirectories: true)
+        try "# PLAN\n".write(to: touchedPlan, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: repoRoot) }
+
+        let preferred = CompanionPlanLocator.preferredPlanPath(
+            repoRoot: repoRoot.path,
+            touchedFiles: ["PLAN.md"]
+        )
+
+        XCTAssertEqual(preferred, touchedPlan.path)
+    }
+
+    func testCompanionPlanLocatorPrefersSessionPlanForSingleSession() throws {
+        let repoRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("repo-\(UUID().uuidString)")
+        let repoPlan = repoRoot.appendingPathComponent("PLAN.md")
+        let sessionPlan = repoRoot.appendingPathComponent(".chau7/sessions/session-123/plan.md")
+        try FileManager.default.createDirectory(at: sessionPlan.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "# Repo plan\n".write(to: repoPlan, atomically: true, encoding: .utf8)
+        try "# Session plan\n".write(to: sessionPlan, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: repoRoot) }
+
+        let preferred = CompanionPlanLocator.preferredPlanPath(
+            repoRoot: repoRoot.path,
+            touchedFiles: ["PLAN.md"],
+            sessionIDs: ["session-123"]
+        )
+
+        XCTAssertEqual(preferred, sessionPlan.path)
+    }
+
+    func testCodeBlockStateTracksDuplicateCommandsByLineNumber() {
+        let model = TextEditorModel()
+
+        model.markCodeBlockQueued("echo hi", lineNumber: 10, tabID: "tab-1")
+        model.markCodeBlockQueued("echo hi", lineNumber: 20, tabID: "tab-1")
+
+        XCTAssertEqual(model.codeBlockState(for: "echo hi", lineNumber: 10), .running)
+        XCTAssertEqual(model.codeBlockState(for: "echo hi", lineNumber: 20), .running)
     }
 }
 
