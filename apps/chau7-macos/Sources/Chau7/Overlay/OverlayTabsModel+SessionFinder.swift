@@ -893,34 +893,25 @@ extension OverlayTabsModel {
                     lastExitAt: nil
                 )
 
-                // Restore scrollback via cat through the shell so the terminal re-renders
-                // content at the current column width (injectOutput doesn't reflow text).
-                // stty -echo suppresses command echo so the cat/cd/clear aren't visible.
-                // Leading space suppresses history in zsh/bash (HIST_IGNORE_SPACE).
-                var commands: [String] = []
+                // Restore scrollback by injecting directly into the terminal
+                // emulator via injectOutput — bypasses the shell entirely.
+                // No stty, no temp files, no echo race.
                 if let scrollback = effectivePaneState.scrollbackContent,
-                   !scrollback.isEmpty,
-                   let data = scrollback.data(using: .utf8) {
-                    let tempFile = NSTemporaryDirectory() + "chau7_restore_\(restoreToken)_\(paneID.uuidString).txt"
-                    do {
-                        try data.write(to: URL(fileURLWithPath: tempFile))
-                        let escapedTemp = Self.shellSafeSingleQuote(tempFile)
-                        commands.append("cat \(escapedTemp) && rm -f \(escapedTemp)")
-                    } catch {
-                        Log.warn("Failed to write scrollback restore file: \(error)")
+                   !scrollback.isEmpty {
+                    if let view = session.existingRustTerminalView {
+                        view.injectOutput(scrollback)
+                    } else {
+                        session.pendingRestoreScrollback = scrollback
                     }
                 }
 
+                // Restore CWD via minimal shell input. Leading space
+                // suppresses shell history (HIST_IGNORE_SPACE). clear wipes
+                // the cd echo so only the restored scrollback is visible.
                 if !effectivePaneState.directory.isEmpty {
-                    commands.append("cd \(Self.shellSafeSingleQuote(effectivePaneState.directory))")
-                }
-
-                if !commands.isEmpty {
-                    // stty -echo: hide the command itself from the terminal
-                    // stty echo: restore normal echo after
-                    // clear: wipe the visible screen so only restored scrollback shows
-                    let restoreChain = commands.joined(separator: " && ")
-                    session.sendOrQueueSystemRestoreInput(" stty -echo && \(restoreChain) && clear && stty echo\n")
+                    session.sendOrQueueSystemRestoreInput(
+                        " cd \(Self.shellSafeSingleQuote(effectivePaneState.directory)) && clear\n"
+                    )
                 }
 
                 if let (resumePaneID, resumeCommand) = resumeTarget,
