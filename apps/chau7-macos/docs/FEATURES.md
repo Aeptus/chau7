@@ -337,6 +337,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Visual bell mode (screen flash), combinable with audible bell.
 - Bell rate limiting with configurable minimum interval, scoped per trigger and tab/session/directory identity.
 - Rate limiting and per-trigger enable/disable.
+- Tab highlights for all user-facing event types: permission, waiting_input, finished, failed, idle, tool_failed, response_failed, elicitation, attention_required, error, context_limit.
 - Process exit confirmation on Cmd+Q with running process name listing.
 - Isolated test mode disables notification-center integration to keep side effects out of the test app.
 
