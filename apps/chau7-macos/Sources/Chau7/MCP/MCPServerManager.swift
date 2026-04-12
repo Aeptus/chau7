@@ -38,7 +38,8 @@ final class MCPServerManager {
         }
 
         let notifyHelperPath = installCodexNotifyHelperIfNeeded()
-        registerToolIntegrations(bridgePath: bridgePath, codexNotifyPath: notifyHelperPath)
+        let claudeHookPath = installClaudeCodeHookIfNeeded()
+        registerToolIntegrations(bridgePath: bridgePath, codexNotifyPath: notifyHelperPath, claudeHookPath: claudeHookPath)
     }
 
     @discardableResult
@@ -67,7 +68,32 @@ final class MCPServerManager {
     /// Registers the Chau7 MCP server with every known AI coding tool's config.
     /// Each tool has its own config format and location; we only touch the chau7
     /// entry and leave everything else intact.
-    private func registerToolIntegrations(bridgePath: String?, codexNotifyPath: String?) {
+    @discardableResult
+    private func installClaudeCodeHookIfNeeded() -> String? {
+        let fm = FileManager.default
+        let binDir = RuntimeIsolation.urlInHome(".chau7/bin")
+        let dest = binDir.appendingPathComponent(ClaudeCodeHookConfiguration.helperName)
+        let eventsFilePath = RuntimeIsolation.pathInHome(".chau7/claude-events.jsonl")
+        let desiredScript = ClaudeCodeHookConfiguration.helperScript(eventsFilePath: eventsFilePath)
+
+        do {
+            if !fm.fileExists(atPath: binDir.path) {
+                try fm.createDirectory(at: binDir, withIntermediateDirectories: true)
+            }
+            let existing = try? String(contentsOf: dest, encoding: .utf8)
+            if existing != desiredScript {
+                try desiredScript.write(to: dest, atomically: true, encoding: .utf8)
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
+                Log.info("MCPServer: installed Claude Code hook helper to \(dest.path)")
+            }
+            return dest.path
+        } catch {
+            Log.error("MCPServer: failed to install Claude Code hook helper: \(error)")
+            return nil
+        }
+    }
+
+    private func registerToolIntegrations(bridgePath: String?, codexNotifyPath: String?, claudeHookPath: String?) {
         let home = RuntimeIsolation.homePath()
 
         if let bridgePath {
@@ -81,6 +107,14 @@ final class MCPServerManager {
 
             // Windsurf: ~/.codeium/windsurf/mcp_config.json
             registerWindsurf(home: home, command: command)
+
+            // Gemini CLI: ~/.gemini/settings.json
+            registerGeminiCLI(home: home, command: command)
+        }
+
+        // Claude Code hooks: ~/.claude/settings.json
+        if let claudeHookPath {
+            registerClaudeCodeHooks(home: home, hookPath: claudeHookPath)
         }
 
         // Codex (OpenAI): ~/.codex/config.toml
@@ -126,6 +160,29 @@ final class MCPServerManager {
         mergeJSONMCPEntry(atPath: path, serverName: "chau7", entry: entry, mcpKey: "mcpServers")
     }
 
+    /// Claude Code hooks (~/.claude/settings.json) — upserts hook entries for all
+    /// registered event types so Chau7 captures permission requests, session lifecycle, etc.
+    private func registerClaudeCodeHooks(home: String, hookPath: String) {
+        let path = home + "/.claude/settings.json"
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: path) else { return }
+
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            if ClaudeCodeHookConfiguration.allHooksInstalled(in: data, helperPath: hookPath) {
+                return
+            }
+            guard let updated = ClaudeCodeHookConfiguration.upsertHooks(in: data, helperPath: hookPath) else {
+                Log.warn("MCPServer: failed to parse Claude settings.json for hook upsert")
+                return
+            }
+            try updated.write(to: URL(fileURLWithPath: path))
+            Log.info("MCPServer: registered hooks in Claude settings.json (\(ClaudeCodeHookConfiguration.hookEvents.count) events)")
+        } catch {
+            Log.error("MCPServer: failed to register Claude hooks: \(error)")
+        }
+    }
+
     /// Cursor global config (~/.cursor/mcp.json) — same JSON shape as Claude Code.
     private func registerCursorGlobal(home: String, command: String) {
         let dir = home + "/.cursor"
@@ -143,6 +200,18 @@ final class MCPServerManager {
     private func registerWindsurf(home: String, command: String) {
         let dir = home + "/.codeium/windsurf"
         let path = dir + "/mcp_config.json"
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: dir) {
+            return
+        }
+        let entry: [String: Any] = ["command": command, "args": [] as [String]]
+        mergeJSONMCPEntry(atPath: path, serverName: "chau7", entry: entry, mcpKey: "mcpServers")
+    }
+
+    /// Gemini CLI config (~/.gemini/settings.json) — same JSON shape as Cursor.
+    private func registerGeminiCLI(home: String, command: String) {
+        let dir = home + "/.gemini"
+        let path = dir + "/settings.json"
         let fm = FileManager.default
         if !fm.fileExists(atPath: dir) {
             return
