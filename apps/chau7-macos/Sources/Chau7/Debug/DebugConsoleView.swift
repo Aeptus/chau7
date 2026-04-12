@@ -31,6 +31,7 @@ struct DebugConsoleView: View {
     @State private var ctoShowAdvanced = false
     @State private var ctoTimePeriod: CTOTimePeriod = .session
     @State private var analyticsMode: AnalyticsMode = .apiCalls
+    @State private var analyticsTimeRange: AnalyticsTimeRange = .week
     @State private var aiPerTabStats: [TabTokenConsumption] = []
     @State private var providerStats: [ProviderConsumptionStats] = []
     @State private var dailyCostTrend: [(date: String, cost: Double, tokens: Int, pricedRunCount: Int, totalRunCount: Int)] = []
@@ -1609,12 +1610,25 @@ struct DebugConsoleView: View {
     private var analyticsView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Picker("", selection: $analyticsMode) {
-                    ForEach(AnalyticsMode.allCases, id: \.self) { mode in
-                        Text(mode.rawValue).tag(mode)
+                HStack(spacing: 12) {
+                    Picker("", selection: $analyticsMode) {
+                        ForEach(AnalyticsMode.allCases, id: \.self) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 200)
+
+                    Picker("Period", selection: $analyticsTimeRange) {
+                        ForEach(AnalyticsTimeRange.allCases) { range in
+                            Text(range.rawValue).tag(range)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: analyticsTimeRange) { _, _ in
+                        refreshAnalyticsData()
                     }
                 }
-                .pickerStyle(.segmented)
 
                 switch analyticsMode {
                 case .apiCalls:
@@ -1632,16 +1646,16 @@ struct DebugConsoleView: View {
 
     private var proxyAnalyticsView: some View {
         VStack(alignment: .leading, spacing: 16) {
-            GroupBox("Proxy API Summary") {
+            GroupBox("Proxy API Summary — \(analyticsTimeRange.rawValue)") {
                 if proxyStats.callCount == 0 {
                     Text("No proxy-captured API calls yet.").foregroundStyle(.secondary)
                 } else {
                     HStack {
-                        Text("Calls: \(proxyStats.callCount)")
+                        Text("Calls: \(LocalizedFormatters.formatInteger(proxyStats.callCount))")
                         Spacer()
-                        Text("Tokens: \(proxyStats.totalTokens)")
+                        Text("Tokens: \(analyticsFormatTokens(proxyStats.totalTokens))")
                         Spacer()
-                        Text(String(format: "Cost: $%.4f", proxyStats.totalCost)).bold()
+                        Text("Cost: \(LocalizedFormatters.formatCostPrecise(proxyStats.totalCost))").bold()
                         Spacer()
                         Text(String(format: "Avg latency: %.0fms", proxyStats.averageLatencyMs))
                             .foregroundStyle(.secondary)
@@ -1657,18 +1671,18 @@ struct DebugConsoleView: View {
                         HStack {
                             Text(stat.provider.capitalized).bold()
                             Spacer()
-                            Text("\(stat.callCount) calls")
+                            Text("\(LocalizedFormatters.formatInteger(stat.callCount)) calls")
                                 .foregroundStyle(.secondary)
-                            Text("\(stat.totalTokens) tokens")
+                            Text("\(analyticsFormatTokens(stat.totalTokens)) tokens")
                                 .foregroundStyle(.secondary)
-                            Text(String(format: "$%.4f", stat.totalCostUSD))
+                            Text(LocalizedFormatters.formatCostPrecise(stat.totalCostUSD))
                                 .monospaced()
                         }
                     }
                 }
             }
 
-            GroupBox("Daily Proxy Cost (Last 7 Days)") {
+            GroupBox("Daily Proxy Cost (\(analyticsTimeRange.rawValue))") {
                 if proxyDailyTrend.isEmpty {
                     Text("No daily proxy data yet.").foregroundStyle(.secondary)
                 } else {
@@ -1676,13 +1690,13 @@ struct DebugConsoleView: View {
                         HStack {
                             Text(day.date).monospaced().font(.caption)
                             Spacer()
-                            Text("\(day.callCount) calls")
+                            Text("\(LocalizedFormatters.formatInteger(day.callCount)) calls")
                                 .foregroundStyle(.secondary)
                                 .font(.caption)
-                            Text("\(day.totalTokens) tokens")
+                            Text("\(analyticsFormatTokens(day.totalTokens)) tokens")
                                 .foregroundStyle(.secondary)
                                 .font(.caption)
-                            Text(String(format: "$%.4f", day.totalCostUSD))
+                            Text(LocalizedFormatters.formatCostPrecise(day.totalCostUSD))
                                 .monospaced()
                                 .bold()
                         }
@@ -1703,7 +1717,7 @@ struct DebugConsoleView: View {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                             Spacer()
-                            Text("\(call.totalTokens) tokens")
+                            Text("\(analyticsFormatTokens(call.totalTokens)) tokens")
                                 .foregroundStyle(.secondary)
                                 .font(.caption)
                             Text(call.formattedCost)
@@ -1720,7 +1734,7 @@ struct DebugConsoleView: View {
 
     private var runAnalyticsView: some View {
         VStack(alignment: .leading, spacing: 16) {
-            GroupBox("Run Telemetry by Provider") {
+            GroupBox("Run Telemetry by Provider — \(analyticsTimeRange.rawValue)") {
                 if providerStats.isEmpty {
                     Text("No AI run telemetry yet.").foregroundStyle(.secondary)
                 } else {
@@ -1728,9 +1742,9 @@ struct DebugConsoleView: View {
                         HStack {
                             Text(stat.provider).bold()
                             Spacer()
-                            Text("\(stat.runCount) runs")
+                            Text("\(LocalizedFormatters.formatInteger(stat.runCount)) runs")
                                 .foregroundStyle(.secondary)
-                            Text("\(stat.totalBillableTokens) billable-ish tokens")
+                            Text("\(analyticsFormatTokens(stat.totalBillableTokens)) tokens")
                                 .foregroundStyle(.secondary)
                             Text(runCostLabel(for: stat))
                                 .monospaced()
@@ -1759,7 +1773,7 @@ struct DebugConsoleView: View {
                                     .font(.caption)
                             }
                             Spacer()
-                            Text("billable: \(stat.totalBillableTokens)")
+                            Text("billable: \(analyticsFormatTokens(stat.totalBillableTokens))")
                                 .foregroundStyle(.secondary)
                             Text(runCostLabel(for: stat))
                                 .monospaced()
@@ -1769,7 +1783,7 @@ struct DebugConsoleView: View {
                 }
             }
 
-            GroupBox("Run Cost Coverage (Last 7 Days)") {
+            GroupBox("Run Cost Coverage (\(analyticsTimeRange.rawValue))") {
                 if dailyCostTrend.isEmpty {
                     Text("No daily run data yet.").foregroundStyle(.secondary)
                 } else {
@@ -1777,7 +1791,7 @@ struct DebugConsoleView: View {
                         HStack {
                             Text(day.date).monospaced().font(.caption)
                             Spacer()
-                            Text("\(day.tokens) tokens")
+                            Text("\(analyticsFormatTokens(day.tokens)) tokens")
                                 .foregroundStyle(.secondary)
                                 .font(.caption)
                             Text(runCostLabel(cost: day.cost, pricedCount: day.pricedRunCount, missingCount: max(0, day.totalRunCount - day.pricedRunCount)))
@@ -1789,16 +1803,16 @@ struct DebugConsoleView: View {
                 }
             }
 
-            GroupBox("Run Summary") {
-                let totalRuns = TelemetryStore.shared.runCount()
+            GroupBox("Run Summary — \(analyticsTimeRange.rawValue)") {
+                let totalRuns = providerStats.reduce(0) { $0 + $1.runCount }
                 let totalTokens = providerStats.reduce(0) { $0 + $1.totalBillableTokens }
                 let totalPricedRuns = providerStats.reduce(0) { $0 + $1.pricedRunCount }
                 let totalMissingCostRuns = providerStats.reduce(0) { $0 + $1.missingCostRunCount }
                 let totalCost = providerStats.reduce(0.0) { $0 + $1.totalCostUSD }
                 HStack {
-                    Text("Runs: \(totalRuns)")
+                    Text("Runs: \(LocalizedFormatters.formatInteger(totalRuns))")
                     Spacer()
-                    Text("Billable-ish tokens: \(totalTokens)")
+                    Text("Tokens: \(analyticsFormatTokens(totalTokens))")
                     Spacer()
                     Text(runCostLabel(cost: totalCost, pricedCount: totalPricedRuns, missingCount: totalMissingCostRuns))
                         .bold()
@@ -1808,14 +1822,11 @@ struct DebugConsoleView: View {
             HStack {
                 Spacer()
                 Button("Rebuild Transcript Metrics") {
-                    // TelemetryStore uses SQLite without internal serialization,
-                    // so run the repair on main to avoid concurrent access.
                     let report = TelemetryRepairService.shared.rebuildTranscriptDerivedRuns()
                     Log.info("DebugConsole: rebuilt telemetry transcript metrics inspected=\(report.inspectedRuns) rebuilt=\(report.rebuiltRuns) invalidated=\(report.invalidatedRuns)")
                     refreshAnalyticsData()
                 }
             }
-
         }
     }
 
@@ -2484,14 +2495,23 @@ struct DebugConsoleView: View {
         }
     }
 
-    private func refreshAnalyticsData() {
-        aiPerTabStats = TelemetryStore.shared.tokenUsagePerTab()
-        providerStats = TelemetryStore.shared.consumptionPerProvider()
-        dailyCostTrend = TelemetryStore.shared.dailyCostTrend()
+    private func analyticsFormatTokens(_ count: Int) -> String {
+        if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
+        if count >= 1000 { return String(format: "%.1fK", Double(count) / 1000) }
+        return "\(count)"
+    }
 
-        proxyStats = ProxyAnalyticsStore.shared.overallStats()
-        proxyProviderStats = ProxyAnalyticsStore.shared.providerStats()
-        proxyDailyTrend = ProxyAnalyticsStore.shared.dailyTrend()
+    private func refreshAnalyticsData() {
+        let after = analyticsTimeRange.startDate
+        let days = analyticsTimeRange.days
+
+        aiPerTabStats = TelemetryStore.shared.tokenUsagePerTab(after: after)
+        providerStats = TelemetryStore.shared.consumptionPerProvider(after: after)
+        dailyCostTrend = TelemetryStore.shared.dailyCostTrend(days: days)
+
+        proxyStats = ProxyAnalyticsStore.shared.overallStats(after: after)
+        proxyProviderStats = ProxyAnalyticsStore.shared.providerStats(after: after)
+        proxyDailyTrend = ProxyAnalyticsStore.shared.dailyTrend(days: days)
         recentProxyCalls = ProxyAnalyticsStore.shared.recentCalls()
 
         repoAnalytics = settings.recentRepoRoots.map { root in
