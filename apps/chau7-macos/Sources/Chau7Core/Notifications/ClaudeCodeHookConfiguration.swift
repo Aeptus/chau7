@@ -21,7 +21,7 @@ public enum ClaudeCodeHookConfiguration {
         ("SubagentStop", "tool_complete"),
         ("SessionStart", "session_start"),
         ("SessionEnd", "session_end"),
-        ("Elicitation", "elicitation"),
+        ("Elicitation", "elicitation")
     ]
 
     /// Generates the hook helper script (Python).

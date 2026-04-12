@@ -884,7 +884,7 @@ private struct ToolbarTabBarView: View {
     @State private var draggingGroupID: String?
     @State private var groupDragOffset: CGFloat = 0
     @State private var groupDragHomeRange: Range<Int> = 0 ..< 0
-    @State private var groupDragCurrentSlot: Int = 0
+    @State private var groupDragCurrentSlot = 0
 
     var body: some View {
         let selected = overlayModel.selectedTab
