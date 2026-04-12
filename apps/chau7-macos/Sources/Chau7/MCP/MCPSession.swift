@@ -4,6 +4,8 @@ import Chau7Core
 /// Handles a single MCP client connection over a Unix domain socket.
 /// Implements the MCP JSON-RPC protocol for tool calls and resource reads.
 final class MCPSession {
+    private static let socketIdleTimeoutSeconds = 120
+
     private let fd: Int32
     private let queryService = TelemetryQueryService()
     private let controlService = TerminalControlService.shared
@@ -16,6 +18,7 @@ final class MCPSession {
     /// Blocking run loop: reads JSON-RPC messages, dispatches, writes responses.
     /// Note: this takes ownership of fd — the fd is closed when the session ends.
     func run() {
+        configureSocketTimeouts()
         let readStream = fdopen(fd, "r")
         // dup() so each FILE* owns its own fd — avoids double-close
         let writeFD = dup(fd)
@@ -35,8 +38,19 @@ final class MCPSession {
         while true {
             var line: UnsafeMutablePointer<CChar>?
             var lineCap = 0
+            errno = 0
             let bytesRead = getline(&line, &lineCap, readStream)
-            guard bytesRead > 0, let line else { break }
+            guard bytesRead > 0, let line else {
+                if errno == EINTR {
+                    continue
+                }
+                if errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT {
+                    Log.info("MCPSession: closing idle client after read timeout (fd=\(fd))")
+                } else if errno != 0 {
+                    Log.warn("MCPSession: read failed for fd=\(fd): \(String(cString: strerror(errno)))")
+                }
+                break
+            }
             defer { free(line) }
 
             let lineStr = String(cString: line).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -56,6 +70,14 @@ final class MCPSession {
 
             let response = handleMethod(method, params: params, id: id)
             writeLine(to: writeStream, json: response)
+        }
+    }
+
+    private func configureSocketTimeouts() {
+        var timeout = timeval(tv_sec: Self.socketIdleTimeoutSeconds, tv_usec: 0)
+        withUnsafePointer(to: &timeout) { ptr in
+            _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, ptr, socklen_t(MemoryLayout<timeval>.size))
+            _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, ptr, socklen_t(MemoryLayout<timeval>.size))
         }
     }
 

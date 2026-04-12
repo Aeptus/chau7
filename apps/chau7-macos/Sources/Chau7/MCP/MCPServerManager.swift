@@ -15,6 +15,7 @@ final class MCPServerManager {
     private var isRunning = false
     private var acceptSource: DispatchSourceRead?
     private var healthCheckSource: DispatchSourceTimer?
+    private var serverGeneration: UInt64 = 0
 
     private init() {
         self.socketPath = RuntimeIsolation.pathInHome(".chau7/mcp.sock")
@@ -348,50 +349,67 @@ final class MCPServerManager {
 
     private func _start() {
         guard !isRunning else { return }
+        let maxBindAttempts = 3
+        var bindSucceeded = false
 
-        // Remove stale socket file
-        unlink(socketPath)
-
-        // Create socket
-        serverSocket = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard serverSocket >= 0 else {
-            Log.error("MCPServer: failed to create socket")
-            return
-        }
-
-        // Bind
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        // Copy path bytes into sun_path tuple
-        var pathBytes = [CChar](repeating: 0, count: 104) // sun_path is 104 bytes on macOS
-        _ = socketPath.withCString { src in
-            strncpy(&pathBytes, src, 103)
-        }
-        withUnsafeMutableBytes(of: &addr.sun_path) { rawBuf in
-            pathBytes.withUnsafeBytes { srcBuf in
-                rawBuf.copyBytes(from: srcBuf.prefix(rawBuf.count))
+        for attempt in 0 ..< maxBindAttempts {
+            guard prepareSocketPathForBinding() else {
+                return
             }
-        }
 
-        let bindResult = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                bind(serverSocket, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            serverSocket = socket(AF_UNIX, SOCK_STREAM, 0)
+            guard serverSocket >= 0 else {
+                Log.error("MCPServer: failed to create socket")
+                return
             }
-        }
 
-        guard bindResult == 0 else {
-            Log.error("MCPServer: failed to bind socket at \(socketPath): \(String(cString: strerror(errno)))")
+            var addr = sockaddr_un()
+            addr.sun_family = sa_family_t(AF_UNIX)
+            var pathBytes = [CChar](repeating: 0, count: 104)
+            _ = socketPath.withCString { src in
+                strncpy(&pathBytes, src, 103)
+            }
+            withUnsafeMutableBytes(of: &addr.sun_path) { rawBuf in
+                pathBytes.withUnsafeBytes { srcBuf in
+                    rawBuf.copyBytes(from: srcBuf.prefix(rawBuf.count))
+                }
+            }
+
+            let bindResult = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                    bind(serverSocket, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+                }
+            }
+
+            if bindResult == 0, listen(serverSocket, 5) == 0 {
+                bindSucceeded = true
+                break
+            }
+
+            let bindErrno = errno
+            if bindResult != 0 {
+                Log.warn(
+                    "MCPServer: bind attempt \(attempt + 1)/\(maxBindAttempts) failed at \(socketPath): " +
+                        "\(String(cString: strerror(bindErrno)))"
+                )
+            } else {
+                Log.warn("MCPServer: listen attempt \(attempt + 1)/\(maxBindAttempts) failed")
+            }
+
             close(serverSocket)
             serverSocket = -1
-            return
+            if bindResult == 0 {
+                unlink(socketPath)
+            }
+
+            guard attempt < maxBindAttempts - 1, shouldRetryStart(after: bindErrno) else {
+                break
+            }
+            usleep(useconds_t((attempt + 1) * 200_000))
         }
 
-        // Listen
-        guard listen(serverSocket, 5) == 0 else {
-            Log.error("MCPServer: failed to listen on socket")
-            close(serverSocket)
-            serverSocket = -1
-            unlink(socketPath)
+        guard bindSucceeded else {
+            Log.error("MCPServer: failed to start socket listener at \(socketPath)")
             return
         }
 
@@ -402,13 +420,19 @@ final class MCPServerManager {
         Log.info("MCPServer: listening on \(socketPath)")
 
         // Accept connections using GCD
-        let source = DispatchSource.makeReadSource(fileDescriptor: serverSocket, queue: queue)
+        serverGeneration &+= 1
+        let currentGeneration = serverGeneration
+        let listeningFD = serverSocket
+        let source = DispatchSource.makeReadSource(fileDescriptor: listeningFD, queue: queue)
         source.setEventHandler { [weak self] in
-            self?.acceptConnection()
+            self?.acceptConnection(listeningFD: listeningFD, generation: currentGeneration)
         }
         source.setCancelHandler { [weak self] in
             guard let self else { return }
-            close(serverSocket)
+            close(listeningFD)
+            if serverSocket == listeningFD {
+                serverSocket = -1
+            }
             unlink(socketPath)
         }
         source.resume()
@@ -419,6 +443,7 @@ final class MCPServerManager {
     private func _stop() {
         guard isRunning else { return }
         isRunning = false
+        serverGeneration &+= 1
 
         acceptSource?.cancel()
         acceptSource = nil
@@ -466,17 +491,26 @@ final class MCPServerManager {
 
     // MARK: - Connection Handling
 
-    private func acceptConnection() {
+    private func acceptConnection(listeningFD: Int32, generation: UInt64) {
+        guard isRunning, generation == serverGeneration, listeningFD == serverSocket else {
+            return
+        }
+
         var clientAddr = sockaddr_un()
         var clientLen = socklen_t(MemoryLayout<sockaddr_un>.size)
 
         let clientFD = withUnsafeMutablePointer(to: &clientAddr) { ptr in
             ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                accept(serverSocket, sockPtr, &clientLen)
+                accept(listeningFD, sockPtr, &clientLen)
             }
         }
 
-        guard clientFD >= 0 else { return }
+        guard clientFD >= 0 else {
+            if errno != EAGAIN, errno != EWOULDBLOCK, errno != EBADF {
+                Log.warn("MCPServer: accept failed: \(String(cString: strerror(errno)))")
+            }
+            return
+        }
 
         clientSockets.append(clientFD)
         Log.info("MCPServer: client connected (fd=\(clientFD), active=\(clientSockets.count))")
@@ -493,6 +527,55 @@ final class MCPServerManager {
                 self?.clientSockets.removeAll(where: { $0 == clientFD })
                 Log.info("MCPServer: client disconnected (fd=\(clientFD), active=\(self?.clientSockets.count ?? 0))")
             }
+        }
+    }
+
+    private func prepareSocketPathForBinding() -> Bool {
+        guard FileManager.default.fileExists(atPath: socketPath) else {
+            return true
+        }
+
+        if canConnectToSocket(at: socketPath) {
+            Log.error("MCPServer: refusing to replace active socket at \(socketPath)")
+            return false
+        }
+
+        unlink(socketPath)
+        return true
+    }
+
+    private func canConnectToSocket(at path: String) -> Bool {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else {
+            return false
+        }
+        defer { close(fd) }
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        var pathBytes = [CChar](repeating: 0, count: 104)
+        _ = path.withCString { src in
+            strncpy(&pathBytes, src, 103)
+        }
+        withUnsafeMutableBytes(of: &addr.sun_path) { rawBuf in
+            pathBytes.withUnsafeBytes { srcBuf in
+                rawBuf.copyBytes(from: srcBuf.prefix(rawBuf.count))
+            }
+        }
+
+        return withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+            }
+        }
+    }
+
+    private func shouldRetryStart(after error: Int32) -> Bool {
+        switch error {
+        case EADDRINUSE, EAGAIN, EINTR:
+            return true
+        default:
+            return false
         }
     }
 }
