@@ -641,10 +641,14 @@ public enum EventParsing {
     /// Event types from hooks
     public enum EventType: String, Codable, CaseIterable, Sendable {
         case userPrompt = "user_prompt"
+        case sessionStart = "session_start"
         case toolStart = "tool_start"
         case toolComplete = "tool_complete"
+        case toolFailed = "tool_failed"
         case permissionRequest = "permission_request"
         case responseComplete = "response_complete"
+        case responseFailed = "response_failed"
+        case elicitation
         case notification
         case sessionEnd = "session_end"
         case unknown
@@ -653,14 +657,24 @@ public enum EventParsing {
             switch hookEvent {
             case "UserPromptSubmit":
                 self = .userPrompt
+            case "SessionStart":
+                self = .sessionStart
             case "PreToolUse":
                 self = .toolStart
-            case "PostToolUse":
+            case "PostToolUse", "SubagentStop":
                 self = .toolComplete
+            case "PostToolUseFailure":
+                self = .toolFailed
             case "PermissionRequest":
                 self = .permissionRequest
             case "Stop":
                 self = .responseComplete
+            case "StopFailure":
+                self = .responseFailed
+            case "Elicitation":
+                self = .elicitation
+            case "Notification":
+                self = .notification
             case "SessionEnd":
                 self = .sessionEnd
             default:

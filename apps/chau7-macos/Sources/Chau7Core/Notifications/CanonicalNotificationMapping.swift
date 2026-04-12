@@ -33,13 +33,14 @@ public enum NotificationSemanticMapping {
         switch normalize(value) {
         case "finished", "response_complete", "responsecomplete", "task_finished", "taskfinished", "agent_turn_complete", "agentturncomplete":
             return .taskFinished
-        case "failed", "error", "context_limit", "contextlimit", "exit_failed", "exitfailed":
+        case "failed", "error", "context_limit", "contextlimit", "exit_failed", "exitfailed",
+             "tool_failed", "toolfailed", "response_failed", "responsefailed":
             return .taskFailed
         case "permission", "permission_request", "permissionrequest", "approval_requested", "approvalrequested":
             return .permissionRequired
         case "waiting_input", "waitinginput", "idle_prompt", "idleprompt", "user_input_requested", "userinputrequested":
             return .waitingForInput
-        case "attention_required", "attentionrequired", "notification":
+        case "attention_required", "attentionrequired", "notification", "elicitation":
             return .attentionRequired
         case "auth_success", "authsuccess":
             return .authenticationSucceeded

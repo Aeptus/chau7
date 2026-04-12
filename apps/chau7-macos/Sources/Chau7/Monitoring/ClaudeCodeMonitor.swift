@@ -187,16 +187,18 @@ final class ClaudeCodeMonitor {
 
     private func stateForEvent(_ type: ClaudeEventType) -> ClaudeSessionInfo.SessionState {
         switch type {
-        case .userPrompt:
-            return .active // User just sent input, Claude starting
-        case .toolStart:
-            return .responding // Claude is working
+        case .userPrompt, .sessionStart:
+            return .active
+        case .toolStart, .toolFailed:
+            return .responding
         case .toolComplete:
-            return .responding // Still working (might do more tools)
-        case .permissionRequest:
-            return .waitingPermission // Needs user permission
+            return .responding
+        case .permissionRequest, .elicitation:
+            return .waitingPermission
         case .responseComplete:
-            return .waitingInput // Claude done, waiting for next user input
+            return .waitingInput
+        case .responseFailed:
+            return .waitingInput
         case .sessionEnd:
             return .closed
         case .notification, .unknown:

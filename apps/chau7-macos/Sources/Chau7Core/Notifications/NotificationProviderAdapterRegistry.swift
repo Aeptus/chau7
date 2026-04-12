@@ -290,10 +290,18 @@ private struct ClaudeCodeNotificationAdapter: NotificationProviderAdapter {
         case "permission_request", "permissionrequest":
             return .emit(event.canonicalEvent(kind: .permissionRequired, reliability: .authoritative))
 
+        case "tool_failed", "toolfailed", "response_failed", "responsefailed":
+            return .emit(event.canonicalEvent(kind: .taskFailed, reliability: .authoritative))
+
+        case "elicitation":
+            return .emit(event.canonicalEvent(kind: .attentionRequired, reliability: .authoritative))
+
         case "response_complete", "responsecomplete":
             return .drop(reason: "Claude response_complete is state-only; Notification hook owns user-facing delivery")
 
-        case "user_prompt", "userprompt", "tool_start", "toolstart", "tool_complete", "toolcomplete", "session_end", "sessionend":
+        case "user_prompt", "userprompt", "session_start", "sessionstart",
+             "tool_start", "toolstart", "tool_complete", "toolcomplete",
+             "session_end", "sessionend":
             return .drop(reason: "Claude raw event \(rawType) is not user-facing")
 
         default:

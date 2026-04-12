@@ -28,10 +28,14 @@ import Foundation
 /// See `AIEvent.type` (String) for the tool-agnostic equivalent used across all sources.
 enum ClaudeEventType: String, Codable {
     case userPrompt = "user_prompt" // User submitted a prompt
+    case sessionStart = "session_start" // Session started
     case toolStart = "tool_start" // Tool about to execute
     case toolComplete = "tool_complete" // Tool execution completed
+    case toolFailed = "tool_failed" // Tool execution failed
     case permissionRequest = "permission_request" // Claude waiting for permission
     case responseComplete = "response_complete" // Claude finished responding
+    case responseFailed = "response_failed" // Turn ended due to API error
+    case elicitation // MCP server requesting user input
     case notification // Custom notification
     case sessionEnd = "session_end" // Session terminated
     case unknown
