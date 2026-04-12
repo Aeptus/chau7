@@ -1684,9 +1684,8 @@ struct Chau7OverlayView: View {
                             .stroke(Color.white.opacity(0.18), lineWidth: 1)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .padding(.trailing, 12)
                 }
-                .padding(.top, OverlayLayout.tabBarHeight + 10)
+                .padding(.top, OverlayLayout.tabBarHeight + 4)
                 .padding(.trailing, 4)
                 .zIndex(11)
             }

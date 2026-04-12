@@ -65,19 +65,12 @@ Detection methods:
 - **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.
 - **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
 - **AI event notifications** — finished, failed, permission, needs_validation, tool_complete, session_end, idle. Default policy: finished, failed, and permission. Noisier triggers available in settings.
-- **Shared history idle monitor setup** — Codex and Claude idle detection now come from one common monitor-source list instead of duplicated setup blocks, reducing drift between provider-specific history monitoring paths.
 - **Multi-provider event normalization** — Claude, Codex, and terminal sources translate provider-specific events into one shared semantic layer. Authoritative events from runtime and hooks take priority over history-derived fallbacks.
 - **Session-aware notification routing** — notifications route by exact AI session ID with fallback to provider/title heuristics. Handles tab restoration, split sessions, nested working directories, and cross-tab file conflicts.
 - **AI-first notification settings** — simplified overview for Finished, Failed, and Permission Request with direct controls for banner, tab highlight, sound, and dock bounce. Waiting-input and attention-required states surface as “needs me” attention. Per-tool overrides and advanced trigger plumbing available separately.
-- **Repeated attention suppression** — permission, waiting-input, idle, and attention-required events for the same unresolved AI session collapse into one delivered attention state for a cooldown window, reducing alert fatigue on long-running tabs.
-- **Post-close stale-event suppression** — once a session emits a finished or failed state, later permission, waiting-input, idle, and attention-required events for that same session identity are dropped as stale instead of re-triggering delivery.
-- **Bounded runtime approval recovery** — repeated MCP/runtime approval timeouts no longer recover to `ready` forever. After a bounded retry count the session records a runtime error and moves to a failed state so stuck approval loops are visible and queryable.
 - **Notification delivery ledger** — lifecycle tracking for debugging: coalescing, retry scheduling, drop reasons, and real UI outcomes.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
 - **Codex session resolver** — maps Codex sessions to working directories with LRU caching.
-- **Codex resume fallback cache** — reuses claimed explicit Codex session matches across history growth, reducing autosave churn and unresolved resume-metadata log spam.
-- **Persistent AI session identity lineage** — restored tabs keep explicit, observed, and clearly marked synthetic AI session IDs, along with launch command, agent start time, last input time, and last exit metadata for accurate resume behavior and audits.
-- **Richer agent state semantics** — local and remote state now distinguish `done` from `idle`, surface `approvalRequired` as a first-class status, and include pre-derived tool logo and tab color metadata so downstream surfaces do not need to rediscover branding on every render.
 
 ### Context Token Optimization (CTO)
 
@@ -110,16 +103,12 @@ Supported commands (46 parsers):
 
 - **TLS/WSS proxy** — Go-based `chau7-proxy` intercepts API calls to Claude, OpenAI (Codex), Gemini, Anthropic with TLS and WebSocket support.
 - **Token counting & cost calculation** — full token breakdown per call: input, output, cache creation, cache read, and reasoning tokens. Accurate cost calculation using provider-specific cache pricing (Anthropic 0.1x/1.25x, OpenAI 0.5x). Fallback estimation when extraction fails.
-- **Live session cost estimation** — runtime sessions accumulate estimated USD cost and cumulative token usage while turns complete, including separate reasoning-output tokens and configurable cost-threshold events for long-running agents.
-- **Provider-family fallback pricing** — model-less Claude, Codex, and Gemini runs still get estimated cost using provider-default pricing families instead of dropping cost to unavailable.
 - **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
 - **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
 - **Baseline estimator** — calculate token savings from context caching.
 - **Analytics dashboard** — command stats, error rates, API usage, and timing. Adaptive polling (2s active, 5s idle, 10s no agents), proxy health monitoring, timeline pagination, and per-agent cost display with cache/reasoning token breakdown.
 - **Repo-level aggregated metrics** — per-repository stats (commands, success rate, AI runs, tokens, cost, providers, top tools) in Debug Console, Data Explorer, and hover card.
 - **Repo-aware debug labels** — per-tab token and CTO rows use `provider/custom title + repo`, with split-session disambiguation when needed.
-- **Repository turn cost summaries** — repository pane turn summaries now show estimated turn cost, active working duration, and average tokens per completed turn instead of only a growing wall-clock duration.
-- **Completed turn summary persistence** — repository pane summaries preserve the last completed turn’s tokens, tools, duration, exit reason, and cost after the session goes idle instead of reverting to zeroed in-flight counters.
 - **Timeline visualization** — scrubber timeline showing command blocks and metrics.
 - **Provider filtering** — include or exclude specific API providers.
 - **Correlation headers** — `X-Chau7-Context-Pack`, `X-Chau7-Tab-ID`, `X-Chau7-Project` for tracing.
@@ -213,18 +202,6 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `runtime_events_poll` | Poll the runtime event stream using a cursor |
 | `runtime_approval_respond` | Approve or deny a pending runtime tool-use request |
 
-Runtime sessions keep pending `initial_prompt` work attached to real terminal readiness changes, so slow interactive launches do not silently miss their first prompt. Runtime-driven tab teardown also queues close work off the immediate stop path and reports when close cleanup is still in flight.
-
-### Runtime Journal
-
-- **Turn-scoped event causality** — runtime events now carry optional correlation IDs so tool use, approval requests, approval resolution, and tool results can be stitched back into one causal chain.
-- **User input boundaries** — each runtime turn journals an explicit `user_input` event with prompt length and preview, giving orchestrators a stable “since last user input” boundary.
-- **Turn integrity metadata** — `turn_completed` events include `turn_duration_ms`, and turn-scoped journal queries can fetch all retained events for a specific turn ID without manual session-wide filtering.
-- **Richer tool results** — `tool_result` events include success/failure, exit code, error preview, output preview, duration, and file path metadata matched back to the originating tool invocation.
-- **Streaming output chunks** — `output_chunk` events are emitted during the active turn with `turn_id` and `chunk_index`, using an 8K default chunk size that can be tuned through runtime settings.
-- **Configurable journal retention** — per-session runtime event journal capacity and output chunk limits are configurable, so long-running orchestration sessions can trade memory for deeper history.
-- **Turn-linked command boundaries** — command blocks now carry runtime `turnID`, changed-file status, and exact terminal row bounds so investigators can map shell work back to one runtime turn without timestamp heuristics.
-
 ### Resources (4 endpoints)
 
 | URI | Description |
@@ -249,18 +226,12 @@ Runtime sessions keep pending `initial_prompt` work attached to real terminal re
 - OSC 133 (FinalTerm) shell integration: prompt start (A), command start (B), output start (C), command finished with exit code (D). Parsed in Rust interceptor, feeds ShellEventDetector. When present, heuristic fallbacks are suppressed.
 - File drag-and-drop: drop files to paste shell-escaped paths; Option+drop images for base64 data URIs.
 - Markdown runbooks: open .md files in the editor pane with executable code blocks.
-- Session companion plans: PM/dashboard sessions prefer `.chau7/sessions/<session-id>/plan.md`; autosave stays limited to Chau7-managed companion plans instead of every repo-level `plan.md`.
 - Native macOS cut/copy/paste shortcuts are preserved inside split-pane text editors before terminal-specific fallbacks run.
 - Show Changed Files (Cmd+Option+G): git diff snapshot per command shows which files were modified.
-- Heuristic command boundaries: when OSC 133 is unavailable, Chau7 still creates command blocks, records shell-reported exit status, captures user/agent/system input rows, and persists per-command changed-file state across restore.
 - Idle tabs dropdown: tabs idle beyond a configurable threshold (default 10 min) are grouped into a compact chip in the tab bar.
 - Repository tab grouping: group tabs by git repo (Off/Auto/Manual). Shows inline repo-name tag chip with connecting line. Suppresses redundant repo path in tab titles, and inherited group membership auto-detaches when a tab moves to a different repo, including tabs opened directly at another directory.
-- Protected repo identity fallback: tabs keep their known repo root and last-known branch even when macOS protected-folder access blocks live git probing, so passive repo-aware UI does not collapse to “not a repo.”
-- Protected-folder prompt cooldown: user-triggered live git actions remember a recent cancel or failed grant per protected root, so Chau7 does not reopen the same permission panel in a tight loop when nothing changed.
-- Command-block restore persistence: restored tabs keep per-command changed-file metadata and load state, so the repository pane does not forget which files a prior command touched just because Chau7 restarted.
-- Repo dashboard overlay: clicking a repo badge opens its dashboard, the active repo badge highlights like a selected tab while the dashboard is open, and clicking any tab closes the dashboard again, including the currently selected tab.
 - Split pane file preview: read-only viewer with syntax highlighting and image support (Cmd+Opt+P).
-- Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D). Prompts for protected-folder access on demand before loading live diffs.
+- Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D).
 - `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (with confirmation).
 - Default start directory and optional startup commands.
 - Copy on select, Option+click cursor positioning, paste escaping.
@@ -283,24 +254,17 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | **Dirty region tracking** | Only re-render what changed |
 | **Feature profiler** | Per-feature timing with os.signpost integration |
 
-MCP session create/stop and tab create/close flows also emit focused main-thread stall diagnostics with operation context, making beachball reports attributable to specific lifecycle operations instead of generic lag.
-
-Startup restore keeps the same “show windows fast, settle intelligently” bias:
-- Protected-folder validation is coalesced per root during restore instead of repeating the same deferral noise for every restored tab.
-- Snippet-context refresh debounces transient home-level restore paths so the stable repo context wins without extra churn.
-- Resume-prefill fallback waits briefly for pane-view readiness before dropping to session-level queueing, which reduces restore retries and keeps first paint reactive.
-- A single startup summary line reports protected-root, snippet, and resume-prefill counts for postmortem analysis.
-
 ## Tabs, Panes & Windows
 
 ### Tabs
 
 - Unlimited tabs per window — `Cmd+T` to create, `Cmd+1–9` to jump.
 - Tab renaming (`Cmd+Shift+R`), 12+ colors, reordering via drag or shortcuts with center-crossing snap thresholds.
-- AI agent logos, git branch indicator, directory path, last command badge. The branch indicator stays populated from cached repo identity when a protected folder blocks live git refresh.
+- AI agent logos, git branch indicator, directory path, last command badge.
 - Broadcast input to all tabs with per-tab exclusion and visual indicator.
 - Background rendering suspension for inactive tabs (configurable delay).
 - Close other tabs (`Cmd+Opt+W`), configurable new tab position.
+- Shortcut helper hint box (`⌘/` and `⌥⌘I`) floats 4pt from tab bar bottom and window right edge.
 
 ### Split Panes
 
@@ -309,7 +273,7 @@ Startup restore keeps the same “show windows fast, settle intelligently” bia
 - Built-in text editor in split panes — syntax highlighting, line numbers, bracket matching, find/replace.
 - Click-to-copy document name in the editor pane header.
 - Multi-language syntax: HTML, CSS, JavaScript, Python, and more.
-- Repository pane (`Cmd+Opt+B`): full git UI — stage, commit (⌘Enter), branch, push/pull, stash, history with search. Session-aware: shows only agent-touched files with diff stats when an AI is active, resets after push. Ahead/behind indicator, hover tooltips, conventional commit chips. In protected folders, passive repo identity remains visible and live git actions prompt for access only when needed.
+- Repository pane (`Cmd+Opt+B`): full git UI — stage, commit (⌘Enter), branch, push/pull, stash, history with search. Session-aware: shows only agent-touched files with diff stats when an AI is active, resets after push. Ahead/behind indicator, hover tooltips, conventional commit chips.
 
 ### Windows
 
@@ -331,7 +295,6 @@ Startup restore keeps the same “show windows fast, settle intelligently” bia
 ### Command Safety
 
 - **Dangerous command guard** — intercepts `rm -rf`, `dd`, `mkfs`, etc. with confirmation.
-- **Protect Chau7** preset adds configurable `Verbose Logging`, `Warning`, and `Blocking` responses for self-harming commands that target Chau7 or its managed runtime.
 - Custom danger patterns via regex.
 - Visual highlighting of dangerous commands in output.
 
@@ -449,13 +412,10 @@ Startup restore keeps the same “show windows fast, settle intelligently” bia
 ### Scripting API
 
 - JSON-RPC Unix socket API — control tabs, run commands, query history, manage snippets, modify settings.
-- Review automation methods: `start_review`, `wait_review`, `get_review_result`, and `stop_review` for delegated code review sessions.
+- Review automation methods: `start_review`, `wait_review`, and `get_review_result` for delegated code review sessions.
 - `start_review` supports both commit-range reviews and staged-diff reviews with explicit staged file lists.
 - Repo-local pre-commit review automation via `Scripts/pre-commit-review`, which talks to the scripting socket, launches a delegated review, waits for a structured result, and prints findings in hook-friendly terminal output.
-- The pre-commit review client applies explicit socket timeouts so a stalled scripting server fails fast instead of hanging the entire commit hook.
-- Delegated review sessions retain their initial prompt until the backend is actually ready, and the hook tears down review tabs after completion or failure instead of leaving orphaned MCP-controlled review tabs open.
 - Per-repo pre-commit review policy via `.chau7/pre-commit-review.conf` with gate modes (`off`, `advisory`, `high`, `any`), timeout, backend, and model selection. The shipped default reviewer model is `gpt-5.3-codex`.
-- The local `pre-push` hook rejects plain release tags like `0.1.1` when the release workflow is configured for `v*`, so release tags match the GitHub workflow trigger before they are pushed.
 
 ### Debugging
 
@@ -465,8 +425,6 @@ Startup restore keeps the same “show windows fast, settle intelligently” bia
 - Sessions Explorer rows use the latest run metadata for provider and repo labels.
 - Live state inspector for tabs, sessions, and models.
 - Feature profiler with os.signpost integration.
-- Main-thread stall telemetry records restore and render work that blocks long enough to explain beachballs during startup or relaunch.
-- Relaunch restore keeps a scoped low-latency App Nap lease while windows and tabs recover, without reverting to the older slow trickle-restore behavior.
 - Structured logging with category-based filtering and correlation IDs.
 - Privacy-first bug report dialog (⌥⌘I): all sensitive data off by default, per-toggle tab pickers, live preview, HTTPS-only submission via relay, success banner with created issue number when available, tab title redaction, background history capture, no AI session fallback leak.
 - In-app issue reporting privacy page: GDPR-compliant sub-processor disclosure (Cloudflare, GitHub) with data categories, retention, legal basis, DPA links, and data subject rights.
@@ -628,20 +586,3 @@ Key patterns:
 - Correlation IDs for trace logging.
 - Binary tree layout for split pane nesting.
 - MCP server with thread-safe main-thread dispatch.
-
-## Recent Additions
-
-- Local quality pipeline:
-  lefthook-driven pre-commit/pre-push/local-CI layered enforcement. Pre-commit runs gitleaks, forbidden-file and large-file guards, anti-slop regex (Swift/TS/Go/Python), a design-system guard on net-new Swift, shellcheck, ruff, tsc+prettier for the relay, and scoped Swift/Rust/Go lint/build. Local CI (`./Scripts/ci-local`) adds periphery dead-code, jscpd duplication, cargo-deny dependency audit, full golangci-lint, and the entire test suite. Escape hatches documented in CONTRIBUTING.md. Running `./Scripts/install-hooks` wires lefthook and removes any stale legacy hooks.
-- Terminal latency telemetry separation:
-  Input-lag telemetry now tracks local PTY responsiveness only. AI prompt round trips keep their dedicated timing logs, but they no longer inflate the input-lag panel or CPU-saturation heuristics used for UI throttling.
-- Protected-folder repo identity restore:
-  Restored tabs now persist each terminal pane's last-known repo root and branch, and restore can fall back to the existing repo group identifier when reopening older saved tabs. This keeps passive git UI such as the tab branch badge available even when the repo lives under protected folders like `Downloads` and live git probing is blocked until the user explicitly grants access.
-- Passive protected-repo tab chrome:
-  Passive tab chrome now reads cached repo identity too, so the selected-tab branch badge, tab git indicator, hover-card branch row, and repo path label remain repo-aware even when live git probing is unavailable in a protected folder.
-- Protected-repo branch durability:
-  Known repo identities now preserve last-known branch metadata when recent repos are reordered or settings are imported, so protected-folder repos do not regress from a real branch name back to `unknown` during normal settings churn.
-- Protected-folder action dedupe:
-  Repository pane, diff viewer, and related live-git surfaces now share a per-root user-action cooldown after a canceled or failed grant, so one denied `Downloads` prompt suppresses the next immediate attempt instead of re-asking on every click.
-- Unified repository model for protected paths:
-  `RepositoryModel` now carries an `accessLevel` (.live or .cached) so that a model exists for every known repo, even when live git access is blocked in protected directories. Consumers see a single, always-present object instead of switching between live models and thin fallback identities. Branch data flows into the model from tab restore, recent-repo recording, and live-to-cached transitions, eliminating the prior circular dependency where recording a branch required the same live access that was blocked.
