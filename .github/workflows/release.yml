@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -14,13 +16,20 @@ jobs:
     runs-on: macos-15
     outputs:
       version: ${{ steps.version.outputs.version }}
-      sha256: ${{ steps.sha256.outputs.sha256 }}
+      dmg_sha256: ${{ steps.checksums.outputs.dmg_sha256 }}
     steps:
       - uses: actions/checkout@v6
 
       - name: Parse version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Export version to environment
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "CHAU7_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "CHAU7_BUILD_NUMBER=${{ github.run_number }}" >> "$GITHUB_ENV"
 
       - name: Swift version
         run: swift --version
@@ -42,7 +51,7 @@ jobs:
         with:
           go-version-file: apps/chau7-macos/chau7-proxy/go.mod
 
-      - name: Build DMG
+      - name: Build DMG and ZIP
         working-directory: apps/chau7-macos
         run: |
           if [ -f ./Scripts/build-dist.sh ]; then
@@ -51,35 +60,167 @@ jobs:
             echo "No dist script found, skipping DMG"
           fi
 
-      - name: Compute DMG SHA256
-        id: sha256
+      # ── Conditional: Apple Developer ID signing & notarization ──
+      # These steps activate when APPLE_DEVELOPER_ID_APPLICATION is set.
+      # Until then, artifacts remain ad-hoc signed.
+
+      - name: Check for Apple signing secrets
+        id: signing
+        env:
+          HAS_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+        run: |
+          if [ -n "$HAS_IDENTITY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Apple signing secrets not configured — skipping notarization."
+          fi
+
+      - name: Import signing certificate
+        if: steps.signing.outputs.available == 'true'
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > /tmp/certificate.p12
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          security import /tmp/certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
+          rm /tmp/certificate.p12
+
+      - name: Sign, notarize, and re-package
+        if: steps.signing.outputs.available == 'true'
+        working-directory: apps/chau7-macos
+        env:
+          IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          APP_DIR="dist/Chau7.app"
+
+          # Re-sign with Developer ID (replaces ad-hoc signature)
+          codesign --force --options runtime --sign "$IDENTITY" --deep "$APP_DIR"
+
+          # Create temporary ZIP for notarization submission
+          ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" /tmp/Chau7-notarize.zip
+
+          # Submit and wait for notarization
+          xcrun notarytool submit /tmp/Chau7-notarize.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_ID_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout 600
+
+          # Staple the notarization ticket to the app
+          xcrun stapler staple "$APP_DIR"
+
+          # Rebuild DMG from notarized app
+          DMG_PATH="dist/Chau7-AppleSilicon.dmg"
+          rm -f "$DMG_PATH"
+          DMG_STAGING="dist/dmg-staging-notarized"
+          mkdir -p "$DMG_STAGING"
+          cp -R "$APP_DIR" "$DMG_STAGING/"
+          ln -s /Applications "$DMG_STAGING/Applications"
+          hdiutil create -fs APFS -volname "Chau7" \
+            -srcfolder "$DMG_STAGING" -ov -format UDBZ "$DMG_PATH"
+          rm -rf "$DMG_STAGING"
+          xcrun stapler staple "$DMG_PATH"
+
+          # Rebuild ZIP from notarized app
+          ZIP_PATH="dist/Chau7-AppleSilicon.zip"
+          rm -f "$ZIP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$ZIP_PATH"
+
+          echo "Notarization complete — DMG and ZIP rebuilt with stapled ticket."
+
+      - name: Build signed PKG installer
+        if: steps.signing.outputs.available == 'true'
+        working-directory: apps/chau7-macos
+        env:
+          INSTALLER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          PKG_PATH="dist/Chau7-AppleSilicon.pkg"
+
+          pkgbuild \
+            --component "dist/Chau7.app" \
+            --install-location "/Applications" \
+            --identifier "com.chau7.app.pkg" \
+            --version "$VERSION" \
+            --sign "$INSTALLER_IDENTITY" \
+            "$PKG_PATH"
+
+          xcrun notarytool submit "$PKG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_ID_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout 600
+
+          xcrun stapler staple "$PKG_PATH"
+          echo "PKG installer created, signed, and notarized."
+
+      # ── Checksums and attestation (run AFTER notarization) ──
+
+      - name: Compute artifact checksums
+        id: checksums
         working-directory: apps/chau7-macos
         run: |
-          DMG_FILE=$(ls dist/*.dmg 2>/dev/null | head -1)
-          if [ -n "$DMG_FILE" ]; then
-            SHA=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')
-            echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
-            echo "Computed SHA256: $SHA"
+          for f in dist/*.dmg dist/*.zip dist/*.pkg; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            sha=$(shasum -a 256 "$f" | awk '{print $1}')
+            echo "$sha  $name" >> dist/SHA256SUMS.txt
+            echo "  $name: $sha"
+          done
+          # Export DMG sha for Homebrew cask
+          DMG_FILE="dist/Chau7-AppleSilicon.dmg"
+          if [ -f "$DMG_FILE" ]; then
+            DMG_SHA=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')
+            echo "dmg_sha256=$DMG_SHA" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Generate SLSA provenance attestations
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            apps/chau7-macos/dist/*.dmg
+            apps/chau7-macos/dist/*.zip
+            apps/chau7-macos/dist/*.pkg
+            apps/chau7-macos/dist/SHA256SUMS.txt
+
+      # ── Release creation ──
 
       - name: Extract release notes from CHANGELOG
         id: notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          NOTES=$(./Scripts/extract-changelog "${{ steps.version.outputs.version }}")
+          NOTES=$(./Scripts/extract-changelog "$VERSION")
           if [ -z "$NOTES" ]; then
             NOTES="See [CHANGELOG](https://github.com/aeptus/chau7/blob/main/apps/chau7-macos/docs/CHANGELOG.md) for details."
           fi
-          # Write to file to avoid shell quoting issues in multiline output
           echo "$NOTES" > /tmp/release-notes.md
 
       - name: Build release body
+        env:
+          SIGNED: ${{ steps.signing.outputs.available }}
         run: |
           cat > /tmp/release-body.md << 'HEADER'
           ## What's Changed
 
           HEADER
           cat /tmp/release-notes.md >> /tmp/release-body.md
-          cat >> /tmp/release-body.md << 'FOOTER'
+
+          cat >> /tmp/release-body.md << 'INSTALL'
 
           ## Install
 
@@ -88,10 +229,55 @@ jobs:
           brew install --cask chau7
           ```
 
-          Or download **Chau7-AppleSilicon.dmg** from the assets below.
+          Or download from the assets below:
 
-          > Ad-hoc signed, not notarized. First launch may require: right-click Chau7.app, then Open.
-          FOOTER
+          | Format | File | Description |
+          |--------|------|-------------|
+          INSTALL
+
+          for f in apps/chau7-macos/dist/*.dmg apps/chau7-macos/dist/*.zip apps/chau7-macos/dist/*.pkg; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            ext="${name##*.}"
+            case "$ext" in
+              dmg) desc="Drag-and-drop installer" ;;
+              zip) desc="ZIP archive (for automation / MDM)" ;;
+              pkg) desc="macOS installer package" ;;
+              *) desc="" ;;
+            esac
+            echo "| ${ext^^} | **${name}** | ${desc} |" >> /tmp/release-body.md
+          done
+
+          if [ -f apps/chau7-macos/dist/SHA256SUMS.txt ]; then
+            {
+              echo ""
+              echo "<details>"
+              echo "<summary>SHA-256 Checksums</summary>"
+              echo ""
+              echo '```'
+              cat apps/chau7-macos/dist/SHA256SUMS.txt
+              echo '```'
+              echo "</details>"
+            } >> /tmp/release-body.md
+          fi
+
+          echo "" >> /tmp/release-body.md
+          if [ "$SIGNED" = "true" ]; then
+            echo "> Signed with Developer ID and notarized by Apple." >> /tmp/release-body.md
+          else
+            echo "> Ad-hoc signed, not notarized. First launch: right-click Chau7.app, then Open." >> /tmp/release-body.md
+          fi
+
+          cat >> /tmp/release-body.md << 'ATTEST'
+
+          ## Verification
+
+          All release artifacts include [SLSA provenance attestations](https://slsa.dev). Verify with:
+
+          ```bash
+          gh attestation verify Chau7-AppleSilicon.dmg --owner aeptus
+          ```
+          ATTEST
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -99,12 +285,15 @@ jobs:
           body_path: /tmp/release-body.md
           files: |
             apps/chau7-macos/dist/*.dmg
+            apps/chau7-macos/dist/*.zip
+            apps/chau7-macos/dist/*.pkg
+            apps/chau7-macos/dist/SHA256SUMS.txt
 
   update-homebrew-tap:
     name: Update Homebrew Tap
     needs: build
     runs-on: ubuntu-latest
-    if: ${{ needs.build.outputs.sha256 != '' }}
+    if: ${{ needs.build.outputs.dmg_sha256 != '' }}
     env:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
@@ -122,12 +311,15 @@ jobs:
 
       - name: Update cask formula
         if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          SHA256: ${{ needs.build.outputs.dmg_sha256 }}
         run: |
           mkdir -p tap/Casks
           cat > tap/Casks/chau7.rb << CASK
           cask "chau7" do
-            version "${{ needs.build.outputs.version }}"
-            sha256 "${{ needs.build.outputs.sha256 }}"
+            version "$VERSION"
+            sha256 "$SHA256"
 
             url "https://github.com/aeptus/chau7/releases/download/v#{version}/Chau7-AppleSilicon.dmg"
             name "Chau7"
@@ -150,9 +342,11 @@ jobs:
       - name: Commit and push
         if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
         working-directory: tap
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Casks/chau7.rb
-          git commit -m "Update chau7 to ${{ needs.build.outputs.version }}"
+          git commit -m "Update chau7 to $VERSION"
           git push
