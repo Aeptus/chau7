@@ -110,6 +110,7 @@ Supported commands (46 parsers):
 - **TLS/WSS proxy** — Go-based `chau7-proxy` intercepts API calls to Claude, OpenAI (Codex), Gemini, Anthropic with TLS and WebSocket support.
 - **Token counting & cost calculation** — full token breakdown per call: input, output, cache creation, cache read, and reasoning tokens. Accurate cost calculation using provider-specific cache pricing (Anthropic 0.1x/1.25x, OpenAI 0.5x). Fallback estimation when extraction fails.
 - **Live session cost estimation** — runtime sessions accumulate estimated USD cost and cumulative token usage while turns complete, including separate reasoning-output tokens and configurable cost-threshold events for long-running agents.
+- **Provider-family fallback pricing** — model-less Claude, Codex, and Gemini runs still get estimated cost using provider-default pricing families instead of dropping cost to unavailable.
 - **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
 - **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
 - **Baseline estimator** — calculate token savings from context caching.
@@ -117,6 +118,7 @@ Supported commands (46 parsers):
 - **Repo-level aggregated metrics** — per-repository stats (commands, success rate, AI runs, tokens, cost, providers, top tools) in Debug Console, Data Explorer, and hover card.
 - **Repo-aware debug labels** — per-tab token and CTO rows use `provider/custom title + repo`, with split-session disambiguation when needed.
 - **Repository turn cost summaries** — repository pane turn summaries now show estimated turn cost, active working duration, and average tokens per completed turn instead of only a growing wall-clock duration.
+- **Completed turn summary persistence** — repository pane summaries preserve the last completed turn’s tokens, tools, duration, exit reason, and cost after the session goes idle instead of reverting to zeroed in-flight counters.
 - **Timeline visualization** — scrubber timeline showing command blocks and metrics.
 - **Provider filtering** — include or exclude specific API providers.
 - **Correlation headers** — `X-Chau7-Context-Pack`, `X-Chau7-Tab-ID`, `X-Chau7-Project` for tracing.

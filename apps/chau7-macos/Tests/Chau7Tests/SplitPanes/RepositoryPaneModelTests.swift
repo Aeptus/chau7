@@ -408,6 +408,35 @@ final class RepositoryPaneModelTests: XCTestCase {
         XCTAssertNil(model.turnSummary)
     }
 
+    func testBuildTurnSummaryUsesCompletedTurnSnapshotWhenSessionIsIdle() throws {
+        let session = RuntimeSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(
+                directory: "/tmp/repository-turn-summary",
+                provider: "claude",
+                model: "claude-sonnet-4"
+            )
+        )
+
+        session.transition(.backendReady)
+        _ = try XCTUnwrap(session.startTurn(prompt: "Hello"))
+        session.recordToolUse(name: "Edit", file: "Sources/App.swift")
+        session.addTokens(input: 100, output: 25, cacheCreation: 10, cacheRead: 5, reasoningOutput: 3)
+        _ = try XCTUnwrap(session.completeTurn(summary: "done", terminalOutput: nil))
+
+        let summary = RepositoryPaneModel.buildTurnSummary(from: session)
+
+        XCTAssertEqual(summary.turnCount, 1)
+        XCTAssertEqual(summary.inputTokens, 100)
+        XCTAssertEqual(summary.outputTokens, 25)
+        XCTAssertEqual(summary.reasoningOutputTokens, 3)
+        XCTAssertEqual(summary.toolsUsed["Edit"], 1)
+        XCTAssertEqual(summary.exitReason, .success)
+        XCTAssertNotNil(summary.duration)
+        XCTAssertEqual(try XCTUnwrap(summary.costEstimateUSD), 0.000759, accuracy: 0.000001)
+    }
+
     func testRefreshStatusRequestsProtectedAccessBeforeRunningGit() {
         let blockedSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
             root: "/Users/me/Downloads",

@@ -248,6 +248,7 @@ final class RuntimeSessionManager {
                 correlationID: correlationID,
                 data: toolData
             )
+
         case .toolComplete:
             journalOutputDeltaIfNeeded(for: session)
             let toolInvocation = completePendingToolInvocation(
@@ -356,10 +357,18 @@ final class RuntimeSessionManager {
                     )
                 }
 
-                // Consume crossed cost thresholds so the session tracks them,
-                // but don't emit into the notification pipeline — these are
-                // telemetry-level signals, not user-facing notifications.
-                _ = session.consumeCrossedCostThresholds(FeatureSettings.shared.runtimeCostThresholdsUSD)
+                let crossedCostThresholds = session.consumeCrossedCostThresholds(FeatureSettings.shared.runtimeCostThresholdsUSD)
+                for threshold in crossedCostThresholds {
+                    session.journal.append(
+                        sessionID: session.id,
+                        turnID: turnIDForOutput,
+                        type: RuntimeEventType.costThreshold.rawValue,
+                        data: [
+                            "threshold_usd": String(format: "%.2f", threshold),
+                            "estimated_cost_usd": String(format: "%.6f", result.estimatedCostUSD ?? 0)
+                        ]
+                    )
+                }
 
                 TelemetryRecorder.shared.updateLiveMetrics(
                     tabID: session.tabID.uuidString,

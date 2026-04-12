@@ -60,6 +60,10 @@ AI Integration,Deterministic Notification Action Outcomes,"Notification delivery
 AI Integration,Runtime Session Startup,"MCP-created runtime sessions transition to ready after launch, and attach_tab_id sessions start usable immediately",Shipped,Yes
 Runtime,Bounded Approval Timeout Recovery,"Repeated runtime approval timeouts recover only for a bounded number of attempts before the session records a session_error and moves to failed",Shipped,Yes
 Runtime,Turn-Scoped Runtime Event Journal,"Runtime journals record user_input boundaries, correlated tool use and results, turn-scoped output chunks, duration metadata, and per-turn event queries for deterministic orchestration",Shipped,Yes
+API Analytics,Provider-Family Fallback Pricing,"Model-less Claude Codex and Gemini runs still receive estimated cost using provider-default pricing families instead of dropping to unavailable",Shipped,Yes
+API Analytics,Completed Turn Summary Persistence,"Repository turn summaries preserve the last completed turn's tokens tools duration exit reason and estimated cost after the session goes idle",Shipped,Yes
+API Analytics,Cost Threshold Events,"Runtime sessions emit cost_threshold journal events when cumulative estimated cost crosses configured limits",Shipped,Yes
+API Analytics,Dashboard Cache Token Split,"Agent dashboard cards track cache creation and cache read tokens separately instead of collapsing all cached usage into reads",Shipped,Yes
 MCP Server,MCP Command Filter Hardening,"Permission checks parse background separators, tabs, and newlines before applying allow/block/approval rules",Shipped,Yes
 MCP Server,Backend Launch Environment Validation,"Runtime backend launch strings drop invalid environment variable names before shell interpolation",Shipped,Yes
 AI Integration,History Monitor Tab Routing,"History-monitor idle and finished events resolve provider session metadata to recover the working directory before notification routing",Shipped,Yes

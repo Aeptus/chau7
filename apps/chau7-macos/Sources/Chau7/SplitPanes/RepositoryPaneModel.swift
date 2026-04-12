@@ -440,13 +440,22 @@ final class RepositoryPaneModel: Identifiable {
     }
 
     /// Build turn summary from a RuntimeSession.
-    private static func buildTurnSummary(from session: RuntimeSession) -> TurnSummaryInfo {
-        let stats = session.currentTurnStats
+    static func buildTurnSummary(from session: RuntimeSession) -> TurnSummaryInfo {
+        let completedSnapshot = session.lastCompletedTurnSnapshot
+        let isTurnActive = session.currentTurnID != nil
+        let stats = isTurnActive ? session.currentTurnStats : (completedSnapshot?.stats ?? session.currentTurnStats)
         var toolsUsed: [String: Int] = [:]
         for (name, tally) in stats.toolTallies {
             toolsUsed[name] = tally.count
         }
-        let duration = session.lastTurnCompletedAt.map { $0.timeIntervalSince(session.createdAt) }
+        let duration: TimeInterval?
+        if isTurnActive {
+            duration = nil
+        } else if let completedSnapshot {
+            duration = TimeInterval(completedSnapshot.durationMs) / 1000
+        } else {
+            duration = session.lastTurnCompletedAt.map { $0.timeIntervalSince(session.createdAt) }
+        }
         return TurnSummaryInfo(
             turnCount: session.turnCount,
             toolsUsed: toolsUsed,
@@ -454,14 +463,16 @@ final class RepositoryPaneModel: Identifiable {
             inputTokens: stats.inputTokens,
             outputTokens: stats.outputTokens,
             reasoningOutputTokens: stats.reasoningOutputTokens,
-            costEstimateUSD: ModelPricingTable.estimatedCostUSD(
-                for: stats,
-                modelID: session.config.model,
-                providerHint: session.backend.name
-            ),
+            costEstimateUSD: isTurnActive
+                ? ModelPricingTable.estimatedCostUSD(
+                    for: stats,
+                    modelID: session.config.model,
+                    providerHint: session.backend.name
+                )
+                : completedSnapshot?.estimatedCostUSD,
             averageTokensPerTurn: session.averageVisibleTokensPerCompletedTurn,
             activeDuration: session.activeDurationMs > 0 ? TimeInterval(session.activeDurationMs) / 1000 : nil,
-            exitReason: session.lastExitReason,
+            exitReason: completedSnapshot?.exitReason ?? session.lastExitReason,
             backendName: session.backend.name,
             sessionState: session.state,
             duration: duration

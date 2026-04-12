@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Live Runtime Cost & Token Accounting**: Runtime sessions now accumulate token usage and estimated USD cost as turns complete, expose reasoning-output tokens separately, emit configurable cost-threshold events, and surface estimated per-turn/session cost in telemetry and repository summaries while a run is still active.
 
 ### Fixed
+- **Live Cost Threshold Events**: Runtime sessions now actually journal `cost_threshold` events when cumulative estimated cost crosses configured limits, instead of only consuming the thresholds internally with no emitted signal.
+- **Completed Turn Summary Persistence**: Repository turn summaries now preserve the last completed turn’s tokens, tools, duration, exit reason, and estimated cost after the session goes idle instead of falling back to a zeroed in-flight accumulator.
+- **Provider-Fallback Cost Estimates**: Sessions and SQLite-backed telemetry without an explicit model now fall back to provider-default pricing families (`claude`, `codex`, `gemini`) so estimated USD cost no longer silently disappears on model-less runs.
+- **Dashboard Cache Token Breakdown**: Agent dashboard cards again distinguish cache creation from cache read tokens instead of collapsing all cached usage into the read bucket.
 - **AnalyticsDashboardView Actor Isolation**: Wrapped the `apiCallRecorded` observer body in an `@MainActor` Task so `refresh()` no longer triggers `-warnings-as-errors` compile failures.
 - **Relay Type Narrowing**: `env.RELAY_SECRET` now survives the `isRelaySecretConfigured` guard into `verifyToken` without compile errors (the predicate lives in an untyped .js module, so the guarded call uses an explicit narrowing assertion).
 - **chau7-proxy + chau7-remote Go Hygiene**: Migrated chau7-remote from deprecated `nhooyr.io/websocket` to `github.com/coder/websocket`; eliminated 58 errcheck + 8 unused findings in chau7-proxy and 11 findings in chau7-remote; repo-wide baseline is green under `golangci-lint run`.

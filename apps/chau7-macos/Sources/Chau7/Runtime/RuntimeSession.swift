@@ -39,6 +39,8 @@ final class RuntimeSession: @unchecked Sendable {
     private var _pendingApproval: PendingApproval?
     private var _currentTurnStats = TurnStats()
     private var _cumulativeTokenUsage = TokenUsage()
+    private var _cumulativeCacheCreationTokens = 0
+    private var _cumulativeCacheReadTokens = 0
     private var _estimatedCostUSD: Double?
     private var _lastDeniedApproval = false
     private var _wasInterrupted = false
@@ -51,6 +53,7 @@ final class RuntimeSession: @unchecked Sendable {
     private var _awaitingProviderUserPromptEcho = false
     private var _pendingInitialPrompt: String?
     private var _lastCompletedTurnID: String?
+    private var _lastCompletedTurnSnapshot: CompletedTurnSnapshot?
     private var _currentResultSchema: JSONValue?
     private var _turnResults: [String: RuntimeTurnResult] = [:]
     private var _emittedCostThresholdCents: Set<Int> = []
@@ -167,6 +170,24 @@ final class RuntimeSession: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return _pendingInitialPrompt
+    }
+
+    var cumulativeCacheCreationTokens: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return _cumulativeCacheCreationTokens
+    }
+
+    var cumulativeCacheReadTokens: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return _cumulativeCacheReadTokens
+    }
+
+    var lastCompletedTurnSnapshot: CompletedTurnSnapshot? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastCompletedTurnSnapshot
     }
 
     func turnResult(id turnID: String? = nil) -> RuntimeTurnResult? {
@@ -303,6 +324,17 @@ final class RuntimeSession: @unchecked Sendable {
         let exitReason: TurnExitReason
         let durationMs: Int
         let cumulativeUsage: TokenUsage
+        let cumulativeCacheCreationTokens: Int
+        let cumulativeCacheReadTokens: Int
+        let completedTurnCostUSD: Double?
+        let estimatedCostUSD: Double?
+    }
+
+    struct CompletedTurnSnapshot {
+        let turnID: String
+        let stats: TurnStats
+        let exitReason: TurnExitReason
+        let durationMs: Int
         let estimatedCostUSD: Double?
     }
 
@@ -375,6 +407,8 @@ final class RuntimeSession: @unchecked Sendable {
 
         lock.lock()
         _cumulativeTokenUsage.add(stats.tokenUsage)
+        _cumulativeCacheCreationTokens += stats.cacheCreationTokens
+        _cumulativeCacheReadTokens += stats.cacheReadTokens
         if let turnCostUSD {
             _estimatedCostUSD = (_estimatedCostUSD ?? 0) + turnCostUSD
         }
@@ -383,10 +417,19 @@ final class RuntimeSession: @unchecked Sendable {
         _currentTurnID = nil
         _currentResultSchema = nil
         _lastCompletedTurnID = turnID
+        _lastCompletedTurnSnapshot = CompletedTurnSnapshot(
+            turnID: turnID,
+            stats: stats,
+            exitReason: exitReason,
+            durationMs: durationMs,
+            estimatedCostUSD: turnCostUSD
+        )
         _lastExitReason = exitReason
         _lastTurnCompletedAt = completedAt
         _awaitingProviderUserPromptEcho = false
         let cumulativeUsage = _cumulativeTokenUsage
+        let cumulativeCacheCreationTokens = _cumulativeCacheCreationTokens
+        let cumulativeCacheReadTokens = _cumulativeCacheReadTokens
         let estimatedCostUSD = _estimatedCostUSD
         lock.unlock()
 
@@ -395,6 +438,9 @@ final class RuntimeSession: @unchecked Sendable {
             exitReason: exitReason,
             durationMs: durationMs,
             cumulativeUsage: cumulativeUsage,
+            cumulativeCacheCreationTokens: cumulativeCacheCreationTokens,
+            cumulativeCacheReadTokens: cumulativeCacheReadTokens,
+            completedTurnCostUSD: turnCostUSD,
             estimatedCostUSD: estimatedCostUSD
         )
     }

@@ -157,7 +157,7 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
 
         session.transition(.backendReady)
         _ = try XCTUnwrap(session.startTurn(prompt: "Hello"))
-        session.addTokens(input: 1_000_000, output: 200_000, cacheCreation: 100_000, cacheRead: 300_000, reasoningOutput: 50_000)
+        session.addTokens(input: 1_000_000, output: 200_000, cacheCreation: 100_000, cacheRead: 300_000, reasoningOutput: 50000)
 
         let result = try XCTUnwrap(session.completeTurn(summary: "done", terminalOutput: nil))
 
@@ -166,7 +166,7 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
         XCTAssertEqual(session.cumulativeTokenUsage.inputTokens, 1_000_000)
         XCTAssertEqual(session.cumulativeTokenUsage.cachedInputTokens, 400_000)
         XCTAssertEqual(session.cumulativeTokenUsage.outputTokens, 200_000)
-        XCTAssertEqual(session.cumulativeTokenUsage.reasoningOutputTokens, 50_000)
+        XCTAssertEqual(session.cumulativeTokenUsage.reasoningOutputTokens, 50000)
         XCTAssertEqual(try XCTUnwrap(result.estimatedCostUSD), 7.215, accuracy: 0.0001)
         XCTAssertEqual(try XCTUnwrap(session.estimatedCostUSD), 7.215, accuracy: 0.0001)
         XCTAssertNotNil(session.lastTurnCompletedAt)
@@ -191,6 +191,34 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
 
         XCTAssertEqual(session.consumeCrossedCostThresholds([1, 5, 10]), [1])
         XCTAssertTrue(session.consumeCrossedCostThresholds([1, 5, 10]).isEmpty)
+    }
+
+    func testCompletedTurnSnapshotPreservesLastFinishedTurnStats() throws {
+        let session = RuntimeSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(
+                directory: "/tmp/runtime-last-turn-snapshot",
+                provider: "claude",
+                model: "claude-sonnet-4"
+            )
+        )
+
+        session.transition(.backendReady)
+        _ = try XCTUnwrap(session.startTurn(prompt: "Hello"))
+        session.recordToolUse(name: "Edit", file: "Sources/App.swift")
+        session.addTokens(input: 100, output: 25, cacheCreation: 10, cacheRead: 5, reasoningOutput: 3)
+        _ = try XCTUnwrap(session.completeTurn(summary: "done", terminalOutput: nil))
+
+        let snapshot = try XCTUnwrap(session.lastCompletedTurnSnapshot)
+        XCTAssertEqual(snapshot.stats.inputTokens, 100)
+        XCTAssertEqual(snapshot.stats.outputTokens, 25)
+        XCTAssertEqual(snapshot.stats.reasoningOutputTokens, 3)
+        XCTAssertEqual(snapshot.stats.cacheCreationTokens, 10)
+        XCTAssertEqual(snapshot.stats.cacheReadTokens, 5)
+        XCTAssertEqual(snapshot.stats.toolTallies["Edit"]?.count, 1)
+        XCTAssertEqual(snapshot.exitReason, .success)
+        XCTAssertGreaterThanOrEqual(snapshot.durationMs, 0)
     }
 }
 #endif

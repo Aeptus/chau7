@@ -175,6 +175,16 @@ public enum ModelPricingTable {
         let fallback = providerHint?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let raw = (candidate?.isEmpty == false ? candidate : fallback)?.lowercased(),
               !raw.isEmpty else { return nil }
+        switch raw {
+        case "claude", "anthropic":
+            return "claude-sonnet-4"
+        case "codex", "openai", "gpt":
+            return "gpt-5.3-codex"
+        case "gemini", "google":
+            return "gemini-2.5-flash"
+        default:
+            break
+        }
         return raw
     }
 }

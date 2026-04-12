@@ -386,6 +386,59 @@ final class RuntimeSessionManagerTests: XCTestCase {
         XCTAssertEqual(userInputs.count, 1)
     }
 
+    func testResponseCompleteJournalsCostThresholdEventWhenEstimatedCostCrossesConfiguredLimit() throws {
+        let manager = RuntimeSessionManager.shared
+        let cwd = "/tmp/runtime-cost-threshold-\(UUID().uuidString)"
+        let originalThresholds = FeatureSettings.shared.runtimeCostThresholdsUSD
+        defer { FeatureSettings.shared.runtimeCostThresholdsUSD = originalThresholds }
+        FeatureSettings.shared.runtimeCostThresholdsUSD = [1]
+
+        let session = manager.createSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(
+                directory: cwd,
+                provider: "claude",
+                model: "claude-sonnet-4"
+            )
+        )
+
+        let turnID = try XCTUnwrap(session.startTurn(prompt: "Track cost"))
+        session.addTokens(input: 500_000, output: 0, cacheCreation: 0, cacheRead: 0)
+
+        manager.handleClaudeEvent(
+            ClaudeCodeEvent(
+                type: .notification,
+                hook: "Notification",
+                sessionId: "claude-session-cost-threshold",
+                transcriptPath: "",
+                toolName: "",
+                message: "Bound session",
+                cwd: cwd,
+                timestamp: Date()
+            )
+        )
+
+        manager.handleClaudeEvent(
+            ClaudeCodeEvent(
+                type: .responseComplete,
+                hook: "Stop",
+                sessionId: "claude-session-cost-threshold",
+                transcriptPath: "",
+                toolName: "",
+                message: "Done",
+                cwd: cwd,
+                timestamp: Date()
+            )
+        )
+
+        let thresholdEvent = try XCTUnwrap(
+            session.journal.events(forTurn: turnID).first { $0.type == RuntimeEventType.costThreshold.rawValue }
+        )
+        XCTAssertEqual(thresholdEvent.data["threshold_usd"], "1.00")
+        XCTAssertEqual(thresholdEvent.data["estimated_cost_usd"], "1.500000")
+    }
+
     func testNotificationEventWithExactSessionDoesNotCreateDuplicateRuntimeSession() {
         let manager = RuntimeSessionManager.shared
         let cwd = "/tmp/runtime-existing-\(UUID().uuidString)"
