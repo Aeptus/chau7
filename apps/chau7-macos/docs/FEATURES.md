@@ -589,3 +589,4 @@ Key patterns:
 # Features
 
 - `tab_output` can read a fresher active AI PTY log tail for MCP-driven tabs, improving retrieval of live Codex and Claude responses.
+- PTY log tail parsing normalizes terminal control sequences and backspaces before downstream consumers read the transcript.

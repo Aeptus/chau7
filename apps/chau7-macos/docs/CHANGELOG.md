@@ -416,3 +416,4 @@ Initial development release
 # Unreleased
 
 - MCP `tab_output(source: "pty_log")` now flushes the active AI PTY log before reading so live Codex/Claude transcripts are less likely to miss the final output tail.
+- PTY log tail reads now normalize ANSI redraws and backspaces before parsing, improving extraction of structured Codex/Claude output from interactive transcripts.

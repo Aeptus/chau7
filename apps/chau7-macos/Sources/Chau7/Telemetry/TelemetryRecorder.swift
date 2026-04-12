@@ -325,10 +325,10 @@ final class TelemetryRecorder {
         guard let data = try? handle.readToEnd(), !data.isEmpty else { return nil }
 
         let raw = String(decoding: data, as: UTF8.self)
-        let stripped = EscapeSequenceSanitizer.sanitize(raw)
+        let normalized = TerminalNormalizer.normalize(raw)
 
         // Collapse excessive blank lines (TUI redraws create many)
-        let lines = stripped.components(separatedBy: "\n")
+        let lines = normalized.components(separatedBy: "\n")
         var result: [String] = []
         var consecutiveEmpty = 0
         for line in lines {

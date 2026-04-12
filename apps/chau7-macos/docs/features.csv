@@ -375,3 +375,4 @@ Developer Experience,Local Quality Pipeline,"lefthook-driven pre-commit/pre-push
 Overlay,Shortcut Helper Hint,"Floating hint box showing keyboard shortcuts (⌘/) and report issue (⌥⌘I), positioned 4pt from tab bar and window edge",Shipped,No
 Performance,Power Efficiency,"Adaptive clipboard polling, shared background drain, event-driven focus detection, timer leeway coalescing, wakeup stats logging",Shipped,Yes
 pty_log_output_flush,macos,mcp,active AI PTY log is flushed before tab_output reads it,shipped
+pty_log_tail_normalization,macos,telemetry,PTY log tails are terminal-normalized before transcript parsing,shipped
