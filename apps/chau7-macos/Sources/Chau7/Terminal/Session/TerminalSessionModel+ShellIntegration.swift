@@ -229,8 +229,7 @@ extension TerminalSessionModel {
             }
         }
 
-        // Check output for dev server patterns
-        guard devServer == nil else { return } // Already detected
+        // Check output for dev server patterns (no early bail — restarts must be caught)
         let checkData = data.prefix(2048)
         guard let output = String(data: checkData, encoding: .utf8) else { return }
         devServerMonitor.checkOutput(output)

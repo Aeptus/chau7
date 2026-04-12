@@ -432,7 +432,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ### Monitoring
 
-- Dev server detection by port scanning.
+- Dev server detection by command hints, output patterns, and port scanning with 30s liveness polling. Handles server restarts, slow starts, and external kills.
 - Git branch change notifications.
 - Shell event pattern matching with custom regex.
 - Directory change detection.

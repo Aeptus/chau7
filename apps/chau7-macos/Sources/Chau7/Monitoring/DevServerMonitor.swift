@@ -4,10 +4,11 @@ import Chau7Core
 
 /// Monitors for running dev servers by detecting port listening and command patterns.
 ///
-/// **Event-driven**: No perpetual timer. Port checks are triggered only by:
+/// **Event-driven with liveness polling**: Port checks are triggered by:
 /// 1. Command hints (e.g., "npm run dev" detected) → burst of checks while server starts
 /// 2. Output patterns (e.g., "Local: http://localhost:3000") → single check for PID enrichment
-/// 3. Command completion (prompt returned) → verify server is still alive
+/// 3. Command completion (prompt returned) → verify or discover servers
+/// 4. Liveness timer (30s) → verify detected server is still alive
 ///
 /// Thread-safety: All callbacks dispatch to main via DispatchQueue.main.async.
 final class DevServerMonitor {
@@ -37,9 +38,12 @@ final class DevServerMonitor {
     private let queue = DispatchQueue(label: "com.chau7.devserver", qos: .utility)
 
     /// Burst timer for checking ports after a command hint.
-    /// Fires a few times over ~10 seconds then stops.
     private var burstTimer: DispatchSourceTimer?
     private var burstChecksRemaining = 0
+
+    /// Periodic liveness timer — runs only when a server is detected.
+    private var livenessTimer: DispatchSourceTimer?
+    private static let livenessInterval: TimeInterval = 30
 
     /// Guards against overlapping port checks.
     private var isCheckingPorts = false
@@ -63,18 +67,13 @@ final class DevServerMonitor {
         burstTimer?.cancel()
         burstTimer = nil
         burstChecksRemaining = 0
+        stopLivenessTimer()
         shellPID = nil
         lastCommandHint = nil
         cachedChildPIDs.removeAll(keepingCapacity: true)
         childProcessCacheAt = Date.distantPast
-        // Ensure no in-flight check on the background queue can start new work
         isStopped = true
-        if currentServer != nil {
-            currentServer = nil
-            DispatchQueue.main.async { [weak self] in
-                self?.onDevServerChanged?(nil)
-            }
-        }
+        updateCurrentServer(nil)
     }
 
     /// Hint from command detection (e.g., "npm run dev" was executed).
@@ -83,8 +82,6 @@ final class DevServerMonitor {
         lastCommandHint = serverName
         if serverName != nil {
             childProcessCacheAt = Date.distantPast
-        }
-        if serverName != nil {
             startBurstCheck()
         }
     }
@@ -105,45 +102,39 @@ final class DevServerMonitor {
             )
 
             if newServer != currentServer {
-                currentServer = newServer
                 lastCommandHint = nil
                 if port != nil {
-                    // Port already known from output — emit immediately
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onDevServerChanged?(newServer)
-                    }
+                    updateCurrentServer(newServer)
                 }
-                // Enrich with PID (and port if not yet known) via lsof
-                scheduleOneShot(delay: 0.5)
+                // Enrich with PID via netstat — only if monitor has a shell PID
+                if shellPID != nil {
+                    scheduleOneShot(delay: 0.5)
+                }
             }
         }
     }
 
     /// Called when a command finishes (prompt returns).
-    /// Checks if a known server is still alive, or discovers a new one.
+    /// Verifies existing server and discovers new ones.
     func commandDidFinish() {
-        // If we have a current server, verify it's still running
-        if currentServer != nil {
-            scheduleOneShot(delay: 0.3)
-        }
+        scheduleOneShot(delay: 0.3)
     }
 
     // MARK: - Burst checking (after command hint)
 
-    /// Starts a burst of port checks: 4 checks over ~12 seconds.
-    /// Dev servers typically take 2-8 seconds to start listening.
+    /// Starts a burst of port checks: 6 checks over ~25 seconds.
+    /// Covers slow servers like Docker cold starts and heavy monorepo toolchains.
     private func startBurstCheck() {
         burstTimer?.cancel()
-        burstChecksRemaining = 4
+        burstChecksRemaining = 6
 
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 2.0, repeating: 3.0)
+        timer.schedule(deadline: .now() + 1.5, repeating: 4.0)
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             burstChecksRemaining -= 1
             checkForListeningPorts()
 
-            // Stop once we found a server or ran out of checks
             if Self.shouldStopBurstChecks(currentServer: currentServer, burstChecksRemaining: burstChecksRemaining) {
                 burstTimer?.cancel()
                 burstTimer = nil
@@ -162,35 +153,73 @@ final class DevServerMonitor {
         }
     }
 
+    // MARK: - Liveness timer
+
+    private func startLivenessTimer() {
+        livenessTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + Self.livenessInterval, repeating: Self.livenessInterval)
+        timer.setEventHandler { [weak self] in
+            self?.checkForListeningPorts()
+        }
+        timer.resume()
+        livenessTimer = timer
+    }
+
+    private func stopLivenessTimer() {
+        livenessTimer?.cancel()
+        livenessTimer = nil
+    }
+
+    // MARK: - Current server state management
+
+    /// Centralized setter for currentServer. Manages liveness timer transitions
+    /// and dispatches the callback.
+    private func updateCurrentServer(_ newServer: DevServerInfo?) {
+        let wasNil = currentServer == nil
+        let isNil = newServer == nil
+        guard newServer != currentServer else { return }
+        currentServer = newServer
+
+        // Manage liveness timer based on state transition
+        if wasNil, !isNil {
+            startLivenessTimer()
+        } else if !wasNil, isNil {
+            stopLivenessTimer()
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.onDevServerChanged?(newServer)
+        }
+    }
+
     // MARK: - Port checking
 
     private func checkForListeningPorts() {
-        guard !isStopped, let shellPID = shellPID else { return }
+        guard !isStopped, let shellPID else { return }
         guard !isCheckingPorts else { return }
         isCheckingPorts = true
         defer { isCheckingPorts = false }
 
         let childPIDs = getChildProcessesWithCache(of: shellPID)
         guard !childPIDs.isEmpty else {
-            // No children — server has stopped
             if currentServer != nil {
-                currentServer = nil
                 lastCommandHint = nil
-                DispatchQueue.main.async { [weak self] in
-                    self?.onDevServerChanged?(nil)
-                }
+                updateCurrentServer(nil)
             }
             return
         }
 
         if let serverInfo = findListeningServer(pids: childPIDs) {
             if serverInfo != currentServer {
-                currentServer = serverInfo
                 lastCommandHint = nil
-                DispatchQueue.main.async { [weak self] in
-                    self?.onDevServerChanged?(serverInfo)
-                }
+                updateCurrentServer(serverInfo)
             }
+        } else if currentServer != nil {
+            // Children exist but none are listening — server process may have exited
+            // while child processes linger. Clear the server.
+            lastCommandHint = nil
+            updateCurrentServer(nil)
         }
     }
 
@@ -252,27 +281,37 @@ final class DevServerMonitor {
 
     // MARK: - Port scanning (netstat, ~7ms)
 
+    /// Default PID column index in `netstat -anv` output (macOS standard layout).
+    private static let defaultNetstatPIDColumn = 10
+
     /// Find a server listening on a dev port among the given PIDs.
     /// Uses `netstat -anv` instead of `lsof` — completes in ~7ms vs 5-10+ seconds.
+    /// Parses the header line dynamically to find the PID column index.
     private func findListeningServer(pids: [pid_t]) -> DevServerInfo? {
         guard !pids.isEmpty else { return nil }
         guard let output = SubprocessRunner.run(executablePath: "/usr/sbin/netstat", arguments: ["-anv", "-p", "tcp"]) else {
             return nil
         }
 
-        // netstat -anv column layout (space-separated):
-        // Proto Recv-Q Send-Q Local Foreign (state) rxbytes txbytes rhiwat shiwat pid epid ...
-        // Index:  0      1      2     3      4       5       6       7      8     9   10  11
+        let lines = output.split(separator: "\n")
+        guard !lines.isEmpty else { return nil }
+
+        // Parse header to find PID column dynamically
+        let headers = lines[0].split(separator: " ", omittingEmptySubsequences: true)
+        let pidColumnIndex = headers.firstIndex(where: { $0.lowercased() == "pid" })
+            ?? Self.defaultNetstatPIDColumn
+
         let pidSet = Set(pids)
-        for line in output.split(separator: "\n") {
+        for line in lines.dropFirst() {
             guard line.contains("LISTEN") else { continue }
             let columns = line.split(separator: " ", omittingEmptySubsequences: true)
-            guard columns.count >= 11 else { continue }
+            guard columns.count > pidColumnIndex else { continue }
 
-            guard let pid = Int32(columns[10]) else { continue }
+            guard let pid = Int32(columns[pidColumnIndex]) else { continue }
             guard pidSet.contains(pid) else { continue }
 
-            // Local address format: "*.3000" or "127.0.0.1.5173" or "::1.8080"
+            // Local address is always column 3
+            guard columns.count > 3 else { continue }
             let localAddr = String(columns[3])
             if let port = extractPortFromNetstat(localAddr) {
                 let commandName = getProcessName(pid: pid) ?? "unknown"

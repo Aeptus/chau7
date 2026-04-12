@@ -267,7 +267,7 @@ Debugging,Privacy-First Bug Report Dialog,"In-app issue reporter (⌥⌘I) with 
 Debugging,Issue Reporting Privacy Page,"GDPR-compliant sub-processor disclosure (Cloudflare, GitHub) with data categories, retention, legal basis (Art. 6(1)(f)), DPA links, and data subject rights",Shipped,Yes
 Debugging,Verbose & Trace Modes,CHAU7_VERBOSE=1 and CHAU7_TRACE=1 for deep diagnostics,Shipped,No
 Command Palette,Command Palette,Cmd+Shift+P for fuzzy-searchable command palette (VS Code style),Shipped,No
-Monitoring,Dev Server Detection,Auto-detect running dev servers by port scanning,Shipped,No
+Monitoring,Dev Server Detection,"Auto-detect running dev servers by command hints, output patterns, and port scanning with 30s liveness polling",Shipped,No
 Monitoring,Git Change Detection,Notifications on git branch changes,Shipped,No
 Monitoring,Shell Event Pattern Matching,Custom regex patterns to watch for in terminal output,Shipped,No
 Monitoring,Directory Change Detection,Notify on working directory changes,Shipped,No
