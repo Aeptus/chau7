@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -14,7 +15,14 @@ DEFAULT_TIMEOUT_MS = 45_000
 DEFAULT_STARTUP_TIMEOUT_MS = 20_000
 DEFAULT_BACKEND = "codex"
 DEFAULT_MODEL = "gpt-5.3-codex"
-DEFAULT_SOCKET_TIMEOUT_SECONDS = 5.0
+DEFAULT_SOCKET_TIMEOUT_SECONDS = 15.0
+DEFAULT_STATUS_POLL_SECONDS = 0.2
+DEFAULT_OUTPUT_POLL_SECONDS = 0.5
+PROMPT_VALIDATION_TIMEOUT_MS = 5_000
+SUBMIT_START_TIMEOUT_MS = 5_000
+DEFAULT_OUTPUT_LINES = 4_000
+PROMPT_VALIDATION_LINES = 240
+PROMPT_SENTINEL = "REVIEW TASK: PRE-COMMIT CODE REVIEW"
 SOCKET_PATH = Path.home() / "Library/Application Support/Chau7/scripting.sock"
 DEFAULT_CONFIG_NAME = ".chau7/pre-commit-review.conf"
 CHAU7_BUNDLE_ID = "com.aeptus.Chau7"
@@ -186,8 +194,12 @@ def staged_diff(root: Path, files: list[str]) -> str:
 
 
 def socket_timeout_seconds(method: str, params: dict[str, Any]) -> float:
-    if method == "stop_session":
+    if method in {"stop_session", "close_tab"}:
         return 2.0
+    if method == "get_output":
+        wait_for_stable_ms = params.get("wait_for_stable_ms")
+        if isinstance(wait_for_stable_ms, int) and wait_for_stable_ms > 0:
+            return max(DEFAULT_SOCKET_TIMEOUT_SECONDS, (wait_for_stable_ms / 1000.0) + 2.0)
     return DEFAULT_SOCKET_TIMEOUT_SECONDS
 
 
@@ -248,22 +260,6 @@ def print_skip(reason: str, code: str | None = None) -> None:
         print(bar, file=sys.stderr)
         return
     print(f"pre-commit review: {reason}", file=sys.stderr)
-
-
-def is_unknown_method(response: dict[str, Any], method: str) -> bool:
-    error = response.get("error")
-    return isinstance(error, str) and error == f"unknown method: {method}"
-
-
-def cleanup_review_session(session_id: str, force: bool) -> None:
-    try:
-        response = socket_call("stop_session", {"session_id": session_id, "force": force})
-    except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-        print_skip(f"unable to clean up review session {session_id} ({exc})")
-        return
-
-    if "error" in response:
-        print_skip(f"unable to clean up review session {session_id} ({response['error']})")
 
 
 def chau7_is_running() -> bool:
@@ -371,44 +367,232 @@ def has_blocking_findings(gate: str, findings: list[dict[str, Any]]) -> bool:
 def review_grace_timeout_ms(timeout_ms: int) -> int:
     return max(5_000, min(15_000, timeout_ms // 3))
 
+def create_review_prompt(staged_files: list[str], diff: str) -> str:
+    lines = [
+        PROMPT_SENTINEL,
+        "Review the staged changes that are about to be committed.",
+        "Only evaluate the staged diff below. Do not speculate about unstaged changes.",
+        "Work read-only. Do not edit files.",
+        "Focus on correctness, regressions, security, and missing tests.",
+        "Return concise prose findings first, then end with exactly one fenced JSON block and nothing after it.",
+        "Use this exact JSON shape:",
+        "```json",
+        "{",
+        '  "summary": "string",',
+        '  "findings": [',
+        "    {",
+        '      "severity": "low|medium|high",',
+        '      "file": "path",',
+        '      "line": 123,',
+        '      "message": "string",',
+        '      "recommendation": "string"',
+        "    }",
+        "  ],",
+        '  "recommendations": ["string"],',
+        '  "confidence": "low|medium|high"',
+        "}",
+        "```",
+    ]
+    if staged_files:
+        lines.append("Staged files:")
+        lines.extend(f"- {path}" for path in staged_files)
+    lines.append("Staged diff:")
+    lines.append("```diff")
+    lines.append(diff)
+    lines.append("```")
+    return "\n".join(lines)
 
-def poll_session_events(
-    session_id: str,
-    cursor: int,
+
+def create_tab(root: Path) -> dict[str, Any]:
+    return socket_call("create_tab", {"directory": str(root)})
+
+
+def get_tab(tab_id: str) -> dict[str, Any]:
+    return socket_call("get_tab", {"id": tab_id})
+
+
+def run_command(tab_id: str, command: str) -> dict[str, Any]:
+    return socket_call("run_command", {"tab_id": tab_id, "command": command})
+
+
+def send_input(tab_id: str, input_text: str) -> dict[str, Any]:
+    return socket_call("send_input", {"tab_id": tab_id, "input": input_text})
+
+
+def submit_prompt(tab_id: str) -> dict[str, Any]:
+    return socket_call("submit_prompt", {"tab_id": tab_id})
+
+
+def get_output(tab_id: str, lines: int, source: str, wait_for_stable_ms: int | None = None) -> dict[str, Any]:
+    params: dict[str, Any] = {
+        "tab_id": tab_id,
+        "lines": lines,
+        "source": source,
+    }
+    if wait_for_stable_ms is not None:
+        params["wait_for_stable_ms"] = wait_for_stable_ms
+    return socket_call("get_output", params)
+
+
+def close_tab(tab_id: str) -> None:
+    try:
+        response = socket_call("close_tab", {"id": tab_id})
+    except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+        print_skip(f"unable to clean up review tab {tab_id} ({exc})")
+        return
+    if "error" in response:
+        print_skip(f"unable to clean up review tab {tab_id} ({response['error']})")
+
+
+def normalized_status(response: dict[str, Any]) -> str:
+    return str(response.get("status", "")).strip().lower()
+
+
+def normalized_active_app(response: dict[str, Any]) -> str:
+    return str(response.get("active_app", "")).strip().lower()
+
+
+def is_prompt_ready(response: dict[str, Any]) -> bool:
+    return bool(response.get("is_at_prompt")) and normalized_status(response) == "idle"
+
+
+def wait_for_tab_state(
+    tab_id: str,
     timeout_ms: int,
-    event_types: list[str] | None = None,
-    limit: int = 50,
-) -> tuple[dict[str, Any], int]:
+    predicate,
+) -> tuple[dict[str, Any] | None, str | None]:
     deadline = time.monotonic() + max(timeout_ms, 1) / 1000.0
-    current_cursor = cursor
+    last_response: dict[str, Any] | None = None
     while time.monotonic() < deadline:
-        response = socket_call(
-            "get_session_events",
-            {
-                "session_id": session_id,
-                "cursor": current_cursor,
-                "limit": limit,
-                "event_types": event_types or [],
-            },
-        )
+        response = get_tab(tab_id)
         if "error" in response:
-            return response, current_cursor
-        events = response.get("events")
-        next_cursor = response.get("cursor")
-        if isinstance(next_cursor, int):
-            current_cursor = next_cursor
-        elif isinstance(next_cursor, str) and next_cursor.isdigit():
-            current_cursor = int(next_cursor)
-        if isinstance(events, list) and events:
-            return response, current_cursor
-        time.sleep(0.2)
+            return None, str(response["error"])
+        last_response = response
+        if predicate(response):
+            return response, None
+        time.sleep(DEFAULT_STATUS_POLL_SECONDS)
+    return last_response, "timed_out"
 
-    return {
-        "session_id": session_id,
-        "cursor": current_cursor,
-        "events": [],
-        "timed_out": True,
-    }, current_cursor
+
+def extract_review_json(text: str) -> dict[str, Any] | None:
+    fenced_blocks = re.findall(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL | re.IGNORECASE)
+    candidates = fenced_blocks[::-1]
+
+    if not candidates:
+        generic_blocks = re.findall(r"```\s*(\{.*?\})\s*```", text, re.DOTALL)
+        candidates.extend(reversed(generic_blocks))
+
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if is_valid_review_payload(payload):
+            return payload
+    return None
+
+
+def is_valid_review_payload(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if not isinstance(payload.get("summary"), str):
+        return False
+    if not isinstance(payload.get("findings"), list):
+        return False
+    if not isinstance(payload.get("recommendations"), list):
+        return False
+    confidence = payload.get("confidence")
+    if not isinstance(confidence, str) or confidence not in {"low", "medium", "high"}:
+        return False
+    for item in payload["findings"]:
+        if not isinstance(item, dict):
+            return False
+        if not isinstance(item.get("severity"), str):
+            return False
+        if not isinstance(item.get("file"), str):
+            return False
+        if not isinstance(item.get("message"), str):
+            return False
+    return True
+
+
+def extract_output_text(tab_id: str, lines: int = DEFAULT_OUTPUT_LINES) -> str:
+    response = get_output(tab_id, lines, "pty_log")
+    if "error" not in response:
+        output = response.get("output")
+        if isinstance(output, str) and output.strip():
+            return output
+
+    fallback = get_output(tab_id, min(lines, 800), "buffer", wait_for_stable_ms=500)
+    if "error" in fallback:
+        return ""
+    output = fallback.get("output")
+    return output if isinstance(output, str) else ""
+
+
+def validate_prompt_visible(tab_id: str, timeout_ms: int) -> bool:
+    deadline = time.monotonic() + max(timeout_ms, 1) / 1000.0
+    while time.monotonic() < deadline:
+        response = get_output(tab_id, PROMPT_VALIDATION_LINES, "buffer", wait_for_stable_ms=300)
+        if "error" not in response:
+            output = response.get("output")
+            if isinstance(output, str) and PROMPT_SENTINEL in output:
+                return True
+        time.sleep(DEFAULT_STATUS_POLL_SECONDS)
+    return False
+
+
+def wait_for_submission_start(tab_id: str, baseline_output: str, timeout_ms: int) -> bool:
+    deadline = time.monotonic() + max(timeout_ms, 1) / 1000.0
+    while time.monotonic() < deadline:
+        status = get_tab(tab_id)
+        if "error" not in status:
+            if not is_prompt_ready(status):
+                return True
+        current_output = extract_output_text(tab_id)
+        if current_output != baseline_output:
+            return True
+        time.sleep(DEFAULT_OUTPUT_POLL_SECONDS)
+    return False
+
+
+def submit_prompt_with_fallback(tab_id: str, baseline_output: str) -> bool:
+    response = submit_prompt(tab_id)
+    if "error" in response:
+        return False
+    if wait_for_submission_start(tab_id, baseline_output, SUBMIT_START_TIMEOUT_MS):
+        return True
+
+    newline_response = send_input(tab_id, "\n")
+    if "error" in newline_response:
+        return False
+    return wait_for_submission_start(tab_id, baseline_output, SUBMIT_START_TIMEOUT_MS)
+
+
+def wait_for_review_completion(tab_id: str, timeout_ms: int) -> tuple[dict[str, Any] | None, str]:
+    deadline = time.monotonic() + max(timeout_ms, 1) / 1000.0
+    last_output = extract_output_text(tab_id)
+    stable_polls = 0
+
+    while time.monotonic() < deadline:
+        status = get_tab(tab_id)
+        if "error" in status:
+            return None, str(status["error"])
+
+        current_output = extract_output_text(tab_id)
+        if current_output == last_output:
+            stable_polls += 1
+        else:
+            stable_polls = 0
+            last_output = current_output
+
+        payload = extract_review_json(current_output)
+        if payload is not None and is_prompt_ready(status) and stable_polls >= 2:
+            return payload, current_output
+
+        time.sleep(DEFAULT_OUTPUT_POLL_SECONDS)
+
+    return None, last_output
 
 
 def main() -> int:
@@ -444,193 +628,104 @@ def main() -> int:
     if not diff:
         return 0
 
-    session_id: str | None = None
-    cleanup_force = False
+    tab_id: str | None = None
     exit_code = 0
+    prompt = create_review_prompt(reviewable_files, diff)
 
     try:
         try:
-            create_response = socket_call(
-                "create_session",
-                {
-                    "directory": str(root),
-                    "backend": backend,
-                    "mode": "staged_diff",
-                    "staged_files": reviewable_files,
-                    "staged_diff": diff,
-                    "model": model,
-                },
-            )
+            create_response = create_tab(root)
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
             code, reason = describe_scripting_unavailable(exc)
             print_skip(reason, code)
             return 0
 
-        if is_unknown_method(create_response, "create_session"):
-            print_skip(
-                "running Chau7 app does not support generic delegated sessions yet; rebuild/relaunch Chau7 from the current source; skipping"
-            )
-            return 0
         if "error" in create_response:
-            print_skip(f"unable to start review ({create_response['error']}); skipping")
+            print_skip(f"unable to create review tab ({create_response['error']}); skipping")
             return 0
 
-        session_id = create_response.get("session_id")
-        if not isinstance(session_id, str) or not session_id:
-            print_skip("review session did not return a session_id; skipping")
+        tab_id = create_response.get("tab_id")
+        if not isinstance(tab_id, str) or not tab_id:
+            print_skip("review tab creation did not return a tab_id; skipping")
             return 0
-
-        cursor_value = create_response.get("cursor", 0)
-        cursor = int(cursor_value) if isinstance(cursor_value, int) else 0
 
         try:
-            ready_response, cursor = poll_session_events(
-                session_id,
-                cursor,
+            _, shell_error = wait_for_tab_state(
+                tab_id,
                 startup_timeout_ms,
-                [
-                    "session_ready",
-                    "approval_needed",
-                    "session_stopped",
-                    "session_error",
-                    "state_changed",
-                ],
+                lambda response: bool(response.get("shell_loading")) is False and bool(response.get("is_at_prompt")),
             )
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
             code, reason = describe_scripting_unavailable(exc)
             print_skip(reason, code)
             return 0
-        if is_unknown_method(ready_response, "get_session_events"):
-            print_skip(
-                "running Chau7 app does not support generic delegated session events yet; rebuild/relaunch Chau7 from the current source; skipping"
-            )
+        if shell_error:
+            print_skip(f"review tab did not reach shell prompt within {startup_timeout_ms}ms; skipping")
             return 0
-        if "error" in ready_response:
-            print_skip(f"review did not become ready ({ready_response['error']}); skipping")
+
+        launch_model = model or DEFAULT_MODEL
+        launch_command = f"codex --model {launch_model}"
+
+        try:
+            launch_response = run_command(tab_id, launch_command)
+        except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+            code, reason = describe_scripting_unavailable(exc)
+            print_skip(reason, code)
             return 0
-        ready_events = ready_response.get("events")
-        if ready_response.get("timed_out") is True or not isinstance(ready_events, list) or not ready_events:
-            state = str(ready_response.get("session_state", "starting")).lower()
-            if state == "starting":
-                print_skip(
-                    f"review startup timed out after {startup_timeout_ms}ms before the reviewer became ready; skipping"
-                )
-            else:
-                print_skip(f"review did not become ready (state={state or 'unknown'}); skipping")
-            return 0
-        if any(
-            str(event.get("type")) in {"session_stopped", "session_error"}
-            for event in ready_events
-            if isinstance(event, dict)
-        ):
-            state = str(ready_response.get("session_state", "unknown")).lower()
-            print_skip(f"review stopped during startup (state={state}); skipping")
+        if "error" in launch_response:
+            print_skip(f"unable to launch Codex ({launch_response['error']}); skipping")
             return 0
 
         try:
-            send_response = socket_call("submit_session_turn", {"session_id": session_id})
+            _, codex_error = wait_for_tab_state(
+                tab_id,
+                startup_timeout_ms,
+                lambda response: normalized_active_app(response) == "codex" and is_prompt_ready(response),
+            )
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
             code, reason = describe_scripting_unavailable(exc)
             print_skip(reason, code)
             return 0
-        if is_unknown_method(send_response, "submit_session_turn"):
-            print_skip(
-                "running Chau7 app does not support generic delegated turn submission yet; rebuild/relaunch Chau7 from the current source; skipping"
-            )
+        if codex_error:
+            print_skip(f"Codex did not become interactive within {startup_timeout_ms}ms; skipping")
+            return 0
+
+        try:
+            send_response = send_input(tab_id, prompt)
+        except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+            code, reason = describe_scripting_unavailable(exc)
+            print_skip(reason, code)
             return 0
         if "error" in send_response:
-            print_skip(f"unable to send review prompt ({send_response['error']}); skipping")
+            print_skip(f"unable to send review input ({send_response['error']}); skipping")
             return 0
 
         try:
-            wait_response, cursor = poll_session_events(
-                session_id,
-                cursor,
-                timeout_ms,
-                [
-                    "turn_result",
-                    "turn_completed",
-                    "turn_failed",
-                    "session_stopped",
-                    "session_error",
-                ],
-            )
+            if not validate_prompt_visible(tab_id, PROMPT_VALIDATION_TIMEOUT_MS):
+                print_skip("review prompt did not appear in the Codex composer before submission; skipping")
+                return 0
+
+            baseline_output = extract_output_text(tab_id)
+            if not submit_prompt_with_fallback(tab_id, baseline_output):
+                print_skip("unable to submit review prompt to Codex; skipping")
+                return 0
+
+            result_payload, _ = wait_for_review_completion(tab_id, timeout_ms + review_grace_timeout_ms(timeout_ms))
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
             code, reason = describe_scripting_unavailable(exc)
             print_skip(reason, code)
             return 0
-        if "error" in wait_response:
-            print_skip(f"review completion failed ({wait_response['error']}); skipping")
-            return 0
-        completion_events = wait_response.get("events")
-        if wait_response.get("timed_out") is True or not isinstance(completion_events, list) or not completion_events:
-            grace_ms = review_grace_timeout_ms(timeout_ms)
-            try:
-                wait_response, cursor = poll_session_events(
-                    session_id,
-                    cursor,
-                    grace_ms,
-                    [
-                        "turn_result",
-                        "turn_completed",
-                        "turn_failed",
-                        "session_stopped",
-                        "session_error",
-                    ],
-                )
-            except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-                code, reason = describe_scripting_unavailable(exc)
-                print_skip(reason, code)
-                return 0
-            completion_events = wait_response.get("events")
-            if (
-                wait_response.get("timed_out") is True
-                or not isinstance(completion_events, list)
-                or not completion_events
-            ):
-                print_skip(f"review timed out after {timeout_ms}ms; skipping")
-                return 0
-        if any(
-            str(event.get("type")) in {"turn_failed", "session_stopped", "session_error"}
-            for event in completion_events
-            if isinstance(event, dict)
-        ):
-            state = str(wait_response.get("session_state", "unknown")).lower()
-            print_skip(f"review did not complete successfully (state={state}); skipping")
+        if result_payload is None:
+            print_skip(f"review timed out after {timeout_ms}ms without a complete structured response; skipping")
             return 0
 
-        try:
-            result_response = socket_call("get_session_result", {"session_id": session_id})
-        except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
-            code, reason = describe_scripting_unavailable(exc)
-            print_skip(reason, code)
-            return 0
-        if "error" in result_response:
-            print_skip(f"review did not produce a result ({result_response['error']}); skipping")
-            return 0
-
-        status = str(result_response.get("status", "missing")).lower()
-        if status != "available":
-            print_skip(f"structured review result unavailable (status={status}); skipping")
-            return 0
-
-        value = result_response.get("value")
-        if not isinstance(value, dict):
-            print_skip("review result payload was malformed; skipping")
-            return 0
-
-        findings = value.get("findings")
-        if not isinstance(findings, list):
-            print_skip("review findings payload was malformed; skipping")
-            return 0
-
-        findings = [item for item in findings if isinstance(item, dict)]
+        findings = [item for item in result_payload.get("findings", []) if isinstance(item, dict)]
         if not findings:
             return 0
 
-        summary = str(value.get("summary", "Pre-commit review reported findings.")).strip()
-        confidence = str(value.get("confidence", "unknown")).strip()
-        recommendations = value.get("recommendations")
+        summary = str(result_payload.get("summary", "Pre-commit review reported findings.")).strip()
+        confidence = str(result_payload.get("confidence", "unknown")).strip()
+        recommendations = result_payload.get("recommendations")
         print(f"pre-commit review: {summary} (confidence: {confidence})", file=sys.stderr)
         for finding in findings:
             print(format_finding(finding), file=sys.stderr)
@@ -646,8 +741,10 @@ def main() -> int:
             exit_code = 1
         return exit_code
     finally:
-        if session_id:
-            cleanup_review_session(session_id, force=cleanup_force)
+        # Temporary debugging: leave the review tab open so the live app state can be inspected.
+        # if tab_id:
+        #     close_tab(tab_id)
+        pass
 
 
 if __name__ == "__main__":
