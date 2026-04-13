@@ -7,6 +7,8 @@ import Chau7Core
 /// A hidden debug console accessible via Cmd+Shift+L (when enabled).
 /// Shows real-time state, token optimizer runtime, event history, and allows generating bug reports.
 struct DebugConsoleView: View {
+    private static let allAnalyticsProviderKey = "all"
+
     private enum AnalyticsMode: String, CaseIterable {
         case apiCalls = "API Calls"
         case aiRuns = "AI Runs"
@@ -38,8 +40,11 @@ struct DebugConsoleView: View {
     @State private var proxyStats: APICallStats = .init()
     @State private var proxyProviderStats: [ProxyProviderAnalytics] = []
     @State private var proxyDailyTrend: [ProxyDailyAnalyticsPoint] = []
+    @State private var proxyHourlyTrend: [ProxyHourlyAnalyticsPoint] = []
     @State private var recentProxyCalls: [APICallEvent] = []
     @State private var repoAnalytics: [(path: String, name: String, stats: RepoStats)] = []
+    @State private var analyticsProviderFilterKey = Self.allAnalyticsProviderKey
+    @State private var availableAnalyticsProviderKeys: [String] = []
     @State private var ptyLogInfo: [(name: String, size: UInt64)] = []
     @State private var ctoPerSessionGain: [String: CTOGainStats] = [:]
     // Category & level filtering
@@ -788,16 +793,7 @@ struct DebugConsoleView: View {
               !trimmed.isEmpty else {
             return nil
         }
-
-        let normalized = AIResumeParser.normalizeProviderName(trimmed) ?? trimmed.lowercased()
-        if let tool = AIToolRegistry.allTools.first(where: { tool in
-            tool.displayName.lowercased() == normalized
-                || tool.resumeProviderKey == normalized
-                || tool.commandNames.contains(normalized)
-        }) {
-            return tool.displayName
-        }
-        return trimmed.capitalized
+        return AnalyticsProvider.displayName(for: trimmed)
     }
 
     private func splitSessionDisambiguator(
@@ -1628,6 +1624,8 @@ struct DebugConsoleView: View {
                     .onChange(of: analyticsTimeRange) { _, _ in
                         refreshAnalyticsData()
                     }
+
+                    analyticsProviderFilterControl
                 }
 
                 switch analyticsMode {
@@ -1653,7 +1651,7 @@ struct DebugConsoleView: View {
                     HStack {
                         Text("Calls: \(LocalizedFormatters.formatInteger(proxyStats.callCount))")
                         Spacer()
-                        Text("Tokens: \(analyticsFormatTokens(proxyStats.totalTokens))")
+                        Text("Tokens: \(analyticsFormatTokens(proxyStats.totalAllTokens))")
                         Spacer()
                         Text("Cost: \(LocalizedFormatters.formatCostPrecise(proxyStats.totalCost))").bold()
                         Spacer()
@@ -1669,11 +1667,11 @@ struct DebugConsoleView: View {
                 } else {
                     ForEach(proxyProviderStats) { stat in
                         HStack {
-                            Text(stat.provider.capitalized).bold()
+                            Text(AnalyticsProvider.displayName(for: stat.provider)).bold()
                             Spacer()
                             Text("\(LocalizedFormatters.formatInteger(stat.callCount)) calls")
                                 .foregroundStyle(.secondary)
-                            Text("\(analyticsFormatTokens(stat.totalTokens)) tokens")
+                            Text("\(analyticsFormatTokens(stat.totalBillableTokens)) tokens")
                                 .foregroundStyle(.secondary)
                             Text(LocalizedFormatters.formatCostPrecise(stat.totalCostUSD))
                                 .monospaced()
@@ -1704,6 +1702,28 @@ struct DebugConsoleView: View {
                 }
             }
 
+            GroupBox("Hourly Proxy Cost (\(analyticsProviderLabel))") {
+                if proxyHourlyTrend.isEmpty {
+                    Text("No hourly proxy data yet.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(proxyHourlyTrend.suffix(24)) { hour in
+                        HStack {
+                            Text(hour.hour).monospaced().font(.caption)
+                            Spacer()
+                            Text("\(LocalizedFormatters.formatInteger(hour.callCount)) calls")
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                            Text("\(analyticsFormatTokens(hour.totalTokens)) tokens")
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                            Text(LocalizedFormatters.formatCostPrecise(hour.totalCostUSD))
+                                .monospaced()
+                                .bold()
+                        }
+                    }
+                }
+            }
+
             GroupBox("Recent Proxy Calls") {
                 if recentProxyCalls.isEmpty {
                     Text("No recent proxy calls recorded.").foregroundStyle(.secondary)
@@ -1717,7 +1737,7 @@ struct DebugConsoleView: View {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                             Spacer()
-                            Text("\(analyticsFormatTokens(call.totalTokens)) tokens")
+                            Text("\(analyticsFormatTokens(call.totalBillableTokens)) tokens")
                                 .foregroundStyle(.secondary)
                                 .font(.caption)
                             Text(call.formattedCost)
@@ -1740,7 +1760,7 @@ struct DebugConsoleView: View {
                 } else {
                     ForEach(providerStats, id: \.provider) { stat in
                         HStack {
-                            Text(stat.provider).bold()
+                            Text(AnalyticsProvider.displayName(for: stat.provider)).bold()
                             Spacer()
                             Text("\(LocalizedFormatters.formatInteger(stat.runCount)) runs")
                                 .foregroundStyle(.secondary)
@@ -1837,8 +1857,8 @@ struct DebugConsoleView: View {
         switch repoSortOrder {
         case .lastActive:
             return filtered.sorted { lhs, rhs in
-                let ld = [lhs.stats.lastCommandAt, lhs.stats.lastRunAt].compactMap { $0 }.max() ?? .distantPast
-                let rd = [rhs.stats.lastCommandAt, rhs.stats.lastRunAt].compactMap { $0 }.max() ?? .distantPast
+                let ld = lhs.stats.lastActiveAt ?? .distantPast
+                let rd = rhs.stats.lastActiveAt ?? .distantPast
                 return ld > rd
             }
         case .eventCount:
@@ -1852,7 +1872,7 @@ struct DebugConsoleView: View {
                 return lf > rf
             }
         case .cost:
-            return filtered.sorted { $0.stats.totalCost > $1.stats.totalCost }
+            return filtered.sorted { $0.stats.combinedCost > $1.stats.combinedCost }
         }
     }
 
@@ -1910,7 +1930,11 @@ struct DebugConsoleView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(.blue)
                     }
+                    Text(analyticsProviderLabel)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                     Spacer()
+                    analyticsProviderFilterControl
                 }
                 .padding(.bottom, 4)
 
@@ -1997,7 +2021,7 @@ struct DebugConsoleView: View {
                 Text(entry.name)
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
-                if let lastActive = [entry.stats.lastCommandAt, entry.stats.lastRunAt].compactMap({ $0 }).max() {
+                if let lastActive = entry.stats.lastActiveAt {
                     Text(relativeTimeString(lastActive))
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
@@ -2030,16 +2054,44 @@ struct DebugConsoleView: View {
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.orange)
                 }
+                if entry.stats.proxyCallCount > 0 {
+                    Text("\(entry.stats.proxyCallCount) proxy")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    Text(repoFormatTokens(entry.stats.proxyTokens))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.green)
+                    if entry.stats.proxyCost > 0 {
+                        Text(LocalizedFormatters.formatCurrency(entry.stats.proxyCost))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.green)
+                    }
+                }
                 Spacer()
-                if !entry.stats.providers.isEmpty {
-                    ForEach(entry.stats.providers, id: \.self) { provider in
-                        Text(provider.capitalized)
+                let combinedProviders = AnalyticsProvider.sortKeys(entry.stats.providers + entry.stats.proxyProviders)
+                if !combinedProviders.isEmpty {
+                    ForEach(combinedProviders, id: \.self) { provider in
+                        Text(AnalyticsProvider.displayName(for: provider))
                             .font(.system(size: 9, weight: .medium))
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(Color.secondary.opacity(0.15))
                             .clipShape(RoundedRectangle(cornerRadius: 3))
                     }
+                }
+            }
+
+            if !entry.stats.proxyHourlyCost.isEmpty {
+                HStack(spacing: 6) {
+                    Text("Proxy hours")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    ForEach(Array(entry.stats.proxyHourlyCost.suffix(6)), id: \.hour) { point in
+                        Text("\(repoHourLabel(point.hour)) \(LocalizedFormatters.formatCostPrecise(point.totalCostUSD))")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
                 }
             }
 
@@ -2157,7 +2209,7 @@ struct DebugConsoleView: View {
                                 Text(entry.name)
                                     .font(.system(size: 12, weight: .semibold))
                                 Spacer()
-                                if let lastActive = [entry.stats.lastCommandAt, entry.stats.lastRunAt].compactMap({ $0 }).max() {
+                                if let lastActive = entry.stats.lastActiveAt {
                                     Text(relativeTimeString(lastActive))
                                         .font(.system(size: 10))
                                         .foregroundStyle(.tertiary)
@@ -2190,9 +2242,10 @@ struct DebugConsoleView: View {
                                         .foregroundStyle(.orange)
                                 }
                                 Spacer()
-                                if !entry.stats.providers.isEmpty {
-                                    ForEach(entry.stats.providers, id: \.self) { provider in
-                                        Text(provider.capitalized)
+                                let providers = AnalyticsProvider.sortKeys(entry.stats.providers + entry.stats.proxyProviders)
+                                if !providers.isEmpty {
+                                    ForEach(providers, id: \.self) { provider in
+                                        Text(AnalyticsProvider.displayName(for: provider))
                                             .font(.system(size: 9, weight: .medium))
                                             .padding(.horizontal, 4)
                                             .padding(.vertical, 1)
@@ -2266,6 +2319,13 @@ struct DebugConsoleView: View {
         if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
         if count >= 1000 { return String(format: "%.0fK", Double(count) / 1000) }
         return "\(count)"
+    }
+
+    private func repoHourLabel(_ hour: String) -> String {
+        if let suffix = hour.split(separator: " ").last {
+            return String(suffix)
+        }
+        return hour
     }
 
     private var healthDashboardView: some View {
@@ -2501,27 +2561,73 @@ struct DebugConsoleView: View {
         return "\(count)"
     }
 
+    private var selectedAnalyticsProviderKey: String? {
+        analyticsProviderFilterKey == Self.allAnalyticsProviderKey ? nil : analyticsProviderFilterKey
+    }
+
+    private var analyticsProviderLabel: String {
+        selectedAnalyticsProviderKey.map { AnalyticsProvider.displayName(for: $0) } ?? "All Providers"
+    }
+
+    @ViewBuilder
+    private var analyticsProviderFilterControl: some View {
+        Picker("Provider", selection: $analyticsProviderFilterKey) {
+            Text("All Providers").tag(Self.allAnalyticsProviderKey)
+            ForEach(availableAnalyticsProviderKeys, id: \.self) { providerKey in
+                Text(AnalyticsProvider.displayName(for: providerKey)).tag(providerKey)
+            }
+        }
+        .pickerStyle(.menu)
+        .frame(maxWidth: 180)
+        .onChange(of: analyticsProviderFilterKey) { _, _ in
+            refreshAnalyticsData()
+        }
+    }
+
     private func refreshAnalyticsData() {
         let after = analyticsTimeRange.startDate
         let days = analyticsTimeRange.days
 
-        aiPerTabStats = TelemetryStore.shared.tokenUsagePerTab(after: after)
-        providerStats = TelemetryStore.shared.consumptionPerProvider(after: after)
-        dailyCostTrend = TelemetryStore.shared.dailyCostTrend(days: days)
+        let allRunProviderStats = TelemetryStore.shared.consumptionPerProvider(after: after)
+        let allProxyProviderStats = ProxyAnalyticsStore.shared.providerStats(after: after)
+        let repoProviderKeys = settings.recentRepoRoots.flatMap { root in
+            let runProviders = TelemetryStore.shared.providersForRepo(repoPath: root)
+            let proxyProviders = ProxyAnalyticsStore.shared.repoSummary(projectPath: root).providers
+            return runProviders + proxyProviders
+        }
+        let providerKeys = AnalyticsProvider.sortKeys(
+            allRunProviderStats.map(\.provider) + allProxyProviderStats.map(\.provider) + repoProviderKeys
+        )
+        availableAnalyticsProviderKeys = providerKeys
 
-        proxyStats = ProxyAnalyticsStore.shared.overallStats(after: after)
-        proxyProviderStats = ProxyAnalyticsStore.shared.providerStats(after: after)
-        proxyDailyTrend = ProxyAnalyticsStore.shared.dailyTrend(days: days)
-        recentProxyCalls = ProxyAnalyticsStore.shared.recentCalls()
+        if analyticsProviderFilterKey != Self.allAnalyticsProviderKey,
+           !providerKeys.contains(analyticsProviderFilterKey) {
+            availableAnalyticsProviderKeys = AnalyticsProvider.sortKeys(providerKeys + [analyticsProviderFilterKey])
+        }
+
+        let providerFilterKey = selectedAnalyticsProviderKey
+
+        aiPerTabStats = TelemetryStore.shared.tokenUsagePerTab(after: after, providerFilterKey: providerFilterKey)
+        providerStats = TelemetryStore.shared.consumptionPerProvider(after: after, providerFilterKey: providerFilterKey)
+        dailyCostTrend = TelemetryStore.shared.dailyCostTrend(days: days, providerFilterKey: providerFilterKey)
+
+        proxyStats = ProxyAnalyticsStore.shared.overallStats(after: after, providerFilterKey: providerFilterKey)
+        proxyProviderStats = ProxyAnalyticsStore.shared.providerStats(after: after, providerFilterKey: providerFilterKey)
+        proxyDailyTrend = ProxyAnalyticsStore.shared.dailyTrend(days: days, providerFilterKey: providerFilterKey)
+        proxyHourlyTrend = ProxyAnalyticsStore.shared.hourlyTrend(
+            days: analyticsTimeRange == .today ? 1 : min(days, 7),
+            providerFilterKey: providerFilterKey
+        )
+        recentProxyCalls = ProxyAnalyticsStore.shared.recentCalls(limit: 50, providerFilterKey: providerFilterKey)
 
         repoAnalytics = settings.recentRepoRoots.map { root in
-            let stats = RepoStatsProvider.stats(for: root)
+            let stats = RepoStatsProvider.stats(for: root, providerFilterKey: providerFilterKey)
             let name = URL(fileURLWithPath: root).lastPathComponent
             return (path: root, name: name, stats: stats)
         }
         .sorted { lhs, rhs in
-            let lhsDate = [lhs.stats.lastCommandAt, lhs.stats.lastRunAt].compactMap { $0 }.max() ?? .distantPast
-            let rhsDate = [rhs.stats.lastCommandAt, rhs.stats.lastRunAt].compactMap { $0 }.max() ?? .distantPast
+            let lhsDate = lhs.stats.lastActiveAt ?? .distantPast
+            let rhsDate = rhs.stats.lastActiveAt ?? .distantPast
             return lhsDate > rhsDate
         }
     }

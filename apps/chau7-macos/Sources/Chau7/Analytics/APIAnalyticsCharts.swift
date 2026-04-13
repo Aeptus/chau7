@@ -132,7 +132,7 @@ struct ProviderBreakdownView: View {
                         .font(.system(size: 11))
                         .foregroundColor(providerColor(p.provider))
                         .frame(width: 16)
-                    Text(p.provider.capitalized)
+                    Text(AnalyticsProvider.displayName(for: p.provider))
                         .font(.system(size: 11, weight: .medium))
                         .frame(width: 70, alignment: .leading)
 
@@ -365,7 +365,7 @@ func providerColor(_ name: String) -> Color {
     switch name.lowercased() {
     case "anthropic": return .purple
     case "openai": return .green
-    case "gemini": return .blue
+    case "gemini", "google": return .blue
     default: return .gray
     }
 }
@@ -374,7 +374,7 @@ func providerIcon(_ name: String) -> String {
     switch name.lowercased() {
     case "anthropic": return "brain.head.profile"
     case "openai": return "sparkles"
-    case "gemini": return "diamond"
+    case "gemini", "google": return "diamond"
     default: return "questionmark.circle"
     }
 }

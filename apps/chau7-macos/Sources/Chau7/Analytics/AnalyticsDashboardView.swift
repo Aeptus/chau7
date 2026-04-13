@@ -163,7 +163,7 @@ struct AnalyticsDashboardView: View {
             )
             StatCard(
                 title: "Tokens",
-                value: formatTokens(model.overallStats.totalInputTokens + model.overallStats.totalOutputTokens),
+                value: formatTokens(model.overallStats.totalAllTokens),
                 icon: "number.circle"
             )
             StatCard(
