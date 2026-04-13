@@ -259,6 +259,7 @@ extension RustTerminalView {
         // Safety: Check if view is being deallocated (CVDisplayLink callback protection)
         guard !isBeingDeallocated else { return }
         guard let rust = rustTerminal else { return }
+        Log.wakeup("render_\(renderTier)")
 
         // ALWAYS poll the Rust terminal to drain PTY buffer, even when suspended.
         // This prevents the PTY reader thread from blocking when the buffer fills up.
