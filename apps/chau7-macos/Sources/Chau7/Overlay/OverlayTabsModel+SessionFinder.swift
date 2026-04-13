@@ -926,33 +926,40 @@ extension OverlayTabsModel {
                     lastExitAt: nil
                 )
 
-                // Restore scrollback by injecting directly into the terminal
-                // emulator via injectOutput — bypasses the shell entirely.
-                // No stty, no temp files, no echo race.
-                // Strip restore artifacts from saved scrollback that may have
-                // been captured by an older binary before the save-side filter.
+                // Restore scrollback via cat through the shell so the terminal
+                // re-renders content at the current column width.
+                // injectOutput bypasses reflowing and corrupts the grid when the
+                // window width differs from the capture width.
+                //
+                // Echo suppression: stty -echo runs first (semicolons guarantee
+                // stty echo always executes). Leading space suppresses history.
+                // The scrollback is written to a temp file and cat'd — the shell
+                // processes the output at the current terminal width.
+                var restoreCommands: [String] = []
+
                 if let raw = effectivePaneState.scrollbackContent,
                    !raw.isEmpty {
                     let scrollback = Self.stripRestoreArtifacts(from: raw)
-                    if !scrollback.isEmpty {
-                        if let view = session.existingRustTerminalView {
-                            view.injectOutput(scrollback)
-                        } else {
-                            session.pendingRestoreScrollback = scrollback
+                    if !scrollback.isEmpty, let data = scrollback.data(using: .utf8) {
+                        let tempFile = NSTemporaryDirectory() + "chau7_restore_\(restoreToken)_\(paneID.uuidString).txt"
+                        do {
+                            try data.write(to: URL(fileURLWithPath: tempFile))
+                            let escapedTemp = Self.shellSafeSingleQuote(tempFile)
+                            restoreCommands.append("cat \(escapedTemp) && rm -f \(escapedTemp)")
+                        } catch {
+                            Log.warn("Failed to write scrollback restore file: \(error)")
                         }
                     }
                 }
 
-                // Restore CWD via shell input with echo suppression.
-                // Uses semicolons (not &&) so stty echo always runs even if cd fails.
-                // Leading space suppresses shell history (HIST_IGNORE_SPACE).
-                // The stty race that plagued the old multi-command chain doesn't
-                // apply here — this is a single short line where stty -echo runs
-                // before the shell processes the cd.
                 if !effectivePaneState.directory.isEmpty {
-                    let dir = Self.shellSafeSingleQuote(effectivePaneState.directory)
+                    restoreCommands.append("cd \(Self.shellSafeSingleQuote(effectivePaneState.directory))")
+                }
+
+                if !restoreCommands.isEmpty {
+                    let chain = restoreCommands.joined(separator: "; ")
                     session.sendOrQueueSystemRestoreInput(
-                        " stty -echo; cd \(dir); stty echo\n"
+                        " stty -echo; \(chain); clear; stty echo\n"
                     )
                 }
 
