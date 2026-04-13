@@ -9,9 +9,20 @@ import Chau7Core
 struct DebugConsoleView: View {
     private static let allAnalyticsProviderKey = "all"
 
-    private enum AnalyticsMode: String, CaseIterable {
-        case apiCalls = "API Calls"
-        case aiRuns = "AI Runs"
+    private struct CombinedProviderAnalyticsRow: Identifiable {
+        let provider: String
+        var totalBillableTokens: Int = 0
+        var totalCostUSD: Double = 0
+
+        var id: String { provider }
+    }
+
+    private struct CombinedDailyAnalyticsPoint: Identifiable {
+        let date: String
+        var totalTokens: Int = 0
+        var totalCostUSD: Double = 0
+
+        var id: String { date }
     }
 
     var appModel: AppModel
@@ -32,7 +43,6 @@ struct DebugConsoleView: View {
     @State private var ctoCommandLog: [CTOManager.CommandLogEntry] = []
     @State private var ctoShowAdvanced = false
     @State private var ctoTimePeriod: CTOTimePeriod = .session
-    @State private var analyticsMode: AnalyticsMode = .apiCalls
     @State private var analyticsTimeRange: AnalyticsTimeRange = .week
     @State private var aiPerTabStats: [TabTokenConsumption] = []
     @State private var providerStats: [ProviderConsumptionStats] = []
@@ -45,6 +55,9 @@ struct DebugConsoleView: View {
     @State private var repoAnalytics: [(path: String, name: String, stats: RepoStats)] = []
     @State private var analyticsProviderFilterKey = Self.allAnalyticsProviderKey
     @State private var availableAnalyticsProviderKeys: [String] = []
+    @State private var analyticsRefreshInFlight = false
+    @State private var analyticsRefreshQueued = false
+    @State private var analyticsLastRefreshAt = Date.distantPast
     @State private var ptyLogInfo: [(name: String, size: UInt64)] = []
     @State private var ctoPerSessionGain: [String: CTOGainStats] = [:]
     // Category & level filtering
@@ -62,6 +75,19 @@ struct DebugConsoleView: View {
         case eventCount = "Most Events"
         case failureRate = "Failure Rate"
         case cost = "Cost"
+    }
+
+    private struct AnalyticsRefreshSnapshot {
+        let availableProviderKeys: [String]
+        let aiPerTabStats: [TabTokenConsumption]
+        let providerStats: [ProviderConsumptionStats]
+        let dailyCostTrend: [(date: String, cost: Double, tokens: Int, pricedRunCount: Int, totalRunCount: Int)]
+        let proxyStats: APICallStats
+        let proxyProviderStats: [ProxyProviderAnalytics]
+        let proxyDailyTrend: [ProxyDailyAnalyticsPoint]
+        let proxyHourlyTrend: [ProxyHourlyAnalyticsPoint]
+        let recentProxyCalls: [APICallEvent]
+        let repoAnalytics: [(path: String, name: String, stats: RepoStats)]
     }
 
     let onClose: () -> Void
@@ -1607,14 +1633,6 @@ struct DebugConsoleView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 12) {
-                    Picker("", selection: $analyticsMode) {
-                        ForEach(AnalyticsMode.allCases, id: \.self) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 200)
-
                     Picker("Period", selection: $analyticsTimeRange) {
                         ForEach(AnalyticsTimeRange.allCases) { range in
                             Text(range.rawValue).tag(range)
@@ -1628,17 +1646,61 @@ struct DebugConsoleView: View {
                     analyticsProviderFilterControl
                 }
 
-                switch analyticsMode {
-                case .apiCalls:
-                    proxyAnalyticsView
-                case .aiRuns:
-                    runAnalyticsView
-                }
+                combinedAnalyticsView
             }
             .padding()
         }
         .onAppear {
             refreshAnalyticsData()
+        }
+    }
+
+    private var combinedAnalyticsView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            GroupBox("Combined Summary — \(analyticsTimeRange.rawValue)") {
+                HStack {
+                    Text("Tokens: \(analyticsFormatTokens(combinedTotalBillableTokens))")
+                    Spacer()
+                    Text("Cost: \(LocalizedFormatters.formatCostPrecise(combinedTotalCostUSD))").bold()
+                }
+            }
+
+            GroupBox("Combined by Provider") {
+                if combinedProviderRows.isEmpty {
+                    Text("No analytics data yet.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(combinedProviderRows) { stat in
+                        HStack {
+                            Text(AnalyticsProvider.displayName(for: stat.provider)).bold()
+                            Spacer()
+                            Text("\(analyticsFormatTokens(stat.totalBillableTokens)) tokens")
+                                .foregroundStyle(.secondary)
+                            Text(LocalizedFormatters.formatCostPrecise(stat.totalCostUSD))
+                                .monospaced()
+                        }
+                    }
+                }
+            }
+
+            GroupBox("Combined Daily Cost (\(analyticsTimeRange.rawValue))") {
+                if combinedDailyTrend.isEmpty {
+                    Text("No combined analytics data yet.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(combinedDailyTrend) { day in
+                        HStack {
+                            Text(day.date).monospaced().font(.caption)
+                            Spacer()
+                            Text("\(analyticsFormatTokens(day.totalTokens)) tokens")
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                            Text(LocalizedFormatters.formatCostPrecise(day.totalCostUSD))
+                                .monospaced()
+                                .bold()
+                        }
+                    }
+                }
+            }
+
         }
     }
 
@@ -2598,17 +2660,97 @@ struct DebugConsoleView: View {
         .pickerStyle(.menu)
         .frame(maxWidth: 180)
         .onChange(of: analyticsProviderFilterKey) { _, _ in
-            refreshAnalyticsData()
+            requestAnalyticsRefresh(force: true)
         }
     }
 
     private func refreshAnalyticsData() {
+        requestAnalyticsRefresh(force: true)
+    }
+
+    private func requestAnalyticsRefresh(force: Bool = false) {
+        let now = Date()
+        let minRefreshInterval: TimeInterval = 3.0
+
+        if analyticsRefreshInFlight {
+            analyticsRefreshQueued = true
+            return
+        }
+        if !force, now.timeIntervalSince(analyticsLastRefreshAt) < minRefreshInterval {
+            return
+        }
+
+        analyticsRefreshInFlight = true
+        analyticsRefreshQueued = false
+
         let after = analyticsTimeRange.startDate
         let days = analyticsTimeRange.days
+        let providerFilterKey = selectedAnalyticsProviderKey
+        let repoRoots = settings.recentRepoRoots
+        let selectedProviderKey = analyticsProviderFilterKey
+        let hourlyDays = analyticsTimeRange == .today ? 1 : min(days, 7)
 
+        if !WakeupControl.isEnabled(.asyncDebugAnalyticsRefresh) {
+            let startedAt = CFAbsoluteTimeGetCurrent()
+            let snapshot = makeAnalyticsRefreshSnapshot(
+                after: after,
+                days: days,
+                providerFilterKey: providerFilterKey,
+                repoRoots: repoRoots,
+                selectedProviderKey: selectedProviderKey,
+                hourlyDays: hourlyDays
+            )
+            let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
+            WakeupProfiler.shared.record("debug.analyticsRefresh", durationMs: durationMs)
+            FeatureProfiler.shared.record(feature: .debugAnalyticsRefresh, durationMs: durationMs)
+            analyticsLastRefreshAt = Date()
+            analyticsRefreshInFlight = false
+            applyAnalyticsRefreshSnapshot(snapshot)
+            if analyticsRefreshQueued {
+                analyticsRefreshQueued = false
+                requestAnalyticsRefresh(force: true)
+            }
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let startedAt = CFAbsoluteTimeGetCurrent()
+            let snapshot = makeAnalyticsRefreshSnapshot(
+                after: after,
+                days: days,
+                providerFilterKey: providerFilterKey,
+                repoRoots: repoRoots,
+                selectedProviderKey: selectedProviderKey,
+                hourlyDays: hourlyDays
+            )
+            let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
+            WakeupProfiler.shared.record("debug.analyticsRefresh", durationMs: durationMs)
+            FeatureProfiler.shared.record(feature: .debugAnalyticsRefresh, durationMs: durationMs)
+
+            DispatchQueue.main.async {
+                analyticsLastRefreshAt = Date()
+                analyticsRefreshInFlight = false
+                applyAnalyticsRefreshSnapshot(snapshot)
+
+                if analyticsRefreshQueued {
+                    analyticsRefreshQueued = false
+                    requestAnalyticsRefresh(force: true)
+                }
+            }
+        }
+    }
+
+    private func makeAnalyticsRefreshSnapshot(
+        after: Date?,
+        days: Int,
+        providerFilterKey: String?,
+        repoRoots: [String],
+        selectedProviderKey: String,
+        hourlyDays: Int
+    ) -> AnalyticsRefreshSnapshot {
         let allRunProviderStats = TelemetryStore.shared.consumptionPerProvider(after: after)
         let allProxyProviderStats = ProxyAnalyticsStore.shared.providerStats(after: after)
-        let repoProviderKeys = settings.recentRepoRoots.flatMap { root in
+        let repoProviderKeys = repoRoots.flatMap { root in
             let runProviders = TelemetryStore.shared.providersForRepo(repoPath: root)
             let proxyProviders = ProxyAnalyticsStore.shared.repoSummary(projectPath: root).providers
             return runProviders + proxyProviders
@@ -2616,38 +2758,48 @@ struct DebugConsoleView: View {
         let providerKeys = AnalyticsProvider.sortKeys(
             allRunProviderStats.map(\.provider) + allProxyProviderStats.map(\.provider) + repoProviderKeys
         )
-        availableAnalyticsProviderKeys = providerKeys
-
-        if analyticsProviderFilterKey != Self.allAnalyticsProviderKey,
-           !providerKeys.contains(analyticsProviderFilterKey) {
-            availableAnalyticsProviderKeys = AnalyticsProvider.sortKeys(providerKeys + [analyticsProviderFilterKey])
+        let availableProviderKeys: [String]
+        if selectedProviderKey != Self.allAnalyticsProviderKey,
+           !providerKeys.contains(selectedProviderKey) {
+            availableProviderKeys = AnalyticsProvider.sortKeys(providerKeys + [selectedProviderKey])
+        } else {
+            availableProviderKeys = providerKeys
         }
 
-        let providerFilterKey = selectedAnalyticsProviderKey
-
-        aiPerTabStats = TelemetryStore.shared.tokenUsagePerTab(after: after, providerFilterKey: providerFilterKey)
-        providerStats = TelemetryStore.shared.consumptionPerProvider(after: after, providerFilterKey: providerFilterKey)
-        dailyCostTrend = TelemetryStore.shared.dailyCostTrend(days: days, providerFilterKey: providerFilterKey)
-
-        proxyStats = ProxyAnalyticsStore.shared.overallStats(after: after, providerFilterKey: providerFilterKey)
-        proxyProviderStats = ProxyAnalyticsStore.shared.providerStats(after: after, providerFilterKey: providerFilterKey)
-        proxyDailyTrend = ProxyAnalyticsStore.shared.dailyTrend(days: days, providerFilterKey: providerFilterKey)
-        proxyHourlyTrend = ProxyAnalyticsStore.shared.hourlyTrend(
-            days: analyticsTimeRange == .today ? 1 : min(days, 7),
-            providerFilterKey: providerFilterKey
+        return AnalyticsRefreshSnapshot(
+            availableProviderKeys: availableProviderKeys,
+            aiPerTabStats: TelemetryStore.shared.tokenUsagePerTab(after: after, providerFilterKey: providerFilterKey),
+            providerStats: TelemetryStore.shared.consumptionPerProvider(after: after, providerFilterKey: providerFilterKey),
+            dailyCostTrend: TelemetryStore.shared.dailyCostTrend(days: days, providerFilterKey: providerFilterKey),
+            proxyStats: ProxyAnalyticsStore.shared.overallStats(after: after, providerFilterKey: providerFilterKey),
+            proxyProviderStats: ProxyAnalyticsStore.shared.providerStats(after: after, providerFilterKey: providerFilterKey),
+            proxyDailyTrend: ProxyAnalyticsStore.shared.dailyTrend(days: days, providerFilterKey: providerFilterKey),
+            proxyHourlyTrend: ProxyAnalyticsStore.shared.hourlyTrend(days: hourlyDays, providerFilterKey: providerFilterKey),
+            recentProxyCalls: ProxyAnalyticsStore.shared.recentCalls(limit: 50, providerFilterKey: providerFilterKey),
+            repoAnalytics: repoRoots.map { root in
+                let stats = RepoStatsProvider.stats(for: root, providerFilterKey: providerFilterKey)
+                let name = URL(fileURLWithPath: root).lastPathComponent
+                return (path: root, name: name, stats: stats)
+            }
+            .sorted { lhs, rhs in
+                let lhsDate = lhs.stats.lastActiveAt ?? .distantPast
+                let rhsDate = rhs.stats.lastActiveAt ?? .distantPast
+                return lhsDate > rhsDate
+            }
         )
-        recentProxyCalls = ProxyAnalyticsStore.shared.recentCalls(limit: 50, providerFilterKey: providerFilterKey)
+    }
 
-        repoAnalytics = settings.recentRepoRoots.map { root in
-            let stats = RepoStatsProvider.stats(for: root, providerFilterKey: providerFilterKey)
-            let name = URL(fileURLWithPath: root).lastPathComponent
-            return (path: root, name: name, stats: stats)
-        }
-        .sorted { lhs, rhs in
-            let lhsDate = lhs.stats.lastActiveAt ?? .distantPast
-            let rhsDate = rhs.stats.lastActiveAt ?? .distantPast
-            return lhsDate > rhsDate
-        }
+    private func applyAnalyticsRefreshSnapshot(_ snapshot: AnalyticsRefreshSnapshot) {
+        availableAnalyticsProviderKeys = snapshot.availableProviderKeys
+        aiPerTabStats = snapshot.aiPerTabStats
+        providerStats = snapshot.providerStats
+        dailyCostTrend = snapshot.dailyCostTrend
+        proxyStats = snapshot.proxyStats
+        proxyProviderStats = snapshot.proxyProviderStats
+        proxyDailyTrend = snapshot.proxyDailyTrend
+        proxyHourlyTrend = snapshot.proxyHourlyTrend
+        recentProxyCalls = snapshot.recentProxyCalls
+        repoAnalytics = snapshot.repoAnalytics
     }
 
     private func runCostLabel(for stat: ProviderConsumptionStats) -> String {
@@ -2667,6 +2819,65 @@ struct DebugConsoleView: View {
             return "\(prefix) partial"
         }
         return prefix
+    }
+
+    private var combinedProviderRows: [CombinedProviderAnalyticsRow] {
+        var merged: [String: CombinedProviderAnalyticsRow] = [:]
+
+        for stat in providerStats {
+            var current = merged[stat.provider] ?? CombinedProviderAnalyticsRow(provider: stat.provider)
+            current.totalBillableTokens += stat.totalBillableTokens
+            current.totalCostUSD += stat.totalCostUSD
+            merged[stat.provider] = current
+        }
+
+        for stat in proxyProviderStats {
+            var current = merged[stat.provider] ?? CombinedProviderAnalyticsRow(provider: stat.provider)
+            current.totalBillableTokens += stat.totalBillableTokens
+            current.totalCostUSD += stat.totalCostUSD
+            merged[stat.provider] = current
+        }
+
+        return merged.values.sorted { lhs, rhs in
+            if lhs.totalCostUSD != rhs.totalCostUSD {
+                return lhs.totalCostUSD > rhs.totalCostUSD
+            }
+            if lhs.totalBillableTokens != rhs.totalBillableTokens {
+                return lhs.totalBillableTokens > rhs.totalBillableTokens
+            }
+            return AnalyticsProvider.displayName(for: lhs.provider)
+                .localizedCaseInsensitiveCompare(AnalyticsProvider.displayName(for: rhs.provider)) == .orderedAscending
+        }
+    }
+
+    private var combinedDailyTrend: [CombinedDailyAnalyticsPoint] {
+        var merged: [String: CombinedDailyAnalyticsPoint] = [:]
+
+        for day in dailyCostTrend {
+            var current = merged[day.date] ?? CombinedDailyAnalyticsPoint(date: day.date)
+            current.totalTokens += day.tokens
+            current.totalCostUSD += day.cost
+            merged[day.date] = current
+        }
+
+        for day in proxyDailyTrend {
+            var current = merged[day.date] ?? CombinedDailyAnalyticsPoint(date: day.date)
+            current.totalTokens += day.totalTokens
+            current.totalCostUSD += day.totalCostUSD
+            merged[day.date] = current
+        }
+
+        return merged.keys.sorted().compactMap { merged[$0] }
+    }
+
+    private var combinedTotalBillableTokens: Int {
+        providerStats.reduce(0) { $0 + $1.totalBillableTokens } +
+        proxyProviderStats.reduce(0) { $0 + $1.totalBillableTokens }
+    }
+
+    private var combinedTotalCostUSD: Double {
+        providerStats.reduce(0.0) { $0 + $1.totalCostUSD } +
+        proxyProviderStats.reduce(0.0) { $0 + $1.totalCostUSD }
     }
 
     /// Command log filtered by the selected time period.
@@ -2749,6 +2960,8 @@ struct DebugConsoleView: View {
     private func startRefresh() {
         stopRefresh()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            let startedAt = CFAbsoluteTimeGetCurrent()
+            WakeupProfiler.shared.record("debug.refreshTick")
             // Force view refresh
             if selectedTab == 4 {
                 perfSnapshot = FeatureProfiler.shared.snapshot()
@@ -2760,8 +2973,10 @@ struct DebugConsoleView: View {
                 loadLogs()
             }
             if selectedTab == 7 || selectedTab == 9 {
-                refreshAnalyticsData()
+                requestAnalyticsRefresh()
             }
+            let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
+            FeatureProfiler.shared.record(feature: .debugRefresh, durationMs: durationMs)
         }
     }
 
