@@ -275,7 +275,7 @@ extension RustTerminalView {
         let keyCode = event.keyCode
         let modifiers = event.modifierFlags
 
-        if isReturnKey(keyCode) {
+        if EnvVars.isEnabled(EnvVars.inputDiagnostics), isReturnKey(keyCode) {
             Log.info(
                 "RustTerminalView[\(viewId)]: keyDown Return hasFocus=\(hasFocus) " +
                     "firstResponder=\(firstResponderDebugName())"
@@ -286,7 +286,7 @@ extension RustTerminalView {
         if let sequence = generateTerminalSequence(keyCode: keyCode, modifiers: modifiers, event: event) {
             let hexPreview = sequence.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
             Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending escape sequence: [\(hexPreview)] (keyCode=\(keyCode))")
-            if isReturnKey(keyCode) {
+            if EnvVars.isEnabled(EnvVars.inputDiagnostics), isReturnKey(keyCode) {
                 Log.info(
                     "RustTerminalView[\(viewId)]: keyDown Return generated terminal sequence [\(hexPreview)] " +
                         "hasFocus=\(hasFocus)"
@@ -323,7 +323,7 @@ extension RustTerminalView {
         let keyCode = event.keyCode
         let modifiers = event.modifierFlags
 
-        if isReturnKey(keyCode) {
+        if EnvVars.isEnabled(EnvVars.inputDiagnostics), isReturnKey(keyCode) {
             Log.info(
                 "RustTerminalView[\(viewId)]: handleTerminalKeyEvent Return hasFocus=\(hasFocus) " +
                     "firstResponder=\(firstResponderDebugName())"
@@ -339,7 +339,7 @@ extension RustTerminalView {
         if let sequence = generateTerminalSequence(keyCode: keyCode, modifiers: modifiers, event: event) {
             let hexPreview = sequence.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
             Log.trace("RustTerminalView[\(viewId)]: handleTerminalKeyEvent - Sending escape sequence: [\(hexPreview)] (keyCode=\(keyCode))")
-            if isReturnKey(keyCode) {
+            if EnvVars.isEnabled(EnvVars.inputDiagnostics), isReturnKey(keyCode) {
                 Log.info(
                     "RustTerminalView[\(viewId)]: handleTerminalKeyEvent Return generated terminal sequence [\(hexPreview)] " +
                         "hasFocus=\(hasFocus)"
@@ -701,7 +701,8 @@ extension RustTerminalView {
             let preview = encoded.bytes.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
             let suffix = encoded.bytes.count > 8 ? " ...<\(encoded.bytes.count - 8) more>" : ""
             Log.trace("RustTerminalView[\(viewId)]: send(keyPress:) - key=\(keyPress.key) modifiers=\(keyPress.sortedModifierNames.joined(separator: "+")) bytes=[\(preview)\(suffix)]")
-            if encoded.bytes.contains(0x0D) || encoded.bytes.contains(0x0A) {
+            if EnvVars.isEnabled(EnvVars.inputDiagnostics),
+               (encoded.bytes.contains(0x0D) || encoded.bytes.contains(0x0A)) {
                 Log.info(
                     "RustTerminalView[\(viewId)]: send(keyPress:) newline-ish bytes=[\(preview)\(suffix)] " +
                         "key=\(keyPress.key)"
@@ -731,7 +732,8 @@ extension RustTerminalView {
     /// Send text to the PTY
     func send(txt text: String) {
         Log.trace("RustTerminalView[\(viewId)]: send(txt:) - Sending \(text.count) chars")
-        if text.contains("\r") || text.contains("\n") {
+        if EnvVars.isEnabled(EnvVars.inputDiagnostics),
+           (text.contains("\r") || text.contains("\n")) {
             let escaped = text
                 .replacingOccurrences(of: "\r", with: "\\r")
                 .replacingOccurrences(of: "\n", with: "\\n")

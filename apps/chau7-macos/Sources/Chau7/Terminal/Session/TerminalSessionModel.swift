@@ -1002,18 +1002,22 @@ final class TerminalSessionModel {
             return String(describing: type(of: responder))
         }()
 
-        Log.info(
-            "focusTerminal: title='\(title)' retry=\(retryCount) " +
-                "candidate=\(candidateView != nil) firstResponder=\(responderName)"
-        )
+        if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
+            Log.info(
+                "focusTerminal: title='\(title)' retry=\(retryCount) " +
+                    "candidate=\(candidateView != nil) firstResponder=\(responderName)"
+            )
+        }
 
         if let view = candidateView,
            view.window === window {
             let focused = window.makeFirstResponder(view)
-            Log.info(
-                "focusTerminal: makeFirstResponder title='\(title)' success=\(focused) " +
-                    "viewWindowMatches=true"
-            )
+            if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
+                Log.info(
+                    "focusTerminal: makeFirstResponder title='\(title)' success=\(focused) " +
+                        "viewWindowMatches=true"
+                )
+            }
             if focused {
                 return
             }

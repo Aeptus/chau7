@@ -66,6 +66,7 @@ enum EnvVars {
     static let idleSeconds = "CHAU7_IDLE_SECONDS"
     static let commandFallbackSeconds = "CHAU7_COMMAND_FALLBACK_SECONDS"
     static let clearOnLaunch = "CHAU7_CLEAR_ON_LAUNCH"
+    static let inputDiagnostics = "CHAU7_INPUT_DIAGNOSTICS"
 
     // Debug output capture
     static let ptyDumpMaxBytes = "CHAU7_PTY_DUMP_MAX_BYTES"
@@ -98,5 +99,23 @@ enum EnvVars {
             return value
         }
         return nil
+    }
+
+    static func isEnabled(_ name: String, default defaultValue: Bool = false, legacy: String? = nil) -> Bool {
+        guard let value = get(name, legacy: legacy)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !value.isEmpty else {
+            return defaultValue
+        }
+
+        switch value {
+        case "1", "true", "yes", "on":
+            return true
+        case "0", "false", "no", "off":
+            return false
+        default:
+            return defaultValue
+        }
     }
 }
