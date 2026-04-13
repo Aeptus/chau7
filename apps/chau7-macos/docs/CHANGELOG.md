@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Background Transcript Restore Fallback**: Background tabs can reuse cached remote transcript text when no live terminal view is attached, and interactive notification planning now covers elicitation and explicit tool/response failures consistently.
 
 ### Fixed
+- **MCP Lifecycle and Tool Error Semantics**: The embedded MCP server now enforces initialize/initialized ordering, negotiates supported protocol versions, returns JSON-RPC protocol errors for unknown tools and malformed tool calls, and marks execution failures with `result.isError` plus structured content instead of reporting every tool failure as plain success text.
 - **MCP Tool Abuse Guardrails**: Chau7 now ships a dedicated per-tool MCP rate limiter with more generous budgets for high-frequency polling tools, reducing same-user client hammering without breaking normal runtime/status polling.
 - **Visible MCP Runtime Launch Failures**: `runtime_session_create` now fails explicitly when Chau7 cannot create a user-visible tab, returning structured `visible_tab_creation_failed` metadata instead of silently validating a hidden PTY-only launch path. MCP client connections also stay open longer during slower eval/debug workflows to reduce idle `Transport closed` disconnects.
 - **MCP Tab Window Routing**: `tab_create` now defaults to the active overlay window instead of always targeting the first registered window, so MCP-created tabs appear in the window the user is currently looking at.

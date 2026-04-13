@@ -8,11 +8,32 @@ final class MCPSession {
     /// (reviews, eval harnesses, manual debugging) without forcing clients to
     /// reconnect between tool calls.
     private static let socketIdleTimeoutSeconds = 30 * 60
+    private static let supportedProtocolVersions = ["2025-11-25", "2024-11-05"]
+    private static let toolRateLimiterQueue = DispatchQueue(label: "com.chau7.mcp.tool-rate-limiter")
+    private static var toolRateLimiter = MCPToolRateLimiter()
 
     private let fd: Int32
     private let queryService = TelemetryQueryService()
     private let controlService = TerminalControlService.shared
     private let controlPlane = ControlPlaneService.shared
+    private var lifecycleState: LifecycleState = .awaitingInitialize
+
+    private enum LifecycleState {
+        case awaitingInitialize
+        case awaitingInitializedNotification
+        case ready
+    }
+
+    private enum ToolCallDisposition {
+        case protocolError(code: Int, message: String, data: Any? = nil)
+        case toolResult(ToolResult)
+    }
+
+    private struct ToolResult {
+        let text: String
+        let isError: Bool
+        let structuredContent: [String: Any]?
+    }
 
     init(fd: Int32) {
         self.fd = fd
@@ -67,12 +88,9 @@ final class MCPSession {
                 continue
             }
 
-            let id = json["id"]
-            let method = json["method"] as? String ?? ""
-            let params = json["params"] as? [String: Any] ?? [:]
-
-            let response = handleMethod(method, params: params, id: id)
-            writeLine(to: writeStream, json: response)
+            if let response = handleRequestObject(json) {
+                writeLine(to: writeStream, json: response)
+            }
         }
     }
 
@@ -86,51 +104,168 @@ final class MCPSession {
 
     // MARK: - Method Dispatch
 
-    private func handleMethod(_ method: String, params: [String: Any], id: Any?) -> [String: Any] {
+    func handleRequestObject(_ request: [String: Any]) -> [String: Any]? {
+        let id = request["id"]
+        let isNotification = request["id"] == nil
+
+        guard (request["jsonrpc"] as? String) == "2.0" else {
+            return responseOrNil(
+                isNotification: isNotification,
+                response: buildError(id: id, code: -32600, message: "Invalid Request: jsonrpc must be '2.0'")
+            )
+        }
+
+        guard let method = request["method"] as? String, !method.isEmpty else {
+            return responseOrNil(
+                isNotification: isNotification,
+                response: buildError(id: id, code: -32600, message: "Invalid Request: method is required")
+            )
+        }
+
+        let rawParams = request["params"]
+        guard rawParams == nil || rawParams is [String: Any] else {
+            return responseOrNil(
+                isNotification: isNotification,
+                response: buildError(id: id, code: -32602, message: "Invalid params: params must be an object")
+            )
+        }
+
+        let params = rawParams as? [String: Any] ?? [:]
+        return handleMethod(method, params: params, id: id, isNotification: isNotification)
+    }
+
+    private func handleMethod(_ method: String, params: [String: Any], id: Any?, isNotification: Bool) -> [String: Any]? {
         switch method {
         case "initialize":
-            return buildResult(id: id, result: [
-                "protocolVersion": "2024-11-05",
-                "capabilities": [
-                    "tools": ["listChanged": false],
-                    "resources": ["subscribe": false, "listChanged": false]
-                ],
-                "serverInfo": [
-                    "name": "chau7",
-                    "version": "1.1.0"
-                ]
-            ])
+            guard lifecycleState == .awaitingInitialize else {
+                return responseOrNil(
+                    isNotification: isNotification,
+                    response: buildError(id: id, code: -32600, message: "Session is already initialized")
+                )
+            }
+            guard let requestedVersion = params["protocolVersion"] as? String, !requestedVersion.isEmpty else {
+                return responseOrNil(
+                    isNotification: isNotification,
+                    response: buildError(id: id, code: -32602, message: "Invalid params: protocolVersion is required")
+                )
+            }
+            guard let negotiatedVersion = negotiateProtocolVersion(requestedVersion) else {
+                return responseOrNil(
+                    isNotification: isNotification,
+                    response: buildError(
+                        id: id,
+                        code: -32602,
+                        message: "Unsupported protocol version: \(requestedVersion)",
+                        data: ["supported": Self.supportedProtocolVersions]
+                    )
+                )
+            }
+
+            lifecycleState = .awaitingInitializedNotification
+            return responseOrNil(
+                isNotification: isNotification,
+                response: buildResult(id: id, result: [
+                    "protocolVersion": negotiatedVersion,
+                    "capabilities": [
+                        "tools": ["listChanged": false],
+                        "resources": ["subscribe": false, "listChanged": false]
+                    ],
+                    "serverInfo": [
+                        "name": "chau7",
+                        "version": "1.1.0"
+                    ]
+                ])
+            )
 
         case "notifications/initialized":
-            // Client acknowledgment — no response needed for notifications
-            return [:]
+            if lifecycleState == .awaitingInitializedNotification {
+                lifecycleState = .ready
+            } else {
+                Log.warn("MCPSession: received notifications/initialized before initialize")
+            }
+            return nil
 
         case "tools/list":
+            if let errorResponse = requireInitializedResponse(for: method, id: id, isNotification: isNotification) {
+                return errorResponse
+            }
             return buildResult(id: id, result: ["tools": toolDefinitions()])
 
         case "tools/call":
-            let toolName = params["name"] as? String ?? ""
-            let args = params["arguments"] as? [String: Any] ?? [:]
-            let result = callTool(toolName, arguments: args)
-            return buildResult(id: id, result: [
-                "content": [["type": "text", "text": result]]
-            ])
+            if let errorResponse = requireInitializedResponse(for: method, id: id, isNotification: isNotification) {
+                return errorResponse
+            }
+            guard let toolName = params["name"] as? String, !toolName.isEmpty else {
+                return responseOrNil(
+                    isNotification: isNotification,
+                    response: buildError(id: id, code: -32602, message: "Invalid params: name is required")
+                )
+            }
+            guard params["arguments"] == nil || params["arguments"] is [String: Any] else {
+                return responseOrNil(
+                    isNotification: isNotification,
+                    response: buildError(id: id, code: -32602, message: "Invalid params: arguments must be an object")
+                )
+            }
+
+            switch callTool(toolName, arguments: params["arguments"] as? [String: Any] ?? [:]) {
+            case let .protocolError(code, message, data):
+                return responseOrNil(
+                    isNotification: isNotification,
+                    response: buildError(id: id, code: code, message: message, data: data)
+                )
+            case let .toolResult(result):
+                var payload: [String: Any] = [
+                    "content": [["type": "text", "text": result.text]]
+                ]
+                if result.isError {
+                    payload["isError"] = true
+                }
+                if let structuredContent = result.structuredContent {
+                    payload["structuredContent"] = structuredContent
+                }
+                return buildResult(id: id, result: payload)
+            }
 
         case "resources/list":
+            if let errorResponse = requireInitializedResponse(for: method, id: id, isNotification: isNotification) {
+                return errorResponse
+            }
             return buildResult(id: id, result: ["resources": resourceDefinitions()])
 
         case "resources/read":
-            let uri = params["uri"] as? String ?? ""
-            let content = readResource(uri)
-            return buildResult(id: id, result: [
-                "contents": [["uri": uri, "mimeType": "application/json", "text": content]]
-            ])
+            if let errorResponse = requireInitializedResponse(for: method, id: id, isNotification: isNotification) {
+                return errorResponse
+            }
+            guard let uri = params["uri"] as? String, !uri.isEmpty else {
+                return responseOrNil(
+                    isNotification: isNotification,
+                    response: buildError(id: id, code: -32602, message: "Invalid params: uri is required")
+                )
+            }
+            switch readResource(uri) {
+            case let .success(content):
+                return buildResult(id: id, result: [
+                    "contents": [["uri": uri, "mimeType": "application/json", "text": content]]
+                ])
+            case let .protocolError(code, message):
+                return responseOrNil(
+                    isNotification: isNotification,
+                    response: buildError(id: id, code: code, message: message)
+                )
+            }
 
         case "ping":
-            return buildResult(id: id, result: [:])
+            return responseOrNil(
+                isNotification: isNotification,
+                response: buildResult(id: id, result: [:])
+            )
 
         default:
-            return buildError(id: id, code: -32601, message: "Method not found: \(method)")
+            return responseOrNil(
+                isNotification: isNotification,
+                response: buildError(id: id, code: -32601, message: "Method not found: \(method)")
+            )
         }
     }
 
@@ -138,7 +273,7 @@ final class MCPSession {
 
     // swiftlint:disable:next function_body_length
     private func toolDefinitions() -> [[String: Any]] {
-        [
+        let definitions: [[String: Any]] = [
             [
                 "name": "run_get",
                 "description": "Get a single telemetry run by ID",
@@ -601,135 +736,169 @@ final class MCPSession {
                 ]
             ]
         ]
+
+        return definitions.map { definition in
+            guard var inputSchema = definition["inputSchema"] as? [String: Any],
+                  (inputSchema["type"] as? String) == "object",
+                  inputSchema["additionalProperties"] == nil else {
+                return definition
+            }
+
+            var updatedDefinition = definition
+            inputSchema["additionalProperties"] = false
+            updatedDefinition["inputSchema"] = inputSchema
+            return updatedDefinition
+        }
     }
 
     // MARK: - Tool Execution
 
-    private func callTool(_ name: String, arguments: [String: Any]) -> String {
+    private func callTool(_ name: String, arguments: [String: Any]) -> ToolCallDisposition {
+        guard let definition = toolDefinitions().first(where: { ($0["name"] as? String) == name }) else {
+            return .protocolError(code: -32602, message: "Unknown tool: \(name)")
+        }
+        if let validationError = validate(arguments: arguments, against: definition, toolName: name) {
+            return .protocolError(code: -32602, message: validationError)
+        }
+
+        let rateDecision = Self.toolRateLimiterQueue.sync { Self.toolRateLimiter.evaluate(toolName: name) }
+        if !rateDecision.isAllowed {
+            var details: [String: Any] = [
+                "error": "rate_limit_exceeded",
+                "tool": name
+            ]
+            var message = "Rate limit exceeded for tool '\(name)'."
+            if let retryAfterSeconds = rateDecision.retryAfterSeconds {
+                details["retry_after_seconds"] = retryAfterSeconds
+                message += " Retry in \(Int(ceil(retryAfterSeconds))) seconds."
+            }
+            return .toolResult(toolErrorResult(message: message, structuredContent: details))
+        }
+
         switch name {
         case "run_get":
             guard let runID = arguments["run_id"] as? String else {
-                return jsonError("run_id is required")
+                return .protocolError(code: -32602, message: "Invalid params: run_id is required")
             }
-            return queryService.getRun(runID)
+            return classifyToolResponse(queryService.getRun(runID))
 
         case "run_list":
-            return queryService.listRuns(arguments)
+            return classifyToolResponse(queryService.listRuns(arguments))
 
         case "run_tool_calls":
             guard let runID = arguments["run_id"] as? String else {
-                return jsonError("run_id is required")
+                return .protocolError(code: -32602, message: "Invalid params: run_id is required")
             }
-            return queryService.getToolCalls(runID)
+            return classifyToolResponse(queryService.getToolCalls(runID))
 
         case "run_transcript":
             guard let runID = arguments["run_id"] as? String else {
-                return jsonError("run_id is required")
+                return .protocolError(code: -32602, message: "Invalid params: run_id is required")
             }
-            return queryService.getTranscript(runID)
+            return classifyToolResponse(queryService.getTranscript(runID))
 
         case "run_tag":
             guard let runID = arguments["run_id"] as? String,
                   let tags = arguments["tags"] as? [String] else {
-                return jsonError("run_id and tags are required")
+                return .protocolError(code: -32602, message: "Invalid params: run_id and tags are required")
             }
-            return queryService.tagRun(runID, tags: tags)
+            return classifyToolResponse(queryService.tagRun(runID, tags: tags))
 
         case "run_latest_for_repo":
             guard let repoPath = arguments["repo_path"] as? String else {
-                return jsonError("repo_path is required")
+                return .protocolError(code: -32602, message: "Invalid params: repo_path is required")
             }
             let provider = arguments["provider"] as? String
-            return queryService.latestRunForRepo(repoPath, provider: provider)
+            return classifyToolResponse(queryService.latestRunForRepo(repoPath, provider: provider))
 
         case "session_list":
             let repoPath = arguments["repo_path"] as? String
             let activeOnly = arguments["active_only"] as? Bool ?? false
-            return queryService.listSessions(repoPath: repoPath, activeOnly: activeOnly)
+            return classifyToolResponse(queryService.listSessions(repoPath: repoPath, activeOnly: activeOnly))
 
         case "session_current":
-            return queryService.currentSessions()
+            return classifyToolResponse(queryService.currentSessions())
 
         // Control plane
         case "tab_list":
-            return controlPlane.call(name: "tab_list", arguments: arguments)
+            return classifyToolResponse(controlPlane.call(name: "tab_list", arguments: arguments))
 
         case "tab_create":
-            return controlPlane.call(name: "tab_create", arguments: arguments)
+            return classifyToolResponse(controlPlane.call(name: "tab_create", arguments: arguments))
 
         case "tab_exec":
-            return controlPlane.call(name: "tab_exec", arguments: arguments)
+            return classifyToolResponse(controlPlane.call(name: "tab_exec", arguments: arguments))
 
         case "tab_status":
-            return controlPlane.call(name: "tab_status", arguments: arguments)
+            return classifyToolResponse(controlPlane.call(name: "tab_status", arguments: arguments))
 
         case "tab_send_input":
-            return controlPlane.call(name: "tab_send_input", arguments: arguments)
+            return classifyToolResponse(controlPlane.call(name: "tab_send_input", arguments: arguments))
 
         case "tab_press_key":
-            return controlPlane.call(name: "tab_press_key", arguments: arguments)
+            return classifyToolResponse(controlPlane.call(name: "tab_press_key", arguments: arguments))
 
         case "tab_submit_prompt":
-            return controlPlane.call(name: "tab_submit_prompt", arguments: arguments)
+            return classifyToolResponse(controlPlane.call(name: "tab_submit_prompt", arguments: arguments))
 
         case "tab_close":
-            return controlPlane.call(name: "tab_close", arguments: arguments)
+            return classifyToolResponse(controlPlane.call(name: "tab_close", arguments: arguments))
 
         case "tab_output":
-            return controlPlane.call(name: "tab_output", arguments: arguments)
+            return classifyToolResponse(controlPlane.call(name: "tab_output", arguments: arguments))
 
         case "tab_set_cto":
             guard let tabID = arguments["tab_id"] as? String,
                   let override = arguments["override"] as? String else {
-                return jsonError("tab_id and override are required")
+                return .protocolError(code: -32602, message: "Invalid params: tab_id and override are required")
             }
-            return controlService.setCTO(tabID: tabID, override: override)
+            return classifyToolResponse(controlService.setCTO(tabID: tabID, override: override))
 
         case "tab_rename":
             guard let tabID = arguments["tab_id"] as? String,
                   let title = arguments["title"] as? String else {
-                return jsonError("tab_id and title are required")
+                return .protocolError(code: -32602, message: "Invalid params: tab_id and title are required")
             }
-            return controlService.renameTab(tabID: tabID, title: title)
+            return classifyToolResponse(controlService.renameTab(tabID: tabID, title: title))
 
         // Repo Metadata
         case "repo_get_metadata":
             guard let repoPath = arguments["repo_path"] as? String else {
-                return jsonError("repo_path is required")
+                return .protocolError(code: -32602, message: "Invalid params: repo_path is required")
             }
-            return controlService.getRepoMetadata(repoPath: repoPath)
+            return classifyToolResponse(controlService.getRepoMetadata(repoPath: repoPath))
 
         case "repo_set_metadata":
             guard let repoPath = arguments["repo_path"] as? String else {
-                return jsonError("repo_path is required")
+                return .protocolError(code: -32602, message: "Invalid params: repo_path is required")
             }
-            return controlService.setRepoMetadata(
+            return classifyToolResponse(controlService.setRepoMetadata(
                 repoPath: repoPath,
                 description: arguments["description"] as? String,
                 labels: arguments["labels"] as? [String],
                 favoriteFiles: arguments["favorite_files"] as? [String]
-            )
+            ))
 
         case "repo_frequent_commands":
             guard let repoPath = arguments["repo_path"] as? String else {
-                return jsonError("repo_path is required")
+                return .protocolError(code: -32602, message: "Invalid params: repo_path is required")
             }
             let limit = arguments["limit"] as? Int ?? 20
-            return controlService.repoFrequentCommands(repoPath: repoPath, limit: limit)
+            return classifyToolResponse(controlService.repoFrequentCommands(repoPath: repoPath, limit: limit))
 
         case "repo_get_events":
             guard let repoPath = arguments["repo_path"] as? String else {
-                return jsonError("repo_path is required")
+                return .protocolError(code: -32602, message: "Invalid params: repo_path is required")
             }
             let limit = min(arguments["limit"] as? Int ?? 20, 50)
-            return controlService.repoGetEvents(repoPath: repoPath, limit: limit)
+            return classifyToolResponse(controlService.repoGetEvents(repoPath: repoPath, limit: limit))
 
         // Runtime API
         case let name where name.hasPrefix("runtime_"):
-            return controlPlane.call(name: name, arguments: arguments)
+            return classifyToolResponse(controlPlane.call(name: name, arguments: arguments))
 
         default:
-            return jsonError("Unknown tool: \(name)")
+            return .protocolError(code: -32602, message: "Unknown tool: \(name)")
         }
     }
 
@@ -758,21 +927,26 @@ final class MCPSession {
         ]
     }
 
-    private func readResource(_ uri: String) -> String {
+    private enum ResourceReadDisposition {
+        case success(String)
+        case protocolError(code: Int, message: String)
+    }
+
+    private func readResource(_ uri: String) -> ResourceReadDisposition {
         switch uri {
         case "chau7://telemetry/runs":
-            return queryService.listRuns(["limit": 20])
+            return .success(queryService.listRuns(["limit": 20]))
         case "chau7://telemetry/sessions":
-            return queryService.listSessions()
+            return .success(queryService.listSessions())
         case "chau7://telemetry/sessions/current":
-            return queryService.currentSessions()
+            return .success(queryService.currentSessions())
         default:
             // Try chau7://telemetry/runs/<run_id>
             if uri.hasPrefix("chau7://telemetry/runs/") {
                 let runID = String(uri.dropFirst("chau7://telemetry/runs/".count))
-                return queryService.getRun(runID)
+                return .success(queryService.getRun(runID))
             }
-            return jsonError("Unknown resource: \(uri)")
+            return .protocolError(code: -32602, message: "Unknown resource: \(uri)")
         }
     }
 
@@ -782,8 +956,12 @@ final class MCPSession {
         ["jsonrpc": "2.0", "id": id as Any, "result": result]
     }
 
-    private func buildError(id: Any?, code: Int, message: String) -> [String: Any] {
-        ["jsonrpc": "2.0", "id": id as Any, "error": ["code": code, "message": message]]
+    private func buildError(id: Any?, code: Int, message: String, data: Any? = nil) -> [String: Any] {
+        var error: [String: Any] = ["code": code, "message": message]
+        if let data {
+            error["data"] = data
+        }
+        return ["jsonrpc": "2.0", "id": id as Any, "error": error]
     }
 
     private func writeError(to stream: UnsafeMutablePointer<FILE>, id: Any?, code: Int, message: String) {
@@ -798,7 +976,116 @@ final class MCPSession {
         fflush(stream)
     }
 
-    private func jsonError(_ message: String) -> String {
-        "{\"error\":\"\(message.replacingOccurrences(of: "\"", with: "\\\""))\"}"
+    private func requireInitializedResponse(for method: String, id: Any?, isNotification: Bool) -> [String: Any]? {
+        guard lifecycleState == .ready else {
+            return responseOrNil(
+                isNotification: isNotification,
+                response: buildError(
+                    id: id,
+                    code: -32002,
+                    message: "Client must complete initialize and notifications/initialized before calling \(method)"
+                )
+            )
+        }
+        return nil
+    }
+
+    private func responseOrNil(isNotification: Bool, response: [String: Any]) -> [String: Any]? {
+        isNotification ? nil : response
+    }
+
+    private func negotiateProtocolVersion(_ requestedVersion: String) -> String? {
+        Self.supportedProtocolVersions.contains(requestedVersion) ? requestedVersion : nil
+    }
+
+    private func validate(arguments: [String: Any], against definition: [String: Any], toolName: String) -> String? {
+        guard let schema = definition["inputSchema"] as? [String: Any] else { return nil }
+        let properties = schema["properties"] as? [String: Any] ?? [:]
+        let required = Set(schema["required"] as? [String] ?? [])
+        let allowsAdditionalProperties = schema["additionalProperties"] as? Bool ?? true
+
+        for key in required.sorted() where arguments[key] == nil {
+            return "Invalid params: missing required argument '\(key)' for tool \(toolName)"
+        }
+
+        if !allowsAdditionalProperties {
+            let unknownArguments = arguments.keys.filter { properties[$0] == nil }.sorted()
+            if let unknown = unknownArguments.first {
+                return "Invalid params: unknown argument '\(unknown)' for tool \(toolName)"
+            }
+        }
+
+        for (key, value) in arguments {
+            guard let propertySchema = properties[key] as? [String: Any],
+                  !valueMatchesSchemaType(value, schema: propertySchema) else {
+                continue
+            }
+            let expectedType = propertySchema["type"] as? String ?? "valid value"
+            return "Invalid params: argument '\(key)' for tool \(toolName) must be a \(expectedType)"
+        }
+
+        return nil
+    }
+
+    private func valueMatchesSchemaType(_ value: Any, schema: [String: Any]) -> Bool {
+        guard let type = schema["type"] as? String else { return true }
+
+        switch type {
+        case "string":
+            return value is String
+        case "integer":
+            return isIntegerValue(value)
+        case "boolean":
+            return isBooleanValue(value)
+        case "array":
+            return value is [Any]
+        case "object":
+            return value is [String: Any]
+        default:
+            return true
+        }
+    }
+
+    private func isIntegerValue(_ value: Any) -> Bool {
+        if value is Int { return true }
+        guard let number = value as? NSNumber, !isBooleanValue(number) else { return false }
+        let doubleValue = number.doubleValue
+        return doubleValue.rounded(.towardZero) == doubleValue
+    }
+
+    private func isBooleanValue(_ value: Any) -> Bool {
+        if value is Bool { return true }
+        guard let number = value as? NSNumber else { return false }
+        return CFGetTypeID(number) == CFBooleanGetTypeID()
+    }
+
+    private func classifyToolResponse(_ text: String) -> ToolCallDisposition {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = trimmed.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) else {
+            return .toolResult(ToolResult(text: trimmed, isError: false, structuredContent: nil))
+        }
+
+        guard let object = json as? [String: Any] else {
+            return .toolResult(ToolResult(text: trimmed, isError: false, structuredContent: nil))
+        }
+
+        if let message = object["error"] as? String {
+            return .toolResult(ToolResult(text: message, isError: true, structuredContent: object))
+        }
+
+        return .toolResult(ToolResult(text: trimmed, isError: false, structuredContent: object))
+    }
+
+    private func toolErrorResult(message: String, structuredContent: [String: Any]) -> ToolResult {
+        var payload = structuredContent
+        payload["message"] = message
+        return ToolResult(text: message, isError: true, structuredContent: payload)
+    }
+
+    static func resetSharedToolRateLimiterForTests() {
+        toolRateLimiterQueue.sync {
+            toolRateLimiter.reset()
+        }
     }
 }
