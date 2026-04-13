@@ -1129,7 +1129,8 @@ final class RustTerminalFFI {
             return
         }
         Log.trace("RustTerminalFFI[\(instanceId)]: sendBytes(Data) - Sending \(data.count) bytes")
-        if data.contains(where: { $0 == 0x0D || $0 == 0x0A }) {
+        if EnvVars.isEnabled(EnvVars.inputDiagnostics),
+           data.contains(where: { $0 == 0x0D || $0 == 0x0A }) {
             let preview = data.prefix(16).map { String(format: "%02X", $0) }.joined(separator: " ")
             let suffix = data.count > 16 ? " ...<\(data.count - 16) more>" : ""
             Log.info("RustTerminalFFI[\(instanceId)]: sendBytes(Data) newline-ish bytes=[\(preview)\(suffix)]")
@@ -1155,7 +1156,8 @@ final class RustTerminalFFI {
             return
         }
         Log.trace("RustTerminalFFI[\(instanceId)]: sendBytes([UInt8]) - Sending \(bytes.count) bytes")
-        if bytes.contains(where: { $0 == 0x0D || $0 == 0x0A }) {
+        if EnvVars.isEnabled(EnvVars.inputDiagnostics),
+           bytes.contains(where: { $0 == 0x0D || $0 == 0x0A }) {
             let preview = bytes.prefix(16).map { String(format: "%02X", $0) }.joined(separator: " ")
             let suffix = bytes.count > 16 ? " ...<\(bytes.count - 16) more>" : ""
             Log.info("RustTerminalFFI[\(instanceId)]: sendBytes([UInt8]) newline-ish bytes=[\(preview)\(suffix)]")
@@ -2033,21 +2035,23 @@ final class RustTerminalView: NSView {
     var notifyUpdateChanges = true {
         didSet {
             guard notifyUpdateChanges != oldValue else { return }
-            let mode = notifyUpdateChanges ? "live-render" : "drain-only"
-            Log.info("RustTerminalView[\(viewId)]: notifyUpdateChanges -> \(mode)")
-            if notifyUpdateChanges {
-                // Tab became active: resume full-speed CVDisplayLink, stop slow drain
-                resumeDisplayLink()
-            } else {
-                // Tab suspended: pause CVDisplayLink, start slow PTY drain
-                pauseDisplayLink()
-            }
+            let requestedMode = notifyUpdateChanges ? "live-render" : "drain-only"
+            Log.info("RustTerminalView[\(viewId)]: notifyUpdateChanges -> \(requestedMode)")
+            updatePollingMode(reason: "notifyUpdateChanges")
+        }
+    }
+
+    override var isHidden: Bool {
+        didSet {
+            guard isHidden != oldValue else { return }
+            updatePollingMode(reason: "isHidden")
         }
     }
 
     /// Whether this view is registered for shared background PTY drain.
     /// Replaces the per-view Timer with a shared drain (see SharedBackgroundDrain).
     var isBackgroundDrainRegistered = false
+    private var isLivePollingActive = false
 
     // MARK: - Properties
 
@@ -2567,6 +2571,7 @@ final class RustTerminalView: NSView {
             Log.trace("RustTerminalView[\(viewId)]: viewDidMoveToWindow - Removed from window")
             removeEventMonitors()
         }
+        updatePollingMode(reason: "viewDidMoveToWindow")
     }
 
     override func layout() {
@@ -2597,6 +2602,26 @@ final class RustTerminalView: NSView {
 
         updateTipOverlayPosition()
         updateInlineImagePositions()
+    }
+
+    private func shouldRunLivePolling() -> Bool {
+        guard notifyUpdateChanges, !isHidden else { return false }
+        guard let window else { return false }
+        return window.isVisible && !window.isMiniaturized
+    }
+
+    private func updatePollingMode(reason: String) {
+        let shouldRunLive = shouldRunLivePolling()
+        guard shouldRunLive != isLivePollingActive else { return }
+
+        isLivePollingActive = shouldRunLive
+        if shouldRunLive {
+            Log.trace("RustTerminalView[\(viewId)]: resuming live polling (\(reason))")
+            resumeDisplayLink()
+        } else {
+            Log.trace("RustTerminalView[\(viewId)]: pausing live polling (\(reason))")
+            pauseDisplayLink()
+        }
     }
 
     override var acceptsFirstResponder: Bool {
