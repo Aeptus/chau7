@@ -9,6 +9,13 @@ public struct StartupRestoreSummary: Equatable {
     public let delayedResumePrefills: Int
     public let queuedResumePrefills: Int
     public let deliveredResumePrefills: Int
+    public let restoreBootstrapStarted: Int
+    public let restoreBootstrapSettled: Int
+    public let restorePreviewShown: Int
+    public let restorePreviewDiscarded: Int
+    public let selectedTabLiveFrameCount: Int
+    public let firstSelectedTabLiveFrameMs: Int?
+    public let slowestSelectedTabLiveFrameMs: Int?
 
     public init(
         durationMs: Int,
@@ -18,7 +25,14 @@ public struct StartupRestoreSummary: Equatable {
         completedSnippetResolves: Int,
         delayedResumePrefills: Int,
         queuedResumePrefills: Int,
-        deliveredResumePrefills: Int
+        deliveredResumePrefills: Int,
+        restoreBootstrapStarted: Int,
+        restoreBootstrapSettled: Int,
+        restorePreviewShown: Int,
+        restorePreviewDiscarded: Int,
+        selectedTabLiveFrameCount: Int,
+        firstSelectedTabLiveFrameMs: Int?,
+        slowestSelectedTabLiveFrameMs: Int?
     ) {
         self.durationMs = durationMs
         self.protectedRoots = protectedRoots
@@ -28,6 +42,13 @@ public struct StartupRestoreSummary: Equatable {
         self.delayedResumePrefills = delayedResumePrefills
         self.queuedResumePrefills = queuedResumePrefills
         self.deliveredResumePrefills = deliveredResumePrefills
+        self.restoreBootstrapStarted = restoreBootstrapStarted
+        self.restoreBootstrapSettled = restoreBootstrapSettled
+        self.restorePreviewShown = restorePreviewShown
+        self.restorePreviewDiscarded = restorePreviewDiscarded
+        self.selectedTabLiveFrameCount = selectedTabLiveFrameCount
+        self.firstSelectedTabLiveFrameMs = firstSelectedTabLiveFrameMs
+        self.slowestSelectedTabLiveFrameMs = slowestSelectedTabLiveFrameMs
     }
 }
 
@@ -41,6 +62,12 @@ public struct StartupRestoreTracker: Equatable {
     public private(set) var delayedResumePrefills = 0
     public private(set) var queuedResumePrefills = 0
     public private(set) var deliveredResumePrefills = 0
+    public private(set) var restoreBootstrapStarted = 0
+    public private(set) var restoreBootstrapSettled = 0
+    public private(set) var restorePreviewShown = 0
+    public private(set) var restorePreviewDiscarded = 0
+    public private(set) var selectedTabLiveFrameMsByWindow: [Int: Int] = [:]
+    public private(set) var windowVisibleAtByNumber: [Int: Date] = [:]
 
     public init() {}
 
@@ -54,6 +81,12 @@ public struct StartupRestoreTracker: Equatable {
         delayedResumePrefills = 0
         queuedResumePrefills = 0
         deliveredResumePrefills = 0
+        restoreBootstrapStarted = 0
+        restoreBootstrapSettled = 0
+        restorePreviewShown = 0
+        restorePreviewDiscarded = 0
+        selectedTabLiveFrameMsByWindow.removeAll(keepingCapacity: true)
+        windowVisibleAtByNumber.removeAll(keepingCapacity: true)
     }
 
     public mutating func noteProtectedPathDeferral(root: String) -> Bool {
@@ -81,12 +114,41 @@ public struct StartupRestoreTracker: Equatable {
         deliveredResumePrefills += 1
     }
 
+    public mutating func noteRestoreBootstrapStarted() {
+        restoreBootstrapStarted += 1
+    }
+
+    public mutating func noteRestoreBootstrapSettled() {
+        restoreBootstrapSettled += 1
+    }
+
+    public mutating func noteRestorePreviewShown() {
+        restorePreviewShown += 1
+    }
+
+    public mutating func noteRestorePreviewDiscarded() {
+        restorePreviewDiscarded += 1
+    }
+
+    public mutating func noteWindowVisible(windowNumber: Int, at date: Date) {
+        windowVisibleAtByNumber[windowNumber] = date
+    }
+
+    public mutating func noteSelectedTabLiveFrame(windowNumber: Int, at date: Date) -> Int? {
+        guard let visibleAt = windowVisibleAtByNumber[windowNumber] else { return nil }
+        guard selectedTabLiveFrameMsByWindow[windowNumber] == nil else { return nil }
+        let elapsedMs = max(0, Int((date.timeIntervalSince(visibleAt) * 1000).rounded()))
+        selectedTabLiveFrameMsByWindow[windowNumber] = elapsedMs
+        return elapsedMs
+    }
+
     public mutating func end(at date: Date) -> StartupRestoreSummary? {
         guard isActive, let startedAt else { return nil }
         isActive = false
         self.startedAt = nil
 
         let durationMs = max(0, Int((date.timeIntervalSince(startedAt) * 1000).rounded()))
+        let liveFrameSamples = selectedTabLiveFrameMsByWindow.values.sorted()
         return StartupRestoreSummary(
             durationMs: durationMs,
             protectedRoots: protectedRoots.sorted(),
@@ -95,7 +157,14 @@ public struct StartupRestoreTracker: Equatable {
             completedSnippetResolves: completedSnippetResolves,
             delayedResumePrefills: delayedResumePrefills,
             queuedResumePrefills: queuedResumePrefills,
-            deliveredResumePrefills: deliveredResumePrefills
+            deliveredResumePrefills: deliveredResumePrefills,
+            restoreBootstrapStarted: restoreBootstrapStarted,
+            restoreBootstrapSettled: restoreBootstrapSettled,
+            restorePreviewShown: restorePreviewShown,
+            restorePreviewDiscarded: restorePreviewDiscarded,
+            selectedTabLiveFrameCount: liveFrameSamples.count,
+            firstSelectedTabLiveFrameMs: liveFrameSamples.first,
+            slowestSelectedTabLiveFrameMs: liveFrameSamples.last
         )
     }
 }

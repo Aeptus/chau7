@@ -836,6 +836,11 @@ final class OverlayTabsModel {
         for index in tabs.indices where tabs[index].restorePreviewSnapshot != nil {
             let phase = tabs[index].displaySession?.restoreBootstrapPhase ?? .inactive
             if phase != .replaying {
+                StartupRestoreCoordinator.shared.noteRestorePreviewDiscarded(
+                    tabID: tabs[index].id,
+                    windowNumber: overlayWindow?.windowNumber,
+                    reason: "\(reason)_phase_\(phase.rawValue)"
+                )
                 tabs[index].restorePreviewSnapshot = nil
             }
         }
@@ -848,11 +853,38 @@ final class OverlayTabsModel {
         let shouldShowRestorePreview = tab.restorePreviewSnapshot != nil
             && tab.displaySession?.isRestoreBootstrapPending == true
         if isTerminalReady == !shouldShowRestorePreview {
+            if !shouldShowRestorePreview {
+                noteStartupSelectedTabLiveFrameIfNeeded(reason: "\(reason)_steady")
+            }
             return
         }
 
         isTerminalReady = !shouldShowRestorePreview
+        if shouldShowRestorePreview {
+            StartupRestoreCoordinator.shared.noteRestorePreviewShown(
+                tabID: tab.id,
+                windowNumber: overlayWindow?.windowNumber,
+                reason: reason
+            )
+        } else {
+            noteStartupSelectedTabLiveFrameIfNeeded(reason: reason)
+        }
         Log.trace("syncSelectedTerminalPresentation[\(reason)]: tab=\(tab.id) preview=\(shouldShowRestorePreview)")
+    }
+
+    func noteStartupSelectedTabLiveFrameIfNeeded(reason: String) {
+        guard let tab = selectedTab,
+              let windowNumber = overlayWindow?.windowNumber else {
+            return
+        }
+        let shouldShowRestorePreview = tab.restorePreviewSnapshot != nil
+            && tab.displaySession?.isRestoreBootstrapPending == true
+        guard !shouldShowRestorePreview else { return }
+        StartupRestoreCoordinator.shared.noteSelectedTabLiveFrame(
+            windowNumber: windowNumber,
+            selectedTabID: tab.id,
+            reason: reason
+        )
     }
 
     func encodedRestorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> Data? {

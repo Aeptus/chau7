@@ -14,6 +14,18 @@ final class StartupRestorePolicyTests: XCTestCase {
         tracker.noteResumePrefillDelayed()
         tracker.noteResumePrefillQueued()
         tracker.noteResumePrefillDelivered()
+        tracker.noteRestoreBootstrapStarted()
+        tracker.noteRestoreBootstrapSettled()
+        tracker.noteRestorePreviewShown()
+        tracker.noteRestorePreviewDiscarded()
+        tracker.noteWindowVisible(windowNumber: 7, at: startedAt.addingTimeInterval(0.2))
+        XCTAssertEqual(
+            tracker.noteSelectedTabLiveFrame(windowNumber: 7, at: startedAt.addingTimeInterval(0.55)),
+            350
+        )
+        XCTAssertNil(
+            tracker.noteSelectedTabLiveFrame(windowNumber: 7, at: startedAt.addingTimeInterval(0.75))
+        )
 
         let summary = tracker.end(at: startedAt.addingTimeInterval(1.25))
         XCTAssertEqual(summary?.durationMs, 1250)
@@ -24,6 +36,13 @@ final class StartupRestorePolicyTests: XCTestCase {
         XCTAssertEqual(summary?.delayedResumePrefills, 1)
         XCTAssertEqual(summary?.queuedResumePrefills, 1)
         XCTAssertEqual(summary?.deliveredResumePrefills, 1)
+        XCTAssertEqual(summary?.restoreBootstrapStarted, 1)
+        XCTAssertEqual(summary?.restoreBootstrapSettled, 1)
+        XCTAssertEqual(summary?.restorePreviewShown, 1)
+        XCTAssertEqual(summary?.restorePreviewDiscarded, 1)
+        XCTAssertEqual(summary?.selectedTabLiveFrameCount, 1)
+        XCTAssertEqual(summary?.firstSelectedTabLiveFrameMs, 350)
+        XCTAssertEqual(summary?.slowestSelectedTabLiveFrameMs, 350)
         XCTAssertFalse(tracker.isActive)
     }
 

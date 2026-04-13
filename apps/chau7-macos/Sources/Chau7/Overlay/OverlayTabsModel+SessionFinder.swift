@@ -439,6 +439,7 @@ extension OverlayTabsModel {
             if let preview = Self.restorePreviewImage(from: state.previewSnapshotPNGData) {
                 tab.restorePreviewSnapshot = preview
                 tab.lastPromptText = tab.session?.displayPath() ?? "~"
+                Log.info("Restore preview hydrated for tab=\(restoredTabID)")
             }
 
             // Restore per-tab token optimization override
@@ -783,9 +784,16 @@ extension OverlayTabsModel {
             }
         }
 
-        for (_, session) in terminalSessions {
-            session.onRestoreBootstrapPhaseChanged = { [weak self] _ in
+        for (paneID, session) in terminalSessions {
+            session.onRestoreBootstrapPhaseChanged = { [weak self] phase in
                 DispatchQueue.main.async {
+                    if phase == .settled {
+                        StartupRestoreCoordinator.shared.noteRestoreBootstrapSettled(
+                            tabID: targetTabID,
+                            paneID: paneID,
+                            source: "phase_changed"
+                        )
+                    }
                     self?.syncSelectedTerminalPresentation(reason: "restore_bootstrap_phase")
                 }
             }
@@ -802,6 +810,11 @@ extension OverlayTabsModel {
             let hasRestoreReplay = !(paneState?.scrollbackContent?.isEmpty ?? true)
                 || !(paneState?.directory.isEmpty ?? true)
             if expectsResumePrefill || hasRestoreReplay {
+                StartupRestoreCoordinator.shared.noteRestoreBootstrapStarted(
+                    tabID: targetTabID,
+                    paneID: paneID,
+                    expectsResumePrefill: expectsResumePrefill
+                )
                 session.beginRestoreBootstrap(expectsResumePrefill: expectsResumePrefill)
             }
         }

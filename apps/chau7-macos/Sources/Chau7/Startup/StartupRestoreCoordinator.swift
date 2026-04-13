@@ -35,7 +35,14 @@ final class StartupRestoreCoordinator {
             completedSnippetResolves=\(summary.completedSnippetResolves) \
             delayedResumePrefills=\(summary.delayedResumePrefills) \
             queuedResumePrefills=\(summary.queuedResumePrefills) \
-            deliveredResumePrefills=\(summary.deliveredResumePrefills)
+            deliveredResumePrefills=\(summary.deliveredResumePrefills) \
+            restoreBootstrapStarted=\(summary.restoreBootstrapStarted) \
+            restoreBootstrapSettled=\(summary.restoreBootstrapSettled) \
+            restorePreviewShown=\(summary.restorePreviewShown) \
+            restorePreviewDiscarded=\(summary.restorePreviewDiscarded) \
+            selectedTabLiveFrameCount=\(summary.selectedTabLiveFrameCount) \
+            firstSelectedTabLiveFrameMs=\(summary.firstSelectedTabLiveFrameMs.map(String.init) ?? "nil") \
+            slowestSelectedTabLiveFrameMs=\(summary.slowestSelectedTabLiveFrameMs.map(String.init) ?? "nil")
             """
         )
     }
@@ -113,5 +120,63 @@ final class StartupRestoreCoordinator {
         defer { lock.unlock() }
         guard tracker.isActive else { return }
         tracker.noteResumePrefillDelivered()
+    }
+
+    func noteRestoreBootstrapStarted(tabID: UUID, paneID: UUID, expectsResumePrefill: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard tracker.isActive else { return }
+        tracker.noteRestoreBootstrapStarted()
+        Log.info(
+            "Restore bootstrap began: tab=\(tabID) pane=\(paneID) expectsResumePrefill=\(expectsResumePrefill)"
+        )
+    }
+
+    func noteRestoreBootstrapSettled(tabID: UUID, paneID: UUID, source: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard tracker.isActive else { return }
+        tracker.noteRestoreBootstrapSettled()
+        Log.info("Restore bootstrap settled: tab=\(tabID) pane=\(paneID) source=\(source)")
+    }
+
+    func noteRestorePreviewShown(tabID: UUID, windowNumber: Int?, reason: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard tracker.isActive else { return }
+        tracker.noteRestorePreviewShown()
+        let windowLabel = windowNumber.map(String.init) ?? "nil"
+        Log.info("Restore preview shown: tab=\(tabID) window=\(windowLabel) reason=\(reason)")
+    }
+
+    func noteRestorePreviewDiscarded(tabID: UUID, windowNumber: Int?, reason: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard tracker.isActive else { return }
+        tracker.noteRestorePreviewDiscarded()
+        let windowLabel = windowNumber.map(String.init) ?? "nil"
+        Log.info("Restore preview discarded: tab=\(tabID) window=\(windowLabel) reason=\(reason)")
+    }
+
+    func noteWindowVisible(windowNumber: Int, selectedTabID: UUID?) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard tracker.isActive else { return }
+        tracker.noteWindowVisible(windowNumber: windowNumber, at: Date())
+        let tabLabel = selectedTabID?.uuidString ?? "nil"
+        Log.info("Startup window visible: window=\(windowNumber) selectedTab=\(tabLabel)")
+    }
+
+    func noteSelectedTabLiveFrame(windowNumber: Int, selectedTabID: UUID?, reason: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard tracker.isActive else { return }
+        guard let elapsedMs = tracker.noteSelectedTabLiveFrame(windowNumber: windowNumber, at: Date()) else {
+            return
+        }
+        let tabLabel = selectedTabID?.uuidString ?? "nil"
+        Log.info(
+            "Startup selected-tab first live frame: window=\(windowNumber) selectedTab=\(tabLabel) elapsed=\(elapsedMs)ms reason=\(reason)"
+        )
     }
 }

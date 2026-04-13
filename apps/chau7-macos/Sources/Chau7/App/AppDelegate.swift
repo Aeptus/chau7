@@ -1825,6 +1825,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         host.model.noteTabBarVisibilityChanged(isVisible: true)
         host.window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        StartupRestoreCoordinator.shared.noteWindowVisible(
+            windowNumber: host.window.windowNumber,
+            selectedTabID: host.model.selectedTabID
+        )
+        host.model.noteStartupSelectedTabLiveFrameIfNeeded(reason: "window_visible_\(reason)")
         host.model.focusSelected()
         logOverlayWindowLifecycle(reason: "showOverlayWindow-\(reason)", window: host.window)
         logOverlayDiagnostics(reason: reason, window: host.window)
