@@ -289,12 +289,7 @@ extension OverlayTabsModel {
 
         // Strip lines that are restore command artifacts — previous launches may
         // have echoed cd/stty commands that were captured in the scrollback.
-        lines = lines.filter { line in
-            let stripped = line.trimmingCharacters(in: .whitespaces)
-            if stripped.contains("stty -echo && "), stripped.contains("stty echo") { return false }
-            if stripped.contains(" cd '"), stripped.hasSuffix("&& clear") { return false }
-            return true
-        }
+        lines = lines.filter { !Self.isRestoreArtifactLine($0) }
 
         // Strip trailing empty lines — the terminal buffer includes blank lines below
         // the cursor, which can otherwise pollute restore output.
@@ -322,6 +317,24 @@ extension OverlayTabsModel {
         }
 
         return restored
+    }
+
+    /// Returns true if a scrollback line looks like a restore command artifact
+    /// (cd + clear chains, stty echo pairs) that should be filtered out.
+    private static func isRestoreArtifactLine(_ line: String) -> Bool {
+        let stripped = line.trimmingCharacters(in: .whitespaces)
+        if stripped.contains("stty -echo && "), stripped.contains("stty echo") { return true }
+        if stripped.contains(" cd '"), stripped.hasSuffix("&& clear") { return true }
+        return false
+    }
+
+    /// Strips restore command artifacts from scrollback content.
+    /// Used on both save (captureScrollback) and inject (restore) paths to handle
+    /// scrollback saved by older binaries that didn't have the save-side filter.
+    static func stripRestoreArtifacts(from content: String) -> String {
+        content.components(separatedBy: "\n")
+            .filter { !isRestoreArtifactLine($0) }
+            .joined(separator: "\n")
     }
 
     static func shellSafeSingleQuote(_ value: String) -> String {
@@ -905,12 +918,17 @@ extension OverlayTabsModel {
                 // Restore scrollback by injecting directly into the terminal
                 // emulator via injectOutput — bypasses the shell entirely.
                 // No stty, no temp files, no echo race.
-                if let scrollback = effectivePaneState.scrollbackContent,
-                   !scrollback.isEmpty {
-                    if let view = session.existingRustTerminalView {
-                        view.injectOutput(scrollback)
-                    } else {
-                        session.pendingRestoreScrollback = scrollback
+                // Strip restore artifacts from saved scrollback that may have
+                // been captured by an older binary before the save-side filter.
+                if let raw = effectivePaneState.scrollbackContent,
+                   !raw.isEmpty {
+                    let scrollback = Self.stripRestoreArtifacts(from: raw)
+                    if !scrollback.isEmpty {
+                        if let view = session.existingRustTerminalView {
+                            view.injectOutput(scrollback)
+                        } else {
+                            session.pendingRestoreScrollback = scrollback
+                        }
                     }
                 }
 
