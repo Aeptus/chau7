@@ -19,6 +19,7 @@ final class WakeupProfiler {
         }
 
         var averageDurationMs: Double {
+            // swiftlint:disable:next empty_count
             guard count > 0, totalDurationMs > 0 else { return 0 }
             return totalDurationMs / Double(count)
         }

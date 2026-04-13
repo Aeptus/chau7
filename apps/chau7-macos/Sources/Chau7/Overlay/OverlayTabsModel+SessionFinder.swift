@@ -720,6 +720,7 @@ extension OverlayTabsModel {
         return SplitPaneController(appModel: appModel, root: root, focusedPaneID: focusedUUID)
     }
 
+    // swiftlint:disable:next function_body_length
     func restoreTabState(for tab: OverlayTab, state: SavedTabState) {
         let targetTabID = tab.id
         let terminalSessions = tab.splitController.terminalSessions
@@ -864,7 +865,9 @@ extension OverlayTabsModel {
             }
 
             var resolvedPaneStates: [UUID: SavedTerminalPaneState] = [:]
+            let paneMapKeys = Set(paneStatesToRestore.keys.map { String($0.uuidString.prefix(8)) })
             for (paneID, session) in currentSessions {
+                let paneHit = paneStatesToRestore[paneID] != nil
                 let paneState = paneStatesToRestore[paneID] ?? SavedTerminalPaneState(
                     paneID: paneID.uuidString,
                     directory: session.currentDirectory,
@@ -898,6 +901,18 @@ extension OverlayTabsModel {
                     provider: resolvedMetadata?.provider,
                     sessionId: resolvedMetadata?.sessionId,
                     sessionIdSource: resolvedMetadata?.sessionIdSource
+                )
+
+                Log.info(
+                    """
+                    restoreTabState: pane resolve tab=\(targetTabID) pane=\(paneID) \
+                    hit=\(paneHit) mapKeys=[\(paneMapKeys.sorted().joined(separator: ","))] \
+                    saved=(provider=\(paneState.aiProvider ?? "nil") session=\(paneState.aiSessionId?.prefix(8) ?? "nil") \
+                    cmd=\(paneState.aiResumeCommand?.prefix(30) ?? "nil")) \
+                    resolved=(provider=\(resolvedMetadata?.provider ?? "nil") session=\(resolvedMetadata?.sessionId.prefix(8) ?? "nil") \
+                    cmd=\(resolvedCommand?.prefix(30) ?? "nil")) \
+                    legacy=\(shouldUseLegacyTabFallback) fallbackProvider=\(fallbackProvider ?? "nil")
+                    """
                 )
 
                 session.restoreAIMetadata(
