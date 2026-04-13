@@ -778,6 +778,29 @@ extension OverlayTabsModel {
             }
         }
 
+        for (_, session) in terminalSessions {
+            session.onRestoreBootstrapPhaseChanged = { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.syncSelectedTerminalPresentation(reason: "restore_bootstrap_phase")
+                }
+            }
+        }
+
+        for (paneID, session) in terminalSessions {
+            let paneState = paneStatesToRestore[paneID]
+            let expectsResumePrefill = Self.normalizedResumeCommand(paneState?.aiResumeCommand) != nil
+                || (paneState?.aiProvider != nil && paneState?.aiSessionId != nil)
+                || (paneStatesToRestore.isEmpty && terminalSessions.count == 1 && (
+                    Self.normalizedResumeCommand(state.aiResumeCommand) != nil
+                        || (state.aiProvider != nil && state.aiSessionId != nil)
+                ))
+            let hasRestoreReplay = !(paneState?.scrollbackContent?.isEmpty ?? true)
+                || !(paneState?.directory.isEmpty ?? true)
+            if expectsResumePrefill || hasRestoreReplay {
+                session.beginRestoreBootstrap(expectsResumePrefill: expectsResumePrefill)
+            }
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.restoreDelaySeconds) { [weak self] in
             guard let self else { return }
             let restoreStartedAt = CFAbsoluteTimeGetCurrent()

@@ -26,6 +26,12 @@ enum AISessionIdentitySource: String, Codable {
     case synthetic
 }
 
+enum RestoreBootstrapPhase: String {
+    case inactive
+    case replaying
+    case settled
+}
+
 /// Model for a terminal session, managing shell state, search, and output capture.
 /// - Note: Thread Safety - Properties must be modified on main thread.
 ///   Callbacks may arrive on background threads and dispatch to main via DispatchQueue.main.async.
@@ -140,6 +146,7 @@ final class TerminalSessionModel {
     )
     /// Callback invoked when `gitRootPath` changes (used by OverlayTabsModel for auto-grouping).
     @ObservationIgnored var onGitRootPathChanged: ((String?) -> Void)?
+    @ObservationIgnored var onRestoreBootstrapPhaseChanged: ((RestoreBootstrapPhase) -> Void)?
 
     var gitRootPath: String? {
         didSet {
@@ -319,6 +326,18 @@ final class TerminalSessionModel {
             object: self,
             userInfo: ["source": source]
         )
+    }
+
+    var restoreBootstrapPhase: RestoreBootstrapPhase = .inactive {
+        didSet {
+            guard restoreBootstrapPhase != oldValue else { return }
+            onSessionStateChanged?()
+            onRestoreBootstrapPhaseChanged?(restoreBootstrapPhase)
+        }
+    }
+
+    var isRestoreBootstrapPending: Bool {
+        restoreBootstrapPhase == .replaying
     }
 
     /// Backdate activity timestamps to force the tab into the idle dropdown.
@@ -544,6 +563,8 @@ final class TerminalSessionModel {
     @ObservationIgnored private var pendingPrefillInput: String?
     /// Retry counter for pending prefill flush attempts.
     @ObservationIgnored private var pendingPrefillRetries = 0
+    @ObservationIgnored private var restoreBootstrapExpectsResumePrefill = false
+    @ObservationIgnored private var restoreBootstrapFallbackWorkItem: DispatchWorkItem?
     /// The next echoed command line that should be treated as a system-injected
     /// restore command rather than explicit user input.
     @ObservationIgnored var pendingSystemRestoreInputLine: String?
@@ -783,6 +804,7 @@ final class TerminalSessionModel {
         devServerMonitor.stop()
         processResourceMonitor.stop()
         forcedTerminationWorkItem?.cancel()
+        restoreBootstrapFallbackWorkItem?.cancel()
     }
 
     // Process monitoring methods moved to TerminalSessionModel+ProcessMonitor.swift
@@ -919,6 +941,33 @@ final class TerminalSessionModel {
 
         flushPendingTerminalActions()
         flushPendingPrefillInputIfReady()
+    }
+
+    func beginRestoreBootstrap(expectsResumePrefill: Bool) {
+        restoreBootstrapFallbackWorkItem?.cancel()
+        restoreBootstrapExpectsResumePrefill = expectsResumePrefill
+        restoreBootstrapPhase = .replaying
+
+        let work = DispatchWorkItem { [weak self] in
+            self?.markRestoreBootstrapReady(source: "timeout")
+        }
+        restoreBootstrapFallbackWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0, execute: work)
+    }
+
+    func noteRestoreBootstrapBufferChanged() {
+        guard isRestoreBootstrapPending else { return }
+        guard !restoreBootstrapExpectsResumePrefill else { return }
+        markRestoreBootstrapReady(source: "buffer_changed")
+    }
+
+    func markRestoreBootstrapReady(source: String) {
+        guard isRestoreBootstrapPending else { return }
+        restoreBootstrapFallbackWorkItem?.cancel()
+        restoreBootstrapFallbackWorkItem = nil
+        restoreBootstrapExpectsResumePrefill = false
+        restoreBootstrapPhase = .settled
+        Log.trace("restoreBootstrap: settled for \(title) via \(source)")
     }
 
     func focusTerminal(in window: NSWindow?, retryCount: Int = 0) {
@@ -1673,6 +1722,7 @@ final class TerminalSessionModel {
             pendingWaitingInputFallbackArmed = false
             pendingWaitingInputFallbackSawLiveOutput = false
             activeTerminalView?.insertSnippet(insertion)
+            markRestoreBootstrapReady(source: "resume_prefill")
             Log.info("Resume prefill delivered: \(text.prefix(60))")
             return
         }

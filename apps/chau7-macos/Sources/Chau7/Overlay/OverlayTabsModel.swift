@@ -732,6 +732,7 @@ final class OverlayTabsModel {
             for (index, state) in sanitizedRestoredStates.enumerated() where index < tabs.count {
                 restoreTabState(for: tabs[index], state: state)
             }
+            syncSelectedTerminalPresentation(reason: "init_restore")
         }
 
         // Setup task lifecycle observers (v1.1)
@@ -819,6 +820,23 @@ final class OverlayTabsModel {
     }
 
     // MARK: - Tab State Persistence
+
+    func syncSelectedTerminalPresentation(reason: String) {
+        guard !isRenderSuspensionEnabled else { return }
+        guard let tab = selectedTab else {
+            isTerminalReady = true
+            return
+        }
+
+        let shouldShowRestorePreview = tab.cachedSnapshot != nil
+            && tab.displaySession?.isRestoreBootstrapPending == true
+        if isTerminalReady == !shouldShowRestorePreview {
+            return
+        }
+
+        isTerminalReady = !shouldShowRestorePreview
+        Log.trace("syncSelectedTerminalPresentation[\(reason)]: tab=\(tab.id) preview=\(shouldShowRestorePreview)")
+    }
 
     /// Saves current tab state to disk backups. Does NOT write to UserDefaults —
     /// that is handled centrally by AppDelegate.saveAllWindowStates() to avoid
@@ -1727,7 +1745,7 @@ final class OverlayTabsModel {
                 isTerminalReady = true
             }
         } else {
-            isTerminalReady = true
+            syncSelectedTerminalPresentation(reason: "select_tab")
         }
     }
 
