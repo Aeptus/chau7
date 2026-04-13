@@ -568,6 +568,10 @@ final class TerminalSessionModel {
     /// The next echoed command line that should be treated as a system-injected
     /// restore command rather than explicit user input.
     @ObservationIgnored var pendingSystemRestoreInputLine: String?
+    /// True while the shell is executing restore-time maintenance commands.
+    /// Those commands should affect prompt readiness, but they must not create
+    /// command blocks or changed-file tracking noise.
+    @ObservationIgnored var systemRestoreCommandInFlight = false
     var hasPendingResumePrefillActivity: Bool {
         pendingPrefillInput != nil || pendingPrefillRetries > 0 || isShellLoading
     }
@@ -915,7 +919,14 @@ final class TerminalSessionModel {
                 lastPromptExitAt = nil
                 // Clear persistent permission border — user answered the prompt
                 onPermissionResolved?()
+                if systemRestoreCommandInFlight {
+                    Log.trace("System restore command started for \(title)")
+                }
             case .commandExecuted:
+                if systemRestoreCommandInFlight {
+                    Log.trace("System restore command executed for \(title)")
+                    return
+                }
                 shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
                 notifyCommandBlockStarted()
                 startCommandChangedFilesTracking()
@@ -924,6 +935,11 @@ final class TerminalSessionModel {
                 commandFinishedNotified = true
                 hasPendingCommand = false
                 promptSeenForPendingCommand = true
+                if systemRestoreCommandInFlight {
+                    systemRestoreCommandInFlight = false
+                    Log.trace("System restore command finished for \(title) exit=\(exitCode)")
+                    return
+                }
                 shellEventDetector.commandFinished(exitCode: Int(exitCode), command: pendingCommandLine)
                 completeCommandBlockAndChangedFiles(exitCode: Int(exitCode))
             }
@@ -1620,6 +1636,9 @@ final class TerminalSessionModel {
         let sanitized = EscapeSequenceSanitizer.sanitize(text)
         let trimmed = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingSystemRestoreInputLine = trimmed.isEmpty ? nil : trimmed
+        if pendingSystemRestoreInputLine != nil {
+            systemRestoreCommandInFlight = true
+        }
         sendOrQueueInput(text)
     }
 

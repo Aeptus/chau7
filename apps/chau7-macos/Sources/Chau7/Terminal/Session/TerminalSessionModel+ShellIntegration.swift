@@ -383,8 +383,10 @@ extension TerminalSessionModel {
     }
 
     func syncCurrentPTYLog() {
-        aiLogQueue.sync {
-            aiLogSession?.sync()
+        outputProcessingQueue.sync { [weak self] in
+            self?.aiLogQueue.sync {
+                self?.aiLogSession?.sync()
+            }
         }
     }
 
@@ -608,6 +610,13 @@ extension TerminalSessionModel {
         flushPendingPrefillInputIfReady()
         emitWaitingInputFallbackIfNeeded(previousStatus: previousStatus)
         clearWaitingInputFallbackTracking()
+        if systemRestoreCommandInFlight, pendingCommandLine == nil {
+            systemRestoreCommandInFlight = false
+            hasPendingCommand = false
+            promptSeenForPendingCommand = false
+            Log.trace("System restore command settled on prompt return for \(title)")
+            return
+        }
         guard hasPendingCommand, pendingCommandLine != nil else { return }
         promptSeenForPendingCommand = true
         if !commandFinishedNotified {
@@ -1123,6 +1132,7 @@ extension TerminalSessionModel {
         let isSystemRestoreInput = pendingSystemRestoreInputLine == trimmed
         if isSystemRestoreInput {
             pendingSystemRestoreInputLine = nil
+            systemRestoreCommandInFlight = true
         }
         guard !trimmed.isEmpty else {
             pendingCommandLine = nil
@@ -1140,14 +1150,22 @@ extension TerminalSessionModel {
         // Security: check if the PTY has echo disabled (password prompt, passphrase, etc.)
         // If so, mark as sensitive to prevent recording in history.
         let echoDisabled = activeTerminalView?.isPtyEchoDisabled ?? false
-        if !trimmed.isEmpty {
-            recordUserInputLineIfNeeded(isSystemRestoreInput: isSystemRestoreInput)
-        }
-        if !isSystemRestoreInput {
+        if !trimmed.isEmpty, !isSystemRestoreInput {
+            recordUserInputLineIfNeeded(isSystemRestoreInput: false)
             CommandHistoryManager.shared.recordCommand(trimmed, tabID: tabIdentifier, isSensitive: echoDisabled)
         }
         guard !echoDisabled else {
             Log.trace("Skipping echo-disabled input from persistence and shell event tracking")
+            return
+        }
+
+        if isSystemRestoreInput {
+            pendingCommandLine = nil
+            clearPendingAITiming()
+            clearWaitingInputFallbackTracking()
+            Log.trace(
+                "Ignoring system restore input for tab=\(tabIdentifier); suppressing command-block/history tracking and keeping waiting_input fallback suppressed until explicit user command"
+            )
             return
         }
 
@@ -1173,18 +1191,10 @@ extension TerminalSessionModel {
         updateActiveAppName(from: trimmed)
         // Command-based detection has had its chance — release the output detection gate.
         commandPendingDetection = false
-        if !isSystemRestoreInput {
-            noteAIInputTimingIfNeeded(for: trimmed)
-            recordInputLineIfNeeded()
-            trackSemanticCommand(trimmed)
-            recordDangerousCommandLineIfNeeded(trimmed)
-        } else {
-            clearPendingAITiming()
-            clearWaitingInputFallbackTracking()
-            Log.info(
-                "Ignoring system restore input for tab=\(tabIdentifier); keeping waiting_input fallback suppressed until explicit user command"
-            )
-        }
+        noteAIInputTimingIfNeeded(for: trimmed)
+        recordInputLineIfNeeded()
+        trackSemanticCommand(trimmed)
+        recordDangerousCommandLineIfNeeded(trimmed)
         guard let targetRaw = cdTarget(from: trimmed) else { return }
 
         var target: String
