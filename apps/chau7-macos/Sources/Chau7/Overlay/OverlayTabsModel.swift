@@ -2781,6 +2781,9 @@ final class OverlayTabsModel {
         if previousSuspended != suspendedTabIDs {
             logVisualState(reason: "renderSuspension: updated")
         }
+
+        // Recompute render tiers so distant tabs drop to low-power polling
+        computeAndApplyRenderTiers()
     }
 
     func scheduleSuspension(for id: UUID) {
@@ -2823,6 +2826,29 @@ final class OverlayTabsModel {
         suspendWorkItems[id] = item
         Log.trace("renderSuspension: scheduled tab \(id) in \(renderSuspensionDelay)s (\(tabRenderSuspensionSummary(tab)))")
         DispatchQueue.main.asyncAfter(deadline: .now() + renderSuspensionDelay, execute: item)
+    }
+
+    /// Assign render tiers to all tabs based on distance from the selected tab.
+    /// Called after every tab switch to gracefully degrade rendering.
+    func computeAndApplyRenderTiers() {
+        guard let selectedIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else { return }
+        for (index, tab) in tabs.enumerated() {
+            let distance = abs(index - selectedIndex)
+            let tier: RustTerminalView.RenderTier
+            if tab.id == selectedTabID {
+                tier = .active
+            } else if distance <= 1 {
+                tier = .adjacent
+            } else if distance <= 3 {
+                tier = .nearby
+            } else {
+                tier = .distant
+            }
+            // Push to all terminal sessions in this tab (handles split panes)
+            for (_, session) in tab.splitController.terminalSessions {
+                session.setRenderTier(tier)
+            }
+        }
     }
 
     func shouldKeepLiveRenderingInBackground(for tab: OverlayTab) -> Bool {

@@ -797,6 +797,12 @@ final class TerminalSessionModel {
         retainedRustTerminalView
     }
 
+    /// Set the render tier for this session's terminal view.
+    /// Called by the tab coordinator when tab distance changes.
+    func setRenderTier(_ tier: RustTerminalView.RenderTier) {
+        existingRustTerminalView?.setRenderTier(tier)
+    }
+
     /// Exposed for background-tab coordination and tests.
     var autoFocusOnAttachEnabled: Bool {
         shouldAutoFocusOnAttach

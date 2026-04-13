@@ -2019,19 +2019,30 @@ final class RustTerminalView: NSView {
     /// Whether to enable mouse reporting to the PTY
     var allowMouseReporting = false
 
-    /// Whether to notify of update changes (for suspended state)
+    // MARK: - Render Tier
+
+    /// Rendering intensity tier — controls which polling mechanism is active.
+    /// Managed by the tab coordinator via `setRenderTier(_:)`.
+    enum RenderTier: Int, Comparable {
+        case active = 0 // CVDisplayLink 60fps — selected tab
+        case adjacent = 1 // Timer 10fps — tabs +/-1 from selected
+        case nearby = 2 // Timer 2fps — tabs +/-3 from selected
+        case distant = 3 // SharedBackgroundDrain 0.5fps — everything else
+
+        static func < (lhs: RenderTier, rhs: RenderTier) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    /// Current render tier. Set via `setRenderTier(_:)` in the Rendering extension.
+    var renderTier: RenderTier = .active
+
+    /// Legacy bridge — SwiftUI's TerminalViewRepresentable sets this.
+    /// Routes through setRenderTier for unified tier management.
     var notifyUpdateChanges = true {
         didSet {
             guard notifyUpdateChanges != oldValue else { return }
-            let mode = notifyUpdateChanges ? "live-render" : "drain-only"
-            Log.info("RustTerminalView[\(viewId)]: notifyUpdateChanges -> \(mode)")
-            if notifyUpdateChanges {
-                // Tab became active: resume full-speed CVDisplayLink, stop slow drain
-                resumeDisplayLink()
-            } else {
-                // Tab suspended: pause CVDisplayLink, start slow PTY drain
-                pauseDisplayLink()
-            }
+            setRenderTier(notifyUpdateChanges ? .active : .distant)
         }
     }
 
