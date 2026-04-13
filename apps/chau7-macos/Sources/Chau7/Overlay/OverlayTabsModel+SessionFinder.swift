@@ -287,6 +287,15 @@ extension OverlayTabsModel {
             $0.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
         }
 
+        // Strip lines that are restore command artifacts — previous launches may
+        // have echoed cd/stty commands that were captured in the scrollback.
+        lines = lines.filter { line in
+            let stripped = line.trimmingCharacters(in: .whitespaces)
+            if stripped.contains("stty -echo && "), stripped.contains("stty echo") { return false }
+            if stripped.contains(" cd '"), stripped.hasSuffix("&& clear") { return false }
+            return true
+        }
+
         // Strip trailing empty lines — the terminal buffer includes blank lines below
         // the cursor, which can otherwise pollute restore output.
         while let last = lines.last, last.isEmpty {
