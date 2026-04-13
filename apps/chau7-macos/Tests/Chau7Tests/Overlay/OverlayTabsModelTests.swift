@@ -545,6 +545,42 @@ final class OverlayTabsModelTests: XCTestCase {
         )
     }
 
+    func testLiveHierarchyKeepsDistantRestoredTabUntilTerminalBootstraps() {
+        let tabIDs = (0 ..< 4).map { _ in UUID() }
+        let states = (0 ..< 4).map { index in
+            SavedTabState(
+                tabID: tabIDs[index].uuidString,
+                selectedTabID: index == 0 ? tabIDs[0].uuidString : nil,
+                customTitle: "Restored \(index)",
+                color: TabColor.allCases[index % TabColor.allCases.count].rawValue,
+                directory: "/tmp/restored-\(index)",
+                selectedIndex: index == 0 ? 0 : nil,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: nil
+            )
+        }
+
+        let restoredModel = OverlayTabsModel(appModel: AppModel(), restoreState: false, restoringStates: states)
+        let distantIndex = 3
+
+        XCTAssertTrue(
+            restoredModel.shouldKeepTabInLiveHierarchy(tab: restoredModel.tabs[distantIndex], index: distantIndex),
+            "Restored distant tabs should stay live until their terminal view attaches once"
+        )
+
+        let terminalView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        restoredModel.tabs[distantIndex].session?.attachRustTerminal(terminalView)
+
+        XCTAssertFalse(
+            restoredModel.shouldKeepTabInLiveHierarchy(tab: restoredModel.tabs[distantIndex], index: distantIndex),
+            "After first attach, restored distant tabs can drop back to placeholder rendering"
+        )
+    }
+
     // MARK: - Tab Close (closeTab)
 
     func testCloseTabRemovesTab() {

@@ -630,6 +630,11 @@ final class OverlayTabsModel {
     @ObservationIgnored var renameOriginalColor: TabColor = .blue
     @ObservationIgnored var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
     @ObservationIgnored var liveRenderExemptTabIDs: Set<UUID> = []
+    /// Restored tabs need a real terminal view at least once so scrollback can be
+    /// injected and resume commands can land without falling back to "no view"
+    /// retries. The set is harmless after attach because `shouldKeep...` only
+    /// honors it while any terminal pane still lacks a Rust view.
+    @ObservationIgnored var restoreBootstrapTabIDs: Set<UUID> = []
     /// Per-pane token for restore-time resume prefills.
     /// Prevents stale delayed retries from writing outdated commands.
     @ObservationIgnored var latestRestoreResumeTokenByPaneID: [UUID: String] = [:]
@@ -708,6 +713,7 @@ final class OverlayTabsModel {
         if let restoredPayload {
             self.tabs = restoredPayload.tabs
             self.selectedTabID = restoredPayload.selectedID
+            self.restoreBootstrapTabIDs = Set(restoredPayload.tabs.map(\.id))
             Log.info("Restored \(restoredPayload.tabs.count) tab(s) from saved state")
         } else {
             // Fallback: create a single fresh tab
@@ -2180,7 +2186,7 @@ final class OverlayTabsModel {
         //    Hierarchy: UnifiedTerminalContainerView → RustTerminalContainerView → RustTerminalView
         if let rustView = session.existingRustTerminalView {
             rustView.isHidden = false
-            rustView.setRenderTier(.active)
+            rustView.notifyUpdateChanges = true
             rustView.needsDisplay = true
             rustView.setEventMonitoringEnabled(true)
             // Unhide container + Metal view
@@ -2721,6 +2727,13 @@ final class OverlayTabsModel {
     /// attached, the retained Rust view keeps the session alive even if the tab
     /// later drops out of the visible hierarchy.
     func shouldKeepTabInLiveHierarchy(tab: OverlayTab, index: Int) -> Bool {
+        if restoreBootstrapTabIDs.contains(tab.id),
+           tab.splitController.terminalSessions.contains(where: { _, session in
+               session.existingRustTerminalView == nil
+           }) {
+            return true
+        }
+
         let selectedIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
         let isNearCurrent = abs(index - selectedIndex) <= 1
         let isNearPrevious = abs(index - previousTabIndex) <= 1
@@ -2742,6 +2755,7 @@ final class OverlayTabsModel {
         suspendWorkItems = suspendWorkItems.filter { validIDs.contains($0.key) }
         suspendedTabIDs = suspendedTabIDs.intersection(validIDs)
         liveRenderExemptTabIDs = liveRenderExemptTabIDs.intersection(validIDs)
+        restoreBootstrapTabIDs = restoreBootstrapTabIDs.intersection(validIDs)
 
         guard isRenderSuspensionEnabled else {
             suspendWorkItems.values.forEach { $0.cancel() }
@@ -2751,10 +2765,6 @@ final class OverlayTabsModel {
             if previousSuspended != suspendedTabIDs {
                 logVisualState(reason: "renderSuspension: cleared")
             }
-            // Render tiers are independent of suspension — always recompute
-            // so background tabs drop to low-power polling even when the
-            // SwiftUI suspension system is disabled.
-            computeAndApplyRenderTiers()
             return
         }
 
@@ -2785,9 +2795,6 @@ final class OverlayTabsModel {
         if previousSuspended != suspendedTabIDs {
             logVisualState(reason: "renderSuspension: updated")
         }
-
-        // Recompute render tiers so distant tabs drop to low-power polling
-        computeAndApplyRenderTiers()
     }
 
     func scheduleSuspension(for id: UUID) {
@@ -2830,29 +2837,6 @@ final class OverlayTabsModel {
         suspendWorkItems[id] = item
         Log.trace("renderSuspension: scheduled tab \(id) in \(renderSuspensionDelay)s (\(tabRenderSuspensionSummary(tab)))")
         DispatchQueue.main.asyncAfter(deadline: .now() + renderSuspensionDelay, execute: item)
-    }
-
-    /// Assign render tiers to all tabs based on distance from the selected tab.
-    /// Called after every tab switch to gracefully degrade rendering.
-    func computeAndApplyRenderTiers() {
-        guard let selectedIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else { return }
-        for (index, tab) in tabs.enumerated() {
-            let distance = abs(index - selectedIndex)
-            let tier: RustTerminalView.RenderTier
-            if tab.id == selectedTabID {
-                tier = .active
-            } else if distance <= 1 {
-                tier = .adjacent
-            } else if distance <= 3 {
-                tier = .nearby
-            } else {
-                tier = .distant
-            }
-            // Push to all terminal sessions in this tab (handles split panes)
-            for (_, session) in tab.splitController.terminalSessions {
-                session.setRenderTier(tier)
-            }
-        }
     }
 
     func shouldKeepLiveRenderingInBackground(for tab: OverlayTab) -> Bool {

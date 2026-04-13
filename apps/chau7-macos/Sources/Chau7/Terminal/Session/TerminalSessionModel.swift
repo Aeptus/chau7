@@ -551,11 +551,6 @@ final class TerminalSessionModel {
         pendingPrefillInput != nil || pendingPrefillRetries > 0 || isShellLoading
     }
 
-    /// Scrollback content queued for direct injection into the terminal emulator.
-    /// Injected via `injectOutput` on view attachment — bypasses the shell entirely,
-    /// eliminating the stty echo race that occurred with the old cat-through-shell approach.
-    @ObservationIgnored var pendingRestoreScrollback: String?
-
     /// Input queued before the terminal view exists. Preserves ordering between raw
     /// text input and synthesized key presses, then flushes on view attachment.
     @ObservationIgnored private var pendingTerminalActions: [PendingTerminalAction] = []
@@ -797,21 +792,6 @@ final class TerminalSessionModel {
         retainedRustTerminalView
     }
 
-    /// Pending render tier for sessions whose view hasn't attached yet.
-    /// Applied in `attachRustTerminal` after the view starts its polling loop.
-    @ObservationIgnored var pendingRenderTier: RustTerminalView.RenderTier?
-
-    /// Set the render tier for this session's terminal view.
-    /// If the view isn't attached yet, queues the tier for later application.
-    func setRenderTier(_ tier: RustTerminalView.RenderTier) {
-        if let view = existingRustTerminalView {
-            view.setRenderTier(tier)
-            pendingRenderTier = nil
-        } else {
-            pendingRenderTier = tier
-        }
-    }
-
     /// Exposed for background-tab coordination and tests.
     var autoFocusOnAttachEnabled: Bool {
         shouldAutoFocusOnAttach
@@ -935,19 +915,6 @@ final class TerminalSessionModel {
                 window.makeFirstResponder(view)
                 Log.trace("Auto-focused Rust terminal view on attach")
             }
-        }
-
-        // Inject queued scrollback directly into the terminal emulator (no shell).
-        if let scrollback = pendingRestoreScrollback {
-            pendingRestoreScrollback = nil
-            view.injectOutput(scrollback)
-            Log.info("TerminalSessionModel: injected \(scrollback.count) chars of restore scrollback")
-        }
-
-        // Apply deferred render tier (set by coordinator before view existed).
-        if let tier = pendingRenderTier {
-            pendingRenderTier = nil
-            view.setRenderTier(tier)
         }
 
         flushPendingTerminalActions()

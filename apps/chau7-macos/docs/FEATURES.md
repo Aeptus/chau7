@@ -214,6 +214,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 ## Terminal Core
 
 - **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
+- **Stabilized tab restore path** — restored scrollback replays through the shell again, with restore-artifact filtering preserved, to avoid post-relaunch history corruption while keeping fast visible startup.
 - Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
 - International Option-key punctuation input preserved for programming characters like brackets and braces.
 - Kitty keyboard protocol (full progressive enhancement).

@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Background Transcript Restore Fallback**: Background tabs can reuse cached remote transcript text when no live terminal view is attached, and interactive notification planning now covers elicitation and explicit tool/response failures consistently.
 
 ### Fixed
+- **Tab Restore and Creation Regressions**: Rolled back the render-tier startup path and direct scrollback injection restore path after they caused slow `Cmd+T` tab creation and corrupted fresh post-restore AI history layout. Restore keeps artifact filtering but now replays scrollback through the shell again for stable geometry.
 - **Tab Highlight Coverage**: `waiting_input`, `tool_failed`, `response_failed`, and `elicitation` events now highlight tabs. Added trigger catalog entries for the 3 new event types. Enabled `idle` trigger by default. Elicitation participates in repeat dedup.
 - **Power Efficiency**: Adaptive clipboard polling (1s foreground, 5s background), shared background drain timer (1 timer for N tabs instead of N timers), event-driven focus/DND detection (zero polling), timer leeway on all fixed timers, and wakeup stats logging every 5 minutes.
 - **Dev Server Detection Reliability**: Fixed 6 issues — server restarts now re-detected (removed early bail), extended burst timing to 25s for slow Docker starts, commandDidFinish discovers new servers, added 30s liveness polling, and dynamic netstat PID column parsing.

@@ -926,16 +926,16 @@ extension OverlayTabsModel {
                     lastExitAt: nil
                 )
 
-                // Restore scrollback via cat through the shell so the terminal
-                // re-renders content at the current column width.
-                // Uses && chains so stty echo is guaranteed to run after clear.
-                // Leading space suppresses shell history (HIST_IGNORE_SPACE).
+                // Restore scrollback via cat through the shell so the terminal re-renders
+                // content at the current column width. Keep artifact stripping on the
+                // saved payload so older polluted snapshots don't replay restore commands.
+                // Leading space suppresses history in zsh/bash (HIST_IGNORE_SPACE).
                 var commands: [String] = []
-
                 if let raw = effectivePaneState.scrollbackContent,
                    !raw.isEmpty {
                     let scrollback = Self.stripRestoreArtifacts(from: raw)
-                    if !scrollback.isEmpty, let data = scrollback.data(using: .utf8) {
+                    if !scrollback.isEmpty,
+                       let data = scrollback.data(using: .utf8) {
                         let tempFile = NSTemporaryDirectory() + "chau7_restore_\(restoreToken)_\(paneID.uuidString).txt"
                         do {
                             try data.write(to: URL(fileURLWithPath: tempFile))
@@ -970,11 +970,6 @@ extension OverlayTabsModel {
                     )
                 }
             }
-
-            // Assign render tiers for this window's tabs now that sessions
-            // have views attached. Without this, non-primary windows never
-            // get updateSuspensionState called and all tabs stay at .active.
-            computeAndApplyRenderTiers()
         }
     }
 

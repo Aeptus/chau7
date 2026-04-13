@@ -11,10 +11,7 @@ extension RustTerminalView {
     func setupPollingLoop() {
         Log.trace("RustTerminalView[\(viewId)]: setupPollingLoop - Creating polling loop")
 
-        // Create CVDisplayLink but DON'T start it yet. The tier coordinator
-        // (computeAndApplyRenderTiers) decides when to start it. This prevents
-        // new background tabs from running at 60fps until the coordinator assigns
-        // their tier.
+        // Try CVDisplayLink first for vsync-aligned updates
         var link: CVDisplayLink?
         let result = CVDisplayLinkCreateWithActiveCGDisplays(&link)
 
@@ -31,15 +28,16 @@ extension RustTerminalView {
                 return kCVReturnSuccess
             }, Unmanaged.passRetained(box).toOpaque())
 
+            CVDisplayLinkStart(link)
             displayLink = link
-            Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - CVDisplayLink created (not yet started)")
+            Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using CVDisplayLink for 60fps polling")
         } else {
-            Log.warn("RustTerminalView[\(viewId)]: setupPollingLoop - CVDisplayLink failed (result=\(result)), timer fallback available")
+            Log.warn("RustTerminalView[\(viewId)]: setupPollingLoop - CVDisplayLink failed (result=\(result)), falling back to Timer")
+            pollTimer = Timer.scheduledTimer(withTimeInterval: displayRefreshInterval, repeats: true) { [weak self] _ in
+                self?.pollAndSync()
+            }
+            Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using Timer fallback for polling")
         }
-
-        // Start at .active tier — the coordinator will downgrade within one
-        // updateSuspensionState cycle if this tab isn't selected.
-        setRenderTier(.active)
     }
 
     func stopPollingLoop() {
@@ -63,80 +61,45 @@ extension RustTerminalView {
         stopBackgroundDrain()
     }
 
-    // MARK: - Render Tier Management
+    // MARK: - Display Link Pause/Resume (Background Tab Optimization)
 
-    /// Transition to a new render tier. Stops the current polling mechanism
-    /// and starts the appropriate one for the target tier.
-    ///
-    /// Tiers degrade gracefully based on tab distance:
-    /// - `.active`: CVDisplayLink at 60fps (selected tab)
-    /// - `.adjacent`: Timer at 10fps with pollAndSync (tabs +/-1)
-    /// - `.nearby`: Timer at 2fps with backgroundDrain (tabs +/-3)
-    /// - `.distant`: SharedBackgroundDrain at 0.5fps (all others)
-    func setRenderTier(_ tier: RenderTier) {
-        guard tier != renderTier else { return }
-        let previous = renderTier
-        renderTier = tier
+    /// Pause the CVDisplayLink and start a slow background drain timer.
+    /// Background tabs only need to drain the PTY buffer to prevent the shell from
+    /// blocking — they don't need 60fps rendering. A 500ms timer is sufficient.
+    func pauseDisplayLink() {
+        // Cancel startup timeout — background tabs shouldn't trigger false positives
+        shellStartupTimeoutWork?.cancel()
+        shellStartupTimeoutWork = nil
 
-        // Cancel startup timeout when moving away from active
-        if tier != .active {
-            shellStartupTimeoutWork?.cancel()
-            shellStartupTimeoutWork = nil
+        if let link = displayLink, CVDisplayLinkIsRunning(link) {
+            CVDisplayLinkStop(link)
+            Log.info("RustTerminalView[\(viewId)]: pauseDisplayLink - CVDisplayLink paused (tab suspended)")
         }
+        pollTimer?.invalidate()
+        pollTimer = nil
 
-        // Stop previous mechanism
-        switch previous {
-        case .active:
-            if let link = displayLink, CVDisplayLinkIsRunning(link) {
-                CVDisplayLinkStop(link)
-            }
-            pollTimer?.invalidate()
-            pollTimer = nil
-        case .adjacent, .nearby:
-            pollTimer?.invalidate()
-            pollTimer = nil
-        case .distant:
-            stopBackgroundDrain()
-        }
+        startBackgroundDrain()
+    }
 
-        // Start new mechanism
-        switch tier {
-        case .active:
-            stopBackgroundDrain()
-            if let link = displayLink, !CVDisplayLinkIsRunning(link) {
-                CVDisplayLinkStart(link)
-            } else if displayLink == nil, pollTimer == nil {
-                pollTimer = Timer.scheduledTimer(withTimeInterval: displayRefreshInterval, repeats: true) { [weak self] _ in
-                    self?.pollAndSync()
-                }
-            }
-            needsGridSync = true
-            pollAndSync()
-        case .adjacent:
-            stopBackgroundDrain()
-            pollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+    /// Resume the CVDisplayLink and stop the slow background drain.
+    /// Called when a tab becomes active again. Forces an immediate full sync
+    /// so the user sees current content without waiting for the next vsync.
+    func resumeDisplayLink() {
+        stopBackgroundDrain()
+
+        if let link = displayLink, !CVDisplayLinkIsRunning(link) {
+            CVDisplayLinkStart(link)
+            Log.info("RustTerminalView[\(viewId)]: resumeDisplayLink - CVDisplayLink resumed (tab active)")
+        } else if displayLink == nil, pollTimer == nil {
+            // If display link was nil (never created or destroyed), don't recreate — just use timer
+            pollTimer = Timer.scheduledTimer(withTimeInterval: displayRefreshInterval, repeats: true) { [weak self] _ in
                 self?.pollAndSync()
             }
-        case .nearby:
-            stopBackgroundDrain()
-            pollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-                self?.backgroundDrain()
-            }
-        case .distant:
-            startBackgroundDrain()
         }
 
-        Log.info("RustTerminalView[\(viewId)]: render tier \(previous) -> \(tier)")
-    }
-
-    /// Legacy pause — routes through render tier system.
-    func pauseDisplayLink() {
-        setRenderTier(.distant)
-    }
-
-    /// Legacy resume — routes through render tier system.
-    func resumeDisplayLink() {
-        setRenderTier(.active)
+        // Force an immediate sync so the user sees fresh content
+        needsGridSync = true
+        pollAndSync()
     }
 
     /// Register this view for shared background PTY drain.
@@ -256,7 +219,6 @@ extension RustTerminalView {
         // Safety: Check if view is being deallocated (CVDisplayLink callback protection)
         guard !isBeingDeallocated else { return }
         guard let rust = rustTerminal else { return }
-        Log.wakeup("render_\(renderTier)")
 
         // ALWAYS poll the Rust terminal to drain PTY buffer, even when suspended.
         // This prevents the PTY reader thread from blocking when the buffer fills up.
