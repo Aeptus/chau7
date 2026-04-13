@@ -128,6 +128,7 @@ Chau7 runs an embedded MCP (Model Context Protocol) server — your AI agents ca
 - **Connection behavior**: Idle MCP client sockets stay open long enough for slower eval and manual-debug workflows instead of timing out after short pauses.
 - **Bridge**: `~/.chau7/bin/chau7-mcp-bridge` (stdio-to-socket bridge for standard MCP clients).
 - **Thread safety**: All terminal operations dispatch to main thread via `DispatchQueue.main.sync`.
+- **Tool guardrails**: Chau7 applies a per-tool token-bucket rate limiter, with higher budgets for polling and status endpoints so normal orchestration loops keep working.
 
 ### Auto-Registration
 
