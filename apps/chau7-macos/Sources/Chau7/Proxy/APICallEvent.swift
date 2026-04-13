@@ -6,6 +6,12 @@ import Chau7Core
 /// Represents a captured API call from the proxy server.
 /// This model is used to track LLM API usage, costs, and performance metrics.
 public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
+    private static let hourFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
     public let id: UUID
     public let sessionId: String
     public let provider: Provider
@@ -21,6 +27,7 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
     public let costUSD: Double
     public let timestamp: Date
     public let errorMessage: String?
+    public let projectPath: String?
 
     // MARK: - Computed Properties
 
@@ -67,6 +74,18 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
         return formatter.string(from: NSNumber(value: totalTokens)) ?? "\(totalTokens)"
     }
 
+    public var formattedHour: String {
+        Self.hourFormatter.string(from: timestamp)
+    }
+
+    public var projectName: String? {
+        guard let projectPath,
+              !projectPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return URL(fileURLWithPath: projectPath).lastPathComponent
+    }
+
     // MARK: - Initialization
 
     public init(
@@ -84,7 +103,8 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
         statusCode: Int,
         costUSD: Double,
         timestamp: Date = Date(),
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        projectPath: String? = nil
     ) {
         self.id = id
         self.sessionId = sessionId
@@ -101,6 +121,7 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
         self.costUSD = costUSD
         self.timestamp = timestamp
         self.errorMessage = errorMessage
+        self.projectPath = projectPath
     }
 
     // MARK: - AIEvent Conversion

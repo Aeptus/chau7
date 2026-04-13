@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Token Estimation Fallback**: When metadata extraction fails on a 200 response, proxy estimates tokens from request/response body sizes (~4 chars/token) instead of silently recording 0.
 - **Dashboard Token Display**: Agent cards now show total tokens including cache, with hover tooltip showing per-type breakdown (input/output/cache write/cache read). Per-agent and total cost shown in header.
 - **IPC Cache Token Propagation**: `ProxyIPCServerData` and `APICallEvent` now carry `cacheCreationInputTokens`, `cacheReadInputTokens`, and `reasoningOutputTokens` through the full pipeline (proxy → IPC socket → Swift app → dashboard).
+- **Recent Proxy Call Context**: Debug Console analytics now shows each recent proxy call with local hour, repo name, and endpoint context so API activity can be tied back to a project quickly.
 
 ### Added
 - **Telemetry Query Projection Helpers**: Added shared projection helpers for live-history Codex parsing, active/stored run deduplication, and telemetry content-state evaluation, with regression coverage for duplicate active runs and active transcript parsing.

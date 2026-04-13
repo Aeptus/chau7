@@ -315,7 +315,8 @@ final class ProxyIPCServer {
             statusCode: data.statusCode,
             costUSD: data.costUSD,
             timestamp: ISO8601DateFormatter().date(from: data.timestamp) ?? Date(),
-            errorMessage: data.errorMessage.isEmpty ? nil : data.errorMessage
+            errorMessage: data.errorMessage.isEmpty ? nil : data.errorMessage,
+            projectPath: data.projectPath
         )
 
         // Update state on main thread

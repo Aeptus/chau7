@@ -167,8 +167,7 @@ final class ProxyAnalyticsStore {
                 let callCount = Int(sqlite3_column_int64(stmt, 1))
                 let current = aggregated[provider]
                 let mergedCallCount = (current?.callCount ?? 0) + callCount
-                let weightedLatency =
-                    (current?.averageLatencyMs ?? 0) * Double(current?.callCount ?? 0)
+                let weightedLatency = (current?.averageLatencyMs ?? 0) * Double(current?.callCount ?? 0)
                     + sqlite3_column_double(stmt, 8) * Double(callCount)
 
                 aggregated[provider] = ProxyProviderAnalytics(
@@ -293,7 +292,7 @@ final class ProxyAnalyticsStore {
             var sql = """
             SELECT session_id, provider, model, endpoint, input_tokens, output_tokens,
                    cache_creation_input_tokens, cache_read_input_tokens, reasoning_output_tokens,
-                   latency_ms, status_code, cost_usd, timestamp, error_message
+                   latency_ms, status_code, cost_usd, timestamp, error_message, project_path
             FROM api_calls
             """
             appendCommonFilters(to: &sql, after: nil, projectPath: projectPath)
@@ -332,7 +331,8 @@ final class ProxyAnalyticsStore {
                         statusCode: Int(sqlite3_column_int64(stmt, 10)),
                         costUSD: sqlite3_column_double(stmt, 11),
                         timestamp: timestamp,
-                        errorMessage: colText(stmt, 13)
+                        errorMessage: colText(stmt, 13),
+                        projectPath: colText(stmt, 14)
                     )
                 )
             }
@@ -372,8 +372,7 @@ final class ProxyAnalyticsStore {
                 let callCount = Int(sqlite3_column_int64(stmt, 2))
                 let current = aggregated[key]
                 let mergedCallCount = (current?.callCount ?? 0) + callCount
-                let weightedLatency =
-                    (current?.averageLatencyMs ?? 0) * Double(current?.callCount ?? 0)
+                let weightedLatency = (current?.averageLatencyMs ?? 0) * Double(current?.callCount ?? 0)
                     + sqlite3_column_double(stmt, 9) * Double(callCount)
 
                 aggregated[key] = ProxyModelAnalytics(

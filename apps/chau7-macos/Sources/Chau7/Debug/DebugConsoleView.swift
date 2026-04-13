@@ -1729,22 +1729,41 @@ struct DebugConsoleView: View {
                     Text("No recent proxy calls recorded.").foregroundStyle(.secondary)
                 } else {
                     ForEach(recentProxyCalls.prefix(15)) { call in
-                        HStack {
-                            Text(call.provider.displayName)
-                                .font(.system(size: 11, weight: .semibold))
-                            Text(call.model)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                            Spacer()
-                            Text("\(analyticsFormatTokens(call.totalBillableTokens)) tokens")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                            Text(call.formattedCost)
-                                .monospaced()
-                            Text(call.formattedLatency)
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(call.provider.displayName)
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text(call.model)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text("\(analyticsFormatTokens(call.totalBillableTokens)) tokens")
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                                Text(call.formattedCost)
+                                    .monospaced()
+                                Text(call.formattedLatency)
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                            }
+                            HStack(spacing: 8) {
+                                Text(call.formattedHour)
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                                if let projectName = call.projectName {
+                                    Text(projectName)
+                                        .font(.system(size: 9, weight: .medium))
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1)
+                                        .background(Color.secondary.opacity(0.12))
+                                        .clipShape(Capsule())
+                                }
+                                Text(call.endpoint)
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
                         }
                     }
                 }
@@ -2569,7 +2588,6 @@ struct DebugConsoleView: View {
         selectedAnalyticsProviderKey.map { AnalyticsProvider.displayName(for: $0) } ?? "All Providers"
     }
 
-    @ViewBuilder
     private var analyticsProviderFilterControl: some View {
         Picker("Provider", selection: $analyticsProviderFilterKey) {
             Text("All Providers").tag(Self.allAnalyticsProviderKey)
