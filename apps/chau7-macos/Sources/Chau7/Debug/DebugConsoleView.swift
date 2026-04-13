@@ -148,6 +148,8 @@ struct DebugConsoleView: View {
         .onChange(of: selectedTab) {
             if selectedTab == 1 {
                 refreshCTOData()
+            } else if selectedTab == 7 || selectedTab == 9 {
+                requestAnalyticsRefresh(force: true)
             }
         }
         .onChange(of: ctoTimePeriod) {
@@ -2670,7 +2672,7 @@ struct DebugConsoleView: View {
 
     private func requestAnalyticsRefresh(force: Bool = false) {
         let now = Date()
-        let minRefreshInterval: TimeInterval = 3.0
+        let minRefreshInterval: TimeInterval = 10.0
 
         if analyticsRefreshInFlight {
             analyticsRefreshQueued = true
