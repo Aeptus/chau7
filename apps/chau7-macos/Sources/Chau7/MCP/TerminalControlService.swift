@@ -25,6 +25,7 @@ final class TerminalControlService {
     private var registeredModels: [WeakModel] = []
     private var nextWindowID = 0
     private var mcpTabIDs = MCPTabIDAllocator()
+    var activeOverlayModelProvider: (() -> OverlayTabsModel?)?
 
     /// Hard ceiling — even if the user sets a higher value in settings.
     private static let absoluteMaxTabs = 50
@@ -190,8 +191,11 @@ final class TerminalControlService {
                 model = entry.model
                 resolvedWindowID = wid
             } else {
-                model = models[0].model
-                resolvedWindowID = models[0].windowID
+                guard let entry = self.preferredModelEntry(from: models) else {
+                    return self.noWindowError()
+                }
+                model = entry.model
+                resolvedWindowID = entry.windowID
             }
 
             // Resource protection: limit MCP-created tabs
@@ -1098,6 +1102,21 @@ final class TerminalControlService {
 
     private func pruneTabAliasesLocked() {
         mcpTabIDs.prune(validTabIDs: Set(allTabs.map(\.id)))
+    }
+
+    private func preferredModelEntry(from models: [(windowID: Int, model: OverlayTabsModel)]) -> (windowID: Int, model: OverlayTabsModel)? {
+        if let activeModel = activeOverlayModelProvider?(),
+           let entry = models.first(where: { $0.model === activeModel }) {
+            return entry
+        }
+
+        if let appDelegate = NSApp.delegate as? AppDelegate,
+           let activeModel = MainActor.assumeIsolated({ appDelegate.activeOverlayModel }),
+           let entry = models.first(where: { $0.model === activeModel }) {
+            return entry
+        }
+
+        return models.first
     }
 
     /// Dispatch to main thread and return result. Safe from any background queue.

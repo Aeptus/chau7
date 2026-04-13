@@ -117,6 +117,8 @@ Supported commands (46 parsers):
 
 Chau7 runs an embedded MCP (Model Context Protocol) server — your AI agents can see and control your terminal.
 
+- Default MCP tab creation targets the active Chau7 overlay window, so new MCP tabs appear in the window currently in use without requiring an explicit `window_id`.
+
 ### Architecture
 
 - **Protocol**: JSON-RPC 2.0 over Unix domain socket (`~/.chau7/mcp.sock`).

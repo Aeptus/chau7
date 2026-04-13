@@ -23,6 +23,7 @@ final class TerminalControlServiceTests: XCTestCase {
         if let overlayModel {
             TerminalControlService.shared.unregister(overlayModel)
         }
+        TerminalControlService.shared.activeOverlayModelProvider = nil
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         overlayModel = nil
@@ -101,6 +102,26 @@ final class TerminalControlServiceTests: XCTestCase {
         overlayModel.newTab(selectNewTab: false)
         let recreatedID = try XCTUnwrap(overlayModel.tabs.last?.id)
         XCTAssertEqual(TerminalControlService.shared.controlPlaneTabID(for: recreatedID), "tab_2")
+    }
+
+    func testCreateTabDefaultsToActiveOverlayWindow() throws {
+        let secondAppModel = AppModel()
+        let secondOverlayModel = OverlayTabsModel(appModel: secondAppModel, restoreState: false)
+        TerminalControlService.shared.register(secondOverlayModel)
+        defer { TerminalControlService.shared.unregister(secondOverlayModel) }
+
+        TerminalControlService.shared.activeOverlayModelProvider = { secondOverlayModel }
+
+        let firstWindowCount = overlayModel.tabs.count
+        let secondWindowCount = secondOverlayModel.tabs.count
+
+        let response = TerminalControlService.shared.createTab(directory: nil, windowID: nil)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["window_id"] as? Int, 1)
+        XCTAssertEqual(overlayModel.tabs.count, firstWindowCount)
+        XCTAssertEqual(secondOverlayModel.tabs.count, secondWindowCount + 1)
+        XCTAssertEqual(secondOverlayModel.selectedTabID, secondOverlayModel.tabs.first?.id)
     }
 
     func testIsToolAtPromptCanBeScopedToSessionID() throws {
