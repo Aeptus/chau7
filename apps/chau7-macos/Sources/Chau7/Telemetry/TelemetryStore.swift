@@ -42,6 +42,7 @@ final class TelemetryStore {
         verifyIntegrity()
         createTables()
         applyMigrations()
+        backfillHistoricalMissingCosts()
     }
 
     /// Quick integrity check on startup. If the database is corrupt, log and
@@ -272,6 +273,55 @@ final class TelemetryStore {
         if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
             Log.warn("TelemetryStore: failed to add column \(table).\(name)")
         }
+    }
+
+    private func backfillHistoricalMissingCosts() {
+        guard let db else { return }
+
+        let sql = """
+        SELECT * FROM runs
+        WHERE (cost_usd IS NULL
+               OR COALESCE(cost_state, 'missing') = 'missing'
+               OR COALESCE(cost_source, 'unavailable') = 'unavailable')
+          AND COALESCE(token_usage_state, 'missing') != 'invalid'
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        var repairedRuns: [TelemetryRun] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let run = parseRun(stmt),
+                  let repaired = TelemetryHistoricalCostBackfill.repairedRun(run) else {
+                continue
+            }
+            repairedRuns.append(repaired)
+        }
+
+        guard !repairedRuns.isEmpty else { return }
+
+        let updateSQL = """
+        UPDATE runs
+        SET cost_usd = ?, cost_source = ?, cost_state = ?
+        WHERE run_id = ?
+        """
+
+        var updateStmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, updateSQL, -1, &updateStmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(updateStmt) }
+
+        for run in repairedRuns {
+            sqlite3_reset(updateStmt)
+            sqlite3_clear_bindings(updateStmt)
+            bindDouble(updateStmt, 1, run.costUSD)
+            bindText(updateStmt, 2, run.costSource?.rawValue)
+            bindText(updateStmt, 3, run.costState.rawValue)
+            bindText(updateStmt, 4, run.id)
+            sqlite3_step(updateStmt)
+        }
+
+        Log.info("TelemetryStore: backfilled historical cost for \(repairedRuns.count) run(s)")
     }
 
     // MARK: - Write
