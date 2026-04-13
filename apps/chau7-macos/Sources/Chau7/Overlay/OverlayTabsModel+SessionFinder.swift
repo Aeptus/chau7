@@ -928,14 +928,9 @@ extension OverlayTabsModel {
 
                 // Restore scrollback via cat through the shell so the terminal
                 // re-renders content at the current column width.
-                // injectOutput bypasses reflowing and corrupts the grid when the
-                // window width differs from the capture width.
-                //
-                // Echo suppression: stty -echo runs first (semicolons guarantee
-                // stty echo always executes). Leading space suppresses history.
-                // The scrollback is written to a temp file and cat'd — the shell
-                // processes the output at the current terminal width.
-                var restoreCommands: [String] = []
+                // Uses && chains so stty echo is guaranteed to run after clear.
+                // Leading space suppresses shell history (HIST_IGNORE_SPACE).
+                var commands: [String] = []
 
                 if let raw = effectivePaneState.scrollbackContent,
                    !raw.isEmpty {
@@ -945,7 +940,7 @@ extension OverlayTabsModel {
                         do {
                             try data.write(to: URL(fileURLWithPath: tempFile))
                             let escapedTemp = Self.shellSafeSingleQuote(tempFile)
-                            restoreCommands.append("cat \(escapedTemp) && rm -f \(escapedTemp)")
+                            commands.append("cat \(escapedTemp) && rm -f \(escapedTemp)")
                         } catch {
                             Log.warn("Failed to write scrollback restore file: \(error)")
                         }
@@ -953,14 +948,12 @@ extension OverlayTabsModel {
                 }
 
                 if !effectivePaneState.directory.isEmpty {
-                    restoreCommands.append("cd \(Self.shellSafeSingleQuote(effectivePaneState.directory))")
+                    commands.append("cd \(Self.shellSafeSingleQuote(effectivePaneState.directory))")
                 }
 
-                if !restoreCommands.isEmpty {
-                    let chain = restoreCommands.joined(separator: "; ")
-                    session.sendOrQueueSystemRestoreInput(
-                        " stty -echo; \(chain); clear; stty echo\n"
-                    )
+                if !commands.isEmpty {
+                    let restoreChain = commands.joined(separator: " && ")
+                    session.sendOrQueueSystemRestoreInput(" stty -echo && \(restoreChain) && clear && stty echo\n")
                 }
 
                 if let (resumePaneID, resumeCommand) = resumeTarget,
