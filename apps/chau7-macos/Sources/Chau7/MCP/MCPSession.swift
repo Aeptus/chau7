@@ -4,7 +4,10 @@ import Chau7Core
 /// Handles a single MCP client connection over a Unix domain socket.
 /// Implements the MCP JSON-RPC protocol for tool calls and resource reads.
 final class MCPSession {
-    private static let socketIdleTimeoutSeconds = 120
+    /// Keep MCP connections open long enough for slower multi-step workflows
+    /// (reviews, eval harnesses, manual debugging) without forcing clients to
+    /// reconnect between tool calls.
+    private static let socketIdleTimeoutSeconds = 30 * 60
 
     private let fd: Int32
     private let queryService = TelemetryQueryService()

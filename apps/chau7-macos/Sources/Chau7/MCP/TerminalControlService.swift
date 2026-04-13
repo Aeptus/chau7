@@ -406,7 +406,62 @@ final class TerminalControlService {
     }
 
     func submitPrompt(tabID: String) -> String {
-        pressKey(tabID: tabID, key: "enter", modifiers: [])
+        let keyPress: TerminalKeyPress
+        do {
+            keyPress = try TerminalKeyPress(key: "enter", modifiers: [])
+            _ = try keyPress.encode()
+        } catch {
+            return jsonError(error.localizedDescription)
+        }
+
+        let initialState: AISubmitSnapshot? = onMain {
+            guard let (_, session) = self.resolveTab(tabID) else { return nil }
+            return self.submitSnapshot(for: session)
+        }
+        guard let initialState else {
+            return jsonError("Tab not found: \(tabID)")
+        }
+
+        DispatchQueue.main.async {
+            guard let (_, session) = self.resolveTab(tabID) else { return }
+            session.sendOrQueueKeyPress(keyPress)
+        }
+        Log.info("MCP: submit_prompt in \(tabID): enter#1")
+
+        guard AISubmitHeuristics.shouldObserveAfterFirstEnter(initialState) else {
+            return encodeAny(["ok": true, "enter_count": 1])
+        }
+
+        let deadline = Date().addingTimeInterval(0.45)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.12)
+            let currentState: AISubmitSnapshot? = onMain {
+                guard let (_, session) = self.resolveTab(tabID) else { return nil }
+                return self.submitSnapshot(for: session)
+            }
+            guard let currentState else {
+                return encodeAny(["ok": true, "enter_count": 1])
+            }
+
+            if AISubmitHeuristics.workStarted(initial: initialState, current: currentState) {
+                return encodeAny(["ok": true, "enter_count": 1])
+            }
+
+            if AISubmitHeuristics.shouldSendSecondEnter(initial: initialState, current: currentState) {
+                DispatchQueue.main.async {
+                    guard let (_, session) = self.resolveTab(tabID) else { return }
+                    session.sendOrQueueKeyPress(keyPress)
+                }
+                Log.info("MCP: submit_prompt in \(tabID): enter#2 after prompt persisted")
+                return encodeAny([
+                    "ok": true,
+                    "enter_count": 2,
+                    "resolved_intermediate_prompt": true
+                ])
+            }
+        }
+
+        return encodeAny(["ok": true, "enter_count": 1])
     }
 
     func closeTab(tabID: String, force: Bool, context: String? = nil) -> String {
@@ -636,6 +691,26 @@ final class TerminalControlService {
             "lines": outputLines.count,
             "source": "buffer"
         ])
+    }
+
+    private func submitSnapshot(for session: TerminalSessionModel) -> AISubmitSnapshot {
+        let toolName = session.aiDisplayAppName
+            ?? session.activeAppName
+            ?? session.effectiveAIProvider
+            ?? "shell"
+        let transcript: String
+        if let data = session.captureRemoteSnapshot(),
+           !data.isEmpty {
+            transcript = String(decoding: data, as: UTF8.self)
+        } else {
+            transcript = session.cachedRemoteOutputText
+        }
+        return AISubmitSnapshot(
+            toolName: toolName,
+            status: session.effectiveStatus.rawValue,
+            isAtPrompt: session.effectiveIsAtPrompt,
+            transcript: transcript
+        )
     }
 
     /// Lightweight fingerprint of buffer content: (byteCount, SHA256 of last 4KB).

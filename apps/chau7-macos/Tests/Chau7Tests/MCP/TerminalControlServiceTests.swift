@@ -158,6 +158,23 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertNotNil(session.currentPTYLogPath())
     }
 
+    func testSubmitPromptIssuesSecondEnterWhenCodexDraftPersists() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+        let session = try XCTUnwrap(tab.session)
+        session.activeAppName = "Codex"
+        session.status = .running
+        session.isAtPrompt = true
+        session.cachedRemoteOutputText = "› Audit Chau7 MCP and report back with bugs and fixes"
+
+        let response = TerminalControlService.shared.submitPrompt(tabID: tabID)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["ok"] as? Bool, true)
+        XCTAssertEqual(json["enter_count"] as? Int, 2)
+        XCTAssertEqual(json["resolved_intermediate_prompt"] as? Bool, true)
+    }
+
     func testTabOutputPTYLogReadsActiveSessionOutputBeforeClose() throws {
         let tab = try XCTUnwrap(overlayModel.tabs.first)
         let session = try XCTUnwrap(tab.session)

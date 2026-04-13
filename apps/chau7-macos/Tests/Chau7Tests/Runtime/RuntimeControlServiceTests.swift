@@ -121,6 +121,30 @@ final class RuntimeControlServiceTests: XCTestCase {
         XCTAssertEqual(session.state, .ready)
     }
 
+    func testRuntimeSessionCreateFailsExplicitlyWhenVisibleTabCannotBeCreated() throws {
+        TerminalControlService.shared.unregister(overlayModel)
+        defer { TerminalControlService.shared.register(overlayModel) }
+
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": "shell",
+                "directory": "/tmp/runtime-no-visible-tab-\(UUID().uuidString)"
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        XCTAssertEqual(json["error_code"] as? String, "visible_tab_creation_failed")
+        XCTAssertEqual(json["session_created"] as? Bool, false)
+        XCTAssertEqual(json["tab_visible"] as? Bool, false)
+        XCTAssertEqual(json["hidden_pty_fallback"] as? Bool, false)
+        XCTAssertEqual(json["launch_surface"] as? String, "none")
+        XCTAssertEqual(json["tab_creation_required"] as? Bool, true)
+        XCTAssertEqual(json["status_message"] as? String, "Agent launch blocked because Chau7 could not create a visible tab.")
+        XCTAssertTrue((json["error"] as? String)?.contains("Failed to create tab") == true)
+        XCTAssertEqual(json["tab_error"] as? String, "No active Chau7 window")
+    }
+
     func testRuntimeSessionCreateWithAttachTabStartsReadySession() throws {
         let attachTabID = TerminalControlService.shared.controlPlaneTabID(for: overlayModel.selectedTabID)
         let response = RuntimeControlService.shared.handleToolCall(

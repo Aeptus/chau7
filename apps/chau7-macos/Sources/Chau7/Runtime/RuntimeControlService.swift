@@ -219,7 +219,7 @@ final class RuntimeControlService {
                   let tabIDStr = json["tab_id"] as? String,
                   let uuid = controlService.resolveControlPlaneTabID(tabIDStr) else {
                 Log.error("MCP runtime_session_create: failed to create tab — \(tabResult)")
-                return jsonError("Failed to create tab: \(tabResult)")
+                return visibleTabCreationFailureResponse(tabResult: tabResult)
             }
             tabID = uuid
             Log.info("MCP runtime_session_create: created tab \(tabIDStr)")
@@ -704,6 +704,24 @@ final class RuntimeControlService {
 
     private func jsonError(_ message: String) -> String {
         "{\"error\":\"\(message.replacingOccurrences(of: "\"", with: "\\\""))\"}"
+    }
+
+    private func visibleTabCreationFailureResponse(tabResult: String) -> String {
+        let tabError = parseJSONObject(tabResult)?["error"] as? String
+        var response: [String: Any] = [
+            "error": "Failed to create tab: \(tabResult)",
+            "error_code": "visible_tab_creation_failed",
+            "hidden_pty_fallback": false,
+            "launch_surface": "none",
+            "session_created": false,
+            "status_message": "Agent launch blocked because Chau7 could not create a visible tab.",
+            "tab_creation_required": true,
+            "tab_visible": false
+        ]
+        if let tabError {
+            response["tab_error"] = tabError
+        }
+        return encodeAny(response)
     }
 
     private func sessionSummary(_ session: RuntimeSession) -> [String: Any] {
