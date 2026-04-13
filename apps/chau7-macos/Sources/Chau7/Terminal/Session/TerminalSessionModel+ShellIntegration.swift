@@ -161,7 +161,7 @@ extension TerminalSessionModel {
                 aiExitCode = aiLogResult.exitCode
                 logData = aiLogResult.loggable
                 if let logData, !logData.isEmpty {
-                    self.aiLogSession?.recordOutputSync(logData)
+                    self.aiLogSession?.recordOutput(logData)
                 }
             }
 

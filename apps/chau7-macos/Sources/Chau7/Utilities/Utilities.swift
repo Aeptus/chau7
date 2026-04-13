@@ -71,6 +71,7 @@ enum EnvVars {
     // Debug output capture
     static let ptyDumpMaxBytes = "CHAU7_PTY_DUMP_MAX_BYTES"
     static let ptyLogMaxBytes = "CHAU7_PTY_LOG_MAX_BYTES"
+    static let ptyLogFlushBytes = "CHAU7_PTY_LOG_FLUSH_BYTES"
     static let remoteOutputBatch = "CHAU7_REMOTE_OUTPUT_BATCH"
 
     // Legacy env var support (for backwards compatibility)
@@ -105,7 +106,7 @@ enum EnvVars {
         guard let value = get(name, legacy: legacy)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased(),
-              !value.isEmpty else {
+            !value.isEmpty else {
             return defaultValue
         }
 

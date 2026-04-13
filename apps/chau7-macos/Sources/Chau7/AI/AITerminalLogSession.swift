@@ -6,6 +6,7 @@ final class AITerminalLogSession {
     private let logPath: String
     private let queue = DispatchQueue(label: "com.chau7.ptylog.\(UUID().uuidString)")
     private var inputBuffer = Data()
+    private var outputBuffer = Data()
     private var writeCount = 0
     private let maxBytes: Int = {
         if let raw = EnvVars.get(EnvVars.ptyLogMaxBytes),
@@ -13,6 +14,13 @@ final class AITerminalLogSession {
             return value
         }
         return 10 * 1024 * 1024 // 10 MB
+    }()
+    private let outputFlushBytes: Int = {
+        if let raw = EnvVars.get(EnvVars.ptyLogFlushBytes),
+           let value = Int(raw), value > 0 {
+            return value
+        }
+        return 32 * 1024 // 32 KB
     }()
 
     init(toolName: String, logPath: String) {
@@ -33,6 +41,7 @@ final class AITerminalLogSession {
         queue.sync { [weak self] in
             guard let self else { return }
             recordOutputLocked(data)
+            flushOutputLocked()
         }
     }
 
@@ -51,11 +60,14 @@ final class AITerminalLogSession {
         queue.sync { [weak self] in
             guard let self else { return }
             flushInputLocked()
+            flushOutputLocked()
         }
     }
 
     func sync() {
-        queue.sync {}
+        queue.sync { [weak self] in
+            self?.flushOutputLocked()
+        }
     }
 
     @discardableResult
@@ -64,7 +76,16 @@ final class AITerminalLogSession {
     }
 
     private func recordOutputLocked(_ data: Data) {
-        let ok = appendLocked(data)
+        outputBuffer.append(data)
+        guard outputBuffer.count >= outputFlushBytes else { return }
+        flushOutputLocked()
+    }
+
+    private func flushOutputLocked() {
+        guard !outputBuffer.isEmpty else { return }
+        let payload = outputBuffer
+        outputBuffer.removeAll(keepingCapacity: true)
+        let ok = appendLocked(payload)
         writeCount += 1
         // Trim every 200 writes, or immediately on write failure (disk full)
         if !ok || writeCount.isMultiple(of: 200) {
@@ -95,6 +116,7 @@ final class AITerminalLogSession {
 
     private func flushInputLocked() {
         guard !inputBuffer.isEmpty else { return }
+        flushOutputLocked()
         let text = String(decoding: inputBuffer, as: UTF8.self)
         inputBuffer.removeAll(keepingCapacity: true)
         guard let sanitized = SensitiveInputGuard.sanitizedInputLineForPersistence(text) else { return }

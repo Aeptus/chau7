@@ -66,4 +66,27 @@ final class AITerminalLogSessionTests: XCTestCase {
         XCTAssertFalse(tail.contains("\u{08}"))
         XCTAssertTrue(tail.contains("\"summary\":\"ok\""))
     }
+
+    func testCloseFlushesBufferedOutput() throws {
+        let logURL = tempDir.appendingPathComponent("pty.log")
+        let session = AITerminalLogSession(toolName: "Codex", logPath: logURL.path)
+
+        session.recordOutput(Data("Working...\n".utf8))
+        session.close()
+
+        let contents = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertEqual(contents, "Working...\n")
+    }
+
+    func testInputFlushPreservesEarlierBufferedOutputOrdering() throws {
+        let logURL = tempDir.appendingPathComponent("pty.log")
+        let session = AITerminalLogSession(toolName: "Codex", logPath: logURL.path)
+
+        session.recordOutput(Data("Working...\n".utf8))
+        session.recordInput("echo hello\n")
+        session.close()
+
+        let contents = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertEqual(contents, "Working...\n[INPUT] echo hello\n")
+    }
 }
