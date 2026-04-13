@@ -755,6 +755,70 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(snapshot.flatMap { String(data: $0, encoding: .utf8) }, "cached buffer")
     }
 
+    func testRestoreAIMetadataPreservesLifecycleFields() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let startedAt = Date(timeIntervalSince1970: 100)
+        let lastInputAt = Date(timeIntervalSince1970: 110)
+        let lastOutputAt = Date(timeIntervalSince1970: 120)
+        let lastExitAt = Date(timeIntervalSince1970: 130)
+
+        session.restoreAIMetadata(
+            provider: "codex",
+            sessionId: "session-123",
+            sessionIdSource: .explicit,
+            launchCommand: "codex --model gpt-5.3-codex",
+            startedAt: startedAt,
+            lastInputAt: lastInputAt,
+            lastOutputAt: lastOutputAt,
+            lastStatus: .done,
+            lastExitCode: 0,
+            lastExitAt: lastExitAt
+        )
+
+        XCTAssertEqual(session.lastAIProvider, "codex")
+        XCTAssertEqual(session.lastAISessionId, "session-123")
+        XCTAssertEqual(session.lastAISessionIdentitySource, .explicit)
+        XCTAssertEqual(session.lastAgentLaunchCommand, "codex --model gpt-5.3-codex")
+        XCTAssertEqual(session.agentStartedAt, startedAt)
+        XCTAssertEqual(session.lastInputDate, lastInputAt)
+        XCTAssertEqual(session.lastOutputDate, lastOutputAt)
+        XCTAssertEqual(session.status, .done)
+        XCTAssertEqual(session.lastExitCode, 0)
+        XCTAssertEqual(session.lastExitAt, lastExitAt)
+    }
+
+    func testCurrentPTYLogPathReflectsActiveAILogSession() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.startAILoggingIfNeeded(toolName: "Codex", commandLine: "codex --model gpt-5.3-codex")
+
+        XCTAssertNotNil(session.currentPTYLogPath())
+        XCTAssertTrue(session.currentPTYLogPath()?.contains("codex") == true)
+
+        session.finishAILogging(exitCode: 0)
+        XCTAssertNotNil(session.currentPTYLogPath())
+    }
+
+    func testSyncCurrentPTYLogDrainsQueuedOutputProcessingQueue() throws {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let logURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("chau7-sync-pty-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: logURL) }
+
+        session.lastPTYLogPath = logURL.path
+        session.startAILoggingIfNeeded(toolName: "Codex", commandLine: "codex --model gpt-5.3-codex")
+        session.handleOutput(Data("Working...\n__CHAU7_REVIEW_JSON_BEGIN__\n{\"summary\":\"ok\",\"findings\":[],\"recommendations\":[],\"confidence\":\"high\"}\n__CHAU7_REVIEW_JSON_END__\n".utf8))
+
+        session.syncCurrentPTYLog()
+
+        let tail = try XCTUnwrap(TelemetryRecorder.readPTYLogTail(path: session.currentPTYLogPath() ?? logURL.path))
+        XCTAssertTrue(tail.contains("__CHAU7_REVIEW_JSON_BEGIN__"))
+        XCTAssertTrue(tail.contains("\"summary\":\"ok\""))
+    }
+
     func testSessionTabIdentifierIsUnique() {
         let model = AppModel()
         let session1 = TerminalSessionModel(appModel: model)
