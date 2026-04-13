@@ -2038,11 +2038,18 @@ final class RustTerminalView: NSView {
     var renderTier: RenderTier = .active
 
     /// Legacy bridge — SwiftUI's TerminalViewRepresentable sets this.
-    /// Routes through setRenderTier for unified tier management.
+    /// Only escalates to `.distant` when suspended; resumption is left
+    /// to the tier coordinator to avoid overriding intermediate tiers
+    /// (`.adjacent`, `.nearby`) with a blanket `.active`.
     var notifyUpdateChanges = true {
         didSet {
             guard notifyUpdateChanges != oldValue else { return }
-            setRenderTier(notifyUpdateChanges ? .active : .distant)
+            if !notifyUpdateChanges {
+                // Suspension: drop to distant
+                setRenderTier(.distant)
+            }
+            // Resume is handled by computeAndApplyRenderTiers — don't
+            // clobber the coordinator's tier assignment with .active.
         }
     }
 

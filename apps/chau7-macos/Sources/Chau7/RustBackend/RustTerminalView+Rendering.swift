@@ -11,16 +11,14 @@ extension RustTerminalView {
     func setupPollingLoop() {
         Log.trace("RustTerminalView[\(viewId)]: setupPollingLoop - Creating polling loop")
 
-        // Try CVDisplayLink first for vsync-aligned updates
+        // Create CVDisplayLink but DON'T start it yet. The tier coordinator
+        // (computeAndApplyRenderTiers) decides when to start it. This prevents
+        // new background tabs from running at 60fps until the coordinator assigns
+        // their tier.
         var link: CVDisplayLink?
         let result = CVDisplayLinkCreateWithActiveCGDisplays(&link)
 
         if result == kCVReturnSuccess, let link = link {
-            Log.trace("RustTerminalView[\(viewId)]: setupPollingLoop - CVDisplayLink created successfully")
-            // Use a weak-reference box to prevent use-after-free if the view
-            // deallocates while a CVDisplayLink callback is in flight.
-            // passRetained ensures the box survives until we explicitly release
-            // it in stopPollingLoop, even if the view itself is deallocated.
             let box = DisplayLinkWeakBox(self)
             displayLinkBox = box
             CVDisplayLinkSetOutputCallback(link, { _, _, _, _, _, userInfo -> CVReturn in
@@ -33,17 +31,15 @@ extension RustTerminalView {
                 return kCVReturnSuccess
             }, Unmanaged.passRetained(box).toOpaque())
 
-            CVDisplayLinkStart(link)
             displayLink = link
-            Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using CVDisplayLink for 60fps polling")
+            Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - CVDisplayLink created (not yet started)")
         } else {
-            // Fallback to timer
-            Log.warn("RustTerminalView[\(viewId)]: setupPollingLoop - CVDisplayLink failed (result=\(result)), falling back to Timer")
-            pollTimer = Timer.scheduledTimer(withTimeInterval: displayRefreshInterval, repeats: true) { [weak self] _ in
-                self?.pollAndSync()
-            }
-            Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using Timer fallback for polling")
+            Log.warn("RustTerminalView[\(viewId)]: setupPollingLoop - CVDisplayLink failed (result=\(result)), timer fallback available")
         }
+
+        // Start at .active tier — the coordinator will downgrade within one
+        // updateSuspensionState cycle if this tab isn't selected.
+        setRenderTier(.active)
     }
 
     func stopPollingLoop() {

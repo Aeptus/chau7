@@ -2180,7 +2180,7 @@ final class OverlayTabsModel {
         //    Hierarchy: UnifiedTerminalContainerView → RustTerminalContainerView → RustTerminalView
         if let rustView = session.existingRustTerminalView {
             rustView.isHidden = false
-            rustView.notifyUpdateChanges = true
+            rustView.setRenderTier(.active)
             rustView.needsDisplay = true
             rustView.setEventMonitoringEnabled(true)
             // Unhide container + Metal view
@@ -2751,6 +2751,10 @@ final class OverlayTabsModel {
             if previousSuspended != suspendedTabIDs {
                 logVisualState(reason: "renderSuspension: cleared")
             }
+            // Render tiers are independent of suspension — always recompute
+            // so background tabs drop to low-power polling even when the
+            // SwiftUI suspension system is disabled.
+            computeAndApplyRenderTiers()
             return
         }
 
