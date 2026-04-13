@@ -797,10 +797,19 @@ final class TerminalSessionModel {
         retainedRustTerminalView
     }
 
+    /// Pending render tier for sessions whose view hasn't attached yet.
+    /// Applied in `attachRustTerminal` after the view starts its polling loop.
+    @ObservationIgnored var pendingRenderTier: RustTerminalView.RenderTier?
+
     /// Set the render tier for this session's terminal view.
-    /// Called by the tab coordinator when tab distance changes.
+    /// If the view isn't attached yet, queues the tier for later application.
     func setRenderTier(_ tier: RustTerminalView.RenderTier) {
-        existingRustTerminalView?.setRenderTier(tier)
+        if let view = existingRustTerminalView {
+            view.setRenderTier(tier)
+            pendingRenderTier = nil
+        } else {
+            pendingRenderTier = tier
+        }
     }
 
     /// Exposed for background-tab coordination and tests.
@@ -933,6 +942,12 @@ final class TerminalSessionModel {
             pendingRestoreScrollback = nil
             view.injectOutput(scrollback)
             Log.info("TerminalSessionModel: injected \(scrollback.count) chars of restore scrollback")
+        }
+
+        // Apply deferred render tier (set by coordinator before view existed).
+        if let tier = pendingRenderTier {
+            pendingRenderTier = nil
+            view.setRenderTier(tier)
         }
 
         flushPendingTerminalActions()

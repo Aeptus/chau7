@@ -107,7 +107,6 @@ extension RustTerminalView {
                 CVDisplayLinkStart(link)
             } else if displayLink == nil, pollTimer == nil {
                 pollTimer = Timer.scheduledTimer(withTimeInterval: displayRefreshInterval, repeats: true) { [weak self] _ in
-                    Log.wakeup("renderActive")
                     self?.pollAndSync()
                 }
             }
@@ -116,13 +115,11 @@ extension RustTerminalView {
         case .adjacent:
             stopBackgroundDrain()
             pollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-                Log.wakeup("renderAdjacent")
                 self?.pollAndSync()
             }
         case .nearby:
             stopBackgroundDrain()
             pollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-                Log.wakeup("renderNearby")
                 self?.backgroundDrain()
             }
         case .distant:
