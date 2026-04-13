@@ -364,22 +364,28 @@ final class TerminalSessionModel {
     var lastPromptExitCode: Int?
     var lastPromptExitAt: Date?
 
-    /// Update the last detected app name, provider, and clear stale session
-    /// metadata when the provider changes. For example, if `lastAIProvider`
-    /// is "claude" (from a prior session) but detection identifies "Codex",
-    /// the Claude session ID in `lastAISessionId` is invalid for Codex and
-    /// `lastAIProvider` must switch to "codex" so the persisted state is
-    /// correct even after `lastDetectedAppName` is cleared on next restore.
+    /// Update the last detected app name and provider when the provider
+    /// changes. Session metadata (sessionId, agentStartedAt) is only cleared
+    /// when switching between DIFFERENT providers (e.g., Claude → Codex).
+    /// Re-detecting the SAME provider (e.g., nil → Codex after restore)
+    /// preserves the session so tab restore can resume it.
     func updateLastDetectedApp(_ app: String) {
         lastDetectedAppName = app
         guard let newProvider = AIResumeParser.normalizeProviderName(app) else { return }
         let oldProvider = AIResumeParser.normalizeProviderName(lastAIProvider ?? "")
-        guard oldProvider == nil || newProvider != oldProvider else { return }
+
+        // Always keep lastAIProvider current so persistence is correct
         lastAIProvider = newProvider
-        lastAISessionId = nil
-        lastAISessionIdentitySource = nil
-        agentStartedAt = nil
-        lastAgentLaunchCommand = nil
+
+        // Only clear session metadata on an actual provider SWITCH.
+        // When oldProvider is nil (after restore or first detection),
+        // keep existing session data — it belongs to this same tool.
+        if let oldProvider, newProvider != oldProvider {
+            lastAISessionId = nil
+            lastAISessionIdentitySource = nil
+            agentStartedAt = nil
+            lastAgentLaunchCommand = nil
+        }
     }
 
     var hasBackgroundRenderingAIContext: Bool {
