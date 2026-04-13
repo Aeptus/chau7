@@ -319,12 +319,23 @@ extension OverlayTabsModel {
         return restored
     }
 
-    /// Returns true if a scrollback line looks like a restore command artifact
-    /// (cd + clear chains, stty echo pairs) that should be filtered out.
+    /// Returns true if a scrollback line looks like a restore command artifact.
+    /// Catches all historical restore formats:
+    /// - stty -echo && cat ... && cd ... && clear && stty echo (v1)
+    /// - cd '/path' && clear (v2)
+    /// - cd '/path' (v3 — bare cd echo)
+    /// - stty -echo; cd '/path'; stty echo (v4 — current)
     private static func isRestoreArtifactLine(_ line: String) -> Bool {
         let stripped = line.trimmingCharacters(in: .whitespaces)
-        if stripped.contains("stty -echo && "), stripped.contains("stty echo") { return true }
+        // v1: full stty chain
+        if stripped.contains("stty -echo"), stripped.contains("stty echo") { return true }
+        // v2: cd + clear
         if stripped.contains(" cd '"), stripped.hasSuffix("&& clear") { return true }
+        // v3/v4: shell echo of restore cd — double space after prompt marker
+        // from the leading space used for HIST_IGNORE_SPACE
+        if stripped.contains("%  cd '/"), stripped.hasSuffix("'") { return true }
+        // v4 with stty wrapper visible (shouldn't happen but defensive)
+        if stripped.contains("stty -echo; cd '"), stripped.contains("; stty echo") { return true }
         return false
     }
 
@@ -932,13 +943,16 @@ extension OverlayTabsModel {
                     }
                 }
 
-                // Restore CWD via minimal shell input. Leading space
-                // suppresses shell history (HIST_IGNORE_SPACE).
-                // No clear — the injected scrollback is already in the buffer
-                // and clear would flash a visible echo before wiping it.
+                // Restore CWD via shell input with echo suppression.
+                // Uses semicolons (not &&) so stty echo always runs even if cd fails.
+                // Leading space suppresses shell history (HIST_IGNORE_SPACE).
+                // The stty race that plagued the old multi-command chain doesn't
+                // apply here — this is a single short line where stty -echo runs
+                // before the shell processes the cd.
                 if !effectivePaneState.directory.isEmpty {
+                    let dir = Self.shellSafeSingleQuote(effectivePaneState.directory)
                     session.sendOrQueueSystemRestoreInput(
-                        " cd \(Self.shellSafeSingleQuote(effectivePaneState.directory))\n"
+                        " stty -echo; cd \(dir); stty echo\n"
                     )
                 }
 
