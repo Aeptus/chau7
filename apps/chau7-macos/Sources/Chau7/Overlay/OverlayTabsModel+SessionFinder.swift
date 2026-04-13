@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Chau7Core
 
 // MARK: - Session Finder Registry
@@ -435,6 +436,11 @@ extension OverlayTabsModel {
             tab.customTitle = state.customTitle
             tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
             tab.stampOwnerTabID()
+            if let preview = Self.restorePreviewImage(from: state.previewSnapshotPNGData) {
+                tab.cachedSnapshot = preview
+                tab.session?.lastRenderedSnapshot = preview
+                tab.lastPromptText = tab.session?.displayPath() ?? "~"
+            }
 
             // Restore per-tab token optimization override
             if let overrideRaw = state.tokenOptOverride,

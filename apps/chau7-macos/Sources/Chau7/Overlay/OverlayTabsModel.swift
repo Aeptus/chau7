@@ -409,6 +409,7 @@ struct SavedTabState: Codable {
     let lastExitCode: Int?
     let lastExitAt: Date?
     let commandBlocks: [CommandBlock]?
+    let previewSnapshotPNGData: Data?
 
     static let userDefaultsKey = "com.chau7.savedTabState"
 
@@ -438,7 +439,8 @@ struct SavedTabState: Codable {
         agentStartedAt: Date? = nil,
         lastExitCode: Int? = nil,
         lastExitAt: Date? = nil,
-        commandBlocks: [CommandBlock]? = nil
+        commandBlocks: [CommandBlock]? = nil,
+        previewSnapshotPNGData: Data? = nil
     ) {
         self.tabID = tabID
         self.selectedTabID = selectedTabID
@@ -466,6 +468,7 @@ struct SavedTabState: Codable {
         self.lastExitCode = lastExitCode
         self.lastExitAt = lastExitAt
         self.commandBlocks = commandBlocks
+        self.previewSnapshotPNGData = previewSnapshotPNGData
     }
 }
 
@@ -838,6 +841,58 @@ final class OverlayTabsModel {
         Log.trace("syncSelectedTerminalPresentation[\(reason)]: tab=\(tab.id) preview=\(shouldShowRestorePreview)")
     }
 
+    func encodedRestorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> Data? {
+        guard let snapshot = restorePreviewSnapshot(for: tab, isSelected: isSelected) else {
+            return nil
+        }
+        return Self.pngData(from: snapshot)
+    }
+
+    func restorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> NSImage? {
+        if let cached = tab.cachedSnapshot ?? tab.session?.lastRenderedSnapshot {
+            return cached
+        }
+
+        guard isSelected,
+              let terminalView = (tab.displaySession ?? tab.session)?.existingRustTerminalView else {
+            return nil
+        }
+        guard let snapshot = Self.captureSnapshotImage(from: terminalView) else {
+            return nil
+        }
+
+        if let index = tabs.firstIndex(where: { $0.id == tab.id }) {
+            tabs[index].cachedSnapshot = snapshot
+            tabs[index].session?.lastRenderedSnapshot = snapshot
+            tabs[index].lastPromptText = tabs[index].session?.displayPath() ?? tabs[index].lastPromptText
+        }
+        return snapshot
+    }
+
+    static func captureSnapshotImage(from view: NSView) -> NSImage? {
+        guard let bitmapRep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+            return nil
+        }
+        view.cacheDisplay(in: view.bounds, to: bitmapRep)
+
+        let image = NSImage(size: view.bounds.size)
+        image.addRepresentation(bitmapRep)
+        return image
+    }
+
+    static func pngData(from image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff) else {
+            return nil
+        }
+        return bitmap.representation(using: .png, properties: [:])
+    }
+
+    static func restorePreviewImage(from pngData: Data?) -> NSImage? {
+        guard let pngData else { return nil }
+        return NSImage(data: pngData)
+    }
+
     /// Saves current tab state to disk backups. Does NOT write to UserDefaults —
     /// that is handled centrally by AppDelegate.saveAllWindowStates() to avoid
     /// multi-window race conditions.
@@ -946,7 +1001,8 @@ final class OverlayTabsModel {
                 lastExitAt: paneStates.first?.lastExitAt,
                 commandBlocks: MainActor.assumeIsolated {
                     CommandBlockManager.shared.blocksForTab(tab.id.uuidString)
-                }
+                },
+                previewSnapshotPNGData: encodedRestorePreviewSnapshot(for: tab, isSelected: isSelected)
             ))
         }
         return states
@@ -1040,7 +1096,8 @@ final class OverlayTabsModel {
             lastExitAt: paneStates.first?.lastExitAt,
             commandBlocks: MainActor.assumeIsolated {
                 CommandBlockManager.shared.blocksForTab(tab.id.uuidString)
-            }
+            },
+            previewSnapshotPNGData: encodedRestorePreviewSnapshot(for: tab, isSelected: false)
         )
 
         closedTabStack.append(ClosedTabEntry(
