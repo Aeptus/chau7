@@ -141,6 +141,11 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertTrue(result is [[String: Any]])
     }
 
+    func testGetRepoEventsRequiresRepoPath() async {
+        let response = await api.handleRequest(["method": "get_repo_events", "params": [:]])
+        XCTAssertEqual(response["error"] as? String, "missing param: repo_path")
+    }
+
     // MARK: - get_settings
 
     func testGetSettingsReturnsDict() async {

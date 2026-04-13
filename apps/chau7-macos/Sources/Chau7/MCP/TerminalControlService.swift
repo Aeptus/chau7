@@ -450,7 +450,7 @@ final class TerminalControlService {
         // source=pty_log: return ANSI-stripped PTY log instead of terminal buffer.
         // Works for all AI tools regardless of alternate screen usage.
         if source == "pty_log" {
-            return ptyLogOutput(tabID: tabID, lines: lines)
+            return ptyLogOutput(tabID: tabID, lines: lines, waitForStableMs: waitForStableMs)
         }
 
         // If wait_for_stable_ms is requested, poll the buffer on the calling (MCP background)
@@ -513,7 +513,58 @@ final class TerminalControlService {
     /// Returns the ANSI-stripped PTY log output for an AI session in a tab.
     /// This captures everything written to the terminal including alternate-screen
     /// content that TUI-based AI tools discard on exit.
-    private func ptyLogOutput(tabID: String, lines: Int) -> String {
+    private func ptyLogOutput(tabID: String, lines: Int, waitForStableMs: Int? = nil) -> String {
+        if let waitForStableMs, waitForStableMs > 0 {
+            return waitForStablePTYLogOutput(tabID: tabID, lines: lines, waitForStableMs: waitForStableMs)
+        }
+        return encodedPTYLogOutput(tabID: tabID, lines: lines)
+    }
+
+    private func waitForStablePTYLogOutput(tabID: String, lines: Int, waitForStableMs: Int) -> String {
+        let maxWaitMs = min(waitForStableMs, 30000)
+        let stabilityThresholdMs = min(maxWaitMs, 500)
+        let pollIntervalMs = 250
+        let deadline = DispatchTime.now() + .milliseconds(maxWaitMs)
+        var previousOutput: String?
+        var stableSince: DispatchTime?
+        var latestResponse = encodedPTYLogOutput(tabID: tabID, lines: lines)
+
+        while DispatchTime.now() < deadline {
+            latestResponse = encodedPTYLogOutput(tabID: tabID, lines: lines)
+            guard let json = parseJSONObject(latestResponse),
+                  json["error"] == nil else {
+                return latestResponse
+            }
+
+            let currentOutput = json["output"] as? String ?? ""
+            if currentOutput == previousOutput {
+                if stableSince == nil { stableSince = DispatchTime.now() }
+                if let stableSince {
+                    let stableMs = Int((DispatchTime.now().uptimeNanoseconds - stableSince.uptimeNanoseconds) / 1_000_000)
+                    if stableMs >= stabilityThresholdMs {
+                        return latestResponse
+                    }
+                }
+            } else {
+                previousOutput = currentOutput
+                stableSince = nil
+            }
+
+            Thread.sleep(forTimeInterval: Double(pollIntervalMs) / 1000.0)
+        }
+
+        return latestResponse
+    }
+
+    private func parseJSONObject(_ json: String) -> [String: Any]? {
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return object
+    }
+
+    private func encodedPTYLogOutput(tabID: String, lines: Int) -> String {
         let result: (path: String?, error: String?) = onMain {
             guard let (_, session) = self.resolveTab(tabID) else {
                 return (nil, self.jsonError("Tab not found: \(tabID)"))
@@ -830,26 +881,70 @@ final class TerminalControlService {
         return encodeAny(result)
     }
 
-    func repoGetEvents(repoPath: String, limit: Int) -> String {
+    func repoGetEvents(
+        repoPath: String,
+        limit: Int,
+        tabID: String? = nil,
+        eventTypes: [String]? = nil,
+        tool: String? = nil,
+        producer: String? = nil,
+        sessionID: String? = nil,
+        truncateMessages: Bool = true
+    ) -> String {
         // Check the per-repo event buffer in AppModel (populated on event ingestion)
         let events: [AIEvent]
         if let appModel = allModels.first?.model.appModel {
-            events = Array((appModel.eventsByRepo[repoPath] ?? []).suffix(limit))
+            let requestedTypes = Set((eventTypes ?? []).map { $0.lowercased() }.filter { !$0.isEmpty })
+            let normalizedTool = tool?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let normalizedProducer = producer?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let normalizedSessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalizedTabID = tabID?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let filtered = (appModel.eventsByRepo[repoPath] ?? []).filter { event in
+                if let normalizedTabID,
+                   let eventTabID = event.tabID,
+                   controlPlaneTabID(for: eventTabID) != normalizedTabID {
+                    return false
+                } else if normalizedTabID != nil, event.tabID == nil {
+                    return false
+                }
+
+                if !requestedTypes.isEmpty, !requestedTypes.contains(event.type.lowercased()) {
+                    return false
+                }
+                if let normalizedTool, event.tool.lowercased() != normalizedTool {
+                    return false
+                }
+                if let normalizedProducer,
+                   event.producer?.lowercased() != normalizedProducer {
+                    return false
+                }
+                if let normalizedSessionID,
+                   event.sessionID != normalizedSessionID {
+                    return false
+                }
+                return true
+            }
+
+            events = Array(filtered.suffix(limit))
         } else {
             events = []
         }
         let result: [[String: Any]] = events.map { event in
+            let message = truncateMessages ? String(event.message.prefix(200)) : event.message
             var entry: [String: Any] = [
                 "id": event.id.uuidString,
                 "source": event.source.rawValue,
                 "type": event.type,
                 "tool": event.tool,
-                "message": String(event.message.prefix(200)),
+                "message": message,
                 "ts": event.ts
             ]
             if let dir = event.directory { entry["directory"] = dir }
             if let tab = event.tabID { entry["tab_id"] = self.controlPlaneTabID(for: tab) }
             if let session = event.sessionID { entry["session_id"] = session }
+            if let producer = event.producer { entry["producer"] = producer }
+            entry["reliability"] = event.reliability.rawValue
             return entry
         }
         return encodeAny(["repo_path": repoPath, "count": result.count, "events": result])

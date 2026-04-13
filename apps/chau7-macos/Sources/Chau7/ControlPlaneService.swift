@@ -84,6 +84,22 @@ final class ControlPlaneService {
                 waitForStableMs: arguments["wait_for_stable_ms"] as? Int,
                 source: arguments["source"] as? String
             )
+        case "repo_get_events":
+            guard let repoPath = arguments["repo_path"] as? String,
+                  !repoPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return jsonError("repo_path is required")
+            }
+            let limit = max(1, min(arguments["limit"] as? Int ?? 25, 200))
+            return terminalControl.repoGetEvents(
+                repoPath: repoPath,
+                limit: limit,
+                tabID: arguments["tab_id"] as? String,
+                eventTypes: arguments["event_types"] as? [String],
+                tool: arguments["tool"] as? String,
+                producer: arguments["producer"] as? String,
+                sessionID: arguments["session_id"] as? String,
+                truncateMessages: arguments["truncate_messages"] as? Bool ?? true
+            )
         case "session_create":
             return createSession(arguments)
         case "session_events":

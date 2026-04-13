@@ -155,6 +155,83 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertTrue((json["output"] as? String)?.contains("\"summary\":\"ok\"") == true)
     }
 
+    func testTabOutputPTYLogSupportsStablePolling() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.startAILoggingIfNeeded(toolName: "Codex", commandLine: "codex --model gpt-5.3-codex")
+        session.aiLogSession?.recordOutput(
+            Data(
+                "line one\n__CHAU7_REVIEW_JSON_BEGIN__\n{\"summary\":\"ok\",\"findings\":[],\"recommendations\":[],\"confidence\":\"high\"}\n__CHAU7_REVIEW_JSON_END__\n".utf8
+            )
+        )
+
+        let response = TerminalControlService.shared.tabOutput(
+            tabID: TerminalControlService.shared.controlPlaneTabID(for: tab.id),
+            lines: 50,
+            waitForStableMs: 300,
+            source: "pty_log"
+        )
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["source"] as? String, "pty_log")
+        XCTAssertTrue((json["output"] as? String)?.contains("__CHAU7_REVIEW_JSON_END__") == true)
+    }
+
+    func testRepoGetEventsSupportsFilteringAndFullMessages() throws {
+        let repoPath = "/tmp/chau7-review-repo"
+        let selectedTabID = try XCTUnwrap(overlayModel.tabs.first?.id)
+        let otherTabID = UUID()
+        let longMessage = "Review complete\n__CHAU7_REVIEW_JSON_BEGIN__\n"
+            + "{\"summary\":\"ok\",\"findings\":[],\"recommendations\":[\"none\"],\"confidence\":\"high\"}\n"
+            + "__CHAU7_REVIEW_JSON_END__\n"
+            + String(repeating: "x", count: 300)
+
+        appModel.eventsByRepo[repoPath] = [
+            AIEvent(
+                source: .runtime,
+                type: "waiting_input",
+                tool: "Codex",
+                message: longMessage,
+                ts: DateFormatters.nowISO8601(),
+                repoPath: repoPath,
+                tabID: selectedTabID,
+                producer: "runtime_session_manager",
+                reliability: .authoritative
+            ),
+            AIEvent(
+                source: .runtime,
+                type: "finished",
+                tool: "Codex",
+                message: "other tab",
+                ts: DateFormatters.nowISO8601(),
+                repoPath: repoPath,
+                tabID: otherTabID,
+                producer: "runtime_session_manager",
+                reliability: .authoritative
+            )
+        ]
+
+        let response = TerminalControlService.shared.repoGetEvents(
+            repoPath: repoPath,
+            limit: 10,
+            tabID: "tab_1",
+            eventTypes: ["waiting_input"],
+            tool: "Codex",
+            producer: "runtime_session_manager",
+            truncateMessages: false
+        )
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let events = try XCTUnwrap(json["events"] as? [[String: Any]])
+        let first = try XCTUnwrap(events.first)
+
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(first["tab_id"] as? String, "tab_1")
+        XCTAssertEqual(first["type"] as? String, "waiting_input")
+        XCTAssertEqual(first["producer"] as? String, "runtime_session_manager")
+        XCTAssertEqual(first["reliability"] as? String, AIEventReliability.authoritative.rawValue)
+        XCTAssertEqual(first["message"] as? String, longMessage)
+    }
+
     func testRenameTabPropagatesToAllSplitSessions() throws {
         overlayModel.splitCurrentTabHorizontally()
         let tab = try XCTUnwrap(overlayModel.tabs.first)

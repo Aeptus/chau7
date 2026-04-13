@@ -23,6 +23,7 @@ final class ScriptingAPI {
         "press_key",
         "submit_prompt",
         "close_tab",
+        "get_repo_events",
         "get_history",
         "get_settings",
         "set_setting",
@@ -290,6 +291,8 @@ final class ScriptingAPI {
             return handleSubmitPrompt(params)
         case "close_tab":
             return handleCloseTab(params)
+        case "get_repo_events":
+            return handleGetRepoEvents(params)
         case "get_history":
             return handleGetHistory(params)
         case "get_settings":
@@ -411,6 +414,37 @@ final class ScriptingAPI {
         }
         return controlPlaneCall(name: "tab_close", arguments: ["tab_id": tabID, "force": true])
             ?? ["error": "close failed"]
+    }
+
+    private func handleGetRepoEvents(_ params: [String: Any]) -> [String: Any] {
+        guard let repoPath = params["repo_path"] as? String,
+              !repoPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return ["error": "missing param: repo_path"]
+        }
+
+        var arguments: [String: Any] = [
+            "repo_path": repoPath,
+            "limit": params["limit"] as? Int ?? 25,
+            "truncate_messages": params["truncate_messages"] as? Bool ?? false
+        ]
+        if let tabID = params["tab_id"] as? String {
+            arguments["tab_id"] = tabID
+        }
+        if let eventTypes = params["event_types"] as? [String], !eventTypes.isEmpty {
+            arguments["event_types"] = eventTypes
+        }
+        if let tool = params["tool"] as? String {
+            arguments["tool"] = tool
+        }
+        if let producer = params["producer"] as? String {
+            arguments["producer"] = producer
+        }
+        if let sessionID = params["session_id"] as? String {
+            arguments["session_id"] = sessionID
+        }
+
+        return controlPlaneCall(name: "repo_get_events", arguments: arguments)
+            ?? ["error": "repo events failed"]
     }
 
     private func parseJSONResponse(_ json: String) -> [String: Any]? {

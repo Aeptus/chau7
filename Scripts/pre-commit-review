@@ -25,6 +25,8 @@ SUBMIT_START_TIMEOUT_MS = 5_000
 DEFAULT_OUTPUT_LINES = 4_000
 PROMPT_VALIDATION_LINES = 240
 PROMPT_SENTINEL = "REVIEW TASK: PRE-COMMIT CODE REVIEW"
+REVIEW_JSON_BEGIN = "__CHAU7_REVIEW_JSON_BEGIN__"
+REVIEW_JSON_END = "__CHAU7_REVIEW_JSON_END__"
 SOCKET_PATH = Path.home() / "Library/Application Support/Chau7/scripting.sock"
 DEFAULT_CONFIG_NAME = ".chau7/pre-commit-review.conf"
 CHAU7_BUNDLE_ID = "com.aeptus.Chau7"
@@ -418,9 +420,10 @@ def create_review_prompt(staged_files: list[str], diff: str) -> str:
         "Only evaluate the staged diff below. Do not speculate about unstaged changes.",
         "Work read-only. Do not edit files.",
         "Focus on correctness, regressions, security, and missing tests.",
-        "Return concise prose findings first, then end with exactly one fenced JSON block and nothing after it.",
+        "Return concise prose findings first.",
+        f"Then print `{REVIEW_JSON_BEGIN}` on its own line, followed by exactly one raw JSON object, followed by `{REVIEW_JSON_END}` on its own line.",
+        "Do not wrap the JSON in fences. Do not print anything after the end marker.",
         "Use this exact JSON shape:",
-        "```json",
         "{",
         '  "summary": "string",',
         '  "findings": [',
@@ -435,7 +438,6 @@ def create_review_prompt(staged_files: list[str], diff: str) -> str:
         '  "recommendations": ["string"],',
         '  "confidence": "low|medium|high"',
         "}",
-        "```",
     ]
     if staged_files:
         lines.append("Staged files:")
@@ -476,6 +478,25 @@ def get_output(tab_id: str, lines: int, source: str, wait_for_stable_ms: int | N
     if wait_for_stable_ms is not None:
         params["wait_for_stable_ms"] = wait_for_stable_ms
     return socket_call("get_output", params)
+
+
+def get_repo_events(
+    repo_path: str,
+    *,
+    limit: int = 25,
+    tab_id: str | None = None,
+    event_types: list[str] | None = None,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {
+        "repo_path": repo_path,
+        "limit": limit,
+        "truncate_messages": False,
+    }
+    if tab_id:
+        params["tab_id"] = tab_id
+    if event_types:
+        params["event_types"] = event_types
+    return socket_call("get_repo_events", params)
 
 
 def close_tab(tab_id: str) -> None:
@@ -580,6 +601,10 @@ def wait_for_codex_prompt(tab_id: str, timeout_ms: int, model: str) -> tuple[dic
 
 
 def extract_review_json(text: str) -> dict[str, Any] | None:
+    marker_payload = extract_review_json_from_markers(text)
+    if marker_payload is not None:
+        return marker_payload
+
     fenced_blocks = re.findall(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL | re.IGNORECASE)
     candidates = fenced_blocks[::-1]
 
@@ -598,6 +623,71 @@ def extract_review_json(text: str) -> dict[str, Any] | None:
         if is_valid_review_payload(payload):
             return payload
     return None
+
+
+def extract_review_result_from_events(
+    events: list[dict[str, Any]],
+    tab_id: str | None = None,
+    ignored_event_ids: set[str] | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    ignored_event_ids = ignored_event_ids or set()
+    for event in reversed(events):
+        if not isinstance(event, dict):
+            continue
+        event_id = event.get("id")
+        if isinstance(event_id, str) and event_id in ignored_event_ids:
+            continue
+        if tab_id and event.get("tab_id") != tab_id:
+            continue
+        message = event.get("message")
+        if not isinstance(message, str) or not message.strip():
+            continue
+        payload = extract_review_json(message)
+        if payload is not None:
+            return payload, event
+    return None, None
+
+
+def existing_review_event_ids(repo_path: str, tab_id: str) -> set[str]:
+    response = get_repo_events(
+        repo_path,
+        limit=50,
+        tab_id=tab_id,
+        event_types=["waiting_input", "finished", "failed", "response_complete", "response_failed"],
+    )
+    if "error" in response:
+        return set()
+    events = response.get("events")
+    if not isinstance(events, list):
+        return set()
+
+    event_ids: set[str] = set()
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        message = event.get("message")
+        event_id = event.get("id")
+        if isinstance(message, str) and extract_review_json(message) is not None and isinstance(event_id, str):
+            event_ids.add(event_id)
+    return event_ids
+
+
+def extract_review_json_from_markers(text: str) -> dict[str, Any] | None:
+    end_index = text.rfind(REVIEW_JSON_END)
+    if end_index == -1:
+        return None
+    begin_index = text.rfind(REVIEW_JSON_BEGIN, 0, end_index)
+    if begin_index == -1:
+        return None
+
+    candidate = text[begin_index + len(REVIEW_JSON_BEGIN):end_index].strip()
+    if not candidate:
+        return None
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    return payload if is_valid_review_payload(payload) else None
 
 
 def extract_balanced_json_objects(text: str) -> list[str]:
@@ -657,12 +747,22 @@ def is_valid_review_payload(payload: Any) -> bool:
     return True
 
 
-def extract_output_text(tab_id: str, lines: int = DEFAULT_OUTPUT_LINES) -> str:
-    response = get_output(tab_id, lines, "pty_log")
+def extract_output_text(
+    tab_id: str,
+    lines: int = DEFAULT_OUTPUT_LINES,
+    *,
+    canonical: bool = False,
+    stable_ms: int | None = None,
+) -> str:
+    response = get_output(tab_id, lines, "pty_log", wait_for_stable_ms=stable_ms)
     if "error" not in response:
         output = response.get("output")
         if isinstance(output, str) and output.strip():
             return output
+
+    if canonical:
+        trace(f"canonical transcript unavailable for {tab_id}: {response.get('error') if isinstance(response, dict) else 'unknown'}")
+        return ""
 
     fallback = get_output(tab_id, min(lines, 800), "buffer", wait_for_stable_ms=500)
     if "error" in fallback:
@@ -701,7 +801,7 @@ def send_prompt_with_confirmation(tab_id: str, prompt: str) -> bool:
 def wait_for_submission_start(tab_id: str, baseline_output: str, timeout_ms: int) -> bool:
     deadline = time.monotonic() + max(timeout_ms, 1) / 1000.0
     while time.monotonic() < deadline:
-        current_output = extract_output_text(tab_id)
+        current_output = extract_output_text(tab_id, canonical=True, stable_ms=300)
         if current_output != baseline_output:
             trace("submit: terminal output changed after submission")
             trace(f"submit: output tail after change={current_output[-400:]!r}")
@@ -741,18 +841,45 @@ def submit_prompt_with_fallback(tab_id: str, baseline_output: str) -> bool:
     return started
 
 
-def wait_for_review_completion(tab_id: str, timeout_ms: int) -> tuple[dict[str, Any] | None, str]:
+def wait_for_review_completion(
+    repo_path: str,
+    tab_id: str,
+    timeout_ms: int,
+    ignored_event_ids: set[str] | None = None,
+) -> tuple[dict[str, Any] | None, str]:
     deadline = time.monotonic() + max(timeout_ms, 1) / 1000.0
-    last_output = extract_output_text(tab_id)
+    last_output = extract_output_text(tab_id, canonical=True, stable_ms=300)
     stable_polls = 0
     trace(f"completion: polling for structured result up to {timeout_ms}ms")
 
     while time.monotonic() < deadline:
+        events_response = get_repo_events(
+            repo_path,
+            limit=50,
+            tab_id=tab_id,
+            event_types=["waiting_input", "finished", "failed", "response_complete", "response_failed"],
+        )
+        if "error" not in events_response:
+            events = events_response.get("events")
+            if isinstance(events, list):
+                payload, event = extract_review_result_from_events(
+                    events,
+                    tab_id=tab_id,
+                    ignored_event_ids=ignored_event_ids,
+                )
+                if payload is not None and isinstance(event, dict):
+                    trace(
+                        "completion: structured result found in stored event "
+                        f"type={event.get('type', '-')!s} producer={event.get('producer', '-')!s}"
+                    )
+                    message = event.get("message")
+                    return payload, message if isinstance(message, str) else ""
+
         status = get_tab(tab_id)
         if "error" in status:
             return None, str(status["error"])
 
-        current_output = extract_output_text(tab_id)
+        current_output = extract_output_text(tab_id, canonical=True, stable_ms=300)
         if current_output == last_output:
             stable_polls += 1
         else:
@@ -760,9 +887,9 @@ def wait_for_review_completion(tab_id: str, timeout_ms: int) -> tuple[dict[str, 
             last_output = current_output
             trace(f"completion: output tail changed={current_output[-400:]!r}")
 
-        payload = extract_review_json(current_output)
-        if payload is not None and is_prompt_ready(status) and stable_polls >= 2:
-            trace("completion: found structured result and prompt returned idle")
+        payload = extract_review_json_from_markers(current_output)
+        if payload is not None and is_prompt_ready(status) and stable_polls >= 1:
+            trace("completion: found sentinel-delimited structured result and prompt returned idle")
             return payload, current_output
 
         time.sleep(DEFAULT_OUTPUT_POLL_SECONDS)
@@ -907,7 +1034,13 @@ def main() -> int:
                 return 0
 
             trace("step 8: wait for final structured output")
-            result_payload, _ = wait_for_review_completion(tab_id, timeout_ms + review_grace_timeout_ms(timeout_ms))
+            ignored_event_ids = existing_review_event_ids(str(root), tab_id)
+            result_payload, _ = wait_for_review_completion(
+                str(root),
+                tab_id,
+                timeout_ms + review_grace_timeout_ms(timeout_ms),
+                ignored_event_ids=ignored_event_ids,
+            )
         except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError) as exc:
             code, reason = describe_scripting_unavailable(exc)
             print_skip(reason, code)
