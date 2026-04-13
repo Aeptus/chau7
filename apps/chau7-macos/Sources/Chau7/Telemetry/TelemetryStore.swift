@@ -831,39 +831,53 @@ final class TelemetryStore {
     }
 
     /// Aggregate run statistics for a repository.
-    func runStatsForRepo(repoPath: String) -> (totalRuns: Int, totalTokens: Int, totalCost: Double, totalTurns: Int, lastRunAt: Date?) {
+    func runStatsForRepo(repoPath: String, providerFilterKey: String? = nil) -> (totalRuns: Int, totalTokens: Int, totalCost: Double, totalTurns: Int, lastRunAt: Date?) {
         queue.sync {
             guard let db else { return (0, 0, 0, 0, nil) }
             let sql = """
-                SELECT COUNT(*) as cnt,
-                       COALESCE(SUM(total_input_tokens + total_output_tokens), 0) as tokens,
+                SELECT provider,
+                       COUNT(*) as cnt,
+                       COALESCE(SUM(total_input_tokens + total_cached_input_tokens + total_output_tokens + total_reasoning_output_tokens), 0) as tokens,
                        COALESCE(SUM(cost_usd), 0) as cost,
                        COALESCE(SUM(turn_count), 0) as turns,
                        MAX(started_at) as last_run
                 FROM runs WHERE repo_path = ?
+                GROUP BY provider
             """
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return (0, 0, 0, 0, nil) }
             defer { sqlite3_finalize(stmt) }
             bindText(stmt, 1, repoPath)
-            guard sqlite3_step(stmt) == SQLITE_ROW else { return (0, 0, 0, 0, nil) }
-            let cnt = Int(sqlite3_column_int(stmt, 0))
-            let tokens = Int(sqlite3_column_int64(stmt, 1))
-            let cost = sqlite3_column_double(stmt, 2)
-            let turns = Int(sqlite3_column_int(stmt, 3))
-            let lastRun: Date?
-            if sqlite3_column_type(stmt, 4) != SQLITE_NULL,
-               let text = sqlite3_column_text(stmt, 4) {
-                lastRun = ISO8601DateFormatter().date(from: String(cString: text))
-            } else {
-                lastRun = nil
+
+            var totalRuns = 0
+            var totalTokens = 0
+            var totalCost = 0.0
+            var totalTurns = 0
+            var lastRunAt: Date?
+            let formatter = ISO8601DateFormatter()
+
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let rawProvider = colText(stmt, 0)
+                guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
+
+                totalRuns += Int(sqlite3_column_int(stmt, 1))
+                totalTokens += Int(sqlite3_column_int64(stmt, 2))
+                totalCost += sqlite3_column_double(stmt, 3)
+                totalTurns += Int(sqlite3_column_int(stmt, 4))
+                if sqlite3_column_type(stmt, 5) != SQLITE_NULL,
+                   let text = sqlite3_column_text(stmt, 5),
+                   let date = formatter.date(from: String(cString: text)),
+                   (lastRunAt == nil || date > lastRunAt!) {
+                    lastRunAt = date
+                }
             }
-            return (cnt, tokens, cost, turns, lastRun)
+
+            return (totalRuns, totalTokens, totalCost, totalTurns, lastRunAt)
         }
     }
 
     /// Distinct AI providers used in a repository.
-    func providersForRepo(repoPath: String) -> [String] {
+    func providersForRepo(repoPath: String, providerFilterKey: String? = nil) -> [String] {
         queue.sync {
             guard let db else { return [] }
             let sql = "SELECT DISTINCT provider FROM runs WHERE repo_path = ? ORDER BY provider"
@@ -871,11 +885,15 @@ final class TelemetryStore {
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
             defer { sqlite3_finalize(stmt) }
             bindText(stmt, 1, repoPath)
-            var results: [String] = []
+            var results: Set<String> = []
             while sqlite3_step(stmt) == SQLITE_ROW {
-                results.append(String(cString: sqlite3_column_text(stmt, 0)))
+                let rawProvider = String(cString: sqlite3_column_text(stmt, 0))
+                if AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
+                   let key = AnalyticsProvider.key(for: rawProvider) {
+                    results.insert(key)
+                }
             }
-            return results
+            return AnalyticsProvider.sortKeys(results)
         }
     }
 
@@ -1029,7 +1047,7 @@ final class TelemetryStore {
     // MARK: - Aggregation Queries
 
     /// Token usage aggregated per tab, ordered by total tokens descending.
-    func tokenUsagePerTab(after: Date? = nil) -> [TabTokenConsumption] {
+    func tokenUsagePerTab(after: Date? = nil, providerFilterKey: String? = nil) -> [TabTokenConsumption] {
         queue.sync {
             guard let db else { return [] }
             var sql = """
@@ -1044,8 +1062,9 @@ final class TelemetryStore {
             }
             sql += """
             ),
-            tab_rollup AS (
+            tab_provider_rollup AS (
                 SELECT tab_id,
+                       provider,
                        COUNT(*) AS run_count,
                        SUM(CASE WHEN COALESCE(cost_state, 'missing') IN ('complete', 'estimated') AND cost_usd IS NOT NULL THEN 1 ELSE 0 END) AS priced_run_count,
                        SUM(CASE WHEN COALESCE(cost_state, 'missing') = 'missing' OR cost_usd IS NULL THEN 1 ELSE 0 END) AS missing_cost_run_count,
@@ -1053,41 +1072,38 @@ final class TelemetryStore {
                        COALESCE(SUM(total_cached_input_tokens),0) AS total_cached_input_tokens,
                        COALESCE(SUM(total_output_tokens),0) AS total_output_tokens,
                        COALESCE(SUM(total_reasoning_output_tokens),0) AS total_reasoning_output_tokens,
-                       COALESCE(SUM(cost_usd),0) AS total_cost_usd
-                FROM filtered_runs
-                GROUP BY tab_id
-            ),
-            latest_run_key AS (
-                SELECT tab_id,
+                       COALESCE(SUM(cost_usd),0) AS total_cost_usd,
                        MAX(started_at || '|' || created_at || '|' || run_id) AS latest_key
                 FROM filtered_runs
-                GROUP BY tab_id
+                GROUP BY tab_id, provider
             ),
-            latest_per_tab AS (
+            latest_per_tab_provider AS (
                 SELECT filtered_runs.tab_id,
-                       filtered_runs.provider AS last_provider,
-                       COALESCE(filtered_runs.repo_path, filtered_runs.cwd) AS last_location_path
+                       filtered_runs.provider,
+                       COALESCE(filtered_runs.repo_path, filtered_runs.cwd) AS last_location_path,
+                       (filtered_runs.started_at || '|' || filtered_runs.created_at || '|' || filtered_runs.run_id) AS latest_key
                 FROM filtered_runs
-                INNER JOIN latest_run_key
-                    ON latest_run_key.tab_id = filtered_runs.tab_id
-                    AND (filtered_runs.started_at || '|' || filtered_runs.created_at || '|' || filtered_runs.run_id) = latest_run_key.latest_key
             )
-            SELECT tab_rollup.tab_id,
-                   tab_rollup.run_count,
-                   tab_rollup.priced_run_count,
-                   tab_rollup.missing_cost_run_count,
-                   tab_rollup.total_input_tokens,
-                   tab_rollup.total_cached_input_tokens,
-                   tab_rollup.total_output_tokens,
-                   tab_rollup.total_reasoning_output_tokens,
-                   tab_rollup.total_cost_usd,
-                   latest_per_tab.last_provider,
-                   latest_per_tab.last_location_path
-            FROM tab_rollup
-            LEFT JOIN latest_per_tab ON latest_per_tab.tab_id = tab_rollup.tab_id
+            SELECT tab_provider_rollup.tab_id,
+                   tab_provider_rollup.provider,
+                   tab_provider_rollup.run_count,
+                   tab_provider_rollup.priced_run_count,
+                   tab_provider_rollup.missing_cost_run_count,
+                   tab_provider_rollup.total_input_tokens,
+                   tab_provider_rollup.total_cached_input_tokens,
+                   tab_provider_rollup.total_output_tokens,
+                   tab_provider_rollup.total_reasoning_output_tokens,
+                   tab_provider_rollup.total_cost_usd,
+                   tab_provider_rollup.latest_key,
+                   latest_per_tab_provider.last_location_path
+            FROM tab_provider_rollup
+            LEFT JOIN latest_per_tab_provider
+              ON latest_per_tab_provider.tab_id = tab_provider_rollup.tab_id
+             AND latest_per_tab_provider.provider = tab_provider_rollup.provider
+             AND latest_per_tab_provider.latest_key = tab_provider_rollup.latest_key
             ORDER BY
-                tab_rollup.total_input_tokens + tab_rollup.total_cached_input_tokens +
-                tab_rollup.total_output_tokens + tab_rollup.total_reasoning_output_tokens DESC
+                tab_provider_rollup.total_input_tokens + tab_provider_rollup.total_cached_input_tokens +
+                tab_provider_rollup.total_output_tokens + tab_provider_rollup.total_reasoning_output_tokens DESC
             """
 
             var stmt: OpaquePointer?
@@ -1098,29 +1114,70 @@ final class TelemetryStore {
                 bindText(stmt, 1, Self.isoString(from: after))
             }
 
-            var results: [TabTokenConsumption] = []
+            struct TabAggregate {
+                var runCount = 0
+                var pricedRunCount = 0
+                var missingCostRunCount = 0
+                var totalInputTokens = 0
+                var totalCachedInputTokens = 0
+                var totalOutputTokens = 0
+                var totalReasoningOutputTokens = 0
+                var totalCostUSD = 0.0
+                var lastProvider: String?
+                var lastLocationPath: String?
+                var latestKey = ""
+            }
+
+            var aggregated: [String: TabAggregate] = [:]
             while sqlite3_step(stmt) == SQLITE_ROW {
                 guard let tabID = colText(stmt, 0) else { continue }
-                results.append(TabTokenConsumption(
-                    tabID: tabID,
-                    runCount: Int(sqlite3_column_int64(stmt, 1)),
-                    pricedRunCount: Int(sqlite3_column_int64(stmt, 2)),
-                    missingCostRunCount: Int(sqlite3_column_int64(stmt, 3)),
-                    totalInputTokens: Int(sqlite3_column_int64(stmt, 4)),
-                    totalCachedInputTokens: Int(sqlite3_column_int64(stmt, 5)),
-                    totalOutputTokens: Int(sqlite3_column_int64(stmt, 6)),
-                    totalReasoningOutputTokens: Int(sqlite3_column_int64(stmt, 7)),
-                    totalCostUSD: sqlite3_column_double(stmt, 8),
-                    lastProvider: colText(stmt, 9),
-                    lastLocationPath: colText(stmt, 10)
-                ))
+                let rawProvider = colText(stmt, 1)
+                guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
+
+                var aggregate = aggregated[tabID] ?? TabAggregate()
+                aggregate.runCount += Int(sqlite3_column_int64(stmt, 2))
+                aggregate.pricedRunCount += Int(sqlite3_column_int64(stmt, 3))
+                aggregate.missingCostRunCount += Int(sqlite3_column_int64(stmt, 4))
+                aggregate.totalInputTokens += Int(sqlite3_column_int64(stmt, 5))
+                aggregate.totalCachedInputTokens += Int(sqlite3_column_int64(stmt, 6))
+                aggregate.totalOutputTokens += Int(sqlite3_column_int64(stmt, 7))
+                aggregate.totalReasoningOutputTokens += Int(sqlite3_column_int64(stmt, 8))
+                aggregate.totalCostUSD += sqlite3_column_double(stmt, 9)
+
+                let latestKey = colText(stmt, 10) ?? ""
+                if latestKey >= aggregate.latestKey {
+                    aggregate.latestKey = latestKey
+                    aggregate.lastProvider = AnalyticsProvider.key(for: rawProvider)
+                    aggregate.lastLocationPath = colText(stmt, 11)
+                }
+                aggregated[tabID] = aggregate
             }
-            return results
+            return aggregated.map { tabID, aggregate in
+                TabTokenConsumption(
+                    tabID: tabID,
+                    runCount: aggregate.runCount,
+                    pricedRunCount: aggregate.pricedRunCount,
+                    missingCostRunCount: aggregate.missingCostRunCount,
+                    totalInputTokens: aggregate.totalInputTokens,
+                    totalCachedInputTokens: aggregate.totalCachedInputTokens,
+                    totalOutputTokens: aggregate.totalOutputTokens,
+                    totalReasoningOutputTokens: aggregate.totalReasoningOutputTokens,
+                    totalCostUSD: aggregate.totalCostUSD,
+                    lastProvider: aggregate.lastProvider,
+                    lastLocationPath: aggregate.lastLocationPath
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.totalBillableTokens != rhs.totalBillableTokens {
+                    return lhs.totalBillableTokens > rhs.totalBillableTokens
+                }
+                return lhs.tabID < rhs.tabID
+            }
         }
     }
 
     /// Token usage aggregated per provider, ordered by cost descending.
-    func consumptionPerProvider(after: Date? = nil) -> [ProviderConsumptionStats] {
+    func consumptionPerProvider(after: Date? = nil, providerFilterKey: String? = nil) -> [ProviderConsumptionStats] {
         queue.sync {
             guard let db else { return [] }
             var sql = """
@@ -1148,31 +1205,47 @@ final class TelemetryStore {
                 bindText(stmt, 1, Self.isoString(from: after))
             }
 
-            var results: [ProviderConsumptionStats] = []
+            var aggregated: [String: ProviderConsumptionStats] = [:]
             while sqlite3_step(stmt) == SQLITE_ROW {
-                guard let provider = colText(stmt, 0) else { continue }
-                results.append(ProviderConsumptionStats(
+                guard let rawProvider = colText(stmt, 0),
+                      AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
+                      let provider = AnalyticsProvider.key(for: rawProvider) else {
+                    continue
+                }
+
+                let current = aggregated[provider]
+                aggregated[provider] = ProviderConsumptionStats(
                     provider: provider,
-                    runCount: Int(sqlite3_column_int64(stmt, 1)),
-                    pricedRunCount: Int(sqlite3_column_int64(stmt, 2)),
-                    missingCostRunCount: Int(sqlite3_column_int64(stmt, 3)),
-                    totalInputTokens: Int(sqlite3_column_int64(stmt, 4)),
-                    totalCachedInputTokens: Int(sqlite3_column_int64(stmt, 5)),
-                    totalOutputTokens: Int(sqlite3_column_int64(stmt, 6)),
-                    totalReasoningOutputTokens: Int(sqlite3_column_int64(stmt, 7)),
-                    totalCostUSD: sqlite3_column_double(stmt, 8)
-                ))
+                    runCount: (current?.runCount ?? 0) + Int(sqlite3_column_int64(stmt, 1)),
+                    pricedRunCount: (current?.pricedRunCount ?? 0) + Int(sqlite3_column_int64(stmt, 2)),
+                    missingCostRunCount: (current?.missingCostRunCount ?? 0) + Int(sqlite3_column_int64(stmt, 3)),
+                    totalInputTokens: (current?.totalInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 4)),
+                    totalCachedInputTokens: (current?.totalCachedInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 5)),
+                    totalOutputTokens: (current?.totalOutputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 6)),
+                    totalReasoningOutputTokens: (current?.totalReasoningOutputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 7)),
+                    totalCostUSD: (current?.totalCostUSD ?? 0) + sqlite3_column_double(stmt, 8)
+                )
             }
-            return results
+            return aggregated.values.sorted { lhs, rhs in
+                if lhs.totalCostUSD != rhs.totalCostUSD {
+                    return lhs.totalCostUSD > rhs.totalCostUSD
+                }
+                if lhs.totalBillableTokens != rhs.totalBillableTokens {
+                    return lhs.totalBillableTokens > rhs.totalBillableTokens
+                }
+                return AnalyticsProvider.displayName(for: lhs.provider)
+                    .localizedCaseInsensitiveCompare(AnalyticsProvider.displayName(for: rhs.provider)) == .orderedAscending
+            }
         }
     }
 
     /// Daily cost trend for the last N days.
-    func dailyCostTrend(days: Int = 7) -> [(date: String, cost: Double, tokens: Int, pricedRunCount: Int, totalRunCount: Int)] {
+    func dailyCostTrend(days: Int = 7, providerFilterKey: String? = nil) -> [(date: String, cost: Double, tokens: Int, pricedRunCount: Int, totalRunCount: Int)] {
         queue.sync {
             guard let db else { return [] }
             let sql = """
-            SELECT date(started_at) as day,
+            SELECT date(datetime(started_at, 'localtime')) as day,
+                   provider,
                    COUNT(*),
                    SUM(CASE WHEN COALESCE(cost_state, 'missing') IN ('complete', 'estimated') AND cost_usd IS NOT NULL THEN 1 ELSE 0 END),
                    COALESCE(SUM(cost_usd), 0),
@@ -1183,22 +1256,33 @@ final class TelemetryStore {
             FROM runs
             WHERE started_at >= date('now', '-\(max(1, min(days, 90))) days')
               AND COALESCE(token_usage_state, 'missing') != 'invalid'
-            GROUP BY day ORDER BY day
+            GROUP BY day, provider ORDER BY day
             """
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
             defer { sqlite3_finalize(stmt) }
 
-            var results: [(String, Double, Int, Int, Int)] = []
+            var aggregated: [String: (cost: Double, tokens: Int, pricedRuns: Int, totalRuns: Int)] = [:]
             while sqlite3_step(stmt) == SQLITE_ROW {
                 guard let day = colText(stmt, 0) else { continue }
-                let totalRuns = Int(sqlite3_column_int64(stmt, 1))
-                let pricedRuns = Int(sqlite3_column_int64(stmt, 2))
-                let cost = sqlite3_column_double(stmt, 3)
-                let tokens = Int(sqlite3_column_int64(stmt, 4))
-                results.append((day, cost, tokens, pricedRuns, totalRuns))
+                let rawProvider = colText(stmt, 1)
+                guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
+
+                let totalRuns = Int(sqlite3_column_int64(stmt, 2))
+                let pricedRuns = Int(sqlite3_column_int64(stmt, 3))
+                let cost = sqlite3_column_double(stmt, 4)
+                let tokens = Int(sqlite3_column_int64(stmt, 5))
+                var current = aggregated[day] ?? (0, 0, 0, 0)
+                current.cost += cost
+                current.tokens += tokens
+                current.pricedRuns += pricedRuns
+                current.totalRuns += totalRuns
+                aggregated[day] = current
             }
-            return results
+            return aggregated.keys.sorted().map { day in
+                let item = aggregated[day] ?? (0, 0, 0, 0)
+                return (day, item.cost, item.tokens, item.pricedRuns, item.totalRuns)
+            }
         }
     }
 
