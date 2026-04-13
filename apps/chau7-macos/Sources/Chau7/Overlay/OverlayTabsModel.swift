@@ -127,10 +127,17 @@ struct OverlayTab: Identifiable, Equatable {
 
     /// Cached screenshot of terminal content for instant visual feedback during tab switch
     var cachedSnapshot: NSImage?
+    /// Passive preview restored from persisted state. Only shown while the
+    /// shell-backed restore bootstrap is still in progress.
+    var restorePreviewSnapshot: NSImage?
     /// Last known cursor position for cursor-first rendering
     var lastCursorPosition: CGPoint = .zero
     /// Last known prompt text for cursor placeholder
     var lastPromptText = ""
+
+    var visibleSnapshot: NSImage? {
+        restorePreviewSnapshot ?? cachedSnapshot
+    }
 
     /// The primary terminal session (first terminal in split tree)
     var session: TerminalSessionModel? {
@@ -826,12 +833,19 @@ final class OverlayTabsModel {
 
     func syncSelectedTerminalPresentation(reason: String) {
         guard !isRenderSuspensionEnabled else { return }
+        for index in tabs.indices where tabs[index].restorePreviewSnapshot != nil {
+            let phase = tabs[index].displaySession?.restoreBootstrapPhase ?? .inactive
+            if phase != .replaying {
+                tabs[index].restorePreviewSnapshot = nil
+            }
+        }
+
         guard let tab = selectedTab else {
             isTerminalReady = true
             return
         }
 
-        let shouldShowRestorePreview = tab.cachedSnapshot != nil
+        let shouldShowRestorePreview = tab.restorePreviewSnapshot != nil
             && tab.displaySession?.isRestoreBootstrapPending == true
         if isTerminalReady == !shouldShowRestorePreview {
             return
@@ -842,13 +856,16 @@ final class OverlayTabsModel {
     }
 
     func encodedRestorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> Data? {
-        guard let snapshot = restorePreviewSnapshot(for: tab, isSelected: isSelected) else {
+        guard let snapshot = persistableRestorePreviewSnapshot(for: tab, isSelected: isSelected) else {
             return nil
         }
         return Self.pngData(from: snapshot)
     }
 
-    func restorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> NSImage? {
+    func persistableRestorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> NSImage? {
+        if let preview = tab.restorePreviewSnapshot {
+            return preview
+        }
         if let cached = tab.cachedSnapshot ?? tab.session?.lastRenderedSnapshot {
             return cached
         }

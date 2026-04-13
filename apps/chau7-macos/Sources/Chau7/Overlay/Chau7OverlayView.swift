@@ -1483,7 +1483,7 @@ struct Chau7OverlayView: View {
             // This displays a cached screenshot while the real terminal renders
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
-                if isSelected, !overlayModel.isTerminalReady, let snapshot = tab.cachedSnapshot {
+                if isSelected, !overlayModel.isTerminalReady, let snapshot = tab.visibleSnapshot {
                     // Show snapshot instantly while terminal renders
                     Image(nsImage: snapshot)
                         .resizable()
@@ -1498,7 +1498,7 @@ struct Chau7OverlayView: View {
             // Only shows if the tab has been viewed before (has cached prompt text)
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
-                let hasContent = !tab.lastPromptText.isEmpty || tab.cachedSnapshot != nil
+                let hasContent = !tab.lastPromptText.isEmpty || tab.visibleSnapshot != nil
                 if isSelected, !overlayModel.isTerminalReady, hasContent {
                     CursorPlaceholderView(
                         promptText: tab.lastPromptText.isEmpty ? "~" : tab.lastPromptText,

@@ -18,7 +18,7 @@ final class OverlayRestorePreviewTests: XCTestCase {
 
     func testExportTabStatesPersistsSelectedRestorePreviewSnapshot() throws {
         let model = OverlayTabsModel(appModel: AppModel(), restoreState: false)
-        model.tabs[0].cachedSnapshot = makePreviewImage()
+        model.tabs[0].restorePreviewSnapshot = makePreviewImage()
 
         let states = model.exportTabStates()
         let persistedData = try XCTUnwrap(states.first?.previewSnapshotPNGData)
@@ -51,10 +51,18 @@ final class OverlayRestorePreviewTests: XCTestCase {
         )
 
         let restoredTab = try XCTUnwrap(restoredModel.tabs.first)
-        XCTAssertNotNil(restoredTab.cachedSnapshot)
+        XCTAssertNotNil(restoredTab.restorePreviewSnapshot)
         XCTAssertFalse(
             restoredModel.isTerminalReady,
             "Selected restored tab should keep the passive preview visible until live restore settles"
+        )
+
+        restoredTab.session?.markRestoreBootstrapReady(source: "test")
+
+        XCTAssertNil(restoredModel.tabs[0].restorePreviewSnapshot)
+        XCTAssertTrue(
+            restoredModel.isTerminalReady,
+            "Passive preview should be discarded once restore bootstrap settles"
         )
     }
 }

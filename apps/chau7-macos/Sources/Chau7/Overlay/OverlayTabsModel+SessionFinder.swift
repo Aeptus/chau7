@@ -437,8 +437,7 @@ extension OverlayTabsModel {
             tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
             tab.stampOwnerTabID()
             if let preview = Self.restorePreviewImage(from: state.previewSnapshotPNGData) {
-                tab.cachedSnapshot = preview
-                tab.session?.lastRenderedSnapshot = preview
+                tab.restorePreviewSnapshot = preview
                 tab.lastPromptText = tab.session?.displayPath() ?? "~"
             }
 
