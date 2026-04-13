@@ -906,11 +906,12 @@ extension OverlayTabsModel {
                 }
 
                 // Restore CWD via minimal shell input. Leading space
-                // suppresses shell history (HIST_IGNORE_SPACE). clear wipes
-                // the cd echo so only the restored scrollback is visible.
+                // suppresses shell history (HIST_IGNORE_SPACE).
+                // No clear — the injected scrollback is already in the buffer
+                // and clear would flash a visible echo before wiping it.
                 if !effectivePaneState.directory.isEmpty {
                     session.sendOrQueueSystemRestoreInput(
-                        " cd \(Self.shellSafeSingleQuote(effectivePaneState.directory)) && clear\n"
+                        " cd \(Self.shellSafeSingleQuote(effectivePaneState.directory))\n"
                     )
                 }
 
@@ -928,6 +929,11 @@ extension OverlayTabsModel {
                     )
                 }
             }
+
+            // Assign render tiers for this window's tabs now that sessions
+            // have views attached. Without this, non-primary windows never
+            // get updateSuspensionState called and all tabs stay at .active.
+            computeAndApplyRenderTiers()
         }
     }
 
