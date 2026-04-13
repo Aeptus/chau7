@@ -6,6 +6,15 @@ import Chau7Core
 
 extension RustTerminalView {
 
+    private func isReturnKey(_ keyCode: UInt16) -> Bool {
+        keyCode == UInt16(kVK_Return) || keyCode == UInt16(kVK_ANSI_KeypadEnter)
+    }
+
+    private func firstResponderDebugName() -> String {
+        guard let responder = window?.firstResponder else { return "nil" }
+        return String(describing: type(of: responder))
+    }
+
     // MARK: - Local Echo (Latency Optimization)
 
     /// Process PTY output to suppress characters we already locally echoed
@@ -266,10 +275,23 @@ extension RustTerminalView {
         let keyCode = event.keyCode
         let modifiers = event.modifierFlags
 
+        if isReturnKey(keyCode) {
+            Log.info(
+                "RustTerminalView[\(viewId)]: keyDown Return hasFocus=\(hasFocus) " +
+                    "firstResponder=\(firstResponderDebugName())"
+            )
+        }
+
         // Generate terminal escape sequence for this key event
         if let sequence = generateTerminalSequence(keyCode: keyCode, modifiers: modifiers, event: event) {
             let hexPreview = sequence.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
             Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending escape sequence: [\(hexPreview)] (keyCode=\(keyCode))")
+            if isReturnKey(keyCode) {
+                Log.info(
+                    "RustTerminalView[\(viewId)]: keyDown Return generated terminal sequence [\(hexPreview)] " +
+                        "hasFocus=\(hasFocus)"
+                )
+            }
             if let text = String(bytes: sequence, encoding: .utf8),
                !(shouldAcceptUserText?(text) ?? true) {
                 Log.info("RustTerminalView[\(viewId)]: keyDown - Suppressed user input by command guard")
@@ -301,6 +323,13 @@ extension RustTerminalView {
         let keyCode = event.keyCode
         let modifiers = event.modifierFlags
 
+        if isReturnKey(keyCode) {
+            Log.info(
+                "RustTerminalView[\(viewId)]: handleTerminalKeyEvent Return hasFocus=\(hasFocus) " +
+                    "firstResponder=\(firstResponderDebugName())"
+            )
+        }
+
         // Command key combinations are handled by the app menu, not terminal
         if modifiers.contains(.command) {
             return false
@@ -310,6 +339,12 @@ extension RustTerminalView {
         if let sequence = generateTerminalSequence(keyCode: keyCode, modifiers: modifiers, event: event) {
             let hexPreview = sequence.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
             Log.trace("RustTerminalView[\(viewId)]: handleTerminalKeyEvent - Sending escape sequence: [\(hexPreview)] (keyCode=\(keyCode))")
+            if isReturnKey(keyCode) {
+                Log.info(
+                    "RustTerminalView[\(viewId)]: handleTerminalKeyEvent Return generated terminal sequence [\(hexPreview)] " +
+                        "hasFocus=\(hasFocus)"
+                )
+            }
             if let text = String(bytes: sequence, encoding: .utf8),
                !(shouldAcceptUserText?(text) ?? true) {
                 Log.info("RustTerminalView[\(viewId)]: handleTerminalKeyEvent - Suppressed user input by command guard")
@@ -666,6 +701,12 @@ extension RustTerminalView {
             let preview = encoded.bytes.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
             let suffix = encoded.bytes.count > 8 ? " ...<\(encoded.bytes.count - 8) more>" : ""
             Log.trace("RustTerminalView[\(viewId)]: send(keyPress:) - key=\(keyPress.key) modifiers=\(keyPress.sortedModifierNames.joined(separator: "+")) bytes=[\(preview)\(suffix)]")
+            if encoded.bytes.contains(0x0D) || encoded.bytes.contains(0x0A) {
+                Log.info(
+                    "RustTerminalView[\(viewId)]: send(keyPress:) newline-ish bytes=[\(preview)\(suffix)] " +
+                        "key=\(keyPress.key)"
+                )
+            }
             hideTipOverlay()
 
             if rustTerminal?.displayOffset ?? 0 > 0 {
@@ -690,6 +731,14 @@ extension RustTerminalView {
     /// Send text to the PTY
     func send(txt text: String) {
         Log.trace("RustTerminalView[\(viewId)]: send(txt:) - Sending \(text.count) chars")
+        if text.contains("\r") || text.contains("\n") {
+            let escaped = text
+                .replacingOccurrences(of: "\r", with: "\\r")
+                .replacingOccurrences(of: "\n", with: "\\n")
+            Log.info(
+                "RustTerminalView[\(viewId)]: send(txt:) newline-ish text='\(escaped.prefix(120))' chars=\(text.count)"
+            )
+        }
         hideTipOverlay()
 
         // Smart scroll: Scroll to bottom on user input (standard terminal behavior)

@@ -692,6 +692,7 @@ final class TerminalSessionModel {
     @ObservationIgnored var bufferRowProvider: (() -> Int?)?
     @ObservationIgnored var dangerousOutputHighlightWorkItem: DispatchWorkItem?
     @ObservationIgnored var dangerousOutputHighlightLastRun = Date.distantPast
+    @ObservationIgnored var dangerousOutputCacheLastRefreshAt = Date.distantPast
     /// Cached dangerous output rows from the most recent async scan (for in-grid tinting).
     @ObservationIgnored var cachedDangerousOutputRowSet: Set<Int> = []
     @ObservationIgnored var scrollHighlightWorkItem: DispatchWorkItem?
@@ -990,10 +991,26 @@ final class TerminalSessionModel {
         guard let window else { return }
         let candidateView = rustTerminalView ?? retainedRustTerminalView
 
+        let responderName: String = {
+            guard let responder = window.firstResponder else { return "nil" }
+            return String(describing: type(of: responder))
+        }()
+
+        Log.info(
+            "focusTerminal: title='\(title)' retry=\(retryCount) " +
+                "candidate=\(candidateView != nil) firstResponder=\(responderName)"
+        )
+
         if let view = candidateView,
-           view.window === window,
-           window.makeFirstResponder(view) {
-            return
+           view.window === window {
+            let focused = window.makeFirstResponder(view)
+            Log.info(
+                "focusTerminal: makeFirstResponder title='\(title)' success=\(focused) " +
+                    "viewWindowMatches=true"
+            )
+            if focused {
+                return
+            }
         }
 
         if retryCount < 8 {
@@ -1853,6 +1870,7 @@ final class TerminalSessionModel {
             self?.dangerousOutputHighlightWorkItem?.cancel()
             self?.dangerousOutputHighlightWorkItem = nil
             self?.dangerousOutputHighlightLastRun = .distantPast
+            self?.dangerousOutputCacheLastRefreshAt = .distantPast
             self?.dangerousHighlightSampleCount = 0
             self?.dangerousHighlightTotalMs = 0
             self?.dangerousHighlightDelayMs = nil
@@ -2248,6 +2266,7 @@ final class TerminalSessionModel {
         dangerousOutputHighlightWorkItem?.cancel()
         dangerousOutputHighlightWorkItem = nil
         dangerousOutputHighlightLastRun = .distantPast
+        dangerousOutputCacheLastRefreshAt = .distantPast
         dangerousHighlightSampleCount = 0
         dangerousHighlightTotalMs = 0
         dangerousHighlightDelayMs = nil

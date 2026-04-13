@@ -1129,6 +1129,11 @@ final class RustTerminalFFI {
             return
         }
         Log.trace("RustTerminalFFI[\(instanceId)]: sendBytes(Data) - Sending \(data.count) bytes")
+        if data.contains(where: { $0 == 0x0D || $0 == 0x0A }) {
+            let preview = data.prefix(16).map { String(format: "%02X", $0) }.joined(separator: " ")
+            let suffix = data.count > 16 ? " ...<\(data.count - 16) more>" : ""
+            Log.info("RustTerminalFFI[\(instanceId)]: sendBytes(Data) newline-ish bytes=[\(preview)\(suffix)]")
+        }
         let terminal = terminal
         let id = instanceId
         // Copy data before dispatching — the original buffer may be freed
@@ -1150,6 +1155,11 @@ final class RustTerminalFFI {
             return
         }
         Log.trace("RustTerminalFFI[\(instanceId)]: sendBytes([UInt8]) - Sending \(bytes.count) bytes")
+        if bytes.contains(where: { $0 == 0x0D || $0 == 0x0A }) {
+            let preview = bytes.prefix(16).map { String(format: "%02X", $0) }.joined(separator: " ")
+            let suffix = bytes.count > 16 ? " ...<\(bytes.count - 16) more>" : ""
+            Log.info("RustTerminalFFI[\(instanceId)]: sendBytes([UInt8]) newline-ish bytes=[\(preview)\(suffix)]")
+        }
         let terminal = terminal
         let id = instanceId
         let copy = bytes

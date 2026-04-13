@@ -22,6 +22,7 @@ extension RustTerminalView {
                 guard let userInfo = userInfo else { return kCVReturnSuccess }
                 let box = Unmanaged<DisplayLinkWeakBox>.fromOpaque(userInfo).takeUnretainedValue()
                 guard let view = box.view else { return kCVReturnSuccess }
+                WakeupProfiler.shared.record("terminal.displayLink")
                 DispatchQueue.main.async { [weak view] in
                     view?.pollAndSync()
                 }
@@ -34,6 +35,7 @@ extension RustTerminalView {
         } else {
             Log.warn("RustTerminalView[\(viewId)]: setupPollingLoop - CVDisplayLink failed (result=\(result)), falling back to Timer")
             pollTimer = Timer.scheduledTimer(withTimeInterval: displayRefreshInterval, repeats: true) { [weak self] _ in
+                WakeupProfiler.shared.record("terminal.pollTimer")
                 self?.pollAndSync()
             }
             Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using Timer fallback for polling")
@@ -93,6 +95,7 @@ extension RustTerminalView {
         } else if displayLink == nil, pollTimer == nil {
             // If display link was nil (never created or destroyed), don't recreate — just use timer
             pollTimer = Timer.scheduledTimer(withTimeInterval: displayRefreshInterval, repeats: true) { [weak self] _ in
+                WakeupProfiler.shared.record("terminal.pollTimer")
                 self?.pollAndSync()
             }
         }
@@ -216,6 +219,12 @@ extension RustTerminalView {
     }
 
     func pollAndSync() {
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        defer {
+            let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
+            WakeupProfiler.shared.record("terminal.pollAndSync", durationMs: durationMs)
+            FeatureProfiler.shared.record(feature: .terminalPoll, durationMs: durationMs)
+        }
         // Safety: Check if view is being deallocated (CVDisplayLink callback protection)
         guard !isBeingDeallocated else { return }
         guard let rust = rustTerminal else { return }

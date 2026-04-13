@@ -1608,6 +1608,7 @@ extension TerminalSessionModel {
         let expectedFireAt = CFAbsoluteTimeGetCurrent() + delay
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            let startedAt = CFAbsoluteTimeGetCurrent()
             let congestionMs = max(0, (CFAbsoluteTimeGetCurrent() - expectedFireAt) * 1000.0)
             dangerousHighlightSamples.append(Int(congestionMs.rounded()))
             dangerousHighlightSampleCount += 1
@@ -1623,8 +1624,19 @@ extension TerminalSessionModel {
                 thresholdMs: highlightLagLogThresholdMs,
                 lastLoggedAt: &lastHighlightLagLogAt
             )
-            refreshCachedDangerousOutputRows()
-            highlightView?.scheduleDisplay()
+            let now = Date()
+            let shouldRefreshCache = shouldRefreshDangerousOutputCache(now: now)
+            if shouldRefreshCache {
+                let cacheRefreshStartedAt = CFAbsoluteTimeGetCurrent()
+                refreshCachedDangerousOutputRows()
+                dangerousOutputCacheLastRefreshAt = now
+                highlightView?.scheduleDisplay()
+                let cacheRefreshMs = (CFAbsoluteTimeGetCurrent() - cacheRefreshStartedAt) * 1000.0
+                WakeupProfiler.shared.record("danger.highlightCacheRefresh", durationMs: cacheRefreshMs)
+                FeatureProfiler.shared.record(feature: .dangerousHighlightRefresh, durationMs: cacheRefreshMs)
+            }
+            let totalDurationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
+            WakeupProfiler.shared.record("danger.highlightWork", durationMs: totalDurationMs)
         }
         dangerousOutputHighlightWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
@@ -1653,8 +1665,26 @@ extension TerminalSessionModel {
     }
 
     private func shouldUseLowPowerHighlights() -> Bool {
+        guard WakeupControl.isEnabled(.lowPowerDangerousHighlights) else { return false }
         guard FeatureSettings.shared.dangerousOutputHighlightLowPowerEnabled else { return false }
         return outputBurstActive || isCpuSaturated()
+    }
+
+    private func shouldRefreshDangerousOutputCache(now: Date) -> Bool {
+        guard dirtyOutputRange != nil else { return false }
+        if !shouldUseLowPowerHighlights() {
+            return true
+        }
+
+        let minInterval: TimeInterval
+        if outputBurstActive {
+            minInterval = 1.5
+        } else if isCpuSaturated() {
+            minInterval = 0.75
+        } else {
+            minInterval = 0.35
+        }
+        return now.timeIntervalSince(dangerousOutputCacheLastRefreshAt) >= minInterval
     }
 
     private func isCpuSaturated() -> Bool {

@@ -1957,6 +1957,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         return false
     }
 
+    private func responderDebugName(_ responder: NSResponder?) -> String {
+        guard let responder else { return "nil" }
+        return String(describing: type(of: responder))
+    }
+
     /// Returns the active terminal view if one is first responder
     private func activeTerminalView(in window: NSWindow?) -> TerminalViewLike? {
         guard let window = window,
@@ -2018,6 +2023,14 @@ private final class OverlayBlurView: NSVisualEffectView {
         guard let window = NSApp.keyWindow else { return event }
         let isOverlayWindow = overlayHosts.contains(where: { $0.window == window })
         let overlayModel = isOverlayWindow ? activeOverlayModel : nil
+
+        if event.keyCode == UInt16(kVK_Return) || event.keyCode == UInt16(kVK_ANSI_KeypadEnter) {
+            Log.info(
+                "AppDelegate: Return key observed by local monitor overlay=\(isOverlayWindow) " +
+                    "firstResponder=\(responderDebugName(window.firstResponder)) " +
+                    "textInputFocused=\(isTextInputFocused(in: window))"
+            )
+        }
 
         if isOverlayWindow,
            flags == [.command],
