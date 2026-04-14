@@ -61,7 +61,7 @@ final class RustTerminalViewTextInputTests: XCTestCase {
             RustTerminalView.shouldKeepStartupPolling(
                 isTerminalStarted: true,
                 startupBytesLogged: 0,
-                shellStartupTimeoutPending: true
+                awaitingInitialPTYOutput: true
             )
         )
     }
@@ -71,17 +71,55 @@ final class RustTerminalViewTextInputTests: XCTestCase {
             RustTerminalView.shouldKeepStartupPolling(
                 isTerminalStarted: true,
                 startupBytesLogged: 1,
-                shellStartupTimeoutPending: true
+                awaitingInitialPTYOutput: true
             )
         )
     }
 
-    func testShouldStopStartupPollingAfterTimeoutSettles() {
+    func testShouldStopStartupPollingAfterBootstrapSettles() {
         XCTAssertFalse(
             RustTerminalView.shouldKeepStartupPolling(
                 isTerminalStarted: true,
                 startupBytesLogged: 0,
-                shellStartupTimeoutPending: false
+                awaitingInitialPTYOutput: false
+            )
+        )
+    }
+
+    func testShouldRefreshVisibleTerminalFromPumpOnlyForVisibleChangingTabs() {
+        XCTAssertTrue(
+            RustTerminalView.shouldRefreshVisibleTerminalFromPump(
+                changed: true,
+                notifyUpdateChanges: true,
+                isHidden: false,
+                hasVisibleWindow: true
+            )
+        )
+
+        XCTAssertFalse(
+            RustTerminalView.shouldRefreshVisibleTerminalFromPump(
+                changed: false,
+                notifyUpdateChanges: true,
+                isHidden: false,
+                hasVisibleWindow: true
+            )
+        )
+
+        XCTAssertFalse(
+            RustTerminalView.shouldRefreshVisibleTerminalFromPump(
+                changed: true,
+                notifyUpdateChanges: false,
+                isHidden: false,
+                hasVisibleWindow: true
+            )
+        )
+
+        XCTAssertFalse(
+            RustTerminalView.shouldRefreshVisibleTerminalFromPump(
+                changed: true,
+                notifyUpdateChanges: true,
+                isHidden: true,
+                hasVisibleWindow: true
             )
         )
     }

@@ -2158,6 +2158,10 @@ final class RustTerminalView: NSView {
 
     /// One-shot timer that fires onShellStartupSlow if no PTY output arrives
     var shellStartupTimeoutWork: DispatchWorkItem?
+    /// Explicit shell bootstrap state. This must not depend on whether a timeout
+    /// work item is currently enqueued, because early polling pauses can cancel
+    /// and recreate timers without meaning that the shell has produced output.
+    var isAwaitingInitialPTYOutput = false
 
     /// Terminal dimensions
     var cols = 80
@@ -2532,6 +2536,8 @@ final class RustTerminalView: NSView {
         }
         isTerminalStarted = true
         didEmitProcessTermination = false
+        startupBytesLogged = 0
+        isAwaitingInitialPTYOutput = true
 
         // Recalculate dimensions with actual bounds
         cols = max(1, Int(bounds.width / cellWidth))
@@ -2581,6 +2587,7 @@ final class RustTerminalView: NSView {
         let work = DispatchWorkItem { [weak self] in
             guard let self, startupBytesLogged == 0 else { return }
             Log.warn("RustTerminalView[\(viewId)]: No PTY output after 5s — shell may be hung")
+            isAwaitingInitialPTYOutput = false
             shellStartupTimeoutWork = nil
             updatePollingMode(reason: "shellStartupTimeout")
             onShellStartupSlow?() // Already on main queue
@@ -2605,6 +2612,7 @@ final class RustTerminalView: NSView {
     /// Permanently tears down live rendering for a closing session while keeping
     /// the terminal object alive long enough to send exit and observe process exit.
     func shutdownRenderingForSessionClosure() {
+        isAwaitingInitialPTYOutput = false
         shellStartupTimeoutWork?.cancel()
         shellStartupTimeoutWork = nil
         setEventMonitoringEnabled(false)
@@ -2676,16 +2684,25 @@ final class RustTerminalView: NSView {
         Self.shouldKeepStartupPolling(
             isTerminalStarted: isTerminalStarted,
             startupBytesLogged: startupBytesLogged,
-            shellStartupTimeoutPending: shellStartupTimeoutWork != nil
+            awaitingInitialPTYOutput: isAwaitingInitialPTYOutput
         )
     }
 
     static func shouldKeepStartupPolling(
         isTerminalStarted: Bool,
         startupBytesLogged: Int,
-        shellStartupTimeoutPending: Bool
+        awaitingInitialPTYOutput: Bool
     ) -> Bool {
-        isTerminalStarted && startupBytesLogged == 0 && shellStartupTimeoutPending
+        isTerminalStarted && startupBytesLogged == 0 && awaitingInitialPTYOutput
+    }
+
+    static func shouldRefreshVisibleTerminalFromPump(
+        changed: Bool,
+        notifyUpdateChanges: Bool,
+        isHidden: Bool,
+        hasVisibleWindow: Bool
+    ) -> Bool {
+        changed && notifyUpdateChanges && !isHidden && hasVisibleWindow
     }
 
     private func shouldRunLivePolling() -> Bool {

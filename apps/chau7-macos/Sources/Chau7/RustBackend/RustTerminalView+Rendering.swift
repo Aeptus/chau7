@@ -126,9 +126,13 @@ extension RustTerminalView {
     /// Background tabs only need to drain the PTY buffer to prevent the shell from
     /// blocking — they don't need 60fps rendering. A 500ms timer is sufficient.
     func pauseDisplayLink() {
-        // Cancel startup timeout — background tabs shouldn't trigger false positives
-        shellStartupTimeoutWork?.cancel()
-        shellStartupTimeoutWork = nil
+        // Keep shell bootstrap state alive until first PTY bytes or the actual
+        // startup timeout. An early pause during restore/window attachment must
+        // not silently end startup polling, or shells can appear hung forever.
+        if !isAwaitingInitialPTYOutput {
+            shellStartupTimeoutWork?.cancel()
+            shellStartupTimeoutWork = nil
+        }
 
         if let link = displayLink, CVDisplayLinkIsRunning(link) {
             CVDisplayLinkStop(link)
@@ -302,28 +306,32 @@ extension RustTerminalView {
         "terminal_render_loop_view_\(viewId)"
     }
 
-    /// Minimal PTY drain for background tabs — no rendering, no UI sync.
-    /// Only polls the Rust terminal to drain its buffer and checks for
-    /// critical events (process exit, title changes, bell).
+    /// Shared PTY/session pump for tabs without a live render loop.
+    /// This keeps shell/bootstrap/session state advancing independently from
+    /// the display link. If a tab is still visible and output changed, we do
+    /// one catch-up presentation without re-enabling continuous live polling.
     func backgroundDrain() {
         guard !isBeingDeallocated else { return }
         guard let rust = rustTerminal else { return }
+        let changed = drainPTYAndProcessTerminalState(rust: rust)
 
-        _ = rust.poll(timeout: 0)
+        let hasVisibleWindow: Bool
+        if let window {
+            hasVisibleWindow = window.isVisible && !window.isMiniaturized
+        } else {
+            hasVisibleWindow = false
+        }
 
-        // Still check for critical events even when suspended
-        if rust.checkBell() { handleBell() }
-        if let exitCode = rust.getPendingExitCode() {
-            emitProcessTerminatedOnce(exitCode: exitCode, reason: "exit-code")
+        guard Self.shouldRefreshVisibleTerminalFromPump(
+            changed: changed,
+            notifyUpdateChanges: notifyUpdateChanges,
+            isHidden: isHidden,
+            hasVisibleWindow: hasVisibleWindow
+        ) else {
+            return
         }
-        if rust.isPtyClosed() {
-            emitProcessTerminatedOnce(exitCode: nil, reason: "pty-closed")
-        }
-        if let title = rust.getPendingTitle() {
-            DispatchQueue.main.async { [weak self] in
-                self?.onTitleChanged?(title)
-            }
-        }
+
+        presentLatestTerminalStateFromPump()
     }
 
     /// Poll Rust terminal and sync to renderer if needed
@@ -340,30 +348,9 @@ extension RustTerminalView {
         }
     }
 
-    func pollAndSync() {
-        let startedAt = CFAbsoluteTimeGetCurrent()
-        defer {
-            let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
-            WakeupProfiler.shared.record("terminal.pollAndSync", durationMs: durationMs)
-            FeatureProfiler.shared.record(feature: .terminalPoll, durationMs: durationMs)
-        }
+    @discardableResult
+    private func drainPTYAndProcessTerminalState(rust: RustTerminalFFI) -> Bool {
         // Safety: Check if view is being deallocated (CVDisplayLink callback protection)
-        guard !isBeingDeallocated else { return }
-        guard let rust = rustTerminal else { return }
-
-        // ALWAYS poll the Rust terminal to drain PTY buffer, even when suspended.
-        // This prevents the PTY reader thread from blocking when the buffer fills up.
-        // (Without this, suspended state blocks the PTY by not draining its buffer)
-        //
-        // Selection preservation: Rust manages selection state internally. If poll()
-        // processes output that scrolls the terminal, Rust may clear its selection.
-        // During an active drag (isSelecting == true), the next mouseDragged event
-        // re-establishes the selection via rust.updateSelection(). However, if the
-        // user holds the mouse still during scrolling, no drag events fire and the
-        // selection stays cleared until the next mouse movement. The 60fps
-        // CVDisplayLink render loop minimizes visible flicker in the common case.
-        // If flicker becomes noticeable, a Rust FFI flag
-        // (preserve_selection_during_scroll) would be the proper fix.
         let changed = rust.poll(timeout: 0)
         RenderPipelineProfiler.shared.recordPoll(
             viewID: viewId,
@@ -438,6 +425,7 @@ extension RustTerminalView {
         if var outputData = rust.getLastOutput(), !outputData.isEmpty {
             // Cancel the shell-startup-slow timer on first PTY output
             if startupBytesLogged == 0 {
+                isAwaitingInitialPTYOutput = false
                 shellStartupTimeoutWork?.cancel()
                 shellStartupTimeoutWork = nil
                 updatePollingMode(reason: "firstPTYOutput")
@@ -460,7 +448,7 @@ extension RustTerminalView {
 
             let extraction = extractInlineImages(from: outputData)
             outputData = extraction.0
-            if !extraction.1.isEmpty {
+            if !extraction.1.isEmpty, notifyUpdateChanges {
                 renderInlineImages(extraction.1)
             }
 
@@ -505,7 +493,13 @@ extension RustTerminalView {
             let savedScrollPosition = scrollPosition
 
             // Smart Scroll: Restore position if user wasn't at bottom
-            restoreSmartScrollIfNeeded(smartScrollEnabled: smartScrollEnabled, wasAtBottom: wasAtBottom, savedPosition: savedScrollPosition)
+            if notifyUpdateChanges {
+                restoreSmartScrollIfNeeded(
+                    smartScrollEnabled: smartScrollEnabled,
+                    wasAtBottom: wasAtBottom,
+                    savedPosition: savedScrollPosition
+                )
+            }
 
             // LOCAL ECHO SUPPRESSION: Filter out characters we already displayed locally
             // This prevents "double echo" when PTY confirms what we predicted
@@ -515,6 +509,49 @@ extension RustTerminalView {
                 onOutput?(outputData)
             }
         }
+
+        return changed
+    }
+
+    private func presentLatestTerminalStateFromPump() {
+        Self.syncCount += 1
+        instanceSyncCount += 1
+        needsGridSync = false
+
+        if !isMetalRenderingActive {
+            syncGridToRenderer(force: true)
+            updateDangerousRowTints()
+            gridView?.tickCursorBlink(now: CFAbsoluteTimeGetCurrent())
+        }
+
+        onBufferChanged?()
+    }
+
+    func pollAndSync() {
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        defer {
+            let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
+            WakeupProfiler.shared.record("terminal.pollAndSync", durationMs: durationMs)
+            FeatureProfiler.shared.record(feature: .terminalPoll, durationMs: durationMs)
+        }
+        // Safety: Check if view is being deallocated (CVDisplayLink callback protection)
+        guard !isBeingDeallocated else { return }
+        guard let rust = rustTerminal else { return }
+
+        // ALWAYS poll the Rust terminal to drain PTY buffer, even when suspended.
+        // This prevents the PTY reader thread from blocking when the buffer fills up.
+        // (Without this, suspended state blocks the PTY by not draining its buffer)
+        //
+        // Selection preservation: Rust manages selection state internally. If poll()
+        // processes output that scrolls the terminal, Rust may clear its selection.
+        // During an active drag (isSelecting == true), the next mouseDragged event
+        // re-establishes the selection via rust.updateSelection(). However, if the
+        // user holds the mouse still during scrolling, no drag events fire and the
+        // selection stays cleared until the next mouse movement. The 60fps
+        // CVDisplayLink render loop minimizes visible flicker in the common case.
+        // If flicker becomes noticeable, a Rust FFI flag
+        // (preserve_selection_during_scroll) would be the proper fix.
+        let changed = drainPTYAndProcessTerminalState(rust: rust)
 
         // Skip UI updates when suspended, but we've already drained the PTY above
         guard notifyUpdateChanges else { return }
