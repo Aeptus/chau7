@@ -2581,6 +2581,8 @@ final class RustTerminalView: NSView {
         let work = DispatchWorkItem { [weak self] in
             guard let self, startupBytesLogged == 0 else { return }
             Log.warn("RustTerminalView[\(viewId)]: No PTY output after 5s — shell may be hung")
+            shellStartupTimeoutWork = nil
+            updatePollingMode(reason: "shellStartupTimeout")
             onShellStartupSlow?() // Already on main queue
         }
         shellStartupTimeoutWork = work
@@ -2670,8 +2672,27 @@ final class RustTerminalView: NSView {
         updateInlineImagePositions()
     }
 
+    private var isShellBootstrapPending: Bool {
+        Self.shouldKeepStartupPolling(
+            isTerminalStarted: isTerminalStarted,
+            startupBytesLogged: startupBytesLogged,
+            shellStartupTimeoutPending: shellStartupTimeoutWork != nil
+        )
+    }
+
+    static func shouldKeepStartupPolling(
+        isTerminalStarted: Bool,
+        startupBytesLogged: Int,
+        shellStartupTimeoutPending: Bool
+    ) -> Bool {
+        isTerminalStarted && startupBytesLogged == 0 && shellStartupTimeoutPending
+    }
+
     private func shouldRunLivePolling() -> Bool {
         guard isTerminalStarted, notifyUpdateChanges, !isHidden else { return false }
+        if isShellBootstrapPending {
+            return true
+        }
         guard let window else { return false }
         return window.isVisible && !window.isMiniaturized
     }

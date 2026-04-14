@@ -440,6 +440,7 @@ extension RustTerminalView {
             if startupBytesLogged == 0 {
                 shellStartupTimeoutWork?.cancel()
                 shellStartupTimeoutWork = nil
+                updatePollingMode(reason: "firstPTYOutput")
             }
 
             // Keep raw PTY startup previews out of the main log unless trace is enabled.

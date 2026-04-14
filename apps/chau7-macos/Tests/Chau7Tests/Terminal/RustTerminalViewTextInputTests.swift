@@ -55,5 +55,35 @@ final class RustTerminalViewTextInputTests: XCTestCase {
             )
         )
     }
+
+    func testShouldKeepStartupPollingWhileWaitingForFirstPTYBytes() {
+        XCTAssertTrue(
+            RustTerminalView.shouldKeepStartupPolling(
+                isTerminalStarted: true,
+                startupBytesLogged: 0,
+                shellStartupTimeoutPending: true
+            )
+        )
+    }
+
+    func testShouldStopStartupPollingAfterFirstPTYBytes() {
+        XCTAssertFalse(
+            RustTerminalView.shouldKeepStartupPolling(
+                isTerminalStarted: true,
+                startupBytesLogged: 1,
+                shellStartupTimeoutPending: true
+            )
+        )
+    }
+
+    func testShouldStopStartupPollingAfterTimeoutSettles() {
+        XCTAssertFalse(
+            RustTerminalView.shouldKeepStartupPolling(
+                isTerminalStarted: true,
+                startupBytesLogged: 0,
+                shellStartupTimeoutPending: false
+            )
+        )
+    }
 }
 #endif
