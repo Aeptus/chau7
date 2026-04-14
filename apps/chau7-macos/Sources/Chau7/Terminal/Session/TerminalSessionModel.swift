@@ -576,6 +576,9 @@ final class TerminalSessionModel {
     @ObservationIgnored private var retainedRustTerminalView: RustTerminalView?
     /// Prefill command queued when restore/restoration occurs before terminal is ready.
     @ObservationIgnored private var pendingPrefillInput: String?
+    @ObservationIgnored private var pendingPrefillRejectionReasonProvider: (() -> String?)?
+    @ObservationIgnored private var pendingPrefillOnDelivered: (() -> Void)?
+    @ObservationIgnored private var pendingPrefillOnRejected: ((String) -> Void)?
     /// Retry counter for pending prefill flush attempts.
     @ObservationIgnored private var pendingPrefillRetries = 0
     @ObservationIgnored private var restoreBootstrapExpectsResumePrefill = false
@@ -1824,23 +1827,52 @@ final class TerminalSessionModel {
         }
     }
 
+    enum PrefillInputResult: Equatable {
+        case delivered
+        case queued
+        case rejected(String)
+    }
+
     /// Prefills the terminal input line without executing it.
     /// This is used for restore-time resume workflows where the user should
     /// explicitly confirm execution.
-    func prefillInput(_ text: String) {
-        guard !text.isEmpty else { return }
+    @discardableResult
+    func prefillInput(
+        _ text: String,
+        rejectionReasonProvider: (() -> String?)? = nil,
+        onDelivered: (() -> Void)? = nil,
+        onRejected: ((String) -> Void)? = nil
+    ) -> PrefillInputResult {
+        guard !text.isEmpty else { return .rejected("empty_prefill") }
         trackAIResumeMetadata(from: text)
         pendingPrefillInput = text
+        pendingPrefillRejectionReasonProvider = rejectionReasonProvider
+        pendingPrefillOnDelivered = onDelivered
+        pendingPrefillOnRejected = onRejected
         pendingWaitingInputFallbackArmed = false
         pendingWaitingInputFallbackSawLiveOutput = false
         suppressWaitingInputFallbackUntilNextUserCommand = true
-        flushPendingPrefillInputIfReady()
+        return flushPendingPrefillInputIfReady()
     }
 
-    func flushPendingPrefillInputIfReady() {
+    @discardableResult
+    func flushPendingPrefillInputIfReady() -> PrefillInputResult {
         guard let text = pendingPrefillInput else {
             pendingPrefillRetries = 0
-            return
+            return .queued
+        }
+
+        if let rejectionReason = pendingPrefillRejectionReasonProvider?() {
+            let onRejected = pendingPrefillOnRejected
+            pendingPrefillInput = nil
+            pendingPrefillRetries = 0
+            pendingPrefillRejectionReasonProvider = nil
+            pendingPrefillOnDelivered = nil
+            pendingPrefillOnRejected = nil
+            markRestoreBootstrapReady(source: "resume_prefill_rejected")
+            Log.warn("Resume prefill rejected: \(rejectionReason) (\(text.prefix(60)))")
+            onRejected?(rejectionReason)
+            return .rejected(rejectionReason)
         }
 
         // After several retries the shell has had time to start — force-clear
@@ -1852,8 +1884,12 @@ final class TerminalSessionModel {
 
         if canPrefillInput() {
             let insertion = SnippetInsertion(text: text, placeholders: [], finalCursorOffset: text.count)
+            let onDelivered = pendingPrefillOnDelivered
             pendingPrefillInput = nil
             pendingPrefillRetries = 0
+            pendingPrefillRejectionReasonProvider = nil
+            pendingPrefillOnDelivered = nil
+            pendingPrefillOnRejected = nil
             deliveredSystemResumePrefillSinceLastUserCommand = true
             suppressWaitingInputFallbackUntilNextUserCommand = true
             pendingWaitingInputFallbackArmed = false
@@ -1861,23 +1897,25 @@ final class TerminalSessionModel {
             activeTerminalView?.insertSnippet(insertion)
             markRestoreBootstrapReady(source: "resume_prefill")
             Log.info("Resume prefill delivered: \(text.prefix(60))")
-            return
+            onDelivered?()
+            return .delivered
         }
 
         // No view yet — wait for attachRustTerminal to call us again.
-        guard existingRustTerminalView != nil else { return }
+        guard existingRustTerminalView != nil else { return .queued }
 
         // View exists but shell isn't ready — schedule a retry.
         guard pendingPrefillRetries < 20 else {
             Log.warn("Resume prefill: retries exhausted, waiting for next prompt (\(text.prefix(60)))")
             pendingPrefillRetries = 0 // reset so handlePromptDetected can restart
-            return
+            return .queued
         }
         pendingPrefillRetries += 1
         let delay = min(0.3 + Double(pendingPrefillRetries) * 0.3, 3.0)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.flushPendingPrefillInputIfReady()
         }
+        return .queued
     }
 
     func canPrefillInput() -> Bool {

@@ -1072,20 +1072,22 @@ extension OverlayTabsModel {
                     latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                     return
                 }
-                session.prefillInput(intent.command)
-                StartupRestoreCoordinator.shared.noteQueuedResumePrefill()
-                recordResumeRestoreDeliveryState(
-                    paneID: paneID,
-                    token: restoreToken,
-                    outcome: .queued,
-                    tabID: targetTabID,
-                    reason: "retries_exhausted"
+                let deliveredImmediately = enqueueResumePrefill(
+                    intent: intent,
+                    into: session,
+                    targetTabID: targetTabID,
+                    restoreToken: restoreToken,
+                    queuedReason: "retries_exhausted",
+                    deliveredReason: "prefilled_after_retries_exhausted"
                 )
-                Log.warn("restoreTabState: retries exhausted, queued prefill for tab=\(targetTabID) pane=\(paneID)")
+                if deliveredImmediately {
+                    Log.info("restoreTabState: retries exhausted but delivered prefill immediately for tab=\(targetTabID) pane=\(paneID)")
+                } else {
+                    Log.warn("restoreTabState: retries exhausted, queued prefill for tab=\(targetTabID) pane=\(paneID)")
+                }
             } else {
                 Log.warn("restoreTabState: retries exhausted, tab/pane gone for tab=\(targetTabID) pane=\(paneID)")
             }
-            latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
             return
         }
 
@@ -1149,16 +1151,14 @@ extension OverlayTabsModel {
                             latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                             return
                         }
-                        reResolvedSession.prefillInput(intent.command)
-                        StartupRestoreCoordinator.shared.noteQueuedResumePrefill()
-                        recordResumeRestoreDeliveryState(
-                            paneID: paneID,
-                            token: restoreToken,
-                            outcome: .queued,
-                            tabID: targetTabID,
-                            reason: "waiting_for_view"
+                        enqueueResumePrefill(
+                            intent: intent,
+                            into: reResolvedSession,
+                            targetTabID: targetTabID,
+                            restoreToken: restoreToken,
+                            queuedReason: "waiting_for_view",
+                            deliveredReason: "prefilled_after_waiting_for_view"
                         )
-                        latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                         Log.info("restoreTabState: no view for tab=\(targetTabID) pane=\(paneID), queued session-level prefill")
                         return
                     }
@@ -1200,22 +1200,13 @@ extension OverlayTabsModel {
             }
 
             // Prefill the pane-owned resume command so the user can confirm with Enter.
-            reResolvedSession.prefillInput(intent.command)
-            StartupRestoreCoordinator.shared.noteDeliveredResumePrefill()
-            recordResumeRestoreDeliveryState(
-                paneID: paneID,
-                token: restoreToken,
-                outcome: .delivered,
-                tabID: targetTabID,
-                reason: "prefilled"
-            )
-            latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
-            Log.info(
-                """
-                restoreTabState: resume command prefilling for tab=\(targetTabID) pane=\(paneID) \
-                provider=\(intent.expectedProvider ?? "nil") session=\(intent.expectedSessionID?.prefix(8) ?? "nil") \
-                dir=\(intent.expectedDirectory)
-                """
+            enqueueResumePrefill(
+                intent: intent,
+                into: reResolvedSession,
+                targetTabID: targetTabID,
+                restoreToken: restoreToken,
+                queuedReason: "deferred_after_ready_check",
+                deliveredReason: "prefilled"
             )
         }
     }
@@ -1260,13 +1251,23 @@ extension OverlayTabsModel {
         tabID: UUID,
         reason: String
     ) {
-        if let existing = resumeRestoreDeliveryStateByPaneID[paneID],
-           existing.token != token,
-           outcome == .superseded {
-            Log.trace(
-                "restoreTabState: preserving newer resume outcome for tab=\(tabID) pane=\(paneID) existingToken=\(existing.token.prefix(8)) staleToken=\(token.prefix(8))"
-            )
-            return
+        if let existing = resumeRestoreDeliveryStateByPaneID[paneID], outcome == .superseded {
+            if existing.token != token {
+                Log.trace(
+                    "restoreTabState: preserving newer resume outcome for tab=\(tabID) pane=\(paneID) existingToken=\(existing.token.prefix(8)) staleToken=\(token.prefix(8))"
+                )
+                return
+            }
+
+            switch existing.outcome {
+            case .delivered, .rejected:
+                Log.trace(
+                    "restoreTabState: preserving terminal resume outcome for tab=\(tabID) pane=\(paneID) token=\(token.prefix(8)) existing=\(existing.outcome.rawValue)"
+                )
+                return
+            case .pending, .queued, .superseded:
+                break
+            }
         }
         resumeRestoreDeliveryStateByPaneID[paneID] = ResumeRestoreDeliveryState(
             token: token,
@@ -1275,6 +1276,85 @@ extension OverlayTabsModel {
         Log.info(
             "restoreTabState: resume outcome tab=\(tabID) pane=\(paneID) token=\(token.prefix(8)) outcome=\(outcome.rawValue) reason=\(reason)"
         )
+    }
+
+    @discardableResult
+    func enqueueResumePrefill(
+        intent: ResumeRestoreIntent,
+        into session: TerminalSessionModel,
+        targetTabID: UUID,
+        restoreToken: String,
+        queuedReason: String,
+        deliveredReason: String
+    ) -> Bool {
+        let paneID = intent.paneID
+        let prefillResult = session.prefillInput(
+            intent.command,
+            rejectionReasonProvider: { [weak self, weak session] in
+                guard let self, let session else { return "session_unavailable_at_delivery" }
+                guard latestRestoreResumeTokenByPaneID[paneID] == restoreToken else {
+                    return "superseded_at_delivery"
+                }
+                guard validateResumeRestoreIntent(intent, against: session, tabID: targetTabID) else {
+                    return "ownership_validation_failed_at_delivery"
+                }
+                return nil
+            },
+            onDelivered: { [weak self] in
+                guard let self else { return }
+                StartupRestoreCoordinator.shared.noteDeliveredResumePrefill()
+                recordResumeRestoreDeliveryState(
+                    paneID: paneID,
+                    token: restoreToken,
+                    outcome: .delivered,
+                    tabID: targetTabID,
+                    reason: deliveredReason
+                )
+                if latestRestoreResumeTokenByPaneID[paneID] == restoreToken {
+                    latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
+                }
+                Log.info(
+                    """
+                    restoreTabState: resume command prefilling for tab=\(targetTabID) pane=\(paneID) \
+                    provider=\(intent.expectedProvider ?? "nil") session=\(intent.expectedSessionID?.prefix(8) ?? "nil") \
+                    dir=\(intent.expectedDirectory)
+                    """
+                )
+            },
+            onRejected: { [weak self] rejectionReason in
+                guard let self else { return }
+                let outcome: ResumeRestoreDeliveryState.Outcome = rejectionReason.hasPrefix("superseded")
+                    ? .superseded
+                    : .rejected
+                recordResumeRestoreDeliveryState(
+                    paneID: paneID,
+                    token: restoreToken,
+                    outcome: outcome,
+                    tabID: targetTabID,
+                    reason: rejectionReason
+                )
+                if latestRestoreResumeTokenByPaneID[paneID] == restoreToken {
+                    latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
+                }
+            }
+        )
+
+        switch prefillResult {
+        case .delivered:
+            return true
+        case .queued:
+            StartupRestoreCoordinator.shared.noteQueuedResumePrefill()
+            recordResumeRestoreDeliveryState(
+                paneID: paneID,
+                token: restoreToken,
+                outcome: .queued,
+                tabID: targetTabID,
+                reason: queuedReason
+            )
+            return false
+        case .rejected:
+            return false
+        }
     }
 
     struct ResumeRestoreIntent {

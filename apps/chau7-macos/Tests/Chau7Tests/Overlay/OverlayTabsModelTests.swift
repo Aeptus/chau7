@@ -2511,6 +2511,157 @@ final class OverlayTabsModelTests: XCTestCase {
         wait(for: [expectationDone], timeout: 1.5)
     }
 
+    func testRecordResumeRestoreDeliveryStatePreservesDeliveredOutcomeAgainstSameTokenSuperseded() {
+        guard let tab = model.tabs.first,
+              let (paneID, _) = tab.splitController.terminalSessions.first else {
+            XCTFail("Expected initial terminal pane")
+            return
+        }
+
+        let token = "restore-same-token"
+        model.recordResumeRestoreDeliveryState(
+            paneID: paneID,
+            token: token,
+            outcome: .delivered,
+            tabID: tab.id,
+            reason: "test_delivered"
+        )
+
+        model.recordResumeRestoreDeliveryState(
+            paneID: paneID,
+            token: token,
+            outcome: .superseded,
+            tabID: tab.id,
+            reason: "test_stale_retry"
+        )
+
+        XCTAssertEqual(
+            model.resumeRestoreDeliveryStateByPaneID[paneID],
+            OverlayTabsModel.ResumeRestoreDeliveryState(
+                token: token,
+                outcome: .delivered
+            )
+        )
+    }
+
+    func testQueuedResumePrefillRevalidatesOwnershipAtActualDelivery() {
+        guard let tab = model.tabs.first,
+              let (paneID, session) = tab.splitController.terminalSessions.first else {
+            XCTFail("Expected initial terminal pane")
+            return
+        }
+
+        session.updateCurrentDirectory("/tmp/owned-pane")
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        session.status = .idle
+
+        let token = "restore-queued-drift"
+        let intent = OverlayTabsModel.ResumeRestoreIntent(
+            paneID: paneID,
+            command: "claude --resume drift-001",
+            expectedDirectory: "/tmp/owned-pane",
+            expectedProvider: nil,
+            expectedSessionID: nil,
+            expectedSessionIDSource: nil,
+            isFocusedPane: true
+        )
+
+        model.latestRestoreResumeTokenByPaneID[paneID] = token
+        let deliveredImmediately = model.enqueueResumePrefill(
+            intent: intent,
+            into: session,
+            targetTabID: tab.id,
+            restoreToken: token,
+            queuedReason: "test_waiting_for_view",
+            deliveredReason: "test_prefilled_after_waiting_for_view"
+        )
+        XCTAssertFalse(deliveredImmediately)
+        XCTAssertEqual(
+            model.resumeRestoreDeliveryStateByPaneID[paneID]?.outcome,
+            .queued
+        )
+
+        session.updateCurrentDirectory("/tmp/drifted-pane")
+
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { text in
+            capturedInputs.append(text)
+        }
+        session.attachRustTerminal(terminalView)
+
+        let expectationDone = expectation(description: "queued prefill is rejected after ownership drift")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            XCTAssertTrue(capturedInputs.isEmpty)
+            XCTAssertEqual(
+                self.model.resumeRestoreDeliveryStateByPaneID[paneID]?.outcome,
+                .rejected
+            )
+            XCTAssertNil(self.model.latestRestoreResumeTokenByPaneID[paneID])
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 1.0)
+    }
+
+    func testQueuedResumePrefillUpgradesLedgerToDeliveredWhenItEventuallyLands() {
+        guard let tab = model.tabs.first,
+              let (paneID, session) = tab.splitController.terminalSessions.first else {
+            XCTFail("Expected initial terminal pane")
+            return
+        }
+
+        session.updateCurrentDirectory("/tmp/owned-pane")
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        session.status = .idle
+
+        let token = "restore-queued-delivered"
+        let intent = OverlayTabsModel.ResumeRestoreIntent(
+            paneID: paneID,
+            command: "claude --resume delivered-001",
+            expectedDirectory: "/tmp/owned-pane",
+            expectedProvider: nil,
+            expectedSessionID: nil,
+            expectedSessionIDSource: nil,
+            isFocusedPane: true
+        )
+
+        model.latestRestoreResumeTokenByPaneID[paneID] = token
+        let deliveredImmediately = model.enqueueResumePrefill(
+            intent: intent,
+            into: session,
+            targetTabID: tab.id,
+            restoreToken: token,
+            queuedReason: "test_waiting_for_view",
+            deliveredReason: "test_prefilled_after_waiting_for_view"
+        )
+        XCTAssertFalse(deliveredImmediately)
+        XCTAssertEqual(
+            model.resumeRestoreDeliveryStateByPaneID[paneID]?.outcome,
+            .queued
+        )
+
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { text in
+            capturedInputs.append(text)
+        }
+        session.attachRustTerminal(terminalView)
+
+        let expectationDone = expectation(description: "queued prefill upgrades ledger when delivered")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            XCTAssertEqual(capturedInputs, ["claude --resume delivered-001"])
+            XCTAssertEqual(
+                self.model.resumeRestoreDeliveryStateByPaneID[paneID]?.outcome,
+                .delivered
+            )
+            XCTAssertNil(self.model.latestRestoreResumeTokenByPaneID[paneID])
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 1.0)
+    }
+
     func testReadFirstLineFromDataSupportsVeryLongLine() {
         let longLine = String(repeating: "a", count: 12000) + "\n" + String(repeating: "b", count: 20)
         guard let data = longLine.data(using: .utf8) else {
