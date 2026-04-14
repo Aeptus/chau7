@@ -61,6 +61,21 @@ extension DashboardAgentState {
         case .starting: self = .starting
         }
     }
+
+    init(commandStatus: CommandStatus, isAtPrompt: Bool) {
+        switch commandStatus {
+        case .approvalRequired:
+            self = .awaitingApproval
+        case .waitingForInput:
+            self = .waitingInput
+        case .running, .stuck:
+            self = .busy
+        case .exited:
+            self = .stopped
+        case .idle, .done:
+            self = isAtPrompt ? .ready : .busy
+        }
+    }
 }
 
 extension DashboardAgentResult {
@@ -80,5 +95,33 @@ extension DashboardResultStatus {
         case .invalid: self = .invalid
         case .missing: self = .missing
         }
+    }
+}
+
+extension DashboardSessionSnapshot {
+    func mergingLiveTab(_ session: TerminalSessionModel, activeRun: TelemetryRun?) -> DashboardSessionSnapshot {
+        let repoDirectory = session.displayGitRootPath ?? session.gitRootPath ?? session.currentDirectory
+        let liveCost = activeRun?.costUSD ?? costUSD
+        let liveTurnCount = max(turnCount, activeRun?.turnCount ?? 0)
+        return DashboardSessionSnapshot(
+            id: id,
+            tabID: tabID,
+            backendName: backendName,
+            directory: repoDirectory,
+            purpose: purpose,
+            parentSessionID: parentSessionID,
+            delegationDepth: delegationDepth,
+            state: state,
+            turnCount: liveTurnCount,
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            cacheCreationTokens: cacheCreationTokens,
+            cacheReadTokens: cacheReadTokens,
+            requiresApproval: requiresApproval || session.effectiveStatus == .approvalRequired,
+            latestResult: latestResult,
+            createdAt: createdAt,
+            costUSD: liveCost,
+            journal: journal
+        )
     }
 }
