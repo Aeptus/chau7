@@ -12,7 +12,15 @@ final class TabExecutionReadinessTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(readiness, TabExecutionReadiness(isReady: true, reason: .ready))
+        XCTAssertEqual(
+            readiness,
+            TabExecutionReadiness(
+                isReady: true,
+                canAcceptExec: true,
+                acceptanceMode: .immediate,
+                reason: .ready
+            )
+        )
     }
 
     func testExitedWinsOverOtherSignals() {
@@ -25,7 +33,15 @@ final class TabExecutionReadinessTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(readiness, TabExecutionReadiness(isReady: false, reason: .exited))
+        XCTAssertEqual(
+            readiness,
+            TabExecutionReadiness(
+                isReady: false,
+                canAcceptExec: false,
+                acceptanceMode: .blocked,
+                reason: .exited
+            )
+        )
     }
 
     func testShellLoadingBlocksReadiness() {
@@ -38,10 +54,18 @@ final class TabExecutionReadinessTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(readiness, TabExecutionReadiness(isReady: false, reason: .shellLoading))
+        XCTAssertEqual(
+            readiness,
+            TabExecutionReadiness(
+                isReady: false,
+                canAcceptExec: true,
+                acceptanceMode: .queued,
+                reason: .shellLoading
+            )
+        )
     }
 
-    func testMissingViewBlocksReadiness() {
+    func testMissingViewQueuesInsteadOfBlockingExecAcceptance() {
         let readiness = TabExecutionReadiness.evaluate(
             snapshot: TabExecutionReadinessSnapshot(
                 shellLoading: false,
@@ -51,7 +75,15 @@ final class TabExecutionReadinessTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(readiness, TabExecutionReadiness(isReady: false, reason: .viewUnattached))
+        XCTAssertEqual(
+            readiness,
+            TabExecutionReadiness(
+                isReady: false,
+                canAcceptExec: true,
+                acceptanceMode: .queued,
+                reason: .viewUnattached
+            )
+        )
     }
 
     func testMissingPromptBlocksReadiness() {
@@ -64,6 +96,14 @@ final class TabExecutionReadinessTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(readiness, TabExecutionReadiness(isReady: false, reason: .notAtPrompt))
+        XCTAssertEqual(
+            readiness,
+            TabExecutionReadiness(
+                isReady: false,
+                canAcceptExec: false,
+                acceptanceMode: .blocked,
+                reason: .notAtPrompt
+            )
+        )
     }
 }

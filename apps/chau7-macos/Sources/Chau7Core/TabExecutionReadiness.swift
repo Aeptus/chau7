@@ -20,6 +20,12 @@ public struct TabExecutionReadinessSnapshot: Sendable, Equatable {
 }
 
 public struct TabExecutionReadiness: Sendable, Equatable {
+    public enum AcceptanceMode: String, Sendable {
+        case immediate
+        case queued
+        case blocked
+    }
+
     public enum Reason: String, Sendable {
         case ready
         case exited
@@ -29,27 +35,61 @@ public struct TabExecutionReadiness: Sendable, Equatable {
     }
 
     public let isReady: Bool
+    public let canAcceptExec: Bool
+    public let acceptanceMode: AcceptanceMode
     public let reason: Reason
 
-    public init(isReady: Bool, reason: Reason) {
+    public init(
+        isReady: Bool,
+        canAcceptExec: Bool,
+        acceptanceMode: AcceptanceMode,
+        reason: Reason
+    ) {
         self.isReady = isReady
+        self.canAcceptExec = canAcceptExec
+        self.acceptanceMode = acceptanceMode
         self.reason = reason
     }
 
     public static func evaluate(snapshot: TabExecutionReadinessSnapshot) -> TabExecutionReadiness {
         let normalizedStatus = snapshot.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if normalizedStatus == "exited" {
-            return TabExecutionReadiness(isReady: false, reason: .exited)
+            return TabExecutionReadiness(
+                isReady: false,
+                canAcceptExec: false,
+                acceptanceMode: .blocked,
+                reason: .exited
+            )
         }
         if snapshot.shellLoading {
-            return TabExecutionReadiness(isReady: false, reason: .shellLoading)
-        }
-        if !snapshot.hasView {
-            return TabExecutionReadiness(isReady: false, reason: .viewUnattached)
+            return TabExecutionReadiness(
+                isReady: false,
+                canAcceptExec: true,
+                acceptanceMode: .queued,
+                reason: .shellLoading
+            )
         }
         if !snapshot.isAtPrompt {
-            return TabExecutionReadiness(isReady: false, reason: .notAtPrompt)
+            return TabExecutionReadiness(
+                isReady: false,
+                canAcceptExec: false,
+                acceptanceMode: .blocked,
+                reason: .notAtPrompt
+            )
         }
-        return TabExecutionReadiness(isReady: true, reason: .ready)
+        if !snapshot.hasView {
+            return TabExecutionReadiness(
+                isReady: false,
+                canAcceptExec: true,
+                acceptanceMode: .queued,
+                reason: .viewUnattached
+            )
+        }
+        return TabExecutionReadiness(
+            isReady: true,
+            canAcceptExec: true,
+            acceptanceMode: .immediate,
+            reason: .ready
+        )
     }
 }

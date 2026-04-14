@@ -161,10 +161,10 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | Tool | Description |
 | --- | --- |
 | `tab_list` | List all tabs across all windows with status, cwd, git branch, CTO state, active app. Primary live discovery API for active AI tabs |
-| `tab_create` | Open a new tab with optional directory and target window — respects approval gate and tab limit, and returns initial readiness fields |
-| `tab_exec` | Execute a command in a tab — auto-queues if shell is still loading, so eval launchers do not need to wait for prompt readiness just to start a command |
-| `tab_status` | Detailed live tab status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch, `ai_provider`, `ai_session_id`, and explicit execution readiness via `ready_for_exec` / `readiness_reason` |
-| `tab_wait_ready` | Wait for prompt-ready execution state and return the last observed status snapshot on success or timeout |
+| `tab_create` | Open a new tab with optional directory and target window — respects approval gate and tab limit, and returns exec-acceptance plus prompt-readiness fields |
+| `tab_exec` | Execute a command in a tab — auto-queues when shell/bootstrap state still needs to settle so launchers can submit deterministically without waiting for prompt-ready rendering |
+| `tab_status` | Detailed live tab status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch, `ai_provider`, `ai_session_id`, deterministic exec-acceptance fields (`can_accept_exec` / `exec_acceptance_mode`), and stricter prompt-ready fields (`ready_for_exec` / `readiness_reason`) |
+| `tab_wait_ready` | Wait until `tab_exec` will be accepted (`can_accept_exec=true`) and return the last observed status snapshot on success or timeout |
 | `tab_send_input` | Send raw input for interactive prompts — no auto-newline appended |
 | `tab_press_key` | Send terminal key presses for interactive TUIs — Enter, Escape, arrows, backspace, delete, paging keys, and ctrl/alt combos |
 | `tab_submit_prompt` | Submit the current interactive prompt by sending Enter as a key press |

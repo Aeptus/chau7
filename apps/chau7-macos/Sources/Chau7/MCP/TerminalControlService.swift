@@ -249,6 +249,8 @@ final class TerminalControlService {
                 "status": "created",
                 "shell_loading": tab.session?.isShellLoading ?? true,
                 "has_terminal_view": tab.session?.existingRustTerminalView != nil,
+                "can_accept_exec": self.tabExecutionReadiness(for: tab.session).canAcceptExec,
+                "exec_acceptance_mode": self.tabExecutionReadiness(for: tab.session).acceptanceMode.rawValue,
                 "ready_for_exec": self.tabExecutionReadiness(for: tab.session).isReady,
                 "readiness_reason": self.tabExecutionReadiness(for: tab.session).reason.rawValue
             ])
@@ -349,7 +351,7 @@ final class TerminalControlService {
                     "provider": run.provider,
                     "started_at": TelemetryStore.isoString(from: run.startedAt),
                     "session_id": run.sessionID as Any,
-                    "duration_so_far_ms": Int(Date().timeIntervalSince(run.startedAt) * 1000)
+                    "duration_so_far_ms": Int(Date().timeIntervalSince(run.startedAt) * 1_000)
                 ] as [String: Any]
             }
 
@@ -365,9 +367,10 @@ final class TerminalControlService {
             return jsonError("Tab not found: \(tabID)")
         }
 
-        if lastSnapshot["ready_for_exec"] as? Bool == true {
+        if lastSnapshot["can_accept_exec"] as? Bool == true {
             return encodeAny([
                 "tab_id": tabID,
+                "can_accept_exec": true,
                 "ready_for_exec": true,
                 "timed_out": false,
                 "waited_ms": 0,
@@ -384,11 +387,12 @@ final class TerminalControlService {
             }
             lastSnapshot = snapshot
 
-            if snapshot["ready_for_exec"] as? Bool == true {
+            if snapshot["can_accept_exec"] as? Bool == true {
                 let waitedMs = Int(Date().timeIntervalSince(start) * 1000)
                 return encodeAny([
                     "tab_id": tabID,
-                    "ready_for_exec": true,
+                    "can_accept_exec": true,
+                    "ready_for_exec": snapshot["ready_for_exec"] as? Bool ?? false,
                     "timed_out": false,
                     "waited_ms": waitedMs,
                     "status": snapshot
@@ -399,6 +403,7 @@ final class TerminalControlService {
         let waitedMs = Int(Date().timeIntervalSince(start) * 1000)
         return encodeAny([
             "tab_id": tabID,
+            "can_accept_exec": false,
             "ready_for_exec": false,
             "timed_out": true,
             "waited_ms": waitedMs,
@@ -1200,6 +1205,8 @@ final class TerminalControlService {
         let readiness = tabExecutionReadiness(for: session)
         result["shell_loading"] = session?.isShellLoading ?? true
         result["has_terminal_view"] = session?.existingRustTerminalView != nil
+        result["can_accept_exec"] = readiness.canAcceptExec
+        result["exec_acceptance_mode"] = readiness.acceptanceMode.rawValue
         result["ready_for_exec"] = readiness.isReady
         result["readiness_reason"] = readiness.reason.rawValue
     }

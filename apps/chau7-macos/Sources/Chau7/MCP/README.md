@@ -18,8 +18,9 @@ Model Context Protocol server: exposes Chau7 tab control, output, and telemetry 
 - `allModels` and `allTabs` search across all windows for cross-window operations
 - `repo_get_metadata` / `repo_set_metadata` / `repo_frequent_commands` for repo memory
 - `tab_list` and `tab_status` are the authoritative live discovery/control path for active AI tabs
-- `tab_status.ready_for_exec` / `readiness_reason` are the canonical prompt-readiness signals for immediate command execution
-- `tab_exec` can still be called during shell bootstrap; Chau7 queues the command while `shell_loading` is true
-- `tab_wait_ready` is the MCP-side helper when a client truly needs prompt-ready state plus timeout diagnostics
+- `tab_status.can_accept_exec` / `exec_acceptance_mode` are the canonical launch signals for deterministic `tab_exec` submission
+- `tab_status.ready_for_exec` / `readiness_reason` remain the stricter prompt-ready signals for immediate non-queued execution
+- `tab_exec` can still be called during shell bootstrap or before the live terminal view attaches; Chau7 queues the command when needed
+- `tab_wait_ready` now waits for deterministic exec acceptance rather than stricter prompt-ready state
 - `session_list` and `session_current` are telemetry/history views, not the live source of truth for tab control
 - runtime orchestration remains app-internal for now and is no longer part of the public MCP tool surface

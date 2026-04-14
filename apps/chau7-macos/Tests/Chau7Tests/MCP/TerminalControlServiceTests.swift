@@ -58,8 +58,10 @@ final class TerminalControlServiceTests: XCTestCase {
 
         XCTAssertEqual(json["raw_status"] as? String, CommandStatus.running.rawValue)
         XCTAssertEqual(json["raw_is_at_prompt"] as? Bool, false)
+        XCTAssertEqual(json["can_accept_exec"] as? Bool, false)
+        XCTAssertEqual(json["exec_acceptance_mode"] as? String, "blocked")
         XCTAssertEqual(json["ready_for_exec"] as? Bool, false)
-        XCTAssertEqual(json["readiness_reason"] as? String, "view_unattached")
+        XCTAssertEqual(json["readiness_reason"] as? String, "not_at_prompt")
         XCTAssertEqual(json["has_terminal_view"] as? Bool, false)
     }
 
@@ -75,19 +77,18 @@ final class TerminalControlServiceTests: XCTestCase {
         let response = TerminalControlService.shared.tabStatus(tabID: overlayModel.selectedTabID.uuidString)
         let json = try XCTUnwrap(parseJSONObject(response))
 
+        XCTAssertEqual(json["can_accept_exec"] as? Bool, true)
+        XCTAssertEqual(json["exec_acceptance_mode"] as? String, "immediate")
         XCTAssertEqual(json["ready_for_exec"] as? Bool, true)
         XCTAssertEqual(json["readiness_reason"] as? String, "ready")
         XCTAssertEqual(json["has_terminal_view"] as? Bool, true)
     }
 
-    func testWaitForTabReadyReturnsImmediateSnapshotWhenAlreadyReady() throws {
+    func testWaitForTabReadyReturnsImmediateSnapshotWhenExecCanBeAccepted() throws {
         let session = try XCTUnwrap(overlayModel.tabs.first?.session)
         session.status = .idle
-        session.isShellLoading = false
+        session.isShellLoading = true
         session.isAtPrompt = true
-
-        let terminalView = RustTerminalView(frame: .zero)
-        session.attachTerminalView(terminalView)
 
         let response = TerminalControlService.shared.waitForTabReady(
             tabID: overlayModel.selectedTabID.uuidString,
@@ -96,15 +97,16 @@ final class TerminalControlServiceTests: XCTestCase {
         let json = try XCTUnwrap(parseJSONObject(response))
         let status = try XCTUnwrap(json["status"] as? [String: Any])
 
-        XCTAssertEqual(json["ready_for_exec"] as? Bool, true)
+        XCTAssertEqual(json["can_accept_exec"] as? Bool, true)
         XCTAssertEqual(json["timed_out"] as? Bool, false)
-        XCTAssertEqual(status["readiness_reason"] as? String, "ready")
+        XCTAssertEqual(status["exec_acceptance_mode"] as? String, "queued")
+        XCTAssertEqual(status["readiness_reason"] as? String, "shell_loading")
     }
 
     func testWaitForTabReadyReturnsLastObservedStatusOnTimeout() throws {
         let session = try XCTUnwrap(overlayModel.tabs.first?.session)
         session.status = .running
-        session.isShellLoading = true
+        session.isShellLoading = false
         session.isAtPrompt = false
 
         let response = TerminalControlService.shared.waitForTabReady(
@@ -114,10 +116,11 @@ final class TerminalControlServiceTests: XCTestCase {
         let json = try XCTUnwrap(parseJSONObject(response))
         let status = try XCTUnwrap(json["status"] as? [String: Any])
 
-        XCTAssertEqual(json["ready_for_exec"] as? Bool, false)
+        XCTAssertEqual(json["can_accept_exec"] as? Bool, false)
         XCTAssertEqual(json["timed_out"] as? Bool, true)
-        XCTAssertEqual(status["shell_loading"] as? Bool, true)
-        XCTAssertEqual(status["readiness_reason"] as? String, "shell_loading")
+        XCTAssertEqual(status["shell_loading"] as? Bool, false)
+        XCTAssertEqual(status["exec_acceptance_mode"] as? String, "blocked")
+        XCTAssertEqual(status["readiness_reason"] as? String, "not_at_prompt")
     }
 
     func testBackgroundTabCreationDisablesAutoFocusOnAttach() {
