@@ -62,6 +62,19 @@ final class MCPSessionTests: XCTestCase {
         let sessionCurrent = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "session_current" }))
         let inputSchema = try XCTUnwrap(sessionCurrent["inputSchema"] as? [String: Any])
         XCTAssertEqual(inputSchema["additionalProperties"] as? Bool, false)
+
+        let sessionList = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "session_list" }))
+        XCTAssertTrue((sessionList["description"] as? String)?.contains("telemetry/history") == true)
+        XCTAssertTrue((sessionList["description"] as? String)?.contains("tab_list") == true)
+
+        XCTAssertTrue((sessionCurrent["description"] as? String)?.contains("telemetry-backed") == true)
+        XCTAssertTrue((sessionCurrent["description"] as? String)?.contains("tab_status") == true)
+
+        let tabList = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "tab_list" }))
+        XCTAssertTrue((tabList["description"] as? String)?.contains("primary live discovery API") == true)
+
+        let tabStatus = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "tab_status" }))
+        XCTAssertTrue((tabStatus["description"] as? String)?.contains("AI provider/session metadata") == true)
     }
 
     func testInitializeRejectsUnsupportedProtocolVersions() throws {

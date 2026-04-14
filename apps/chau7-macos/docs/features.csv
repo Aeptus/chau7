@@ -94,10 +94,10 @@ MCP Server,MCP Enable/Disable Toggle,Global on/off toggle for the MCP server (mc
 MCP Server,MCP Approval Gate,Optional approval dialog before MCP operations touch your terminal (mcpRequiresApproval),Shipped,No
 MCP Server,MCP Tab Limit,Configurable maximum MCP-created tabs per session (default 4 — hard cap 50),Shipped,No
 MCP Server,MCP Tab Indicator,Purple indicator badge on MCP-controlled tabs (mcpShowTabIndicator),Shipped,No
-MCP Tools — Tab Management,tab_list,"List all open tabs across all windows with status, cwd, git branch, CTO state, active app",Shipped,Yes
+MCP Tools — Tab Management,tab_list,"List all open tabs across all windows with status, cwd, git branch, CTO state, active app; primary live discovery API for active AI tabs",Shipped,Yes
 MCP Tools — Tab Management,tab_create,"Open a new terminal tab with optional directory and target window — respects approval gate and tab limit",Shipped,Yes
 MCP Tools — Tab Management,tab_exec,"Execute a shell command in a tab — auto-queues if shell is still loading, checks prompt state",Shipped,Yes
-MCP Tools — Tab Management,tab_status,"Detailed tab status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch",Shipped,Yes
+MCP Tools — Tab Management,tab_status,"Detailed live tab status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch, ai_provider, and ai_session_id",Shipped,Yes
 MCP Tools — Tab Management,tab_send_input,"Send raw input to terminal for interactive prompts and confirmations — no auto-newline",Shipped,Yes
 MCP Tools — Tab Management,tab_press_key,"Send terminal key presses for interactive TUIs — Enter, Escape, arrows, backspace, delete, paging keys, and ctrl/alt combos",Shipped,Yes
 MCP Tools — Tab Management,tab_submit_prompt,Submit the current interactive prompt by sending Enter as a key press,Shipped,Yes
@@ -115,8 +115,8 @@ MCP Tools — Telemetry,run_tool_calls,Get all tool calls for a telemetry run �
 MCP Tools — Telemetry,run_transcript,"Get conversation transcript for a run — active Codex runs use ~/.codex/history.jsonl first, then ANSI-stripped PTY log for TUI tools, then terminal buffer",Shipped,Yes
 MCP Tools — Telemetry,run_tag,Set tags on a telemetry run for organization and filtering,Shipped,Yes
 MCP Tools — Telemetry,run_latest_for_repo,Get the most recent run for a repository — optionally filter by provider,Shipped,Yes
-MCP Tools — Telemetry,session_list,"List AI sessions with run counts — filter by repo_path, active_only; includes active/completed rollups and latest_run_state",Shipped,Yes
-MCP Tools — Telemetry,session_current,Get currently active AI sessions across all tabs,Shipped,Yes
+MCP Tools — Telemetry,session_list,"List telemetry/history AI sessions with run counts — filter by repo_path, active_only; includes active/completed rollups and latest_run_state. Use tab_list/tab_status for live discovery",Shipped,Yes
+MCP Tools — Telemetry,session_current,"Get currently active telemetry-backed AI sessions. Use tab_list/tab_status for live discovery and control",Shipped,Yes
 MCP Tools — Runtime,runtime_session_create,"Start or attach an agent session in Chau7 and return a runtime session ID. Supports delegated-task metadata, structured result schemas, and session policy limits",Shipped,Yes
 AI Integration,Delegated Task Lineage,"Runtime-managed AI runs persist parent run/session lineage and task metadata into telemetry so parent agents can fetch exact child runs instead of inferring by repo-wide recency",Shipped,Yes
 AI Integration,Staged-Diff Delegated Review,"Code review task templates can review explicit staged patches and staged file lists, not only commit ranges, while preserving structured findings and review-safe policy defaults",Shipped,Yes

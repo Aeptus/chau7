@@ -345,7 +345,7 @@ final class MCPSession {
             ],
             [
                 "name": "session_list",
-                "description": "List AI sessions with run counts",
+                "description": "List telemetry/history AI sessions with run counts. Use tab_list and tab_status for live AI tab discovery.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
@@ -356,7 +356,7 @@ final class MCPSession {
             ],
             [
                 "name": "session_current",
-                "description": "Get currently active AI sessions",
+                "description": "Get currently active telemetry-backed AI sessions. Telemetry/history view only; use tab_list and tab_status for live tab discovery and control.",
                 "inputSchema": ["type": "object", "properties": [:]]
             ],
 
@@ -364,7 +364,7 @@ final class MCPSession {
 
             [
                 "name": "tab_list",
-                "description": "List all open Chau7 tabs across all windows. Each tab includes a window_id field identifying which window it belongs to.",
+                "description": "List all open Chau7 tabs across all windows. This is the primary live discovery API for active AI work. Each tab includes a window_id field identifying which window it belongs to.",
                 "inputSchema": ["type": "object", "properties": [:]]
             ],
             [
@@ -392,7 +392,7 @@ final class MCPSession {
             ],
             [
                 "name": "tab_status",
-                "description": "Get detailed status of a tab: process state, working directory, active app, child processes, and active telemetry run",
+                "description": "Get detailed live status of a tab: process state, working directory, active app, AI provider/session metadata, child processes, and active telemetry run. Use this to inspect active AI tabs.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [

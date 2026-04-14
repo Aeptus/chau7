@@ -156,10 +156,10 @@ Registration only occurs if the AI tool's config directory exists — no files a
 
 | Tool | Description |
 | --- | --- |
-| `tab_list` | List all tabs across all windows with status, cwd, git branch, CTO state, active app |
+| `tab_list` | List all tabs across all windows with status, cwd, git branch, CTO state, active app. Primary live discovery API for active AI tabs |
 | `tab_create` | Open a new tab with optional directory and target window — respects approval gate and tab limit |
 | `tab_exec` | Execute a command in a tab — auto-queues if shell is still loading, checks prompt state |
-| `tab_status` | Detailed status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch |
+| `tab_status` | Detailed live tab status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch, `ai_provider`, and `ai_session_id` |
 | `tab_send_input` | Send raw input for interactive prompts — no auto-newline appended |
 | `tab_press_key` | Send terminal key presses for interactive TUIs — Enter, Escape, arrows, backspace, delete, paging keys, and ctrl/alt combos |
 | `tab_submit_prompt` | Submit the current interactive prompt by sending Enter as a key press |
@@ -187,8 +187,8 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `run_transcript` | Full conversation transcript for a run. Active Codex sessions fall back to live prompts from `~/.codex/history.jsonl`; TUI sessions then fall back to ANSI-stripped PTY log, then terminal buffer |
 | `run_tag` | Set tags on a run for organization and filtering |
 | `run_latest_for_repo` | Most recent run for a repository — optionally filter by provider |
-| `session_list` | List AI sessions with run counts — filter by repo_path, active_only. Responses include `active_run_count`, `completed_run_count`, `latest_run_id`, and `latest_run_state` |
-| `session_current` | Get currently active AI sessions across all tabs |
+| `session_list` | List telemetry/history AI sessions with run counts — filter by repo_path, active_only. Responses include `active_run_count`, `completed_run_count`, `latest_run_id`, and `latest_run_state`. Use `tab_list` / `tab_status` for live discovery |
+| `session_current` | Get currently active telemetry-backed AI sessions. Use `tab_list` / `tab_status` for live discovery and control |
 
 ### Runtime API (13 tools)
 

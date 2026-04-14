@@ -11,18 +11,22 @@ struct DebugConsoleView: View {
 
     private struct CombinedProviderAnalyticsRow: Identifiable {
         let provider: String
-        var totalBillableTokens: Int = 0
+        var totalBillableTokens = 0
         var totalCostUSD: Double = 0
 
-        var id: String { provider }
+        var id: String {
+            provider
+        }
     }
 
     private struct CombinedDailyAnalyticsPoint: Identifiable {
         let date: String
-        var totalTokens: Int = 0
+        var totalTokens = 0
         var totalCostUSD: Double = 0
 
-        var id: String { date }
+        var id: String {
+            date
+        }
     }
 
     var appModel: AppModel
@@ -57,6 +61,7 @@ struct DebugConsoleView: View {
     @State private var availableAnalyticsProviderKeys: [String] = []
     @State private var analyticsRefreshInFlight = false
     @State private var analyticsRefreshQueued = false
+    @State private var analyticsRefreshQueuedForce = false
     @State private var analyticsLastRefreshAt = Date.distantPast
     @State private var ptyLogInfo: [(name: String, size: UInt64)] = []
     @State private var ctoPerSessionGain: [String: CTOGainStats] = [:]
@@ -2676,6 +2681,7 @@ struct DebugConsoleView: View {
 
         if analyticsRefreshInFlight {
             analyticsRefreshQueued = true
+            analyticsRefreshQueuedForce = analyticsRefreshQueuedForce || force
             return
         }
         if !force, now.timeIntervalSince(analyticsLastRefreshAt) < minRefreshInterval {
@@ -2684,6 +2690,7 @@ struct DebugConsoleView: View {
 
         analyticsRefreshInFlight = true
         analyticsRefreshQueued = false
+        analyticsRefreshQueuedForce = false
 
         let after = analyticsTimeRange.startDate
         let days = analyticsTimeRange.days
@@ -2709,8 +2716,10 @@ struct DebugConsoleView: View {
             analyticsRefreshInFlight = false
             applyAnalyticsRefreshSnapshot(snapshot)
             if analyticsRefreshQueued {
+                let queuedForce = analyticsRefreshQueuedForce
                 analyticsRefreshQueued = false
-                requestAnalyticsRefresh(force: true)
+                analyticsRefreshQueuedForce = false
+                requestAnalyticsRefresh(force: queuedForce)
             }
             return
         }
@@ -2735,8 +2744,10 @@ struct DebugConsoleView: View {
                 applyAnalyticsRefreshSnapshot(snapshot)
 
                 if analyticsRefreshQueued {
+                    let queuedForce = analyticsRefreshQueuedForce
                     analyticsRefreshQueued = false
-                    requestAnalyticsRefresh(force: true)
+                    analyticsRefreshQueuedForce = false
+                    requestAnalyticsRefresh(force: queuedForce)
                 }
             }
         }
@@ -2874,12 +2885,12 @@ struct DebugConsoleView: View {
 
     private var combinedTotalBillableTokens: Int {
         providerStats.reduce(0) { $0 + $1.totalBillableTokens } +
-        proxyProviderStats.reduce(0) { $0 + $1.totalBillableTokens }
+            proxyProviderStats.reduce(0) { $0 + $1.totalBillableTokens }
     }
 
     private var combinedTotalCostUSD: Double {
         providerStats.reduce(0.0) { $0 + $1.totalCostUSD } +
-        proxyProviderStats.reduce(0.0) { $0 + $1.totalCostUSD }
+            proxyProviderStats.reduce(0.0) { $0 + $1.totalCostUSD }
     }
 
     /// Command log filtered by the selected time period.
