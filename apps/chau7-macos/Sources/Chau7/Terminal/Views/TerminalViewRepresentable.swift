@@ -313,6 +313,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             model?.highlightView?.scheduleDisplay()
             model?.recordOutputLatencyIfNeeded()
             model?.noteRestoreBootstrapBufferChanged()
+            model?.notifyVisibleFrameReadyIfNeeded()
         }
         view.onScrollChanged = { [weak model] in
             model?.scheduleHighlightAfterScroll()

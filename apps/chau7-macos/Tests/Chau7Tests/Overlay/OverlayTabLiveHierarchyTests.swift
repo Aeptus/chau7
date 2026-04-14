@@ -132,5 +132,35 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
             "Selecting a tab with only a session-retained frame should still use the snapshot-first handoff"
         )
     }
+
+    func testSelectingTabArmsVisibleFrameReadyHandoffForTargetSession() {
+        model.newTab(selectNewTab: false)
+        let targetID = model.tabs[1].id
+        model.tabs[1].session?.lastRenderedSnapshot = makeSnapshot()
+
+        model.selectTab(id: targetID)
+
+        XCTAssertTrue(
+            model.tabs[1].session?.awaitingVisibleFrameReady == true,
+            "Snapshot-backed tab switches should wait for the selected session's first live frame"
+        )
+    }
+
+    func testSelectedSessionVisibleFrameReadyRevealsTerminal() {
+        model.newTab(selectNewTab: false)
+        let targetID = model.tabs[1].id
+        model.tabs[1].session?.lastRenderedSnapshot = makeSnapshot()
+
+        model.selectTab(id: targetID)
+        XCTAssertFalse(model.isTerminalReady)
+
+        model.tabs[1].session?.notifyVisibleFrameReadyIfNeeded()
+
+        XCTAssertTrue(
+            model.isTerminalReady,
+            "The selected terminal should become visible only after its first live frame arrives"
+        )
+        XCTAssertFalse(model.tabs[1].session?.awaitingVisibleFrameReady ?? true)
+    }
 }
 #endif

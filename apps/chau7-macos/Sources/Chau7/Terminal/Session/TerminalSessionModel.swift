@@ -8,6 +8,8 @@ extension Notification.Name {
         Notification.Name("com.chau7.terminalSessionRenderSuspensionStateChanged")
     static let terminalSessionRuntimeReadinessChanged =
         Notification.Name("com.chau7.terminalSessionRuntimeReadinessChanged")
+    static let terminalSessionVisibleFrameReady =
+        Notification.Name("com.chau7.terminalSessionVisibleFrameReady")
 }
 
 enum CommandStatus: String, Codable {
@@ -269,6 +271,20 @@ final class TerminalSessionModel {
         case .idle, .done, .running, .stuck:
             return Date().timeIntervalSince(lastActivityDate) <= Self.backgroundLiveRenderGraceInterval
         }
+    }
+
+    func armVisibleFrameReadyHandoff() {
+        awaitingVisibleFrameReady = true
+    }
+
+    func cancelVisibleFrameReadyHandoff() {
+        awaitingVisibleFrameReady = false
+    }
+
+    func notifyVisibleFrameReadyIfNeeded() {
+        guard awaitingVisibleFrameReady else { return }
+        awaitingVisibleFrameReady = false
+        NotificationCenter.default.post(name: .terminalSessionVisibleFrameReady, object: self)
     }
 
     var renderSuspensionDebugSummary: String {
@@ -590,6 +606,9 @@ final class TerminalSessionModel {
     /// Those commands should affect prompt readiness, but they must not create
     /// command blocks or changed-file tracking noise.
     @ObservationIgnored var systemRestoreCommandInFlight = false
+    /// One-shot handoff guard used when snapshot-backed tab switches wait for the
+    /// first live sync from the newly selected terminal before revealing it.
+    @ObservationIgnored private(set) var awaitingVisibleFrameReady = false
     var hasPendingResumePrefillActivity: Bool {
         pendingPrefillInput != nil || pendingPrefillRetries > 0 || isShellLoading
     }
@@ -1933,12 +1952,14 @@ final class TerminalSessionModel {
         hasView: Bool,
         status: CommandStatus
     ) -> Bool {
-        guard !isShellLoading else { return false }
-        guard isAtPrompt else { return false }
-        guard hasView else { return false }
-
-        // Prompt detection is more authoritative than laggy status transitions.
-        return status != .exited
+        TabExecutionReadiness.evaluate(
+            snapshot: TabExecutionReadinessSnapshot(
+                shellLoading: isShellLoading,
+                isAtPrompt: isAtPrompt,
+                hasView: hasView,
+                status: status.rawValue
+            )
+        ).isReady
     }
 
     // MARK: - F21: Snippet Insertion

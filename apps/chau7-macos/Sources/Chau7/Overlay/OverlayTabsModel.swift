@@ -560,6 +560,7 @@ final class OverlayTabsModel {
     /// Generation counter for isTerminalReady — prevents stale asyncAfter
     /// callbacks from clobbering the state after rapid tab switches.
     @ObservationIgnored var terminalReadyGeneration: UInt64 = 0
+    @ObservationIgnored var terminalReadyFallbackWorkItem: DispatchWorkItem?
     /// Set of tab IDs currently being pre-warmed (on hover)
     @ObservationIgnored var prewarmingTabIDs: Set<UUID> = []
     @ObservationIgnored static let previousLiveHierarchyKeepAliveInterval: TimeInterval = 0.5
@@ -671,6 +672,7 @@ final class OverlayTabsModel {
     /// CTO notification observer tokens (stored for cleanup in deinit)
     @ObservationIgnored var ctoModeObserver: NSObjectProtocol?
     @ObservationIgnored var renderSuspensionObserver: NSObjectProtocol?
+    @ObservationIgnored var visibleFrameReadyObserver: NSObjectProtocol?
     @ObservationIgnored var suspensionDebounceItem: DispatchWorkItem?
     @ObservationIgnored var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
     @ObservationIgnored var codexResumeFallbackCache: [ObjectIdentifier: CachedCodexResumeFallback] = [:]
@@ -842,6 +844,19 @@ final class OverlayTabsModel {
             self.suspensionDebounceItem = item
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: item)
         }
+
+        self.visibleFrameReadyObserver = NotificationCenter.default.addObserver(
+            forName: .terminalSessionVisibleFrameReady,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self, let session = note.object as? TerminalSessionModel else { return }
+            guard !isTerminalReady else { return }
+            guard let selected = selectedTab else { return }
+            let isSelectedSession = selected.displaySession === session || selected.session === session
+            guard isSelectedSession, selected.visibleSnapshot != nil else { return }
+            syncSelectedTerminalPresentation(reason: "selected_live_frame_ready")
+        }
     }
 
     deinit {
@@ -849,7 +864,9 @@ final class OverlayTabsModel {
         stopTabBarWatchdog()
         if let ctoModeObserver { NotificationCenter.default.removeObserver(ctoModeObserver) }
         if let renderSuspensionObserver { NotificationCenter.default.removeObserver(renderSuspensionObserver) }
+        if let visibleFrameReadyObserver { NotificationCenter.default.removeObserver(visibleFrameReadyObserver) }
         previousLiveHierarchyReleaseWorkItem?.cancel()
+        terminalReadyFallbackWorkItem?.cancel()
     }
 
     // MARK: - Tab State Persistence
@@ -869,6 +886,8 @@ final class OverlayTabsModel {
         }
 
         guard let tab = selectedTab else {
+            terminalReadyFallbackWorkItem?.cancel()
+            terminalReadyFallbackWorkItem = nil
             isTerminalReady = true
             return
         }
@@ -883,6 +902,12 @@ final class OverlayTabsModel {
         }
 
         isTerminalReady = !shouldShowRestorePreview
+        if isTerminalReady {
+            terminalReadyFallbackWorkItem?.cancel()
+            terminalReadyFallbackWorkItem = nil
+            tab.displaySession?.cancelVisibleFrameReadyHandoff()
+            tab.session?.cancelVisibleFrameReadyHandoff()
+        }
         if shouldShowRestorePreview {
             StartupRestoreCoordinator.shared.noteRestorePreviewShown(
                 tabID: tab.id,
@@ -1819,9 +1844,14 @@ final class OverlayTabsModel {
         // 2. Capture the outgoing tab's last frame so inactive tabs can freeze
         //    visually without keeping their renderer hot.
         captureCurrentTabSnapshot()
+        let targetSession = tabs.first(where: { $0.id == id })?.displaySession
+            ?? tabs.first(where: { $0.id == id })?.session
         let shouldShowTransitionSnapshot = tabs.first(where: { $0.id == id })?.visibleSnapshot != nil
         if shouldShowTransitionSnapshot {
             isTerminalReady = false
+            targetSession?.armVisibleFrameReadyHandoff()
+        } else {
+            targetSession?.cancelVisibleFrameReadyHandoff()
         }
 
         // 4. Batch all state changes to minimize SwiftUI diff passes
@@ -1866,16 +1896,21 @@ final class OverlayTabsModel {
         }
 
         // 6. Mark terminal as ready. When suspension is off, set immediately (no
-        //    snapshot to display). When a retained frame exists, allow one frame
-        //    for the handoff before revealing the live terminal.
+        //    snapshot to display). When a retained frame exists, wait for the
+        //    selected terminal's first live sync and keep a timeout only as a
+        //    safety valve so the tab cannot remain hidden forever.
         schedulePreviousLiveHierarchyRelease()
+        terminalReadyFallbackWorkItem?.cancel()
         if shouldShowTransitionSnapshot {
             terminalReadyGeneration &+= 1
             let expectedGeneration = terminalReadyGeneration
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
+            let item = DispatchWorkItem { [weak self] in
                 guard let self, terminalReadyGeneration == expectedGeneration else { return }
-                isTerminalReady = true
+                targetSession?.cancelVisibleFrameReadyHandoff()
+                syncSelectedTerminalPresentation(reason: "select_tab_fallback")
             }
+            terminalReadyFallbackWorkItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: item)
         } else {
             syncSelectedTerminalPresentation(reason: "select_tab")
         }
