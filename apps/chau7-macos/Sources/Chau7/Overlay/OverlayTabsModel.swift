@@ -552,6 +552,9 @@ final class OverlayTabsModel {
 
     /// Previous tab index for directional animation
     var previousTabIndex = 0
+    /// Tab kept alive briefly after selection changes so the switch can hand off
+    /// from a retained frame without keeping nearby tabs permanently attached.
+    var previousLiveHierarchyTabID: UUID?
     /// Whether the terminal content is ready to display (for snapshot swap)
     var isTerminalReady = true
     /// Generation counter for isTerminalReady — prevents stale asyncAfter
@@ -559,6 +562,7 @@ final class OverlayTabsModel {
     @ObservationIgnored var terminalReadyGeneration: UInt64 = 0
     /// Set of tab IDs currently being pre-warmed (on hover)
     @ObservationIgnored var prewarmingTabIDs: Set<UUID> = []
+    @ObservationIgnored static let previousLiveHierarchyKeepAliveInterval: TimeInterval = 0.5
 
     // MARK: - Tab Bar Recovery
 
@@ -640,6 +644,7 @@ final class OverlayTabsModel {
     @ObservationIgnored var renameOriginalColor: TabColor = .blue
     @ObservationIgnored var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
     @ObservationIgnored var liveRenderExemptTabIDs: Set<UUID> = []
+    @ObservationIgnored var previousLiveHierarchyReleaseWorkItem: DispatchWorkItem?
     /// Restored tabs need a real terminal view at least once so scrollback can be
     /// injected and resume commands can land without falling back to "no view"
     /// retries. The set is harmless after attach because `shouldKeep...` only
@@ -844,6 +849,7 @@ final class OverlayTabsModel {
         stopTabBarWatchdog()
         if let ctoModeObserver { NotificationCenter.default.removeObserver(ctoModeObserver) }
         if let renderSuspensionObserver { NotificationCenter.default.removeObserver(renderSuspensionObserver) }
+        previousLiveHierarchyReleaseWorkItem?.cancel()
     }
 
     // MARK: - Tab State Persistence
@@ -1810,11 +1816,11 @@ final class OverlayTabsModel {
         // 1. Record previous tab index for directional animation
         let oldIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
 
-        // 2. Capture snapshot only when render suspension is enabled (tabs may
-        //    have stale content). When suspension is off, tabs render continuously
-        //    so the incoming view is already up-to-date — skip the expensive GPU readback.
-        if isRenderSuspensionEnabled {
-            captureCurrentTabSnapshot()
+        // 2. Capture the outgoing tab's last frame so inactive tabs can freeze
+        //    visually without keeping their renderer hot.
+        captureCurrentTabSnapshot()
+        let shouldShowTransitionSnapshot = tabs.first(where: { $0.id == id })?.visibleSnapshot != nil
+        if shouldShowTransitionSnapshot {
             isTerminalReady = false
         }
 
@@ -1824,6 +1830,7 @@ final class OverlayTabsModel {
             clearRenameState(shouldFocus: false)
         }
         previousTabIndex = oldIndex
+        previousLiveHierarchyTabID = tabs[oldIndex].id
         selectedTabID = id
 
         // Clear notification style when switching to a tab (user acknowledged it),
@@ -1859,8 +1866,10 @@ final class OverlayTabsModel {
         }
 
         // 6. Mark terminal as ready. When suspension is off, set immediately (no
-        //    snapshot to display). When on, use a brief delay for the snapshot swap.
-        if isRenderSuspensionEnabled {
+        //    snapshot to display). When a retained frame exists, allow one frame
+        //    for the handoff before revealing the live terminal.
+        schedulePreviousLiveHierarchyRelease()
+        if shouldShowTransitionSnapshot {
             terminalReadyGeneration &+= 1
             let expectedGeneration = terminalReadyGeneration
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
@@ -1880,6 +1889,23 @@ final class OverlayTabsModel {
         }
         guard selectedTabID != id else { return }
         selectTab(id: id)
+    }
+
+    func schedulePreviousLiveHierarchyRelease() {
+        previousLiveHierarchyReleaseWorkItem?.cancel()
+        guard let previousLiveHierarchyTabID else { return }
+
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.previousLiveHierarchyTabID == previousLiveHierarchyTabID else { return }
+            self.previousLiveHierarchyTabID = nil
+            self.updateSuspensionState()
+        }
+        previousLiveHierarchyReleaseWorkItem = item
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.previousLiveHierarchyKeepAliveInterval,
+            execute: item
+        )
     }
 
     // MARK: - Tab Switch Optimization: Snapshot Capture
@@ -2867,7 +2893,7 @@ final class OverlayTabsModel {
     /// exec/input requests have a PTY to land on. Once a terminal view has
     /// attached, the retained Rust view keeps the session alive even if the tab
     /// later drops out of the visible hierarchy.
-    func shouldKeepTabInLiveHierarchy(tab: OverlayTab, index: Int) -> Bool {
+    func shouldKeepTabInLiveHierarchy(tab: OverlayTab, index _: Int) -> Bool {
         if restoreBootstrapTabIDs.contains(tab.id),
            tab.splitController.terminalSessions.contains(where: { _, session in
                session.existingRustTerminalView == nil
@@ -2875,10 +2901,7 @@ final class OverlayTabsModel {
             return true
         }
 
-        let selectedIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
-        let isNearCurrent = abs(index - selectedIndex) <= 1
-        let isNearPrevious = abs(index - previousTabIndex) <= 1
-        if isNearCurrent || isNearPrevious {
+        if tab.id == selectedTabID || tab.id == previousLiveHierarchyTabID {
             return true
         }
 

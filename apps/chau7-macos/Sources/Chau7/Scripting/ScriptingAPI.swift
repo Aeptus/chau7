@@ -31,13 +31,6 @@ final class ScriptingAPI {
         "run_snippet",
         "get_status"
     ]
-    private static let legacySessionMethods = [
-        "create_session",
-        "get_session_events",
-        "submit_session_turn",
-        "get_session_result",
-        "stop_session"
-    ]
 
     var isEnabled: Bool {
         didSet {
@@ -307,16 +300,6 @@ final class ScriptingAPI {
             return await handleRunSnippet(params)
         case "get_status":
             return handleGetStatus()
-        case "create_session":
-            return handleCreateSession(params)
-        case "get_session_events":
-            return handleGetSessionEvents(params)
-        case "submit_session_turn":
-            return handleSubmitSessionTurn(params)
-        case "get_session_result":
-            return handleGetSessionResult(params)
-        case "stop_session":
-            return handleStopSession(params)
         default:
             return ["error": "unknown method: \(method)"]
         }
@@ -549,42 +532,6 @@ final class ScriptingAPI {
             return ["error": "snippet_not_found", "message": "No snippet named '\(name)'"]
         }
         return ["ok": true, "snippet": entry.snippet.title, "body": entry.snippet.body]
-    }
-
-    private func handleCreateSession(_ params: [String: Any]) -> [String: Any] {
-        controlPlaneCall(name: "session_create", arguments: params) ?? ["error": "review_start_failed"]
-    }
-
-    private func handleGetSessionEvents(_ params: [String: Any]) -> [String: Any] {
-        guard let sessionID = params["session_id"] as? String,
-              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return ["error": "missing param: session_id"]
-        }
-        return controlPlaneCall(name: "session_events", arguments: params) ?? ["error": "session_events_failed"]
-    }
-
-    private func handleSubmitSessionTurn(_ params: [String: Any]) -> [String: Any] {
-        guard let sessionID = params["session_id"] as? String,
-              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return ["error": "missing param: session_id"]
-        }
-        return controlPlaneCall(name: "session_submit_turn", arguments: params) ?? ["error": "review_prompt_failed"]
-    }
-
-    private func handleGetSessionResult(_ params: [String: Any]) -> [String: Any] {
-        guard let sessionID = params["session_id"] as? String,
-              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return ["error": "missing param: session_id"]
-        }
-        return controlPlaneCall(name: "session_result", arguments: params) ?? ["error": "session_result_failed"]
-    }
-
-    private func handleStopSession(_ params: [String: Any]) -> [String: Any] {
-        guard let sessionID = params["session_id"] as? String,
-              !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return ["error": "missing param: session_id"]
-        }
-        return controlPlaneCall(name: "session_stop", arguments: params) ?? ["error": "session_stop_failed"]
     }
 
     private func handleGetStatus() -> [String: Any] {

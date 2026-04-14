@@ -1520,10 +1520,11 @@ struct Chau7OverlayView: View {
 
             // MARK: - Tab Switch Optimization: Lazy Tab Loading + Directional Motion
 
-            // Only keep nearby tabs (selected ± 1, previous ± 1) in full view hierarchy.
-            // This ensures smooth transitions even when jumping between distant tabs.
-            // Distant tabs use lightweight placeholders - their shell processes
-            // continue running via retainedRustTerminalView in TerminalSessionModel.
+            // Keep only the selected tab live by default. A just-unselected tab
+            // stays attached for one short handoff window so snapshot-backed tab
+            // switches still feel instant without keeping neighbors hot.
+            // All other tabs use lightweight placeholders while their shell state
+            // continues via the retained Rust terminal view on the session model.
             ForEach(Array(overlayModel.tabs.enumerated()), id: \.element.id) { index, tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
                 let keepLiveHierarchy = overlayModel.shouldKeepTabInLiveHierarchy(tab: tab, index: index)
@@ -1531,7 +1532,7 @@ struct Chau7OverlayView: View {
                 let direction = slideDirection(for: tab, isSelected: isSelected)
 
                 if keepLiveHierarchy {
-                    // Full terminal view for selected and adjacent tabs
+                    // Full terminal view for the selected tab and short handoff tab
                     SplitPaneView(controller: tab.splitController, isSuspended: isSuspended, isActive: isSelected)
                         .opacity(isSelected && overlayModel.isTerminalReady ? 1 : 0)
                         .offset(x: isSelected ? 0 : (30 * direction)) // Subtle slide effect

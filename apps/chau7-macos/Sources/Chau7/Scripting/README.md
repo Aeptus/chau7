@@ -17,7 +17,7 @@ External scripting API over a Unix socket for automating Chau7 from scripts.
 ## Contract
 
 - Public scripting discovery is tab-first: tabs, input/output, history, snippets, and settings.
-- Legacy review/session methods remain callable during migration, but are no longer advertised through `get_status.supported_methods`.
+- Legacy review/session methods have been removed. Review automation should use the tab-first scripting methods plus repo events/output.
 
 ## Dependencies
 

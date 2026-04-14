@@ -7,7 +7,6 @@ import XCTest
 final class ScriptingAPITests: XCTestCase {
 
     private var api: ScriptingAPI!
-    private var createdSessionIDs: [String] = []
     private var defaultsSuiteName: String!
     private var isolatedDefaults: UserDefaults!
 
@@ -20,10 +19,6 @@ final class ScriptingAPITests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        for sessionID in createdSessionIDs {
-            _ = RuntimeSessionManager.shared.stopSession(id: sessionID)
-        }
-        createdSessionIDs.removeAll()
         if let defaultsSuiteName {
             isolatedDefaults?.removePersistentDomain(forName: defaultsSuiteName)
         }
@@ -259,291 +254,18 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertTrue(response["result"] is [[String: Any]])
     }
 
-    // MARK: - Delegated Sessions
+    // MARK: - Removed Legacy Session API
 
-    func testCreateSessionRequiresDirectory() async {
-        let response = await api.handleRequest([
-            "method": "create_session",
-            "params": [
-                "mode": "staged_diff",
-                "staged_diff": "diff --git a/file.swift b/file.swift"
-            ]
-        ])
-
-        XCTAssertEqual(response["error"] as? String, "missing param: directory")
-    }
-
-    func testCreateSessionRejectsUnsupportedMode() async {
-        let response = await api.handleRequest([
-            "method": "create_session",
-            "params": [
-                "directory": "/tmp/review-\(UUID().uuidString)",
-                "mode": "mystery"
-            ]
-        ])
-
-        XCTAssertEqual(response["error"] as? String, "unsupported review mode: mystery")
-    }
-
-    func testCreateSessionCreatesDelegatedCodeReviewSession() async throws {
-        let response = await api.handleRequest([
-            "method": "create_session",
-            "params": [
-                "backend": "shell",
-                "directory": "/tmp/review-\(UUID().uuidString)",
-                "mode": "staged_diff",
-                "staged_files": ["Sources/App.swift", "Tests/AppTests.swift"],
-                "staged_diff": """
-                diff --git a/Sources/App.swift b/Sources/App.swift
-                @@ -1 +1 @@
-                -old
-                +new
-                """
-            ]
-        ])
-
-        let sessionID = try XCTUnwrap(response["session_id"] as? String)
-        createdSessionIDs.append(sessionID)
-        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
-
-        XCTAssertEqual(response["purpose"] as? String, "code_review")
-        XCTAssertEqual(session.config.purpose, "code_review")
-        XCTAssertEqual(session.config.taskMetadata["review_mode"], "staged_diff")
-        XCTAssertEqual(session.config.taskMetadata["session_binding"], "isolated")
-        XCTAssertEqual(session.config.policy.maxTurns, 1)
-        XCTAssertFalse(session.config.policy.allowChildDelegation)
-    }
-
-    func testCreateReviewSessionDoesNotStartTurnBeforePromptIsSent() async throws {
-        let response = await api.handleRequest([
-            "method": "create_session",
-            "params": [
-                "backend": "shell",
-                "directory": "/tmp/review-\(UUID().uuidString)",
-                "mode": "staged_diff",
-                "staged_diff": "diff --git a/file.swift b/file.swift"
-            ]
-        ])
-
-        let sessionID = try XCTUnwrap(response["session_id"] as? String)
-        createdSessionIDs.append(sessionID)
-        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
-
-        XCTAssertEqual(response["phase"] as? String, "created")
-        XCTAssertEqual(response["prompt_sent"] as? Bool, false)
-        XCTAssertNil(session.currentTurnID)
-    }
-
-    func testGetSessionEventsReturnsReadyEventForImmediateBackend() async throws {
-        let createResponse = await api.handleRequest([
-            "method": "create_session",
-            "params": [
-                "backend": "shell",
-                "directory": "/tmp/review-\(UUID().uuidString)",
-                "mode": "staged_diff",
-                "staged_diff": "diff --git a/file.swift b/file.swift"
-            ]
-        ])
-
-        let sessionID = try XCTUnwrap(createResponse["session_id"] as? String)
-        createdSessionIDs.append(sessionID)
-
-        let eventsResponse = await api.handleRequest([
-            "method": "get_session_events",
-            "params": [
-                "session_id": sessionID,
-                "cursor": 0
-            ]
-        ])
-
-        XCTAssertEqual(eventsResponse["session_id"] as? String, sessionID)
-        let events = try XCTUnwrap(eventsResponse["events"] as? [[String: Any]])
-        XCTAssertTrue(events.contains(where: { $0["type"] as? String == RuntimeEventType.sessionReady.rawValue }))
-    }
-
-    func testGetSessionEventsPreservesRuntimeCursorWhenFilterRemovesEvents() async throws {
-        let createResponse = await api.handleRequest([
-            "method": "create_session",
-            "params": [
-                "backend": "shell",
-                "directory": "/tmp/review-\(UUID().uuidString)",
-                "mode": "staged_diff",
-                "staged_diff": "diff --git a/file.swift b/file.swift"
-            ]
-        ])
-
-        let sessionID = try XCTUnwrap(createResponse["session_id"] as? String)
-        createdSessionIDs.append(sessionID)
-
-        let unfilteredResponse = await api.handleRequest([
-            "method": "get_session_events",
-            "params": [
-                "session_id": sessionID,
-                "cursor": 0
-            ]
-        ])
-        let unfilteredCursor = try XCTUnwrap(unfilteredResponse["cursor"])
-
-        let filteredResponse = await api.handleRequest([
-            "method": "get_session_events",
-            "params": [
-                "session_id": sessionID,
-                "cursor": 0,
-                "event_types": ["definitely_not_a_real_event_type"]
-            ]
-        ])
-
-        XCTAssertEqual(filteredResponse["session_id"] as? String, sessionID)
-        let filteredEvents = try XCTUnwrap(filteredResponse["events"] as? [[String: Any]])
-        XCTAssertTrue(filteredEvents.isEmpty)
-        XCTAssertEqual(String(describing: filteredResponse["cursor"]), String(describing: unfilteredCursor))
-    }
-
-    func testSubmitSessionTurnStartsTurnForPreparedSession() async throws {
-        let createResponse = await api.handleRequest([
-            "method": "create_session",
-            "params": [
-                "backend": "shell",
-                "directory": "/tmp/review-\(UUID().uuidString)",
-                "mode": "staged_diff",
-                "staged_diff": "diff --git a/file.swift b/file.swift"
-            ]
-        ])
-
-        let sessionID = try XCTUnwrap(createResponse["session_id"] as? String)
-        createdSessionIDs.append(sessionID)
-        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
-
-        let sendResponse = await api.handleRequest([
-            "method": "submit_session_turn",
-            "params": ["session_id": sessionID]
-        ])
-
-        XCTAssertEqual(sendResponse["phase"] as? String, "prompt_sent")
-        XCTAssertEqual(sendResponse["prompt_sent"] as? Bool, true)
-        XCTAssertEqual(sendResponse["status"] as? String, "accepted")
-        XCTAssertNotNil(sendResponse["turn_id"] as? String)
-        XCTAssertNotNil(session.currentTurnID)
-        XCTAssertNil(sendResponse["result_schema"])
-    }
-
-    func testGetSessionEventsReturnsTurnResultAfterCompletion() async throws {
-        let response = await api.handleRequest([
-            "method": "create_session",
-            "params": [
-                "backend": "shell",
-                "directory": "/tmp/review-\(UUID().uuidString)",
-                "mode": "staged_diff",
-                "staged_diff": "diff --git a/file.swift b/file.swift"
-            ]
-        ])
-
-        let sessionID = try XCTUnwrap(response["session_id"] as? String)
-        createdSessionIDs.append(sessionID)
-        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
-        _ = await api.handleRequest([
-            "method": "submit_session_turn",
-            "params": ["session_id": sessionID]
-        ])
-        try await waitForTurnStart(session)
-        _ = session.completeTurn(
-            summary: """
-            ```json
-            {"summary":"done","findings":[],"recommendations":[],"confidence":"high"}
-            ```
-            """,
-            terminalOutput: nil
-        )
-
-        let eventsResponse = await api.handleRequest([
-            "method": "get_session_events",
-            "params": [
-                "session_id": sessionID,
-                "cursor": 0,
-                "event_types": [RuntimeEventType.turnResult.rawValue]
-            ]
-        ])
-
-        XCTAssertEqual(eventsResponse["session_id"] as? String, sessionID)
-        let events = try XCTUnwrap(eventsResponse["events"] as? [[String: Any]])
-        XCTAssertTrue(events.contains(where: { $0["type"] as? String == RuntimeEventType.turnResult.rawValue }))
-    }
-
-    func testGetSessionResultReturnsStructuredPayload() async throws {
-        let response = await api.handleRequest([
-            "method": "create_session",
-            "params": [
-                "backend": "shell",
-                "directory": "/tmp/review-\(UUID().uuidString)",
-                "mode": "commit_range",
-                "base_commit": "abc123",
-                "head_commit": "def456"
-            ]
-        ])
-
-        let sessionID = try XCTUnwrap(response["session_id"] as? String)
-        createdSessionIDs.append(sessionID)
-        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
-        _ = await api.handleRequest([
-            "method": "submit_session_turn",
-            "params": ["session_id": sessionID]
-        ])
-        try await waitForTurnStart(session)
-        _ = session.completeTurn(
-            summary: """
-            ```json
-            {"summary":"ready","findings":[{"severity":"medium","file":"App.swift","message":"Missing test"}],"recommendations":["Add a regression test"],"confidence":"high"}
-            ```
-            """,
-            terminalOutput: nil
-        )
-
-        let resultResponse = await api.handleRequest([
-            "method": "get_session_result",
-            "params": ["session_id": sessionID]
-        ])
-
-        XCTAssertEqual(resultResponse["status"] as? String, "available")
-        let value = try XCTUnwrap(resultResponse["value"] as? [String: Any])
-        XCTAssertEqual(value["summary"] as? String, "ready")
-    }
-
-    func testStopSessionStopsSessionAndClosesTab() async throws {
-        let response = await api.handleRequest([
-            "method": "create_session",
-            "params": [
-                "backend": "shell",
-                "directory": "/tmp/review-\(UUID().uuidString)",
-                "mode": "staged_diff",
-                "staged_diff": "diff --git a/file.swift b/file.swift"
-            ]
-        ])
-
-        let sessionID = try XCTUnwrap(response["session_id"] as? String)
-        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
-        createdSessionIDs.append(sessionID)
-
-        let stopResponse = await api.handleRequest([
-            "method": "stop_session",
-            "params": [
-                "session_id": sessionID,
-                "force": true
-            ]
-        ])
-
-        XCTAssertEqual(stopResponse["ok"] as? Bool, true)
-        XCTAssertEqual(stopResponse["session_id"] as? String, sessionID)
-        XCTAssertEqual(session.state, .stopped)
-    }
-
-    private func waitForTurnStart(_ session: RuntimeSession, timeoutNs: UInt64 = 2_000_000_000) async throws {
-        let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNs
-        while session.currentTurnID == nil {
-            if DispatchTime.now().uptimeNanoseconds >= deadline {
-                XCTFail("Timed out waiting for initial review turn to start")
-                return
-            }
-            try await Task.sleep(nanoseconds: 50_000_000)
+    func testLegacySessionMethodsReturnUnknownMethod() async {
+        for method in [
+            "create_session",
+            "get_session_events",
+            "submit_session_turn",
+            "get_session_result",
+            "stop_session"
+        ] {
+            let response = await api.handleRequest(["method": method, "params": [:]])
+            XCTAssertEqual(response["error"] as? String, "unknown method: \(method)")
         }
     }
 }

@@ -410,7 +410,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 ### Scripting API
 
 - JSON-RPC Unix socket API — control tabs, run commands, query history, manage snippets, modify settings.
-- Review automation is built from scripting tab/session primitives such as `create_tab`, `run_command`, `get_tab`, `send_input`, `submit_prompt`, `get_output`, `close_tab`, and the generic session helpers.
+- Review automation is built from tab-first scripting primitives such as `create_tab`, `run_command`, `get_tab`, `send_input`, `submit_prompt`, `get_output`, `close_tab`, and `get_repo_events`.
 - Repo-local pre-commit review automation via `Scripts/pre-commit-review`, which creates a review tab, launches Codex, waits for the app to become interactive, sends the staged-diff prompt, validates and submits it, polls PTY output for the final structured JSON block, and prints findings in hook-friendly terminal output.
 - Repo-scoped event retrieval for automation via `get_repo_events`, which returns recent AI events with full stored messages plus filters for tab, type, producer, and session. The pre-commit reviewer now prefers this authoritative stored result path before falling back to terminal transcript scraping.
 - Per-repo pre-commit review policy via `.chau7/pre-commit-review.conf` with gate modes (`off`, `advisory`, `high`, `any`), timeout, backend, and model selection. The shipped default reviewer model is `gpt-5.3-codex`.
