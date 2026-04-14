@@ -181,6 +181,25 @@ final class TelemetryStore {
         CREATE INDEX IF NOT EXISTS idx_usage_evidence_run
             ON usage_evidence(run_id);
 
+        CREATE TABLE IF NOT EXISTS provider_latency_samples (
+            sample_id TEXT PRIMARY KEY,
+            provider TEXT NOT NULL,
+            metric_kind TEXT NOT NULL,
+            latency_ms INTEGER NOT NULL,
+            model TEXT,
+            session_id TEXT,
+            run_id TEXT,
+            project_path TEXT,
+            source_kind TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_provider_latency_samples_time
+            ON provider_latency_samples(observed_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_provider_latency_samples_provider
+            ON provider_latency_samples(provider, metric_kind, observed_at DESC);
+
         CREATE TABLE IF NOT EXISTS schema_version (
             version INTEGER PRIMARY KEY,
             applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -674,6 +693,12 @@ final class TelemetryStore {
         }
     }
 
+    func insertLatencySample(_ sample: ProviderLatencySample) {
+        queue.async { [weak self] in
+            self?._insertLatencySample(sample)
+        }
+    }
+
     private func _insertUsageEvidence(_ evidence: UsageEvidence) {
         guard let db else { return }
         let sql = """
@@ -742,6 +767,45 @@ final class TelemetryStore {
         if sqlite3_step(stmt) != SQLITE_DONE {
             let err = String(cString: sqlite3_errmsg(db))
             Log.warn("TelemetryStore: insert usage evidence failed for \(evidence.id): \(err)")
+        }
+    }
+
+    private func _insertLatencySample(_ sample: ProviderLatencySample) {
+        guard let db else { return }
+        let sql = """
+        INSERT INTO provider_latency_samples
+        (sample_id, provider, metric_kind, latency_ms, model, session_id, run_id, project_path, source_kind, observed_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(sample_id) DO UPDATE SET
+            provider = excluded.provider,
+            metric_kind = excluded.metric_kind,
+            latency_ms = excluded.latency_ms,
+            model = excluded.model,
+            session_id = excluded.session_id,
+            run_id = excluded.run_id,
+            project_path = excluded.project_path,
+            source_kind = excluded.source_kind,
+            observed_at = excluded.observed_at
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, sample.id)
+        bindText(stmt, 2, sample.provider)
+        bindText(stmt, 3, sample.metricKind.rawValue)
+        bindInt(stmt, 4, sample.latencyMs)
+        bindText(stmt, 5, sample.model)
+        bindText(stmt, 6, sample.sessionID)
+        bindText(stmt, 7, sample.runID)
+        bindText(stmt, 8, sample.projectPath)
+        bindText(stmt, 9, sample.sourceKind)
+        bindText(stmt, 10, Self.isoString(from: sample.timestamp))
+
+        if sqlite3_step(stmt) != SQLITE_DONE {
+            let err = String(cString: sqlite3_errmsg(db))
+            Log.warn("TelemetryStore: insert latency sample failed for \(sample.id): \(err)")
         }
     }
 
@@ -1476,6 +1540,70 @@ final class TelemetryStore {
                 }
                 return lhs.tabID < rhs.tabID
             }
+        }
+    }
+
+    /// Persisted provider latency samples ordered by observation time.
+    func latencySamples(
+        after: Date? = nil,
+        providerFilterKey: String? = nil,
+        metricKind: ProviderLatencyMetricKind? = nil
+    ) -> [ProviderLatencySample] {
+        queue.sync {
+            guard let db else { return [] }
+            var sql = """
+            SELECT sample_id, provider, metric_kind, latency_ms, model, session_id, run_id, project_path, source_kind, observed_at
+            FROM provider_latency_samples
+            WHERE 1 = 1
+            """
+            if after != nil {
+                sql += " AND observed_at >= ?"
+            }
+            if metricKind != nil {
+                sql += after != nil ? " AND metric_kind = ?" : " AND metric_kind = ?"
+            }
+            sql += " ORDER BY observed_at ASC"
+
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+
+            var bindIndex: Int32 = 1
+            if let after {
+                bindText(stmt, bindIndex, Self.isoString(from: after))
+                bindIndex += 1
+            }
+            if let metricKind {
+                bindText(stmt, bindIndex, metricKind.rawValue)
+            }
+
+            var samples: [ProviderLatencySample] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let provider = colText(stmt, 1),
+                      AnalyticsProvider.matches(provider, filterKey: providerFilterKey),
+                      let normalizedProvider = AnalyticsProvider.key(for: provider) ?? AIResumeParser.normalizeProviderName(provider),
+                      let metricRaw = colText(stmt, 2),
+                      let kind = ProviderLatencyMetricKind(rawValue: metricRaw),
+                      let observedAt = colText(stmt, 9).flatMap({ Self.isoDate(from: $0) }) else {
+                    continue
+                }
+
+                samples.append(
+                    ProviderLatencySample(
+                        id: colText(stmt, 0) ?? UUID().uuidString,
+                        provider: normalizedProvider,
+                        metricKind: kind,
+                        latencyMs: Int(sqlite3_column_int64(stmt, 3)),
+                        timestamp: observedAt,
+                        model: colText(stmt, 4),
+                        sessionID: colText(stmt, 5),
+                        runID: colText(stmt, 6),
+                        projectPath: colText(stmt, 7),
+                        sourceKind: colText(stmt, 8) ?? "telemetry"
+                    )
+                )
+            }
+            return samples
         }
     }
 

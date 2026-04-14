@@ -112,7 +112,7 @@ extension TerminalSessionModel {
             updateOutputBurstState(bytes: data.count, outputGap: outputGap, now: now)
             markOutputLatencyStart()
             markDirtyOutputRange(for: data)
-            noteAIFirstOutputIfNeeded(bytes: data.count, at: now)
+            noteAIFirstOutputIfNeeded(data: data, at: now)
             markWaitingInputFallbackOutputIfNeeded()
         }
         bufferNeedsRefresh = true
@@ -1539,8 +1539,9 @@ extension TerminalSessionModel {
         )
     }
 
-    private func noteAIFirstOutputIfNeeded(bytes: Int, at now: Date) {
+    private func noteAIFirstOutputIfNeeded(data: Data, at now: Date) {
         guard let inputAt = pendingAITimingInputAt else { return }
+        guard ProviderLatencyOutputHeuristics.hasMeaningfulFirstResponseText(in: data) else { return }
 
         let elapsed = now.timeIntervalSince(inputAt)
         guard elapsed >= 0, elapsed <= aiTimingWindowSeconds else {
@@ -1552,8 +1553,24 @@ extension TerminalSessionModel {
             ?? Self.displayName(fromProvider: effectiveAIProvider)
             ?? "unknown"
         Log.info(
-            "AI timing: first output tab=\(tabIdentifier) app=\(app) provider=\(effectiveAIProvider ?? "nil") sessionId=\(effectiveAISessionId ?? "nil") inputChars=\(pendingAITimingInputChars) bytes=\(bytes) afterMs=\(Int((elapsed * 1000).rounded())) status=\(effectiveStatus.rawValue) prompt=\(effectiveIsAtPrompt)"
+            "AI timing: first output tab=\(tabIdentifier) app=\(app) provider=\(effectiveAIProvider ?? "nil") sessionId=\(effectiveAISessionId ?? "nil") inputChars=\(pendingAITimingInputChars) bytes=\(data.count) afterMs=\(Int((elapsed * 1000).rounded())) status=\(effectiveStatus.rawValue) prompt=\(effectiveIsAtPrompt)"
         )
+        if let provider = effectiveAIProvider {
+            let normalizedProvider = AIResumeParser.normalizeProviderName(provider) ?? provider.lowercased()
+            let activeRun = TelemetryRecorder.shared.activeRunForTab(tabIdentifier)
+            TelemetryStore.shared.insertLatencySample(
+                ProviderLatencySample(
+                    provider: normalizedProvider,
+                    metricKind: .firstResponse,
+                    latencyMs: Int((elapsed * 1000).rounded()),
+                    timestamp: now,
+                    sessionID: effectiveAISessionId,
+                    runID: activeRun?.id,
+                    projectPath: currentDirectory,
+                    sourceKind: "terminal_first_output"
+                )
+            )
+        }
         clearPendingAITiming()
     }
 
