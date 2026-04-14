@@ -2426,6 +2426,91 @@ final class OverlayTabsModelTests: XCTestCase {
         wait(for: [expectationDone], timeout: 2.5)
     }
 
+    func testScheduleResumeCommandPreservesLatestDeliveredStateWhenOlderRetryBecomesStale() {
+        guard let tab = model.tabs.first,
+              let (paneID, session) = tab.splitController.terminalSessions.first else {
+            XCTFail("Expected initial terminal pane")
+            return
+        }
+
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { text in
+            capturedInputs.append(text)
+        }
+        session.attachRustTerminal(terminalView)
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        session.status = .idle
+
+        let oldToken = "restore-old-token"
+        let newToken = "restore-new-token"
+        let oldIntent = OverlayTabsModel.ResumeRestoreIntent(
+            paneID: paneID,
+            command: "claude --resume old-001",
+            expectedDirectory: session.currentDirectory,
+            expectedProvider: nil,
+            expectedSessionID: nil,
+            expectedSessionIDSource: nil,
+            isFocusedPane: true
+        )
+        let newIntent = OverlayTabsModel.ResumeRestoreIntent(
+            paneID: paneID,
+            command: "claude --resume new-001",
+            expectedDirectory: session.currentDirectory,
+            expectedProvider: nil,
+            expectedSessionID: nil,
+            expectedSessionIDSource: nil,
+            isFocusedPane: true
+        )
+
+        model.latestRestoreResumeTokenByPaneID[paneID] = oldToken
+        model.recordResumeRestoreDeliveryState(
+            paneID: paneID,
+            token: oldToken,
+            outcome: .pending,
+            tabID: tab.id,
+            reason: "test_old_schedule"
+        )
+        model.scheduleResumeCommand(
+            intent: oldIntent,
+            targetTabID: tab.id,
+            restoreToken: oldToken,
+            remainingAttempts: 1,
+            delay: 0.25
+        )
+
+        model.latestRestoreResumeTokenByPaneID[paneID] = newToken
+        model.recordResumeRestoreDeliveryState(
+            paneID: paneID,
+            token: newToken,
+            outcome: .pending,
+            tabID: tab.id,
+            reason: "test_new_schedule"
+        )
+        model.scheduleResumeCommand(
+            intent: newIntent,
+            targetTabID: tab.id,
+            restoreToken: newToken,
+            remainingAttempts: 1,
+            delay: 0
+        )
+
+        let expectationDone = expectation(description: "stale retry does not overwrite newer delivered state")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            XCTAssertEqual(capturedInputs, ["claude --resume new-001"])
+            XCTAssertEqual(
+                model.resumeRestoreDeliveryStateByPaneID[paneID],
+                OverlayTabsModel.ResumeRestoreDeliveryState(
+                    token: newToken,
+                    outcome: .delivered
+                )
+            )
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 1.5)
+    }
+
     func testReadFirstLineFromDataSupportsVeryLongLine() {
         let longLine = String(repeating: "a", count: 12000) + "\n" + String(repeating: "b", count: 20)
         guard let data = longLine.data(using: .utf8) else {

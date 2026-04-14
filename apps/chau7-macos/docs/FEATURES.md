@@ -74,6 +74,7 @@ Detection methods:
 - **Pane-owned AI restore** — split tabs restore resume commands from each saved terminal pane’s own metadata instead of inferring ownership from whichever pane is focused after layout rebuild.
 - **Restore ownership validation** — pane resume prefills now verify directory and restored AI identity before insertion, so stale retries fail closed instead of landing in the wrong pane.
 - **Restore delivery ledger** — pane resume restore now records scheduled, queued, delivered, rejected, and superseded outcomes per pane so stale retries are explicit in logs and tests instead of silent.
+- **Restore supersession guard** — stale retry callbacks can no longer overwrite a newer pane’s delivered restore outcome, so the ledger keeps the winning pane state instead of regressing to `superseded`.
 
 ### Context Token Optimization (CTO)
 

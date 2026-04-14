@@ -390,4 +390,5 @@ background_transcript_and_interactive_notifications,macos,restore,background sna
 restore_resume_per_pane,macos,restore,split-tab AI resume restore now binds each saved resume command to its owning terminal pane instead of routing through the rebuilt focused pane,shipped
 restore_resume_ownership_validation,macos,restore,restore-time resume prefills now validate pane directory and restored AI identity before insertion and skip mismatched stale targets,shipped
 restore_resume_delivery_ledger,macos,restore,pane-owned resume restore now records scheduled queued delivered rejected and superseded outcomes per pane so stale retries stay diagnosable,shipped
+restore_resume_supersession_guard,macos,restore,late stale retry callbacks no longer overwrite a newer pane's delivered restore outcome so the ledger preserves the winning pane state,shipped
 Notifications,Tab Highlight Coverage,"All user-facing AI events (permission, waiting_input, finished, failed, idle, tool_failed, response_failed, elicitation) trigger tab border/color highlights with 30s auto-clear",Shipped,Yes

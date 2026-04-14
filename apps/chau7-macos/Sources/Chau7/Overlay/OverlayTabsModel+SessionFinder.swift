@@ -1260,6 +1260,14 @@ extension OverlayTabsModel {
         tabID: UUID,
         reason: String
     ) {
+        if let existing = resumeRestoreDeliveryStateByPaneID[paneID],
+           existing.token != token,
+           outcome == .superseded {
+            Log.trace(
+                "restoreTabState: preserving newer resume outcome for tab=\(tabID) pane=\(paneID) existingToken=\(existing.token.prefix(8)) staleToken=\(token.prefix(8))"
+            )
+            return
+        }
         resumeRestoreDeliveryStateByPaneID[paneID] = ResumeRestoreDeliveryState(
             token: token,
             outcome: outcome
