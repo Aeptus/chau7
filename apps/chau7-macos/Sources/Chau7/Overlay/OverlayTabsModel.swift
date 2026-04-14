@@ -966,35 +966,67 @@ final class OverlayTabsModel {
         return snapshot
     }
 
-    static func captureSnapshotImage(from view: NSView) -> NSImage? {
-        guard let bitmapRep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
-            return nil
+    private static func snapshotSurface(for view: NSView) -> NSView {
+        if let unified = view as? UnifiedTerminalContainerView {
+            return unified
         }
-        view.cacheDisplay(in: view.bounds, to: bitmapRep)
-
-        let image = NSImage(size: view.bounds.size)
-        image.addRepresentation(bitmapRep)
-        return image
+        if let container = view as? RustTerminalContainerView {
+            return container
+        }
+        if let container = view.superview as? RustTerminalContainerView {
+            return container
+        }
+        if let unified = view.superview as? UnifiedTerminalContainerView {
+            return unified
+        }
+        if let unified = view.superview?.superview as? UnifiedTerminalContainerView {
+            return unified
+        }
+        return view
     }
 
-    @discardableResult
-    func ensureRetainedSnapshotForTab(id: UUID) -> Bool {
-        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
-        if tabs[index].visibleSnapshot != nil {
-            return true
+    private static func isSnapshotSurfaceReady(_ view: NSView) -> Bool {
+        if let unified = view as? UnifiedTerminalContainerView {
+            if let metalView = unified.rustMetalCoordinator?.metalView, !metalView.isHidden {
+                return true
+            }
+            return !(unified.rustTerminalView?.isHidden ?? true)
         }
+        if let container = view as? RustTerminalContainerView {
+            if let metalView = container.rustMetalCoordinator?.metalView, !metalView.isHidden {
+                return true
+            }
+            return !container.terminalView.isHidden
+        }
+        return !view.isHidden
+    }
 
-        guard let terminalView = (tabs[index].displaySession ?? tabs[index].session)?.existingRustTerminalView,
-              let snapshot = Self.captureSnapshotImage(from: terminalView) else {
-            return false
+    static func captureSnapshotImage(from view: NSView) -> NSImage? {
+        if let rustView = view as? RustTerminalView {
+            return rustView.makeRetainedFrameImage()
         }
+        if let unified = view as? UnifiedTerminalContainerView,
+           let rustView = unified.rustTerminalView {
+            return rustView.makeRetainedFrameImage()
+        }
+        if let container = view as? RustTerminalContainerView {
+            return container.terminalView.makeRetainedFrameImage()
+        }
+        let snapshotView = snapshotSurface(for: view)
+        guard isSnapshotSurfaceReady(snapshotView) else {
+            return nil
+        }
+        snapshotView.layoutSubtreeIfNeeded()
+        guard snapshotView.bounds.width > 0,
+              snapshotView.bounds.height > 0,
+              let bitmapRep = snapshotView.bitmapImageRepForCachingDisplay(in: snapshotView.bounds) else {
+            return nil
+        }
+        snapshotView.cacheDisplay(in: snapshotView.bounds, to: bitmapRep)
 
-        tabs[index].cachedSnapshot = snapshot
-        tabs[index].session?.lastRenderedSnapshot = snapshot
-        if let session = tabs[index].session {
-            tabs[index].lastPromptText = session.displayPath()
-        }
-        return true
+        let image = NSImage(size: snapshotView.bounds.size)
+        image.addRepresentation(bitmapRep)
+        return image
     }
 
     static func pngData(from image: NSImage) -> Data? {
@@ -1864,7 +1896,6 @@ final class OverlayTabsModel {
         // 2. Capture the outgoing tab's last frame so inactive tabs can freeze
         //    visually without keeping their renderer hot.
         captureCurrentTabSnapshot()
-        _ = ensureRetainedSnapshotForTab(id: id)
         let targetSession = tabs.first(where: { $0.id == id })?.displaySession
             ?? tabs.first(where: { $0.id == id })?.session
         let shouldShowTransitionSnapshot = tabs.first(where: { $0.id == id })?.visibleSnapshot != nil
@@ -1972,17 +2003,8 @@ final class OverlayTabsModel {
             return
         }
 
-        let snapshotView: NSView? = tabs[currentIndex].session?.existingRustTerminalView as NSView?
-        if let terminalView = snapshotView {
-            // Live capture from the terminal view
-            guard let bitmapRep = terminalView.bitmapImageRepForCachingDisplay(in: terminalView.bounds) else {
-                logVisualState(reason: "snapshot: skipped (no bitmap rep)")
-                return
-            }
-            terminalView.cacheDisplay(in: terminalView.bounds, to: bitmapRep)
-
-            let image = NSImage(size: terminalView.bounds.size)
-            image.addRepresentation(bitmapRep)
+        if let terminalView = tabs[currentIndex].session?.existingRustTerminalView,
+           let image = terminalView.makeRetainedFrameImage() {
             tabs[currentIndex].cachedSnapshot = image
             // Also cache on the session for when the view is torn down later
             tabs[currentIndex].session?.lastRenderedSnapshot = image
