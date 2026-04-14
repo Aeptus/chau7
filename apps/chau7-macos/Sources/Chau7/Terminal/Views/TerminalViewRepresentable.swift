@@ -208,10 +208,18 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         return makeRustTerminalView()
     }
 
+    private func cacheRetainedFrameIfAvailable(from view: RustTerminalView) {
+        guard let snapshot = OverlayTabsModel.captureSnapshotImage(from: view) else { return }
+        model.lastRenderedSnapshot = snapshot
+    }
+
     private func makeRustTerminalView() -> UnifiedTerminalContainerView {
         // Reuse existing Rust terminal view if available
         if let existingView = model.existingRustTerminalView {
             Log.trace("Reusing existing Rust terminal view for session")
+            if isSuspended {
+                cacheRetainedFrameIfAvailable(from: existingView)
+            }
             existingView.notifyUpdateChanges = !isSuspended
             existingView.isHidden = isSuspended
             existingView.setEventMonitoringEnabled(isActive && !isSuspended)
@@ -369,6 +377,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         nsView.setEventMonitoringEnabled(isActive && !isSuspended)
 
         let metalActive = container.rustMetalCoordinator != nil
+        if isSuspended {
+            cacheRetainedFrameIfAvailable(from: nsView)
+        }
         if nsView.isHidden != isSuspended {
             nsView.isHidden = isSuspended
             if !isSuspended, !metalActive {

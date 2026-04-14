@@ -9,6 +9,15 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
     private var model: OverlayTabsModel!
     private var appModel: AppModel!
 
+    private func makeSnapshot(size: NSSize = NSSize(width: 80, height: 40)) -> NSImage {
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.systemBlue.setFill()
+        NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
+        image.unlockFocus()
+        return image
+    }
+
     override func setUp() {
         super.setUp()
         OverlayTabsModel.clearPersistedWindowState()
@@ -97,6 +106,30 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertFalse(
             model.shouldKeepTabInLiveHierarchy(tab: model.tabs[distantIndex], index: distantIndex),
             "Once a terminal view has attached, distant MCP tabs can fall back to placeholder rendering"
+        )
+    }
+
+    func testVisibleSnapshotFallsBackToSessionRetainedFrame() {
+        let snapshot = makeSnapshot()
+        model.tabs[0].session?.lastRenderedSnapshot = snapshot
+
+        XCTAssertNotNil(model.tabs[0].visibleSnapshot)
+        XCTAssertEqual(model.tabs[0].visibleSnapshot?.size.width, snapshot.size.width)
+        XCTAssertEqual(model.tabs[0].visibleSnapshot?.size.height, snapshot.size.height)
+    }
+
+    func testSelectingTabUsesSessionRetainedFrameWhenTabCacheIsEmpty() {
+        model.newTab(selectNewTab: false)
+        let targetID = model.tabs[1].id
+        model.tabs[1].session?.lastRenderedSnapshot = makeSnapshot()
+        model.tabs[1].cachedSnapshot = nil
+
+        model.selectTab(id: targetID)
+
+        XCTAssertEqual(model.selectedTabID, targetID)
+        XCTAssertFalse(
+            model.isTerminalReady,
+            "Selecting a tab with only a session-retained frame should still use the snapshot-first handoff"
         )
     }
 }

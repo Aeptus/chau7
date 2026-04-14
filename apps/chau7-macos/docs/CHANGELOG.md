@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Background Transcript Restore Fallback**: Background tabs can reuse cached remote transcript text when no live terminal view is attached, and interactive notification planning now covers elicitation and explicit tool/response failures consistently.
 
 ### Fixed
+- **Cold Tab Switch Handoff**: Inactive tabs now fall back to a retained last-rendered frame during selection handoff, and restore-bootstrap phase changes immediately re-evaluate suspension so restored tabs cool down promptly instead of staying live longer than intended.
 - **Codex Rollout Quota Parsing**: Telemetry now parses pretty-printed Codex rollout JSON objects in addition to one-line JSONL, so quota snapshots and rate-limit windows are recovered reliably from multiline history files.
 - **Legacy Scripting Session API Removed**: The local scripting socket no longer exposes `create_session`, `get_session_events`, `submit_session_turn`, `get_session_result`, or `stop_session`. Review automation now relies on the existing tab-first scripting methods plus repo events/output instead of the runtime-backed session wrapper layer.
 - **MCP Runtime Surface Removed**: `runtime_*` tools are no longer callable through MCP. Public MCP clients now get a strictly tab-first live-control surface plus telemetry/history tools, while runtime orchestration remains internal to the app.

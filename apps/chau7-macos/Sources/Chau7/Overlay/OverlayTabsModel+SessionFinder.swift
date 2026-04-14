@@ -370,10 +370,12 @@ extension OverlayTabsModel {
     }
 
     /// Restores tabs from saved state. Returns nil if no saved state exists
-    /// or if decoding fails.
+    /// or if decoding fails. Window 0 is intentionally never restored — it
+    /// always starts with a fresh shell tab.
     static func restoreSavedTabs(appModel: AppModel) -> RestorableTabsPayload? {
         guard let data = UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey) else {
-            return restoreSavedTabsFromBackups(appModel: appModel)
+            // Legacy key is cleared at save time for window 0 — no backup fallback.
+            return nil
         }
         archiveImportedTabStateIfNeeded(data)
         // Clear saved state immediately so a crash during restoration
@@ -795,6 +797,7 @@ extension OverlayTabsModel {
                             source: "phase_changed"
                         )
                     }
+                    self?.updateSuspensionState()
                     self?.syncSelectedTerminalPresentation(reason: "restore_bootstrap_phase")
                 }
             }

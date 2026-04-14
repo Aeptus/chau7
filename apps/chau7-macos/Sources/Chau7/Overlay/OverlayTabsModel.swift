@@ -136,7 +136,7 @@ struct OverlayTab: Identifiable, Equatable {
     var lastPromptText = ""
 
     var visibleSnapshot: NSImage? {
-        restorePreviewSnapshot ?? cachedSnapshot
+        restorePreviewSnapshot ?? cachedSnapshot ?? session?.lastRenderedSnapshot
     }
 
     /// The primary terminal session (first terminal in split tree)
