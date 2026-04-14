@@ -648,6 +648,10 @@ final class OverlayTabsModel {
     /// Per-pane token for restore-time resume prefills.
     /// Prevents stale delayed retries from writing outdated commands.
     @ObservationIgnored var latestRestoreResumeTokenByPaneID: [UUID: String] = [:]
+    /// Per-pane restore outcome ledger for resume prefills.
+    /// Keeps supersession, queued, delivered, and rejected states explicit so
+    /// restore retries remain diagnosable and stale callbacks cannot silently win.
+    @ObservationIgnored var resumeRestoreDeliveryStateByPaneID: [UUID: ResumeRestoreDeliveryState] = [:]
     @ObservationIgnored var isRenderSuspensionEnabled = false
     // Reduced from 5.0s to 2.0s — combined with CVDisplayLink pausing, this
     // means background tabs stop rendering 3 seconds sooner, saving significant CPU.
@@ -688,6 +692,19 @@ final class OverlayTabsModel {
         let claimedSessionFingerprint: Int
         let claimedSessionCount: Int
         let historyFingerprint: Int
+    }
+
+    struct ResumeRestoreDeliveryState: Equatable {
+        enum Outcome: String, Equatable {
+            case pending
+            case queued
+            case delivered
+            case rejected
+            case superseded
+        }
+
+        let token: String
+        let outcome: Outcome
     }
 
     struct StableCodexResumeFallbackSignature: Equatable {

@@ -2295,6 +2295,14 @@ final class OverlayTabsModelTests: XCTestCase {
             ]
             XCTAssertEqual(Set(capturedInputs), expected)
             XCTAssertEqual(capturedInputs.count, 2)
+            XCTAssertEqual(
+                restoredModel.resumeRestoreDeliveryStateByPaneID[focusedPaneID]?.outcome,
+                .delivered
+            )
+            XCTAssertEqual(
+                restoredModel.resumeRestoreDeliveryStateByPaneID[secondaryPaneID]?.outcome,
+                .delivered
+            )
             expectationDone.fulfill()
         }
         wait(for: [expectationDone], timeout: 2.0)
@@ -2351,6 +2359,10 @@ final class OverlayTabsModelTests: XCTestCase {
         let expectationDone = expectation(description: "resume prefill skipped when ownership validation fails")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             XCTAssertTrue(capturedInputs.isEmpty)
+            XCTAssertEqual(
+                restoredModel.resumeRestoreDeliveryStateByPaneID[paneID]?.outcome,
+                .rejected
+            )
             expectationDone.fulfill()
         }
         wait(for: [expectationDone], timeout: 2.0)

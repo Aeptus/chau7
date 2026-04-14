@@ -1021,6 +1021,13 @@ extension OverlayTabsModel {
                 }
 
                 if let resumeIntent = resumeIntents.first(where: { $0.paneID == paneID }) {
+                    recordResumeRestoreDeliveryState(
+                        paneID: paneID,
+                        token: restoreToken,
+                        outcome: .pending,
+                        tabID: targetTabID,
+                        reason: "scheduled"
+                    )
                     Log.info(
                         """
                         restoreTabState: scheduling resume command for tab=\(targetTabID) pane=\(paneID) \
@@ -1055,11 +1062,25 @@ extension OverlayTabsModel {
             if let tab = tabs.first(where: { $0.id == targetTabID }),
                let session = tab.splitController.root.findSession(id: paneID) {
                 guard validateResumeRestoreIntent(intent, against: session, tabID: targetTabID) else {
+                    recordResumeRestoreDeliveryState(
+                        paneID: paneID,
+                        token: restoreToken,
+                        outcome: .rejected,
+                        tabID: targetTabID,
+                        reason: "ownership_validation_failed_after_retries"
+                    )
                     latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                     return
                 }
                 session.prefillInput(intent.command)
                 StartupRestoreCoordinator.shared.noteQueuedResumePrefill()
+                recordResumeRestoreDeliveryState(
+                    paneID: paneID,
+                    token: restoreToken,
+                    outcome: .queued,
+                    tabID: targetTabID,
+                    reason: "retries_exhausted"
+                )
                 Log.warn("restoreTabState: retries exhausted, queued prefill for tab=\(targetTabID) pane=\(paneID)")
             } else {
                 Log.warn("restoreTabState: retries exhausted, tab/pane gone for tab=\(targetTabID) pane=\(paneID)")
@@ -1071,6 +1092,13 @@ extension OverlayTabsModel {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
             guard latestRestoreResumeTokenByPaneID[paneID] == restoreToken else {
+                recordResumeRestoreDeliveryState(
+                    paneID: paneID,
+                    token: restoreToken,
+                    outcome: .superseded,
+                    tabID: targetTabID,
+                    reason: "stale_retry"
+                )
                 Log.trace("restoreTabState: skipping stale resume prefill for tab=\(targetTabID) pane=\(paneID)")
                 return
             }
@@ -1111,11 +1139,25 @@ extension OverlayTabsModel {
                         // deliver the command when the view is eventually created via
                         // attachRustTerminal → flushPendingPrefillInputIfReady.
                         guard validateResumeRestoreIntent(intent, against: reResolvedSession, tabID: targetTabID) else {
+                            recordResumeRestoreDeliveryState(
+                                paneID: paneID,
+                                token: restoreToken,
+                                outcome: .rejected,
+                                tabID: targetTabID,
+                                reason: "ownership_validation_failed_before_queue"
+                            )
                             latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                             return
                         }
                         reResolvedSession.prefillInput(intent.command)
                         StartupRestoreCoordinator.shared.noteQueuedResumePrefill()
+                        recordResumeRestoreDeliveryState(
+                            paneID: paneID,
+                            token: restoreToken,
+                            outcome: .queued,
+                            tabID: targetTabID,
+                            reason: "waiting_for_view"
+                        )
                         latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                         Log.info("restoreTabState: no view for tab=\(targetTabID) pane=\(paneID), queued session-level prefill")
                         return
@@ -1146,6 +1188,13 @@ extension OverlayTabsModel {
             }
 
             guard validateResumeRestoreIntent(intent, against: reResolvedSession, tabID: targetTabID) else {
+                recordResumeRestoreDeliveryState(
+                    paneID: paneID,
+                    token: restoreToken,
+                    outcome: .rejected,
+                    tabID: targetTabID,
+                    reason: "ownership_validation_failed_before_delivery"
+                )
                 latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                 return
             }
@@ -1153,6 +1202,13 @@ extension OverlayTabsModel {
             // Prefill the pane-owned resume command so the user can confirm with Enter.
             reResolvedSession.prefillInput(intent.command)
             StartupRestoreCoordinator.shared.noteDeliveredResumePrefill()
+            recordResumeRestoreDeliveryState(
+                paneID: paneID,
+                token: restoreToken,
+                outcome: .delivered,
+                tabID: targetTabID,
+                reason: "prefilled"
+            )
             latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
             Log.info(
                 """
@@ -1195,6 +1251,22 @@ extension OverlayTabsModel {
         }
 
         return true
+    }
+
+    func recordResumeRestoreDeliveryState(
+        paneID: UUID,
+        token: String,
+        outcome: ResumeRestoreDeliveryState.Outcome,
+        tabID: UUID,
+        reason: String
+    ) {
+        resumeRestoreDeliveryStateByPaneID[paneID] = ResumeRestoreDeliveryState(
+            token: token,
+            outcome: outcome
+        )
+        Log.info(
+            "restoreTabState: resume outcome tab=\(tabID) pane=\(paneID) token=\(token.prefix(8)) outcome=\(outcome.rawValue) reason=\(reason)"
+        )
     }
 
     struct ResumeRestoreIntent {
