@@ -27,4 +27,6 @@ Model Context Protocol server: exposes Chau7 tab control, output, and telemetry 
 - `chau7_runtime_info` exposes build/process identity for external observability
 - `chau7_runtime_events` exposes app-owned lifecycle markers plus unified non-app AI events with stable sequence numbers
 - `chau7_timer_inventory` exposes Chau7-owned timer/display-link state for renderer and MCP server correlation
+- `chau7_state_snapshot` is the authoritative aggregated observer read: runtime identity, tabs, approvals, repo event summaries, active telemetry runs/sessions, timers, and latest sequence
+- `chau7_subscribe` / `chau7_unsubscribe` open one long-lived state feed per MCP connection using JSON-RPC notifications (`notifications/chau7.event`) with replay from a cursor
 - runtime orchestration remains app-internal for now and is no longer part of the public MCP tool surface

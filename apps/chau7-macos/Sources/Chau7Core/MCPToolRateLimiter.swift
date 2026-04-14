@@ -34,6 +34,9 @@ public struct MCPToolRateLimiter {
         public static let `default` = Config(
             defaultLimit: Limit(maxPerMinute: 120, burstAllowance: 30),
             perToolLimits: [
+                "chau7_state_snapshot": Limit(maxPerMinute: 240, burstAllowance: 120),
+                "chau7_subscribe": Limit(maxPerMinute: 30, burstAllowance: 10),
+                "chau7_unsubscribe": Limit(maxPerMinute: 60, burstAllowance: 20),
                 "chau7_runtime_events": Limit(maxPerMinute: 240, burstAllowance: 120),
                 "tab_output": Limit(maxPerMinute: 240, burstAllowance: 120),
                 "tab_status": Limit(maxPerMinute: 240, burstAllowance: 120),

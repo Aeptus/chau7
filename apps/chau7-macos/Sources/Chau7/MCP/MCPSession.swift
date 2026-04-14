@@ -16,7 +16,13 @@ final class MCPSession {
     private let queryService = TelemetryQueryService()
     private let controlService = TerminalControlService.shared
     private let controlPlane = ControlPlaneService.shared
+    private let stateSnapshotService = Chau7StateSnapshotService.shared
     private var lifecycleState: LifecycleState = .awaitingInitialize
+    private let writeQueue = DispatchQueue(label: "com.chau7.mcp.session.write")
+    private let notificationSink: (([String: Any]) -> Void)?
+    private var liveNotificationWriter: (([String: Any]) -> Void)?
+    private var subscriptionToken: UUID?
+    private var subscriptionID: String?
 
     private enum LifecycleState {
         case awaitingInitialize
@@ -35,8 +41,13 @@ final class MCPSession {
         let structuredContent: [String: Any]?
     }
 
-    init(fd: Int32) {
+    init(fd: Int32, notificationSink: (([String: Any]) -> Void)? = nil) {
         self.fd = fd
+        self.notificationSink = notificationSink
+    }
+
+    deinit {
+        cancelSubscription()
     }
 
     /// Blocking run loop: reads JSON-RPC messages, dispatches, writes responses.
@@ -55,8 +66,16 @@ final class MCPSession {
         }
 
         defer {
+            cancelSubscription()
+            liveNotificationWriter = nil
+            writeQueue.sync {}
             fclose(readStream) // closes original fd
             fclose(writeStream) // closes dup'd fd
+        }
+
+        liveNotificationWriter = { [weak self] payload in
+            guard let self else { return }
+            self.writeJSON(to: writeStream, json: payload, mirrorToNotificationSink: true)
         }
 
         while true {
@@ -89,7 +108,7 @@ final class MCPSession {
             }
 
             if let response = handleRequestObject(json) {
-                writeLine(to: writeStream, json: response)
+                writeJSON(to: writeStream, json: response)
             }
         }
     }
@@ -398,6 +417,37 @@ final class MCPSession {
                 "description": "Get the current Chau7-owned timer and display-link inventory for observability. Includes stable timer ids, timer kind, subsystem, queue label, cadence, and active state.",
                 "inputSchema": ["type": "object", "properties": [:]]
             ],
+            [
+                "name": "chau7_state_snapshot",
+                "description": "Get the authoritative aggregated Chau7 state snapshot for external observers. Includes runtime identity, live tabs, pending approvals, repo event summaries, active telemetry runs/sessions, timers, and the latest monotonic change sequence.",
+                "inputSchema": ["type": "object", "properties": [:]]
+            ],
+            [
+                "name": "chau7_subscribe",
+                "description": "Open a long-lived Chau7 state subscription on this MCP connection. Returns an initial aggregated snapshot, the latest sequence number, and optional replayed changes since a cursor. Subsequent state deltas are emitted as JSON-RPC notifications.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "topics": [
+                            "type": "array",
+                            "items": ["type": "string"],
+                            "description": "Optional topic filter. Supported topics include runtime-events, tab-state, approval-state, repo-events, telemetry-runs, timer-inventory, and session-state."
+                        ],
+                        "cursor": ["type": "integer", "description": "Optional last seen monotonic sequence number for replay."],
+                        "replay_limit": ["type": "integer", "description": "Maximum replayed changes to include in the subscribe response (default 200, max 500)."]
+                    ]
+                ]
+            ],
+            [
+                "name": "chau7_unsubscribe",
+                "description": "Stop the current Chau7 state subscription for this MCP connection.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "subscription_id": ["type": "string", "description": "Optional subscription id returned by chau7_subscribe."]
+                    ]
+                ]
+            ],
 
             // MARK: Control Plane Tools
 
@@ -686,6 +736,19 @@ final class MCPSession {
         case "chau7_timer_inventory":
             return classifyToolResponse(Chau7ObservabilityService.shared.timerInventoryJSON())
 
+        case "chau7_state_snapshot":
+            return .toolResult(
+                toolSuccessResult(
+                    payload: stateSnapshotService.snapshotPayload()
+                )
+            )
+
+        case "chau7_subscribe":
+            return subscribeToChau7State(arguments: arguments)
+
+        case "chau7_unsubscribe":
+            return unsubscribeFromChau7State(arguments: arguments)
+
         // Control plane
         case "tab_list":
             return classifyToolResponse(controlPlane.call(name: "tab_list", arguments: arguments))
@@ -831,7 +894,20 @@ final class MCPSession {
     }
 
     private func writeError(to stream: UnsafeMutablePointer<FILE>, id: Any?, code: Int, message: String) {
-        writeLine(to: stream, json: buildError(id: id, code: code, message: message))
+        writeJSON(to: stream, json: buildError(id: id, code: code, message: message))
+    }
+
+    private func writeJSON(
+        to stream: UnsafeMutablePointer<FILE>,
+        json: [String: Any],
+        mirrorToNotificationSink: Bool = false
+    ) {
+        writeQueue.sync {
+            writeLine(to: stream, json: json)
+            if mirrorToNotificationSink {
+                notificationSink?(json)
+            }
+        }
     }
 
     private func writeLine(to stream: UnsafeMutablePointer<FILE>, json: [String: Any]) {
@@ -943,10 +1019,127 @@ final class MCPSession {
         return .toolResult(ToolResult(text: trimmed, isError: false, structuredContent: object))
     }
 
+    private func toolSuccessResult(payload: [String: Any]) -> ToolResult {
+        ToolResult(
+            text: encodeJSONObject(payload) ?? "{}",
+            isError: false,
+            structuredContent: payload
+        )
+    }
+
     private func toolErrorResult(message: String, structuredContent: [String: Any]) -> ToolResult {
         var payload = structuredContent
         payload["message"] = message
         return ToolResult(text: message, isError: true, structuredContent: payload)
+    }
+
+    private func subscribeToChau7State(arguments: [String: Any]) -> ToolCallDisposition {
+        guard canEmitNotifications else {
+            return .toolResult(
+                toolErrorResult(
+                    message: "Subscriptions require a live MCP connection that can receive JSON-RPC notifications.",
+                    structuredContent: ["error": "notifications_unavailable"]
+                )
+            )
+        }
+
+        let topics = arguments["topics"] as? [String]
+        let cursor = (arguments["cursor"] as? Int64) ?? (arguments["cursor"] as? Int).map(Int64.init)
+        let replayLimit = min(max(arguments["replay_limit"] as? Int ?? 200, 1), 500)
+
+        if let cursor,
+           let oldestAvailable = Chau7ObservabilityService.shared.oldestAvailableChangeSequence(),
+           cursor < oldestAvailable - 1 {
+            return .toolResult(
+                toolErrorResult(
+                    message: "Requested cursor is no longer available. Rehydrate from a fresh snapshot.",
+                    structuredContent: [
+                        "error": "snapshot_required",
+                        "latest_seq": Chau7ObservabilityService.shared.latestSequence(),
+                        "oldest_available_seq": oldestAvailable
+                    ]
+                )
+            )
+        }
+
+        cancelSubscription()
+
+        let replay = Chau7ObservabilityService.shared.changePayloads(
+            sinceSeq: cursor,
+            topics: topics,
+            limit: replayLimit
+        )
+        let subscriptionID = "sub_\(UUID().uuidString)"
+        self.subscriptionID = subscriptionID
+        subscriptionToken = Chau7ObservabilityService.shared.addChangeListener(topics: topics) { [weak self] change in
+            self?.emitSubscriptionNotification(subscriptionID: subscriptionID, change: change)
+        }
+
+        var payload = stateSnapshotService.snapshotPayload()
+        payload["subscription_id"] = subscriptionID
+        payload["topics"] = topics ?? []
+        if !replay.isEmpty {
+            payload["replay"] = replay
+        }
+        return .toolResult(toolSuccessResult(payload: payload))
+    }
+
+    private func unsubscribeFromChau7State(arguments: [String: Any]) -> ToolCallDisposition {
+        if let requestedID = arguments["subscription_id"] as? String,
+           let activeID = subscriptionID,
+           requestedID != activeID {
+            return .protocolError(code: -32602, message: "Unknown subscription_id: \(requestedID)")
+        }
+
+        let previousID = subscriptionID
+        cancelSubscription()
+        return .toolResult(
+            toolSuccessResult(
+                payload: [
+                    "ok": true,
+                    "subscription_id": previousID as Any
+                ].compactMapValues { $0 }
+            )
+        )
+    }
+
+    private var canEmitNotifications: Bool {
+        liveNotificationWriter != nil || notificationSink != nil
+    }
+
+    private func cancelSubscription() {
+        if let token = subscriptionToken {
+            Chau7ObservabilityService.shared.removeChangeListener(token)
+        }
+        subscriptionToken = nil
+        subscriptionID = nil
+    }
+
+    private func emitSubscriptionNotification(subscriptionID: String, change: [String: Any]) {
+        var params = change
+        params["subscription_id"] = subscriptionID
+        sendNotification(method: "notifications/chau7.event", params: params)
+    }
+
+    private func sendNotification(method: String, params: [String: Any]) {
+        let payload: [String: Any] = [
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params
+        ]
+        if let liveNotificationWriter {
+            liveNotificationWriter(payload)
+        } else {
+            notificationSink?(payload)
+        }
+    }
+
+    private func encodeJSONObject(_ object: [String: Any]) -> String? {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
     }
 
     static func resetSharedToolRateLimiterForTests() {

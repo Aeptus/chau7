@@ -124,6 +124,9 @@ MCP Tools — Telemetry,session_current,"Get currently active telemetry-backed A
 MCP Tools — Observability,chau7_runtime_info,"Get Chau7 build and process identity for external observability: version, build metadata, process id, launch time, and schema version",Shipped,Yes
 MCP Tools — Observability,chau7_runtime_events,"Get recent Chau7 observability events with stable sequence ids. Includes app lifecycle markers and unified non-app AI events with optional tab/session/run/repo scoping",Shipped,Yes
 MCP Tools — Observability,chau7_timer_inventory,"Get Chau7-owned timer and display-link inventory with stable ids, subsystem, queue label, cadence, and active state",Shipped,Yes
+MCP Tools — Observability,chau7_state_snapshot,"Get the authoritative aggregated observer snapshot: runtime identity, live tabs, pending approvals, repo event summaries, active telemetry runs/sessions, timers, and latest sequence",Shipped,Yes
+MCP Tools — Observability,chau7_subscribe,"Open one long-lived Chau7 state subscription on the current MCP connection. Returns an initial snapshot plus optional replayed changes since a cursor, then emits JSON-RPC notifications/chau7.event deltas",Shipped,Yes
+MCP Tools — Observability,chau7_unsubscribe,"Stop the active Chau7 state subscription for the current MCP connection",Shipped,Yes
 MCP Tools — Contract,No public runtime tools,"MCP no longer accepts runtime_* tool calls; live control is tab_* and history/analytics are run_* and session_*",Shipped,Yes
 Telemetry,Codex Rollout Multiline Parsing,"Quota snapshots and rate-limit windows are extracted from both one-line JSONL and pretty-printed multiline Codex rollout JSON objects",Shipped,No
 AI Integration,Delegated Task Lineage,"Runtime-managed AI runs persist parent run/session lineage and task metadata into telemetry so parent agents can fetch exact child runs instead of inferring by repo-wide recency",Shipped,Yes

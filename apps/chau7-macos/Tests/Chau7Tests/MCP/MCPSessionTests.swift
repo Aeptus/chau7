@@ -73,6 +73,10 @@ final class MCPSessionTests: XCTestCase {
         let timerInventory = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "chau7_timer_inventory" }))
         XCTAssertTrue((timerInventory["description"] as? String)?.contains("timer and display-link inventory") == true)
 
+        XCTAssertNotNil(tools.first(where: { ($0["name"] as? String) == "chau7_state_snapshot" }))
+        XCTAssertNotNil(tools.first(where: { ($0["name"] as? String) == "chau7_subscribe" }))
+        XCTAssertNotNil(tools.first(where: { ($0["name"] as? String) == "chau7_unsubscribe" }))
+
         let sessionList = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "session_list" }))
         XCTAssertTrue((sessionList["description"] as? String)?.contains("telemetry/history") == true)
         XCTAssertTrue((sessionList["description"] as? String)?.contains("tab_list") == true)
@@ -222,8 +226,126 @@ final class MCPSessionTests: XCTestCase {
         XCTAssertEqual(timers.first?["id"] as? String, "mcp_health_check")
     }
 
+    func testStateSnapshotReturnsAggregatedState() throws {
+        Chau7ObservabilityService.shared.recordEvent(type: "app_launched", subsystem: "app_lifecycle")
+
+        let session = initializedSession()
+        let snapshot = try toolStructuredContent(
+            session: session,
+            name: "chau7_state_snapshot",
+            arguments: [:]
+        )
+
+        XCTAssertEqual(snapshot["schema_version"] as? Int, 1)
+        XCTAssertNotNil(snapshot["latest_seq"])
+        XCTAssertNotNil(snapshot["runtime_info"] as? [String: Any])
+        XCTAssertNotNil(snapshot["tabs"] as? [[String: Any]])
+        XCTAssertNotNil(snapshot["approvals"] as? [[String: Any]])
+        XCTAssertNotNil((snapshot["telemetry"] as? [String: Any])?["active_runs"] as? [[String: Any]])
+    }
+
+    func testSubscribeEmitsReplayAndNotifications() throws {
+        let notificationExpectation = expectation(description: "receives state notification")
+        var receivedNotification: [String: Any]?
+        let session = initializedSession(notificationSink: { payload in
+            if payload["method"] as? String == "notifications/chau7.event" {
+                receivedNotification = payload
+                notificationExpectation.fulfill()
+            }
+        })
+
+        Chau7ObservabilityService.shared.recordEvent(type: "app_launched", subsystem: "app_lifecycle")
+
+        let subscribeResponse = try XCTUnwrap(
+            session.handleRequestObject([
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "tools/call",
+                "params": [
+                    "name": "chau7_subscribe",
+                    "arguments": [
+                        "topics": ["runtime-events"],
+                        "cursor": 0,
+                        "replay_limit": 10
+                    ]
+                ]
+            ])
+        )
+
+        let subscribeResult = try XCTUnwrap(subscribeResponse["result"] as? [String: Any])
+        let subscribeStructured = try XCTUnwrap(subscribeResult["structuredContent"] as? [String: Any])
+        XCTAssertNotNil(subscribeStructured["subscription_id"] as? String)
+        let replay = try XCTUnwrap(subscribeStructured["replay"] as? [[String: Any]])
+        XCTAssertEqual(replay.count, 1)
+        XCTAssertEqual(replay.first?["type"] as? String, "app_launched")
+
+        Chau7ObservabilityService.shared.recordEvent(type: "tab_created", subsystem: "tabs", detail: ["window_id": 1])
+
+        waitForExpectations(timeout: 1)
+
+        let params = try XCTUnwrap(receivedNotification?["params"] as? [String: Any])
+        XCTAssertEqual(params["type"] as? String, "tab_created")
+        XCTAssertEqual((params["topics"] as? [String])?.contains("runtime-events"), true)
+        XCTAssertNotNil(params["subscription_id"] as? String)
+    }
+
+    func testUnsubscribeStopsNotifications() throws {
+        let inverted = expectation(description: "no notification after unsubscribe")
+        inverted.isInverted = true
+
+        let session = initializedSession(notificationSink: { payload in
+            if payload["method"] as? String == "notifications/chau7.event" {
+                inverted.fulfill()
+            }
+        })
+
+        let subscribeStructured = try toolStructuredContent(
+            session: session,
+            name: "chau7_subscribe",
+            arguments: [:]
+        )
+        let subscriptionID = try XCTUnwrap(subscribeStructured["subscription_id"] as? String)
+
+        _ = try toolStructuredContent(
+            session: session,
+            name: "chau7_unsubscribe",
+            arguments: ["subscription_id": subscriptionID]
+        )
+
+        Chau7ObservabilityService.shared.recordEvent(type: "tab_created", subsystem: "tabs")
+        waitForExpectations(timeout: 0.2)
+    }
+
+    func testSubscribeRejectsExpiredCursorReplay() throws {
+        Chau7ObservabilityService.shared.recordEvent(type: "app_launched", subsystem: "app_lifecycle")
+
+        let session = initializedSession(notificationSink: { _ in })
+        let response = try XCTUnwrap(
+            session.handleRequestObject([
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": [
+                    "name": "chau7_subscribe",
+                    "arguments": ["cursor": -1]
+                ]
+            ])
+        )
+
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        XCTAssertEqual(result["isError"] as? Bool, true)
+        let structured = try XCTUnwrap(result["structuredContent"] as? [String: Any])
+        XCTAssertEqual(structured["error"] as? String, "snapshot_required")
+        XCTAssertNotNil(structured["latest_seq"] as? Int64 ?? structured["latest_seq"] as? Int)
+        XCTAssertNotNil(structured["oldest_available_seq"] as? Int64 ?? structured["oldest_available_seq"] as? Int)
+    }
+
     private func initializedSession() -> MCPSession {
-        let session = MCPSession(fd: -1)
+        initializedSession(notificationSink: nil)
+    }
+
+    private func initializedSession(notificationSink: (([String: Any]) -> Void)?) -> MCPSession {
+        let session = MCPSession(fd: -1, notificationSink: notificationSink)
         _ = session.handleRequestObject([
             "jsonrpc": "2.0",
             "id": 1,
