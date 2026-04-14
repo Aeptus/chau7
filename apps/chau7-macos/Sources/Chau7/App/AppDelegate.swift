@@ -389,6 +389,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         // preferredContentSize would otherwise override our 860x680 default with
         // SwiftUI's intrinsic fitting size (often taller than the viewport).
         window.setContentSize(NSSize(width: 860, height: 680))
+        window.setFrameAutosaveName("Chau7SettingsWindow")
         window.center()
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
