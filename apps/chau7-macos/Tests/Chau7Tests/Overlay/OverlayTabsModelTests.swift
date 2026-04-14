@@ -104,6 +104,24 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(windows[1].first?.customTitle, "Window 2")
     }
 
+    func testRestoreSavedTabsUsesPrimaryWindowFromMultiWindowState() throws {
+        let data = try JSONEncoder().encode(
+            SavedMultiWindowState(
+                windows: [
+                    [makeSavedTabState(title: "Window 1", directory: "/tmp/one")],
+                    [makeSavedTabState(title: "Window 2", directory: "/tmp/two")]
+                ]
+            )
+        )
+        UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
+
+        let restored = try XCTUnwrap(OverlayTabsModel.restoreSavedTabs(appModel: appModel))
+
+        XCTAssertEqual(restored.tabs.count, 1)
+        XCTAssertEqual(restored.tabs.first?.customTitle, "Window 1")
+        XCTAssertEqual(restored.rawStates.first?.directory, "/tmp/one")
+    }
+
     func testResolveAIResumeMetadataAllowsLiveProviderHintToOverrideStaleCodexRestore() {
         OverlayTabsModel.registerSessionFinder(forProviderKey: "claude") { directory, _, _ in
             directory == "/tmp/aetower" ? "claude-session-1" : nil
@@ -290,6 +308,19 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.tabs[1].id, model.selectedTabID)
         XCTAssertNil(model.tabs[1].repoGroupID)
         XCTAssertFalse(model.tabs[1].hasInheritedRepoGroup)
+    }
+
+    func testCloseTabClearsSessionRetainedSnapshotBeforeSessionShutdown() throws {
+        model.newTab(selectNewTab: false)
+        let closingTabID = model.tabs[1].id
+        let closingSession = try XCTUnwrap(model.tabs[1].session)
+        let snapshot = NSImage(size: NSSize(width: 120, height: 60))
+        model.tabs[1].cachedSnapshot = snapshot
+        closingSession.lastRenderedSnapshot = snapshot
+
+        model.closeTab(id: closingTabID, skipWarning: true)
+
+        XCTAssertNil(closingSession.lastRenderedSnapshot)
     }
 
     func testDisplaySessionTracksFocusedTerminalPane() {

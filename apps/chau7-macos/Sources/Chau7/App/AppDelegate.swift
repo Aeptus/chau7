@@ -1045,8 +1045,8 @@ private final class OverlayBlurView: NSVisualEffectView {
         lastSavedWindowStates = allWindows
         lastSavedWindowStatesAt = Date()
 
-        // Write window 0 to legacy key (restore side ignores it, but keeping
-        // it populated prevents data-loss if the multi-window key is lost).
+        // Write window 0 to the legacy key so the primary model can restore it
+        // even if the multi-window payload is unavailable.
         if let firstWindowStates = allWindows.first,
            let data = try? JSONEncoder().encode(firstWindowStates) {
             UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
@@ -1070,7 +1070,8 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     /// Save all visible windows' tab states atomically to UserDefaults and disk backups.
-    /// Window 0 → legacy key, windows 1..N → multi-window key.
+    /// Window 0 → legacy key, windows 1..N → additional entries in the
+    /// multi-window key.
     private func saveAllWindowStates(reason: TabStateSaveReason) {
         let reusedTerminationSnapshot = reason == .termination && shouldReuseCachedWindowStatesForTermination()
         let allWindows = reusedTerminationSnapshot ? lastSavedWindowStates : collectVisibleWindowStates()

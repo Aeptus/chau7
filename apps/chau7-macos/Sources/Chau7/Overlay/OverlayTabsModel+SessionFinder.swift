@@ -369,13 +369,25 @@ extension OverlayTabsModel {
         return map
     }
 
-    /// Window 0 is never restored — it always starts with a fresh shell tab.
-    /// DO NOT add restore logic here. Any code that decodes or returns a
-    /// payload will cause window 0 to resurrect old tabs on every launch.
+    /// Restore the primary window from the first saved window entry.
+    /// Preference order:
+    /// 1. Multi-window state key → first saved window
+    /// 2. Legacy single-window key
+    /// 3. Latest backup payloads
     static func restoreSavedTabs(appModel: AppModel) -> RestorableTabsPayload? {
-        // Clear stale keys so they don't accumulate across sessions.
-        UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
-        return nil
+        if let data = UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
+           let multiState = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data),
+           let primaryWindowStates = multiState.windows.first,
+           !primaryWindowStates.isEmpty {
+            return decodeRestorableTabs(fromStates: primaryWindowStates, appModel: appModel)
+        }
+
+        if let data = UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey),
+           let restored = decodeRestorableTabs(from: data, appModel: appModel) {
+            return restored
+        }
+
+        return restoreSavedTabsFromBackups(appModel: appModel)
     }
 
     /// Decode from pre-decoded states (multi-window restore — avoids UserDefaults round-trip).
