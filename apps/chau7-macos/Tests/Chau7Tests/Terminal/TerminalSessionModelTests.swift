@@ -33,6 +33,62 @@ final class TerminalSessionModelTests: XCTestCase {
         )
     }
 
+    // MARK: - Background Live Rendering
+
+    func testShouldKeepLiveRenderingInBackgroundRequiresActiveAIApp() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.status = .running
+        session.lastOutputAt = Date()
+
+        XCTAssertFalse(session.shouldKeepLiveRenderingInBackground)
+    }
+
+    func testShouldKeepLiveRenderingInBackgroundPinsRestoreBootstrap() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.activeAppName = "Codex"
+        session.status = .idle
+        session.lastOutputAt = Date.distantPast
+        session.lastInputAt = Date.distantPast
+        session.restoreBootstrapPhase = .replaying
+
+        XCTAssertTrue(session.shouldKeepLiveRenderingInBackground)
+    }
+
+    func testShouldKeepLiveRenderingInBackgroundPinsWaitingForInput() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.activeAppName = "Codex"
+        session.status = .waitingForInput
+        session.lastOutputAt = Date.distantPast
+        session.lastInputAt = Date.distantPast
+
+        XCTAssertTrue(session.shouldKeepLiveRenderingInBackground)
+    }
+
+    func testShouldKeepLiveRenderingInBackgroundCoolsStaleAITab() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.activeAppName = "Codex"
+        session.status = .running
+        session.lastOutputAt = Date(timeIntervalSinceNow: -120)
+        session.lastInputAt = Date(timeIntervalSinceNow: -120)
+
+        XCTAssertFalse(session.shouldKeepLiveRenderingInBackground)
+    }
+
+    func testShouldKeepLiveRenderingInBackgroundKeepsRecentAIActivityWarm() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.activeAppName = "Codex"
+        session.status = .running
+        session.lastOutputAt = Date()
+        session.lastInputAt = Date()
+
+        XCTAssertTrue(session.shouldKeepLiveRenderingInBackground)
+    }
+
     // MARK: - resolveStartDirectory (static, pure)
 
     func testResolveStartDirectoryWithAbsolutePath() {

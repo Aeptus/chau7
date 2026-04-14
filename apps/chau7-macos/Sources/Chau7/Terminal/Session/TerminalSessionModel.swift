@@ -253,13 +253,22 @@ final class TerminalSessionModel {
         return !aiDetection.isRestored
     }
 
+    private static let backgroundLiveRenderGraceInterval: TimeInterval = 10
+
     var shouldKeepLiveRenderingInBackground: Bool {
-        // Only keep live rendering when an AI tool is actively running (activeAppName
-        // is set). Previously used hasBackgroundRenderingAIContext which included
-        // persisted provider/sessionId — making every tab that EVER ran an AI tool
-        // permanently exempt from suspension.
         guard activeAppName != nil else { return false }
-        return effectiveStatus != .exited
+        if isRestoreBootstrapPending {
+            return true
+        }
+
+        switch effectiveStatus {
+        case .approvalRequired, .waitingForInput:
+            return true
+        case .exited:
+            return false
+        case .idle, .done, .running, .stuck:
+            return Date().timeIntervalSince(lastActivityDate) <= Self.backgroundLiveRenderGraceInterval
+        }
     }
 
     var renderSuspensionDebugSummary: String {
