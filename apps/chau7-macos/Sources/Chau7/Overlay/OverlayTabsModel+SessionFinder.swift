@@ -370,9 +370,10 @@ extension OverlayTabsModel {
     }
 
     /// Window 0 is never restored — it always starts with a fresh shell tab.
-    /// Clear any stale legacy key (left over from builds before the skip was
-    /// added) and return nil unconditionally.
+    /// DO NOT add restore logic here. Any code that decodes or returns a
+    /// payload will cause window 0 to resurrect old tabs on every launch.
     static func restoreSavedTabs(appModel: AppModel) -> RestorableTabsPayload? {
+        // Clear stale keys so they don't accumulate across sessions.
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         return nil
     }
