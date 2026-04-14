@@ -458,7 +458,7 @@ extension RustTerminalView {
     /// 3. Dirty row tracking - Only rebuild escape sequences for rows that actually changed
     /// 4. Partial sync - When fewer than half the rows changed, update only those rows
     /// 5. Efficient comparison - Cell-by-cell comparison with early exit per row
-    func syncGridToRenderer() {
+    func syncGridToRenderer(force: Bool = false) {
         guard let rust = rustTerminal else {
             Log.trace("RustTerminalView[\(viewId)]: syncGridToRenderer - No Rust terminal")
             return
@@ -466,7 +466,7 @@ extension RustTerminalView {
 
         // Rate limiting: Skip if we synced very recently (allows up to 120fps for responsiveness)
         let now = CFAbsoluteTimeGetCurrent()
-        if now - lastSyncTime < Self.minSyncInterval {
+        if !force, now - lastSyncTime < Self.minSyncInterval {
             skippedSyncCount += 1
             return
         }

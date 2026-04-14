@@ -209,7 +209,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     }
 
     private func cacheRetainedFrameIfAvailable(from view: RustTerminalView) {
-        guard let snapshot = OverlayTabsModel.captureSnapshotImage(from: view) else { return }
+        guard let snapshot = view.makeRetainedFrameImage() else { return }
         model.lastRenderedSnapshot = snapshot
     }
 
@@ -217,13 +217,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         // Reuse existing Rust terminal view if available
         if let existingView = model.existingRustTerminalView {
             Log.trace("Reusing existing Rust terminal view for session")
-            if isSuspended {
-                cacheRetainedFrameIfAvailable(from: existingView)
-            }
-            existingView.notifyUpdateChanges = !isSuspended
-            existingView.isHidden = isSuspended
-            existingView.setEventMonitoringEnabled(isActive && !isSuspended)
-            existingView.allowMouseReporting = settings.isMouseReportingEnabled
             existingView.onInput = { [weak model] text in
                 model?.handleInput(text)
             }
@@ -254,6 +247,13 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
             existingView.installHistoryKeyMonitor()
             let container = UnifiedTerminalContainerView(rustView: existingView)
+            if isSuspended {
+                cacheRetainedFrameIfAvailable(from: existingView)
+            }
+            existingView.notifyUpdateChanges = !isSuspended
+            existingView.isHidden = isSuspended
+            existingView.setEventMonitoringEnabled(isActive && !isSuspended)
+            existingView.allowMouseReporting = settings.isMouseReportingEnabled
             // Re-enable Metal rendering — the previous container (and its Metal
             // coordinator) was torn down when the tab went out of nearby range.
             // Without this, isMetalRenderingActive stays true on the view (skipping
