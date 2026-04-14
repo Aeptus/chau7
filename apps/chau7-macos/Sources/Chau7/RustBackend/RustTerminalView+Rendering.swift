@@ -623,6 +623,8 @@ extension RustTerminalView {
             }
         }
 
+        hasRetainedFrameSourceReady = true
+
         // Periodic stats logging (every 1000 syncs)
         if (fullSyncCount + partialSyncCount).isMultiple(of: 1000) {
             Log.trace("RustTerminalView[\(viewId)]: syncStats - full:\(fullSyncCount) partial:\(partialSyncCount) skipped:\(skippedSyncCount)")
@@ -674,6 +676,7 @@ extension RustTerminalView {
         previousGridRows = 0
         previousCursorCol = 0
         previousCursorRow = 0
+        hasRetainedFrameSourceReady = false
         needsGridSync = true
         clearLocalEchoOverlay()
     }

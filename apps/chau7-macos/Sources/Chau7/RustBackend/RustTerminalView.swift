@@ -2174,6 +2174,7 @@ final class RustTerminalView: NSView {
     var fullSyncCount: UInt64 = 0
     var partialSyncCount: UInt64 = 0
     var skippedSyncCount: UInt64 = 0
+    var hasRetainedFrameSourceReady = false
 
     // MARK: - Buffer Line Cache (Performance fix for scrollback access)
 
@@ -2954,10 +2955,16 @@ final class RustTerminalView: NSView {
         Log.trace("RustTerminalView[\(viewId)]: applyBellSettings - enabled=\(enabled), sound=\(sound)")
     }
 
-    func makeRetainedFrameImage() -> NSImage? {
-        if isMetalRenderingActive {
+    func makeRetainedFrameImage(allowForcedSync: Bool = false) -> NSImage? {
+        guard rustTerminal != nil else {
+            return nil
+        }
+        if allowForcedSync {
             syncGridToRenderer(force: true)
             updateDangerousRowTints()
+        }
+        guard hasRetainedFrameSourceReady else {
+            return nil
         }
         return gridView?.makeRetainedFrameImage()
     }
