@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Background Transcript Restore Fallback**: Background tabs can reuse cached remote transcript text when no live terminal view is attached, and interactive notification planning now covers elicitation and explicit tool/response failures consistently.
 
 ### Fixed
+- **Codex Rollout Quota Parsing**: Telemetry now parses pretty-printed Codex rollout JSON objects in addition to one-line JSONL, so quota snapshots and rate-limit windows are recovered reliably from multiline history files.
 - **Legacy Scripting Session API Removed**: The local scripting socket no longer exposes `create_session`, `get_session_events`, `submit_session_turn`, `get_session_result`, or `stop_session`. Review automation now relies on the existing tab-first scripting methods plus repo events/output instead of the runtime-backed session wrapper layer.
 - **MCP Runtime Surface Hidden**: `runtime_*` tools are no longer advertised through MCP discovery. Public MCP clients now see a tab-first surface for live control plus telemetry/history tools, while the existing runtime orchestration remains internal to the app during migration.
 - **MCP Live vs Telemetry Session Contract**: `tab_list` and `tab_status` are now documented as Chau7's primary live discovery/control path for active AI work, while `session_list` and `session_current` are explicitly framed as telemetry/history views instead of the live source of truth.

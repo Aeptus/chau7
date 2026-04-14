@@ -194,6 +194,8 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `session_list` | List telemetry/history AI sessions with run counts — filter by repo_path, active_only. Responses include `active_run_count`, `completed_run_count`, `latest_run_id`, and `latest_run_state`. Use `tab_list` / `tab_status` for live discovery |
 | `session_current` | Get currently active telemetry-backed AI sessions. Use `tab_list` / `tab_status` for live discovery and control |
 
+Telemetry parsing also accepts pretty-printed Codex rollout JSON when extracting quota snapshots and rate-limit windows, so multiline history files produce the same quota data as one-line JSONL.
+
 ### Internal Runtime
 
 The app still contains internal runtime orchestration used by dashboard and review flows, but `runtime_*` is no longer part of the public MCP tool surface. Public MCP clients should use `tab_*` for live control and `run_*` / `session_*` for telemetry/history.

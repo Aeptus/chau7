@@ -117,6 +117,7 @@ MCP Tools — Telemetry,run_tag,Set tags on a telemetry run for organization and
 MCP Tools — Telemetry,run_latest_for_repo,Get the most recent run for a repository — optionally filter by provider,Shipped,Yes
 MCP Tools — Telemetry,session_list,"List telemetry/history AI sessions with run counts — filter by repo_path, active_only; includes active/completed rollups and latest_run_state. Use tab_list/tab_status for live discovery",Shipped,Yes
 MCP Tools — Telemetry,session_current,"Get currently active telemetry-backed AI sessions. Use tab_list/tab_status for live discovery and control",Shipped,Yes
+Telemetry,Codex Rollout Multiline Parsing,"Quota snapshots and rate-limit windows are extracted from both one-line JSONL and pretty-printed multiline Codex rollout JSON objects",Shipped,No
 AI Integration,Delegated Task Lineage,"Runtime-managed AI runs persist parent run/session lineage and task metadata into telemetry so parent agents can fetch exact child runs instead of inferring by repo-wide recency",Shipped,Yes
 AI Integration,Staged-Diff Delegated Review,"Code review task templates can review explicit staged patches and staged file lists, not only commit ranges, while preserving structured findings and review-safe policy defaults",Shipped,Yes
 Architecture,Internal Runtime Orchestration,"Runtime-managed sessions remain app-internal for dashboard and review flows and are no longer part of the public MCP tool surface",Shipped,No

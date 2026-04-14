@@ -49,11 +49,7 @@ public enum CodexRolloutParser {
         var turnIndex = 0
         var callIndex = 0
 
-        for line in text.components(separatedBy: .newlines) where !line.isEmpty {
-            guard let lineData = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any]
-            else { continue }
-
+        forEachJSONObject(in: text) { obj in
             let type = obj["type"] as? String ?? ""
             let payload = obj["payload"] as? [String: Any] ?? [:]
             let timestamp = parseDate(obj["timestamp"] as? String)
@@ -72,7 +68,7 @@ public enum CodexRolloutParser {
                 }
 
             case "response_item":
-                guard isInRunWindow else { continue }
+                guard isInRunWindow else { return }
 
                 let roleStr = payload["role"] as? String ?? ""
                 let role: TurnRole
@@ -84,7 +80,7 @@ public enum CodexRolloutParser {
                 case "developer", "system":
                     role = .system
                 default:
-                    continue
+                    return
                 }
 
                 var contentText = ""
@@ -149,7 +145,7 @@ public enum CodexRolloutParser {
                       (payload["type"] as? String) == "token_count",
                       let info = payload["info"] as? [String: Any],
                       let last = info["last_token_usage"] as? [String: Any]
-                else { continue }
+                else { return }
 
                 tokenUsage.add(
                     TokenUsage(
@@ -185,18 +181,13 @@ public enum CodexRolloutParser {
     ) -> ProviderQuotaSnapshot? {
         var latestSnapshot: ProviderQuotaSnapshot?
 
-        for line in text.components(separatedBy: .newlines) where !line.isEmpty {
-            guard let lineData = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
-                continue
-            }
-
+        forEachJSONObject(in: text) { obj in
             guard let payload = obj["payload"] as? [String: Any],
                   let snapshot = parseQuotaSnapshot(
                       payload: payload,
                       timestamp: parseDate(obj["timestamp"] as? String) ?? Date()
                   ) else {
-                continue
+                return
             }
 
             latestSnapshot = ProviderQuotaSnapshot(
@@ -211,6 +202,33 @@ public enum CodexRolloutParser {
         }
 
         return latestSnapshot
+    }
+
+    private static func forEachJSONObject(in text: String, _ body: ([String: Any]) -> Void) {
+        var buffer = ""
+
+        func flushBufferIfPossible() {
+            guard !buffer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let data = buffer.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return
+            }
+            body(obj)
+            buffer.removeAll(keepingCapacity: true)
+        }
+
+        for line in text.components(separatedBy: .newlines) {
+            if buffer.isEmpty {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                buffer = line
+            } else {
+                buffer += "\n" + line
+            }
+            flushBufferIfPossible()
+        }
+
+        flushBufferIfPossible()
     }
 
     private static func parseQuotaSnapshot(
