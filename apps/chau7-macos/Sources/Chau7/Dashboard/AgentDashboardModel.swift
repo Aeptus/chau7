@@ -37,6 +37,7 @@ final class AgentDashboardModel: Identifiable {
     @ObservationIgnored private var currentPollInterval: TimeInterval = 2
     @ObservationIgnored private var pollCount = 0
     @ObservationIgnored private var lastCompanionPlanHash: String?
+    @ObservationIgnored private let sessionController: AgentDashboardSessionControlling
 
     var repoName: String {
         URL(fileURLWithPath: repoGroupID).lastPathComponent
@@ -48,8 +49,12 @@ final class AgentDashboardModel: Identifiable {
 
     // MARK: - Init
 
-    init(repoGroupID: String) {
+    init(
+        repoGroupID: String,
+        sessionController: AgentDashboardSessionControlling = RuntimeAgentDashboardSessionController.shared
+    ) {
         self.repoGroupID = repoGroupID
+        self.sessionController = sessionController
     }
 
     deinit {
@@ -95,7 +100,7 @@ final class AgentDashboardModel: Identifiable {
     // MARK: - Refresh
 
     private func refresh() {
-        let sessions = RuntimeSessionManager.shared.allSessions(includeStopped: false)
+        let sessions = sessionController.allSessions(includeStopped: false)
         let matching = sessions.filter { sessionMatchesRepo($0) }
         let childCounts = Dictionary(
             grouping: matching.compactMap { session -> (String, String)? in
@@ -359,7 +364,7 @@ final class AgentDashboardModel: Identifiable {
     // MARK: - Actions
 
     func stopAgent(sessionID: String) {
-        _ = RuntimeSessionManager.shared.stopSession(id: sessionID)
+        _ = sessionController.stopSession(id: sessionID)
     }
 
     func stopAllAgents() {
@@ -459,11 +464,7 @@ final class AgentDashboardModel: Identifiable {
         if let prompt, !prompt.isEmpty { args["initial_prompt"] = prompt }
         if autoApprove { args["auto_approve"] = true }
 
-        // Use RuntimeControlService which handles validation, PATH check, and retry
-        _ = RuntimeControlService.shared.handleToolCall(
-            name: "runtime_session_create",
-            arguments: args
-        )
+        _ = sessionController.startSession(arguments: args)
         // The new session will appear in the next 2s poll refresh
     }
 
@@ -517,10 +518,7 @@ final class AgentDashboardModel: Identifiable {
             args["auto_approve"] = true
         }
 
-        let response = RuntimeControlService.shared.handleToolCall(
-            name: "runtime_session_create",
-            arguments: args
-        )
+        let response = sessionController.startSession(arguments: args)
         if let json = parseJSONObject(response), let error = json["error"] as? String {
             reviewError = error
         }
