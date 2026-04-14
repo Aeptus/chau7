@@ -1533,8 +1533,11 @@ struct Chau7OverlayView: View {
 
                 if keepLiveHierarchy {
                     // Full terminal view for the selected tab and short handoff tab
+                    // Keep the selected live surface composited underneath any
+                    // retained snapshot so tab switches behave like a reveal
+                    // instead of exposing the grey container background.
                     SplitPaneView(controller: tab.splitController, isSuspended: isSuspended, isActive: isSelected)
-                        .opacity(isSelected && overlayModel.isTerminalReady ? 1 : 0)
+                        .opacity(isSelected ? 1 : 0)
                         .offset(x: isSelected ? 0 : (30 * direction)) // Subtle slide effect
                         .allowsHitTesting(isSelected)
                         .accessibilityHidden(!isSelected)

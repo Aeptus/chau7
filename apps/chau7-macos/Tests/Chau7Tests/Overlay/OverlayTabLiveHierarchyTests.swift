@@ -9,6 +9,10 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
     private var model: OverlayTabsModel!
     private var appModel: AppModel!
 
+    private func drainMainQueue(_ seconds: TimeInterval = 0.05) {
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+    }
+
     private func makeSnapshot(size: NSSize = NSSize(width: 80, height: 40)) -> NSImage {
         let image = NSImage(size: size)
         image.lockFocus()
@@ -155,6 +159,11 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertFalse(model.isTerminalReady)
 
         model.tabs[1].session?.notifyVisibleFrameReadyIfNeeded()
+        XCTAssertFalse(
+            model.isTerminalReady,
+            "The snapshot should stay visible for one compositor pass after the first frame is presented"
+        )
+        drainMainQueue()
 
         XCTAssertTrue(
             model.isTerminalReady,
@@ -172,10 +181,23 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
 
         model.selectTab(id: targetID)
         model.tabs[1].session?.notifyVisibleFrameReadyIfNeeded()
+        drainMainQueue()
 
         XCTAssertTrue(model.isTerminalReady)
         XCTAssertNil(model.tabs[1].cachedSnapshot)
         XCTAssertNil(model.tabs[1].session?.lastRenderedSnapshot)
+    }
+
+    func testSelectNextTabUsesSnapshotBackedHandoffPath() {
+        model.newTab(selectNewTab: false)
+        let targetID = model.tabs[1].id
+        model.tabs[1].session?.lastRenderedSnapshot = makeSnapshot()
+
+        model.selectNextTab()
+
+        XCTAssertEqual(model.selectedTabID, targetID)
+        XCTAssertFalse(model.isTerminalReady)
+        XCTAssertTrue(model.tabs[1].session?.awaitingVisibleFrameReady == true)
     }
 
     func testSelectingColdTabUsesRetainedSessionSnapshotForHandoff() {
@@ -211,6 +233,8 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
 
         for index in model.tabs.indices {
             let snapshot = makeSnapshot(size: NSSize(width: CGFloat(80 + index), height: CGFloat(40 + index)))
@@ -218,14 +242,16 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
             model.tabs[index].session?.lastRenderedSnapshot = snapshot
         }
 
-        model.cleanupDistantSnapshots(currentIndex: 2)
+        model.cleanupDistantSnapshots(currentIndex: 3)
 
         XCTAssertNotNil(model.tabs[1].cachedSnapshot)
         XCTAssertNotNil(model.tabs[1].session?.lastRenderedSnapshot)
         XCTAssertNotNil(model.tabs[0].cachedSnapshot)
         XCTAssertNil(model.tabs[0].session?.lastRenderedSnapshot)
-        XCTAssertNotNil(model.tabs[4].cachedSnapshot)
-        XCTAssertNil(model.tabs[4].session?.lastRenderedSnapshot)
+        XCTAssertNotNil(model.tabs[5].cachedSnapshot)
+        XCTAssertNotNil(model.tabs[5].session?.lastRenderedSnapshot)
+        XCTAssertNotNil(model.tabs[6].cachedSnapshot)
+        XCTAssertNil(model.tabs[6].session?.lastRenderedSnapshot)
     }
 
     func testCaptureSnapshotSkipsHiddenFreshRetainedView() {

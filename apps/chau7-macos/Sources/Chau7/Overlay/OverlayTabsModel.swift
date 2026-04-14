@@ -560,7 +560,11 @@ final class OverlayTabsModel {
     /// Generation counter for isTerminalReady — prevents stale asyncAfter
     /// callbacks from clobbering the state after rapid tab switches.
     @ObservationIgnored var terminalReadyGeneration: UInt64 = 0
+    @ObservationIgnored var terminalReadyCommitWorkItem: DispatchWorkItem?
     @ObservationIgnored var terminalReadyFallbackWorkItem: DispatchWorkItem?
+    @ObservationIgnored var selectedTerminalHandoffStartedAt: CFAbsoluteTime?
+    @ObservationIgnored var selectedTerminalFramePresentedAt: CFAbsoluteTime?
+    @ObservationIgnored static let terminalReadyCompositingDelay: TimeInterval = 1.0 / 60.0
     /// Set of tab IDs currently being pre-warmed (on hover)
     @ObservationIgnored var prewarmingTabIDs: Set<UUID> = []
     @ObservationIgnored static let previousLiveHierarchyKeepAliveInterval: TimeInterval = 0.5
@@ -851,11 +855,22 @@ final class OverlayTabsModel {
             queue: .main
         ) { [weak self] note in
             guard let self, let session = note.object as? TerminalSessionModel else { return }
-            guard !isTerminalReady else { return }
-            guard let selected = selectedTab else { return }
+            guard !self.isTerminalReady else { return }
+            guard let selected = self.selectedTab else { return }
             let isSelectedSession = selected.displaySession === session || selected.session === session
             guard isSelectedSession, selected.visibleSnapshot != nil else { return }
-            syncSelectedTerminalPresentation(reason: "selected_live_frame_ready")
+            self.selectedTerminalFramePresentedAt = CFAbsoluteTimeGetCurrent()
+            if let startedAt = self.selectedTerminalHandoffStartedAt,
+               let presentedAt = self.selectedTerminalFramePresentedAt {
+                let elapsedMs = Int((presentedAt - startedAt) * 1000)
+                Log.trace("tab handoff: first frame presented for \(selected.id) after \(elapsedMs)ms")
+            } else {
+                Log.trace("tab handoff: first frame presented for \(selected.id)")
+            }
+            self.scheduleSelectedTerminalPresentationCommit(
+                reason: "selected_live_frame_ready",
+                delay: Self.terminalReadyCompositingDelay
+            )
         }
     }
 
@@ -866,13 +881,24 @@ final class OverlayTabsModel {
         if let renderSuspensionObserver { NotificationCenter.default.removeObserver(renderSuspensionObserver) }
         if let visibleFrameReadyObserver { NotificationCenter.default.removeObserver(visibleFrameReadyObserver) }
         previousLiveHierarchyReleaseWorkItem?.cancel()
+        terminalReadyCommitWorkItem?.cancel()
         terminalReadyFallbackWorkItem?.cancel()
     }
 
     // MARK: - Tab State Persistence
 
+    func scheduleSelectedTerminalPresentationCommit(reason: String, delay: TimeInterval) {
+        terminalReadyCommitWorkItem?.cancel()
+        let expectedGeneration = terminalReadyGeneration
+        let item = DispatchWorkItem { [weak self] in
+            guard let self, self.terminalReadyGeneration == expectedGeneration else { return }
+            self.syncSelectedTerminalPresentation(reason: reason)
+        }
+        terminalReadyCommitWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
     func syncSelectedTerminalPresentation(reason: String) {
-        guard !isRenderSuspensionEnabled else { return }
         for index in tabs.indices where tabs[index].restorePreviewSnapshot != nil {
             let phase = tabs[index].displaySession?.restoreBootstrapPhase ?? .inactive
             if phase != .replaying {
@@ -886,8 +912,12 @@ final class OverlayTabsModel {
         }
 
         guard let tab = selectedTab else {
+            terminalReadyCommitWorkItem?.cancel()
+            terminalReadyCommitWorkItem = nil
             terminalReadyFallbackWorkItem?.cancel()
             terminalReadyFallbackWorkItem = nil
+            selectedTerminalHandoffStartedAt = nil
+            selectedTerminalFramePresentedAt = nil
             isTerminalReady = true
             return
         }
@@ -903,6 +933,8 @@ final class OverlayTabsModel {
 
         isTerminalReady = !shouldShowRestorePreview
         if isTerminalReady {
+            terminalReadyCommitWorkItem?.cancel()
+            terminalReadyCommitWorkItem = nil
             terminalReadyFallbackWorkItem?.cancel()
             terminalReadyFallbackWorkItem = nil
             tab.displaySession?.cancelVisibleFrameReadyHandoff()
@@ -910,6 +942,20 @@ final class OverlayTabsModel {
             if let selectedIndex = tabs.firstIndex(where: { $0.id == tab.id }) {
                 clearRetainedSnapshots(forTabAt: selectedIndex)
             }
+            let committedAt = CFAbsoluteTimeGetCurrent()
+            if let startedAt = selectedTerminalHandoffStartedAt {
+                let totalMs = Int((committedAt - startedAt) * 1000)
+                if let presentedAt = selectedTerminalFramePresentedAt {
+                    let postPresentMs = Int((committedAt - presentedAt) * 1000)
+                    Log.trace(
+                        "tab handoff complete[\(reason)]: tab=\(tab.id) total=\(totalMs)ms post_present=\(postPresentMs)ms"
+                    )
+                } else {
+                    Log.trace("tab handoff complete[\(reason)]: tab=\(tab.id) total=\(totalMs)ms")
+                }
+            }
+            selectedTerminalHandoffStartedAt = nil
+            selectedTerminalFramePresentedAt = nil
         }
         if shouldShowRestorePreview {
             StartupRestoreCoordinator.shared.noteRestorePreviewShown(
@@ -1902,9 +1948,18 @@ final class OverlayTabsModel {
         let targetSession = tabs.first(where: { $0.id == id })?.displaySession
             ?? tabs.first(where: { $0.id == id })?.session
         let shouldShowTransitionSnapshot = tabs.first(where: { $0.id == id })?.visibleSnapshot != nil
+        terminalReadyCommitWorkItem?.cancel()
+        terminalReadyCommitWorkItem = nil
+        terminalReadyFallbackWorkItem?.cancel()
+        terminalReadyFallbackWorkItem = nil
+        selectedTerminalHandoffStartedAt = nil
+        selectedTerminalFramePresentedAt = nil
         if shouldShowTransitionSnapshot {
             isTerminalReady = false
+            terminalReadyGeneration &+= 1
+            selectedTerminalHandoffStartedAt = CFAbsoluteTimeGetCurrent()
             targetSession?.armVisibleFrameReadyHandoff()
+            Log.trace("tab handoff start: tab=\(id) generation=\(terminalReadyGeneration)")
         } else {
             targetSession?.cancelVisibleFrameReadyHandoff()
         }
@@ -1942,7 +1997,7 @@ final class OverlayTabsModel {
         // initial visual switch which should be as fast as possible.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            updateSuspensionState()
+            self.updateSuspensionState()
             MainActor.assumeIsolated {
                 self.updateCurrentCandidate(from: ProxyIPCServer.shared.pendingCandidates)
                 self.updateCurrentTask(from: ProxyIPCServer.shared.activeTasks)
@@ -1955,14 +2010,12 @@ final class OverlayTabsModel {
         //    selected terminal's first live sync and keep a timeout only as a
         //    safety valve so the tab cannot remain hidden forever.
         schedulePreviousLiveHierarchyRelease()
-        terminalReadyFallbackWorkItem?.cancel()
         if shouldShowTransitionSnapshot {
-            terminalReadyGeneration &+= 1
             let expectedGeneration = terminalReadyGeneration
             let item = DispatchWorkItem { [weak self] in
-                guard let self, terminalReadyGeneration == expectedGeneration else { return }
+                guard let self, self.terminalReadyGeneration == expectedGeneration else { return }
                 targetSession?.cancelVisibleFrameReadyHandoff()
-                syncSelectedTerminalPresentation(reason: "select_tab_fallback")
+                self.syncSelectedTerminalPresentation(reason: "select_tab_fallback")
             }
             terminalReadyFallbackWorkItem = item
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: item)
@@ -1989,7 +2042,7 @@ final class OverlayTabsModel {
             guard let self else { return }
             guard self.previousLiveHierarchyTabID == previousLiveHierarchyTabID else { return }
             self.previousLiveHierarchyTabID = nil
-            updateSuspensionState()
+            self.updateSuspensionState()
         }
         previousLiveHierarchyReleaseWorkItem = item
         DispatchQueue.main.asyncAfter(

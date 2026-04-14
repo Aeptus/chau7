@@ -682,23 +682,7 @@ extension OverlayTabsModel {
         let nextIndex = (index + 1) % tabs.count
         Log.trace("selectNextTab: \(index) -> \(nextIndex), tabs.count=\(tabs.count)")
         let targetID = tabs[nextIndex].id
-        selectedTabID = targetID
-
-        // Ensure terminal is visible (recover from stuck isTerminalReady=false)
-        isTerminalReady = true
-
-        // Unsuspend target tab so its terminal view is available for focus
-        cancelSuspension(for: targetID)
-        if suspendedTabIDs.remove(targetID) != nil {
-            Log.info("selectNextTab: unsuspended tab \(targetID)")
-        }
-
-        focusSelected()
-        updateSuspensionState()
-        updateSnippetContextForSelection()
-        if isSearchVisible {
-            refreshSearch()
-        }
+        selectTab(id: targetID)
     }
 
     func selectPreviousTab() {
@@ -709,23 +693,7 @@ extension OverlayTabsModel {
         let prevIndex = (index - 1 + tabs.count) % tabs.count
         Log.trace("selectPreviousTab: \(index) -> \(prevIndex), tabs.count=\(tabs.count)")
         let targetID = tabs[prevIndex].id
-        selectedTabID = targetID
-
-        // Ensure terminal is visible (recover from stuck isTerminalReady=false)
-        isTerminalReady = true
-
-        // Unsuspend target tab so its terminal view is available for focus
-        cancelSuspension(for: targetID)
-        if suspendedTabIDs.remove(targetID) != nil {
-            Log.info("selectPreviousTab: unsuspended tab \(targetID)")
-        }
-
-        focusSelected()
-        updateSuspensionState()
-        updateSnippetContextForSelection()
-        if isSearchVisible {
-            refreshSearch()
-        }
+        selectTab(id: targetID)
     }
 
     func focusSelected() {

@@ -37,6 +37,8 @@ final class OverlayTabSnapshotRetentionTests: XCTestCase {
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
 
         for index in model.tabs.indices {
             let snapshot = makeSnapshot(size: NSSize(width: CGFloat(80 + index), height: CGFloat(40 + index)))
@@ -44,14 +46,16 @@ final class OverlayTabSnapshotRetentionTests: XCTestCase {
             model.tabs[index].session?.lastRenderedSnapshot = snapshot
         }
 
-        model.cleanupDistantSnapshots(currentIndex: 2)
+        model.cleanupDistantSnapshots(currentIndex: 3)
 
         XCTAssertNotNil(model.tabs[0].cachedSnapshot)
         XCTAssertNil(model.tabs[0].session?.lastRenderedSnapshot)
         XCTAssertNotNil(model.tabs[1].cachedSnapshot)
         XCTAssertNotNil(model.tabs[1].session?.lastRenderedSnapshot)
-        XCTAssertNotNil(model.tabs[4].cachedSnapshot)
-        XCTAssertNil(model.tabs[4].session?.lastRenderedSnapshot)
+        XCTAssertNotNil(model.tabs[5].cachedSnapshot)
+        XCTAssertNotNil(model.tabs[5].session?.lastRenderedSnapshot)
+        XCTAssertNotNil(model.tabs[6].cachedSnapshot)
+        XCTAssertNil(model.tabs[6].session?.lastRenderedSnapshot)
     }
 
     func testCloseTabClearsSessionRetainedSnapshotBeforeSessionShutdown() throws {
