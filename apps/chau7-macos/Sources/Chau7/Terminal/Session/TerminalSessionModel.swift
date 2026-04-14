@@ -1472,12 +1472,24 @@ final class TerminalSessionModel {
         let currentPID = existingRustTerminalView?.shellPid ?? 0
         guard currentPID == expectedPID, currentPID > 0 else { return }
 
-        let diagnostics = terminationDiagnosticsSummary(stage: "sigkill", shellPID: currentPID)
+        // Capture process tree once — used for both diagnostics and descendant kill
+        let descendants = captureDescendantPIDs(of: currentPID)
+        let diagnostics = terminationDiagnosticsSummary(
+            stage: "sigkill", shellPID: currentPID, preCapturedDescendants: descendants
+        )
         Log.error("Shell process group still alive after SIGINT+SIGTERM; sending SIGKILL (pid=\(currentPID)) \(diagnostics)")
         sendTerminationSignal(SIGKILL, toShellPID: currentPID)
+
+        // Kill escaped descendants individually (processes in child process groups
+        // that the group SIGKILL above cannot reach).
+        killEscapedDescendants(descendants, shellPID: currentPID)
     }
 
-    private func terminationDiagnosticsSummary(stage: String, shellPID: pid_t) -> String {
+    private func terminationDiagnosticsSummary(
+        stage: String,
+        shellPID: pid_t,
+        preCapturedDescendants: [DescendantProcess]? = nil
+    ) -> String {
         let now = Date()
         let timing = terminationStateQueue.sync {
             (
@@ -1490,7 +1502,8 @@ final class TerminalSessionModel {
         let closeMs = timing.closeRequestedAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
         let sigintMs = timing.sigintSentAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
         let sigtermMs = timing.sigtermSentAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
-        let processTree = terminationProcessTreeSummary(shellPID: shellPID)
+        let descendants = preCapturedDescendants ?? captureDescendantPIDs(of: shellPID)
+        let processTree = formatProcessTreeSummary(shellPID: shellPID, descendants: descendants)
         let ptyState = [
             "log_path=\(lastPTYLogPath ?? "nil")",
             "session_open=\(aiLogSession != nil)"
@@ -1501,22 +1514,26 @@ final class TerminalSessionModel {
             "pty={\(ptyState)} process_tree=\(processTree)}"
     }
 
-    private func terminationProcessTreeSummary(shellPID: pid_t) -> String {
+    // MARK: - Process Tree Capture & Descendant Kill
+
+    struct DescendantProcess {
+        let pid: pid_t
+        let parentPID: pid_t
+        let command: String
+    }
+
+    /// Captures a fresh snapshot of all descendant processes of the given shell PID
+    /// via `ps`. Returns an array in BFS order (parents before children).
+    private func captureDescendantPIDs(of shellPID: pid_t) -> [DescendantProcess] {
         guard let output = SubprocessRunner.run(
             executablePath: "/bin/ps",
             arguments: ["-axo", "pid=,ppid=,command="]
         ) else {
-            return "unavailable"
-        }
-
-        struct ProcessRow {
-            let pid: pid_t
-            let parentPID: pid_t
-            let command: String
+            return []
         }
 
         var childrenOf: [pid_t: [pid_t]] = [:]
-        var rowsByPID: [pid_t: ProcessRow] = [:]
+        var rowsByPID: [pid_t: DescendantProcess] = [:]
 
         for line in output.split(separator: "\n") {
             let columns = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
@@ -1528,10 +1545,10 @@ final class TerminalSessionModel {
 
             let command = String(columns[2]).trimmingCharacters(in: .whitespacesAndNewlines)
             childrenOf[parentPID, default: []].append(pid)
-            rowsByPID[pid] = ProcessRow(pid: pid, parentPID: parentPID, command: command)
+            rowsByPID[pid] = DescendantProcess(pid: pid, parentPID: parentPID, command: command)
         }
 
-        var descendants: [ProcessRow] = []
+        var descendants: [DescendantProcess] = []
         var queue: [pid_t] = childrenOf[shellPID] ?? []
         var index = 0
         while index < queue.count {
@@ -1545,7 +1562,15 @@ final class TerminalSessionModel {
             }
         }
 
-        let prefix = rowsByPID[shellPID].map { "shell=\($0.pid):\($0.command)" } ?? "shell=\(shellPID)"
+        return descendants
+    }
+
+    /// Formats a captured descendant list into the diagnostic log string.
+    private func formatProcessTreeSummary(
+        shellPID: pid_t,
+        descendants: [DescendantProcess]
+    ) -> String {
+        let prefix = "shell=\(shellPID)"
         guard !descendants.isEmpty else { return "\(prefix) children=[]" }
 
         let renderedChildren = descendants
@@ -1557,6 +1582,63 @@ final class TerminalSessionModel {
             return "\(prefix) children=[\(renderedChildren) | +\(remaining) more]"
         }
         return "\(prefix) children=[\(renderedChildren)]"
+    }
+
+    /// Kills descendant processes that escaped the process group SIGKILL.
+    ///
+    /// Safety contract — three independent layers prevent false positives:
+    /// 1. Only PIDs found as descendants via a fresh `ps` snapshot are candidates
+    /// 2. Before each kill, a kernel sysctl confirms the PID's current parent is
+    ///    still in our tree (catches PID recycling)
+    /// 3. Processes are killed leaf-first so parent ppids remain stable during
+    ///    the walk
+    private func killEscapedDescendants(_ descendants: [DescendantProcess], shellPID: pid_t) {
+        guard !descendants.isEmpty else { return }
+
+        let allTreePIDs = Set(descendants.map(\.pid)).union([shellPID])
+
+        var killed = 0
+        var skipped = 0
+
+        // Reversed: BFS order is parents-first, so reversed gives leaf-first.
+        // Killing leaves first prevents init reparenting from invalidating ppid checks.
+        for desc in descendants.reversed() {
+            guard let livePPID = Self.currentParentPID(of: desc.pid) else {
+                skipped += 1 // Process already exited — nothing to kill
+                continue
+            }
+            guard allTreePIDs.contains(livePPID) else {
+                // PID was recycled: its current parent is not in our tree
+                skipped += 1
+                Log.warn(
+                    "Descendant kill skipped: pid=\(desc.pid) " +
+                        "ppid changed \(desc.parentPID)→\(livePPID) (not in tree)"
+                )
+                continue
+            }
+            _ = Darwin.kill(desc.pid, SIGKILL)
+            killed += 1
+        }
+
+        if killed > 0 || skipped < descendants.count {
+            Log.info(
+                "Descendant cleanup for shell \(shellPID): " +
+                    "killed=\(killed) skipped=\(skipped) total=\(descendants.count)"
+            )
+        }
+    }
+
+    /// Returns the current parent PID of a live process via sysctl, or nil if the
+    /// process no longer exists. Used to validate a PID hasn't been recycled before
+    /// sending SIGKILL.
+    private static func currentParentPID(of pid: pid_t) -> pid_t? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.size
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else {
+            return nil
+        }
+        return info.kp_eproc.e_ppid
     }
 
     private func sendTerminationSignal(_ signal: Int32, toShellPID shellPID: pid_t) {
