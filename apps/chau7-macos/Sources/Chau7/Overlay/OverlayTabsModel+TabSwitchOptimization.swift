@@ -105,6 +105,12 @@ extension OverlayTabsModel {
                 notify: true
             )
         }
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "tab_created",
+            subsystem: "tabs",
+            nativeTabID: tab.id,
+            detail: ["window_id": overlayWindow?.windowNumber as Any].compactMapValues { $0 }
+        )
     }
 
     func newTab(at directory: String, selectNewTab: Bool = true) {
@@ -156,6 +162,16 @@ extension OverlayTabsModel {
                 notify: true
             )
         }
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "tab_created",
+            subsystem: "tabs",
+            nativeTabID: tab.id,
+            detail: [
+                "directory": directory,
+                "window_id": overlayWindow?.windowNumber as Any
+            ]
+            .compactMapValues { $0 }
+        )
     }
 
     func closeCurrentTab() {
@@ -472,6 +488,12 @@ extension OverlayTabsModel {
                 notify: true
             )
         }
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "tab_closed",
+            subsystem: "tabs",
+            nativeTabID: id,
+            detail: ["remaining_tabs": tabs.count]
+        )
 
         Log.info("closeTab completed. tabs.count=\(tabs.count)")
     }

@@ -5,6 +5,7 @@ final class MCPSessionTests: XCTestCase {
     override func setUp() {
         super.setUp()
         MCPSession.resetSharedToolRateLimiterForTests()
+        Chau7ObservabilityService.shared.resetForTests()
     }
 
     func testRejectsRequestsBeforeInitialization() throws {
@@ -62,6 +63,15 @@ final class MCPSessionTests: XCTestCase {
         let sessionCurrent = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "session_current" }))
         let inputSchema = try XCTUnwrap(sessionCurrent["inputSchema"] as? [String: Any])
         XCTAssertEqual(inputSchema["additionalProperties"] as? Bool, false)
+
+        let runtimeInfo = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "chau7_runtime_info" }))
+        XCTAssertTrue((runtimeInfo["description"] as? String)?.contains("build and process identity") == true)
+
+        let runtimeEvents = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "chau7_runtime_events" }))
+        XCTAssertTrue((runtimeEvents["description"] as? String)?.contains("observability events") == true)
+
+        let timerInventory = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "chau7_timer_inventory" }))
+        XCTAssertTrue((timerInventory["description"] as? String)?.contains("timer and display-link inventory") == true)
 
         let sessionList = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "session_list" }))
         XCTAssertTrue((sessionList["description"] as? String)?.contains("telemetry/history") == true)
@@ -173,6 +183,45 @@ final class MCPSessionTests: XCTestCase {
         XCTAssertEqual(content.first?["text"] as? String, "Run not found")
     }
 
+    func testObservabilityToolsReturnStructuredResults() throws {
+        Chau7ObservabilityService.shared.recordEvent(type: "app_launched", subsystem: "app_lifecycle")
+        Chau7ObservabilityService.shared.registerTimer(
+            id: "mcp_health_check",
+            kind: "dispatch_source_timer",
+            label: "mcp-health-check",
+            subsystem: "mcp_server",
+            queueLabel: "com.chau7.mcp.server",
+            intervalMs: 15_000,
+            leewayMs: 3_000,
+            active: true
+        )
+
+        let session = initializedSession()
+
+        let runtimeInfo = try toolStructuredContent(
+            session: session,
+            name: "chau7_runtime_info",
+            arguments: [:]
+        )
+        XCTAssertEqual(runtimeInfo["observability_schema_version"] as? Int, 1)
+
+        let runtimeEvents = try toolStructuredContent(
+            session: session,
+            name: "chau7_runtime_events",
+            arguments: ["limit": 10]
+        )
+        let events = try XCTUnwrap(runtimeEvents["events"] as? [[String: Any]])
+        XCTAssertEqual(events.first?["type"] as? String, "app_launched")
+
+        let timerInventory = try toolStructuredContent(
+            session: session,
+            name: "chau7_timer_inventory",
+            arguments: [:]
+        )
+        let timers = try XCTUnwrap(timerInventory["timers"] as? [[String: Any]])
+        XCTAssertEqual(timers.first?["id"] as? String, "mcp_health_check")
+    }
+
     private func initializedSession() -> MCPSession {
         let session = MCPSession(fd: -1)
         _ = session.handleRequestObject([
@@ -186,5 +235,18 @@ final class MCPSessionTests: XCTestCase {
             "method": "notifications/initialized"
         ])
         return session
+    }
+
+    private func toolStructuredContent(session: MCPSession, name: String, arguments: [String: Any]) throws -> [String: Any] {
+        let response = try XCTUnwrap(
+            session.handleRequestObject([
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": ["name": name, "arguments": arguments]
+            ])
+        )
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        return try XCTUnwrap(result["structuredContent"] as? [String: Any])
     }
 }

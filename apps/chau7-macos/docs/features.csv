@@ -121,6 +121,9 @@ MCP Tools — Telemetry,run_tag,Set tags on a telemetry run for organization and
 MCP Tools — Telemetry,run_latest_for_repo,Get the most recent run for a repository — optionally filter by provider,Shipped,Yes
 MCP Tools — Telemetry,session_list,"List telemetry/history AI sessions with run counts — filter by repo_path, active_only; includes active/completed rollups and latest_run_state. Use tab_list/tab_status for live discovery",Shipped,Yes
 MCP Tools — Telemetry,session_current,"Get currently active telemetry-backed AI sessions. Use tab_list/tab_status for live discovery and control",Shipped,Yes
+MCP Tools — Observability,chau7_runtime_info,"Get Chau7 build and process identity for external observability: version, build metadata, process id, launch time, and schema version",Shipped,Yes
+MCP Tools — Observability,chau7_runtime_events,"Get recent Chau7 observability events with stable sequence ids. Includes app lifecycle markers and unified non-app AI events with optional tab/session/run/repo scoping",Shipped,Yes
+MCP Tools — Observability,chau7_timer_inventory,"Get Chau7-owned timer and display-link inventory with stable ids, subsystem, queue label, cadence, and active state",Shipped,Yes
 MCP Tools — Contract,No public runtime tools,"MCP no longer accepts runtime_* tool calls; live control is tab_* and history/analytics are run_* and session_*",Shipped,Yes
 Telemetry,Codex Rollout Multiline Parsing,"Quota snapshots and rate-limit windows are extracted from both one-line JSONL and pretty-printed multiline Codex rollout JSON objects",Shipped,No
 AI Integration,Delegated Task Lineage,"Runtime-managed AI runs persist parent run/session lineage and task metadata into telemetry so parent agents can fetch exact child runs instead of inferring by repo-wide recency",Shipped,Yes

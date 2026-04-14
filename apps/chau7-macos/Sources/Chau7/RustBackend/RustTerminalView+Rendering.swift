@@ -31,6 +31,16 @@ extension RustTerminalView {
 
             CVDisplayLinkStart(link)
             displayLink = link
+            Chau7ObservabilityService.shared.registerTimer(
+                id: renderLoopTimerID,
+                kind: "display_link",
+                label: "terminal-render-loop",
+                subsystem: "renderer",
+                queueLabel: "com.chau7.renderer.main",
+                intervalMs: displayRefreshInterval * 1000,
+                leewayMs: 0,
+                active: true
+            )
             Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using CVDisplayLink for 60fps polling")
         } else {
             Log.warn("RustTerminalView[\(viewId)]: setupPollingLoop - CVDisplayLink failed (result=\(result)), falling back to Timer")
@@ -38,6 +48,16 @@ extension RustTerminalView {
                 WakeupProfiler.shared.record("terminal.pollTimer")
                 self?.pollAndSync()
             }
+            Chau7ObservabilityService.shared.registerTimer(
+                id: renderLoopTimerID,
+                kind: "timer",
+                label: "terminal-render-loop",
+                subsystem: "renderer",
+                queueLabel: "com.chau7.renderer.main",
+                intervalMs: displayRefreshInterval * 1000,
+                leewayMs: 0,
+                active: true
+            )
             Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using Timer fallback for polling")
         }
     }
@@ -60,6 +80,7 @@ extension RustTerminalView {
             pollTimer?.invalidate()
             pollTimer = nil
         }
+        Chau7ObservabilityService.shared.setTimerActive(renderLoopTimerID, active: false)
         stopBackgroundDrain()
     }
 
@@ -79,6 +100,7 @@ extension RustTerminalView {
         }
         pollTimer?.invalidate()
         pollTimer = nil
+        Chau7ObservabilityService.shared.setTimerActive(renderLoopTimerID, active: false)
 
         startBackgroundDrain()
     }
@@ -91,6 +113,16 @@ extension RustTerminalView {
 
         if let link = displayLink, !CVDisplayLinkIsRunning(link) {
             CVDisplayLinkStart(link)
+            Chau7ObservabilityService.shared.registerTimer(
+                id: renderLoopTimerID,
+                kind: "display_link",
+                label: "terminal-render-loop",
+                subsystem: "renderer",
+                queueLabel: "com.chau7.renderer.main",
+                intervalMs: displayRefreshInterval * 1000,
+                leewayMs: 0,
+                active: true
+            )
             Log.info("RustTerminalView[\(viewId)]: resumeDisplayLink - CVDisplayLink resumed (tab active)")
         } else if displayLink == nil, pollTimer == nil {
             // If display link was nil (never created or destroyed), don't recreate — just use timer
@@ -98,6 +130,16 @@ extension RustTerminalView {
                 WakeupProfiler.shared.record("terminal.pollTimer")
                 self?.pollAndSync()
             }
+            Chau7ObservabilityService.shared.registerTimer(
+                id: renderLoopTimerID,
+                kind: "timer",
+                label: "terminal-render-loop",
+                subsystem: "renderer",
+                queueLabel: "com.chau7.renderer.main",
+                intervalMs: displayRefreshInterval * 1000,
+                leewayMs: 0,
+                active: true
+            )
         }
 
         // Force an immediate sync so the user sees fresh content
@@ -124,6 +166,7 @@ extension RustTerminalView {
     /// Single timer that drains PTY buffers for ALL background tabs.
     /// Reduces N timers (one per background view) to 1 timer total.
     enum SharedBackgroundDrain {
+        private static let timerID = "terminal_background_drain"
         private static var views: [ObjectIdentifier: WeakViewRef] = [:]
         private static var timer: DispatchSourceTimer?
         private static let interval: TimeInterval = 0.5
@@ -157,11 +200,22 @@ extension RustTerminalView {
             }
             source.resume()
             timer = source
+            Chau7ObservabilityService.shared.registerTimer(
+                id: timerID,
+                kind: "dispatch_source_timer",
+                label: "background-drain",
+                subsystem: "renderer",
+                queueLabel: "com.chau7.renderer.main",
+                intervalMs: interval * 1000,
+                leewayMs: 250,
+                active: true
+            )
         }
 
         private static func stopTimer() {
             timer?.cancel()
             timer = nil
+            Chau7ObservabilityService.shared.setTimerActive(timerID, active: false)
         }
 
         private static func tick() {
@@ -178,6 +232,10 @@ extension RustTerminalView {
                 stopTimer()
             }
         }
+    }
+
+    private var renderLoopTimerID: String {
+        "terminal_render_loop_view_\(viewId)"
     }
 
     /// Minimal PTY drain for background tabs — no rendering, no UI sync.

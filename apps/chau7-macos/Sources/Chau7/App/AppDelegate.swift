@@ -64,6 +64,8 @@ private final class OverlayBlurView: NSVisualEffectView {
         Self.shared = self
         Log.info("AppDelegate did finish launching.")
         didFinishLaunching = true
+        Chau7ObservabilityService.shared.recordEvent(type: "app_launched", subsystem: "app_lifecycle")
+        Chau7ObservabilityService.shared.recordEvent(type: "build_activated", subsystem: "app_lifecycle")
 
         // Wire Chau7Core's localization hook into the Chau7 app's L() helper so
         // strings generated inside Core (e.g. AIEvent.notificationTitle/body) are
@@ -1600,6 +1602,11 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func windowDidBecomeKey(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "window_focused",
+            subsystem: "window_lifecycle",
+            detail: ["window_id": window.windowNumber]
+        )
         if let host = overlayHosts.first(where: { $0.window == window }) {
             activeOverlayModel = host.model
             host.model.focusSelected()
@@ -1627,6 +1634,11 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func windowDidResignKey(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "window_unfocused",
+            subsystem: "window_lifecycle",
+            detail: ["window_id": window.windowNumber]
+        )
         logOverlayWindowLifecycle(reason: "didResignKey", window: window)
         logOverlayDiagnostics(reason: "didResignKey", window: window)
     }

@@ -1428,6 +1428,7 @@ final class AppModel {
     @MainActor
     private func publishUnifiedEventOnMain(_ acceptedEvent: NotificationIngress.AcceptedEvent, notify: Bool) {
         let event = acceptedEvent.sharedEvent
+        Chau7ObservabilityService.shared.recordAIEvent(event)
         if notify {
             NotificationManager.shared.notify(acceptedEvent: acceptedEvent)
         }

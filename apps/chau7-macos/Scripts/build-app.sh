@@ -10,6 +10,16 @@ BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-com.chau7.app.dev}"
 APP_VERSION="${CHAU7_VERSION:-1.0}"
 APP_BUILD_NUMBER="${CHAU7_BUILD_NUMBER:-1}"
 APP_COPYRIGHT="${CHAU7_COPYRIGHT:-Local build}"
+REPO_ROOT="$(cd "$ROOT_DIR/../.." && pwd)"
+APP_BUILD_SHA="${CHAU7_BUILD_SHA:-$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)}"
+APP_BUILD_TIMESTAMP="${CHAU7_BUILD_TIMESTAMP:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+if [[ -n "${CHAU7_BUILD_CHANNEL:-}" ]]; then
+  APP_BUILD_CHANNEL="$CHAU7_BUILD_CHANNEL"
+elif [[ "$BUNDLE_IDENTIFIER" == *".dev" ]]; then
+  APP_BUILD_CHANNEL="dev"
+else
+  APP_BUILD_CHANNEL="release"
+fi
 
 export CHAU7_LOG_ROOT="$ROOT_DIR"
 CHAU7_LOG_NAME="build-app"
@@ -74,6 +84,12 @@ cat <<PLIST > "$CONTENTS/Info.plist"
   <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
   <string>$APP_BUILD_NUMBER</string>
+  <key>Chau7BuildGitSHA</key>
+  <string>$APP_BUILD_SHA</string>
+  <key>Chau7BuildTimestamp</key>
+  <string>$APP_BUILD_TIMESTAMP</string>
+  <key>Chau7BuildChannel</key>
+  <string>$APP_BUILD_CHANNEL</string>
   <key>LSUIElement</key>
   $LSUI_ELEMENT_VALUE
   <key>LSMultipleInstancesProhibited</key>

@@ -195,6 +195,14 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `session_list` | List telemetry/history AI sessions with run counts — filter by repo_path, active_only. Responses include `active_run_count`, `completed_run_count`, `latest_run_id`, and `latest_run_state`. Use `tab_list` / `tab_status` for live discovery |
 | `session_current` | Get currently active telemetry-backed AI sessions. Use `tab_list` / `tab_status` for live discovery and control |
 
+### Observability (3 tools)
+
+| Tool | Description |
+| --- | --- |
+| `chau7_runtime_info` | Build and process identity for external observability: app version, build number, build sha/timestamp/channel, process id, launch time, and schema version |
+| `chau7_runtime_events` | Recent Chau7 observability events with stable sequence ids. Includes app-owned lifecycle markers plus unified non-app AI events with optional `tab_id`, `session_id`, `run_id`, and `repo_path` |
+| `chau7_timer_inventory` | Chau7-owned timer and display-link inventory for observability: stable timer ids, kind, subsystem, queue label, cadence, and active state |
+
 Telemetry parsing also accepts pretty-printed Codex rollout JSON when extracting quota snapshots and rate-limit windows, so multiline history files produce the same quota data as one-line JSONL.
 
 ### Internal Runtime

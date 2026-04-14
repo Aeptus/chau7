@@ -375,6 +375,30 @@ final class MCPSession {
                 "inputSchema": ["type": "object", "properties": [:]]
             ],
 
+            // MARK: Observability Tools
+
+            [
+                "name": "chau7_runtime_info",
+                "description": "Get Chau7 build and process identity for external observability: app version, build metadata, process id, launch time, and observability schema version.",
+                "inputSchema": ["type": "object", "properties": [:]]
+            ],
+            [
+                "name": "chau7_runtime_events",
+                "description": "Get recent Chau7 observability events for lifecycle correlation. Returns app-owned events plus unified non-app AI events with stable ids, timestamps, subsystem, and optional tab/session/run scoping.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "since_millis": ["type": "integer", "description": "Only return events at or after this Unix timestamp in milliseconds."],
+                        "limit": ["type": "integer", "description": "Maximum events to return (default 200, max 500)."]
+                    ]
+                ]
+            ],
+            [
+                "name": "chau7_timer_inventory",
+                "description": "Get the current Chau7-owned timer and display-link inventory for observability. Includes stable timer ids, timer kind, subsystem, queue label, cadence, and active state.",
+                "inputSchema": ["type": "object", "properties": [:]]
+            ],
+
             // MARK: Control Plane Tools
 
             [
@@ -649,6 +673,18 @@ final class MCPSession {
 
         case "session_current":
             return classifyToolResponse(queryService.currentSessions())
+
+        case "chau7_runtime_info":
+            return classifyToolResponse(Chau7ObservabilityService.shared.runtimeInfoJSON())
+
+        case "chau7_runtime_events":
+            let sinceMillis = arguments["since_millis"] as? Int64
+                ?? (arguments["since_millis"] as? Int).map(Int64.init)
+            let limit = arguments["limit"] as? Int ?? 200
+            return classifyToolResponse(Chau7ObservabilityService.shared.runtimeEventsJSON(sinceMillis: sinceMillis, limit: limit))
+
+        case "chau7_timer_inventory":
+            return classifyToolResponse(Chau7ObservabilityService.shared.timerInventoryJSON())
 
         // Control plane
         case "tab_list":

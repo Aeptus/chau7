@@ -1297,13 +1297,27 @@ final class TerminalControlService {
 
     /// Show a modal approval dialog for tab creation. Must be called on main thread.
     private func requestApproval(message: String) -> Bool {
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "approval_waiting",
+            subsystem: "mcp_approvals",
+            detail: ["kind": "tab_request"]
+        )
         let alert = NSAlert()
         alert.messageText = L("mcp.approval.tabRequest.title", "MCP Tab Request")
         alert.informativeText = message
         alert.alertStyle = .informational
         alert.addButton(withTitle: L("mcp.approval.allow", "Allow"))
         alert.addButton(withTitle: L("mcp.approval.deny", "Deny"))
-        return alert.runModal() == .alertFirstButtonReturn
+        let approved = alert.runModal() == .alertFirstButtonReturn
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "approval_resolved",
+            subsystem: "mcp_approvals",
+            detail: [
+                "kind": "tab_request",
+                "decision": approved ? "approved" : "denied"
+            ]
+        )
+        return approved
     }
 
     /// Dual-path command approval: shows a three-option NSAlert on Mac AND sends
@@ -1314,6 +1328,17 @@ final class TerminalControlService {
             ? "Permissions source: profile \"\(permissions.matchedProfile!.name)\""
             : "Permissions source: global settings"
         let contextNote = "\(reason)\n\n\(sourceInfo)"
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "approval_waiting",
+            subsystem: "mcp_approvals",
+            sessionID: requestID,
+            detail: [
+                "kind": "command_request",
+                "flagged_command": flaggedCommand,
+                "reason": reason,
+                "permissions_source": permissions.sourceName
+            ]
+        )
 
         // Send approval request to iOS via RemoteControlManager
         let payload = ApprovalRequestPayload(
@@ -1367,19 +1392,42 @@ final class TerminalControlService {
         pendingApprovals.removeValue(forKey: requestID)
         approvalLock.unlock()
 
-        if let iosResult = iosResult {
-            return iosResult
+        let result: MCPApprovalResult
+        if let iosResult {
+            result = iosResult
+        } else {
+            switch response {
+            case .alertFirstButtonReturn:
+                result = .denied
+            case .alertSecondButtonReturn:
+                result = .allowedOnce
+            case .alertThirdButtonReturn:
+                result = .alwaysAllow
+            default:
+                result = .denied
+            }
         }
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "approval_resolved",
+            subsystem: "mcp_approvals",
+            sessionID: requestID,
+            detail: [
+                "kind": "command_request",
+                "decision": approvalDecisionLabel(result),
+                "flagged_command": flaggedCommand
+            ]
+        )
+        return result
+    }
 
-        switch response {
-        case .alertFirstButtonReturn:
-            return .denied
-        case .alertSecondButtonReturn:
-            return .allowedOnce
-        case .alertThirdButtonReturn:
-            return .alwaysAllow
-        default:
-            return .denied
+    private func approvalDecisionLabel(_ result: MCPApprovalResult) -> String {
+        switch result {
+        case .denied:
+            return "denied"
+        case .allowedOnce:
+            return "allowed_once"
+        case .alwaysAllow:
+            return "always_allow"
         }
     }
 

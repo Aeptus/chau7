@@ -449,6 +449,7 @@ final class MCPServerManager {
         acceptSource = nil
         healthCheckSource?.cancel()
         healthCheckSource = nil
+        Chau7ObservabilityService.shared.setTimerActive("mcp_health_check", active: false)
 
         for client in clientSockets {
             close(client)
@@ -468,6 +469,16 @@ final class MCPServerManager {
         }
         source.resume()
         healthCheckSource = source
+        Chau7ObservabilityService.shared.registerTimer(
+            id: "mcp_health_check",
+            kind: "dispatch_source_timer",
+            label: "mcp-health-check",
+            subsystem: "mcp_server",
+            queueLabel: "com.chau7.mcp.server",
+            intervalMs: 15_000,
+            leewayMs: 3_000,
+            active: true
+        )
     }
 
     private func ensureHealthy(reason: String) {
