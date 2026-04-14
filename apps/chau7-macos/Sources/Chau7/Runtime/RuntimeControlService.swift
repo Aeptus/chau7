@@ -286,6 +286,7 @@ final class RuntimeControlService {
         guard let session = sessionManager.session(id: sessionID) else {
             return jsonError("Session not found: \(sessionID)")
         }
+        syncSessionProgress(session, source: "runtime_session_get")
         return encodeAny(sessionSummary(session))
     }
 
@@ -490,6 +491,7 @@ final class RuntimeControlService {
         guard let session = sessionManager.session(id: sessionID) else {
             return jsonError("Session not found: \(sessionID)")
         }
+        syncSessionProgress(session, source: "runtime_turn_status")
 
         var result: [String: Any] = [
             "session_id": sessionID,
@@ -535,6 +537,7 @@ final class RuntimeControlService {
         guard let session = sessionManager.session(id: sessionID) else {
             return jsonError("Session not found: \(sessionID)")
         }
+        syncSessionProgress(session, source: "runtime_turn_result")
 
         if let result = session.turnResult(id: turnID) {
             return encode(result)
@@ -570,6 +573,7 @@ final class RuntimeControlService {
         guard let session = sessionManager.session(id: sessionID) else {
             return jsonError("Session not found: \(sessionID)")
         }
+        syncSessionProgress(session, source: "runtime_events_poll")
 
         let cursor: UInt64
         if let cursorNum = args["cursor"] as? NSNumber {
@@ -747,8 +751,42 @@ final class RuntimeControlService {
         return session.canAcceptTurn
     }
 
+    private func syncSessionProgress(_ session: RuntimeSession, source: String) {
+        _ = dispatchPendingInitialPromptIfReady(session)
+        _ = reconcileSettledInteractiveTurnIfNeeded(session, source: source)
+    }
+
+    @discardableResult
+    private func reconcileSettledInteractiveTurnIfNeeded(_ session: RuntimeSession, source: String) -> Bool {
+        guard session.backend.launchReadinessStrategy == .interactiveAgent,
+              session.state == .busy,
+              session.currentTurnID != nil,
+              let snapshot = launchReadinessProbe?(session)
+              ?? controlService.runtimeLaunchSnapshot(forOverlayTabID: session.tabID),
+              RuntimeLaunchReadiness.isSettledAfterTurn(
+                  snapshot: snapshot,
+                  backendName: session.backend.name
+              ) else {
+            return false
+        }
+
+        let reconciliationSource = "terminal_settled:\(source)"
+        guard sessionManager.reconcileTurnIfTerminalSettled(
+            sessionID: session.id,
+            source: reconciliationSource
+        ) else {
+            return false
+        }
+
+        Log.info("MCP runtime_turn_reconcile: session \(session.id) via \(reconciliationSource)")
+        return true
+    }
+
     private func handleRuntimeReadinessChange(forTabID tabID: UUID, source: String) {
         guard let session = sessionManager.sessionForTab(tabID) else { return }
+        if reconcileSettledInteractiveTurnIfNeeded(session, source: source) {
+            return
+        }
         guard session.state == .starting || session.pendingInitialPrompt != nil else { return }
 
         if session.isTerminal {
@@ -971,7 +1009,7 @@ final class RuntimeControlService {
         let statusArgs = statusArguments(sessionID: sessionID, turnID: requestedTurnID)
 
         while Date() < deadline {
-            _ = dispatchPendingInitialPromptIfReady(session)
+            syncSessionProgress(session, source: "runtime_turn_wait")
             if turnIsFinished(session: session, requestedTurnID: requestedTurnID) {
                 return completedWaitResponse(statusArgs: statusArgs, timeoutMs: timeoutMs, deadline: deadline)
             }
@@ -993,7 +1031,7 @@ final class RuntimeControlService {
         let statusArgs = statusArguments(sessionID: sessionID, turnID: requestedTurnID)
 
         while Date() < deadline {
-            _ = dispatchPendingInitialPromptIfReady(session)
+            syncSessionProgress(session, source: "runtime_turn_wait_async")
             if turnIsFinished(session: session, requestedTurnID: requestedTurnID) {
                 return completedWaitResponse(statusArgs: statusArgs, timeoutMs: timeoutMs, deadline: deadline)
             }

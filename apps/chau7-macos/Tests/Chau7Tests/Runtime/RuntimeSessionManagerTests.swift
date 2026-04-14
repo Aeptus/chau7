@@ -439,6 +439,41 @@ final class RuntimeSessionManagerTests: XCTestCase {
         XCTAssertEqual(thresholdEvent.data["estimated_cost_usd"], "1.500000")
     }
 
+    func testReconcileTurnIfTerminalSettledCompletesBusyTurnAndJournalsReconciliation() throws {
+        let manager = RuntimeSessionManager.shared
+        let session = manager.createSession(
+            tabID: UUID(),
+            backend: GenericShellBackend(),
+            config: SessionConfig(directory: "/tmp/runtime-reconcile-\(UUID().uuidString)", provider: "shell")
+        )
+
+        let turnID = try XCTUnwrap(session.startTurn(prompt: "Continue"))
+
+        XCTAssertTrue(
+            manager.reconcileTurnIfTerminalSettled(
+                sessionID: session.id,
+                source: "terminal_settled:test"
+            )
+        )
+        XCTAssertEqual(session.state, .ready)
+        XCTAssertNil(session.currentTurnID)
+        XCTAssertEqual(session.lastCompletedTurnID, turnID)
+
+        let events = session.journal.events(forTurn: turnID)
+        let completedEvent = try XCTUnwrap(events.first { $0.type == RuntimeEventType.turnCompleted.rawValue })
+        let reconciledEvent = try XCTUnwrap(events.first { $0.type == RuntimeEventType.turnReconciled.rawValue })
+
+        XCTAssertEqual(completedEvent.data["exit_reason"], TurnExitReason.success.rawValue)
+        XCTAssertEqual(reconciledEvent.data["source"], "terminal_settled:test")
+        XCTAssertEqual(reconciledEvent.data["exit_reason"], TurnExitReason.success.rawValue)
+        XCTAssertFalse(
+            manager.reconcileTurnIfTerminalSettled(
+                sessionID: session.id,
+                source: "terminal_settled:test"
+            )
+        )
+    }
+
     func testNotificationEventWithExactSessionDoesNotCreateDuplicateRuntimeSession() {
         let manager = RuntimeSessionManager.shared
         let cwd = "/tmp/runtime-existing-\(UUID().uuidString)"

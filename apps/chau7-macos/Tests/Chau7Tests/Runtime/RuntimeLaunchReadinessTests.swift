@@ -113,6 +113,36 @@ final class RuntimeLaunchReadinessTests: XCTestCase {
         )
     }
 
+    func testSettledAfterTurnRequiresTerminalDoneState() {
+        XCTAssertFalse(
+            RuntimeLaunchReadiness.isSettledAfterTurn(
+                snapshot: snapshot(
+                    shellLoading: false,
+                    isAtPrompt: true,
+                    effectiveStatus: "idle",
+                    rawStatus: "idle",
+                    aiProvider: "codex"
+                ),
+                backendName: "codex"
+            )
+        )
+    }
+
+    func testSettledAfterTurnAcceptsDoneStatus() {
+        XCTAssertTrue(
+            RuntimeLaunchReadiness.isSettledAfterTurn(
+                snapshot: snapshot(
+                    shellLoading: false,
+                    isAtPrompt: true,
+                    effectiveStatus: "done",
+                    rawStatus: "done",
+                    aiProvider: "codex"
+                ),
+                backendName: "codex"
+            )
+        )
+    }
+
     func testReadyWhenApprovalRequiredStatusMatchesBackend() {
         XCTAssertTrue(
             RuntimeLaunchReadiness.isReady(

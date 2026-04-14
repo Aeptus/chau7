@@ -52,10 +52,30 @@ public enum RuntimeLaunchReadiness {
         return statusLooksInteractive(snapshot)
     }
 
+    public static func isSettledAfterTurn(
+        snapshot: RuntimeLaunchReadinessSnapshot,
+        backendName: String
+    ) -> Bool {
+        guard !snapshot.shellLoading else {
+            return false
+        }
+        guard launchSignalsMatchBackend(snapshot, backendName: backendName) else {
+            return false
+        }
+        return statusLooksSettled(snapshot)
+    }
+
     private static func statusLooksInteractive(_ snapshot: RuntimeLaunchReadinessSnapshot) -> Bool {
         let candidates = [snapshot.effectiveStatus, snapshot.rawStatus].map(normalizeStatusToken)
         return candidates.contains(where: {
             ["idle", "done", "running", "approvalrequired", "waitingforinput", "stuck"].contains($0)
+        })
+    }
+
+    private static func statusLooksSettled(_ snapshot: RuntimeLaunchReadinessSnapshot) -> Bool {
+        let candidates = [snapshot.effectiveStatus, snapshot.rawStatus].map(normalizeStatusToken)
+        return candidates.contains(where: {
+            ["done", "waitingforinput"].contains($0)
         })
     }
 

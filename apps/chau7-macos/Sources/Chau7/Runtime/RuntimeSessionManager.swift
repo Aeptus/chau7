@@ -338,54 +338,15 @@ final class RuntimeSessionManager {
 
                 // Capture terminal output and turnID before completeTurn clears them
                 let output = captureOutput(for: session)
-                let turnIDForOutput = session.currentTurnID
-                journalOutputDeltaIfNeeded(for: session)
-                guard let result = session.completeTurn(summary: event.message, terminalOutput: output) else {
+                guard finalizeTurn(
+                    session: session,
+                    summary: event.message,
+                    terminalOutput: output,
+                    source: "provider_response_complete",
+                    emitWaitingInputNotification: session.backend.name.lowercased() != "claude"
+                ) != nil else {
                     Log.error("RuntimeSessionManager: completeTurn rejected for session \(session.id)")
                     return
-                }
-                clearTurnScopedTracking(sessionID: session.id, turnID: turnIDForOutput)
-
-                // Claude owns waiting-input delivery through its upstream
-                // Notification hook. Runtime stays responsible for state and
-                // telemetry, but should not emit a second semantic notification.
-                if session.backend.name.lowercased() != "claude" {
-                    emitNotification(
-                        session: session,
-                        type: "waiting_input",
-                        message: event.message.isEmpty ? "\(session.backend.name) is waiting for your input." : event.message
-                    )
-                }
-
-                let crossedCostThresholds = session.consumeCrossedCostThresholds(FeatureSettings.shared.runtimeCostThresholdsUSD)
-                for threshold in crossedCostThresholds {
-                    session.journal.append(
-                        sessionID: session.id,
-                        turnID: turnIDForOutput,
-                        type: RuntimeEventType.costThreshold.rawValue,
-                        data: [
-                            "threshold_usd": String(format: "%.2f", threshold),
-                            "estimated_cost_usd": String(format: "%.6f", result.estimatedCostUSD ?? 0)
-                        ]
-                    )
-                }
-
-                TelemetryRecorder.shared.updateLiveMetrics(
-                    tabID: session.tabID.uuidString,
-                    model: session.config.model,
-                    tokenUsage: result.cumulativeUsage,
-                    turnCount: session.turnCount,
-                    costUSD: result.estimatedCostUSD,
-                    tokenUsageSource: .transcriptDelta,
-                    tokenUsageState: result.cumulativeUsage.hasAnyTokens ? .estimated : .missing,
-                    costSource: result.estimatedCostUSD != nil ? .estimated : .unavailable,
-                    costState: result.estimatedCostUSD != nil ? .estimated : .missing
-                )
-
-                // Emit exit classification if not success
-                if result.exitReason != .success {
-                    let typeStr = result.exitReason == .contextLimit ? "context_limit" : "failed"
-                    emitNotification(session: session, type: typeStr, message: "Exit: \(result.exitReason.rawValue)")
                 }
             }
 
@@ -415,6 +376,29 @@ final class RuntimeSessionManager {
         default:
             Log.debug("RuntimeSessionManager: unhandled event type=\(event.type) session=\(session.id)")
         }
+    }
+
+    @discardableResult
+    func reconcileTurnIfTerminalSettled(sessionID: String, source: String) -> Bool {
+        guard let session = session(id: sessionID),
+              session.state == .busy,
+              session.currentTurnID != nil else {
+            return false
+        }
+
+        let output = captureOutput(for: session)
+        guard finalizeTurn(
+            session: session,
+            summary: nil,
+            terminalOutput: output,
+            source: source,
+            emitWaitingInputNotification: false
+        ) != nil else {
+            return false
+        }
+
+        Log.info("RuntimeSessionManager: reconciled busy turn for session \(session.id) via \(source)")
+        return true
     }
 
     // MARK: - Session Lifecycle
@@ -806,6 +790,91 @@ final class RuntimeSessionManager {
             return nil
         }
         return output
+    }
+
+    @discardableResult
+    private func finalizeTurn(
+        session: RuntimeSession,
+        summary: String?,
+        terminalOutput: String?,
+        source: String,
+        emitWaitingInputNotification: Bool
+    ) -> RuntimeSession.TurnCompletionResult? {
+        let turnIDForOutput = session.currentTurnID
+        journalOutputDeltaIfNeeded(for: session)
+        guard let result = session.completeTurn(summary: summary, terminalOutput: terminalOutput) else {
+            return nil
+        }
+        clearTurnScopedTracking(sessionID: session.id, turnID: turnIDForOutput)
+
+        if source != "provider_response_complete" {
+            session.journal.append(
+                sessionID: session.id,
+                turnID: turnIDForOutput,
+                type: RuntimeEventType.turnReconciled.rawValue,
+                data: [
+                    "source": source,
+                    "exit_reason": result.exitReason.rawValue
+                ]
+            )
+        }
+
+        if emitWaitingInputNotification {
+            let waitingInputMessage: String
+            if let summary, !summary.isEmpty {
+                waitingInputMessage = summary
+            } else {
+                waitingInputMessage = "\(session.backend.name) is waiting for your input."
+            }
+            emitNotification(
+                session: session,
+                type: "waiting_input",
+                message: waitingInputMessage
+            )
+        }
+
+        recordTurnCompletionSideEffects(
+            session: session,
+            turnID: turnIDForOutput,
+            result: result
+        )
+        return result
+    }
+
+    private func recordTurnCompletionSideEffects(
+        session: RuntimeSession,
+        turnID: String?,
+        result: RuntimeSession.TurnCompletionResult
+    ) {
+        let crossedCostThresholds = session.consumeCrossedCostThresholds(FeatureSettings.shared.runtimeCostThresholdsUSD)
+        for threshold in crossedCostThresholds {
+            session.journal.append(
+                sessionID: session.id,
+                turnID: turnID,
+                type: RuntimeEventType.costThreshold.rawValue,
+                data: [
+                    "threshold_usd": String(format: "%.2f", threshold),
+                    "estimated_cost_usd": String(format: "%.6f", result.estimatedCostUSD ?? 0)
+                ]
+            )
+        }
+
+        TelemetryRecorder.shared.updateLiveMetrics(
+            tabID: session.tabID.uuidString,
+            model: session.config.model,
+            tokenUsage: result.cumulativeUsage,
+            turnCount: session.turnCount,
+            costUSD: result.estimatedCostUSD,
+            tokenUsageSource: .transcriptDelta,
+            tokenUsageState: result.cumulativeUsage.hasAnyTokens ? .estimated : .missing,
+            costSource: result.estimatedCostUSD != nil ? .estimated : .unavailable,
+            costState: result.estimatedCostUSD != nil ? .estimated : .missing
+        )
+
+        if result.exitReason != .success {
+            let typeStr = result.exitReason == .contextLimit ? "context_limit" : "failed"
+            emitNotification(session: session, type: typeStr, message: "Exit: \(result.exitReason.rawValue)")
+        }
     }
 
     // MARK: - Notification Emission

@@ -59,6 +59,7 @@ public struct RuntimeEventType: RawRepresentable, Equatable, Hashable, Sendable 
     public static let turnStarted = RuntimeEventType(rawValue: "turn_started")
     public static let turnCompleted = RuntimeEventType(rawValue: "turn_completed")
     public static let turnFailed = RuntimeEventType(rawValue: "turn_failed")
+    public static let turnReconciled = RuntimeEventType(rawValue: "turn_reconciled")
     public static let turnResult = RuntimeEventType(rawValue: "turn_result")
     public static let userInput = RuntimeEventType(rawValue: "user_input")
 

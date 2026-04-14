@@ -522,6 +522,66 @@ final class RuntimeControlServiceTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(probeAttempts, 17)
     }
 
+    func testRuntimeTurnWaitReconcilesBusyInteractiveSessionOnceTerminalSettles() throws {
+        let backendName = "mock-interactive-settle-\(UUID().uuidString)"
+        RuntimeControlService.registerBackend(name: backendName) { MockInteractiveBackend(name: backendName) }
+
+        var settled = false
+        RuntimeControlService.shared.launchReadinessProbe = { _ in
+            let status = settled ? "done" : "idle"
+            return RuntimeLaunchReadinessSnapshot(
+                shellLoading: false,
+                isAtPrompt: true,
+                effectiveStatus: status,
+                rawStatus: status,
+                activeApp: "MockInteractive",
+                rawActiveApp: "MockInteractive",
+                aiProvider: backendName,
+                activeRunProvider: backendName,
+                processNames: [backendName]
+            )
+        }
+
+        let response = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": backendName,
+                "directory": "/tmp/runtime-settle-\(UUID().uuidString)",
+                "initial_prompt": "review this change"
+            ]
+        )
+
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let sessionID = try XCTUnwrap(json["session_id"] as? String)
+        let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+
+        XCTAssertTrue(waitUntil(timeout: 1.5) { session.turnCount == 1 && session.state == .busy })
+
+        settled = true
+
+        let waitResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_turn_wait",
+            arguments: [
+                "session_id": sessionID,
+                "timeout_ms": 1200
+            ]
+        )
+
+        let waitJSON = try XCTUnwrap(parseJSONObject(waitResponse))
+        XCTAssertEqual(waitJSON["timed_out"] as? Bool, false)
+        XCTAssertEqual(waitJSON["state"] as? String, "ready")
+        XCTAssertEqual(waitJSON["last_completed_turn_id"] as? String, "t_1")
+        XCTAssertNil(session.currentTurnID)
+        XCTAssertEqual(session.state, .ready)
+
+        let reconcileEvent = try XCTUnwrap(
+            session.journal
+                .events(forTurn: "t_1")
+                .first { $0.type == RuntimeEventType.turnReconciled.rawValue }
+        )
+        XCTAssertEqual(reconcileEvent.data["source"], "terminal_settled:runtime_turn_wait")
+    }
+
     func testRuntimeTurnResultReturnsCapturedStructuredPayload() throws {
         let response = RuntimeControlService.shared.handleToolCall(
             name: "runtime_session_create",
