@@ -10,7 +10,7 @@ final class TelemetryHistoricalCostBackfillTests: XCTestCase {
             totalInputTokens: 1_000_000,
             totalCachedInputTokens: 500_000,
             totalOutputTokens: 100_000,
-            totalReasoningOutputTokens: 25_000,
+            totalReasoningOutputTokens: 25000,
             tokenUsageState: .complete,
             costSource: .unavailable,
             costState: .missing

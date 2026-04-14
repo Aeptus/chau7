@@ -8,6 +8,8 @@ public struct TelemetryTurn: Codable, Identifiable, Sendable {
     public let role: TurnRole
     public var content: String?
     public var inputTokens: Int?
+    public var cacheCreationInputTokens: Int?
+    public var cacheReadInputTokens: Int?
     public var cachedInputTokens: Int?
     public var outputTokens: Int?
     public var reasoningOutputTokens: Int?
@@ -22,6 +24,8 @@ public struct TelemetryTurn: Codable, Identifiable, Sendable {
         role: TurnRole,
         content: String? = nil,
         inputTokens: Int? = nil,
+        cacheCreationInputTokens: Int? = nil,
+        cacheReadInputTokens: Int? = nil,
         cachedInputTokens: Int? = nil,
         outputTokens: Int? = nil,
         reasoningOutputTokens: Int? = nil,
@@ -35,7 +39,14 @@ public struct TelemetryTurn: Codable, Identifiable, Sendable {
         self.role = role
         self.content = content
         self.inputTokens = inputTokens
-        self.cachedInputTokens = cachedInputTokens
+        self.cacheCreationInputTokens = cacheCreationInputTokens
+        self.cacheReadInputTokens = cacheReadInputTokens
+        let explicitCachedTotal = max(0, (cacheCreationInputTokens ?? 0) + (cacheReadInputTokens ?? 0))
+        if let cachedInputTokens {
+            self.cachedInputTokens = max(cachedInputTokens, explicitCachedTotal)
+        } else {
+            self.cachedInputTokens = explicitCachedTotal > 0 ? explicitCachedTotal : nil
+        }
         self.outputTokens = outputTokens
         self.reasoningOutputTokens = reasoningOutputTokens
         self.toolCalls = toolCalls
@@ -46,6 +57,8 @@ public struct TelemetryTurn: Codable, Identifiable, Sendable {
     public var tokenUsage: TokenUsage {
         TokenUsage(
             inputTokens: inputTokens ?? 0,
+            cacheCreationInputTokens: cacheCreationInputTokens ?? 0,
+            cacheReadInputTokens: cacheReadInputTokens ?? 0,
             cachedInputTokens: cachedInputTokens ?? 0,
             outputTokens: outputTokens ?? 0,
             reasoningOutputTokens: reasoningOutputTokens ?? 0

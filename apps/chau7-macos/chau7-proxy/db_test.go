@@ -56,11 +56,11 @@ func TestDatabase_InsertAndRetrieve(t *testing.T) {
 		Provider:     ProviderAnthropic,
 		Model:        "claude-3-5-sonnet",
 		Endpoint:     "/v1/messages",
-		InputTokens:  100,
-		OutputTokens: 50,
+		InputTokens:  IntPointer(100),
+		OutputTokens: IntPointer(50),
 		LatencyMs:    250,
 		StatusCode:   200,
-		CostUSD:      0.001,
+		CostUSD:      FloatPointer(0.001),
 		Timestamp:    now,
 	}
 
@@ -89,11 +89,11 @@ func TestDatabase_InsertAndRetrieve(t *testing.T) {
 	if r.Model != "claude-3-5-sonnet" {
 		t.Errorf("Model mismatch: got %s", r.Model)
 	}
-	if r.InputTokens != 100 {
-		t.Errorf("InputTokens mismatch: got %d", r.InputTokens)
+	if IntValue(r.InputTokens) != 100 {
+		t.Errorf("InputTokens mismatch: got %d", IntValue(r.InputTokens))
 	}
-	if r.OutputTokens != 50 {
-		t.Errorf("OutputTokens mismatch: got %d", r.OutputTokens)
+	if IntValue(r.OutputTokens) != 50 {
+		t.Errorf("OutputTokens mismatch: got %d", IntValue(r.OutputTokens))
 	}
 }
 
@@ -115,11 +115,11 @@ func TestDatabase_MultipleRecords(t *testing.T) {
 			Provider:     ProviderOpenAI,
 			Model:        "gpt-4o",
 			Endpoint:     "/v1/chat/completions",
-			InputTokens:  100 * (i + 1),
-			OutputTokens: 50 * (i + 1),
+			InputTokens:  IntPointer(100 * (i + 1)),
+			OutputTokens: IntPointer(50 * (i + 1)),
 			LatencyMs:    int64(100 * (i + 1)),
 			StatusCode:   200,
-			CostUSD:      0.001 * float64(i+1),
+			CostUSD:      FloatPointer(0.001 * float64(i+1)),
 			Timestamp:    now.Add(time.Duration(i) * time.Second),
 		}
 		if err := db.InsertAPICall(record); err != nil {
@@ -161,11 +161,11 @@ func TestDatabase_GetDailyStats(t *testing.T) {
 			Provider:     ProviderAnthropic,
 			Model:        "claude-3-sonnet",
 			Endpoint:     "/v1/messages",
-			InputTokens:  100,
-			OutputTokens: 200,
+			InputTokens:  IntPointer(100),
+			OutputTokens: IntPointer(200),
 			LatencyMs:    100,
 			StatusCode:   200,
-			CostUSD:      0.01,
+			CostUSD:      FloatPointer(0.01),
 			Timestamp:    now,
 		},
 		{
@@ -173,11 +173,11 @@ func TestDatabase_GetDailyStats(t *testing.T) {
 			Provider:     ProviderOpenAI,
 			Model:        "gpt-4o",
 			Endpoint:     "/v1/chat/completions",
-			InputTokens:  150,
-			OutputTokens: 300,
+			InputTokens:  IntPointer(150),
+			OutputTokens: IntPointer(300),
 			LatencyMs:    200,
 			StatusCode:   200,
-			CostUSD:      0.02,
+			CostUSD:      FloatPointer(0.02),
 			Timestamp:    now,
 		},
 		{
@@ -185,11 +185,11 @@ func TestDatabase_GetDailyStats(t *testing.T) {
 			Provider:     ProviderGemini,
 			Model:        "gemini-pro",
 			Endpoint:     "/v1/models/gemini-pro:generateContent",
-			InputTokens:  50,
-			OutputTokens: 100,
+			InputTokens:  IntPointer(50),
+			OutputTokens: IntPointer(100),
 			LatencyMs:    150,
 			StatusCode:   200,
-			CostUSD:      0.005,
+			CostUSD:      FloatPointer(0.005),
 			Timestamp:    now,
 		},
 	}
@@ -322,8 +322,8 @@ func TestDatabase_CloseAndReopen(t *testing.T) {
 		Provider:     ProviderAnthropic,
 		Model:        "claude-3-haiku",
 		Endpoint:     "/v1/messages",
-		InputTokens:  10,
-		OutputTokens: 20,
+		InputTokens:  IntPointer(10),
+		OutputTokens: IntPointer(20),
 		StatusCode:   200,
 		Timestamp:    time.Now().UTC(),
 	}

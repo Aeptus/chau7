@@ -21,7 +21,7 @@ final class TelemetryMetricsSanitizerTests: XCTestCase {
     func testSanitize_invalidatesImplausibleTokenTotals() {
         let content = ExtractedRunContent(
             turns: [TelemetryTurn(runID: "run-1", turnIndex: 0, role: .assistant, content: "hi")],
-            totalInputTokens: 120_000_000,
+            totalInputTokens: 1_200_000_000,
             totalOutputTokens: 10,
             costUSD: 12.34,
             tokenUsageSource: .transcriptDelta,
@@ -37,5 +37,28 @@ final class TelemetryMetricsSanitizerTests: XCTestCase {
         XCTAssertNil(result.content.totalInputTokens)
         XCTAssertNil(result.content.costUSD)
         XCTAssertNotNil(result.warning)
+    }
+
+    func testSanitize_keepsLargeButPlausibleTranscriptTotals() {
+        let content = ExtractedRunContent(
+            turns: [TelemetryTurn(runID: "run-2", turnIndex: 0, role: .assistant, content: "hi")],
+            totalInputTokens: 802_504,
+            totalCacheCreationInputTokens: 9_541_997,
+            totalCacheReadInputTokens: 181_895_638,
+            totalOutputTokens: 726_929,
+            costUSD: 123.45,
+            tokenUsageSource: .transcriptDelta,
+            tokenUsageState: .complete,
+            costSource: .estimated,
+            costState: .complete
+        )
+
+        let result = TelemetryMetricsSanitizer.sanitize(content, provider: "claude")
+
+        XCTAssertEqual(result.content.tokenUsageState, .complete)
+        XCTAssertEqual(result.content.costState, .complete)
+        XCTAssertEqual(result.content.totalCacheReadInputTokens, 181_895_638)
+        XCTAssertEqual(result.content.costUSD, 123.45)
+        XCTAssertNil(result.warning)
     }
 }

@@ -37,6 +37,8 @@ public struct TurnStats: Codable, Sendable {
     public var tokenUsage: TokenUsage {
         TokenUsage(
             inputTokens: inputTokens,
+            cacheCreationInputTokens: cacheCreationTokens,
+            cacheReadInputTokens: cacheReadTokens,
             cachedInputTokens: cacheCreationTokens + cacheReadTokens,
             outputTokens: outputTokens,
             reasoningOutputTokens: reasoningOutputTokens

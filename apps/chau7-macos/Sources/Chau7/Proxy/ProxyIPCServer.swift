@@ -314,9 +314,28 @@ final class ProxyIPCServer {
             latencyMs: Int(data.latencyMs),
             statusCode: data.statusCode,
             costUSD: data.costUSD,
+            pricingVersion: data.pricingVersion,
             timestamp: ISO8601DateFormatter().date(from: data.timestamp) ?? Date(),
             errorMessage: data.errorMessage.isEmpty ? nil : data.errorMessage,
             projectPath: data.projectPath
+        )
+
+        TelemetryStore.shared.insertUsageEvidence(
+            UsageEvidence.proxyEvent(
+                provider: data.provider,
+                model: data.model.isEmpty ? nil : data.model,
+                sessionID: data.sessionId.isEmpty ? nil : data.sessionId,
+                endpoint: data.endpoint.isEmpty ? nil : data.endpoint,
+                projectPath: data.projectPath,
+                observedAt: event.timestamp,
+                inputTokens: data.inputTokens,
+                outputTokens: data.outputTokens,
+                cacheCreationInputTokens: data.cacheCreationInputTokens,
+                cacheReadInputTokens: data.cacheReadInputTokens,
+                reasoningOutputTokens: data.reasoningOutputTokens,
+                costUSD: data.costUSD,
+                pricingVersion: data.pricingVersion
+            )
         )
 
         // Update state on main thread
@@ -534,25 +553,27 @@ struct ProxyIPCServerData: Decodable {
     let provider: String
     let model: String
     let endpoint: String
-    let inputTokens: Int
-    let outputTokens: Int
-    let cacheCreationInputTokens: Int
-    let cacheReadInputTokens: Int
-    let reasoningOutputTokens: Int
+    let inputTokens: Int?
+    let outputTokens: Int?
+    let cacheCreationInputTokens: Int?
+    let cacheReadInputTokens: Int?
+    let reasoningOutputTokens: Int?
     let latencyMs: Int64
     let statusCode: Int
-    let costUSD: Double
+    let costUSD: Double?
+    let pricingVersion: String?
     let timestamp: String
     let errorMessage: String
+    let taskId: String?
     let tabId: String?
     let projectPath: String?
 
     static let empty = ProxyIPCServerData(
         sessionId: "", provider: "", model: "", endpoint: "",
-        inputTokens: 0, outputTokens: 0,
-        cacheCreationInputTokens: 0, cacheReadInputTokens: 0, reasoningOutputTokens: 0,
+        inputTokens: nil, outputTokens: nil,
+        cacheCreationInputTokens: nil, cacheReadInputTokens: nil, reasoningOutputTokens: nil,
         latencyMs: 0, statusCode: 0,
-        costUSD: 0, timestamp: "", errorMessage: "", tabId: nil, projectPath: nil
+        costUSD: nil, pricingVersion: nil, timestamp: "", errorMessage: "", taskId: nil, tabId: nil, projectPath: nil
     )
 
     enum CodingKeys: String, CodingKey {
@@ -568,8 +589,10 @@ struct ProxyIPCServerData: Decodable {
         case latencyMs = "latency_ms"
         case statusCode = "status_code"
         case costUSD = "cost_usd"
+        case pricingVersion = "pricing_version"
         case timestamp
         case errorMessage = "error_message"
+        case taskId = "task_id"
         case tabId = "tab_id"
         case projectPath = "project_path"
     }
@@ -579,16 +602,18 @@ struct ProxyIPCServerData: Decodable {
         provider: String,
         model: String,
         endpoint: String,
-        inputTokens: Int,
-        outputTokens: Int,
-        cacheCreationInputTokens: Int = 0,
-        cacheReadInputTokens: Int = 0,
-        reasoningOutputTokens: Int = 0,
+        inputTokens: Int?,
+        outputTokens: Int?,
+        cacheCreationInputTokens: Int? = nil,
+        cacheReadInputTokens: Int? = nil,
+        reasoningOutputTokens: Int? = nil,
         latencyMs: Int64,
         statusCode: Int,
-        costUSD: Double,
+        costUSD: Double?,
+        pricingVersion: String? = nil,
         timestamp: String,
         errorMessage: String,
+        taskId: String?,
         tabId: String?,
         projectPath: String?
     ) {
@@ -604,8 +629,10 @@ struct ProxyIPCServerData: Decodable {
         self.latencyMs = latencyMs
         self.statusCode = statusCode
         self.costUSD = costUSD
+        self.pricingVersion = pricingVersion
         self.timestamp = timestamp
         self.errorMessage = errorMessage
+        self.taskId = taskId
         self.tabId = tabId
         self.projectPath = projectPath
     }
@@ -616,16 +643,18 @@ struct ProxyIPCServerData: Decodable {
         self.provider = try container.decode(String.self, forKey: .provider)
         self.model = try container.decode(String.self, forKey: .model)
         self.endpoint = try container.decode(String.self, forKey: .endpoint)
-        self.inputTokens = try container.decode(Int.self, forKey: .inputTokens)
-        self.outputTokens = try container.decode(Int.self, forKey: .outputTokens)
-        self.cacheCreationInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheCreationInputTokens) ?? 0
-        self.cacheReadInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheReadInputTokens) ?? 0
-        self.reasoningOutputTokens = try container.decodeIfPresent(Int.self, forKey: .reasoningOutputTokens) ?? 0
+        self.inputTokens = try container.decodeIfPresent(Int.self, forKey: .inputTokens)
+        self.outputTokens = try container.decodeIfPresent(Int.self, forKey: .outputTokens)
+        self.cacheCreationInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheCreationInputTokens)
+        self.cacheReadInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheReadInputTokens)
+        self.reasoningOutputTokens = try container.decodeIfPresent(Int.self, forKey: .reasoningOutputTokens)
         self.latencyMs = try container.decode(Int64.self, forKey: .latencyMs)
         self.statusCode = try container.decode(Int.self, forKey: .statusCode)
-        self.costUSD = try container.decode(Double.self, forKey: .costUSD)
+        self.costUSD = try container.decodeIfPresent(Double.self, forKey: .costUSD)
+        self.pricingVersion = try container.decodeIfPresent(String.self, forKey: .pricingVersion)
         self.timestamp = try container.decode(String.self, forKey: .timestamp)
         self.errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage) ?? ""
+        self.taskId = try container.decodeIfPresent(String.self, forKey: .taskId)
         self.tabId = try container.decodeIfPresent(String.self, forKey: .tabId)
         self.projectPath = try container.decodeIfPresent(String.self, forKey: .projectPath)
     }

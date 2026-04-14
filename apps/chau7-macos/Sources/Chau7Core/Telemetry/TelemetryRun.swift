@@ -15,6 +15,8 @@ public struct TelemetryRun: Codable, Identifiable, Sendable {
     public var durationMs: Int?
     public var exitStatus: Int?
     public var totalInputTokens: Int?
+    public var totalCacheCreationInputTokens: Int?
+    public var totalCacheReadInputTokens: Int?
     public var totalCachedInputTokens: Int?
     public var totalOutputTokens: Int?
     public var totalReasoningOutputTokens: Int?
@@ -43,6 +45,8 @@ public struct TelemetryRun: Codable, Identifiable, Sendable {
         durationMs: Int? = nil,
         exitStatus: Int? = nil,
         totalInputTokens: Int? = nil,
+        totalCacheCreationInputTokens: Int? = nil,
+        totalCacheReadInputTokens: Int? = nil,
         totalCachedInputTokens: Int? = nil,
         totalOutputTokens: Int? = nil,
         totalReasoningOutputTokens: Int? = nil,
@@ -70,7 +74,14 @@ public struct TelemetryRun: Codable, Identifiable, Sendable {
         self.durationMs = durationMs
         self.exitStatus = exitStatus
         self.totalInputTokens = totalInputTokens
-        self.totalCachedInputTokens = totalCachedInputTokens
+        self.totalCacheCreationInputTokens = totalCacheCreationInputTokens
+        self.totalCacheReadInputTokens = totalCacheReadInputTokens
+        let explicitCachedTotal = max(0, (totalCacheCreationInputTokens ?? 0) + (totalCacheReadInputTokens ?? 0))
+        if let totalCachedInputTokens {
+            self.totalCachedInputTokens = max(totalCachedInputTokens, explicitCachedTotal)
+        } else {
+            self.totalCachedInputTokens = explicitCachedTotal > 0 ? explicitCachedTotal : nil
+        }
         self.totalOutputTokens = totalOutputTokens
         self.totalReasoningOutputTokens = totalReasoningOutputTokens
         self.costUSD = costUSD
@@ -89,6 +100,8 @@ public struct TelemetryRun: Codable, Identifiable, Sendable {
     public var tokenUsage: TokenUsage {
         TokenUsage(
             inputTokens: totalInputTokens ?? 0,
+            cacheCreationInputTokens: totalCacheCreationInputTokens ?? 0,
+            cacheReadInputTokens: totalCacheReadInputTokens ?? 0,
             cachedInputTokens: totalCachedInputTokens ?? 0,
             outputTokens: totalOutputTokens ?? 0,
             reasoningOutputTokens: totalReasoningOutputTokens ?? 0

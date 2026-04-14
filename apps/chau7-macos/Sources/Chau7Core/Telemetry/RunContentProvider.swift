@@ -21,12 +21,15 @@ public protocol RunContentProvider: Sendable {
     ///   - sessionID: The AI tool's session ID (e.g., Claude's resume ID)
     ///   - cwd: Working directory of the run
     ///   - startedAt: Run start time (for disambiguation when multiple sessions exist)
+    ///   - endedAt: Run end time. Providers should use this to avoid attributing
+    ///     later transcript events from a reused session to an earlier run.
     /// - Returns: Extracted content, or nil if unavailable
     func extractContent(
         runID: String,
         sessionID: String?,
         cwd: String,
-        startedAt: Date
+        startedAt: Date,
+        endedAt: Date?
     ) -> ExtractedRunContent?
 }
 
@@ -35,6 +38,8 @@ public struct ExtractedRunContent: Sendable {
     public var model: String?
     public var turns: [TelemetryTurn]
     public var totalInputTokens: Int?
+    public var totalCacheCreationInputTokens: Int?
+    public var totalCacheReadInputTokens: Int?
     public var totalCachedInputTokens: Int?
     public var totalOutputTokens: Int?
     public var totalReasoningOutputTokens: Int?
@@ -50,6 +55,8 @@ public struct ExtractedRunContent: Sendable {
         model: String? = nil,
         turns: [TelemetryTurn] = [],
         totalInputTokens: Int? = nil,
+        totalCacheCreationInputTokens: Int? = nil,
+        totalCacheReadInputTokens: Int? = nil,
         totalCachedInputTokens: Int? = nil,
         totalOutputTokens: Int? = nil,
         totalReasoningOutputTokens: Int? = nil,
@@ -64,7 +71,14 @@ public struct ExtractedRunContent: Sendable {
         self.model = model
         self.turns = turns
         self.totalInputTokens = totalInputTokens
-        self.totalCachedInputTokens = totalCachedInputTokens
+        self.totalCacheCreationInputTokens = totalCacheCreationInputTokens
+        self.totalCacheReadInputTokens = totalCacheReadInputTokens
+        let explicitCachedTotal = max(0, (totalCacheCreationInputTokens ?? 0) + (totalCacheReadInputTokens ?? 0))
+        if let totalCachedInputTokens {
+            self.totalCachedInputTokens = max(totalCachedInputTokens, explicitCachedTotal)
+        } else {
+            self.totalCachedInputTokens = explicitCachedTotal > 0 ? explicitCachedTotal : nil
+        }
         self.totalOutputTokens = totalOutputTokens
         self.totalReasoningOutputTokens = totalReasoningOutputTokens
         self.costUSD = costUSD

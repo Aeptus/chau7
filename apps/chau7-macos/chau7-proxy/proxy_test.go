@@ -115,8 +115,8 @@ func TestProxyHandler_BasicPassthrough(t *testing.T) {
 	if r.Provider != ProviderAnthropic {
 		t.Errorf("Provider mismatch: %s", r.Provider)
 	}
-	if r.InputTokens != 50 || r.OutputTokens != 100 {
-		t.Errorf("Token count mismatch: in=%d out=%d", r.InputTokens, r.OutputTokens)
+	if IntValue(r.InputTokens) != 50 || IntValue(r.OutputTokens) != 100 {
+		t.Errorf("Token count mismatch: in=%d out=%d", IntValue(r.InputTokens), IntValue(r.OutputTokens))
 	}
 }
 

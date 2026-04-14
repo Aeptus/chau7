@@ -43,6 +43,7 @@ final class TelemetryStore {
         createTables()
         applyMigrations()
         backfillHistoricalMissingCosts()
+        backfillRunUsageEvidence()
     }
 
     /// Quick integrity check on startup. If the database is corrupt, log and
@@ -86,6 +87,8 @@ final class TelemetryStore {
             duration_ms INTEGER,
             exit_status INTEGER,
             total_input_tokens INTEGER,
+            total_cache_creation_input_tokens INTEGER,
+            total_cache_read_input_tokens INTEGER,
             total_cached_input_tokens INTEGER,
             total_output_tokens INTEGER,
             total_reasoning_output_tokens INTEGER,
@@ -116,6 +119,8 @@ final class TelemetryStore {
             role TEXT NOT NULL,
             content TEXT,
             input_tokens INTEGER,
+            cache_creation_input_tokens INTEGER,
+            cache_read_input_tokens INTEGER,
             cached_input_tokens INTEGER,
             output_tokens INTEGER,
             reasoning_output_tokens INTEGER,
@@ -140,6 +145,41 @@ final class TelemetryStore {
 
         CREATE INDEX IF NOT EXISTS idx_tool_calls_run ON tool_calls(run_id);
         CREATE INDEX IF NOT EXISTS idx_tool_calls_name ON tool_calls(tool_name);
+
+        CREATE TABLE IF NOT EXISTS usage_evidence (
+            evidence_id TEXT PRIMARY KEY,
+            unique_event_key TEXT NOT NULL,
+            reconciliation_key TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT,
+            session_id TEXT,
+            run_id TEXT,
+            endpoint TEXT,
+            project_path TEXT,
+            input_tokens INTEGER,
+            cache_creation_input_tokens INTEGER,
+            cache_read_input_tokens INTEGER,
+            output_tokens INTEGER,
+            reasoning_output_tokens INTEGER,
+            cost_usd REAL,
+            token_usage_source TEXT,
+            token_usage_state TEXT NOT NULL,
+            cost_source TEXT,
+            cost_state TEXT NOT NULL,
+            pricing_version TEXT,
+            source_ref TEXT,
+            metadata TEXT,
+            observed_at TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_usage_evidence_provider
+            ON usage_evidence(provider, observed_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_usage_evidence_reconciliation
+            ON usage_evidence(reconciliation_key, source_kind);
+        CREATE INDEX IF NOT EXISTS idx_usage_evidence_run
+            ON usage_evidence(run_id);
 
         CREATE TABLE IF NOT EXISTS schema_version (
             version INTEGER PRIMARY KEY,
@@ -185,12 +225,16 @@ final class TelemetryStore {
     private func applyMigrations() {
         guard let db else { return }
         ensureColumn(table: "runs", name: "total_cached_input_tokens", definition: "INTEGER")
+        ensureColumn(table: "runs", name: "total_cache_creation_input_tokens", definition: "INTEGER")
+        ensureColumn(table: "runs", name: "total_cache_read_input_tokens", definition: "INTEGER")
         ensureColumn(table: "runs", name: "total_reasoning_output_tokens", definition: "INTEGER")
         ensureColumn(table: "runs", name: "token_usage_source", definition: "TEXT")
         ensureColumn(table: "runs", name: "token_usage_state", definition: "TEXT")
         ensureColumn(table: "runs", name: "cost_source", definition: "TEXT")
         ensureColumn(table: "runs", name: "cost_state", definition: "TEXT")
 
+        ensureColumn(table: "turns", name: "cache_creation_input_tokens", definition: "INTEGER")
+        ensureColumn(table: "turns", name: "cache_read_input_tokens", definition: "INTEGER")
         ensureColumn(table: "turns", name: "cached_input_tokens", definition: "INTEGER")
         ensureColumn(table: "turns", name: "reasoning_output_tokens", definition: "INTEGER")
 
@@ -201,6 +245,8 @@ final class TelemetryStore {
             SET token_usage_state = COALESCE(token_usage_state,
                 CASE
                     WHEN total_input_tokens IS NULL
+                         AND total_cache_creation_input_tokens IS NULL
+                         AND total_cache_read_input_tokens IS NULL
                          AND total_cached_input_tokens IS NULL
                          AND total_output_tokens IS NULL
                          AND total_reasoning_output_tokens IS NULL
@@ -231,6 +277,8 @@ final class TelemetryStore {
             """
             UPDATE runs
             SET total_input_tokens = NULL,
+                total_cache_creation_input_tokens = NULL,
+                total_cache_read_input_tokens = NULL,
                 total_cached_input_tokens = NULL,
                 total_output_tokens = NULL,
                 total_reasoning_output_tokens = NULL,
@@ -241,12 +289,17 @@ final class TelemetryStore {
                 cost_state = 'missing',
                 error_message = COALESCE(error_message, 'invalidated historical telemetry metrics that exceeded sanity thresholds')
             WHERE COALESCE(total_input_tokens, 0) > 100000000
+               OR COALESCE(total_cache_creation_input_tokens, 0) > 100000000
+               OR COALESCE(total_cache_read_input_tokens, 0) > 100000000
                OR COALESCE(total_cached_input_tokens, 0) > 100000000
                OR COALESCE(total_output_tokens, 0) > 100000000
                OR COALESCE(total_reasoning_output_tokens, 0) > 100000000
                OR (
                     COALESCE(total_input_tokens, 0) +
-                    COALESCE(total_cached_input_tokens, 0) +
+                    COALESCE(
+                        total_cached_input_tokens,
+                        COALESCE(total_cache_creation_input_tokens, 0) + COALESCE(total_cache_read_input_tokens, 0)
+                    ) +
                     COALESCE(total_output_tokens, 0) +
                     COALESCE(total_reasoning_output_tokens, 0)
                   ) > 150000000
@@ -324,6 +377,33 @@ final class TelemetryStore {
         Log.info("TelemetryStore: backfilled historical cost for \(repairedRuns.count) run(s)")
     }
 
+    private func backfillRunUsageEvidence() {
+        guard let db else { return }
+
+        let sql = """
+        SELECT r.*
+        FROM runs r
+        LEFT JOIN usage_evidence ue
+          ON ue.evidence_id = ('run|' || r.run_id)
+        WHERE ue.evidence_id IS NULL
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        var insertedCount = 0
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let run = parseRun(stmt) else { continue }
+            _insertUsageEvidence(UsageEvidence.runSummary(run))
+            insertedCount += 1
+        }
+
+        if insertedCount > 0 {
+            Log.info("TelemetryStore: backfilled usage evidence for \(insertedCount) missing run(s)")
+        }
+    }
+
     // MARK: - Write
 
     /// Insert a new run record. Use finalizeRun() to update it on completion.
@@ -340,10 +420,11 @@ final class TelemetryStore {
         INSERT OR IGNORE INTO runs
         (run_id, session_id, tab_id, provider, model, cwd, repo_path,
          started_at, ended_at, duration_ms, exit_status,
-         total_input_tokens, total_cached_input_tokens, total_output_tokens, total_reasoning_output_tokens,
+         total_input_tokens, total_cache_creation_input_tokens, total_cache_read_input_tokens,
+         total_cached_input_tokens, total_output_tokens, total_reasoning_output_tokens,
          cost_usd, token_usage_source, token_usage_state, cost_source, cost_state,
          turn_count, tags, metadata, raw_transcript_ref, parent_run_id, error_message)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """
 
         var stmt: OpaquePointer?
@@ -362,20 +443,22 @@ final class TelemetryStore {
         bindInt(stmt, 10, run.durationMs)
         bindInt(stmt, 11, run.exitStatus)
         bindInt(stmt, 12, run.totalInputTokens)
-        bindInt(stmt, 13, run.totalCachedInputTokens)
-        bindInt(stmt, 14, run.totalOutputTokens)
-        bindInt(stmt, 15, run.totalReasoningOutputTokens)
-        bindDouble(stmt, 16, run.costUSD)
-        bindText(stmt, 17, run.tokenUsageSource?.rawValue)
-        bindText(stmt, 18, run.tokenUsageState.rawValue)
-        bindText(stmt, 19, run.costSource?.rawValue)
-        bindText(stmt, 20, run.costState.rawValue)
-        bindInt(stmt, 21, run.turnCount)
-        bindText(stmt, 22, Self.encodeJSON(run.tags))
-        bindText(stmt, 23, Self.encodeJSON(run.metadata))
-        bindText(stmt, 24, run.rawTranscriptRef)
-        bindText(stmt, 25, run.parentRunID)
-        bindText(stmt, 26, run.errorMessage)
+        bindInt(stmt, 13, run.totalCacheCreationInputTokens)
+        bindInt(stmt, 14, run.totalCacheReadInputTokens)
+        bindInt(stmt, 15, run.totalCachedInputTokens)
+        bindInt(stmt, 16, run.totalOutputTokens)
+        bindInt(stmt, 17, run.totalReasoningOutputTokens)
+        bindDouble(stmt, 18, run.costUSD)
+        bindText(stmt, 19, run.tokenUsageSource?.rawValue)
+        bindText(stmt, 20, run.tokenUsageState.rawValue)
+        bindText(stmt, 21, run.costSource?.rawValue)
+        bindText(stmt, 22, run.costState.rawValue)
+        bindInt(stmt, 23, run.turnCount)
+        bindText(stmt, 24, Self.encodeJSON(run.tags))
+        bindText(stmt, 25, Self.encodeJSON(run.metadata))
+        bindText(stmt, 26, run.rawTranscriptRef)
+        bindText(stmt, 27, run.parentRunID)
+        bindText(stmt, 28, run.errorMessage)
 
         if sqlite3_step(stmt) != SQLITE_DONE {
             let err = String(cString: sqlite3_errmsg(db))
@@ -396,9 +479,9 @@ final class TelemetryStore {
             let updateSQL = """
             UPDATE runs SET
                 session_id = ?, model = ?, ended_at = ?, duration_ms = ?, exit_status = ?,
-                total_input_tokens = ?, total_cached_input_tokens = ?, total_output_tokens = ?,
-                total_reasoning_output_tokens = ?, cost_usd = ?, token_usage_source = ?,
-                token_usage_state = ?, cost_source = ?, cost_state = ?,
+                total_input_tokens = ?, total_cache_creation_input_tokens = ?, total_cache_read_input_tokens = ?,
+                total_cached_input_tokens = ?, total_output_tokens = ?, total_reasoning_output_tokens = ?,
+                cost_usd = ?, token_usage_source = ?, token_usage_state = ?, cost_source = ?, cost_state = ?,
                 turn_count = ?, raw_transcript_ref = ?, error_message = ?
             WHERE run_id = ?
             """
@@ -410,18 +493,20 @@ final class TelemetryStore {
                 bindInt(stmt, 4, run.durationMs)
                 bindInt(stmt, 5, run.exitStatus)
                 bindInt(stmt, 6, run.totalInputTokens)
-                bindInt(stmt, 7, run.totalCachedInputTokens)
-                bindInt(stmt, 8, run.totalOutputTokens)
-                bindInt(stmt, 9, run.totalReasoningOutputTokens)
-                bindDouble(stmt, 10, run.costUSD)
-                bindText(stmt, 11, run.tokenUsageSource?.rawValue)
-                bindText(stmt, 12, run.tokenUsageState.rawValue)
-                bindText(stmt, 13, run.costSource?.rawValue)
-                bindText(stmt, 14, run.costState.rawValue)
-                bindInt(stmt, 15, run.turnCount)
-                bindText(stmt, 16, run.rawTranscriptRef)
-                bindText(stmt, 17, run.errorMessage)
-                bindText(stmt, 18, run.id)
+                bindInt(stmt, 7, run.totalCacheCreationInputTokens)
+                bindInt(stmt, 8, run.totalCacheReadInputTokens)
+                bindInt(stmt, 9, run.totalCachedInputTokens)
+                bindInt(stmt, 10, run.totalOutputTokens)
+                bindInt(stmt, 11, run.totalReasoningOutputTokens)
+                bindDouble(stmt, 12, run.costUSD)
+                bindText(stmt, 13, run.tokenUsageSource?.rawValue)
+                bindText(stmt, 14, run.tokenUsageState.rawValue)
+                bindText(stmt, 15, run.costSource?.rawValue)
+                bindText(stmt, 16, run.costState.rawValue)
+                bindInt(stmt, 17, run.turnCount)
+                bindText(stmt, 18, run.rawTranscriptRef)
+                bindText(stmt, 19, run.errorMessage)
+                bindText(stmt, 20, run.id)
                 sqlite3_step(stmt)
                 sqlite3_finalize(stmt)
             }
@@ -435,6 +520,8 @@ final class TelemetryStore {
             for call in toolCalls {
                 _insertToolCall(call)
             }
+
+            _insertUsageEvidence(UsageEvidence.runSummary(run))
 
             sqlite3_exec(db, "COMMIT", nil, nil, nil)
         }
@@ -453,9 +540,10 @@ final class TelemetryStore {
         guard let db else { return }
         let sql = """
         INSERT OR IGNORE INTO turns
-        (turn_id, run_id, turn_index, role, content, input_tokens, cached_input_tokens, output_tokens,
-         reasoning_output_tokens, tool_calls, timestamp, duration_ms)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        (turn_id, run_id, turn_index, role, content, input_tokens,
+         cache_creation_input_tokens, cache_read_input_tokens, cached_input_tokens,
+         output_tokens, reasoning_output_tokens, tool_calls, timestamp, duration_ms)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """
 
         var stmt: OpaquePointer?
@@ -468,12 +556,14 @@ final class TelemetryStore {
         bindText(stmt, 4, turn.role.rawValue)
         bindText(stmt, 5, turn.content)
         bindInt(stmt, 6, turn.inputTokens)
-        bindInt(stmt, 7, turn.cachedInputTokens)
-        bindInt(stmt, 8, turn.outputTokens)
-        bindInt(stmt, 9, turn.reasoningOutputTokens)
-        bindText(stmt, 10, Self.encodeJSON(turn.toolCalls))
-        bindText(stmt, 11, turn.timestamp.map { Self.isoString(from: $0) })
-        bindInt(stmt, 12, turn.durationMs)
+        bindInt(stmt, 7, turn.cacheCreationInputTokens)
+        bindInt(stmt, 8, turn.cacheReadInputTokens)
+        bindInt(stmt, 9, turn.cachedInputTokens)
+        bindInt(stmt, 10, turn.outputTokens)
+        bindInt(stmt, 11, turn.reasoningOutputTokens)
+        bindText(stmt, 12, Self.encodeJSON(turn.toolCalls))
+        bindText(stmt, 13, turn.timestamp.map { Self.isoString(from: $0) })
+        bindInt(stmt, 14, turn.durationMs)
 
         if sqlite3_step(stmt) != SQLITE_DONE {
             let err = String(cString: sqlite3_errmsg(db))
@@ -549,7 +639,8 @@ final class TelemetryStore {
             guard let self, let db = db else { return }
             let sql = """
             UPDATE runs SET
-                model = ?, total_input_tokens = ?, total_cached_input_tokens = ?,
+                model = ?, total_input_tokens = ?, total_cache_creation_input_tokens = ?,
+                total_cache_read_input_tokens = ?, total_cached_input_tokens = ?,
                 total_output_tokens = ?, total_reasoning_output_tokens = ?, cost_usd = ?,
                 token_usage_source = ?, token_usage_state = ?, cost_source = ?, cost_state = ?,
                 turn_count = ?, error_message = ?
@@ -560,18 +651,97 @@ final class TelemetryStore {
             defer { sqlite3_finalize(stmt) }
             bindText(stmt, 1, run.model)
             bindInt(stmt, 2, run.totalInputTokens)
-            bindInt(stmt, 3, run.totalCachedInputTokens)
-            bindInt(stmt, 4, run.totalOutputTokens)
-            bindInt(stmt, 5, run.totalReasoningOutputTokens)
-            bindDouble(stmt, 6, run.costUSD)
-            bindText(stmt, 7, run.tokenUsageSource?.rawValue)
-            bindText(stmt, 8, run.tokenUsageState.rawValue)
-            bindText(stmt, 9, run.costSource?.rawValue)
-            bindText(stmt, 10, run.costState.rawValue)
-            bindInt(stmt, 11, run.turnCount)
-            bindText(stmt, 12, run.errorMessage)
-            bindText(stmt, 13, run.id)
+            bindInt(stmt, 3, run.totalCacheCreationInputTokens)
+            bindInt(stmt, 4, run.totalCacheReadInputTokens)
+            bindInt(stmt, 5, run.totalCachedInputTokens)
+            bindInt(stmt, 6, run.totalOutputTokens)
+            bindInt(stmt, 7, run.totalReasoningOutputTokens)
+            bindDouble(stmt, 8, run.costUSD)
+            bindText(stmt, 9, run.tokenUsageSource?.rawValue)
+            bindText(stmt, 10, run.tokenUsageState.rawValue)
+            bindText(stmt, 11, run.costSource?.rawValue)
+            bindText(stmt, 12, run.costState.rawValue)
+            bindInt(stmt, 13, run.turnCount)
+            bindText(stmt, 14, run.errorMessage)
+            bindText(stmt, 15, run.id)
             sqlite3_step(stmt)
+        }
+    }
+
+    func insertUsageEvidence(_ evidence: UsageEvidence) {
+        queue.async { [weak self] in
+            self?._insertUsageEvidence(evidence)
+        }
+    }
+
+    private func _insertUsageEvidence(_ evidence: UsageEvidence) {
+        guard let db else { return }
+        let sql = """
+        INSERT INTO usage_evidence
+        (evidence_id, unique_event_key, reconciliation_key, source_kind, provider, model,
+         session_id, run_id, endpoint, project_path,
+         input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens, reasoning_output_tokens,
+         cost_usd, token_usage_source, token_usage_state, cost_source, cost_state,
+         pricing_version, source_ref, metadata, observed_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(evidence_id) DO UPDATE SET
+            unique_event_key = excluded.unique_event_key,
+            reconciliation_key = excluded.reconciliation_key,
+            source_kind = excluded.source_kind,
+            provider = excluded.provider,
+            model = excluded.model,
+            session_id = excluded.session_id,
+            run_id = excluded.run_id,
+            endpoint = excluded.endpoint,
+            project_path = excluded.project_path,
+            input_tokens = excluded.input_tokens,
+            cache_creation_input_tokens = excluded.cache_creation_input_tokens,
+            cache_read_input_tokens = excluded.cache_read_input_tokens,
+            output_tokens = excluded.output_tokens,
+            reasoning_output_tokens = excluded.reasoning_output_tokens,
+            cost_usd = excluded.cost_usd,
+            token_usage_source = excluded.token_usage_source,
+            token_usage_state = excluded.token_usage_state,
+            cost_source = excluded.cost_source,
+            cost_state = excluded.cost_state,
+            pricing_version = excluded.pricing_version,
+            source_ref = excluded.source_ref,
+            metadata = excluded.metadata,
+            observed_at = excluded.observed_at
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, evidence.id)
+        bindText(stmt, 2, evidence.uniqueEventKey)
+        bindText(stmt, 3, evidence.reconciliationKey)
+        bindText(stmt, 4, evidence.sourceKind.rawValue)
+        bindText(stmt, 5, evidence.provider)
+        bindText(stmt, 6, evidence.model)
+        bindText(stmt, 7, evidence.sessionID)
+        bindText(stmt, 8, evidence.runID)
+        bindText(stmt, 9, evidence.endpoint)
+        bindText(stmt, 10, evidence.projectPath)
+        bindInt(stmt, 11, evidence.inputTokens)
+        bindInt(stmt, 12, evidence.cacheCreationInputTokens)
+        bindInt(stmt, 13, evidence.cacheReadInputTokens)
+        bindInt(stmt, 14, evidence.outputTokens)
+        bindInt(stmt, 15, evidence.reasoningOutputTokens)
+        bindDouble(stmt, 16, evidence.costUSD)
+        bindText(stmt, 17, evidence.tokenUsageSource?.rawValue)
+        bindText(stmt, 18, evidence.tokenUsageState.rawValue)
+        bindText(stmt, 19, evidence.costSource?.rawValue)
+        bindText(stmt, 20, evidence.costState.rawValue)
+        bindText(stmt, 21, evidence.pricingVersion)
+        bindText(stmt, 22, evidence.sourceRef)
+        bindText(stmt, 23, Self.encodeJSON(evidence.metadata))
+        bindText(stmt, 24, Self.isoString(from: evidence.observedAt))
+
+        if sqlite3_step(stmt) != SQLITE_DONE {
+            let err = String(cString: sqlite3_errmsg(db))
+            Log.warn("TelemetryStore: insert usage evidence failed for \(evidence.id): \(err)")
         }
     }
 
@@ -587,9 +757,9 @@ final class TelemetryStore {
             UPDATE runs SET
                 session_id = ?, tab_id = ?, provider = ?, model = ?, cwd = ?, repo_path = ?,
                 started_at = ?, ended_at = ?, duration_ms = ?, exit_status = ?,
-                total_input_tokens = ?, total_cached_input_tokens = ?, total_output_tokens = ?,
-                total_reasoning_output_tokens = ?, cost_usd = ?, token_usage_source = ?,
-                token_usage_state = ?, cost_source = ?, cost_state = ?, turn_count = ?,
+                total_input_tokens = ?, total_cache_creation_input_tokens = ?, total_cache_read_input_tokens = ?,
+                total_cached_input_tokens = ?, total_output_tokens = ?, total_reasoning_output_tokens = ?,
+                cost_usd = ?, token_usage_source = ?, token_usage_state = ?, cost_source = ?, cost_state = ?, turn_count = ?,
                 tags = ?, metadata = ?, raw_transcript_ref = ?, parent_run_id = ?, error_message = ?
             WHERE run_id = ?
             """
@@ -607,21 +777,23 @@ final class TelemetryStore {
                 bindInt(stmt, 9, run.durationMs)
                 bindInt(stmt, 10, run.exitStatus)
                 bindInt(stmt, 11, run.totalInputTokens)
-                bindInt(stmt, 12, run.totalCachedInputTokens)
-                bindInt(stmt, 13, run.totalOutputTokens)
-                bindInt(stmt, 14, run.totalReasoningOutputTokens)
-                bindDouble(stmt, 15, run.costUSD)
-                bindText(stmt, 16, run.tokenUsageSource?.rawValue)
-                bindText(stmt, 17, run.tokenUsageState.rawValue)
-                bindText(stmt, 18, run.costSource?.rawValue)
-                bindText(stmt, 19, run.costState.rawValue)
-                bindInt(stmt, 20, run.turnCount)
-                bindText(stmt, 21, Self.encodeJSON(run.tags))
-                bindText(stmt, 22, Self.encodeJSON(run.metadata))
-                bindText(stmt, 23, run.rawTranscriptRef)
-                bindText(stmt, 24, run.parentRunID)
-                bindText(stmt, 25, run.errorMessage)
-                bindText(stmt, 26, run.id)
+                bindInt(stmt, 12, run.totalCacheCreationInputTokens)
+                bindInt(stmt, 13, run.totalCacheReadInputTokens)
+                bindInt(stmt, 14, run.totalCachedInputTokens)
+                bindInt(stmt, 15, run.totalOutputTokens)
+                bindInt(stmt, 16, run.totalReasoningOutputTokens)
+                bindDouble(stmt, 17, run.costUSD)
+                bindText(stmt, 18, run.tokenUsageSource?.rawValue)
+                bindText(stmt, 19, run.tokenUsageState.rawValue)
+                bindText(stmt, 20, run.costSource?.rawValue)
+                bindText(stmt, 21, run.costState.rawValue)
+                bindInt(stmt, 22, run.turnCount)
+                bindText(stmt, 23, Self.encodeJSON(run.tags))
+                bindText(stmt, 24, Self.encodeJSON(run.metadata))
+                bindText(stmt, 25, run.rawTranscriptRef)
+                bindText(stmt, 26, run.parentRunID)
+                bindText(stmt, 27, run.errorMessage)
+                bindText(stmt, 28, run.id)
                 sqlite3_step(stmt)
                 sqlite3_finalize(stmt)
             }
@@ -633,6 +805,8 @@ final class TelemetryStore {
                 _insertToolCall(call)
             }
 
+            _insertUsageEvidence(UsageEvidence.runSummary(run))
+
             sqlite3_exec(db, "COMMIT", nil, nil, nil)
         }
     }
@@ -643,6 +817,8 @@ final class TelemetryStore {
             let sql = """
             UPDATE runs
             SET total_input_tokens = NULL,
+                total_cache_creation_input_tokens = NULL,
+                total_cache_read_input_tokens = NULL,
                 total_cached_input_tokens = NULL,
                 total_output_tokens = NULL,
                 total_reasoning_output_tokens = NULL,
@@ -660,6 +836,10 @@ final class TelemetryStore {
             bindText(stmt, 1, reason)
             bindText(stmt, 2, runID)
             sqlite3_step(stmt)
+
+            if let refreshedRun = _getRun(runID) {
+                _insertUsageEvidence(UsageEvidence.runSummary(refreshedRun))
+            }
         }
     }
 
@@ -740,6 +920,79 @@ final class TelemetryStore {
             }
         }
         return events
+    }
+
+    func listUsageEvidence(
+        provider: String? = nil,
+        runID: String? = nil,
+        reconciliationKey: String? = nil,
+        limit: Int = 500
+    ) -> [UsageEvidence] {
+        queue.sync {
+            _listUsageEvidence(
+                provider: provider,
+                runID: runID,
+                reconciliationKey: reconciliationKey,
+                limit: limit
+            )
+        }
+    }
+
+    private func _listUsageEvidence(
+        provider: String?,
+        runID: String?,
+        reconciliationKey: String?,
+        limit: Int
+    ) -> [UsageEvidence] {
+        guard let db else { return [] }
+
+        var conditions: [String] = []
+        var bindValues: [String?] = []
+        if let provider {
+            conditions.append("provider = ?")
+            bindValues.append(provider.lowercased())
+        }
+        if let runID {
+            conditions.append("run_id = ?")
+            bindValues.append(runID)
+        }
+        if let reconciliationKey {
+            conditions.append("reconciliation_key = ?")
+            bindValues.append(reconciliationKey)
+        }
+
+        let whereClause = conditions.isEmpty ? "" : "WHERE " + conditions.joined(separator: " AND ")
+        let sql = """
+        SELECT * FROM usage_evidence
+        \(whereClause)
+        ORDER BY observed_at DESC
+        LIMIT ?
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        var index: Int32 = 1
+        for value in bindValues {
+            bindText(stmt, index, value)
+            index += 1
+        }
+        sqlite3_bind_int64(stmt, index, Int64(limit))
+
+        var evidence: [UsageEvidence] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let row = parseUsageEvidence(stmt) {
+                evidence.append(row)
+            }
+        }
+        return evidence
+    }
+
+    func reconcileUsageEvidence(provider: String? = nil, limit: Int = 2000) -> UsageReconciliationReport {
+        UsageReconciliationService.reconcile(
+            listUsageEvidence(provider: provider, limit: limit)
+        )
     }
 
     // MARK: - Read
@@ -917,7 +1170,7 @@ final class TelemetryStore {
                 if sqlite3_column_type(stmt, 5) != SQLITE_NULL,
                    let text = sqlite3_column_text(stmt, 5),
                    let date = formatter.date(from: String(cString: text)),
-                   (lastRunAt == nil || date > lastRunAt!) {
+                   lastRunAt == nil || date > lastRunAt! {
                     lastRunAt = date
                 }
             }
@@ -1360,6 +1613,8 @@ final class TelemetryStore {
             durationMs: intByName(stmt, "duration_ms"),
             exitStatus: intByName(stmt, "exit_status"),
             totalInputTokens: intByName(stmt, "total_input_tokens"),
+            totalCacheCreationInputTokens: intByName(stmt, "total_cache_creation_input_tokens"),
+            totalCacheReadInputTokens: intByName(stmt, "total_cache_read_input_tokens"),
             totalCachedInputTokens: intByName(stmt, "total_cached_input_tokens"),
             totalOutputTokens: intByName(stmt, "total_output_tokens"),
             totalReasoningOutputTokens: intByName(stmt, "total_reasoning_output_tokens"),
@@ -1392,6 +1647,8 @@ final class TelemetryStore {
             role: role,
             content: colByName(stmt, "content"),
             inputTokens: intByName(stmt, "input_tokens"),
+            cacheCreationInputTokens: intByName(stmt, "cache_creation_input_tokens"),
+            cacheReadInputTokens: intByName(stmt, "cache_read_input_tokens"),
             cachedInputTokens: intByName(stmt, "cached_input_tokens"),
             outputTokens: intByName(stmt, "output_tokens"),
             reasoningOutputTokens: intByName(stmt, "reasoning_output_tokens"),
@@ -1412,6 +1669,46 @@ final class TelemetryStore {
             status: ToolCallStatus(rawValue: colByName(stmt, "status") ?? "") ?? .success,
             durationMs: intByName(stmt, "duration_ms"),
             callIndex: intByName(stmt, "call_index") ?? 0
+        )
+    }
+
+    private func parseUsageEvidence(_ stmt: OpaquePointer?) -> UsageEvidence? {
+        guard let stmt,
+              let id = colByName(stmt, "evidence_id"),
+              let uniqueEventKey = colByName(stmt, "unique_event_key"),
+              let reconciliationKey = colByName(stmt, "reconciliation_key"),
+              let rawSourceKind = colByName(stmt, "source_kind"),
+              let sourceKind = UsageEvidenceSourceKind(rawValue: rawSourceKind),
+              let provider = colByName(stmt, "provider"),
+              let observedAtString = colByName(stmt, "observed_at"),
+              let observedAt = Self.isoDate(from: observedAtString)
+        else { return nil }
+
+        return UsageEvidence(
+            id: id,
+            uniqueEventKey: uniqueEventKey,
+            reconciliationKey: reconciliationKey,
+            sourceKind: sourceKind,
+            provider: provider,
+            model: colByName(stmt, "model"),
+            sessionID: colByName(stmt, "session_id"),
+            runID: colByName(stmt, "run_id"),
+            endpoint: colByName(stmt, "endpoint"),
+            projectPath: colByName(stmt, "project_path"),
+            inputTokens: intByName(stmt, "input_tokens"),
+            cacheCreationInputTokens: intByName(stmt, "cache_creation_input_tokens"),
+            cacheReadInputTokens: intByName(stmt, "cache_read_input_tokens"),
+            outputTokens: intByName(stmt, "output_tokens"),
+            reasoningOutputTokens: intByName(stmt, "reasoning_output_tokens"),
+            costUSD: doubleByName(stmt, "cost_usd"),
+            tokenUsageSource: colByName(stmt, "token_usage_source").flatMap(TokenUsageSource.init(rawValue:)),
+            tokenUsageState: colByName(stmt, "token_usage_state").flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
+            costSource: colByName(stmt, "cost_source").flatMap(CostSource.init(rawValue:)),
+            costState: colByName(stmt, "cost_state").flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
+            pricingVersion: colByName(stmt, "pricing_version"),
+            sourceRef: colByName(stmt, "source_ref"),
+            observedAt: observedAt,
+            metadata: Self.decodeJSON(colByName(stmt, "metadata")) ?? [:]
         )
     }
 

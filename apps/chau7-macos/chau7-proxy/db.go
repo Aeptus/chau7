@@ -15,15 +15,16 @@ type APICallRecord struct {
 	Provider                 Provider
 	Model                    string
 	Endpoint                 string
-	InputTokens              int
-	OutputTokens             int
-	CacheCreationInputTokens int
-	CacheReadInputTokens     int
-	ReasoningOutputTokens    int
+	InputTokens              *int
+	OutputTokens             *int
+	CacheCreationInputTokens *int
+	CacheReadInputTokens     *int
+	ReasoningOutputTokens    *int
 	LatencyMs                int64
 	TTFTMs                   int64 // Time-to-first-token (ms from request start to first response byte)
 	StatusCode               int
-	CostUSD                  float64
+	CostUSD                  *float64
+	PricingVersion           string
 	Timestamp                time.Time
 	ErrorMessage             string
 }
@@ -77,8 +78,8 @@ func (d *Database) InsertAPICall(record *APICallRecord) error {
 			input_tokens, output_tokens,
 			cache_creation_input_tokens, cache_read_input_tokens, reasoning_output_tokens,
 			latency_ms, ttft_ms, status_code,
-			cost_usd, timestamp, error_message
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			cost_usd, pricing_version, timestamp, error_message
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		record.SessionID,
 		string(record.Provider),
@@ -93,6 +94,7 @@ func (d *Database) InsertAPICall(record *APICallRecord) error {
 		record.TTFTMs,
 		record.StatusCode,
 		record.CostUSD,
+		record.PricingVersion,
 		record.Timestamp.UTC().Format(time.RFC3339),
 		record.ErrorMessage,
 	)
@@ -134,8 +136,10 @@ func (d *Database) GetRecentCalls(limit int) ([]APICallRecord, error) {
 	rows, err := d.db.Query(`
 		SELECT
 			session_id, provider, model, endpoint,
-			input_tokens, output_tokens, latency_ms, ttft_ms, status_code,
-			cost_usd, timestamp, error_message
+			input_tokens, output_tokens,
+			cache_creation_input_tokens, cache_read_input_tokens, reasoning_output_tokens,
+			latency_ms, ttft_ms, status_code,
+			cost_usd, pricing_version, timestamp, error_message
 		FROM api_calls
 		ORDER BY timestamp DESC
 		LIMIT ?
@@ -150,6 +154,13 @@ func (d *Database) GetRecentCalls(limit int) ([]APICallRecord, error) {
 		var r APICallRecord
 		var provider string
 		var timestamp string
+		var inputTokens sql.NullInt64
+		var outputTokens sql.NullInt64
+		var cacheCreationInputTokens sql.NullInt64
+		var cacheReadInputTokens sql.NullInt64
+		var reasoningOutputTokens sql.NullInt64
+		var costUSD sql.NullFloat64
+		var pricingVersion sql.NullString
 		var errorMsg sql.NullString
 
 		err := rows.Scan(
@@ -157,12 +168,16 @@ func (d *Database) GetRecentCalls(limit int) ([]APICallRecord, error) {
 			&provider,
 			&r.Model,
 			&r.Endpoint,
-			&r.InputTokens,
-			&r.OutputTokens,
+			&inputTokens,
+			&outputTokens,
+			&cacheCreationInputTokens,
+			&cacheReadInputTokens,
+			&reasoningOutputTokens,
 			&r.LatencyMs,
 			&r.TTFTMs,
 			&r.StatusCode,
-			&r.CostUSD,
+			&costUSD,
+			&pricingVersion,
 			&timestamp,
 			&errorMsg,
 		)
@@ -172,6 +187,33 @@ func (d *Database) GetRecentCalls(limit int) ([]APICallRecord, error) {
 
 		r.Provider = Provider(provider)
 		r.Timestamp, _ = time.Parse(time.RFC3339, timestamp)
+		if inputTokens.Valid {
+			value := int(inputTokens.Int64)
+			r.InputTokens = &value
+		}
+		if outputTokens.Valid {
+			value := int(outputTokens.Int64)
+			r.OutputTokens = &value
+		}
+		if cacheCreationInputTokens.Valid {
+			value := int(cacheCreationInputTokens.Int64)
+			r.CacheCreationInputTokens = &value
+		}
+		if cacheReadInputTokens.Valid {
+			value := int(cacheReadInputTokens.Int64)
+			r.CacheReadInputTokens = &value
+		}
+		if reasoningOutputTokens.Valid {
+			value := int(reasoningOutputTokens.Int64)
+			r.ReasoningOutputTokens = &value
+		}
+		if costUSD.Valid {
+			value := costUSD.Float64
+			r.CostUSD = &value
+		}
+		if pricingVersion.Valid {
+			r.PricingVersion = pricingVersion.String
+		}
 		if errorMsg.Valid {
 			r.ErrorMessage = errorMsg.String
 		}
@@ -191,6 +233,30 @@ type DailyStats struct {
 	AvgLatencyMs      float64
 }
 
+func IntValue(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func IntPointer(value int) *int {
+	v := value
+	return &v
+}
+
+func FloatValue(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func FloatPointer(value float64) *float64 {
+	v := value
+	return &v
+}
+
 // initSchema creates the database schema
 func initSchema(db *sql.DB) error {
 	// Create tables first (without indexes that depend on migrated columns).
@@ -203,12 +269,13 @@ func initSchema(db *sql.DB) error {
 			provider TEXT NOT NULL,
 			model TEXT,
 			endpoint TEXT NOT NULL,
-			input_tokens INTEGER DEFAULT 0,
-			output_tokens INTEGER DEFAULT 0,
+			input_tokens INTEGER,
+			output_tokens INTEGER,
 			latency_ms INTEGER,
 			ttft_ms INTEGER DEFAULT 0,
 			status_code INTEGER,
-			cost_usd REAL DEFAULT 0,
+			cost_usd REAL,
+			pricing_version TEXT,
 			timestamp TEXT DEFAULT (datetime('now')),
 			error_message TEXT,
 			task_id TEXT,
@@ -325,6 +392,7 @@ func runMigrations(db *sql.DB) error {
 	hasTaskID := false
 	hasCacheTokens := false
 	hasTTFT := false
+	hasPricingVersion := false
 	for rows.Next() {
 		var cid int
 		var name, ctype string
@@ -340,6 +408,8 @@ func runMigrations(db *sql.DB) error {
 			hasCacheTokens = true
 		case "ttft_ms":
 			hasTTFT = true
+		case "pricing_version":
+			hasPricingVersion = true
 		}
 	}
 
@@ -356,9 +426,9 @@ func runMigrations(db *sql.DB) error {
 
 	if !hasCacheTokens {
 		cacheTokenMigrations := []string{
-			"ALTER TABLE api_calls ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0",
-			"ALTER TABLE api_calls ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0",
-			"ALTER TABLE api_calls ADD COLUMN reasoning_output_tokens INTEGER DEFAULT 0",
+			"ALTER TABLE api_calls ADD COLUMN cache_creation_input_tokens INTEGER",
+			"ALTER TABLE api_calls ADD COLUMN cache_read_input_tokens INTEGER",
+			"ALTER TABLE api_calls ADD COLUMN reasoning_output_tokens INTEGER",
 		}
 		for _, m := range cacheTokenMigrations {
 			_, _ = db.Exec(m) // Ignore errors for columns that may already exist
@@ -367,6 +437,10 @@ func runMigrations(db *sql.DB) error {
 
 	if !hasTTFT {
 		_, _ = db.Exec("ALTER TABLE api_calls ADD COLUMN ttft_ms INTEGER DEFAULT 0")
+	}
+
+	if !hasPricingVersion {
+		_, _ = db.Exec("ALTER TABLE api_calls ADD COLUMN pricing_version TEXT")
 	}
 
 	// v1.2 migrations: Add baseline fields to api_calls
@@ -568,8 +642,8 @@ func (d *Database) InsertAPICallWithTask(record *APICallRecord, taskID, tabID, p
 			input_tokens, output_tokens,
 			cache_creation_input_tokens, cache_read_input_tokens, reasoning_output_tokens,
 			latency_ms, ttft_ms, status_code,
-			cost_usd, timestamp, error_message, task_id, tab_id, project_path
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			cost_usd, pricing_version, timestamp, error_message, task_id, tab_id, project_path
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		record.SessionID,
 		string(record.Provider),
@@ -584,6 +658,7 @@ func (d *Database) InsertAPICallWithTask(record *APICallRecord, taskID, tabID, p
 		record.TTFTMs,
 		record.StatusCode,
 		record.CostUSD,
+		record.PricingVersion,
 		record.Timestamp.UTC().Format(time.RFC3339),
 		record.ErrorMessage,
 		taskID,
@@ -705,11 +780,13 @@ func (d *Database) InsertAPICallWithBaseline(record *APICallRecord, taskID, tabI
 	result, err := d.db.Exec(`
 		INSERT INTO api_calls (
 			session_id, provider, model, endpoint,
-			input_tokens, output_tokens, latency_ms, ttft_ms, status_code,
-			cost_usd, timestamp, error_message, task_id, tab_id, project_path,
+			input_tokens, output_tokens,
+			cache_creation_input_tokens, cache_read_input_tokens, reasoning_output_tokens,
+			latency_ms, ttft_ms, status_code,
+			cost_usd, pricing_version, timestamp, error_message, task_id, tab_id, project_path,
 			baseline_input_tokens, baseline_output_tokens, baseline_total_tokens,
 			baseline_method, baseline_version, tokens_saved
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		record.SessionID,
 		string(record.Provider),
@@ -717,10 +794,14 @@ func (d *Database) InsertAPICallWithBaseline(record *APICallRecord, taskID, tabI
 		record.Endpoint,
 		record.InputTokens,
 		record.OutputTokens,
+		record.CacheCreationInputTokens,
+		record.CacheReadInputTokens,
+		record.ReasoningOutputTokens,
 		record.LatencyMs,
 		record.TTFTMs,
 		record.StatusCode,
 		record.CostUSD,
+		record.PricingVersion,
 		record.Timestamp.UTC().Format(time.RFC3339),
 		record.ErrorMessage,
 		taskID,

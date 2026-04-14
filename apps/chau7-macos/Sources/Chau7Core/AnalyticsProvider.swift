@@ -17,7 +17,7 @@ public enum AnalyticsProvider {
         "meta": "Meta",
         "mistral": "Mistral",
         "deepseek": "DeepSeek",
-        "unknown": "Unknown",
+        "unknown": "Unknown"
     ]
 
     /// Returns the stable analytics key for a raw provider string.

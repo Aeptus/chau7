@@ -18,7 +18,7 @@ final class ClaudeCodeContentProvider: RunContentProvider {
         return lower.contains("claude") || lower == "anthropic"
     }
 
-    func extractContent(runID: String, sessionID: String?, cwd: String, startedAt: Date) -> ExtractedRunContent? {
+    func extractContent(runID: String, sessionID: String?, cwd: String, startedAt: Date, endedAt: Date?) -> ExtractedRunContent? {
         guard let sessionID, !sessionID.isEmpty else { return nil }
 
         // Resolve the project directory hash from cwd
@@ -47,7 +47,13 @@ final class ClaudeCodeContentProvider: RunContentProvider {
         for file in jsonlFiles.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             guard let data = try? Data(contentsOf: file),
                   let text = String(data: data, encoding: .utf8) else { continue }
-            ClaudeTranscriptUsageParser.ingest(jsonl: text, runID: runID, startedAt: startedAt, state: &state)
+            ClaudeTranscriptUsageParser.ingest(
+                jsonl: text,
+                runID: runID,
+                startedAt: startedAt,
+                endedAt: endedAt,
+                state: &state
+            )
         }
 
         guard !state.turns.isEmpty else { return nil }
@@ -57,6 +63,8 @@ final class ClaudeCodeContentProvider: RunContentProvider {
             model: state.model,
             turns: state.turns,
             totalInputTokens: state.tokenUsage.inputTokens > 0 ? state.tokenUsage.inputTokens : nil,
+            totalCacheCreationInputTokens: state.tokenUsage.cacheCreationInputTokens > 0 ? state.tokenUsage.cacheCreationInputTokens : nil,
+            totalCacheReadInputTokens: state.tokenUsage.cacheReadInputTokens > 0 ? state.tokenUsage.cacheReadInputTokens : nil,
             totalCachedInputTokens: state.tokenUsage.cachedInputTokens > 0 ? state.tokenUsage.cachedInputTokens : nil,
             totalOutputTokens: state.tokenUsage.outputTokens > 0 ? state.tokenUsage.outputTokens : nil,
             totalReasoningOutputTokens: state.tokenUsage.reasoningOutputTokens > 0 ? state.tokenUsage.reasoningOutputTokens : nil,

@@ -29,6 +29,7 @@ public enum ClaudeTranscriptUsageParser {
         jsonl text: String,
         runID: String,
         startedAt: Date,
+        endedAt: Date? = nil,
         state: inout State
     ) {
         for line in text.components(separatedBy: .newlines) where !line.isEmpty {
@@ -37,8 +38,13 @@ public enum ClaudeTranscriptUsageParser {
                   let message = obj["message"] as? [String: Any]
             else { continue }
 
-            if let timestamp = parseDate(obj["timestamp"] as? String), timestamp < startedAt {
-                continue
+            if let timestamp = parseDate(obj["timestamp"] as? String) {
+                if timestamp < startedAt {
+                    continue
+                }
+                if let endedAt, timestamp > endedAt {
+                    continue
+                }
             }
 
             let roleStr = (message["role"] as? String) ?? (obj["type"] as? String) ?? ""
@@ -63,9 +69,13 @@ public enum ClaudeTranscriptUsageParser {
 
             var turnUsage = TokenUsage()
             if shouldCountUsage, let usage = message["usage"] as? [String: Any] {
+                let cacheCreationTokens = (usage["cache_creation_input_tokens"] as? Int) ?? 0
+                let cacheReadTokens = (usage["cache_read_input_tokens"] as? Int) ?? 0
                 turnUsage = TokenUsage(
                     inputTokens: (usage["input_tokens"] as? Int) ?? 0,
-                    cachedInputTokens: ((usage["cache_creation_input_tokens"] as? Int) ?? 0) + ((usage["cache_read_input_tokens"] as? Int) ?? 0),
+                    cacheCreationInputTokens: cacheCreationTokens,
+                    cacheReadInputTokens: cacheReadTokens,
+                    cachedInputTokens: cacheCreationTokens + cacheReadTokens,
                     outputTokens: (usage["output_tokens"] as? Int) ?? 0,
                     reasoningOutputTokens: (usage["reasoning_output_tokens"] as? Int) ?? 0
                 )
@@ -126,6 +136,8 @@ public enum ClaudeTranscriptUsageParser {
                     role: role,
                     content: contentText.isEmpty ? nil : contentText,
                     inputTokens: shouldCountUsage ? turnUsage.inputTokens : nil,
+                    cacheCreationInputTokens: shouldCountUsage ? turnUsage.cacheCreationInputTokens : nil,
+                    cacheReadInputTokens: shouldCountUsage ? turnUsage.cacheReadInputTokens : nil,
                     cachedInputTokens: shouldCountUsage ? turnUsage.cachedInputTokens : nil,
                     outputTokens: shouldCountUsage ? turnUsage.outputTokens : nil,
                     reasoningOutputTokens: shouldCountUsage ? turnUsage.reasoningOutputTokens : nil,

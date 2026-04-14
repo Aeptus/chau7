@@ -22,26 +22,31 @@ public struct ModelPricing: Codable, Equatable, Sendable {
     }
 
     public func estimatedCostUSD(for usage: TokenUsage) -> Double {
-        (
-            Double(usage.inputTokens) * inputUSDPerMTok
-                + Double(usage.cachedInputTokens) * cacheReadUSDPerMTok
-                + Double(usage.outputTokens) * outputUSDPerMTok
-                + Double(usage.reasoningOutputTokens) * reasoningOutputUSDPerMTok
-        ) / 1_000_000
+        let uncategorizedCachedTokens = usage.uncategorizedCachedInputTokens
+        let inputCost = Double(usage.inputTokens) * inputUSDPerMTok
+        let cacheWriteCost = Double(usage.cacheCreationInputTokens) * (cacheWriteUSDPerMTok ?? inputUSDPerMTok)
+        let cacheReadCost = Double(usage.cacheReadInputTokens) * cacheReadUSDPerMTok
+        let uncategorizedCacheCost = Double(uncategorizedCachedTokens) * cacheReadUSDPerMTok
+        let outputCost = Double(usage.outputTokens) * outputUSDPerMTok
+        let reasoningCost = Double(usage.reasoningOutputTokens) * reasoningOutputUSDPerMTok
+        let totalCost = inputCost + cacheWriteCost + cacheReadCost + uncategorizedCacheCost + outputCost + reasoningCost
+        return totalCost / 1_000_000
     }
 
     public func estimatedCostUSD(for turnStats: TurnStats) -> Double {
-        (
-            Double(turnStats.inputTokens) * inputUSDPerMTok
-                + Double(turnStats.cacheCreationTokens) * (cacheWriteUSDPerMTok ?? inputUSDPerMTok)
-                + Double(turnStats.cacheReadTokens) * cacheReadUSDPerMTok
-                + Double(turnStats.outputTokens) * outputUSDPerMTok
-                + Double(turnStats.reasoningOutputTokens) * reasoningOutputUSDPerMTok
-        ) / 1_000_000
+        let inputCost = Double(turnStats.inputTokens) * inputUSDPerMTok
+        let cacheWriteCost = Double(turnStats.cacheCreationTokens) * (cacheWriteUSDPerMTok ?? inputUSDPerMTok)
+        let cacheReadCost = Double(turnStats.cacheReadTokens) * cacheReadUSDPerMTok
+        let outputCost = Double(turnStats.outputTokens) * outputUSDPerMTok
+        let reasoningCost = Double(turnStats.reasoningOutputTokens) * reasoningOutputUSDPerMTok
+        let totalCost = inputCost + cacheWriteCost + cacheReadCost + outputCost + reasoningCost
+        return totalCost / 1_000_000
     }
 }
 
 public enum ModelPricingTable {
+    public static let version = "2026-04-13"
+
     private struct Entry: Sendable {
         let aliases: [String]
         let pricing: ModelPricing

@@ -36,6 +36,19 @@ final class ModelPricingTableTests: XCTestCase {
         XCTAssertEqual(cost, 1.35, accuracy: 0.0001)
     }
 
+    func testEstimatedCostForAggregateUsageUsesCacheWriteWhenBreakdownExists() throws {
+        let usage = TokenUsage(
+            inputTokens: 1_000_000,
+            cacheCreationInputTokens: 100_000,
+            cacheReadInputTokens: 300_000,
+            cachedInputTokens: 400_000,
+            outputTokens: 200_000,
+            reasoningOutputTokens: 50000
+        )
+        let cost = try XCTUnwrap(ModelPricingTable.estimatedCostUSD(for: usage, modelID: "claude-sonnet-4"))
+        XCTAssertEqual(cost, 7.215, accuracy: 0.0001)
+    }
+
     func testUnknownModelReturnsNil() {
         XCTAssertNil(ModelPricingTable.pricing(for: "unknown-model"))
         XCTAssertNil(ModelPricingTable.estimatedCostUSD(for: TokenUsage(inputTokens: 100), modelID: "unknown-model"))

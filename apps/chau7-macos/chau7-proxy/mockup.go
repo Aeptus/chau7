@@ -109,18 +109,19 @@ func (c *MockupClient) SendAPICallEvent(record *APICallRecord, taskID string, ba
 	}
 
 	data := map[string]interface{}{
-		"call_id":       fmt.Sprintf("call_%d", time.Now().UnixNano()),
-		"provider":      string(record.Provider),
-		"model":         record.Model,
-		"endpoint":      record.Endpoint,
-		"input_tokens":  record.InputTokens,
-		"output_tokens": record.OutputTokens,
-		"total_tokens":  record.InputTokens + record.OutputTokens,
-		"latency_ms":    record.LatencyMs,
-		"status_code":   record.StatusCode,
-		"cost_usd":      record.CostUSD,
-		"session_id":    record.SessionID,
-		"task_id":       taskID,
+		"call_id":         fmt.Sprintf("call_%d", time.Now().UnixNano()),
+		"provider":        string(record.Provider),
+		"model":           record.Model,
+		"endpoint":        record.Endpoint,
+		"input_tokens":    record.InputTokens,
+		"output_tokens":   record.OutputTokens,
+		"total_tokens":    IntValue(record.InputTokens) + IntValue(record.OutputTokens),
+		"latency_ms":      record.LatencyMs,
+		"status_code":     record.StatusCode,
+		"cost_usd":        record.CostUSD,
+		"pricing_version": record.PricingVersion,
+		"session_id":      record.SessionID,
+		"task_id":         taskID,
 	}
 
 	// Add baseline data if available

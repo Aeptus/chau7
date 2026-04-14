@@ -23,4 +23,26 @@ final class CodexRolloutParserTests: XCTestCase {
         XCTAssertEqual(parsed.tokenUsage.outputTokens, 30)
         XCTAssertEqual(parsed.tokenUsage.reasoningOutputTokens, 4)
     }
+
+    func testParse_excludesEventsAfterRunEnd() {
+        let startedAt = CodexRolloutParser.parseDate("2026-04-01T10:00:00.000Z")!
+        let endedAt = CodexRolloutParser.parseDate("2026-04-01T10:00:04.500Z")!
+        // swiftlint:disable line_length
+        let jsonl = """
+        {"timestamp":"2026-04-01T10:00:01.000Z","type":"turn_context","payload":{"model":"gpt-5.4"}}
+        {"timestamp":"2026-04-01T10:00:02.000Z","type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"fix"}]}}
+        {"timestamp":"2026-04-01T10:00:03.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":40,"cached_input_tokens":4,"output_tokens":10,"reasoning_output_tokens":1},"total_token_usage":{"input_tokens":40,"cached_input_tokens":4,"output_tokens":10,"reasoning_output_tokens":1}}}}
+        {"timestamp":"2026-04-01T10:00:05.000Z","type":"response_item","payload":{"role":"assistant","content":[{"type":"output_text","text":"late"}]}}
+        {"timestamp":"2026-04-01T10:00:06.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":4000,"cached_input_tokens":400,"output_tokens":1000,"reasoning_output_tokens":100},"total_token_usage":{"input_tokens":4040,"cached_input_tokens":404,"output_tokens":1010,"reasoning_output_tokens":101}}}}
+        """
+        // swiftlint:enable line_length
+
+        let parsed = CodexRolloutParser.parse(jsonl: jsonl, runID: "run-2", startedAt: startedAt, endedAt: endedAt)
+
+        XCTAssertEqual(parsed.turns.count, 1)
+        XCTAssertEqual(parsed.tokenUsage.inputTokens, 40)
+        XCTAssertEqual(parsed.tokenUsage.cachedInputTokens, 4)
+        XCTAssertEqual(parsed.tokenUsage.outputTokens, 10)
+        XCTAssertEqual(parsed.tokenUsage.reasoningOutputTokens, 1)
+    }
 }

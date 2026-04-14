@@ -35,7 +35,8 @@ public enum CodexRolloutParser {
     public static func parse(
         jsonl text: String,
         runID: String,
-        startedAt: Date
+        startedAt: Date,
+        endedAt: Date? = nil
     ) -> ParseResult {
         var model: String?
         var turns: [TelemetryTurn] = []
@@ -52,7 +53,13 @@ public enum CodexRolloutParser {
             let type = obj["type"] as? String ?? ""
             let payload = obj["payload"] as? [String: Any] ?? [:]
             let timestamp = parseDate(obj["timestamp"] as? String)
-            let isInRunWindow = timestamp == nil || timestamp! >= startedAt
+            let isInRunWindow: Bool
+            if let timestamp {
+                let isBeforeEnd = endedAt.map { timestamp <= $0 } ?? true
+                isInRunWindow = timestamp >= startedAt && isBeforeEnd
+            } else {
+                isInRunWindow = true
+            }
 
             switch type {
             case "turn_context":

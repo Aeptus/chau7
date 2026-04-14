@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Darwin
 
 @main
 struct Chau7App: App {
@@ -10,6 +11,10 @@ struct Chau7App: App {
     private static var initCount = 0
 
     init() {
+        if Self.handleCLIIfNeeded() {
+            Darwin.exit(0)
+        }
+
         Self.initCount += 1
         if Self.initCount > 1 {
             Log.warn("Chau7App.init() called \(Self.initCount) times — SwiftUI is recreating the App struct (pid=\(ProcessInfo.processInfo.processIdentifier))")
@@ -68,6 +73,24 @@ struct Chau7App: App {
         NSApplication.shared.setActivationPolicy(policy)
         appDelegate.configureModels(model: model, overlayModel: overlayModel)
         RemoteControlManager.shared.configure(overlayModel: overlayModel)
+    }
+
+    private static func handleCLIIfNeeded() -> Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--telemetry-repair") else { return false }
+
+        let report = TelemetryRepairService.shared.rebuildTranscriptDerivedRuns(limit: 100_000)
+        let stdout = FileHandle.standardOutput
+        let lines = [
+            "telemetry_repair inspected=\(report.inspectedRuns)",
+            "rebuilt=\(report.rebuiltRuns)",
+            "invalidated=\(report.invalidatedRuns)",
+            "skipped=\(report.skippedRuns)"
+        ]
+        if let data = lines.joined(separator: "\n").appending("\n").data(using: .utf8) {
+            try? stdout.write(contentsOf: data)
+        }
+        return true
     }
 
     var body: some Scene {

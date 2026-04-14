@@ -111,11 +111,11 @@ func TestMockupClient_SendAPICallEvent(t *testing.T) {
 		Provider:     ProviderAnthropic,
 		Model:        "claude-sonnet-4",
 		Endpoint:     "/v1/messages",
-		InputTokens:  1000,
-		OutputTokens: 500,
+		InputTokens:  IntPointer(1000),
+		OutputTokens: IntPointer(500),
 		LatencyMs:    250,
 		StatusCode:   200,
-		CostUSD:      0.0075,
+		CostUSD:      FloatPointer(0.0075),
 		Timestamp:    time.Now(),
 	}
 

@@ -16,6 +16,7 @@ final class TelemetryRecorder {
     /// Maps run ID → run record (for in-progress updates)
     private var inProgressRuns: [String: TelemetryRun] = [:]
     private let lock = NSLock()
+    private let repairQueue = DispatchQueue(label: "com.chau7.telemetry.repair", qos: .utility)
 
     private init() {
         self.providers = [
@@ -109,7 +110,8 @@ final class TelemetryRecorder {
                 runID: runID,
                 sessionID: run.sessionID,
                 cwd: run.cwd,
-                startedAt: run.startedAt
+                startedAt: run.startedAt,
+                endedAt: run.endedAt
             ) {
                 let normalized = TelemetryMetricsSanitizer.sanitize(content, provider: run.provider)
                 if let warning = normalized.warning {
@@ -119,6 +121,8 @@ final class TelemetryRecorder {
                 let finalContent = normalized.content
                 run.model = finalContent.model ?? run.model
                 run.totalInputTokens = finalContent.totalInputTokens
+                run.totalCacheCreationInputTokens = finalContent.totalCacheCreationInputTokens
+                run.totalCacheReadInputTokens = finalContent.totalCacheReadInputTokens
                 run.totalCachedInputTokens = finalContent.totalCachedInputTokens
                 run.totalOutputTokens = finalContent.totalOutputTokens
                 run.totalReasoningOutputTokens = finalContent.totalReasoningOutputTokens
@@ -186,6 +190,7 @@ final class TelemetryRecorder {
         // Atomic: UPDATE the run row + INSERT turns + INSERT tool calls in one transaction.
         // This avoids the INSERT OR REPLACE cascade-delete problem.
         store.finalizeRun(run, turns: turns, toolCalls: toolCalls)
+        scheduleTranscriptRepairIfNeeded(for: run)
         removeLiveRun(runID: run.id)
         Log.info("TelemetryRecorder: run ended \(runID) exit=\(exitStatus ?? -1) duration=\(run.durationMs ?? 0)ms turns=\(run.turnCount)")
     }
@@ -285,6 +290,8 @@ final class TelemetryRecorder {
         }
         run.model = model ?? run.model
         run.totalInputTokens = tokenUsage.inputTokens > 0 ? tokenUsage.inputTokens : nil
+        run.totalCacheCreationInputTokens = tokenUsage.cacheCreationInputTokens > 0 ? tokenUsage.cacheCreationInputTokens : nil
+        run.totalCacheReadInputTokens = tokenUsage.cacheReadInputTokens > 0 ? tokenUsage.cacheReadInputTokens : nil
         run.totalCachedInputTokens = tokenUsage.cachedInputTokens > 0 ? tokenUsage.cachedInputTokens : nil
         run.totalOutputTokens = tokenUsage.outputTokens > 0 ? tokenUsage.outputTokens : nil
         run.totalReasoningOutputTokens = tokenUsage.reasoningOutputTokens > 0 ? tokenUsage.reasoningOutputTokens : nil
@@ -371,6 +378,23 @@ final class TelemetryRecorder {
     private func removeLiveRun(runID: String) {
         DispatchQueue.main.async {
             TelemetryRunLiveStore.shared.remove(runID: runID)
+        }
+    }
+
+    private func scheduleTranscriptRepairIfNeeded(for run: TelemetryRun) {
+        guard TelemetryRepairService.needsTranscriptRepair(run) else { return }
+        for delaySeconds in [2, 10, 60] {
+            repairQueue.asyncAfter(deadline: .now() + .seconds(delaySeconds)) {
+                let result = TelemetryRepairService.shared.rebuildRunIfNeeded(runID: run.id)
+                switch result {
+                case .rebuilt:
+                    Log.info("TelemetryRecorder: repaired transcript-derived metrics for run \(run.id) after \(delaySeconds)s")
+                case .invalidated:
+                    Log.warn("TelemetryRecorder: transcript repair invalidated run \(run.id) after \(delaySeconds)s")
+                case .skipped:
+                    break
+                }
+            }
         }
     }
 }

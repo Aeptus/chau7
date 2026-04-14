@@ -17,19 +17,44 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
     public let provider: Provider
     public let model: String
     public let endpoint: String
-    public let inputTokens: Int
-    public let outputTokens: Int
-    public let cacheCreationInputTokens: Int
-    public let cacheReadInputTokens: Int
-    public let reasoningOutputTokens: Int
+    public let observedInputTokens: Int?
+    public let observedOutputTokens: Int?
+    public let observedCacheCreationInputTokens: Int?
+    public let observedCacheReadInputTokens: Int?
+    public let observedReasoningOutputTokens: Int?
     public let latencyMs: Int
     public let statusCode: Int
-    public let costUSD: Double
+    public let observedCostUSD: Double?
+    public let pricingVersion: String?
     public let timestamp: Date
     public let errorMessage: String?
     public let projectPath: String?
 
     // MARK: - Computed Properties
+
+    public var inputTokens: Int {
+        observedInputTokens ?? 0
+    }
+
+    public var outputTokens: Int {
+        observedOutputTokens ?? 0
+    }
+
+    public var cacheCreationInputTokens: Int {
+        observedCacheCreationInputTokens ?? 0
+    }
+
+    public var cacheReadInputTokens: Int {
+        observedCacheReadInputTokens ?? 0
+    }
+
+    public var reasoningOutputTokens: Int {
+        observedReasoningOutputTokens ?? 0
+    }
+
+    public var costUSD: Double {
+        observedCostUSD ?? 0
+    }
 
     public var totalTokens: Int {
         inputTokens + outputTokens
@@ -43,6 +68,8 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
     public var tokenUsage: TokenUsage {
         TokenUsage(
             inputTokens: inputTokens,
+            cacheCreationInputTokens: cacheCreationInputTokens,
+            cacheReadInputTokens: cacheReadInputTokens,
             cachedInputTokens: cacheCreationInputTokens + cacheReadInputTokens,
             outputTokens: outputTokens,
             reasoningOutputTokens: reasoningOutputTokens
@@ -94,14 +121,15 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
         provider: Provider,
         model: String,
         endpoint: String,
-        inputTokens: Int,
-        outputTokens: Int,
-        cacheCreationInputTokens: Int = 0,
-        cacheReadInputTokens: Int = 0,
-        reasoningOutputTokens: Int = 0,
+        inputTokens: Int? = nil,
+        outputTokens: Int? = nil,
+        cacheCreationInputTokens: Int? = nil,
+        cacheReadInputTokens: Int? = nil,
+        reasoningOutputTokens: Int? = nil,
         latencyMs: Int,
         statusCode: Int,
-        costUSD: Double,
+        costUSD: Double? = nil,
+        pricingVersion: String? = nil,
         timestamp: Date = Date(),
         errorMessage: String? = nil,
         projectPath: String? = nil
@@ -111,14 +139,15 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
         self.provider = provider
         self.model = model
         self.endpoint = endpoint
-        self.inputTokens = inputTokens
-        self.outputTokens = outputTokens
-        self.cacheCreationInputTokens = cacheCreationInputTokens
-        self.cacheReadInputTokens = cacheReadInputTokens
-        self.reasoningOutputTokens = reasoningOutputTokens
+        self.observedInputTokens = inputTokens
+        self.observedOutputTokens = outputTokens
+        self.observedCacheCreationInputTokens = cacheCreationInputTokens
+        self.observedCacheReadInputTokens = cacheReadInputTokens
+        self.observedReasoningOutputTokens = reasoningOutputTokens
         self.latencyMs = latencyMs
         self.statusCode = statusCode
-        self.costUSD = costUSD
+        self.observedCostUSD = costUSD
+        self.pricingVersion = pricingVersion
         self.timestamp = timestamp
         self.errorMessage = errorMessage
         self.projectPath = projectPath

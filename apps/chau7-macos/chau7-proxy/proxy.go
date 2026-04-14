@@ -181,12 +181,22 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Calculate cost (includes cache and reasoning token pricing)
-	cost := CalculateFullCostForCall(provider, model, respMeta)
+	usagePresent := respMeta.InputTokens > 0 ||
+		respMeta.OutputTokens > 0 ||
+		respMeta.CacheCreationInputTokens > 0 ||
+		respMeta.CacheReadInputTokens > 0 ||
+		respMeta.ReasoningOutputTokens > 0
+
+	// Calculate cost (includes cache and reasoning token pricing) only when usage is known.
+	var cost *float64
+	if usagePresent {
+		calculatedCost := CalculateFullCostForCall(provider, model, respMeta)
+		cost = FloatPointer(calculatedCost)
+	}
 
 	// v1.2: Calculate baseline estimate
 	var baseline *BaselineEstimate
-	if p.baseline != nil && resp.StatusCode == 200 {
+	if p.baseline != nil && resp.StatusCode == 200 && usagePresent {
 		// Extract context pack ID from headers if present
 		contextPackID := r.Header.Get("X-Chau7-Context-Pack")
 
@@ -218,16 +228,24 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Provider:                 provider,
 		Model:                    model,
 		Endpoint:                 r.URL.Path,
-		InputTokens:              respMeta.InputTokens,
-		OutputTokens:             respMeta.OutputTokens,
-		CacheCreationInputTokens: respMeta.CacheCreationInputTokens,
-		CacheReadInputTokens:     respMeta.CacheReadInputTokens,
-		ReasoningOutputTokens:    respMeta.ReasoningOutputTokens,
+		InputTokens:              nil,
+		OutputTokens:             nil,
+		CacheCreationInputTokens: nil,
+		CacheReadInputTokens:     nil,
+		ReasoningOutputTokens:    nil,
 		LatencyMs:                latencyMs,
 		TTFTMs:                   ttftMs,
 		StatusCode:               resp.StatusCode,
 		CostUSD:                  cost,
+		PricingVersion:           PricingTableVersion,
 		Timestamp:                startTime,
+	}
+	if usagePresent {
+		record.InputTokens = IntPointer(respMeta.InputTokens)
+		record.OutputTokens = IntPointer(respMeta.OutputTokens)
+		record.CacheCreationInputTokens = IntPointer(respMeta.CacheCreationInputTokens)
+		record.CacheReadInputTokens = IntPointer(respMeta.CacheReadInputTokens)
+		record.ReasoningOutputTokens = IntPointer(respMeta.ReasoningOutputTokens)
 	}
 
 	// Log to database with task correlation and baseline (v1.2)
@@ -277,7 +295,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("[INFO] %s %s: %d | %s | in:%d out:%d | %dms (ttft:%dms) | $%.4f | task:%s%s%s",
 		r.Method, r.URL.Path, resp.StatusCode, model,
-		respMeta.InputTokens, respMeta.OutputTokens, latencyMs, ttftMs, cost, actualTaskID, cacheInfo, savedInfo)
+		respMeta.InputTokens, respMeta.OutputTokens, latencyMs, ttftMs, FloatValue(cost), actualTaskID, cacheInfo, savedInfo)
 
 	_ = bytesWritten // Silence unused variable warning
 }

@@ -1,8 +1,12 @@
 import Foundation
 
 public enum TelemetryMetricsSanitizer {
-    private static let maxSingleFieldTokens = 100_000_000
-    private static let maxBillableTokens = 150_000_000
+    // Long-running local coding sessions can legitimately accumulate hundreds of
+    // millions of billable tokens, especially on cached transcript replays.
+    // Keep the guardrails high enough to reject obvious parser explosions without
+    // invalidating real heavy sessions.
+    private static let maxSingleFieldTokens = 1_000_000_000
+    private static let maxBillableTokens = 2_000_000_000
 
     public static func sanitize(
         _ content: ExtractedRunContent,
@@ -12,6 +16,8 @@ public enum TelemetryMetricsSanitizer {
 
         let usage = TokenUsage(
             inputTokens: sanitized.totalInputTokens ?? 0,
+            cacheCreationInputTokens: sanitized.totalCacheCreationInputTokens ?? 0,
+            cacheReadInputTokens: sanitized.totalCacheReadInputTokens ?? 0,
             cachedInputTokens: sanitized.totalCachedInputTokens ?? 0,
             outputTokens: sanitized.totalOutputTokens ?? 0,
             reasoningOutputTokens: sanitized.totalReasoningOutputTokens ?? 0
@@ -19,12 +25,16 @@ public enum TelemetryMetricsSanitizer {
 
         if !usage.hasAnyTokens {
             sanitized.totalInputTokens = nil
+            sanitized.totalCacheCreationInputTokens = nil
+            sanitized.totalCacheReadInputTokens = nil
             sanitized.totalCachedInputTokens = nil
             sanitized.totalOutputTokens = nil
             sanitized.totalReasoningOutputTokens = nil
             sanitized.tokenUsageState = .missing
         } else if isImplausible(usage) {
             sanitized.totalInputTokens = nil
+            sanitized.totalCacheCreationInputTokens = nil
+            sanitized.totalCacheReadInputTokens = nil
             sanitized.totalCachedInputTokens = nil
             sanitized.totalOutputTokens = nil
             sanitized.totalReasoningOutputTokens = nil
@@ -48,7 +58,9 @@ public enum TelemetryMetricsSanitizer {
 
     private static func isImplausible(_ usage: TokenUsage) -> Bool {
         if usage.inputTokens > maxSingleFieldTokens { return true }
-        if usage.cachedInputTokens > maxSingleFieldTokens { return true }
+        if usage.cacheCreationInputTokens > maxSingleFieldTokens { return true }
+        if usage.cacheReadInputTokens > maxSingleFieldTokens { return true }
+        if usage.effectiveCachedInputTokens > maxSingleFieldTokens { return true }
         if usage.outputTokens > maxSingleFieldTokens { return true }
         if usage.reasoningOutputTokens > maxSingleFieldTokens { return true }
         if usage.totalBillableTokens > maxBillableTokens { return true }

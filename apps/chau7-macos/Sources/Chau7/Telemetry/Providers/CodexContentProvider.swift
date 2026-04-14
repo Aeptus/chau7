@@ -22,36 +22,46 @@ final class CodexContentProvider: RunContentProvider {
         return lower.contains("codex") || lower.contains("openai") || lower == "gpt"
     }
 
-    func extractContent(runID: String, sessionID: String?, cwd: String, startedAt: Date) -> ExtractedRunContent? {
+    func extractContent(runID: String, sessionID: String?, cwd: String, startedAt: Date, endedAt: Date?) -> ExtractedRunContent? {
         // Try JSONL first (richer data), fall back to SQLite
         if let sessionID,
-           let result = extractFromJSONL(runID: runID, sessionID: sessionID, cwd: cwd, startedAt: startedAt) {
+           let result = extractFromJSONL(runID: runID, sessionID: sessionID, cwd: cwd, startedAt: startedAt, endedAt: endedAt) {
             return result
         }
         if let sessionID {
-            return extractFromSQLite(runID: runID, sessionID: sessionID)
+            return extractFromSQLite(runID: runID, sessionID: sessionID, startedAt: startedAt, endedAt: endedAt)
         }
         return nil
     }
 
     // MARK: - JSONL Extraction
 
-    private func extractFromJSONL(runID: String, sessionID: String, cwd: String, startedAt: Date) -> ExtractedRunContent? {
+    private func extractFromJSONL(runID: String, sessionID: String, cwd: String, startedAt: Date, endedAt: Date?) -> ExtractedRunContent? {
         guard let file = findRolloutFile(sessionID: sessionID, startedAt: startedAt) else {
+            return nil
+        }
+
+        return extractFromJSONL(file: file, runID: runID, startedAt: startedAt, endedAt: endedAt)
+    }
+
+    private func extractFromJSONL(file: URL, runID: String, startedAt: Date, endedAt: Date?) -> ExtractedRunContent? {
+        guard FileManager.default.fileExists(atPath: file.path) else {
             return nil
         }
 
         guard let data = try? Data(contentsOf: file),
               let text = String(data: data, encoding: .utf8) else { return nil }
 
-        let parsed = CodexRolloutParser.parse(jsonl: text, runID: runID, startedAt: startedAt)
-        guard !parsed.turns.isEmpty else { return nil }
+        let parsed = CodexRolloutParser.parse(jsonl: text, runID: runID, startedAt: startedAt, endedAt: endedAt)
+        guard !parsed.turns.isEmpty || parsed.tokenUsage.hasAnyTokens else { return nil }
         let estimatedCost = ModelPricingTable.estimatedCostUSD(for: parsed.tokenUsage, modelID: parsed.model, providerHint: providerName)
 
         return ExtractedRunContent(
             model: parsed.model,
             turns: parsed.turns,
             totalInputTokens: parsed.tokenUsage.inputTokens > 0 ? parsed.tokenUsage.inputTokens : nil,
+            totalCacheCreationInputTokens: parsed.tokenUsage.cacheCreationInputTokens > 0 ? parsed.tokenUsage.cacheCreationInputTokens : nil,
+            totalCacheReadInputTokens: parsed.tokenUsage.cacheReadInputTokens > 0 ? parsed.tokenUsage.cacheReadInputTokens : nil,
             totalCachedInputTokens: parsed.tokenUsage.cachedInputTokens > 0 ? parsed.tokenUsage.cachedInputTokens : nil,
             totalOutputTokens: parsed.tokenUsage.outputTokens > 0 ? parsed.tokenUsage.outputTokens : nil,
             totalReasoningOutputTokens: parsed.tokenUsage.reasoningOutputTokens > 0 ? parsed.tokenUsage.reasoningOutputTokens : nil,
@@ -67,7 +77,7 @@ final class CodexContentProvider: RunContentProvider {
 
     // MARK: - SQLite Fallback
 
-    private func extractFromSQLite(runID: String, sessionID: String) -> ExtractedRunContent? {
+    private func extractFromSQLite(runID: String, sessionID: String, startedAt: Date, endedAt: Date?) -> ExtractedRunContent? {
         let dbPath = RuntimeIsolation.pathInHome(".codex/state_5.sqlite")
         guard FileManager.default.fileExists(atPath: dbPath) else { return nil }
 
@@ -93,7 +103,12 @@ final class CodexContentProvider: RunContentProvider {
         // We've already extracted what we need from stmt, so defer cleanup is safe.
         if let rolloutPath,
            FileManager.default.fileExists(atPath: rolloutPath) {
-            if let result = extractFromJSONL(runID: runID, sessionID: sessionID, cwd: "", startedAt: .distantPast) {
+            if let result = extractFromJSONL(
+                file: URL(fileURLWithPath: rolloutPath),
+                runID: runID,
+                startedAt: startedAt,
+                endedAt: endedAt
+            ) {
                 return result
             }
         }

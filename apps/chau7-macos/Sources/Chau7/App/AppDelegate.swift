@@ -79,6 +79,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         // Purge oversized PTY logs on startup to prevent disk bloat
         purgeLargePTYLogs()
+        scheduleRecentTelemetryRepairSweep()
 
         // Strip env vars from parent process that would confuse nested CLI tools.
         // When Chau7 is launched from within a Claude Code session (e.g. via
@@ -1389,6 +1390,19 @@ private final class OverlayBlurView: NSVisualEffectView {
                     Log.warn("Failed to purge PTY log \(file): \(error)")
                 }
             }
+        }
+    }
+
+    /// Revisit recent incomplete transcript-derived runs after launch.
+    /// This catches delayed transcript flushes and app restarts without requiring
+    /// a manual one-shot repair.
+    private func scheduleRecentTelemetryRepairSweep() {
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 15) {
+            let report = TelemetryRepairService.shared.rebuildRecentIncompleteRuns(limit: 250)
+            guard report.inspectedRuns > 0 else { return }
+            Log.info(
+                "Startup telemetry repair sweep inspected=\(report.inspectedRuns) rebuilt=\(report.rebuiltRuns) invalidated=\(report.invalidatedRuns) skipped=\(report.skippedRuns)"
+            )
         }
     }
 
