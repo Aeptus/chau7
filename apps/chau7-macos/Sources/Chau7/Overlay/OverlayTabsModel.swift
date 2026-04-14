@@ -1899,7 +1899,7 @@ final class OverlayTabsModel {
             guard let self else { return }
             guard self.previousLiveHierarchyTabID == previousLiveHierarchyTabID else { return }
             self.previousLiveHierarchyTabID = nil
-            self.updateSuspensionState()
+            updateSuspensionState()
         }
         previousLiveHierarchyReleaseWorkItem = item
         DispatchQueue.main.asyncAfter(

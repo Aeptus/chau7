@@ -22,5 +22,6 @@ apps/chau7-macos/Libraries/
 services/chau7-relay/node_modules/
 services/chau7-remote/chau7-remote
 .jscpd-report/
-Scripts/__pycache__/
+**/__pycache__/
+aetower-feedback.md
 apps/chau7-macos/chau7-xunit-swift-testing.xml
