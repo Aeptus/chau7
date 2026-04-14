@@ -36,6 +36,7 @@ public struct MCPToolRateLimiter {
             perToolLimits: [
                 "tab_output": Limit(maxPerMinute: 240, burstAllowance: 120),
                 "tab_status": Limit(maxPerMinute: 240, burstAllowance: 120),
+                "tab_wait_ready": Limit(maxPerMinute: 240, burstAllowance: 120),
                 "session_current": Limit(maxPerMinute: 240, burstAllowance: 120)
             ]
         )

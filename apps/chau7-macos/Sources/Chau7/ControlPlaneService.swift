@@ -29,6 +29,14 @@ final class ControlPlaneService {
                 return jsonError("tab_id is required")
             }
             return terminalControl.tabStatus(tabID: tabID)
+        case "tab_wait_ready":
+            guard let tabID = arguments["tab_id"] as? String else {
+                return jsonError("tab_id is required")
+            }
+            return terminalControl.waitForTabReady(
+                tabID: tabID,
+                timeoutMs: arguments["timeout_ms"] as? Int ?? 30_000
+            )
         case "tab_send_input":
             guard let tabID = arguments["tab_id"] as? String,
                   let input = arguments["input"] as? String else {

@@ -73,8 +73,14 @@ final class MCPSessionTests: XCTestCase {
         let tabList = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "tab_list" }))
         XCTAssertTrue((tabList["description"] as? String)?.contains("primary live discovery API") == true)
 
+        let tabExec = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "tab_exec" }))
+        XCTAssertTrue((tabExec["description"] as? String)?.contains("queues the command automatically") == true)
+
         let tabStatus = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "tab_status" }))
-        XCTAssertTrue((tabStatus["description"] as? String)?.contains("AI provider/session metadata") == true)
+        XCTAssertTrue((tabStatus["description"] as? String)?.contains("ready_for_exec") == true)
+
+        let tabWaitReady = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "tab_wait_ready" }))
+        XCTAssertTrue((tabWaitReady["description"] as? String)?.contains("last observed tab status snapshot") == true)
         XCTAssertFalse(tools.contains(where: { (($0["name"] as? String) ?? "").hasPrefix("runtime_") }))
     }
 

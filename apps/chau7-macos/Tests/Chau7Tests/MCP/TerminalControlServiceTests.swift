@@ -35,6 +35,7 @@ final class TerminalControlServiceTests: XCTestCase {
         let session = try XCTUnwrap(overlayModel.tabs.first?.session)
         session.status = .running
         session.isAtPrompt = false
+        session.isShellLoading = false
         session.restoreAIMetadata(provider: "claude", sessionId: "session-123")
         appModel.sessionStatuses = [
             SessionStatus(
@@ -57,6 +58,66 @@ final class TerminalControlServiceTests: XCTestCase {
 
         XCTAssertEqual(json["raw_status"] as? String, CommandStatus.running.rawValue)
         XCTAssertEqual(json["raw_is_at_prompt"] as? Bool, false)
+        XCTAssertEqual(json["ready_for_exec"] as? Bool, false)
+        XCTAssertEqual(json["readiness_reason"] as? String, "view_unattached")
+        XCTAssertEqual(json["has_terminal_view"] as? Bool, false)
+    }
+
+    func testTabStatusIncludesReadyForExecWhenRawPromptAndViewAreAvailable() throws {
+        let session = try XCTUnwrap(overlayModel.tabs.first?.session)
+        session.status = .running
+        session.isShellLoading = false
+        session.isAtPrompt = true
+
+        let terminalView = RustTerminalView(frame: .zero)
+        session.attachTerminalView(terminalView)
+
+        let response = TerminalControlService.shared.tabStatus(tabID: overlayModel.selectedTabID.uuidString)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["ready_for_exec"] as? Bool, true)
+        XCTAssertEqual(json["readiness_reason"] as? String, "ready")
+        XCTAssertEqual(json["has_terminal_view"] as? Bool, true)
+    }
+
+    func testWaitForTabReadyReturnsImmediateSnapshotWhenAlreadyReady() throws {
+        let session = try XCTUnwrap(overlayModel.tabs.first?.session)
+        session.status = .idle
+        session.isShellLoading = false
+        session.isAtPrompt = true
+
+        let terminalView = RustTerminalView(frame: .zero)
+        session.attachTerminalView(terminalView)
+
+        let response = TerminalControlService.shared.waitForTabReady(
+            tabID: overlayModel.selectedTabID.uuidString,
+            timeoutMs: 10
+        )
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let status = try XCTUnwrap(json["status"] as? [String: Any])
+
+        XCTAssertEqual(json["ready_for_exec"] as? Bool, true)
+        XCTAssertEqual(json["timed_out"] as? Bool, false)
+        XCTAssertEqual(status["readiness_reason"] as? String, "ready")
+    }
+
+    func testWaitForTabReadyReturnsLastObservedStatusOnTimeout() throws {
+        let session = try XCTUnwrap(overlayModel.tabs.first?.session)
+        session.status = .running
+        session.isShellLoading = true
+        session.isAtPrompt = false
+
+        let response = TerminalControlService.shared.waitForTabReady(
+            tabID: overlayModel.selectedTabID.uuidString,
+            timeoutMs: 5
+        )
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let status = try XCTUnwrap(json["status"] as? [String: Any])
+
+        XCTAssertEqual(json["ready_for_exec"] as? Bool, false)
+        XCTAssertEqual(json["timed_out"] as? Bool, true)
+        XCTAssertEqual(status["shell_loading"] as? Bool, true)
+        XCTAssertEqual(status["readiness_reason"] as? String, "shell_loading")
     }
 
     func testBackgroundTabCreationDisablesAutoFocusOnAttach() {

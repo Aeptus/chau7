@@ -395,7 +395,7 @@ final class MCPSession {
             ],
             [
                 "name": "tab_exec",
-                "description": "Execute a shell command in a tab. The tab must be at prompt (idle). Use tab_status to check first.",
+                "description": "Execute a shell command in a tab. If the shell is still bootstrapping, Chau7 queues the command automatically. Once shell loading finishes, use tab_status.ready_for_exec or tab_wait_ready when you need an immediate prompt-ready state.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
@@ -407,11 +407,23 @@ final class MCPSession {
             ],
             [
                 "name": "tab_status",
-                "description": "Get detailed live status of a tab: process state, working directory, active app, AI provider/session metadata, child processes, and active telemetry run. Use this to inspect active AI tabs.",
+                "description": "Get detailed live status of a tab: process state, working directory, active app, AI provider/session metadata, explicit execution readiness (`ready_for_exec` / `readiness_reason`), child processes, and active telemetry run.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
                         "tab_id": ["type": "string", "description": "Deterministic tab ID, such as 'tab_1'"]
+                    ],
+                    "required": ["tab_id"]
+                ]
+            ],
+            [
+                "name": "tab_wait_ready",
+                "description": "Wait for a tab to become prompt-ready for immediate execution. Returns the last observed tab status snapshot on success or timeout so orchestration clients can diagnose slow shell startup.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Deterministic tab ID, such as 'tab_1'"],
+                        "timeout_ms": ["type": "integer", "description": "Maximum wait in milliseconds before timing out. Defaults to 30000."]
                     ],
                     "required": ["tab_id"]
                 ]
@@ -650,6 +662,9 @@ final class MCPSession {
 
         case "tab_status":
             return classifyToolResponse(controlPlane.call(name: "tab_status", arguments: arguments))
+
+        case "tab_wait_ready":
+            return classifyToolResponse(controlPlane.call(name: "tab_wait_ready", arguments: arguments))
 
         case "tab_send_input":
             return classifyToolResponse(controlPlane.call(name: "tab_send_input", arguments: arguments))

@@ -247,7 +247,10 @@ final class TerminalControlService {
                 "tab_id": self.controlPlaneTabIDLocked(for: tab.id),
                 "window_id": resolvedWindowID,
                 "status": "created",
-                "shell_loading": tab.session?.isShellLoading ?? true
+                "shell_loading": tab.session?.isShellLoading ?? true,
+                "has_terminal_view": tab.session?.existingRustTerminalView != nil,
+                "ready_for_exec": self.tabExecutionReadiness(for: tab.session).isReady,
+                "readiness_reason": self.tabExecutionReadiness(for: tab.session).reason.rawValue
             ])
         }
     }
@@ -324,9 +327,7 @@ final class TerminalControlService {
             }
 
             var result: [String: Any] = self.tabSummary(tab)
-
-            // Shell readiness
-            result["shell_loading"] = session.isShellLoading
+            self.addExecutionReadinessFields(to: &result, session: session)
 
             // Add process group info
             if let pg = session.processGroup {
@@ -354,6 +355,55 @@ final class TerminalControlService {
 
             return self.encodeAny(result)
         }
+    }
+
+    func waitForTabReady(tabID: String, timeoutMs: Int = 30_000) -> String {
+        let boundedTimeoutMs = max(0, min(timeoutMs, 120_000))
+        let start = Date()
+
+        guard var lastSnapshot = onMain({ self.tabReadinessSnapshot(tabID: tabID) }) else {
+            return jsonError("Tab not found: \(tabID)")
+        }
+
+        if lastSnapshot["ready_for_exec"] as? Bool == true {
+            return encodeAny([
+                "tab_id": tabID,
+                "ready_for_exec": true,
+                "timed_out": false,
+                "waited_ms": 0,
+                "status": lastSnapshot
+            ])
+        }
+
+        let deadline = start.addingTimeInterval(Double(boundedTimeoutMs) / 1000.0)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: min(0.1, max(0.01, deadline.timeIntervalSinceNow)))
+
+            guard let snapshot = onMain({ self.tabReadinessSnapshot(tabID: tabID) }) else {
+                return jsonError("Tab not found: \(tabID)")
+            }
+            lastSnapshot = snapshot
+
+            if snapshot["ready_for_exec"] as? Bool == true {
+                let waitedMs = Int(Date().timeIntervalSince(start) * 1000)
+                return encodeAny([
+                    "tab_id": tabID,
+                    "ready_for_exec": true,
+                    "timed_out": false,
+                    "waited_ms": waitedMs,
+                    "status": snapshot
+                ])
+            }
+        }
+
+        let waitedMs = Int(Date().timeIntervalSince(start) * 1000)
+        return encodeAny([
+            "tab_id": tabID,
+            "ready_for_exec": false,
+            "timed_out": true,
+            "waited_ms": waitedMs,
+            "status": lastSnapshot
+        ])
     }
 
     func sendInput(tabID: String, input: String) -> String {
@@ -1132,6 +1182,34 @@ final class TerminalControlService {
                 result["repo_labels"] = repoModel.metadata.labels
             }
         }
+        return result
+    }
+
+    private func tabExecutionReadiness(for session: TerminalSessionModel?) -> TabExecutionReadiness {
+        TabExecutionReadiness.evaluate(
+            snapshot: TabExecutionReadinessSnapshot(
+                shellLoading: session?.isShellLoading ?? true,
+                isAtPrompt: session?.isAtPrompt ?? false,
+                hasView: session?.existingRustTerminalView != nil,
+                status: session?.status.rawValue ?? "unknown"
+            )
+        )
+    }
+
+    private func addExecutionReadinessFields(to result: inout [String: Any], session: TerminalSessionModel?) {
+        let readiness = tabExecutionReadiness(for: session)
+        result["shell_loading"] = session?.isShellLoading ?? true
+        result["has_terminal_view"] = session?.existingRustTerminalView != nil
+        result["ready_for_exec"] = readiness.isReady
+        result["readiness_reason"] = readiness.reason.rawValue
+    }
+
+    private func tabReadinessSnapshot(tabID: String) -> [String: Any]? {
+        guard let (tab, session) = resolveTab(tabID) else {
+            return nil
+        }
+        var result = tabSummary(tab)
+        addExecutionReadinessFields(to: &result, session: session)
         return result
     }
 
