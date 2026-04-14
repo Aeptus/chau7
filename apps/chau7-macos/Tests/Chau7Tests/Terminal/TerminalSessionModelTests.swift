@@ -67,6 +67,16 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertTrue(session.shouldKeepLiveRenderingInBackground)
     }
 
+    func testBackgroundLiveRenderReasonsIncludeRestoreBootstrapAndApproval() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.activeAppName = "Codex"
+        session.status = .approvalRequired
+        session.restoreBootstrapPhase = .replaying
+
+        XCTAssertEqual(session.backgroundLiveRenderReasons(), ["restoreBootstrap", "approvalRequired"])
+    }
+
     func testShouldKeepLiveRenderingInBackgroundCoolsStaleAITab() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
@@ -78,7 +88,7 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertFalse(session.shouldKeepLiveRenderingInBackground)
     }
 
-    func testShouldKeepLiveRenderingInBackgroundKeepsRecentAIActivityWarm() {
+    func testShouldKeepLiveRenderingInBackgroundKeepsRecentRunningAIActivityWarm() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
         session.activeAppName = "Codex"
@@ -87,6 +97,17 @@ final class TerminalSessionModelTests: XCTestCase {
         session.lastInputAt = Date()
 
         XCTAssertTrue(session.shouldKeepLiveRenderingInBackground)
+    }
+
+    func testShouldKeepLiveRenderingInBackgroundCoolsIdleAITabEvenWithRecentActivity() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.activeAppName = "Codex"
+        session.status = .idle
+        session.lastOutputAt = Date()
+        session.lastInputAt = Date()
+
+        XCTAssertFalse(session.shouldKeepLiveRenderingInBackground)
     }
 
     // MARK: - resolveStartDirectory (static, pure)

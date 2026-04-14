@@ -7,9 +7,16 @@ final class RenderPipelineProfilerTests: XCTestCase {
     func testSnapshotAggregatesRenderPipelineMetrics() {
         let profiler = RenderPipelineProfiler(flushInterval: 300)
 
-        profiler.updateRenderLoopState(viewID: 7, active: true, mode: "display_link", reason: "test")
-        profiler.recordPoll(viewID: 7, changed: true, live: true)
-        profiler.recordPoll(viewID: 7, changed: false, live: true)
+        profiler.updateRenderLoopState(
+            viewID: 7,
+            active: true,
+            tabID: "tab-1",
+            sessionID: "session-1",
+            mode: "display_link",
+            reasons: "selected,visibleWindow"
+        )
+        profiler.recordPoll(viewID: 7, changed: true)
+        profiler.recordPoll(viewID: 7, changed: false)
         profiler.recordDraw(viewID: 7, cellCount: 120)
         profiler.recordSync(rows: 24, cols: 80, syncedRows: 24, syncedCols: 80, mismatched: true, bytesWritten: 4096)
         profiler.recordCommit(dirtyRows: 12, dirtyCells: 960, bytesCopied: 2048, fullRefresh: true)
@@ -25,6 +32,16 @@ final class RenderPipelineProfilerTests: XCTestCase {
 
         let snapshot = profiler.snapshot()
         XCTAssertEqual(snapshot.activeLiveViewIDs, [UInt64(7)])
+        XCTAssertEqual(
+            snapshot.liveViews,
+            [RenderPipelineProfiler.LiveViewSnapshot(
+                viewID: 7,
+                tabID: "tab-1",
+                sessionID: "session-1",
+                mode: "display_link",
+                reasons: "selected,visibleWindow"
+            )]
+        )
         XCTAssertEqual(snapshot.livePollCount, 2)
         XCTAssertEqual(snapshot.changedPollCount, 1)
         XCTAssertEqual(snapshot.drawCount, 1)
@@ -48,12 +65,20 @@ final class RenderPipelineProfilerTests: XCTestCase {
     func testResetClearsState() {
         let profiler = RenderPipelineProfiler(flushInterval: 300)
 
-        profiler.updateRenderLoopState(viewID: 3, active: true, mode: "display_link", reason: "test")
-        profiler.recordPoll(viewID: 3, changed: true, live: true)
+        profiler.updateRenderLoopState(
+            viewID: 3,
+            active: true,
+            tabID: "tab-3",
+            sessionID: nil,
+            mode: "display_link",
+            reasons: "selected"
+        )
+        profiler.recordPoll(viewID: 3, changed: true)
         profiler.resetForTesting()
 
         let snapshot = profiler.snapshot()
         XCTAssertEqual(snapshot.activeLiveViewIDs, [])
+        XCTAssertEqual(snapshot.liveViews, [])
         XCTAssertEqual(snapshot.livePollCount, 0)
         XCTAssertEqual(snapshot.drawCount, 0)
         XCTAssertEqual(snapshot.syncCallCount, 0)

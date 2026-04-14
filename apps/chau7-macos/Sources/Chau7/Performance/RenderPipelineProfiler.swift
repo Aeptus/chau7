@@ -4,9 +4,18 @@ import Chau7Core
 final class RenderPipelineProfiler {
     static let shared = RenderPipelineProfiler()
 
+    struct LiveViewSnapshot: Equatable {
+        let viewID: UInt64
+        let tabID: String?
+        let sessionID: String?
+        let mode: String
+        let reasons: String
+    }
+
     struct Snapshot {
         let asOf: Date
         let activeLiveViewIDs: [UInt64]
+        let liveViews: [LiveViewSnapshot]
         let livePollCount: Int
         let changedPollCount: Int
         let drawCount: Int
@@ -29,6 +38,7 @@ final class RenderPipelineProfiler {
         static let empty = Snapshot(
             asOf: .distantPast,
             activeLiveViewIDs: [],
+            liveViews: [],
             livePollCount: 0,
             changedPollCount: 0,
             drawCount: 0,
@@ -72,8 +82,10 @@ final class RenderPipelineProfiler {
     }
 
     private struct LiveViewState {
+        var tabID: String?
+        var sessionID: String?
         var mode: String
-        var reason: String
+        var reasons: String
         var updatedAt: Date
     }
 
@@ -87,23 +99,34 @@ final class RenderPipelineProfiler {
         self.flushInterval = flushInterval
     }
 
-    func updateRenderLoopState(viewID: UInt64, active: Bool, mode: String, reason: String) {
+    func updateRenderLoopState(
+        viewID: UInt64,
+        active: Bool,
+        tabID: String?,
+        sessionID: String?,
+        mode: String,
+        reasons: String
+    ) {
         guard WakeupControl.isEnabled(.instrumentationEnabled) else { return }
         recordMutation { now in
             if active {
-                liveViews[viewID] = LiveViewState(mode: mode, reason: reason, updatedAt: now)
+                liveViews[viewID] = LiveViewState(
+                    tabID: tabID,
+                    sessionID: sessionID,
+                    mode: mode,
+                    reasons: reasons,
+                    updatedAt: now
+                )
             } else {
                 liveViews.removeValue(forKey: viewID)
             }
         }
     }
 
-    func recordPoll(viewID: UInt64, changed: Bool, live: Bool) {
+    func recordPoll(viewID: UInt64, changed: Bool) {
         guard WakeupControl.isEnabled(.instrumentationEnabled) else { return }
         recordMutation { _ in
-            if live {
-                totals.livePollCount += 1
-            }
+            totals.livePollCount += 1
             if changed {
                 totals.changedPollCount += 1
             }
@@ -176,6 +199,7 @@ final class RenderPipelineProfiler {
         return Snapshot(
             asOf: Date(),
             activeLiveViewIDs: liveViews.keys.sorted(),
+            liveViews: liveViewSnapshots(),
             livePollCount: totals.livePollCount,
             changedPollCount: totals.changedPollCount,
             drawCount: totals.drawCount,
@@ -215,6 +239,7 @@ final class RenderPipelineProfiler {
             snapshot = Snapshot(
                 asOf: now,
                 activeLiveViewIDs: liveViews.keys.sorted(),
+                liveViews: liveViewSnapshots(),
                 livePollCount: totals.livePollCount,
                 changedPollCount: totals.changedPollCount,
                 drawCount: totals.drawCount,
@@ -273,5 +298,27 @@ final class RenderPipelineProfiler {
                 missRate
             )
         )
+        if !snapshot.liveViews.isEmpty {
+            let detail = snapshot.liveViews.map { liveView in
+                let tab = liveView.tabID ?? "nil"
+                let session = liveView.sessionID ?? "nil"
+                return "view=\(liveView.viewID) tab=\(tab) session=\(session) mode=\(liveView.mode) reasons=\(liveView.reasons)"
+            }.joined(separator: " | ")
+            Log.info("Render live views (30s): \(detail)")
+        }
+    }
+
+    private func liveViewSnapshots() -> [LiveViewSnapshot] {
+        liveViews
+            .map { viewID, state in
+                LiveViewSnapshot(
+                    viewID: viewID,
+                    tabID: state.tabID,
+                    sessionID: state.sessionID,
+                    mode: state.mode,
+                    reasons: state.reasons
+                )
+            }
+            .sorted { lhs, rhs in lhs.viewID < rhs.viewID }
     }
 }

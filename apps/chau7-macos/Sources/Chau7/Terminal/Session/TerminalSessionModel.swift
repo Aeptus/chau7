@@ -258,22 +258,35 @@ final class TerminalSessionModel {
         return !aiDetection.isRestored
     }
 
-    private static let backgroundLiveRenderGraceInterval: TimeInterval = 10
+    private static let backgroundLiveRenderGraceInterval: TimeInterval = 2
 
-    var shouldKeepLiveRenderingInBackground: Bool {
-        guard activeAppName != nil else { return false }
+    func backgroundLiveRenderReasons(now: Date = Date()) -> [String] {
+        guard activeAppName != nil else { return [] }
+
+        var reasons: [String] = []
         if isRestoreBootstrapPending {
-            return true
+            reasons.append("restoreBootstrap")
         }
 
         switch effectiveStatus {
-        case .approvalRequired, .waitingForInput:
-            return true
-        case .exited:
-            return false
-        case .idle, .done, .running, .stuck:
-            return Date().timeIntervalSince(lastActivityDate) <= Self.backgroundLiveRenderGraceInterval
+        case .approvalRequired:
+            reasons.append("approvalRequired")
+        case .waitingForInput:
+            reasons.append("waitingForInput")
+        case .running, .stuck:
+            let secondsSinceActivity = now.timeIntervalSince(lastActivityDate)
+            if secondsSinceActivity <= Self.backgroundLiveRenderGraceInterval {
+                reasons.append(String(format: "recentActivity=%.1fs", max(0, secondsSinceActivity)))
+            }
+        case .idle, .done, .exited:
+            break
         }
+
+        return reasons
+    }
+
+    var shouldKeepLiveRenderingInBackground: Bool {
+        !backgroundLiveRenderReasons().isEmpty
     }
 
     func armVisibleFrameReadyHandoff() {
@@ -296,7 +309,9 @@ final class TerminalSessionModel {
             ?? "shell"
         let provider = effectiveAIProvider ?? "nil"
         let sessionId = effectiveAISessionId ?? "nil"
-        return "app=\(app) provider=\(provider) sessionId=\(sessionId) status=\(effectiveStatus.rawValue) prompt=\(effectiveIsAtPrompt)"
+        let liveReasons = backgroundLiveRenderReasons()
+        let liveReasonSummary = liveReasons.isEmpty ? "none" : liveReasons.joined(separator: ",")
+        return "app=\(app) provider=\(provider) sessionId=\(sessionId) status=\(effectiveStatus.rawValue) prompt=\(effectiveIsAtPrompt) liveReasons=\(liveReasonSummary)"
     }
 
     var devServer: DevServerMonitor.DevServerInfo?

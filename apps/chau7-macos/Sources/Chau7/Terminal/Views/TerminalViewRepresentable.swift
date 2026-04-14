@@ -226,6 +226,17 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         Coordinator()
     }
 
+    private func liveEligibilitySummary() -> String {
+        var reasons: [String] = []
+        if isActive {
+            reasons.append("selected")
+        } else if !isSuspended {
+            reasons.append("handoff")
+        }
+        reasons.append(contentsOf: model.backgroundLiveRenderReasons())
+        return reasons.isEmpty ? "none" : Array(NSOrderedSet(array: reasons)).compactMap { $0 as? String }.joined(separator: ",")
+    }
+
     func makeNSView(context: Context) -> UnifiedTerminalContainerView {
         Log.trace("TerminalViewRepresentable: makeNSView — Rust backend")
         let container = makeRustTerminalView()
@@ -275,6 +286,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             }
             existingView.tabIdentifier = model.tabIdentifier
             existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
+            existingView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
             existingView.installHistoryKeyMonitor()
             let container = UnifiedTerminalContainerView(rustView: existingView)
             existingView.notifyUpdateChanges = !isSuspended
@@ -360,6 +372,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         }
         view.tabIdentifier = model.tabIdentifier
         view.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
+        view.liveEligibilityReasonForProfiling = liveEligibilitySummary()
         view.installHistoryKeyMonitor()
 
         view.wantsLayer = true
@@ -411,6 +424,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         nsView.setEventMonitoringEnabled(isActive && !isSuspended)
 
         let metalActive = container.rustMetalCoordinator != nil
+        nsView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
         let suspensionChanged = context.coordinator.consumeSuspensionChange(to: isSuspended)
         if suspensionChanged, isSuspended {
             cacheRetainedFrameIfAvailable(from: nsView)
