@@ -291,7 +291,9 @@ struct DebugUsageTabView: View {
                                         .lineLimit(1)
                                 }
                                 .frame(width: barWidth + 6)
-                                .help("\(bucket.aggregate.count) samples, p50 \(bucket.aggregate.p50LatencyMs.map { "\($0)ms" } ?? "n/a"), p95 \(bucket.aggregate.p95LatencyMs.map { "\($0)ms" } ?? "n/a")")
+                                .help(
+                                    "\(bucket.aggregate.count) samples, p50 \(bucket.aggregate.p50LatencyMs.map { "\($0)ms" } ?? "n/a"), p95 \(bucket.aggregate.p95LatencyMs.map { "\($0)ms" } ?? "n/a")"
+                                )
                             }
                         }
                         .frame(width: contentWidth, alignment: .leading)

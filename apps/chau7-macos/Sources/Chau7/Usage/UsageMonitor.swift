@@ -415,8 +415,8 @@ final class UsageMonitor {
     ) -> ProviderLatencyMetricKind? {
         guard let provider else { return nil }
         let availableKinds = Array(Set(samples
-            .filter { $0.provider.caseInsensitiveCompare(provider) == .orderedSame }
-            .map(\.metricKind)))
+                .filter { $0.provider.caseInsensitiveCompare(provider) == .orderedSame }
+                .map(\.metricKind)))
             .sorted { Self.metricOrder($0) < Self.metricOrder($1) }
         guard !availableKinds.isEmpty else { return nil }
         if let current, availableKinds.contains(current) {
