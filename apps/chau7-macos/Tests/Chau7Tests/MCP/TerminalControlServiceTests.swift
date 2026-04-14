@@ -98,6 +98,7 @@ final class TerminalControlServiceTests: XCTestCase {
         let status = try XCTUnwrap(json["status"] as? [String: Any])
 
         XCTAssertEqual(json["can_accept_exec"] as? Bool, true)
+        XCTAssertEqual(json["ready_for_exec"] as? Bool, false)
         XCTAssertEqual(json["timed_out"] as? Bool, false)
         XCTAssertEqual(status["exec_acceptance_mode"] as? String, "queued")
         XCTAssertEqual(status["readiness_reason"] as? String, "shell_loading")

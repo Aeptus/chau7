@@ -371,7 +371,7 @@ final class TerminalControlService {
             return encodeAny([
                 "tab_id": tabID,
                 "can_accept_exec": true,
-                "ready_for_exec": true,
+                "ready_for_exec": lastSnapshot["ready_for_exec"] as? Bool ?? false,
                 "timed_out": false,
                 "waited_ms": 0,
                 "status": lastSnapshot
