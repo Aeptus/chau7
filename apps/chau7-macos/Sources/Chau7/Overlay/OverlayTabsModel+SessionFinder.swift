@@ -369,23 +369,12 @@ extension OverlayTabsModel {
         return map
     }
 
-    /// Restores tabs from saved state. Returns nil if no saved state exists
-    /// or if decoding fails. Window 0 is intentionally never restored — it
-    /// always starts with a fresh shell tab.
+    /// Window 0 is never restored — it always starts with a fresh shell tab.
+    /// Clear any stale legacy key (left over from builds before the skip was
+    /// added) and return nil unconditionally.
     static func restoreSavedTabs(appModel: AppModel) -> RestorableTabsPayload? {
-        guard let data = UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey) else {
-            // Legacy key is cleared at save time for window 0 — no backup fallback.
-            return nil
-        }
-        archiveImportedTabStateIfNeeded(data)
-        // Clear saved state immediately so a crash during restoration
-        // doesn't cause an infinite crash loop
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
-
-        if let payload = decodeRestorableTabs(from: data, appModel: appModel) {
-            return payload
-        }
-        return restoreSavedTabsFromBackups(appModel: appModel)
+        return nil
     }
 
     /// Decode from pre-decoded states (multi-window restore — avoids UserDefaults round-trip).
