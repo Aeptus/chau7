@@ -18,8 +18,8 @@ public enum AISubmitHeuristics {
     public static func shouldObserveAfterFirstEnter(_ snapshot: AISubmitSnapshot) -> Bool {
         supports(toolName: snapshot.toolName) && (
             draftedPromptLine(in: snapshot.transcript) != nil
-            || InteractivePromptDetector.detect(in: snapshot.transcript, toolName: snapshot.toolName) != nil
-            || snapshot.isAtPrompt
+                || InteractivePromptDetector.detect(in: snapshot.transcript, toolName: snapshot.toolName) != nil
+                || snapshot.isAtPrompt
         )
     }
 
