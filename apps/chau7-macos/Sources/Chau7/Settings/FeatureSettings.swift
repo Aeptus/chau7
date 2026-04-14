@@ -1866,6 +1866,30 @@ final class FeatureSettings {
         }
     }
 
+    var isUsageMonitoringEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: Keys.usageMonitoringEnabled) as? Bool ?? false }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.usageMonitoringEnabled)
+            NotificationCenter.default.post(name: .usageMonitoringSettingsChanged, object: nil)
+        }
+    }
+
+    var isClaudeStatusLineQuotaCaptureEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: Keys.claudeStatusLineQuotaCaptureEnabled) as? Bool ?? false }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.claudeStatusLineQuotaCaptureEnabled)
+            NotificationCenter.default.post(name: .usageMonitoringSettingsChanged, object: nil)
+        }
+    }
+
+    var isUsageQuotaWarningsEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: Keys.usageQuotaWarningsEnabled) as? Bool ?? false }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.usageQuotaWarningsEnabled)
+            NotificationCenter.default.post(name: .usageMonitoringSettingsChanged, object: nil)
+        }
+    }
+
     var bellEnabled: Bool {
         didSet { UserDefaults.standard.set(bellEnabled, forKey: Keys.bellEnabled) }
     }
@@ -2349,6 +2373,9 @@ final class FeatureSettings {
         static let runtimeEventJournalCapacity = "runtime.eventJournalCapacity"
         static let runtimeOutputChunkLimit = "runtime.outputChunkLimit"
         static let runtimeCostThresholdsUSD = "runtime.costThresholdsUSD"
+        static let usageMonitoringEnabled = "usage.monitoring.enabled"
+        static let claudeStatusLineQuotaCaptureEnabled = "usage.claude.statusLine.enabled"
+        static let usageQuotaWarningsEnabled = "usage.quotaWarnings.enabled"
         static let bellEnabled = "terminal.bellEnabled"
         static let bellSound = "terminal.bellSound"
         static let dangerousCommandHighlightEnabled = "terminal.dangerousCommandHighlightEnabled"

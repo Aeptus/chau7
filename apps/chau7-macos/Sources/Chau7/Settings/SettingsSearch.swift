@@ -915,6 +915,7 @@ extension Notification.Name {
     static let apiAnalyticsSettingsChanged = Notification.Name("apiAnalyticsSettingsChanged")
     static let apiCallRecorded = Notification.Name("apiCallRecorded")
     static let proxyStatusChanged = Notification.Name("proxyStatusChanged")
+    static let usageMonitoringSettingsChanged = Notification.Name("usageMonitoringSettingsChanged")
     /// Posted when the status-bar monitoring toggle flips. Raw string preserved
     /// for compatibility with any legacy observer that used
     /// `NSNotification.Name("MonitoringStateChanged")`.

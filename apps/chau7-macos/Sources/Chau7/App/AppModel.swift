@@ -482,6 +482,9 @@ final class AppModel {
         startCleanupTimer()
         RuntimeSessionManager.shared.startCleanupTimer()
         startAppEventEmitter()
+        UsageMonitor.shared.configureWarningHandler { [weak self] event in
+            self?.publishUnifiedEvent(event, notify: true)
+        }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             ConflictDetector.shared.configure(appModel: self)

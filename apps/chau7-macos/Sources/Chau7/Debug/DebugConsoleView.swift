@@ -122,6 +122,7 @@ struct DebugConsoleView: View {
                 Text("Analytics").tag(7)
                 Text("Health").tag(8)
                 Text("Repos").tag(9)
+                Text("Usage").tag(10)
             }
             .pickerStyle(.segmented)
             .padding(8)
@@ -141,6 +142,7 @@ struct DebugConsoleView: View {
                 case 7: analyticsView
                 case 8: healthDashboardView
                 case 9: reposTabView
+                case 10: DebugUsageTabView()
                 default: stateView
                 }
             }
@@ -155,6 +157,8 @@ struct DebugConsoleView: View {
                 refreshCTOData()
             } else if selectedTab == 7 || selectedTab == 9 {
                 requestAnalyticsRefresh(force: true)
+            } else if selectedTab == 10 {
+                UsageMonitor.shared.refreshNow()
             }
         }
         .onChange(of: ctoTimePeriod) {
