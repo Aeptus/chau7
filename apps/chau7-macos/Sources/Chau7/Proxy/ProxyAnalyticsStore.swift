@@ -202,10 +202,21 @@ final class ProxyAnalyticsStore {
     ) -> [ProviderLatencySample] {
         withDatabase { db in
             var sql = """
-            SELECT provider, model, latency_ms, timestamp, project_path, session_id
+            SELECT provider,
+                   model,
+                   endpoint,
+                   latency_ms,
+                   ttft_ms,
+                   timestamp,
+                   project_path,
+                   session_id
             FROM api_calls
             """
-            var clauses = ["latency_ms IS NOT NULL", "latency_ms > 0"]
+            var clauses = [
+                "(ttft_ms IS NOT NULL AND ttft_ms > 0) OR (latency_ms IS NOT NULL AND latency_ms > 0)",
+                "status_code >= 200",
+                "status_code < 300"
+            ]
             if after != nil {
                 clauses.append("timestamp >= ?")
             }
@@ -223,7 +234,15 @@ final class ProxyAnalyticsStore {
                 guard let rawProvider = colText(stmt, 0),
                       AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
                       let provider = AnalyticsProvider.key(for: rawProvider),
-                      let timestamp = colText(stmt, 3).flatMap(isoDate) else {
+                      ProviderLatencyAnalytics.isLatencyRelevantAPIEndpoint(
+                        provider: provider,
+                        endpoint: colText(stmt, 2)
+                      ),
+                      let timestamp = colText(stmt, 5).flatMap(isoDate),
+                      let latencyMs = ProviderLatencyAnalytics.preferredAPILatencyMs(
+                        roundTripMs: Int(sqlite3_column_int64(stmt, 3)),
+                        timeToFirstTokenMs: Int(sqlite3_column_int64(stmt, 4))
+                      ) else {
                     continue
                 }
 
@@ -231,15 +250,69 @@ final class ProxyAnalyticsStore {
                     ProviderLatencySample(
                         provider: provider,
                         metricKind: .apiRequest,
-                        latencyMs: Int(sqlite3_column_int64(stmt, 2)),
+                        latencyMs: latencyMs,
                         timestamp: timestamp,
                         model: colText(stmt, 1),
-                        sessionID: colText(stmt, 5),
-                        projectPath: colText(stmt, 4),
-                        sourceKind: "proxy_api"
+                        sessionID: colText(stmt, 7),
+                        projectPath: colText(stmt, 6),
+                        sourceKind: Int(sqlite3_column_int64(stmt, 4)) > 0 ? "proxy_api_ttft" : "proxy_api_round_trip"
                     )
                 )
             }
+            return samples
+        } ?? []
+    }
+
+    func activitySamples(
+        after: Date? = nil,
+        providerFilterKey: String? = nil,
+        projectPath: String? = nil
+    ) -> [ProviderActivitySample] {
+        withDatabase { db in
+            var sql = """
+            SELECT provider,
+                   endpoint,
+                   timestamp
+            FROM api_calls
+            """
+            var clauses = [
+                "status_code >= 200",
+                "status_code < 300"
+            ]
+            if after != nil {
+                clauses.append("timestamp >= ?")
+            }
+            if let projectPath, !projectPath.isEmpty {
+                clauses.append("project_path = ?")
+            }
+            sql += " WHERE " + clauses.joined(separator: " AND ")
+            sql += " ORDER BY timestamp ASC"
+
+            guard let stmt = prepareStatement(db: db, sql: sql, after: after, projectPath: projectPath) else { return [] }
+            defer { sqlite3_finalize(stmt) }
+
+            var samples: [ProviderActivitySample] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let rawProvider = colText(stmt, 0),
+                      AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
+                      let provider = AnalyticsProvider.key(for: rawProvider),
+                      ProviderLatencyAnalytics.isLatencyRelevantAPIEndpoint(
+                        provider: provider,
+                        endpoint: colText(stmt, 1)
+                      ),
+                      let timestamp = colText(stmt, 2).flatMap(isoDate) else {
+                    continue
+                }
+
+                samples.append(
+                    ProviderActivitySample(
+                        provider: provider,
+                        timestamp: timestamp,
+                        sourceKind: "proxy_api_call"
+                    )
+                )
+            }
+
             return samples
         } ?? []
     }

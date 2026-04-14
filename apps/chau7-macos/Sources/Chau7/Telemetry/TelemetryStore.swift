@@ -2,6 +2,12 @@ import Foundation
 import SQLite3
 import Chau7Core
 
+struct ProviderLatencyBackfillReport: Sendable {
+    var inspectedRuns = 0
+    var insertedSamples = 0
+    var skippedRuns = 0
+}
+
 /// SQLite-backed store for telemetry run records, turns, and tool calls.
 /// Thread-safe: all database access is serialized on a dedicated queue.
 final class TelemetryStore {
@@ -44,6 +50,13 @@ final class TelemetryStore {
         applyMigrations()
         backfillHistoricalMissingCosts()
         backfillRunUsageEvidence()
+        let latencyBackfill = _backfillCompletedRunLatencySamples()
+        if latencyBackfill.insertedSamples > 0 {
+            Log.info(
+                "TelemetryStore: backfilled latency samples for \(latencyBackfill.insertedSamples) run(s) " +
+                "(inspected=\(latencyBackfill.inspectedRuns), skipped=\(latencyBackfill.skippedRuns))"
+            )
+        }
     }
 
     /// Quick integrity check on startup. If the database is corrupt, log and
@@ -189,6 +202,7 @@ final class TelemetryStore {
             model TEXT,
             session_id TEXT,
             run_id TEXT,
+            round_index INTEGER,
             project_path TEXT,
             source_kind TEXT NOT NULL,
             observed_at TEXT NOT NULL,
@@ -256,6 +270,7 @@ final class TelemetryStore {
         ensureColumn(table: "turns", name: "cache_read_input_tokens", definition: "INTEGER")
         ensureColumn(table: "turns", name: "cached_input_tokens", definition: "INTEGER")
         ensureColumn(table: "turns", name: "reasoning_output_tokens", definition: "INTEGER")
+        ensureColumn(table: "provider_latency_samples", name: "round_index", definition: "INTEGER")
 
         sqlite3_exec(
             db,
@@ -423,6 +438,58 @@ final class TelemetryStore {
         }
     }
 
+    func backfillCompletedRunLatencySamples() -> ProviderLatencyBackfillReport {
+        queue.sync {
+            _backfillCompletedRunLatencySamples()
+        }
+    }
+
+    private func _backfillCompletedRunLatencySamples() -> ProviderLatencyBackfillReport {
+        guard let db else { return ProviderLatencyBackfillReport() }
+
+        let sql = """
+        SELECT r.*
+        FROM runs r
+        WHERE r.ended_at IS NOT NULL
+          AND (
+                lower(r.provider) LIKE '%codex%'
+             OR lower(r.provider) LIKE '%claude%'
+             OR lower(r.provider) LIKE '%anthropic%'
+             OR lower(r.provider) LIKE '%openai%'
+          )
+        ORDER BY r.started_at ASC
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            return ProviderLatencyBackfillReport()
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var report = ProviderLatencyBackfillReport()
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let run = parseRun(stmt) else { continue }
+            report.inspectedRuns += 1
+            let turns = _getTurns(runID: run.id)
+            let samples = ProviderLatencyAnalytics.completedRunFirstResponseSamples(run: run, turns: turns)
+            deleteLatencySamples(
+                runID: run.id,
+                metricKind: .firstResponse,
+                sourceKind: "completed_run_turns"
+            )
+            guard !samples.isEmpty else {
+                report.skippedRuns += 1
+                continue
+            }
+            for sample in samples {
+                _insertLatencySample(sample)
+                report.insertedSamples += 1
+            }
+        }
+
+        return report
+    }
+
     // MARK: - Write
 
     /// Insert a new run record. Use finalizeRun() to update it on completion.
@@ -541,6 +608,7 @@ final class TelemetryStore {
             }
 
             _insertUsageEvidence(UsageEvidence.runSummary(run))
+            upsertCompletedRunLatencySamples(run: run, turns: turns)
 
             sqlite3_exec(db, "COMMIT", nil, nil, nil)
         }
@@ -774,8 +842,8 @@ final class TelemetryStore {
         guard let db else { return }
         let sql = """
         INSERT INTO provider_latency_samples
-        (sample_id, provider, metric_kind, latency_ms, model, session_id, run_id, project_path, source_kind, observed_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
+        (sample_id, provider, metric_kind, latency_ms, model, session_id, run_id, round_index, project_path, source_kind, observed_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(sample_id) DO UPDATE SET
             provider = excluded.provider,
             metric_kind = excluded.metric_kind,
@@ -783,6 +851,7 @@ final class TelemetryStore {
             model = excluded.model,
             session_id = excluded.session_id,
             run_id = excluded.run_id,
+            round_index = excluded.round_index,
             project_path = excluded.project_path,
             source_kind = excluded.source_kind,
             observed_at = excluded.observed_at
@@ -799,13 +868,54 @@ final class TelemetryStore {
         bindText(stmt, 5, sample.model)
         bindText(stmt, 6, sample.sessionID)
         bindText(stmt, 7, sample.runID)
-        bindText(stmt, 8, sample.projectPath)
-        bindText(stmt, 9, sample.sourceKind)
-        bindText(stmt, 10, Self.isoString(from: sample.timestamp))
+        bindInt(stmt, 8, sample.roundIndex)
+        bindText(stmt, 9, sample.projectPath)
+        bindText(stmt, 10, sample.sourceKind)
+        bindText(stmt, 11, Self.isoString(from: sample.timestamp))
 
         if sqlite3_step(stmt) != SQLITE_DONE {
             let err = String(cString: sqlite3_errmsg(db))
             Log.warn("TelemetryStore: insert latency sample failed for \(sample.id): \(err)")
+        }
+    }
+
+    private func deleteLatencySamples(
+        runID: String,
+        metricKind: ProviderLatencyMetricKind,
+        sourceKind: String? = nil
+    ) {
+        guard let db else { return }
+        let sql: String
+        if sourceKind != nil {
+            sql = "DELETE FROM provider_latency_samples WHERE run_id = ? AND metric_kind = ? AND source_kind = ?"
+        } else {
+            sql = "DELETE FROM provider_latency_samples WHERE run_id = ? AND metric_kind = ?"
+        }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        bindText(stmt, 1, runID)
+        bindText(stmt, 2, metricKind.rawValue)
+        if let sourceKind {
+            bindText(stmt, 3, sourceKind)
+        }
+        sqlite3_step(stmt)
+    }
+
+    private func upsertCompletedRunLatencySamples(run: TelemetryRun, turns: [TelemetryTurn]) {
+        let sourceKind = "completed_run_turns"
+        let samples = ProviderLatencyAnalytics.completedRunFirstResponseSamples(
+            run: run,
+            turns: turns,
+            sourceKind: sourceKind
+        )
+        guard !samples.isEmpty else {
+            deleteLatencySamples(runID: run.id, metricKind: .firstResponse, sourceKind: sourceKind)
+            return
+        }
+        deleteLatencySamples(runID: run.id, metricKind: .firstResponse, sourceKind: sourceKind)
+        for sample in samples {
+            _insertLatencySample(sample)
         }
     }
 
@@ -870,6 +980,7 @@ final class TelemetryStore {
             }
 
             _insertUsageEvidence(UsageEvidence.runSummary(run))
+            upsertCompletedRunLatencySamples(run: run, turns: turns)
 
             sqlite3_exec(db, "COMMIT", nil, nil, nil)
         }
@@ -1552,7 +1663,7 @@ final class TelemetryStore {
         queue.sync {
             guard let db else { return [] }
             var sql = """
-            SELECT sample_id, provider, metric_kind, latency_ms, model, session_id, run_id, project_path, source_kind, observed_at
+            SELECT sample_id, provider, metric_kind, latency_ms, model, session_id, run_id, round_index, project_path, source_kind, observed_at
             FROM provider_latency_samples
             WHERE 1 = 1
             """
@@ -1581,10 +1692,10 @@ final class TelemetryStore {
             while sqlite3_step(stmt) == SQLITE_ROW {
                 guard let provider = colText(stmt, 1),
                       AnalyticsProvider.matches(provider, filterKey: providerFilterKey),
-                      let normalizedProvider = AnalyticsProvider.key(for: provider) ?? AIResumeParser.normalizeProviderName(provider),
+                      let normalizedProvider = AIResumeParser.normalizeProviderName(provider) ?? AnalyticsProvider.key(for: provider),
                       let metricRaw = colText(stmt, 2),
                       let kind = ProviderLatencyMetricKind(rawValue: metricRaw),
-                      let observedAt = colText(stmt, 9).flatMap({ Self.isoDate(from: $0) }) else {
+                      let observedAt = colText(stmt, 10).flatMap({ Self.isoDate(from: $0) }) else {
                     continue
                 }
 
@@ -1598,12 +1709,13 @@ final class TelemetryStore {
                         model: colText(stmt, 4),
                         sessionID: colText(stmt, 5),
                         runID: colText(stmt, 6),
-                        projectPath: colText(stmt, 7),
-                        sourceKind: colText(stmt, 8) ?? "telemetry"
+                        roundIndex: intByColumn(stmt, 7),
+                        projectPath: colText(stmt, 8),
+                        sourceKind: colText(stmt, 9) ?? "telemetry"
                     )
                 )
             }
-            return samples
+            return ProviderLatencyAnalytics.canonicalLatencySamples(samples)
         }
     }
 
@@ -1904,6 +2016,12 @@ final class TelemetryStore {
             }
         }
         return nil
+    }
+
+    private func intByColumn(_ stmt: OpaquePointer?, _ index: Int32) -> Int? {
+        guard let stmt else { return nil }
+        guard sqlite3_column_type(stmt, index) != SQLITE_NULL else { return nil }
+        return Int(sqlite3_column_int64(stmt, index))
     }
 
     private func intByName(_ stmt: OpaquePointer?, _ name: String) -> Int? {

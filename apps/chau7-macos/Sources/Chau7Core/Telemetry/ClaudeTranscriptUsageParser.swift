@@ -32,7 +32,15 @@ public enum ClaudeTranscriptUsageParser {
         endedAt: Date? = nil,
         state: inout State
     ) {
-        for line in text.components(separatedBy: .newlines) where !line.isEmpty {
+        var lineStart = text.startIndex
+        while lineStart < text.endIndex {
+            let lineEnd = text[lineStart...].firstIndex(where: \.isNewline) ?? text.endIndex
+            let line = String(text[lineStart..<lineEnd])
+            defer {
+                lineStart = lineEnd == text.endIndex ? text.endIndex : text.index(after: lineEnd)
+            }
+
+            guard !line.isEmpty else { continue }
             guard let lineData = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
                   let message = obj["message"] as? [String: Any]

@@ -16,6 +16,8 @@ import SQLite3
 
 final class CodexContentProvider: RunContentProvider {
     let providerName = "codex"
+    private static let rolloutFileIndexLock = NSLock()
+    private static var rolloutFileIndexByRoot: [String: [String: URL]] = [:]
 
     func canHandle(provider: String) -> Bool {
         let lower = provider.lowercased()
@@ -142,6 +144,13 @@ final class CodexContentProvider: RunContentProvider {
 
     /// Codex rollout files: ~/.codex/sessions/<year>/<month>/<day>/rollout-<ts>-<id>.jsonl
     private func findRolloutFile(sessionID: String, startedAt: Date) -> URL? {
+        if let rolloutPath = lookupRolloutPathInSQLite(sessionID: sessionID) {
+            let rolloutURL = URL(fileURLWithPath: rolloutPath)
+            if FileManager.default.fileExists(atPath: rolloutURL.path) {
+                return rolloutURL
+            }
+        }
+
         let sessionsDir = RuntimeIsolation.urlInHome(".codex/sessions")
 
         let cal = Calendar.current
@@ -154,14 +163,14 @@ final class CodexContentProvider: RunContentProvider {
             .appendingPathComponent(month)
             .appendingPathComponent(day)
 
-        guard let files = try? FileManager.default.contentsOfDirectory(
+        if let files = try? FileManager.default.contentsOfDirectory(
             at: dayDir, includingPropertiesForKeys: nil
-        ) else { return nil }
-
-        // Match by session ID in filename: rollout-<timestamp>-<session-id>.jsonl
-        for file in files where file.pathExtension == "jsonl" {
-            if file.lastPathComponent.contains(sessionID) {
-                return file
+        ) {
+            // Match by session ID in filename: rollout-<timestamp>-<session-id>.jsonl
+            for file in files where file.pathExtension == "jsonl" {
+                if file.lastPathComponent.contains(sessionID) {
+                    return file
+                }
             }
         }
 
@@ -186,7 +195,71 @@ final class CodexContentProvider: RunContentProvider {
             }
         }
 
+        if let globalMatch = globallyFindRolloutFile(sessionID: sessionID, root: sessionsDir) {
+            return globalMatch
+        }
+
         return nil
+    }
+
+    private func globallyFindRolloutFile(sessionID: String, root: URL) -> URL? {
+        Self.rolloutFileIndexLock.lock()
+        if Self.rolloutFileIndexByRoot[root.path] == nil {
+            Self.rolloutFileIndexByRoot[root.path] = buildRolloutFileIndex(root: root)
+        }
+        let match = Self.rolloutFileIndexByRoot[root.path]?[sessionID]
+        Self.rolloutFileIndexLock.unlock()
+        return match
+    }
+
+    private func lookupRolloutPathInSQLite(sessionID: String) -> String? {
+        let dbPath = RuntimeIsolation.pathInHome(".codex/state_5.sqlite")
+        guard FileManager.default.fileExists(atPath: dbPath) else { return nil }
+
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_close(db) }
+
+        let sql = "SELECT rollout_path FROM threads WHERE id = ? LIMIT 1"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+
+        sqlite3_bind_text(stmt, 1, (sessionID as NSString).utf8String, -1, nil)
+        guard sqlite3_step(stmt) == SQLITE_ROW,
+              let ptr = sqlite3_column_text(stmt, 0) else {
+            return nil
+        }
+        return String(cString: ptr)
+    }
+
+    private func buildRolloutFileIndex(root: URL) -> [String: URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return [:]
+        }
+
+        var index: [String: URL] = [:]
+        for case let fileURL as URL in enumerator {
+            guard fileURL.pathExtension == "jsonl",
+                  let sessionID = sessionIDFromRolloutFilename(fileURL.lastPathComponent) else {
+                continue
+            }
+            index[sessionID] = fileURL
+        }
+        return index
+    }
+
+    private func sessionIDFromRolloutFilename(_ filename: String) -> String? {
+        guard filename.hasPrefix("rollout-"), filename.hasSuffix(".jsonl") else { return nil }
+        let stem = String(filename.dropLast(".jsonl".count))
+        guard stem.count >= 36 else { return nil }
+        let sessionIDStart = stem.index(stem.endIndex, offsetBy: -36)
+        let sessionID = String(stem[sessionIDStart...])
+        return sessionID.contains("-") ? sessionID : nil
     }
 
     // MARK: - SQLite Helpers

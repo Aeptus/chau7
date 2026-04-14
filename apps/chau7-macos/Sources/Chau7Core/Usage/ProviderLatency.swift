@@ -11,9 +11,27 @@ public enum ProviderLatencyMetricKind: String, Codable, CaseIterable, Identifiab
     public var displayName: String {
         switch self {
         case .apiRequest:
-            return "API Request"
+            return "API Response"
         case .firstResponse:
-            return "First Response"
+            return "Round Trip"
+        }
+    }
+
+    public var shortExplanation: String {
+        switch self {
+        case .apiRequest:
+            return "Successful API call latency using TTFT when available, else round trip."
+        case .firstResponse:
+            return "Time from a submitted prompt to the first assistant output for that same round."
+        }
+    }
+
+    public var detailedExplanation: String {
+        switch self {
+        case .apiRequest:
+            return "Measures successful proxy-backed API latency. For streaming calls, Chau7 uses proxy-observed time to first token when available. For non-streaming calls or older rows without TTFT, it falls back to full request round trip time."
+        case .firstResponse:
+            return "Measures the exact round trip for CLI providers: from the first human prompt in a round to the first assistant output for that same round. Chau7 stores one sample per prompt/response round and falls back to run start when an authoritative transcript begins with assistant output."
         }
     }
 }
@@ -105,6 +123,7 @@ public struct ProviderLatencySample: Identifiable, Codable, Equatable, Sendable 
     public let model: String?
     public let sessionID: String?
     public let runID: String?
+    public let roundIndex: Int?
     public let projectPath: String?
     public let sourceKind: String
 
@@ -117,6 +136,7 @@ public struct ProviderLatencySample: Identifiable, Codable, Equatable, Sendable 
         model: String? = nil,
         sessionID: String? = nil,
         runID: String? = nil,
+        roundIndex: Int? = nil,
         projectPath: String? = nil,
         sourceKind: String
     ) {
@@ -128,6 +148,7 @@ public struct ProviderLatencySample: Identifiable, Codable, Equatable, Sendable 
         self.model = model
         self.sessionID = sessionID
         self.runID = runID
+        self.roundIndex = roundIndex
         self.projectPath = projectPath
         self.sourceKind = sourceKind
     }
@@ -170,7 +191,129 @@ public struct ProviderLatencyBucketPoint: Identifiable, Equatable, Sendable {
     }
 }
 
+public struct ProviderActivitySample: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let provider: String
+    public let timestamp: Date
+    public let sourceKind: String
+
+    public init(
+        id: String = UUID().uuidString,
+        provider: String,
+        timestamp: Date,
+        sourceKind: String
+    ) {
+        self.id = id
+        self.provider = provider
+        self.timestamp = timestamp
+        self.sourceKind = sourceKind
+    }
+}
+
+public struct ProviderActivityBucketPoint: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let label: String
+    public let count: Int
+
+    public init(id: String, label: String, count: Int) {
+        self.id = id
+        self.label = label
+        self.count = count
+    }
+}
+
 public enum ProviderLatencyAnalytics {
+    public static func canonicalLatencySamples(
+        _ samples: [ProviderLatencySample]
+    ) -> [ProviderLatencySample] {
+        var preferredByRunKey: [String: ProviderLatencySample] = [:]
+        var passthrough: [ProviderLatencySample] = []
+
+        for sample in samples {
+            guard sample.metricKind == .firstResponse,
+                  let runID = sample.runID,
+                  !runID.isEmpty,
+                  let roundIndex = sample.roundIndex else {
+                passthrough.append(sample)
+                continue
+            }
+
+            let key = "\(sample.provider.lowercased())|\(sample.metricKind.rawValue)|\(runID)|\(roundIndex)"
+            if let existing = preferredByRunKey[key] {
+                if preferredSourceRank(for: sample.sourceKind) < preferredSourceRank(for: existing.sourceKind) {
+                    preferredByRunKey[key] = sample
+                }
+            } else {
+                preferredByRunKey[key] = sample
+            }
+        }
+
+        let completedRunIDs = Set(
+            passthrough.compactMap { sample -> String? in
+                guard sample.metricKind == .firstResponse,
+                      sample.sourceKind == "completed_run_turns",
+                      let runID = sample.runID,
+                      !runID.isEmpty else {
+                    return nil
+                }
+                return runID
+            }
+        )
+        let filteredPassthrough = passthrough.filter { sample in
+            guard sample.metricKind == .firstResponse,
+                  sample.sourceKind == "terminal_first_output",
+                  let runID = sample.runID,
+                  !runID.isEmpty else {
+                return true
+            }
+            return !completedRunIDs.contains(runID)
+        }
+
+        return (filteredPassthrough + preferredByRunKey.values).sorted { lhs, rhs in
+            if lhs.timestamp != rhs.timestamp {
+                return lhs.timestamp < rhs.timestamp
+            }
+            return lhs.id < rhs.id
+        }
+    }
+
+    public static func isLatencyRelevantAPIEndpoint(
+        provider: String,
+        endpoint: String?
+    ) -> Bool {
+        guard let endpoint else { return false }
+        let normalizedProvider = provider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedEndpoint.isEmpty else { return false }
+
+        switch normalizedProvider {
+        case "openai":
+            return normalizedEndpoint == "/v1/responses" ||
+                normalizedEndpoint == "/v1/chat/completions" ||
+                normalizedEndpoint == "/v1/completions"
+        case "anthropic":
+            return normalizedEndpoint == "/v1/messages" ||
+                normalizedEndpoint == "/v1/complete"
+        case "gemini":
+            return normalizedEndpoint.contains("generatecontent")
+        default:
+            return true
+        }
+    }
+
+    public static func preferredAPILatencyMs(
+        roundTripMs: Int?,
+        timeToFirstTokenMs: Int?
+    ) -> Int? {
+        if let timeToFirstTokenMs, timeToFirstTokenMs > 0 {
+            return timeToFirstTokenMs
+        }
+        if let roundTripMs, roundTripMs > 0 {
+            return roundTripMs
+        }
+        return nil
+    }
+
     public static func aggregate(samples: [ProviderLatencySample]) -> ProviderLatencyAggregate? {
         guard !samples.isEmpty else { return nil }
         let sorted = samples.map(\.latencyMs).sorted()
@@ -202,6 +345,25 @@ public enum ProviderLatencyAnalytics {
         return metadata.sorted { $0.2 < $1.2 }.compactMap { key, label, _ in
             guard let group = grouped[key], let aggregate = aggregate(samples: group) else { return nil }
             return ProviderLatencyBucketPoint(id: key, label: label, aggregate: aggregate)
+        }
+    }
+
+    public static func activityBucketed(
+        samples: [ProviderActivitySample],
+        by bucketKind: ProviderLatencyBucketKind,
+        calendar: Calendar = .current
+    ) -> [ProviderActivityBucketPoint] {
+        let grouped = Dictionary(grouping: samples) { sample in
+            bucketKey(for: sample.timestamp, bucketKind: bucketKind, calendar: calendar)
+        }
+
+        let metadata = grouped.keys.compactMap { key -> (String, String, Int)? in
+            bucketMetadata(for: key, bucketKind: bucketKind, calendar: calendar)
+        }
+
+        return metadata.sorted { $0.2 < $1.2 }.compactMap { key, label, _ in
+            guard let count = grouped[key]?.count else { return nil }
+            return ProviderActivityBucketPoint(id: key, label: label, count: count)
         }
     }
 
@@ -265,10 +427,129 @@ public enum ProviderLatencyAnalytics {
         return (weekday - firstWeekday + 7) % 7
     }
 
+    public static func completedRunFirstResponseSamples(
+        run: TelemetryRun,
+        turns: [TelemetryTurn],
+        sourceKind: String = "completed_run_turns"
+    ) -> [ProviderLatencySample] {
+        guard isAuthoritativeCompletedRunLatencySource(run.rawTranscriptRef) else {
+            return []
+        }
+
+        let runEndedAt = run.endedAt
+        let inRunWindow = turns.filter { turn in
+            guard let timestamp = turn.timestamp, timestamp >= run.startedAt else { return false }
+            if let runEndedAt {
+                return timestamp <= runEndedAt
+            }
+            return true
+        }.sorted { lhs, rhs in
+            if lhs.turnIndex != rhs.turnIndex {
+                return lhs.turnIndex < rhs.turnIndex
+            }
+            return (lhs.timestamp ?? .distantPast) < (rhs.timestamp ?? .distantPast)
+        }
+
+        var samples: [ProviderLatencySample] = []
+        var pendingHuman: (index: Int, timestamp: Date)?
+        var roundIndex = 0
+
+        for turn in inRunWindow {
+            guard let timestamp = turn.timestamp else { continue }
+            switch turn.role {
+            case .human:
+                pendingHuman = (roundIndex, timestamp)
+                roundIndex += 1
+            case .assistant:
+                let currentPendingHuman: (index: Int, timestamp: Date)
+                if let pendingHuman {
+                    currentPendingHuman = pendingHuman
+                } else {
+                    currentPendingHuman = (roundIndex, run.startedAt)
+                    roundIndex += 1
+                }
+                guard timestamp >= currentPendingHuman.timestamp else { continue }
+                let latencyMs = Int((timestamp.timeIntervalSince(currentPendingHuman.timestamp) * 1000).rounded())
+                guard latencyMs >= 0 else { continue }
+                samples.append(
+                    ProviderLatencySample(
+                        id: completedRunFirstResponseSampleID(
+                            runID: run.id,
+                            roundIndex: currentPendingHuman.index,
+                            sourceKind: sourceKind
+                        ),
+                        provider: run.provider.lowercased(),
+                        metricKind: .firstResponse,
+                        latencyMs: latencyMs,
+                        timestamp: timestamp,
+                        model: run.model,
+                        sessionID: run.sessionID,
+                        runID: run.id,
+                        roundIndex: currentPendingHuman.index,
+                        projectPath: run.repoPath ?? run.cwd,
+                        sourceKind: sourceKind
+                    )
+                )
+                self.clearPendingHuman(&pendingHuman)
+            default:
+                continue
+            }
+        }
+
+        return samples
+    }
+
+    public static func completedRunFirstResponseSample(
+        run: TelemetryRun,
+        turns: [TelemetryTurn],
+        sourceKind: String = "completed_run_turns"
+    ) -> ProviderLatencySample? {
+        completedRunFirstResponseSamples(
+            run: run,
+            turns: turns,
+            sourceKind: sourceKind
+        ).first
+    }
+
+    public static func completedRunFirstResponseSampleID(
+        runID: String,
+        roundIndex: Int,
+        sourceKind: String = "completed_run_turns"
+    ) -> String {
+        "latency|\(runID)|\(ProviderLatencyMetricKind.firstResponse.rawValue)|r\(roundIndex)|\(sourceKind)"
+    }
+
+    private static func isAuthoritativeCompletedRunLatencySource(_ rawTranscriptRef: String?) -> Bool {
+        guard let rawTranscriptRef else {
+            return false
+        }
+        let trimmedRawTranscriptRef = rawTranscriptRef.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedRawTranscriptRef.isEmpty else { return false }
+        if trimmedRawTranscriptRef == "pty_log" || trimmedRawTranscriptRef == "terminal_buffer" {
+            return false
+        }
+        return true
+    }
+
+    private static func preferredSourceRank(for sourceKind: String) -> Int {
+        switch sourceKind {
+        case "completed_run_turns":
+            return 0
+        case "terminal_first_output":
+            return 1
+        default:
+            return 2
+        }
+    }
+
     private static func percentile(sortedValues: [Int], percentile: Double) -> Int? {
         guard !sortedValues.isEmpty else { return nil }
         let clamped = max(0.0, min(1.0, percentile))
         let index = Int((Double(sortedValues.count - 1) * clamped).rounded(.toNearestOrEven))
         return sortedValues[index]
+    }
+
+    private static func clearPendingHuman(_ pendingHuman: inout (index: Int, timestamp: Date)?) {
+        pendingHuman = nil
     }
 }

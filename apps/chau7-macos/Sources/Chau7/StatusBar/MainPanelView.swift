@@ -403,6 +403,7 @@ struct SettingsRootView: View {
                     .listStyle(.sidebar)
                 }
                 .frame(minWidth: 220)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
             } detail: {
                 SettingsDetailView(
                     selection: selection,
@@ -410,9 +411,11 @@ struct SettingsRootView: View {
                     overlayModel: overlayModel,
                     searchQuery: searchQuery
                 )
+                .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .navigationSplitViewColumnWidth(min: 560, ideal: 700)
             }
         }
-        .frame(minWidth: 860, minHeight: 650)
+        .frame(minWidth: 860, maxWidth: .infinity, minHeight: 650, maxHeight: .infinity, alignment: .topLeading)
         .onChange(of: searchQuery) {
             // Auto-select first matching section when searching
             if !searchQuery.isEmpty, let firstMatch = filteredSections.first {

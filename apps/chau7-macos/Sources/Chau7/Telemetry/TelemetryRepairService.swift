@@ -52,11 +52,8 @@ final class TelemetryRepairService {
 
     func rebuildTranscriptDerivedRuns(limit: Int = 500) -> TelemetryRepairReport {
         let runs = store.listRuns(filter: TelemetryRunFilter(limit: limit))
-            .filter { run in
-                guard run.endedAt != nil else { return false }
-                let provider = run.provider.lowercased()
-                return provider.contains("claude") || provider.contains("codex") || provider.contains("anthropic") || provider.contains("openai")
-            }
+            .filter(Self.needsTranscriptRepair)
+            .sorted(by: Self.repairPriority(lhs:rhs:))
 
         var report = TelemetryRepairReport()
 
@@ -79,6 +76,7 @@ final class TelemetryRepairService {
     func rebuildRecentIncompleteRuns(limit: Int = 200) -> TelemetryRepairReport {
         let runs = store.listRuns(filter: TelemetryRunFilter(limit: limit))
             .filter(Self.needsTranscriptRepair)
+            .sorted(by: Self.repairPriority(lhs:rhs:))
 
         var report = TelemetryRepairReport()
 
@@ -151,5 +149,30 @@ final class TelemetryRepairService {
 
         store.rewriteCompletedRun(run, turns: repaired.turns, toolCalls: repaired.toolCalls)
         return repaired.tokenUsageState == .invalid ? .invalidated : .rebuilt
+    }
+
+    private static func repairPriority(lhs: TelemetryRun, rhs: TelemetryRun) -> Bool {
+        let lhsRank = repairRank(for: lhs)
+        let rhsRank = repairRank(for: rhs)
+        if lhsRank != rhsRank {
+            return lhsRank < rhsRank
+        }
+        return lhs.startedAt > rhs.startedAt
+    }
+
+    private static func repairRank(for run: TelemetryRun) -> Int {
+        let provider = run.provider.lowercased()
+        let hasAuthoritativeSource = !(run.rawTranscriptRef == nil
+            || run.rawTranscriptRef == "pty_log"
+            || run.rawTranscriptRef == "terminal_buffer")
+
+        switch provider {
+        case let value where value.contains("claude") || value.contains("anthropic"):
+            return hasAuthoritativeSource ? 1 : 0
+        case let value where value.contains("codex") || value.contains("openai"):
+            return hasAuthoritativeSource ? 3 : 2
+        default:
+            return 4
+        }
     }
 }

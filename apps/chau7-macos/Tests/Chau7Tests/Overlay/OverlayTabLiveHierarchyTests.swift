@@ -228,7 +228,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertEqual(model.tabs[0].visibleSnapshot?.size, NSSize(width: 120, height: 60))
     }
 
-    func testCleanupDistantSnapshotsPreservesTabPreviewButClearsSessionRetainedFrames() {
+    func testCleanupDistantSnapshotsEvictsDistantTabPreviewAndSessionFrames() {
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)
@@ -246,11 +246,11 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
 
         XCTAssertNotNil(model.tabs[1].cachedSnapshot)
         XCTAssertNotNil(model.tabs[1].session?.lastRenderedSnapshot)
-        XCTAssertNotNil(model.tabs[0].cachedSnapshot)
+        XCTAssertNil(model.tabs[0].cachedSnapshot)
         XCTAssertNil(model.tabs[0].session?.lastRenderedSnapshot)
         XCTAssertNotNil(model.tabs[5].cachedSnapshot)
         XCTAssertNotNil(model.tabs[5].session?.lastRenderedSnapshot)
-        XCTAssertNotNil(model.tabs[6].cachedSnapshot)
+        XCTAssertNil(model.tabs[6].cachedSnapshot)
         XCTAssertNil(model.tabs[6].session?.lastRenderedSnapshot)
     }
 

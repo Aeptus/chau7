@@ -2100,10 +2100,17 @@ final class OverlayTabsModel {
     }
 
     /// Releases transient session-owned retained frames for distant tabs while
-    /// preserving the tab-owned cached snapshot used for cold-tab handoff.
+    /// preserving nearby handoff frames and any persisted restore preview.
     func cleanupDistantSnapshots(currentIndex: Int) {
         for i in 0 ..< tabs.count {
-            if abs(i - currentIndex) > 2 {
+            let retainCachedSnapshot = TransitionSnapshotRetention.shouldRetainCachedSnapshot(
+                tabIndex: i,
+                currentIndex: currentIndex,
+                hasRestorePreview: tabs[i].restorePreviewSnapshot != nil
+            )
+            if !retainCachedSnapshot {
+                clearRetainedSnapshots(forTabAt: i, includeCachedSnapshot: true)
+            } else if abs(i - currentIndex) > TransitionSnapshotRetention.nearbyTabDistance {
                 clearRetainedSnapshots(forTabAt: i, includeCachedSnapshot: false)
             }
         }

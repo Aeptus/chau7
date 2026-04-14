@@ -12,6 +12,8 @@ import Chau7Core
 ///   - Content blocks: text, tool_use, tool_result
 final class ClaudeCodeContentProvider: RunContentProvider {
     let providerName = "claude"
+    private static let sessionIndexLock = NSLock()
+    private static var sessionDirsByRoot: [String: [String: URL]] = [:]
 
     func canHandle(provider: String) -> Bool {
         let lower = provider.lowercased()
@@ -22,9 +24,14 @@ final class ClaudeCodeContentProvider: RunContentProvider {
         guard let sessionID, !sessionID.isEmpty else { return nil }
 
         // Resolve the project directory hash from cwd
-        guard let projectDir = resolveProjectDir(cwd: cwd),
-              let sessionDir = findSessionDir(projectDir: projectDir, sessionID: sessionID)
-        else { return nil }
+        let sessionDir: URL?
+        if let projectDir = resolveProjectDir(cwd: cwd),
+           let matchedSessionDir = findSessionDir(projectDir: projectDir, sessionID: sessionID) {
+            sessionDir = matchedSessionDir
+        } else {
+            sessionDir = findSessionDirGlobally(sessionID: sessionID)
+        }
+        guard let sessionDir else { return nil }
 
         // Parse JSONL files: try subagents/ first, then session root.
         // Claude Code versions differ in where they write conversation data.
@@ -143,5 +150,41 @@ final class ClaudeCodeContentProvider: RunContentProvider {
             }
         }
         return nil
+    }
+
+    private func findSessionDirGlobally(sessionID: String) -> URL? {
+        let claudeProjects = RuntimeIsolation.urlInHome(".claude/projects")
+        Self.sessionIndexLock.lock()
+        if Self.sessionDirsByRoot[claudeProjects.path] == nil {
+            Self.sessionDirsByRoot[claudeProjects.path] = buildGlobalSessionIndex(root: claudeProjects)
+        }
+        let match = Self.sessionDirsByRoot[claudeProjects.path]?[sessionID]
+        Self.sessionIndexLock.unlock()
+        return match
+    }
+
+    private func buildGlobalSessionIndex(root: URL) -> [String: URL] {
+        guard let projectDirs = try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return [:]
+        }
+
+        var index: [String: URL] = [:]
+        for projectDir in projectDirs {
+            guard let entries = try? FileManager.default.contentsOfDirectory(
+                at: projectDir,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) else {
+                continue
+            }
+            for entry in entries where entry.lastPathComponent.contains("-") {
+                index[entry.lastPathComponent] = entry
+            }
+        }
+        return index
     }
 }

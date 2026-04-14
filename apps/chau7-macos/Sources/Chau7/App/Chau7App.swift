@@ -77,6 +77,20 @@ struct Chau7App: App {
 
     private static func handleCLIIfNeeded() -> Bool {
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--telemetry-backfill-latency") {
+            let report = TelemetryStore.shared.backfillCompletedRunLatencySamples()
+            let stdout = FileHandle.standardOutput
+            let lines = [
+                "telemetry_latency_backfill inspected=\(report.inspectedRuns)",
+                "inserted=\(report.insertedSamples)",
+                "skipped=\(report.skippedRuns)"
+            ]
+            if let data = lines.joined(separator: "\n").appending("\n").data(using: .utf8) {
+                try? stdout.write(contentsOf: data)
+            }
+            return true
+        }
+
         guard arguments.contains("--telemetry-repair") else { return false }
 
         let report = TelemetryRepairService.shared.rebuildTranscriptDerivedRuns(limit: 100_000)

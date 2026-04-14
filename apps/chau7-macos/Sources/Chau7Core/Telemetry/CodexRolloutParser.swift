@@ -217,15 +217,22 @@ public enum CodexRolloutParser {
             buffer.removeAll(keepingCapacity: true)
         }
 
-        for line in text.components(separatedBy: .newlines) {
+        var lineStart = text.startIndex
+        while lineStart < text.endIndex {
+            let lineEnd = text[lineStart...].firstIndex(where: \.isNewline) ?? text.endIndex
+            let line = String(text[lineStart..<lineEnd])
             if buffer.isEmpty {
                 let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { continue }
+                if trimmed.isEmpty {
+                    lineStart = lineEnd == text.endIndex ? text.endIndex : text.index(after: lineEnd)
+                    continue
+                }
                 buffer = line
             } else {
                 buffer += "\n" + line
             }
             flushBufferIfPossible()
+            lineStart = lineEnd == text.endIndex ? text.endIndex : text.index(after: lineEnd)
         }
 
         flushBufferIfPossible()

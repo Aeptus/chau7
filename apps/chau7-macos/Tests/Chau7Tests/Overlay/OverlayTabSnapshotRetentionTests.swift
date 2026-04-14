@@ -32,7 +32,7 @@ final class OverlayTabSnapshotRetentionTests: XCTestCase {
         super.tearDown()
     }
 
-    func testCleanupDistantSnapshotsClearsOnlySessionRetainedFrames() {
+    func testCleanupDistantSnapshotsEvictsDistantCachedSnapshots() {
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)
@@ -48,14 +48,34 @@ final class OverlayTabSnapshotRetentionTests: XCTestCase {
 
         model.cleanupDistantSnapshots(currentIndex: 3)
 
-        XCTAssertNotNil(model.tabs[0].cachedSnapshot)
+        XCTAssertNil(model.tabs[0].cachedSnapshot)
         XCTAssertNil(model.tabs[0].session?.lastRenderedSnapshot)
         XCTAssertNotNil(model.tabs[1].cachedSnapshot)
         XCTAssertNotNil(model.tabs[1].session?.lastRenderedSnapshot)
         XCTAssertNotNil(model.tabs[5].cachedSnapshot)
         XCTAssertNotNil(model.tabs[5].session?.lastRenderedSnapshot)
-        XCTAssertNotNil(model.tabs[6].cachedSnapshot)
+        XCTAssertNil(model.tabs[6].cachedSnapshot)
         XCTAssertNil(model.tabs[6].session?.lastRenderedSnapshot)
+    }
+
+    func testCleanupDistantSnapshotsPreservesRestorePreviewSnapshots() {
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+
+        let distantSnapshot = makeSnapshot(size: NSSize(width: 160, height: 90))
+        model.tabs[0].cachedSnapshot = distantSnapshot
+        model.tabs[0].restorePreviewSnapshot = distantSnapshot
+        model.tabs[0].session?.lastRenderedSnapshot = distantSnapshot
+
+        model.cleanupDistantSnapshots(currentIndex: 3)
+
+        XCTAssertNotNil(model.tabs[0].restorePreviewSnapshot)
+        XCTAssertNotNil(model.tabs[0].cachedSnapshot)
+        XCTAssertNil(model.tabs[0].session?.lastRenderedSnapshot)
     }
 
     func testCloseTabClearsSessionRetainedSnapshotBeforeSessionShutdown() throws {
