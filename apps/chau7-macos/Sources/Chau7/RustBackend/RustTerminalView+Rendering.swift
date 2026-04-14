@@ -38,6 +38,12 @@ extension RustTerminalView {
 
             CVDisplayLinkStart(link)
             displayLink = link
+            RenderPipelineProfiler.shared.updateRenderLoopState(
+                viewID: viewId,
+                active: true,
+                mode: "display_link",
+                reason: "setup"
+            )
             Chau7ObservabilityService.shared.registerTimer(
                 id: renderLoopTimerID,
                 kind: "display_link",
@@ -57,6 +63,12 @@ extension RustTerminalView {
                 WakeupProfiler.shared.record("terminal.pollTimer")
                 self?.pollAndSync()
             }
+            RenderPipelineProfiler.shared.updateRenderLoopState(
+                viewID: viewId,
+                active: true,
+                mode: "timer",
+                reason: "setup-fallback"
+            )
             Chau7ObservabilityService.shared.registerTimer(
                 id: renderLoopTimerID,
                 kind: "timer",
@@ -91,6 +103,12 @@ extension RustTerminalView {
             pollTimer?.invalidate()
             pollTimer = nil
         }
+        RenderPipelineProfiler.shared.updateRenderLoopState(
+            viewID: viewId,
+            active: false,
+            mode: "stopped",
+            reason: "stopPollingLoop"
+        )
         Chau7ObservabilityService.shared.setTimerActive(renderLoopTimerID, active: false)
         stopBackgroundDrain()
     }
@@ -111,6 +129,12 @@ extension RustTerminalView {
         }
         pollTimer?.invalidate()
         pollTimer = nil
+        RenderPipelineProfiler.shared.updateRenderLoopState(
+            viewID: viewId,
+            active: false,
+            mode: "background_drain",
+            reason: "pauseDisplayLink"
+        )
         Chau7ObservabilityService.shared.setTimerActive(renderLoopTimerID, active: false)
 
         startBackgroundDrain()
@@ -124,6 +148,12 @@ extension RustTerminalView {
 
         if let link = displayLink, !CVDisplayLinkIsRunning(link) {
             CVDisplayLinkStart(link)
+            RenderPipelineProfiler.shared.updateRenderLoopState(
+                viewID: viewId,
+                active: true,
+                mode: "display_link",
+                reason: "resume"
+            )
             Chau7ObservabilityService.shared.registerTimer(
                 id: renderLoopTimerID,
                 kind: "display_link",
@@ -143,6 +173,12 @@ extension RustTerminalView {
                 WakeupProfiler.shared.record("terminal.pollTimer")
                 self?.pollAndSync()
             }
+            RenderPipelineProfiler.shared.updateRenderLoopState(
+                viewID: viewId,
+                active: true,
+                mode: "timer",
+                reason: "resume-fallback"
+            )
             Chau7ObservabilityService.shared.registerTimer(
                 id: renderLoopTimerID,
                 kind: "timer",
@@ -316,6 +352,11 @@ extension RustTerminalView {
         // If flicker becomes noticeable, a Rust FFI flag
         // (preserve_selection_during_scroll) would be the proper fix.
         let changed = rust.poll(timeout: 0)
+        RenderPipelineProfiler.shared.recordPoll(
+            viewID: viewId,
+            changed: changed,
+            live: livePollingActiveForProfiling
+        )
 
         // Check for bell events from Rust terminal and trigger audio/visual feedback
         if rust.checkBell() {

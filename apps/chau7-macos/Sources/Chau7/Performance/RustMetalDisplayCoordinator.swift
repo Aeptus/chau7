@@ -335,7 +335,6 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                 )
             }
         }
-
         // 4. Update cursor state
         renderer.cursorRow = Int(snapshot.cursor.row)
         renderer.cursorCol = Int(snapshot.cursor.col)
@@ -390,6 +389,12 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         }
 
         let cellsPtr = UnsafeBufferPointer(renderBuf.cells)
+        if let viewID = terminalView?.viewId {
+            RenderPipelineProfiler.shared.recordDraw(
+                viewID: viewID,
+                cellCount: cellCount
+            )
+        }
         // Use view bounds (points) for the projection matrix, not drawable texture
         // (pixels). Cell positions are calculated in point-space
         // (cw = cellSize.width / scaleFactor), so the orthographic projection

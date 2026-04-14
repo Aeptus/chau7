@@ -120,6 +120,7 @@ final class MetalTerminalRenderer: NSObject {
 
     /// Cache miss count for profiling
     private(set) var glyphCacheMisses = 0
+    private(set) var glyphLookupCount = 0
 
     /// Diagnostic frame counter for throttled logging
     private var diagFrameCounter = 0
@@ -572,6 +573,7 @@ final class MetalTerminalRenderer: NSObject {
 
     /// Looks up a glyph, rasterizing on-demand if needed. Returns space glyph as fallback.
     private func lookupGlyph(codePoint: UInt32, bold: Bool, italic: Bool) -> GlyphInfo? {
+        glyphLookupCount += 1
         let key = GlyphKey(codePoint: codePoint, bold: bold, italic: italic)
         if let info = glyphCache[key] { return info }
 
@@ -732,12 +734,16 @@ final class MetalTerminalRenderer: NSObject {
         to drawable: CAMetalDrawable,
         viewportSize: CGSize
     ) {
+        let renderStartedAt = CFAbsoluteTimeGetCurrent()
         guard let commandBuffer = commandQueue.makeCommandBuffer() else { return }
 
         let cellCount = min(cells.count, maxCells)
 
         // Update instance buffer (may trigger on-demand glyph rasterization)
+        let instanceStartedAt = CFAbsoluteTimeGetCurrent()
         updateInstanceBuffer(cells: cells, count: cellCount, cols: cols)
+        let instanceDurationMs = (CFAbsoluteTimeGetCurrent() - instanceStartedAt) * 1000.0
+        FeatureProfiler.shared.record(feature: .metalInstanceBuffer, durationMs: instanceDurationMs)
 
         // Upload atlas if new glyphs were rasterized
         if atlasDirty { uploadAtlasTexture() }
@@ -769,9 +775,13 @@ final class MetalTerminalRenderer: NSObject {
 
         commandBuffer.present(drawable)
         commandBuffer.commit()
+        let renderDurationMs = (CFAbsoluteTimeGetCurrent() - renderStartedAt) * 1000.0
+        FeatureProfiler.shared.record(feature: .metalDrawStage, durationMs: renderDurationMs)
     }
 
     private func updateInstanceBuffer(cells: UnsafeBufferPointer<TerminalCell>, count: Int, cols: Int) {
+        let startingGlyphLookups = glyphLookupCount
+        let startingGlyphMisses = glyphCacheMisses
         let instances = instanceBuffer.contents().bindMemory(to: CellInstance.self, capacity: count)
         // Cell size in points (not scaled — scaling happens in the atlas and texture UVs)
         let cw = Float(cellSize.width / scaleFactor)
@@ -905,6 +915,18 @@ final class MetalTerminalRenderer: NSObject {
                 instances[cursorIndex].foreground = cursorColor
             }
         }
+
+        let frameGlyphLookups = glyphLookupCount - startingGlyphLookups
+        let frameGlyphMisses = glyphCacheMisses - startingGlyphMisses
+        RenderPipelineProfiler.shared.recordInstanceBuffer(
+            cells: count,
+            bufferBytes: instanceBuffer.length,
+            saturated: cells.count > maxCells,
+            glyphLookups: frameGlyphLookups,
+            glyphMisses: frameGlyphMisses,
+            glyphCacheSize: glyphCache.count,
+            ligatureCacheSize: ligatureCache.count
+        )
     }
 
     private func updateUniforms(viewportSize: CGSize) {

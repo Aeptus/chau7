@@ -50,6 +50,7 @@ final class RustTermBridge {
     /// - Returns: `(rows, cols)` actually synced, or `nil` if the grid should trigger a resize
     @discardableResult
     func syncToTripleBuffer(_ buffer: TripleBufferedTerminal, grid: UnsafeMutablePointer<RustGridSnapshot>) -> (rows: Int, cols: Int)? {
+        let startedAt = CFAbsoluteTimeGetCurrent()
         let snapshot = grid.pointee
         guard let cells = snapshot.cells else { return nil }
 
@@ -73,7 +74,27 @@ final class RustTermBridge {
             }
         }
 
-        buffer.commitUpdate()
+        let commitStats = buffer.commitUpdate()
+        let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
+        let bytesWritten = syncRows * syncCols * MemoryLayout<TerminalCell>.stride
+        RenderPipelineProfiler.shared.recordSync(
+            rows: gridRows,
+            cols: gridCols,
+            syncedRows: syncRows,
+            syncedCols: syncCols,
+            mismatched: mismatch,
+            bytesWritten: bytesWritten
+        )
+        FeatureProfiler.shared.record(
+            feature: .tripleBufferSync,
+            durationMs: durationMs,
+            bytes: bytesWritten
+        )
+        FeatureProfiler.shared.record(
+            feature: .tripleBufferCommit,
+            durationMs: commitStats.durationMs,
+            bytes: commitStats.bytesCopied
+        )
         return mismatch ? nil : (rows: syncRows, cols: syncCols)
     }
 

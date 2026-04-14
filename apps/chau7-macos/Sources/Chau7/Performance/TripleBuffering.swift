@@ -14,6 +14,14 @@ import Atomics
 /// Atomic buffer swaps ensure lock-free operation.
 final class TripleBufferedTerminal {
 
+    struct CommitStatistics {
+        let dirtyRows: Int
+        let dirtyCells: Int
+        let bytesCopied: Int
+        let fullRefresh: Bool
+        let durationMs: Double
+    }
+
     // MARK: - Types
 
     /// Single terminal buffer containing all cell data
@@ -145,12 +153,18 @@ final class TripleBufferedTerminal {
 
     /// Commits the current update buffer and swaps it with the render buffer.
     /// The old render buffer becomes available for the next update.
-    func commitUpdate() {
+    @discardableResult
+    func commitUpdate() -> CommitStatistics {
+        let startedAt = CFAbsoluteTimeGetCurrent()
         let current = updateIndex.load(ordering: .relaxed)
         let render = renderIndex.load(ordering: .relaxed)
+        let sourceBuffer = buffers[current]
+        let copiedRows = sourceBuffer.fullRefreshNeeded ? rows : sourceBuffer.dirtyRows.count
+        let copiedCells = copiedRows * cols
+        let copiedBytes = copiedCells * MemoryLayout<TerminalCell>.stride
 
         // Copy dirty regions to render buffer
-        buffers[render].copyDirtyFrom(buffers[current])
+        buffers[render].copyDirtyFrom(sourceBuffer)
 
         // Swap update and render indices
         updateIndex.store(render, ordering: .releasing)
@@ -160,6 +174,21 @@ final class TripleBufferedTerminal {
         buffers[current].clearDirty()
 
         swapCount.wrappingIncrement(ordering: .relaxed)
+        let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
+        let stats = CommitStatistics(
+            dirtyRows: copiedRows,
+            dirtyCells: copiedCells,
+            bytesCopied: copiedBytes,
+            fullRefresh: sourceBuffer.fullRefreshNeeded,
+            durationMs: durationMs
+        )
+        RenderPipelineProfiler.shared.recordCommit(
+            dirtyRows: stats.dirtyRows,
+            dirtyCells: stats.dirtyCells,
+            bytesCopied: stats.bytesCopied,
+            fullRefresh: stats.fullRefresh
+        )
+        return stats
     }
 
     // MARK: - Consumer API (Render Thread)

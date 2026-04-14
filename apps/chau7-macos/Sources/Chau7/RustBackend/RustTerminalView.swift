@@ -2093,6 +2093,7 @@ final class RustTerminalView: NSView {
     /// Replaces the per-view Timer with a shared drain (see SharedBackgroundDrain).
     var isBackgroundDrainRegistered = false
     private var isLivePollingActive = false
+    var livePollingActiveForProfiling: Bool { isLivePollingActive }
 
     // MARK: - Properties
 
