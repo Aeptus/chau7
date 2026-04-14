@@ -13,7 +13,7 @@ final class ScriptingAPI {
     static let featureFlagKey = "feature.scriptingAPI"
     private static let defaultEnabled = true
     private static let apiVersion = 2
-    private static let supportedMethods = [
+    private static let publicSupportedMethods = [
         "list_tabs",
         "get_tab",
         "run_command",
@@ -29,7 +29,9 @@ final class ScriptingAPI {
         "set_setting",
         "list_snippets",
         "run_snippet",
-        "get_status",
+        "get_status"
+    ]
+    private static let legacySessionMethods = [
         "create_session",
         "get_session_events",
         "submit_session_turn",
@@ -595,7 +597,7 @@ final class ScriptingAPI {
                 "version": version,
                 "build": build,
                 "api_version": Self.apiVersion,
-                "supported_methods": Self.supportedMethods,
+                "supported_methods": Self.publicSupportedMethods,
                 "uptime_seconds": Int(uptime),
                 "connected_clients": connectedClients,
                 "server_running": isRunning,

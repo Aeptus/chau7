@@ -130,6 +130,18 @@ final class ScriptingAPITests: XCTestCase {
         XCTAssertTrue(methods.contains("submit_prompt"))
     }
 
+    func testGetStatusHidesLegacySessionMethodsFromDiscovery() async throws {
+        let response = await api.handleRequest(["method": "get_status"])
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        let methods = try XCTUnwrap(result["supported_methods"] as? [String])
+
+        XCTAssertFalse(methods.contains("create_session"))
+        XCTAssertFalse(methods.contains("get_session_events"))
+        XCTAssertFalse(methods.contains("submit_session_turn"))
+        XCTAssertFalse(methods.contains("get_session_result"))
+        XCTAssertFalse(methods.contains("stop_session"))
+    }
+
     // MARK: - get_history
 
     func testGetHistoryReturnsArray() async {
