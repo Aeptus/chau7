@@ -15,6 +15,7 @@ final class AITerminalLogSession {
         }
         return 10 * 1024 * 1024 // 10 MB
     }()
+
     private let outputFlushBytes: Int = {
         if let raw = EnvVars.get(EnvVars.ptyLogFlushBytes),
            let value = Int(raw), value > 0 {
