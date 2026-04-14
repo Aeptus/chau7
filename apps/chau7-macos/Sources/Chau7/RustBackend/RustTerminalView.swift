@@ -2525,6 +2525,7 @@ final class RustTerminalView: NSView {
 
         // Start polling loop now that terminal exists
         setupPollingLoop()
+        updatePollingMode(reason: "startTerminal")
 
         // Schedule a one-shot timeout: if no PTY output arrives within 5 seconds,
         // notify the UI so it can show a "shell initializing" indicator.
@@ -2605,7 +2606,7 @@ final class RustTerminalView: NSView {
     }
 
     private func shouldRunLivePolling() -> Bool {
-        guard notifyUpdateChanges, !isHidden else { return false }
+        guard isTerminalStarted, notifyUpdateChanges, !isHidden else { return false }
         guard let window else { return false }
         return window.isVisible && !window.isMiniaturized
     }

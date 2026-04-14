@@ -702,7 +702,7 @@ extension RustTerminalView {
             let suffix = encoded.bytes.count > 8 ? " ...<\(encoded.bytes.count - 8) more>" : ""
             Log.trace("RustTerminalView[\(viewId)]: send(keyPress:) - key=\(keyPress.key) modifiers=\(keyPress.sortedModifierNames.joined(separator: "+")) bytes=[\(preview)\(suffix)]")
             if EnvVars.isEnabled(EnvVars.inputDiagnostics),
-               (encoded.bytes.contains(0x0D) || encoded.bytes.contains(0x0A)) {
+               encoded.bytes.contains(0x0D) || encoded.bytes.contains(0x0A) {
                 Log.info(
                     "RustTerminalView[\(viewId)]: send(keyPress:) newline-ish bytes=[\(preview)\(suffix)] " +
                         "key=\(keyPress.key)"
@@ -733,7 +733,7 @@ extension RustTerminalView {
     func send(txt text: String) {
         Log.trace("RustTerminalView[\(viewId)]: send(txt:) - Sending \(text.count) chars")
         if EnvVars.isEnabled(EnvVars.inputDiagnostics),
-           (text.contains("\r") || text.contains("\n")) {
+           text.contains("\r") || text.contains("\n") {
             let escaped = text
                 .replacingOccurrences(of: "\r", with: "\\r")
                 .replacingOccurrences(of: "\n", with: "\\n")

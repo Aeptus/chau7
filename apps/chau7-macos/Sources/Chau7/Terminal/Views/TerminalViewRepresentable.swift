@@ -216,6 +216,24 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.isHidden = isSuspended
             existingView.setEventMonitoringEnabled(isActive && !isSuspended)
             existingView.allowMouseReporting = settings.isMouseReportingEnabled
+            existingView.onInput = { [weak model] text in
+                model?.handleInput(text)
+            }
+            existingView.shouldAcceptUserText = { [weak model] text in
+                model?.shouldAcceptDirectUserInput(text) ?? true
+            }
+            existingView.onOutput = { [weak model] data in
+                model?.handleOutput(data)
+            }
+            existingView.onShellStartupSlow = { [weak model] in
+                model?.shellStartupSlow = true
+            }
+            existingView.onBufferChanged = { [weak model] in
+                model?.scheduleSearchRefresh()
+                model?.highlightView?.scheduleDisplay()
+                model?.recordOutputLatencyIfNeeded()
+                model?.noteRestoreBootstrapBufferChanged()
+            }
             existingView.onFilePathClicked = onFilePathClicked
             existingView.onScrollbackCleared = { [weak model] in
                 model?.resetDangerousHighlights()
