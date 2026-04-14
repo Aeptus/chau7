@@ -1342,6 +1342,8 @@ final class TerminalSessionModel {
             sigtermSentAt = nil
         }
 
+        lastRenderedSnapshot = nil
+
         // Stop all background work
         stopIdleTimer()
         repositoryModel?.onBranchChange = nil

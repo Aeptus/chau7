@@ -163,6 +163,21 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertFalse(model.tabs[1].session?.awaitingVisibleFrameReady ?? true)
     }
 
+    func testSelectedSessionVisibleFrameReadyClearsTransientSnapshots() {
+        model.newTab(selectNewTab: false)
+        let targetID = model.tabs[1].id
+        let snapshot = makeSnapshot()
+        model.tabs[1].cachedSnapshot = snapshot
+        model.tabs[1].session?.lastRenderedSnapshot = snapshot
+
+        model.selectTab(id: targetID)
+        model.tabs[1].session?.notifyVisibleFrameReadyIfNeeded()
+
+        XCTAssertTrue(model.isTerminalReady)
+        XCTAssertNil(model.tabs[1].cachedSnapshot)
+        XCTAssertNil(model.tabs[1].session?.lastRenderedSnapshot)
+    }
+
     func testSelectingColdTabUsesRetainedSessionSnapshotForHandoff() {
         model.newTab(selectNewTab: false)
         let targetID = model.tabs[1].id
@@ -189,6 +204,28 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         focusedSession.lastRenderedSnapshot = makeSnapshot(size: NSSize(width: 120, height: 60))
 
         XCTAssertEqual(model.tabs[0].visibleSnapshot?.size, NSSize(width: 120, height: 60))
+    }
+
+    func testCleanupDistantSnapshotsPreservesTabPreviewButClearsSessionRetainedFrames() {
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+
+        for index in model.tabs.indices {
+            let snapshot = makeSnapshot(size: NSSize(width: CGFloat(80 + index), height: CGFloat(40 + index)))
+            model.tabs[index].cachedSnapshot = snapshot
+            model.tabs[index].session?.lastRenderedSnapshot = snapshot
+        }
+
+        model.cleanupDistantSnapshots(currentIndex: 2)
+
+        XCTAssertNotNil(model.tabs[1].cachedSnapshot)
+        XCTAssertNotNil(model.tabs[1].session?.lastRenderedSnapshot)
+        XCTAssertNotNil(model.tabs[0].cachedSnapshot)
+        XCTAssertNil(model.tabs[0].session?.lastRenderedSnapshot)
+        XCTAssertNotNil(model.tabs[4].cachedSnapshot)
+        XCTAssertNil(model.tabs[4].session?.lastRenderedSnapshot)
     }
 
     func testCaptureSnapshotSkipsHiddenFreshRetainedView() {

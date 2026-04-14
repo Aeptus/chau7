@@ -1378,6 +1378,17 @@ final class TerminalSessionModelTests: XCTestCase {
         )
     }
 
+    func testCloseSessionClearsLastRenderedSnapshot() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let snapshot = NSImage(size: NSSize(width: 80, height: 40))
+        session.lastRenderedSnapshot = snapshot
+
+        session.closeSession()
+
+        XCTAssertNil(session.lastRenderedSnapshot)
+    }
+
     // MARK: - Prefill Input
 
     func testPrefillInputQueuesUntilTerminalViewAttached() {

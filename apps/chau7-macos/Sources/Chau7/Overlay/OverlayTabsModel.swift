@@ -907,6 +907,9 @@ final class OverlayTabsModel {
             terminalReadyFallbackWorkItem = nil
             tab.displaySession?.cancelVisibleFrameReadyHandoff()
             tab.session?.cancelVisibleFrameReadyHandoff()
+            if let selectedIndex = tabs.firstIndex(where: { $0.id == tab.id }) {
+                clearRetainedSnapshots(forTabAt: selectedIndex)
+            }
         }
         if shouldShowRestorePreview {
             StartupRestoreCoordinator.shared.noteRestorePreviewShown(
@@ -959,9 +962,8 @@ final class OverlayTabsModel {
         }
 
         if let index = tabs.firstIndex(where: { $0.id == tab.id }) {
-            tabs[index].cachedSnapshot = snapshot
+            cacheRetainedSnapshot(snapshot, forTabAt: index)
             let snapshotSession = tabs[index].displaySession ?? tabs[index].session
-            snapshotSession?.lastRenderedSnapshot = snapshot
             tabs[index].lastPromptText = snapshotSession?.displayPath() ?? tabs[index].lastPromptText
         }
         return snapshot
@@ -1998,6 +2000,21 @@ final class OverlayTabsModel {
 
     // MARK: - Tab Switch Optimization: Snapshot Capture
 
+    func cacheRetainedSnapshot(_ snapshot: NSImage, forTabAt index: Int) {
+        guard tabs.indices.contains(index) else { return }
+        tabs[index].cachedSnapshot = snapshot
+    }
+
+    func clearRetainedSnapshots(forTabAt index: Int, includeCachedSnapshot: Bool = true) {
+        guard tabs.indices.contains(index) else { return }
+        if includeCachedSnapshot {
+            tabs[index].cachedSnapshot = nil
+        }
+        for session in tabs[index].splitController.root.allSessions {
+            session.lastRenderedSnapshot = nil
+        }
+    }
+
     /// Captures a screenshot of the current terminal view for instant display during tab switch
     func captureCurrentTabSnapshot() {
         guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else {
@@ -2007,9 +2024,7 @@ final class OverlayTabsModel {
         let snapshotSession = tabs[currentIndex].displaySession ?? tabs[currentIndex].session
         if let terminalView = snapshotSession?.existingRustTerminalView,
            let image = terminalView.makeRetainedFrameImage() {
-            tabs[currentIndex].cachedSnapshot = image
-            // Also cache on the session for when the view is torn down later
-            snapshotSession?.lastRenderedSnapshot = image
+            cacheRetainedSnapshot(image, forTabAt: currentIndex)
         } else if let cached = snapshotSession?.lastRenderedSnapshot ?? tabs[currentIndex].session?.lastRenderedSnapshot {
             // View is not in the hierarchy (distant-tab optimization removed it),
             // but we have a previously cached frame from the session.
@@ -2031,11 +2046,12 @@ final class OverlayTabsModel {
         cleanupDistantSnapshots(currentIndex: currentIndex)
     }
 
-    /// Clears cached snapshots for tabs far from the current position to limit memory usage
+    /// Releases transient session-owned retained frames for distant tabs while
+    /// preserving the tab-owned cached snapshot used for cold-tab handoff.
     func cleanupDistantSnapshots(currentIndex: Int) {
         for i in 0 ..< tabs.count {
             if abs(i - currentIndex) > 2 {
-                tabs[i].cachedSnapshot = nil
+                clearRetainedSnapshots(forTabAt: i, includeCachedSnapshot: false)
             }
         }
     }
