@@ -1952,14 +1952,12 @@ final class TerminalSessionModel {
         hasView: Bool,
         status: CommandStatus
     ) -> Bool {
-        TabExecutionReadiness.evaluate(
-            snapshot: TabExecutionReadinessSnapshot(
-                shellLoading: isShellLoading,
-                isAtPrompt: isAtPrompt,
-                hasView: hasView,
-                status: status.rawValue
-            )
-        ).isReady
+        guard !isShellLoading else { return false }
+        guard isAtPrompt else { return false }
+        guard hasView else { return false }
+
+        // Prompt detection is more authoritative than laggy status transitions.
+        return status != .exited
     }
 
     // MARK: - F21: Snippet Insertion

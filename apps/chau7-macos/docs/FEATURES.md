@@ -265,6 +265,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Background rendering suspension for inactive tabs (configurable delay).
 - Retained-frame inactive tab handoff keeps the last rendered frame for suspended tabs so switching back shows an immediate snapshot while the live terminal catches up.
 - Snapshot-backed tab switches stay on that retained frame until the selected terminal reports its first live sync, avoiding grey flashes during cold-tab reactivation.
+- Cold tabs that still keep a retained Rust terminal view synthesize a retained frame on demand before selection, so reused terminal views do not fall back to a blank grey handoff.
 - Close other tabs (`Cmd+Opt+W`), configurable new tab position.
 - Shortcut helper hint box (`⌘/` and `⌥⌘I`) floats 4pt from tab bar bottom and window right edge.
 

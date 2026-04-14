@@ -162,5 +162,24 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         )
         XCTAssertFalse(model.tabs[1].session?.awaitingVisibleFrameReady ?? true)
     }
+
+    func testSelectingColdTabCapturesSnapshotFromRetainedRustView() {
+        model.newTab(selectNewTab: false)
+        let targetID = model.tabs[1].id
+        let rustView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 320, height: 160))
+        rustView.wantsLayer = true
+        rustView.layer?.backgroundColor = NSColor.systemGreen.cgColor
+        model.tabs[1].session?.attachRustTerminal(rustView)
+        model.tabs[1].cachedSnapshot = nil
+        model.tabs[1].session?.lastRenderedSnapshot = nil
+
+        model.selectTab(id: targetID)
+
+        XCTAssertNotNil(
+            model.tabs[1].visibleSnapshot,
+            "Selecting a cold tab should synthesize a retained frame from the retained Rust view before the handoff"
+        )
+        XCTAssertFalse(model.isTerminalReady)
+    }
 }
 #endif

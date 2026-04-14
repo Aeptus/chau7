@@ -977,6 +977,26 @@ final class OverlayTabsModel {
         return image
     }
 
+    @discardableResult
+    func ensureRetainedSnapshotForTab(id: UUID) -> Bool {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
+        if tabs[index].visibleSnapshot != nil {
+            return true
+        }
+
+        guard let terminalView = (tabs[index].displaySession ?? tabs[index].session)?.existingRustTerminalView,
+              let snapshot = Self.captureSnapshotImage(from: terminalView) else {
+            return false
+        }
+
+        tabs[index].cachedSnapshot = snapshot
+        tabs[index].session?.lastRenderedSnapshot = snapshot
+        if let session = tabs[index].session {
+            tabs[index].lastPromptText = session.displayPath()
+        }
+        return true
+    }
+
     static func pngData(from image: NSImage) -> Data? {
         guard let tiff = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiff) else {
@@ -1844,6 +1864,7 @@ final class OverlayTabsModel {
         // 2. Capture the outgoing tab's last frame so inactive tabs can freeze
         //    visually without keeping their renderer hot.
         captureCurrentTabSnapshot()
+        _ = ensureRetainedSnapshotForTab(id: id)
         let targetSession = tabs.first(where: { $0.id == id })?.displaySession
             ?? tabs.first(where: { $0.id == id })?.session
         let shouldShowTransitionSnapshot = tabs.first(where: { $0.id == id })?.visibleSnapshot != nil

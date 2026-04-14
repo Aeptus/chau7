@@ -3,6 +3,7 @@ Terminal Core,Rust Terminal Backend,"Custom terminal emulator written in Rust wi
 Terminal Core,Stabilized Scrollback Restore,"Restored scrollback is replayed through the shell again, with restore-artifact filtering preserved, to avoid fresh post-relaunch history corruption while keeping fast visible startup",Shipped,Yes
 Performance,Retained-Frame Inactive Tab Handoff,"Suspended tabs keep a retained last-rendered frame so tab switches can show an immediate snapshot while the live terminal resynchronizes",Shipped,Yes
 Tabs,Event-Driven Retained-Frame Reveal,"Snapshot-backed tab switches keep the retained frame visible until the selected terminal reports its first live sync, avoiding brief grey flashes during cold-tab reactivation",Shipped,Yes
+Tabs,Cold Tab Snapshot Synthesis,"If a cold tab still has a retained Rust terminal view but no cached frame, Chau7 now captures a retained snapshot on selection so reused terminal views avoid a blank grey handoff",Shipped,Yes
 Terminal Core,Full ANSI/VT100 Support,"16-color, 256-color, and 24-bit true color with full SGR attributes (bold, italic, underline, strikethrough)",Shipped,No
 Terminal Core,International Option-Key Punctuation,"Option-generated programming characters like brackets and braces are routed as literal text on international keyboard layouts",Shipped,Yes
 Terminal Core,Kitty Keyboard Protocol,Full Kitty progressive enhancement keyboard protocol for modern key handling,Shipped,No

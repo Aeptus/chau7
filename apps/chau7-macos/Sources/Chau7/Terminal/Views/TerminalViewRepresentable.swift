@@ -241,6 +241,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
                 model?.highlightView?.scheduleDisplay()
                 model?.recordOutputLatencyIfNeeded()
                 model?.noteRestoreBootstrapBufferChanged()
+                model?.notifyVisibleFrameReadyIfNeeded()
             }
             existingView.onFilePathClicked = onFilePathClicked
             existingView.onScrollbackCleared = { [weak model] in
