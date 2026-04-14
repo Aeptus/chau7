@@ -381,6 +381,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             defer: false
         )
         window.minSize = NSSize(width: 820, height: 650)
+        window.contentMinSize = NSSize(width: 820, height: 650)
 
         window.title = L("window.settings.title", "Chau7 Settings")
         window.contentViewController = hostingController
