@@ -2052,6 +2052,12 @@ final class RustTerminalView: NSView {
     /// Current MCP-facing ownership for observability exports.
     var observabilityTabID: String?
     var observabilitySessionID: String?
+    var liveEligibilityReasonForProfiling = "unknown" {
+        didSet {
+            guard liveEligibilityReasonForProfiling != oldValue else { return }
+            refreshRenderPipelineProfilingState(mode: currentRenderLoopMode)
+        }
+    }
 
     /// Shell process ID (for dev server monitoring)
     var shellPid: pid_t {
@@ -2670,9 +2676,72 @@ final class RustTerminalView: NSView {
         return window.isVisible && !window.isMiniaturized
     }
 
-    private func updatePollingMode(reason: String) {
+    private var isRenderLoopActuallyRunning: Bool {
+        if let link = displayLink {
+            return CVDisplayLinkIsRunning(link)
+        }
+        return pollTimer != nil
+    }
+
+    static func shouldReconcilePollingMode(
+        desiredLive: Bool,
+        markedLive: Bool,
+        actuallyRunning: Bool
+    ) -> Bool {
+        desiredLive != markedLive || desiredLive != actuallyRunning
+    }
+
+    var currentRenderLoopMode: String {
+        if isLivePollingActive {
+            if displayLink != nil {
+                return "display_link"
+            }
+            if pollTimer != nil {
+                return "timer"
+            }
+        }
+        return isBackgroundDrainRegistered ? "background_drain" : "stopped"
+    }
+
+    var profilerReasons: String {
+        var reasons = liveEligibilityReasonForProfiling
+            .split(separator: ",")
+            .map { String($0) }
+            .filter { !$0.isEmpty }
+        reasons.append(notifyUpdateChanges ? "notifyUpdateChanges" : "drainOnly")
+        reasons.append(isHidden ? "hidden" : "visible")
+        if let window {
+            reasons.append(window.isVisible ? "visibleWindow" : "windowHidden")
+            if window.isMiniaturized {
+                reasons.append("miniaturized")
+            }
+        } else {
+            reasons.append("noWindow")
+        }
+        return Array(NSOrderedSet(array: reasons)).compactMap { $0 as? String }.joined(separator: ",")
+    }
+
+    func refreshRenderPipelineProfilingState(mode: String? = nil) {
+        RenderPipelineProfiler.shared.updateRenderLoopState(
+            viewID: viewId,
+            active: isLivePollingActive,
+            tabID: observabilityTabID,
+            sessionID: observabilitySessionID,
+            mode: mode ?? currentRenderLoopMode,
+            reasons: profilerReasons
+        )
+    }
+
+    func updatePollingMode(reason: String) {
         let shouldRunLive = shouldRunLivePolling()
-        guard shouldRunLive != isLivePollingActive else { return }
+        guard Self.shouldReconcilePollingMode(
+            desiredLive: shouldRunLive,
+            markedLive: isLivePollingActive,
+            actuallyRunning: isRenderLoopActuallyRunning
+        ) else {
+            refreshRenderPipelineProfilingState()
+            return
+        }
 
         isLivePollingActive = shouldRunLive
         if shouldRunLive {
@@ -2682,6 +2751,7 @@ final class RustTerminalView: NSView {
             Log.trace("RustTerminalView[\(viewId)]: pausing live polling (\(reason))")
             pauseDisplayLink()
         }
+        refreshRenderPipelineProfilingState()
     }
 
     override var acceptsFirstResponder: Bool {

@@ -41,8 +41,10 @@ extension RustTerminalView {
             RenderPipelineProfiler.shared.updateRenderLoopState(
                 viewID: viewId,
                 active: true,
+                tabID: observabilityTabID,
+                sessionID: observabilitySessionID,
                 mode: "display_link",
-                reason: "setup"
+                reasons: profilerReasons
             )
             Chau7ObservabilityService.shared.registerTimer(
                 id: renderLoopTimerID,
@@ -66,8 +68,10 @@ extension RustTerminalView {
             RenderPipelineProfiler.shared.updateRenderLoopState(
                 viewID: viewId,
                 active: true,
+                tabID: observabilityTabID,
+                sessionID: observabilitySessionID,
                 mode: "timer",
-                reason: "setup-fallback"
+                reasons: profilerReasons
             )
             Chau7ObservabilityService.shared.registerTimer(
                 id: renderLoopTimerID,
@@ -83,6 +87,7 @@ extension RustTerminalView {
             )
             Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using Timer fallback for polling")
         }
+        updatePollingMode(reason: "setupPollingLoop")
     }
 
     func stopPollingLoop() {
@@ -106,8 +111,10 @@ extension RustTerminalView {
         RenderPipelineProfiler.shared.updateRenderLoopState(
             viewID: viewId,
             active: false,
+            tabID: observabilityTabID,
+            sessionID: observabilitySessionID,
             mode: "stopped",
-            reason: "stopPollingLoop"
+            reasons: profilerReasons
         )
         Chau7ObservabilityService.shared.setTimerActive(renderLoopTimerID, active: false)
         stopBackgroundDrain()
@@ -132,8 +139,10 @@ extension RustTerminalView {
         RenderPipelineProfiler.shared.updateRenderLoopState(
             viewID: viewId,
             active: false,
+            tabID: observabilityTabID,
+            sessionID: observabilitySessionID,
             mode: "background_drain",
-            reason: "pauseDisplayLink"
+            reasons: profilerReasons
         )
         Chau7ObservabilityService.shared.setTimerActive(renderLoopTimerID, active: false)
 
@@ -151,8 +160,10 @@ extension RustTerminalView {
             RenderPipelineProfiler.shared.updateRenderLoopState(
                 viewID: viewId,
                 active: true,
+                tabID: observabilityTabID,
+                sessionID: observabilitySessionID,
                 mode: "display_link",
-                reason: "resume"
+                reasons: profilerReasons
             )
             Chau7ObservabilityService.shared.registerTimer(
                 id: renderLoopTimerID,
@@ -176,8 +187,10 @@ extension RustTerminalView {
             RenderPipelineProfiler.shared.updateRenderLoopState(
                 viewID: viewId,
                 active: true,
+                tabID: observabilityTabID,
+                sessionID: observabilitySessionID,
                 mode: "timer",
-                reason: "resume-fallback"
+                reasons: profilerReasons
             )
             Chau7ObservabilityService.shared.registerTimer(
                 id: renderLoopTimerID,
@@ -354,8 +367,7 @@ extension RustTerminalView {
         let changed = rust.poll(timeout: 0)
         RenderPipelineProfiler.shared.recordPoll(
             viewID: viewId,
-            changed: changed,
-            live: livePollingActiveForProfiling
+            changed: changed
         )
 
         // Check for bell events from Rust terminal and trigger audio/visual feedback

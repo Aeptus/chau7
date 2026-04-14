@@ -35,5 +35,25 @@ final class RustTerminalViewTextInputTests: XCTestCase {
             "Plain text keys still need the fallback path when NSTextInputContext does not consume the event"
         )
     }
+
+    func testShouldReconcilePollingModeWhenLoopIsStillRunningWhileMarkedInactive() {
+        XCTAssertTrue(
+            RustTerminalView.shouldReconcilePollingMode(
+                desiredLive: false,
+                markedLive: false,
+                actuallyRunning: true
+            )
+        )
+    }
+
+    func testShouldNotReconcilePollingModeWhenMarkedStateMatchesReality() {
+        XCTAssertFalse(
+            RustTerminalView.shouldReconcilePollingMode(
+                desiredLive: true,
+                markedLive: true,
+                actuallyRunning: true
+            )
+        )
+    }
 }
 #endif
