@@ -136,7 +136,7 @@ struct OverlayTab: Identifiable, Equatable {
     var lastPromptText = ""
 
     var visibleSnapshot: NSImage? {
-        restorePreviewSnapshot ?? cachedSnapshot ?? session?.lastRenderedSnapshot
+        restorePreviewSnapshot ?? cachedSnapshot ?? displaySession?.lastRenderedSnapshot ?? session?.lastRenderedSnapshot
     }
 
     /// The primary terminal session (first terminal in split tree)
@@ -946,7 +946,7 @@ final class OverlayTabsModel {
         if let preview = tab.restorePreviewSnapshot {
             return preview
         }
-        if let cached = tab.cachedSnapshot ?? tab.session?.lastRenderedSnapshot {
+        if let cached = tab.cachedSnapshot ?? tab.displaySession?.lastRenderedSnapshot ?? tab.session?.lastRenderedSnapshot {
             return cached
         }
 
@@ -954,14 +954,15 @@ final class OverlayTabsModel {
               let terminalView = (tab.displaySession ?? tab.session)?.existingRustTerminalView else {
             return nil
         }
-        guard let snapshot = Self.captureSnapshotImage(from: terminalView) else {
+        guard let snapshot = Self.captureSnapshotImage(from: terminalView, allowForcedTerminalSync: true) else {
             return nil
         }
 
         if let index = tabs.firstIndex(where: { $0.id == tab.id }) {
             tabs[index].cachedSnapshot = snapshot
-            tabs[index].session?.lastRenderedSnapshot = snapshot
-            tabs[index].lastPromptText = tabs[index].session?.displayPath() ?? tabs[index].lastPromptText
+            let snapshotSession = tabs[index].displaySession ?? tabs[index].session
+            snapshotSession?.lastRenderedSnapshot = snapshot
+            tabs[index].lastPromptText = snapshotSession?.displayPath() ?? tabs[index].lastPromptText
         }
         return snapshot
     }
@@ -1001,16 +1002,16 @@ final class OverlayTabsModel {
         return !view.isHidden
     }
 
-    static func captureSnapshotImage(from view: NSView) -> NSImage? {
+    static func captureSnapshotImage(from view: NSView, allowForcedTerminalSync: Bool = false) -> NSImage? {
         if let rustView = view as? RustTerminalView {
-            return rustView.makeRetainedFrameImage()
+            return rustView.makeRetainedFrameImage(allowForcedSync: allowForcedTerminalSync)
         }
         if let unified = view as? UnifiedTerminalContainerView,
            let rustView = unified.rustTerminalView {
-            return rustView.makeRetainedFrameImage()
+            return rustView.makeRetainedFrameImage(allowForcedSync: allowForcedTerminalSync)
         }
         if let container = view as? RustTerminalContainerView {
-            return container.terminalView.makeRetainedFrameImage()
+            return container.terminalView.makeRetainedFrameImage(allowForcedSync: allowForcedTerminalSync)
         }
         let snapshotView = snapshotSurface(for: view)
         guard isSnapshotSurfaceReady(snapshotView) else {
@@ -2003,12 +2004,13 @@ final class OverlayTabsModel {
             return
         }
 
-        if let terminalView = tabs[currentIndex].session?.existingRustTerminalView,
+        let snapshotSession = tabs[currentIndex].displaySession ?? tabs[currentIndex].session
+        if let terminalView = snapshotSession?.existingRustTerminalView,
            let image = terminalView.makeRetainedFrameImage() {
             tabs[currentIndex].cachedSnapshot = image
             // Also cache on the session for when the view is torn down later
-            tabs[currentIndex].session?.lastRenderedSnapshot = image
-        } else if let cached = tabs[currentIndex].session?.lastRenderedSnapshot {
+            snapshotSession?.lastRenderedSnapshot = image
+        } else if let cached = snapshotSession?.lastRenderedSnapshot ?? tabs[currentIndex].session?.lastRenderedSnapshot {
             // View is not in the hierarchy (distant-tab optimization removed it),
             // but we have a previously cached frame from the session.
             tabs[currentIndex].cachedSnapshot = cached
@@ -2019,7 +2021,7 @@ final class OverlayTabsModel {
         }
 
         // Also capture cursor position and prompt for cursor-first rendering
-        if let session = tabs[currentIndex].session {
+        if let session = snapshotSession {
             tabs[currentIndex].lastPromptText = session.displayPath()
             // Cursor position would need terminal view support - using placeholder
             tabs[currentIndex].lastCursorPosition = CGPoint(x: 50, y: 20)

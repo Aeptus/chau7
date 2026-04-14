@@ -178,13 +178,26 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertFalse(model.isTerminalReady)
     }
 
-    func testCaptureSnapshotUsesRendererStateForHiddenRetainedView() {
+    func testVisibleSnapshotPrefersFocusedDisplaySessionFrame() {
+        model.splitCurrentTabHorizontally()
+        let splitSessions = model.tabs[0].splitController.terminalSessions
+        let focusedPaneID = splitSessions[1].0
+        let focusedSession = splitSessions[1].1
+        model.tabs[0].splitController.setFocusedPane(focusedPaneID)
+
+        model.tabs[0].session?.lastRenderedSnapshot = nil
+        focusedSession.lastRenderedSnapshot = makeSnapshot(size: NSSize(width: 120, height: 60))
+
+        XCTAssertEqual(model.tabs[0].visibleSnapshot?.size, NSSize(width: 120, height: 60))
+    }
+
+    func testCaptureSnapshotSkipsHiddenFreshRetainedView() {
         let rustView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 320, height: 160))
         rustView.isHidden = true
 
-        XCTAssertNotNil(
+        XCTAssertNil(
             OverlayTabsModel.captureSnapshotImage(from: rustView),
-            "Renderer-owned retained frames should not depend on the NSView staying visible"
+            "A hidden terminal view without any rendered frame should not yield a retained snapshot"
         )
     }
 }
