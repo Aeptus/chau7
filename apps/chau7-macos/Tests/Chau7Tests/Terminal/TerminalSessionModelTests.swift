@@ -1389,6 +1389,35 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertNil(session.lastRenderedSnapshot)
     }
 
+    func testCloseSessionShutsDownRetainedTerminalRendering() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let terminalView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        terminalView.notifyUpdateChanges = true
+        terminalView.isHidden = false
+        terminalView.setEventMonitoringEnabled(true)
+        session.attachRustTerminal(terminalView)
+
+        session.closeSession()
+
+        XCTAssertFalse(terminalView.notifyUpdateChanges)
+        XCTAssertTrue(terminalView.isHidden)
+        XCTAssertTrue(session.existingRustTerminalView === terminalView)
+    }
+
+    func testProcessTerminationReleasesRetainedTerminalView() async {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let terminalView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        session.attachRustTerminal(terminalView)
+
+        session.closeSession()
+        terminalView.onProcessTerminated?(0)
+        await flushMainQueue()
+
+        XCTAssertNil(session.existingRustTerminalView)
+    }
+
     // MARK: - Prefill Input
 
     func testPrefillInputQueuesUntilTerminalViewAttached() {

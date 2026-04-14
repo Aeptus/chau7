@@ -2593,6 +2593,22 @@ final class RustTerminalView: NSView {
         Log.trace("RustTerminalView[\(viewId)]: deinit - Cleanup complete")
     }
 
+    /// Permanently tears down live rendering for a closing session while keeping
+    /// the terminal object alive long enough to send exit and observe process exit.
+    func shutdownRenderingForSessionClosure() {
+        shellStartupTimeoutWork?.cancel()
+        shellStartupTimeoutWork = nil
+        setEventMonitoringEnabled(false)
+        notifyUpdateChanges = false
+        isHidden = true
+        stopPollingLoop()
+        if let container = superview as? RustTerminalContainerView {
+            container.disableMetalRendering()
+        } else {
+            isMetalRenderingActive = false
+        }
+    }
+
     // MARK: - View Lifecycle
 
     override func viewDidMoveToWindow() {

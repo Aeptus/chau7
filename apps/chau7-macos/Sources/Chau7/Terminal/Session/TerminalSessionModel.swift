@@ -841,6 +841,7 @@ final class TerminalSessionModel {
 
     deinit {
         // Clean up resources
+        releaseRetainedTerminalView()
         for observer in settingsObservers {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -873,6 +874,18 @@ final class TerminalSessionModel {
     /// Accessor for the active terminal view
     var activeTerminalView: (any TerminalViewLike)? {
         rustTerminalView ?? retainedRustTerminalView
+    }
+
+    private func shutdownRetainedTerminalRendering() {
+        retainedRustTerminalView?.shutdownRenderingForSessionClosure()
+    }
+
+    private func releaseRetainedTerminalView() {
+        rustTerminalView?.setEventMonitoringEnabled(false)
+        retainedRustTerminalView?.setEventMonitoringEnabled(false)
+        rustTerminalView = nil
+        retainedRustTerminalView?.onProcessTerminated = nil
+        retainedRustTerminalView = nil
     }
 
     func attachRustTerminal(_ view: RustTerminalView) {
@@ -1343,6 +1356,7 @@ final class TerminalSessionModel {
         }
 
         lastRenderedSnapshot = nil
+        shutdownRetainedTerminalRendering()
 
         // Stop all background work
         stopIdleTimer()
@@ -1392,6 +1406,7 @@ final class TerminalSessionModel {
             self.devServer = nil
             self.lastExitCode = exitCode.map(Int.init)
             self.lastExitAt = Date()
+            self.releaseRetainedTerminalView()
         }
         devServerMonitor.stop()
         // finishAILogging is idempotent and has internal synchronization

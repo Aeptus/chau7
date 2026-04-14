@@ -25,6 +25,10 @@ final class RustTerminalContainerView: NSView {
         fatalError("init(coder:) not implemented")
     }
 
+    deinit {
+        disableMetalRendering()
+    }
+
     override func layout() {
         super.layout()
         terminalView.frame = bounds
