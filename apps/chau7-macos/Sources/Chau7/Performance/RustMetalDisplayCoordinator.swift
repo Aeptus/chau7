@@ -403,6 +403,8 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             viewportSize: view.bounds.size
         )
 
+        terminalView?.onFramePresented?()
+
         // 7. Advance triple buffer
         tripleBuffer.presentFrame()
 

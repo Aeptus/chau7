@@ -1991,6 +1991,11 @@ final class RustTerminalView: NSView {
     /// Callback when buffer content changes
     var onBufferChanged: (() -> Void)?
 
+    /// Callback after the terminal has presented a visible frame.
+    /// Used for snapshot-to-live handoff so the UI does not reveal a Metal
+    /// surface before its first draw has completed.
+    var onFramePresented: (() -> Void)?
+
     /// Callback when scroll position changes
     var onScrollChanged: (() -> Void)?
 

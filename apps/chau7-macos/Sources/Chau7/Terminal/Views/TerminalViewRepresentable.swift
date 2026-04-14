@@ -197,15 +197,36 @@ final class UnifiedTerminalContainerView: NSView {
 }
 
 struct TerminalViewRepresentable: NSViewRepresentable {
+    final class Coordinator {
+        var lastSuspendedState: Bool?
+
+        func seedSuspensionState(_ isSuspended: Bool) {
+            lastSuspendedState = isSuspended
+        }
+
+        func consumeSuspensionChange(to isSuspended: Bool) -> Bool {
+            let previous = lastSuspendedState ?? isSuspended
+            let changed = previous != isSuspended
+            lastSuspendedState = isSuspended
+            return changed
+        }
+    }
+
     var model: TerminalSessionModel
     var isSuspended: Bool
     var isActive: Bool
     var onFilePathClicked: ((String, Int?, Int?) -> Void)?
     var settings = FeatureSettings.shared
 
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeNSView(context: Context) -> UnifiedTerminalContainerView {
         Log.trace("TerminalViewRepresentable: makeNSView — Rust backend")
-        return makeRustTerminalView()
+        let container = makeRustTerminalView()
+        context.coordinator.seedSuspensionState(isSuspended)
+        return container
     }
 
     private func cacheRetainedFrameIfAvailable(from view: RustTerminalView) {
@@ -229,11 +250,16 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.onShellStartupSlow = { [weak model] in
                 model?.shellStartupSlow = true
             }
-            existingView.onBufferChanged = { [weak model] in
+            existingView.onBufferChanged = { [weak model, weak existingView] in
                 model?.scheduleSearchRefresh()
                 model?.highlightView?.scheduleDisplay()
                 model?.recordOutputLatencyIfNeeded()
                 model?.noteRestoreBootstrapBufferChanged()
+                if existingView?.isMetalRenderingActive == false {
+                    model?.notifyVisibleFrameReadyIfNeeded()
+                }
+            }
+            existingView.onFramePresented = { [weak model] in
                 model?.notifyVisibleFrameReadyIfNeeded()
             }
             existingView.onFilePathClicked = onFilePathClicked
@@ -247,9 +273,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
             existingView.installHistoryKeyMonitor()
             let container = UnifiedTerminalContainerView(rustView: existingView)
-            if isSuspended {
-                cacheRetainedFrameIfAvailable(from: existingView)
-            }
             existingView.notifyUpdateChanges = !isSuspended
             existingView.isHidden = isSuspended
             existingView.setEventMonitoringEnabled(isActive && !isSuspended)
@@ -309,11 +332,16 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.onShellStartupSlow = { [weak model] in
             model?.shellStartupSlow = true
         }
-        view.onBufferChanged = { [weak model] in
+        view.onBufferChanged = { [weak model, weak view] in
             model?.scheduleSearchRefresh()
             model?.highlightView?.scheduleDisplay()
             model?.recordOutputLatencyIfNeeded()
             model?.noteRestoreBootstrapBufferChanged()
+            if view?.isMetalRenderingActive == false {
+                model?.notifyVisibleFrameReadyIfNeeded()
+            }
+        }
+        view.onFramePresented = { [weak model] in
             model?.notifyVisibleFrameReadyIfNeeded()
         }
         view.onScrollChanged = { [weak model] in
@@ -379,7 +407,8 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         nsView.setEventMonitoringEnabled(isActive && !isSuspended)
 
         let metalActive = container.rustMetalCoordinator != nil
-        if isSuspended {
+        let suspensionChanged = context.coordinator.consumeSuspensionChange(to: isSuspended)
+        if suspensionChanged, isSuspended {
             cacheRetainedFrameIfAvailable(from: nsView)
         }
         if nsView.isHidden != isSuspended {
@@ -396,6 +425,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
                 container.rustMetalCoordinator?.pauseBlinkTimer()
             } else {
                 container.rustMetalCoordinator?.resumeBlinkTimer()
+                if suspensionChanged {
+                    container.rustMetalCoordinator?.setNeedsSync()
+                }
             }
         }
         if nsView.notifyUpdateChanges == isSuspended {
