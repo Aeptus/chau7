@@ -34,11 +34,9 @@ public struct MCPToolRateLimiter {
         public static let `default` = Config(
             defaultLimit: Limit(maxPerMinute: 120, burstAllowance: 30),
             perToolLimits: [
-                "runtime_events_poll": Limit(maxPerMinute: 240, burstAllowance: 120),
-                "runtime_turn_status": Limit(maxPerMinute: 240, burstAllowance: 120),
-                "runtime_turn_wait": Limit(maxPerMinute: 180, burstAllowance: 60),
                 "tab_output": Limit(maxPerMinute: 240, burstAllowance: 120),
-                "tab_status": Limit(maxPerMinute: 240, burstAllowance: 120)
+                "tab_status": Limit(maxPerMinute: 240, burstAllowance: 120),
+                "session_current": Limit(maxPerMinute: 240, burstAllowance: 120)
             ]
         )
     }

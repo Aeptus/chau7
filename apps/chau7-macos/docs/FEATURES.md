@@ -198,7 +198,7 @@ Telemetry parsing also accepts pretty-printed Codex rollout JSON when extracting
 
 ### Internal Runtime
 
-The app still contains internal runtime orchestration used by dashboard and review flows, but `runtime_*` is no longer part of the public MCP tool surface. Public MCP clients should use `tab_*` for live control and `run_*` / `session_*` for telemetry/history.
+The app still contains internal runtime orchestration used by dashboard and review flows, but `runtime_*` is not callable through MCP anymore. Public MCP clients should use `tab_*` for live control and `run_*` / `session_*` for telemetry/history.
 
 ### Resources (4 endpoints)
 

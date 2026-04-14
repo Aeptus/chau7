@@ -110,7 +110,7 @@ final class MCPSessionTests: XCTestCase {
         XCTAssertEqual(error["code"] as? Int, -32602)
     }
 
-    func testRuntimeToolsRemainCallableButHiddenFromMCPDiscovery() throws {
+    func testRuntimeToolsAreRejectedByMCP() throws {
         let session = initializedSession()
 
         let response = try XCTUnwrap(
@@ -122,8 +122,9 @@ final class MCPSessionTests: XCTestCase {
             ])
         )
 
-        XCTAssertNil(response["error"])
-        XCTAssertNotNil(response["result"] as? [String: Any])
+        let error = try XCTUnwrap(response["error"] as? [String: Any])
+        XCTAssertEqual(error["code"] as? Int, -32602)
+        XCTAssertTrue((error["message"] as? String)?.contains("Unknown tool") == true)
     }
 
     func testMissingRequiredArgumentsReturnProtocolError() throws {

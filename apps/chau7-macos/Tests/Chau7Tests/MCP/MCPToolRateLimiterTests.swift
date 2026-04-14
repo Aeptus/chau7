@@ -27,22 +27,22 @@ final class MCPToolRateLimiterTests: XCTestCase {
 
         XCTAssertTrue(limiter.evaluate(toolName: "tab_create", now: now).isAllowed)
         XCTAssertFalse(limiter.evaluate(toolName: "tab_create", now: now).isAllowed)
-        XCTAssertTrue(limiter.evaluate(toolName: "runtime_events_poll", now: now).isAllowed)
+        XCTAssertTrue(limiter.evaluate(toolName: "session_current", now: now).isAllowed)
     }
 
     func testToolSpecificOverridesApply() {
         var limiter = MCPToolRateLimiter(
             config: .init(
                 defaultLimit: .init(maxPerMinute: 1, burstAllowance: 0),
-                perToolLimits: ["runtime_events_poll": .init(maxPerMinute: 2, burstAllowance: 1)]
+                perToolLimits: ["tab_output": .init(maxPerMinute: 2, burstAllowance: 1)]
             )
         )
         let now = Date(timeIntervalSinceReferenceDate: 300)
 
-        XCTAssertTrue(limiter.evaluate(toolName: "runtime_events_poll", now: now).isAllowed)
-        XCTAssertTrue(limiter.evaluate(toolName: "runtime_events_poll", now: now).isAllowed)
-        XCTAssertTrue(limiter.evaluate(toolName: "runtime_events_poll", now: now).isAllowed)
-        XCTAssertFalse(limiter.evaluate(toolName: "runtime_events_poll", now: now).isAllowed)
+        XCTAssertTrue(limiter.evaluate(toolName: "tab_output", now: now).isAllowed)
+        XCTAssertTrue(limiter.evaluate(toolName: "tab_output", now: now).isAllowed)
+        XCTAssertTrue(limiter.evaluate(toolName: "tab_output", now: now).isAllowed)
+        XCTAssertFalse(limiter.evaluate(toolName: "tab_output", now: now).isAllowed)
 
         XCTAssertTrue(limiter.evaluate(toolName: "tab_exec", now: now).isAllowed)
         XCTAssertFalse(limiter.evaluate(toolName: "tab_exec", now: now).isAllowed)
@@ -54,8 +54,8 @@ final class MCPToolRateLimiterTests: XCTestCase {
         )
         let now = Date(timeIntervalSinceReferenceDate: 400)
 
-        XCTAssertTrue(limiter.evaluate(toolName: "runtime_session_create", now: now).isAllowed)
-        let blocked = limiter.evaluate(toolName: "runtime_session_create", now: now)
+        XCTAssertTrue(limiter.evaluate(toolName: "tab_create", now: now).isAllowed)
+        let blocked = limiter.evaluate(toolName: "tab_create", now: now)
         XCTAssertFalse(blocked.isAllowed)
         XCTAssertNil(blocked.retryAfterSeconds)
     }
