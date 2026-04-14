@@ -18,17 +18,20 @@ public enum CodexRolloutParser {
         public var turns: [TelemetryTurn]
         public var toolCalls: [TelemetryToolCall]
         public var tokenUsage: TokenUsage
+        public var latestQuotaSnapshot: ProviderQuotaSnapshot?
 
         public init(
             model: String? = nil,
             turns: [TelemetryTurn] = [],
             toolCalls: [TelemetryToolCall] = [],
-            tokenUsage: TokenUsage = TokenUsage()
+            tokenUsage: TokenUsage = TokenUsage(),
+            latestQuotaSnapshot: ProviderQuotaSnapshot? = nil
         ) {
             self.model = model
             self.turns = turns
             self.toolCalls = toolCalls
             self.tokenUsage = tokenUsage
+            self.latestQuotaSnapshot = latestQuotaSnapshot
         }
     }
 
@@ -42,6 +45,7 @@ public enum CodexRolloutParser {
         var turns: [TelemetryTurn] = []
         var toolCalls: [TelemetryToolCall] = []
         var tokenUsage = TokenUsage()
+        var latestQuotaSnapshot: ProviderQuotaSnapshot?
         var turnIndex = 0
         var callIndex = 0
 
@@ -134,6 +138,13 @@ public enum CodexRolloutParser {
                 turnIndex += 1
 
             case "event_msg":
+                if let quotaSnapshot = parseQuotaSnapshot(
+                    payload: payload,
+                    timestamp: timestamp ?? startedAt
+                ) {
+                    latestQuotaSnapshot = quotaSnapshot
+                }
+
                 guard isInRunWindow,
                       (payload["type"] as? String) == "token_count",
                       let info = payload["info"] as? [String: Any],
@@ -154,11 +165,120 @@ public enum CodexRolloutParser {
             }
         }
 
-        return ParseResult(model: model, turns: turns, toolCalls: toolCalls, tokenUsage: tokenUsage)
+        return ParseResult(
+            model: model,
+            turns: turns,
+            toolCalls: toolCalls,
+            tokenUsage: tokenUsage,
+            latestQuotaSnapshot: latestQuotaSnapshot
+        )
     }
 
     public static func parseDate(_ value: String?) -> Date? {
         guard let value, !value.isEmpty else { return nil }
         return iso8601.date(from: value) ?? iso8601Basic.date(from: value)
+    }
+
+    public static func latestQuotaSnapshot(
+        in text: String,
+        rawSourceRef: String? = nil
+    ) -> ProviderQuotaSnapshot? {
+        var latestSnapshot: ProviderQuotaSnapshot?
+
+        for line in text.components(separatedBy: .newlines) where !line.isEmpty {
+            guard let lineData = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
+                continue
+            }
+
+            guard let payload = obj["payload"] as? [String: Any],
+                  let snapshot = parseQuotaSnapshot(
+                      payload: payload,
+                      timestamp: parseDate(obj["timestamp"] as? String) ?? Date()
+                  ) else {
+                continue
+            }
+
+            latestSnapshot = ProviderQuotaSnapshot(
+                provider: snapshot.provider,
+                capturedAt: snapshot.capturedAt,
+                source: snapshot.source,
+                planType: snapshot.planType,
+                credits: snapshot.credits,
+                rawSourceRef: rawSourceRef,
+                windows: snapshot.windows
+            )
+        }
+
+        return latestSnapshot
+    }
+
+    private static func parseQuotaSnapshot(
+        payload: [String: Any],
+        timestamp: Date
+    ) -> ProviderQuotaSnapshot? {
+        guard let rateLimits = payload["rate_limits"] as? [String: Any] else { return nil }
+
+        var windows: [ProviderQuotaWindowSnapshot] = []
+        if let primary = rateLimits["primary"] as? [String: Any],
+           let usedPercent = numberValue(primary["used_percent"]) {
+            windows.append(
+                ProviderQuotaWindowSnapshot(
+                    id: "primary",
+                    usedPercent: usedPercent,
+                    windowMinutes: intValue(primary["window_minutes"]),
+                    resetsAt: unixDate(primary["resets_at"])
+                )
+            )
+        }
+        if let secondary = rateLimits["secondary"] as? [String: Any],
+           let usedPercent = numberValue(secondary["used_percent"]) {
+            windows.append(
+                ProviderQuotaWindowSnapshot(
+                    id: "secondary",
+                    usedPercent: usedPercent,
+                    windowMinutes: intValue(secondary["window_minutes"]),
+                    resetsAt: unixDate(secondary["resets_at"])
+                )
+            )
+        }
+
+        guard !windows.isEmpty else { return nil }
+        return ProviderQuotaSnapshot(
+            provider: "codex",
+            capturedAt: timestamp,
+            source: "codex_rollout",
+            planType: rateLimits["plan_type"] as? String,
+            credits: numberValue(rateLimits["credits"]),
+            rawSourceRef: nil,
+            windows: windows
+        )
+    }
+
+    private static func numberValue(_ raw: Any?) -> Double? {
+        switch raw {
+        case let value as NSNumber:
+            return value.doubleValue
+        case let value as String:
+            return Double(value)
+        default:
+            return nil
+        }
+    }
+
+    private static func intValue(_ raw: Any?) -> Int? {
+        switch raw {
+        case let value as NSNumber:
+            return value.intValue
+        case let value as String:
+            return Int(value)
+        default:
+            return nil
+        }
+    }
+
+    private static func unixDate(_ raw: Any?) -> Date? {
+        guard let seconds = numberValue(raw) else { return nil }
+        return Date(timeIntervalSince1970: seconds)
     }
 }

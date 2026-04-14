@@ -45,4 +45,33 @@ final class CodexRolloutParserTests: XCTestCase {
         XCTAssertEqual(parsed.tokenUsage.outputTokens, 10)
         XCTAssertEqual(parsed.tokenUsage.reasoningOutputTokens, 1)
     }
+
+    func testLatestQuotaSnapshot_parsesRateLimits() {
+        let jsonl = """
+        {
+          "timestamp":"2026-04-01T10:00:01.000Z",
+          "type":"event_msg",
+          "payload":{
+            "type":"token_count",
+            "info":null,
+            "rate_limits":{
+              "limit_id":"codex",
+              "primary":{"used_percent":12.5,"window_minutes":300,"resets_at":1776097458},
+              "secondary":{"used_percent":44.0,"window_minutes":10080,"resets_at":1776433461},
+              "credits":null,
+              "plan_type":"pro"
+            }
+          }
+        }
+        """
+
+        let snapshot = CodexRolloutParser.latestQuotaSnapshot(in: jsonl, rawSourceRef: "/tmp/rollout.jsonl")
+
+        XCTAssertEqual(snapshot?.provider, "codex")
+        XCTAssertEqual(snapshot?.planType, "pro")
+        XCTAssertEqual(snapshot?.rawSourceRef, "/tmp/rollout.jsonl")
+        XCTAssertEqual(snapshot?.windows.count, 2)
+        XCTAssertEqual(snapshot?.windows.first(where: { $0.windowMinutes == 300 })?.usedPercent, 12.5)
+        XCTAssertEqual(snapshot?.windows.first(where: { $0.windowMinutes == 10080 })?.usedPercent, 44.0)
+    }
 }
