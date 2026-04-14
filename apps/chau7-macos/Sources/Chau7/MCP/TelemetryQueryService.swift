@@ -165,9 +165,35 @@ final class TelemetryQueryService {
     }
 
     func currentSessions() -> String {
+        encodeAny(currentRunObjects())
+    }
+
+    func currentRunObjects() -> [[String: Any]] {
         let active = recorder.allActiveRuns.sorted(by: TelemetryQueryProjection.runSortDescending)
         let activeRunIDs = Set(active.map(\.id))
-        return encodeAny(active.map { projectRun($0, activeRunIDs: activeRunIDs) })
+        return active.map { projectRun($0, activeRunIDs: activeRunIDs) }
+    }
+
+    func activeSessionObjects() -> [[String: Any]] {
+        let activeRuns = recorder.allActiveRuns.sorted(by: TelemetryQueryProjection.runSortDescending)
+        let grouped = Dictionary(grouping: activeRuns.compactMap { run -> (String, TelemetryRun)? in
+            guard let sessionID = run.sessionID, !sessionID.isEmpty else { return nil }
+            return (sessionID, run)
+        }, by: \.0)
+
+        return grouped.keys.sorted().compactMap { sessionID -> [String: Any]? in
+            guard let pairs = grouped[sessionID] else { return nil }
+            let runs = pairs.map(\.1)
+            let latestRun = runs.sorted(by: TelemetryQueryProjection.runSortDescending).first
+            return [
+                "session_id": sessionID,
+                "provider": latestRun?.provider as Any,
+                "repo_path": latestRun?.repoPath as Any,
+                "active_run_count": runs.count,
+                "latest_run_id": latestRun?.id as Any,
+                "last_active": latestRun.map { isoFormatter.string(from: $0.startedAt) } as Any
+            ].compactMapValues { $0 }
+        }
     }
 
     // MARK: - Encoding

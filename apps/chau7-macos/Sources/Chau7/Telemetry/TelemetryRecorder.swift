@@ -75,6 +75,18 @@ final class TelemetryRecorder {
 
         store.insertRun(run)
         publishLiveRun(run)
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "telemetry_run_started",
+            subsystem: "telemetry",
+            tabID: tabID,
+            sessionID: sessionID,
+            runID: runID,
+            repoPath: repoPath,
+            detail: [
+                "provider": provider,
+                "cwd": cwd
+            ]
+        )
         Log.info("TelemetryRecorder: run started \(runID) provider=\(provider) cwd=\(cwd)")
     }
 
@@ -192,6 +204,20 @@ final class TelemetryRecorder {
         store.finalizeRun(run, turns: turns, toolCalls: toolCalls)
         scheduleTranscriptRepairIfNeeded(for: run)
         removeLiveRun(runID: run.id)
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "telemetry_run_completed",
+            subsystem: "telemetry",
+            tabID: tabID,
+            sessionID: run.sessionID,
+            runID: runID,
+            repoPath: run.repoPath,
+            detail: [
+                "provider": run.provider,
+                "exit_status": exitStatus as Any,
+                "turn_count": run.turnCount,
+                "duration_ms": run.durationMs as Any
+            ].compactMapValues { $0 }
+        )
         Log.info("TelemetryRecorder: run ended \(runID) exit=\(exitStatus ?? -1) duration=\(run.durationMs ?? 0)ms turns=\(run.turnCount)")
     }
 
@@ -211,6 +237,14 @@ final class TelemetryRecorder {
         if let liveRun {
             publishLiveRun(liveRun)
         }
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "telemetry_run_updated",
+            subsystem: "telemetry",
+            tabID: tabID,
+            sessionID: sessionID,
+            runID: runID,
+            detail: ["field": "session_id"]
+        )
     }
 
     /// Update session ID for an active run matched by provider and working directory.
@@ -239,6 +273,15 @@ final class TelemetryRecorder {
             if let liveRun {
                 publishLiveRun(liveRun)
             }
+            Chau7ObservabilityService.shared.recordEvent(
+                type: "telemetry_run_updated",
+                subsystem: "telemetry",
+                tabID: run.tabID,
+                sessionID: sessionID,
+                runID: run.id,
+                repoPath: run.repoPath,
+                detail: ["field": "session_id"]
+            )
             Log.info("TelemetryRecorder: session ID updated via cwd match: \(sessionID.prefix(8)) → run \(run.id.prefix(8))")
         } else {
             lock.unlock()
@@ -306,6 +349,19 @@ final class TelemetryRecorder {
 
         store.updateRunLiveMetrics(run)
         publishLiveRun(run)
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "telemetry_run_updated",
+            subsystem: "telemetry",
+            tabID: tabID,
+            sessionID: run.sessionID,
+            runID: runID,
+            repoPath: run.repoPath,
+            detail: [
+                "field": "live_metrics",
+                "turn_count": turnCount,
+                "provider": run.provider
+            ]
+        )
     }
 
     // MARK: - PTY Log Reading

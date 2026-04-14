@@ -116,6 +116,75 @@ final class Chau7ObservabilityServiceTests: XCTestCase {
         XCTAssertEqual(timers[0]["session_id"] as? String, "sess_7")
     }
 
+    func testChangePayloadsClassifyTopicsAndReplayBySequence() {
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "approval_waiting",
+            subsystem: "mcp_approvals",
+            sessionID: "req_1",
+            detail: ["kind": "command_request"]
+        )
+        Chau7ObservabilityService.shared.registerTimer(
+            id: "mcp_health_check",
+            kind: "dispatch_source_timer",
+            label: "mcp-health-check",
+            subsystem: "mcp_server",
+            queueLabel: "com.chau7.mcp.server",
+            intervalMs: 15_000,
+            leewayMs: 3_000,
+            active: true
+        )
+
+        let allChanges = Chau7ObservabilityService.shared.changePayloads(sinceSeq: nil, topics: nil, limit: 10)
+        XCTAssertEqual(allChanges.count, 2)
+        XCTAssertEqual(allChanges[0]["type"] as? String, "approval_waiting")
+        XCTAssertEqual(allChanges[1]["type"] as? String, "timer_registered")
+
+        let approvalChanges = Chau7ObservabilityService.shared.changePayloads(
+            sinceSeq: nil,
+            topics: ["approval-state"],
+            limit: 10
+        )
+        XCTAssertEqual(approvalChanges.count, 1)
+        XCTAssertEqual(approvalChanges[0]["type"] as? String, "approval_waiting")
+
+        let sinceFirst = Chau7ObservabilityService.shared.changePayloads(
+            sinceSeq: allChanges[0]["seq"] as? Int64,
+            topics: nil,
+            limit: 10
+        )
+        XCTAssertEqual(sinceFirst.count, 1)
+        XCTAssertEqual(sinceFirst[0]["type"] as? String, "timer_registered")
+    }
+
+    func testChangeListenersReceiveMatchingTopicsOnly() {
+        let expectation = expectation(description: "listener receives matching change")
+        var receivedType: String?
+        let token = Chau7ObservabilityService.shared.addChangeListener(topics: ["timer-inventory"]) { change in
+            receivedType = change["type"] as? String
+            expectation.fulfill()
+        }
+        defer { Chau7ObservabilityService.shared.removeChangeListener(token) }
+
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "approval_waiting",
+            subsystem: "mcp_approvals",
+            sessionID: "req_1"
+        )
+        Chau7ObservabilityService.shared.registerTimer(
+            id: "mcp_health_check",
+            kind: "dispatch_source_timer",
+            label: "mcp-health-check",
+            subsystem: "mcp_server",
+            queueLabel: "com.chau7.mcp.server",
+            intervalMs: 15_000,
+            leewayMs: 3_000,
+            active: true
+        )
+
+        waitForExpectations(timeout: 1)
+        XCTAssertEqual(receivedType, "timer_registered")
+    }
+
     private func decodeObject(_ json: String) throws -> [String: Any] {
         let data = try XCTUnwrap(json.data(using: .utf8))
         return try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])

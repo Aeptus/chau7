@@ -37,6 +37,7 @@ final class TerminalControlService {
 
     /// Tracks in-flight approval requests so iOS responses can resolve them.
     private var pendingApprovals: [String: (MCPApprovalResult) -> Void] = [:]
+    private var pendingApprovalDetails: [String: [String: Any]] = [:]
     private let approvalLock = NSLock()
 
     /// Register an overlay model. Call from AppDelegate for every new window.
@@ -147,18 +148,45 @@ final class TerminalControlService {
 
     func listTabs() -> String {
         onMain {
-            self.pruneTabAliasesLocked()
-            let models = self.allModels
-            guard !models.isEmpty else { return self.noWindowError() }
-            var result: [[String: Any]] = []
-            for (windowID, model) in models {
-                for tab in model.tabs {
-                    var summary = self.tabSummary(tab)
-                    summary["window_id"] = windowID
-                    result.append(summary)
-                }
+            self.encodeAny(self.liveTabSummaries())
+        }
+    }
+
+    func liveTabSummaries() -> [[String: Any]] {
+        pruneTabAliasesLocked()
+        let models = allModels
+        guard !models.isEmpty else { return [] }
+        var result: [[String: Any]] = []
+        for (windowID, model) in models {
+            for tab in model.tabs {
+                var summary = tabSummary(tab)
+                summary["window_id"] = windowID
+                result.append(summary)
             }
-            return self.encodeAny(result)
+        }
+        return result
+    }
+
+    func pendingApprovalSummaries() -> [[String: Any]] {
+        approvalLock.lock()
+        defer { approvalLock.unlock() }
+        return pendingApprovalDetails.keys.sorted().compactMap { pendingApprovalDetails[$0] }
+    }
+
+    func repoEventSnapshots(limitPerRepo: Int = 5) -> [[String: Any]] {
+        onMain {
+            guard let appModel = self.allModels.first?.model.appModel else { return [] }
+            let clampedLimit = max(1, min(limitPerRepo, 20))
+            return appModel.eventsByRepo.keys.sorted().map { repoPath in
+                let events = appModel.eventsByRepo[repoPath] ?? []
+                let recent = Array(events.suffix(clampedLimit)).map { self.aiEventDictionary($0) }
+                return [
+                    "repo_path": repoPath,
+                    "event_count": events.count,
+                    "recent_events": recent,
+                    "last_event_at": events.last?.ts as Any
+                ].compactMapValues { $0 }
+            }
         }
     }
 
@@ -846,6 +874,7 @@ final class TerminalControlService {
         let result: MCPApprovalResult = approved ? .allowedOnce : .denied
         approvalLock.lock()
         let handler = pendingApprovals.removeValue(forKey: requestID)
+        pendingApprovalDetails.removeValue(forKey: requestID)
         approvalLock.unlock()
         handler?(result)
     }
@@ -1220,6 +1249,23 @@ final class TerminalControlService {
         return result
     }
 
+    private func aiEventDictionary(_ event: AIEvent) -> [String: Any] {
+        [
+            "id": event.id.uuidString,
+            "timestamp": event.ts,
+            "type": event.type,
+            "tool": event.tool,
+            "message": event.message,
+            "source": event.source.rawValue,
+            "tab_id": event.tabID.map(controlPlaneTabID) as Any,
+            "session_id": event.sessionID as Any,
+            "repo_path": event.repoPath as Any,
+            "producer": event.producer as Any,
+            "notification_type": event.notificationType as Any,
+            "reliability": event.reliability.rawValue
+        ].compactMapValues { $0 }
+    }
+
     func controlPlaneTabID(for nativeTabID: UUID) -> String {
         onMain {
             self.controlPlaneTabIDLocked(for: nativeTabID)
@@ -1375,6 +1421,14 @@ final class TerminalControlService {
         // Register a handler so iOS response can dismiss the alert
         var iosResult: MCPApprovalResult?
         approvalLock.lock()
+        pendingApprovalDetails[requestID] = [
+            "request_id": requestID,
+            "kind": "command_request",
+            "flagged_command": flaggedCommand,
+            "reason": reason,
+            "permissions_source": permissions.sourceName,
+            "requested_at": ISO8601DateFormatter().string(from: Date())
+        ]
         pendingApprovals[requestID] = { result in
             iosResult = result
             // Dismiss the Mac alert from iOS response
@@ -1390,6 +1444,7 @@ final class TerminalControlService {
         // Clean up pending handler if Mac user responded first
         approvalLock.lock()
         pendingApprovals.removeValue(forKey: requestID)
+        pendingApprovalDetails.removeValue(forKey: requestID)
         approvalLock.unlock()
 
         let result: MCPApprovalResult

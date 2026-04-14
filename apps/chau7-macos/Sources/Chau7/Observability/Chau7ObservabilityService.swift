@@ -4,6 +4,8 @@ import Chau7Core
 final class Chau7ObservabilityService {
     static let shared = Chau7ObservabilityService()
 
+    typealias ChangePayload = [String: Any]
+
     private struct EventRecord {
         let seq: Int64
         let id: String
@@ -30,12 +32,29 @@ final class Chau7ObservabilityService {
         var sessionID: String?
     }
 
+    private struct ChangeRecord {
+        let seq: Int64
+        let timestampMillis: Int64
+        let topics: [String]
+        let type: String
+        let subsystem: String
+        let payload: [String: Any]
+    }
+
+    private struct ListenerRecord {
+        let topics: Set<String>?
+        let handler: (ChangePayload) -> Void
+    }
+
     private static let eventLimit = 1_000
+    private static let changeLimit = 2_000
     private let queue = DispatchQueue(label: "com.chau7.observability")
     private let launchedAt = Date()
     private var nextSeq: Int64 = 1
     private var events: [EventRecord] = []
+    private var changes: [ChangeRecord] = []
     private var timers: [String: TimerRecord] = [:]
+    private var listeners: [UUID: ListenerRecord] = [:]
 
     private init() {}
 
@@ -61,14 +80,53 @@ final class Chau7ObservabilityService {
 
     func timerInventoryJSON() -> String {
         let payload: [String: Any] = queue.sync {
-            let sortedTimers = timers.values.sorted { lhs, rhs in
-                lhs.id < rhs.id
-            }
-            return [
-                "timers": sortedTimers.map(timerDictionary)
-            ]
+            timerInventoryPayload()
         }
         return encode(payload: payload)
+    }
+
+    func latestSequence() -> Int64 {
+        queue.sync {
+            max(nextSeq - 1, 0)
+        }
+    }
+
+    func changePayloads(sinceSeq: Int64?, topics: [String]?, limit: Int) -> [[String: Any]] {
+        let requestedTopics = normalizedTopics(topics)
+        let clampedLimit = min(max(limit, 1), 500)
+        return queue.sync {
+            let filtered = changes.filter { change in
+                if let sinceSeq, change.seq <= sinceSeq {
+                    return false
+                }
+                guard let requestedTopics else { return true }
+                return !requestedTopics.isDisjoint(with: change.topics)
+            }
+            return Array(filtered.suffix(clampedLimit)).map(changeDictionary)
+        }
+    }
+
+    func oldestAvailableChangeSequence() -> Int64? {
+        queue.sync {
+            changes.first?.seq
+        }
+    }
+
+    func addChangeListener(topics: [String]?, handler: @escaping (ChangePayload) -> Void) -> UUID {
+        let token = UUID()
+        queue.sync {
+            listeners[token] = ListenerRecord(
+                topics: normalizedTopics(topics),
+                handler: handler
+            )
+        }
+        return token
+    }
+
+    func removeChangeListener(_ token: UUID) {
+        _ = queue.sync {
+            listeners.removeValue(forKey: token)
+        }
     }
 
     func recordEvent(
@@ -81,27 +139,35 @@ final class Chau7ObservabilityService {
         detail: [String: Any] = [:]
     ) {
         let timestampMillis = Int64(Date().timeIntervalSince1970 * 1000)
-        queue.sync {
-            let seq = self.nextSeq
-            self.nextSeq += 1
-            self.events.append(
-                EventRecord(
-                    seq: seq,
-                    id: "evt_\(seq)",
-                    timestampMillis: timestampMillis,
-                    type: type,
-                    subsystem: subsystem,
-                    tabID: tabID,
-                    sessionID: sessionID,
-                    runID: runID,
-                    repoPath: repoPath,
-                    detail: detail
-                )
+        let event = queue.sync { () -> EventRecord in
+            let seq = allocateSequenceLocked()
+            let event = EventRecord(
+                seq: seq,
+                id: "evt_\(seq)",
+                timestampMillis: timestampMillis,
+                type: type,
+                subsystem: subsystem,
+                tabID: tabID,
+                sessionID: sessionID,
+                runID: runID,
+                repoPath: repoPath,
+                detail: detail
             )
+            self.events.append(event)
             if self.events.count > Self.eventLimit {
                 self.events.removeFirst(self.events.count - Self.eventLimit)
             }
+            appendChangeLocked(
+                seq: seq,
+                timestampMillis: timestampMillis,
+                topics: topicsForEvent(type: type, subsystem: subsystem, tabID: tabID, sessionID: sessionID, runID: runID, repoPath: repoPath),
+                type: type,
+                subsystem: subsystem,
+                payload: eventDictionary(event)
+            )
+            return event
         }
+        dispatchChangeIfNeeded(seq: event.seq)
     }
 
     func recordEvent(
@@ -159,8 +225,8 @@ final class Chau7ObservabilityService {
         tabID: String? = nil,
         sessionID: String? = nil
     ) {
-        queue.sync {
-            self.timers[id] = TimerRecord(
+        let changeSeq = queue.sync { () -> Int64 in
+            let record = TimerRecord(
                 id: id,
                 kind: kind,
                 label: label,
@@ -172,23 +238,61 @@ final class Chau7ObservabilityService {
                 tabID: tabID,
                 sessionID: sessionID
             )
+            self.timers[id] = record
+            let seq = allocateSequenceLocked()
+            appendChangeLocked(
+                seq: seq,
+                timestampMillis: Int64(Date().timeIntervalSince1970 * 1000),
+                topics: ["timer-inventory"],
+                type: "timer_registered",
+                subsystem: subsystem,
+                payload: timerDictionary(record)
+            )
+            return seq
         }
+        dispatchChangeIfNeeded(seq: changeSeq)
     }
 
     func setTimerActive(_ id: String, active: Bool) {
-        queue.sync {
-            guard var record = self.timers[id] else { return }
+        let changeSeq = queue.sync { () -> Int64? in
+            guard var record = self.timers[id] else { return nil }
             record.active = active
             self.timers[id] = record
+            let seq = allocateSequenceLocked()
+            appendChangeLocked(
+                seq: seq,
+                timestampMillis: Int64(Date().timeIntervalSince1970 * 1000),
+                topics: ["timer-inventory"],
+                type: "timer_updated",
+                subsystem: record.subsystem,
+                payload: timerDictionary(record)
+            )
+            return seq
+        }
+        if let changeSeq {
+            dispatchChangeIfNeeded(seq: changeSeq)
         }
     }
 
     func updateTimerScope(_ id: String, tabID: String?, sessionID: String?) {
-        queue.sync {
-            guard var record = self.timers[id] else { return }
+        let changeSeq = queue.sync { () -> Int64? in
+            guard var record = self.timers[id] else { return nil }
             record.tabID = tabID
             record.sessionID = sessionID
             self.timers[id] = record
+            let seq = allocateSequenceLocked()
+            appendChangeLocked(
+                seq: seq,
+                timestampMillis: Int64(Date().timeIntervalSince1970 * 1000),
+                topics: ["timer-inventory"],
+                type: "timer_updated",
+                subsystem: record.subsystem,
+                payload: timerDictionary(record)
+            )
+            return seq
+        }
+        if let changeSeq {
+            dispatchChangeIfNeeded(seq: changeSeq)
         }
     }
 
@@ -196,11 +300,13 @@ final class Chau7ObservabilityService {
         queue.sync {
             nextSeq = 1
             events.removeAll()
+            changes.removeAll()
             timers.removeAll()
+            listeners.removeAll()
         }
     }
 
-    private func runtimeInfoPayload() -> [String: Any] {
+    func runtimeInfoPayload() -> [String: Any] {
         let info = Bundle.main.infoDictionary ?? [:]
         let launchTime = DateFormatters.iso8601.string(from: launchedAt)
         return [
@@ -215,6 +321,15 @@ final class Chau7ObservabilityService {
             "session_started_at": launchTime,
             "mcp_protocol_version": "2025-11-25",
             "observability_schema_version": 1
+        ]
+    }
+
+    func timerInventoryPayload() -> [String: Any] {
+        let sortedTimers = timers.values.sorted { lhs, rhs in
+            lhs.id < rhs.id
+        }
+        return [
+            "timers": sortedTimers.map(timerDictionary)
         ]
     }
 
@@ -248,6 +363,97 @@ final class Chau7ObservabilityService {
         payload["tab_id"] = timer.tabID
         payload["session_id"] = timer.sessionID
         return payload.compactMapValues { $0 }
+    }
+
+    private func normalizedTopics(_ topics: [String]?) -> Set<String>? {
+        guard let topics else { return nil }
+        let normalized = Set(topics.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty })
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private func allocateSequenceLocked() -> Int64 {
+        let seq = nextSeq
+        nextSeq += 1
+        return seq
+    }
+
+    private func topicsForEvent(
+        type: String,
+        subsystem: String,
+        tabID: String?,
+        sessionID: String?,
+        runID: String?,
+        repoPath: String?
+    ) -> [String] {
+        var topics = Set<String>(["runtime-events"])
+        if tabID != nil || type.hasPrefix("tab_") || subsystem == "tabs" {
+            topics.insert("tab-state")
+        }
+        if subsystem == "mcp_approvals" || type.hasPrefix("approval_") {
+            topics.insert("approval-state")
+        }
+        if runID != nil || type.hasPrefix("telemetry_run_") {
+            topics.insert("telemetry-runs")
+        }
+        if repoPath != nil || type == "ai_event" {
+            topics.insert("repo-events")
+        }
+        if sessionID != nil {
+            topics.insert("session-state")
+        }
+        return Array(topics).sorted()
+    }
+
+    private func appendChangeLocked(
+        seq: Int64,
+        timestampMillis: Int64,
+        topics: [String],
+        type: String,
+        subsystem: String,
+        payload: [String: Any]
+    ) {
+        guard !topics.isEmpty else { return }
+        changes.append(
+            ChangeRecord(
+                seq: seq,
+                timestampMillis: timestampMillis,
+                topics: topics,
+                type: type,
+                subsystem: subsystem,
+                payload: payload
+            )
+        )
+        if changes.count > Self.changeLimit {
+            changes.removeFirst(changes.count - Self.changeLimit)
+        }
+    }
+
+    private func changeDictionary(_ change: ChangeRecord) -> [String: Any] {
+        [
+            "seq": change.seq,
+            "timestamp_millis": change.timestampMillis,
+            "topics": change.topics,
+            "type": change.type,
+            "subsystem": change.subsystem,
+            "payload": change.payload
+        ]
+    }
+
+    private func dispatchChangeIfNeeded(seq: Int64) {
+        let listenersToNotify: [(handler: (ChangePayload) -> Void, payload: ChangePayload)] = queue.sync {
+            guard let change = changes.last, change.seq == seq else { return [] }
+            let payload = changeDictionary(change)
+            return listeners.compactMap { _, listener in
+                if let topics = listener.topics, topics.isDisjoint(with: change.topics) {
+                    return nil
+                }
+                return (listener.handler, payload)
+            }
+        }
+
+        for entry in listenersToNotify {
+            entry.handler(entry.payload)
+        }
     }
 
     private func encode(payload: [String: Any]) -> String {
