@@ -104,7 +104,7 @@ final class AgentDashboardModel: Identifiable {
         let matching = sessions.filter { sessionMatchesRepo($0) }
         let childCounts = Dictionary(
             grouping: matching.compactMap { session -> (String, String)? in
-                guard let parentSessionID = session.config.parentSessionID else { return nil }
+                guard let parentSessionID = session.parentSessionID else { return nil }
                 return (parentSessionID, session.id)
             },
             by: \.0
@@ -119,8 +119,6 @@ final class AgentDashboardModel: Identifiable {
         fleetFileIndex.reset()
 
         for session in matching {
-            let cumulativeUsage = session.cumulativeTokenUsage
-
             // Update file tracker for this session
             let tracker = fileTrackers[session.id] ?? SessionFilesTracker()
             tracker.gitRoot = repoGroupID
@@ -136,38 +134,38 @@ final class AgentDashboardModel: Identifiable {
             let lastTool = extractLastTool(from: session.journal)
 
             // Cost accumulated from proxy IPC notifications (lock for thread safety)
-            let sessionCost: Double = {
+            let sessionCost = session.costUSD > 0 ? session.costUSD : {
                 costLock.lock()
                 defer { costLock.unlock() }
-                return sessionCosts[session.id] ?? session.estimatedCostUSD ?? 0
+                return sessionCosts[session.id] ?? 0
             }()
 
             cards.append(AgentCardData(
                 sessionID: session.id,
                 tabID: session.tabID,
-                backendName: session.backend.name,
-                purpose: session.config.purpose,
-                parentSessionID: session.config.parentSessionID,
-                delegationDepth: session.config.delegationDepth,
-                state: DashboardAgentState(runtimeState: session.state),
+                backendName: session.backendName,
+                purpose: session.purpose,
+                parentSessionID: session.parentSessionID,
+                delegationDepth: session.delegationDepth,
+                state: session.state,
                 turnCount: session.turnCount,
-                inputTokens: cumulativeUsage.inputTokens,
-                outputTokens: cumulativeUsage.outputTokens + cumulativeUsage.reasoningOutputTokens,
-                cacheCreationTokens: session.cumulativeCacheCreationTokens,
-                cacheReadTokens: session.cumulativeCacheReadTokens,
+                inputTokens: session.inputTokens,
+                outputTokens: session.outputTokens,
+                cacheCreationTokens: session.cacheCreationTokens,
+                cacheReadTokens: session.cacheReadTokens,
                 touchedFiles: tracker.touchedFiles,
                 currentTurnFiles: tracker.currentTurnFiles,
-                requiresApproval: session.pendingApproval != nil,
+                requiresApproval: session.requiresApproval,
                 lastToolUsed: lastTool,
-                latestResult: DashboardAgentResult(runtimeResult: session.turnResult()),
+                latestResult: session.latestResult,
                 childCount: childCounts[session.id] ?? 0,
                 createdAt: session.createdAt,
                 costUSD: sessionCost
             ))
 
-            allTokens += cumulativeUsage.totalBillableTokens
+            allTokens += session.totalTokens
             allCost += sessionCost
-            if session.state == .awaitingApproval { hasApprovals = true }
+            if session.requiresApproval || session.state == .awaitingApproval { hasApprovals = true }
             if session.state == .busy { hasActive = true }
         }
 
@@ -291,8 +289,8 @@ final class AgentDashboardModel: Identifiable {
 
     // MARK: - Conflict Detection
 
-    private func detectConflicts(from sessions: [RuntimeSession]) -> [DashboardConflict] {
-        let backendBySession = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.backend.name) })
+    private func detectConflicts(from sessions: [DashboardSessionSnapshot]) -> [DashboardConflict] {
+        let backendBySession = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.backendName) })
 
         return fleetFileIndex.overlappingFiles()
             .filter { $0.value.count >= 2 }
@@ -311,7 +309,7 @@ final class AgentDashboardModel: Identifiable {
 
     // MARK: - Timeline
 
-    private func buildTimeline(from sessions: [RuntimeSession]) -> [TimelineEntry] {
+    private func buildTimeline(from sessions: [DashboardSessionSnapshot]) -> [TimelineEntry] {
         var entries: [TimelineEntry] = []
 
         for session in sessions {
@@ -324,7 +322,7 @@ final class AgentDashboardModel: Identifiable {
                     id: "\(event.sessionID):\(event.seq)",
                     timestamp: event.timestamp,
                     sessionID: event.sessionID,
-                    backendName: session.backend.name,
+                    backendName: session.backendName,
                     type: event.type,
                     message: event.data["tool"] ?? event.data["summary"] ?? event.type
                 ))
@@ -336,8 +334,8 @@ final class AgentDashboardModel: Identifiable {
 
     // MARK: - Helpers
 
-    private func sessionMatchesRepo(_ session: RuntimeSession) -> Bool {
-        let dir = session.config.directory
+    private func sessionMatchesRepo(_ session: DashboardSessionSnapshot) -> Bool {
+        let dir = session.directory
         return dir == repoGroupID
             || dir.hasPrefix(repoGroupID + "/")
     }
@@ -589,41 +587,6 @@ struct AgentCardData: Identifiable {
         if count > 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
         if count > 1000 { return String(format: "%.1fk", Double(count) / 1000) }
         return "\(count)"
-    }
-}
-
-private extension DashboardAgentState {
-    init(runtimeState: RuntimeSessionStateMachine.State) {
-        switch runtimeState {
-        case .ready: self = .ready
-        case .busy: self = .busy
-        case .awaitingApproval: self = .awaitingApproval
-        case .waitingInput: self = .waitingInput
-        case .interrupted: self = .interrupted
-        case .failed: self = .failed
-        case .stopped: self = .stopped
-        case .starting: self = .starting
-        }
-    }
-}
-
-private extension DashboardAgentResult {
-    init?(runtimeResult: RuntimeTurnResult?) {
-        guard let runtimeResult else { return nil }
-        self.init(
-            status: DashboardResultStatus(runtimeStatus: runtimeResult.status),
-            summary: runtimeResult.value?.objectValue?["summary"]?.stringValue
-        )
-    }
-}
-
-private extension DashboardResultStatus {
-    init(runtimeStatus: RuntimeTurnResultStatus) {
-        switch runtimeStatus {
-        case .available: self = .available
-        case .invalid: self = .invalid
-        case .missing: self = .missing
-        }
     }
 }
 
