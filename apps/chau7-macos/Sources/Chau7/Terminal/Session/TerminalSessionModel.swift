@@ -123,7 +123,10 @@ final class TerminalSessionModel {
     /// Propagated to ShellEventDetector so emitted events carry a deterministic tabID
     /// for the fast-path in TabResolver.
     @ObservationIgnored var ownerTabID: UUID? {
-        didSet { shellEventDetector.ownerTabID = ownerTabID }
+        didSet {
+            shellEventDetector.ownerTabID = ownerTabID
+            syncRustTerminalObservabilityScope()
+        }
     }
 
     var status: CommandStatus = .idle {
@@ -376,7 +379,9 @@ final class TerminalSessionModel {
     }
 
     var lastAIProvider: String?
-    var lastAISessionId: String?
+    var lastAISessionId: String? {
+        didSet { syncRustTerminalObservabilityScope() }
+    }
     var lastAISessionIdentitySource: AISessionIdentitySource?
     /// The last app name set by live detection (command or output).
     /// Unlike `activeAppName`, this is NOT cleared on process exit,
@@ -874,6 +879,7 @@ final class TerminalSessionModel {
         rustTerminalView = view
         retainedRustTerminalView = view // Keep strong reference to survive view recreation
         view.currentDirectory = currentDirectory
+        syncRustTerminalObservabilityScope()
 
         // Configure scrollback buffer size from settings
         let scrollbackLines = FeatureSettings.shared.scrollbackLines
@@ -1288,6 +1294,13 @@ final class TerminalSessionModel {
         } catch {
             Log.error("Failed to create shell integration files: \(error)")
         }
+    }
+
+    private func syncRustTerminalObservabilityScope() {
+        guard let view = existingRustTerminalView else { return }
+        view.observabilityTabID = ownerTabID.map { TerminalControlService.shared.controlPlaneTabID(for: $0) }
+        view.observabilitySessionID = normalizedStoredAISessionId()
+        view.refreshObservabilityTimerScope()
     }
 
     /// Returns the shell integration directory path

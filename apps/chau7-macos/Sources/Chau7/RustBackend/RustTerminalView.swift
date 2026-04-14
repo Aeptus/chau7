@@ -2044,6 +2044,10 @@ final class RustTerminalView: NSView {
     var tabIdentifier = ""
     var isAtPrompt: (() -> Bool)?
 
+    /// Current MCP-facing ownership for observability exports.
+    var observabilityTabID: String?
+    var observabilitySessionID: String?
+
     /// Shell process ID (for dev server monitoring)
     var shellPid: pid_t {
         rustTerminal?.shellPid() ?? 0

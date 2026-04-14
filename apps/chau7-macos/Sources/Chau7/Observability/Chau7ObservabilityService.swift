@@ -183,6 +183,15 @@ final class Chau7ObservabilityService {
         }
     }
 
+    func updateTimerScope(_ id: String, tabID: String?, sessionID: String?) {
+        queue.sync {
+            guard var record = self.timers[id] else { return }
+            record.tabID = tabID
+            record.sessionID = sessionID
+            self.timers[id] = record
+        }
+    }
+
     func resetForTests() {
         queue.sync {
             nextSeq = 1

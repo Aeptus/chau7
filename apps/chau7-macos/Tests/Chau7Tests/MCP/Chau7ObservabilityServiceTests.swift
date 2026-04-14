@@ -91,6 +91,31 @@ final class Chau7ObservabilityServiceTests: XCTestCase {
         XCTAssertEqual(timers[0]["active"] as? Bool, false)
     }
 
+    func testTimerInventoryCanUpdateTabAndSessionScope() throws {
+        Chau7ObservabilityService.shared.registerTimer(
+            id: "terminal_render_loop_view_1",
+            kind: "display_link",
+            label: "terminal-render-loop",
+            subsystem: "renderer",
+            queueLabel: "com.chau7.renderer.main",
+            intervalMs: 16.67,
+            leewayMs: 0,
+            active: true
+        )
+
+        Chau7ObservabilityService.shared.updateTimerScope(
+            "terminal_render_loop_view_1",
+            tabID: "tab_42",
+            sessionID: "sess_7"
+        )
+
+        let payload = try decodeObject(Chau7ObservabilityService.shared.timerInventoryJSON())
+        let timers = try XCTUnwrap(payload["timers"] as? [[String: Any]])
+        XCTAssertEqual(timers.count, 1)
+        XCTAssertEqual(timers[0]["tab_id"] as? String, "tab_42")
+        XCTAssertEqual(timers[0]["session_id"] as? String, "sess_7")
+    }
+
     private func decodeObject(_ json: String) throws -> [String: Any] {
         let data = try XCTUnwrap(json.data(using: .utf8))
         return try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])

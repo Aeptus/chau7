@@ -5,6 +5,13 @@ import Chau7Core
 // MARK: - Rendering, Grid Sync, and Display Link
 
 extension RustTerminalView {
+    func refreshObservabilityTimerScope() {
+        Chau7ObservabilityService.shared.updateTimerScope(
+            renderLoopTimerID,
+            tabID: observabilityTabID,
+            sessionID: observabilitySessionID
+        )
+    }
 
     // MARK: - Polling Loop
 
@@ -39,7 +46,9 @@ extension RustTerminalView {
                 queueLabel: "com.chau7.renderer.main",
                 intervalMs: displayRefreshInterval * 1000,
                 leewayMs: 0,
-                active: true
+                active: true,
+                tabID: observabilityTabID,
+                sessionID: observabilitySessionID
             )
             Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using CVDisplayLink for 60fps polling")
         } else {
@@ -56,7 +65,9 @@ extension RustTerminalView {
                 queueLabel: "com.chau7.renderer.main",
                 intervalMs: displayRefreshInterval * 1000,
                 leewayMs: 0,
-                active: true
+                active: true,
+                tabID: observabilityTabID,
+                sessionID: observabilitySessionID
             )
             Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using Timer fallback for polling")
         }
@@ -121,7 +132,9 @@ extension RustTerminalView {
                 queueLabel: "com.chau7.renderer.main",
                 intervalMs: displayRefreshInterval * 1000,
                 leewayMs: 0,
-                active: true
+                active: true,
+                tabID: observabilityTabID,
+                sessionID: observabilitySessionID
             )
             Log.info("RustTerminalView[\(viewId)]: resumeDisplayLink - CVDisplayLink resumed (tab active)")
         } else if displayLink == nil, pollTimer == nil {
@@ -138,7 +151,9 @@ extension RustTerminalView {
                 queueLabel: "com.chau7.renderer.main",
                 intervalMs: displayRefreshInterval * 1000,
                 leewayMs: 0,
-                active: true
+                active: true,
+                tabID: observabilityTabID,
+                sessionID: observabilitySessionID
             )
         }
 
