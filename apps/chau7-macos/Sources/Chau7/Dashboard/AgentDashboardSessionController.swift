@@ -8,8 +8,8 @@ protocol AgentDashboardSessionControlling {
     func startSession(arguments: [String: Any]) -> String
 }
 
-final class RuntimeAgentDashboardSessionController: AgentDashboardSessionControlling {
-    static let shared = RuntimeAgentDashboardSessionController()
+final class AgentDashboardSessionController: AgentDashboardSessionControlling {
+    static let shared = AgentDashboardSessionController()
     private let terminalControl = TerminalControlService.shared
     private let recorder = TelemetryRecorder.shared
 
@@ -135,5 +135,40 @@ final class RuntimeAgentDashboardSessionController: AgentDashboardSessionControl
     private func fallbackTabID(from sessionID: String) -> UUID? {
         guard sessionID.hasPrefix("tab:") else { return nil }
         return UUID(uuidString: String(sessionID.dropFirst(4)))
+    }
+}
+
+private extension DashboardAgentState {
+    init(runtimeState: RuntimeSessionStateMachine.State) {
+        switch runtimeState {
+        case .ready: self = .ready
+        case .busy: self = .busy
+        case .awaitingApproval: self = .awaitingApproval
+        case .waitingInput: self = .waitingInput
+        case .interrupted: self = .interrupted
+        case .failed: self = .failed
+        case .stopped: self = .stopped
+        case .starting: self = .starting
+        }
+    }
+}
+
+private extension DashboardAgentResult {
+    init?(runtimeResult: RuntimeTurnResult?) {
+        guard let runtimeResult else { return nil }
+        self.init(
+            status: DashboardResultStatus(runtimeStatus: runtimeResult.status),
+            summary: runtimeResult.value?.objectValue?["summary"]?.stringValue
+        )
+    }
+}
+
+private extension DashboardResultStatus {
+    init(runtimeStatus: RuntimeTurnResultStatus) {
+        switch runtimeStatus {
+        case .available: self = .available
+        case .invalid: self = .invalid
+        case .missing: self = .missing
+        }
     }
 }

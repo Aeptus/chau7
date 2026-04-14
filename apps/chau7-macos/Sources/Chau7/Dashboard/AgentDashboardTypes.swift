@@ -49,19 +49,6 @@ struct DashboardSessionSnapshot {
 }
 
 extension DashboardAgentState {
-    init(runtimeState: RuntimeSessionStateMachine.State) {
-        switch runtimeState {
-        case .ready: self = .ready
-        case .busy: self = .busy
-        case .awaitingApproval: self = .awaitingApproval
-        case .waitingInput: self = .waitingInput
-        case .interrupted: self = .interrupted
-        case .failed: self = .failed
-        case .stopped: self = .stopped
-        case .starting: self = .starting
-        }
-    }
-
     init(commandStatus: CommandStatus, isAtPrompt: Bool) {
         switch commandStatus {
         case .approvalRequired:
@@ -74,26 +61,6 @@ extension DashboardAgentState {
             self = .stopped
         case .idle, .done:
             self = isAtPrompt ? .ready : .busy
-        }
-    }
-}
-
-extension DashboardAgentResult {
-    init?(runtimeResult: RuntimeTurnResult?) {
-        guard let runtimeResult else { return nil }
-        self.init(
-            status: DashboardResultStatus(runtimeStatus: runtimeResult.status),
-            summary: runtimeResult.value?.objectValue?["summary"]?.stringValue
-        )
-    }
-}
-
-extension DashboardResultStatus {
-    init(runtimeStatus: RuntimeTurnResultStatus) {
-        switch runtimeStatus {
-        case .available: self = .available
-        case .invalid: self = .invalid
-        case .missing: self = .missing
         }
     }
 }

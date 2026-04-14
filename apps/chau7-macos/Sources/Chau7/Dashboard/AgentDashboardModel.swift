@@ -3,9 +3,9 @@ import Foundation
 
 /// Data model for the multi-agent dashboard tab.
 ///
-/// Polls `RuntimeSessionManager` on an adaptive interval to aggregate session data,
-/// detect cross-agent file conflicts, and build a merged event timeline.
-/// Scoped to a single repo group (git root path).
+/// Polls the dashboard session controller on an adaptive interval to aggregate
+/// live tab-backed session data, detect cross-agent file conflicts, and build a
+/// merged event timeline. Scoped to a single repo group (git root path).
 @Observable
 final class AgentDashboardModel: Identifiable {
     let id = UUID()
@@ -51,7 +51,7 @@ final class AgentDashboardModel: Identifiable {
 
     init(
         repoGroupID: String,
-        sessionController: AgentDashboardSessionControlling = RuntimeAgentDashboardSessionController.shared
+        sessionController: AgentDashboardSessionControlling = AgentDashboardSessionController.shared
     ) {
         self.repoGroupID = repoGroupID
         self.sessionController = sessionController
