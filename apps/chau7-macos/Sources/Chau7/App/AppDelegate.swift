@@ -1302,8 +1302,8 @@ private final class OverlayBlurView: NSVisualEffectView {
     // MARK: - Multi-Window Restoration
 
     /// Restore additional windows saved in the multi-window state.
-    /// Window 0 is already restored by the primary OverlayTabsModel init.
-    /// Windows 1..N are created here with their saved tab states.
+    /// The primary OverlayTabsModel already hydrates the first saved window.
+    /// This method recreates windows 1..N from the remaining saved entries.
     private func restoreAdditionalWindows() {
         guard let model else { return }
         let restoreStartedAt = CFAbsoluteTimeGetCurrent()
