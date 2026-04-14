@@ -271,9 +271,24 @@ final class MCPSession {
 
     // MARK: - Tool Definitions
 
+    private func normalizedToolDefinitions(_ definitions: [[String: Any]]) -> [[String: Any]] {
+        definitions.map { definition in
+            guard var inputSchema = definition["inputSchema"] as? [String: Any],
+                  (inputSchema["type"] as? String) == "object",
+                  inputSchema["additionalProperties"] == nil else {
+                return definition
+            }
+
+            var updatedDefinition = definition
+            inputSchema["additionalProperties"] = false
+            updatedDefinition["inputSchema"] = inputSchema
+            return updatedDefinition
+        }
+    }
+
     // swiftlint:disable:next function_body_length
     private func toolDefinitions() -> [[String: Any]] {
-        let definitions: [[String: Any]] = [
+        normalizedToolDefinitions([
             [
                 "name": "run_get",
                 "description": "Get a single telemetry run by ID",
@@ -550,10 +565,17 @@ final class MCPSession {
                     ],
                     "required": ["repo_path"]
                 ]
-            ],
+            ]
+        ])
+    }
 
-            // MARK: Runtime API Tools
+    // MARK: Hidden Tools
 
+    // Runtime remains callable during migration, but is intentionally omitted
+    // from MCP discovery so public clients see only the tab/telemetry surface.
+    // swiftlint:disable:next function_body_length
+    private func hiddenToolDefinitions() -> [[String: Any]] {
+        normalizedToolDefinitions([
             [
                 "name": "runtime_session_create",
                 "description": "Start an agent session. Creates a tab, launches the backend (claude/codex/shell), and returns a session ID for subsequent operations.",
@@ -735,26 +757,14 @@ final class MCPSession {
                     "required": ["session_id", "approval_id", "approved"]
                 ]
             ]
-        ]
-
-        return definitions.map { definition in
-            guard var inputSchema = definition["inputSchema"] as? [String: Any],
-                  (inputSchema["type"] as? String) == "object",
-                  inputSchema["additionalProperties"] == nil else {
-                return definition
-            }
-
-            var updatedDefinition = definition
-            inputSchema["additionalProperties"] = false
-            updatedDefinition["inputSchema"] = inputSchema
-            return updatedDefinition
-        }
+        ])
     }
 
     // MARK: - Tool Execution
 
     private func callTool(_ name: String, arguments: [String: Any]) -> ToolCallDisposition {
-        guard let definition = toolDefinitions().first(where: { ($0["name"] as? String) == name }) else {
+        let availableDefinitions = toolDefinitions() + hiddenToolDefinitions()
+        guard let definition = availableDefinitions.first(where: { ($0["name"] as? String) == name }) else {
             return .protocolError(code: -32602, message: "Unknown tool: \(name)")
         }
         if let validationError = validate(arguments: arguments, against: definition, toolName: name) {

@@ -75,6 +75,7 @@ final class MCPSessionTests: XCTestCase {
 
         let tabStatus = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "tab_status" }))
         XCTAssertTrue((tabStatus["description"] as? String)?.contains("AI provider/session metadata") == true)
+        XCTAssertFalse(tools.contains(where: { (($0["name"] as? String) ?? "").hasPrefix("runtime_") }))
     }
 
     func testInitializeRejectsUnsupportedProtocolVersions() throws {
@@ -107,6 +108,22 @@ final class MCPSessionTests: XCTestCase {
 
         let error = try XCTUnwrap(response["error"] as? [String: Any])
         XCTAssertEqual(error["code"] as? Int, -32602)
+    }
+
+    func testRuntimeToolsRemainCallableButHiddenFromMCPDiscovery() throws {
+        let session = initializedSession()
+
+        let response = try XCTUnwrap(
+            session.handleRequestObject([
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": ["name": "runtime_session_list", "arguments": [:]]
+            ])
+        )
+
+        XCTAssertNil(response["error"])
+        XCTAssertNotNil(response["result"] as? [String: Any])
     }
 
     func testMissingRequiredArgumentsReturnProtocolError() throws {
