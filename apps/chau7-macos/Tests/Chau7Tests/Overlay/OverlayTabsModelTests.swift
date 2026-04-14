@@ -2204,6 +2204,102 @@ final class OverlayTabsModelTests: XCTestCase {
         wait(for: [expectationDone], timeout: 2.0)
     }
 
+    func testRestorePrefillsResumeCommandsPerPaneInSplitTab() {
+        let focusedPaneID = UUID()
+        let secondaryPaneID = UUID()
+        let split = SavedSplitNode(
+            kind: .split,
+            id: UUID().uuidString,
+            direction: .horizontal,
+            ratio: 0.5,
+            first: SavedSplitNode(
+                kind: .terminal,
+                id: focusedPaneID.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: nil
+            ),
+            second: SavedSplitNode(
+                kind: .terminal,
+                id: secondaryPaneID.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: nil
+            ),
+            textEditorPath: nil
+        )
+
+        let focusedPaneState = SavedTerminalPaneState(
+            paneID: focusedPaneID.uuidString,
+            directory: "/tmp/focused-pane",
+            scrollbackContent: nil,
+            aiResumeCommand: "claude --resume focused-001"
+        )
+        let secondaryPaneState = SavedTerminalPaneState(
+            paneID: secondaryPaneID.uuidString,
+            directory: "/tmp/secondary-pane",
+            scrollbackContent: nil,
+            aiResumeCommand: "codex resume secondary-001"
+        )
+
+        storeSavedTabStates([
+            SavedTabState(
+                customTitle: "Split Pane Ownership",
+                color: TabColor.orange.rawValue,
+                directory: "/tmp/focused-pane",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: split,
+                focusedPaneID: focusedPaneID.uuidString,
+                paneStates: [focusedPaneState, secondaryPaneState]
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+        guard let tab = restoredModel.tabs.first else {
+            XCTFail("Expected restored tab")
+            return
+        }
+
+        guard let focusedSession = tab.splitController.root.findSession(id: focusedPaneID),
+              let secondarySession = tab.splitController.root.findSession(id: secondaryPaneID) else {
+            XCTFail("Expected restored split sessions")
+            return
+        }
+
+        let focusedView = RustTerminalView(frame: .zero)
+        let secondaryView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        focusedView.onInput = { capturedInputs.append("focused:\($0)") }
+        secondaryView.onInput = { capturedInputs.append("secondary:\($0)") }
+        focusedSession.attachRustTerminal(focusedView)
+        secondarySession.attachRustTerminal(secondaryView)
+        focusedSession.isShellLoading = false
+        focusedSession.isAtPrompt = true
+        focusedSession.status = .idle
+        secondarySession.isShellLoading = false
+        secondarySession.isAtPrompt = true
+        secondarySession.status = .idle
+
+        let expectationDone = expectation(description: "resume commands remain bound to owning panes")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            let expected: Set = [
+                "focused:claude --resume focused-001",
+                "secondary:codex resume secondary-001"
+            ]
+            XCTAssertEqual(Set(capturedInputs), expected)
+            XCTAssertEqual(capturedInputs.count, 2)
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 2.0)
+    }
+
     func testRestoreIgnoresInvalidPersistedResumeCommand() {
         let paneID = UUID()
         let split = SavedSplitNode(

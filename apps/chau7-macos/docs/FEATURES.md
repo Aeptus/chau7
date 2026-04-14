@@ -71,6 +71,7 @@ Detection methods:
 - **Notification delivery ledger** — lifecycle tracking for debugging: coalescing, retry scheduling, drop reasons, and real UI outcomes.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
 - **Codex session resolver** — maps Codex sessions to working directories with LRU caching.
+- **Pane-owned AI restore** — split tabs restore resume commands from each saved terminal pane’s own metadata instead of inferring ownership from whichever pane is focused after layout rebuild.
 
 ### Context Token Optimization (CTO)
 

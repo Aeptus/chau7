@@ -853,15 +853,15 @@ extension OverlayTabsModel {
             }
 
             let restoredFocus = state.focusedPaneID.flatMap(UUID.init)
-            let activePaneID: UUID = if let restoredFocus,
-                                        restoredTab.splitController.root.paneType(for: restoredFocus) == .terminal {
+            let focusedTerminalPaneID: UUID = if let restoredFocus,
+                                                 restoredTab.splitController.root.paneType(for: restoredFocus) == .terminal {
                 restoredFocus
             } else {
                 restoredTab.splitController.focusedTerminalSessionID() ?? currentSessions[0].0
             }
 
-            if restoredTab.splitController.root.paneType(for: activePaneID) == .terminal {
-                restoredTab.splitController.setFocusedPane(activePaneID)
+            if restoredTab.splitController.root.paneType(for: focusedTerminalPaneID) == .terminal {
+                restoredTab.splitController.setFocusedPane(focusedTerminalPaneID)
             }
 
             var resolvedPaneStates: [UUID: SavedTerminalPaneState] = [:]
@@ -950,14 +950,22 @@ extension OverlayTabsModel {
                 paneStatesToRestore[paneID] = effectivePaneState
             }
 
-            let normalizedResumeCommands = resolvedPaneStates.compactMap { paneID, paneState -> (UUID, String)? in
-                guard let candidate = Self.normalizedResumeCommand(paneState.aiResumeCommand) else {
+            let resumeIntents = currentSessions.compactMap { paneID, _ -> ResumeRestoreIntent? in
+                guard let paneState = resolvedPaneStates[paneID],
+                      let command = Self.normalizedResumeCommand(paneState.aiResumeCommand) else {
                     return nil
                 }
-                return (paneID, candidate)
+                return ResumeRestoreIntent(
+                    paneID: paneID,
+                    command: command,
+                    expectedDirectory: paneState.directory,
+                    expectedProvider: paneState.aiProvider,
+                    expectedSessionID: paneState.aiSessionId,
+                    expectedSessionIDSource: paneState.aiSessionIdSource,
+                    isFocusedPane: paneID == focusedTerminalPaneID
+                )
             }
-            let resumeTarget = normalizedResumeCommands.first(where: { $0.0 == activePaneID })
-            if resumeTarget == nil {
+            if resumeIntents.isEmpty {
                 Log.info("restoreTabState: no resume command candidate found for tab=\(targetTabID)")
             }
 
@@ -1012,14 +1020,18 @@ extension OverlayTabsModel {
                     session.sendOrQueueSystemRestoreInput(" stty -echo && \(restoreChain) && clear && stty echo\n")
                 }
 
-                if let (resumePaneID, resumeCommand) = resumeTarget,
-                   resumePaneID == paneID {
-                    Log.info("restoreTabState: scheduling resume command for tab=\(targetTabID) pane=\(paneID)")
+                if let resumeIntent = resumeIntents.first(where: { $0.paneID == paneID }) {
+                    Log.info(
+                        """
+                        restoreTabState: scheduling resume command for tab=\(targetTabID) pane=\(paneID) \
+                        focused=\(resumeIntent.isFocusedPane) provider=\(resumeIntent.expectedProvider ?? "nil") \
+                        session=\(resumeIntent.expectedSessionID?.prefix(8) ?? "nil")
+                        """
+                    )
                     latestRestoreResumeTokenByPaneID[paneID] = restoreToken
                     scheduleResumeCommand(
-                        command: resumeCommand,
+                        intent: resumeIntent,
                         targetTabID: targetTabID,
-                        paneID: paneID,
                         restoreToken: restoreToken,
                         remainingAttempts: Self.resumeCommandMaxAttempts,
                         delay: Self.resumeCommandDelaySeconds
@@ -1030,19 +1042,19 @@ extension OverlayTabsModel {
     }
 
     func scheduleResumeCommand(
-        command: String,
+        intent: ResumeRestoreIntent,
         targetTabID: UUID,
-        paneID: UUID,
         restoreToken: String,
         remainingAttempts: Int,
         delay: TimeInterval = 0
     ) {
+        let paneID = intent.paneID
         guard remainingAttempts > 0 else {
             // Last resort: queue the command so the session's own retry logic
             // can deliver it when the terminal becomes ready (e.g. tab unsuspends).
             if let tab = tabs.first(where: { $0.id == targetTabID }),
                let session = tab.splitController.root.findSession(id: paneID) {
-                session.prefillInput(command)
+                session.prefillInput(intent.command)
                 StartupRestoreCoordinator.shared.noteQueuedResumePrefill()
                 Log.warn("restoreTabState: retries exhausted, queued prefill for tab=\(targetTabID) pane=\(paneID)")
             } else {
@@ -1083,9 +1095,8 @@ extension OverlayTabsModel {
                             "restoreTabState: waiting for view before resume prefill for tab=\(targetTabID) pane=\(paneID) retry in \(String(format: "%.2f", nextDelay))s"
                         )
                         scheduleResumeCommand(
-                            command: command,
+                            intent: intent,
                             targetTabID: targetTabID,
-                            paneID: paneID,
                             restoreToken: restoreToken,
                             remainingAttempts: remainingAttempts - 1,
                             delay: nextDelay
@@ -1095,7 +1106,7 @@ extension OverlayTabsModel {
                         // Delegate to the session's pending prefill mechanism which will
                         // deliver the command when the view is eventually created via
                         // attachRustTerminal → flushPendingPrefillInputIfReady.
-                        reResolvedSession.prefillInput(command)
+                        reResolvedSession.prefillInput(intent.command)
                         StartupRestoreCoordinator.shared.noteQueuedResumePrefill()
                         latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                         Log.info("restoreTabState: no view for tab=\(targetTabID) pane=\(paneID), queued session-level prefill")
@@ -1117,9 +1128,8 @@ extension OverlayTabsModel {
                     Log.trace(message)
                 }
                 scheduleResumeCommand(
-                    command: command,
+                    intent: intent,
                     targetTabID: targetTabID,
-                    paneID: paneID,
                     restoreToken: restoreToken,
                     remainingAttempts: remainingAttempts - 1,
                     delay: nextDelay
@@ -1127,12 +1137,22 @@ extension OverlayTabsModel {
                 return
             }
 
-            // Prefill the command in the active terminal so user can confirm with Enter.
-            reResolvedSession.prefillInput(command)
+            // Prefill the pane-owned resume command so the user can confirm with Enter.
+            reResolvedSession.prefillInput(intent.command)
             StartupRestoreCoordinator.shared.noteDeliveredResumePrefill()
             latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
             Log.info("restoreTabState: resume command prefilling for tab=\(targetTabID) pane=\(paneID)")
         }
+    }
+
+    struct ResumeRestoreIntent {
+        let paneID: UUID
+        let command: String
+        let expectedDirectory: String
+        let expectedProvider: String?
+        let expectedSessionID: String?
+        let expectedSessionIDSource: AISessionIdentitySource?
+        let isFocusedPane: Bool
     }
 
     static func normalizedResumeCommand(_ value: String?) -> String? {
