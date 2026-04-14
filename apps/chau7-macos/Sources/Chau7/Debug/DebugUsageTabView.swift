@@ -12,6 +12,7 @@ struct DebugUsageTabView: View {
                 ForEach(usageMonitor.providerSummaries) { summary in
                     providerSection(summary)
                 }
+                latencySection
                 if let lastErrorMessage = usageMonitor.lastErrorMessage, !lastErrorMessage.isEmpty {
                     GroupBox("Errors") {
                         Text(lastErrorMessage)
@@ -25,6 +26,71 @@ struct DebugUsageTabView: View {
         }
         .onAppear {
             usageMonitor.refreshNow()
+        }
+    }
+
+    private var latencySection: some View {
+        GroupBox("AI Provider Latency") {
+            VStack(alignment: .leading, spacing: 12) {
+                if usageMonitor.latencyProviders.isEmpty {
+                    Text("No latency samples captured yet.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 12) {
+                        Picker("Range", selection: Binding(
+                            get: { usageMonitor.selectedLatencyTimeRange },
+                            set: { usageMonitor.selectedLatencyTimeRange = $0 }
+                        )) {
+                            ForEach(ProviderLatencyTimeRange.allCases) { range in
+                                Text(range.rawValue).tag(range)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 120)
+
+                        Picker("Provider", selection: Binding(
+                            get: { usageMonitor.selectedLatencyProvider ?? usageMonitor.latencyProviders.first?.provider ?? "" },
+                            set: { usageMonitor.selectLatencyProvider($0.isEmpty ? nil : $0) }
+                        )) {
+                            ForEach(usageMonitor.latencyProviders) { provider in
+                                Text(provider.displayName).tag(provider.provider)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 160)
+
+                        if let selectedProvider = usageMonitor.selectedLatencyProvider,
+                           let selectedProviderOverview = usageMonitor.latencyProviders.first(where: { $0.provider == selectedProvider }),
+                           selectedProviderOverview.metrics.count > 1 {
+                            Picker("Metric", selection: Binding(
+                                get: { usageMonitor.selectedLatencyMetricKind ?? selectedProviderOverview.metrics.first?.metricKind ?? .firstResponse },
+                                set: { usageMonitor.selectLatencyMetricKind($0) }
+                            )) {
+                                ForEach(selectedProviderOverview.metrics) { metric in
+                                    Text(metric.metricKind.displayName).tag(metric.metricKind)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                    }
+
+                    if let dashboard = usageMonitor.latencyDashboard {
+                        HStack(spacing: 16) {
+                            latencyStat("Metric", dashboard.metricKind.displayName)
+                            latencyStat("Samples", "\(dashboard.aggregate.count)")
+                            latencyStat("Avg", latencyLabel(dashboard.aggregate.averageLatencyMs))
+                            latencyStat("P50", dashboard.aggregate.p50LatencyMs.map { "\($0)ms" } ?? "n/a")
+                            latencyStat("P95", dashboard.aggregate.p95LatencyMs.map { "\($0)ms" } ?? "n/a")
+                        }
+
+                        latencyBucketsChart("Per Day", buckets: dashboard.dailyBuckets)
+                        latencyBucketsChart("Weekday", buckets: dashboard.weekdayBuckets)
+                        latencyBucketsChart("Period of Day", buckets: dashboard.periodBuckets)
+                        latencyBucketsChart("Hour of Day", buckets: dashboard.hourBuckets)
+                    }
+                }
+            }
         }
     }
 
@@ -173,6 +239,72 @@ struct DebugUsageTabView: View {
         }
     }
 
+    private func latencyStat(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 11, design: .monospaced).bold())
+        }
+    }
+
+    private func latencyBucketsChart(_ title: String, buckets: [ProviderLatencyBucketPoint]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+
+            if buckets.isEmpty {
+                Text("No data")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            } else {
+                GeometryReader { geo in
+                    let maxValue = max(buckets.map { $0.aggregate.averageLatencyMs }.max() ?? 1, 1)
+                    let barArea = geo.size.height - 28
+                    let barWidth: CGFloat = 20
+                    let spacing: CGFloat = 8
+                    let contentWidth = max(
+                        geo.size.width,
+                        CGFloat(buckets.count) * barWidth + CGFloat(max(buckets.count - 1, 0)) * spacing
+                    )
+
+                    ScrollView(.horizontal, showsIndicators: buckets.count > 12) {
+                        HStack(alignment: .bottom, spacing: spacing) {
+                            ForEach(buckets) { bucket in
+                                VStack(spacing: 2) {
+                                    Text(latencyLabel(bucket.aggregate.averageLatencyMs))
+                                        .font(.system(size: 8, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(Color.accentColor.opacity(0.65))
+                                        .frame(
+                                            width: barWidth,
+                                            height: max(2, barArea * CGFloat(bucket.aggregate.averageLatencyMs) / CGFloat(maxValue))
+                                        )
+
+                                    Text(bucket.label)
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                }
+                                .frame(width: barWidth + 6)
+                                .help("\(bucket.aggregate.count) samples, p50 \(bucket.aggregate.p50LatencyMs.map { "\($0)ms" } ?? "n/a"), p95 \(bucket.aggregate.p95LatencyMs.map { "\($0)ms" } ?? "n/a")")
+                            }
+                        }
+                        .frame(width: contentWidth, alignment: .leading)
+                    }
+                }
+                .frame(height: 120)
+            }
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
     private func currency(_ value: Double) -> String {
         String(format: "$%.2f", value)
     }
@@ -189,6 +321,13 @@ struct DebugUsageTabView: View {
 
     private func paceLabel(_ percentPerMinute: Double) -> String {
         String(format: "%.2f%%/m", percentPerMinute)
+    }
+
+    private func latencyLabel(_ latencyMs: Double) -> String {
+        if latencyMs >= 1000 {
+            return String(format: "%.1fs", latencyMs / 1000)
+        }
+        return String(format: "%.0fms", latencyMs)
     }
 
     private func minutesLabel(_ remainingMinutes: Double) -> String {

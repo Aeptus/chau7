@@ -16,6 +16,41 @@ struct UsageProviderSummary: Identifiable {
     }
 }
 
+struct UsageLatencyMetricOverview: Identifiable {
+    let metricKind: ProviderLatencyMetricKind
+    let aggregate: ProviderLatencyAggregate
+
+    var id: String {
+        metricKind.rawValue
+    }
+}
+
+struct UsageLatencyProviderOverview: Identifiable {
+    let provider: String
+    let displayName: String
+    let metrics: [UsageLatencyMetricOverview]
+
+    var id: String {
+        provider
+    }
+}
+
+struct UsageLatencyDashboard {
+    let provider: String
+    let displayName: String
+    let metricKind: ProviderLatencyMetricKind
+    let aggregate: ProviderLatencyAggregate
+    let dailyBuckets: [ProviderLatencyBucketPoint]
+    let weekdayBuckets: [ProviderLatencyBucketPoint]
+    let periodBuckets: [ProviderLatencyBucketPoint]
+    let hourBuckets: [ProviderLatencyBucketPoint]
+}
+
+private struct CachedLatencySamples {
+    let loadedAt: Date
+    let samples: [ProviderLatencySample]
+}
+
 @Observable
 final class UsageMonitor {
     static let shared = UsageMonitor()
@@ -25,14 +60,37 @@ final class UsageMonitor {
     @ObservationIgnored private var refreshTimer: Timer?
     @ObservationIgnored private var settingsObserver: NSObjectProtocol?
     @ObservationIgnored private var warningHandler: ((AIEvent) -> Void)?
+    @ObservationIgnored private var latencySamplesCache: [ProviderLatencyTimeRange: CachedLatencySamples] = [:]
 
     private(set) var lastRefreshAt: Date?
     private(set) var lastErrorMessage: String?
     private(set) var isRefreshing = false
     private(set) var isClaudeStatusLineInstalled = false
     private(set) var providerSummaries: [UsageProviderSummary] = []
+    private(set) var latencyProviders: [UsageLatencyProviderOverview] = []
+    private(set) var latencyDashboard: UsageLatencyDashboard?
+    private(set) var selectedLatencyProvider: String?
+    private(set) var selectedLatencyMetricKind: ProviderLatencyMetricKind?
+    var selectedLatencyTimeRange: ProviderLatencyTimeRange = .week {
+        didSet {
+            guard oldValue != selectedLatencyTimeRange else { return }
+            refreshNow()
+        }
+    }
 
     private init() {}
+
+    func selectLatencyProvider(_ provider: String?) {
+        guard selectedLatencyProvider != provider else { return }
+        selectedLatencyProvider = provider
+        refreshNow()
+    }
+
+    func selectLatencyMetricKind(_ metricKind: ProviderLatencyMetricKind?) {
+        guard selectedLatencyMetricKind != metricKind else { return }
+        selectedLatencyMetricKind = metricKind
+        refreshNow()
+    }
 
     func start() {
         guard refreshTimer == nil else { return }
@@ -96,6 +154,22 @@ final class UsageMonitor {
                     .consumptionPerProvider(after: cutoff)
                     .map { ($0.provider.lowercased(), $0) }
             )
+            let latencySamples = self.loadLatencySamples(for: self.selectedLatencyTimeRange)
+            let latencyProviders = self.buildLatencyProviders(from: latencySamples)
+            let selectedLatencyProvider = self.resolveSelectedLatencyProvider(
+                current: self.selectedLatencyProvider,
+                available: latencyProviders.map(\.provider)
+            )
+            let selectedLatencyMetricKind = self.resolveSelectedLatencyMetricKind(
+                current: self.selectedLatencyMetricKind,
+                provider: selectedLatencyProvider,
+                samples: latencySamples
+            )
+            let latencyDashboard = selectedLatencyProvider.flatMap { provider in
+                selectedLatencyMetricKind.flatMap { kind in
+                    self.buildLatencyDashboard(samples: latencySamples, provider: provider, metricKind: kind)
+                }
+            }
 
             let providerOrder = ["codex", "claude"]
             let summaries = providerOrder.map { provider -> UsageProviderSummary in
@@ -141,6 +215,10 @@ final class UsageMonitor {
                 self.lastRefreshAt = Date()
                 self.lastErrorMessage = nil
                 self.isRefreshing = false
+                self.latencyProviders = latencyProviders
+                self.selectedLatencyProvider = selectedLatencyProvider
+                self.selectedLatencyMetricKind = selectedLatencyMetricKind
+                self.latencyDashboard = latencyDashboard
                 warningEvents.forEach { self.warningHandler?($0) }
             }
         }
@@ -275,6 +353,97 @@ final class UsageMonitor {
             windows: snapshot.windows
         )
         appendSnapshotIfNeeded(snapshot)
+    }
+
+    private func loadLatencySamples(for timeRange: ProviderLatencyTimeRange) -> [ProviderLatencySample] {
+        let now = Date()
+        if let cached = latencySamplesCache[timeRange],
+           now.timeIntervalSince(cached.loadedAt) < Self.latencyCacheTTL(for: timeRange) {
+            return cached.samples
+        }
+
+        let after = timeRange.startDate(now: now)
+        let proxySamples = ProxyAnalyticsStore.shared.latencySamples(after: after)
+        let cliSamples = TelemetryStore.shared.latencySamples(after: after)
+        let samples = (proxySamples + cliSamples).sorted { $0.timestamp < $1.timestamp }
+        latencySamplesCache[timeRange] = CachedLatencySamples(loadedAt: now, samples: samples)
+        return samples
+    }
+
+    private func buildLatencyProviders(from samples: [ProviderLatencySample]) -> [UsageLatencyProviderOverview] {
+        Dictionary(grouping: samples, by: { $0.provider.lowercased() })
+            .compactMap { provider, providerSamples -> UsageLatencyProviderOverview? in
+                let metrics = Dictionary(grouping: providerSamples, by: \.metricKind)
+                    .compactMap { metricKind, metricSamples -> UsageLatencyMetricOverview? in
+                        guard let aggregate = ProviderLatencyAnalytics.aggregate(samples: metricSamples) else { return nil }
+                        return UsageLatencyMetricOverview(metricKind: metricKind, aggregate: aggregate)
+                    }
+                    .sorted { lhs, rhs in
+                        Self.metricOrder(lhs.metricKind) < Self.metricOrder(rhs.metricKind)
+                    }
+
+                guard !metrics.isEmpty else { return nil }
+                return UsageLatencyProviderOverview(
+                    provider: provider,
+                    displayName: Self.displayName(for: provider),
+                    metrics: metrics
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.metrics.count != rhs.metrics.count {
+                    return lhs.metrics.count > rhs.metrics.count
+                }
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
+    }
+
+    private func resolveSelectedLatencyProvider(current: String?, available: [String]) -> String? {
+        guard !available.isEmpty else { return nil }
+        if let current, available.contains(current) {
+            return current
+        }
+        for preferred in ["codex", "claude", "anthropic", "openai", "gemini"] where available.contains(preferred) {
+            return preferred
+        }
+        return available.first
+    }
+
+    private func resolveSelectedLatencyMetricKind(
+        current: ProviderLatencyMetricKind?,
+        provider: String?,
+        samples: [ProviderLatencySample]
+    ) -> ProviderLatencyMetricKind? {
+        guard let provider else { return nil }
+        let availableKinds = Array(Set(samples
+            .filter { $0.provider.caseInsensitiveCompare(provider) == .orderedSame }
+            .map(\.metricKind)))
+            .sorted { Self.metricOrder($0) < Self.metricOrder($1) }
+        guard !availableKinds.isEmpty else { return nil }
+        if let current, availableKinds.contains(current) {
+            return current
+        }
+        return availableKinds.first
+    }
+
+    private func buildLatencyDashboard(
+        samples: [ProviderLatencySample],
+        provider: String,
+        metricKind: ProviderLatencyMetricKind
+    ) -> UsageLatencyDashboard? {
+        let filtered = samples.filter {
+            $0.provider.caseInsensitiveCompare(provider) == .orderedSame && $0.metricKind == metricKind
+        }
+        guard let aggregate = ProviderLatencyAnalytics.aggregate(samples: filtered) else { return nil }
+        return UsageLatencyDashboard(
+            provider: provider,
+            displayName: Self.displayName(for: provider),
+            metricKind: metricKind,
+            aggregate: aggregate,
+            dailyBuckets: ProviderLatencyAnalytics.bucketed(samples: filtered, by: .day),
+            weekdayBuckets: ProviderLatencyAnalytics.bucketed(samples: filtered, by: .weekday),
+            periodBuckets: ProviderLatencyAnalytics.bucketed(samples: filtered, by: .periodOfDay),
+            hourBuckets: ProviderLatencyAnalytics.bucketed(samples: filtered, by: .hourOfDay)
+        )
     }
 
     private func latestCodexRolloutFile() -> URL? {
@@ -528,8 +697,36 @@ final class UsageMonitor {
             return "Claude Code"
         case "codex":
             return "Codex"
+        case "anthropic":
+            return "Anthropic API"
+        case "openai":
+            return "OpenAI API"
+        case "gemini":
+            return "Gemini API"
         default:
             return provider.capitalized
+        }
+    }
+
+    private static func metricOrder(_ metricKind: ProviderLatencyMetricKind) -> Int {
+        switch metricKind {
+        case .firstResponse:
+            return 0
+        case .apiRequest:
+            return 1
+        }
+    }
+
+    private static func latencyCacheTTL(for timeRange: ProviderLatencyTimeRange) -> TimeInterval {
+        switch timeRange {
+        case .allTime:
+            return 300
+        case .quarter:
+            return 120
+        case .month:
+            return 60
+        case .today, .week, .twoWeeks:
+            return 15
         }
     }
 
