@@ -1041,11 +1041,13 @@ private final class OverlayBlurView: NSVisualEffectView {
         lastSavedWindowStates = allWindows
         lastSavedWindowStatesAt = Date()
 
-        // Window 0 is never restored — clear the legacy key so it always starts fresh.
-        UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
-
-        // Multi-window key saves ALL windows (including window 0 as a positional
-        // anchor). Restore uses dropFirst() to skip window 0.
+        // Write window 0 to legacy key (restore side ignores it, but keeping
+        // it populated prevents data-loss if the multi-window key is lost).
+        if let firstWindowStates = allWindows.first,
+           let data = try? JSONEncoder().encode(firstWindowStates) {
+            UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
+        }
+        // Write all windows to multi-window key
         if allWindows.count > 1 {
             let multiState = SavedMultiWindowState(windows: allWindows)
             if let data = try? JSONEncoder().encode(multiState) {
