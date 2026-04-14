@@ -152,7 +152,6 @@ public struct UsageEvidence: Codable, Equatable, Identifiable, Sendable {
             id: uniqueEventKey,
             uniqueEventKey: uniqueEventKey,
             reconciliationKey: defaultReconciliationKey(
-                sourceKind: .proxy,
                 provider: normalizedProvider,
                 sessionID: normalizedSessionID,
                 runID: nil,
@@ -212,7 +211,6 @@ public struct UsageEvidence: Codable, Equatable, Identifiable, Sendable {
             id: uniqueEventKey,
             uniqueEventKey: uniqueEventKey,
             reconciliationKey: defaultReconciliationKey(
-                sourceKind: sourceKind,
                 provider: run.provider.lowercased(),
                 sessionID: normalizedNonEmpty(run.sessionID),
                 runID: run.id,
@@ -288,7 +286,6 @@ public struct UsageEvidence: Codable, Equatable, Identifiable, Sendable {
     }
 
     private static func defaultReconciliationKey(
-        sourceKind: UsageEvidenceSourceKind,
         provider: String,
         sessionID: String?,
         runID: String?,
