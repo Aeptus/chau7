@@ -388,4 +388,5 @@ pre_commit_review_verbose_flow,macos,automation,pre-commit review now traces tab
 pre_commit_review_stored_event_completion,macos,automation,pre-commit review now prefers stored repo AI events with full messages to detect the final structured review result before falling back to transcript scraping,shipped
 background_transcript_and_interactive_notifications,macos,restore,background snapshots can reuse cached remote transcript text and notification logic now treats elicitation plus tool or response failures as first-class interactive events,shipped
 restore_resume_per_pane,macos,restore,split-tab AI resume restore now binds each saved resume command to its owning terminal pane instead of routing through the rebuilt focused pane,shipped
+restore_resume_ownership_validation,macos,restore,restore-time resume prefills now validate pane directory and restored AI identity before insertion and skip mismatched stale targets,shipped
 Notifications,Tab Highlight Coverage,"All user-facing AI events (permission, waiting_input, finished, failed, idle, tool_failed, response_failed, elicitation) trigger tab border/color highlights with 30s auto-clear",Shipped,Yes

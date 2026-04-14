@@ -1054,6 +1054,10 @@ extension OverlayTabsModel {
             // can deliver it when the terminal becomes ready (e.g. tab unsuspends).
             if let tab = tabs.first(where: { $0.id == targetTabID }),
                let session = tab.splitController.root.findSession(id: paneID) {
+                guard validateResumeRestoreIntent(intent, against: session, tabID: targetTabID) else {
+                    latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
+                    return
+                }
                 session.prefillInput(intent.command)
                 StartupRestoreCoordinator.shared.noteQueuedResumePrefill()
                 Log.warn("restoreTabState: retries exhausted, queued prefill for tab=\(targetTabID) pane=\(paneID)")
@@ -1106,6 +1110,10 @@ extension OverlayTabsModel {
                         // Delegate to the session's pending prefill mechanism which will
                         // deliver the command when the view is eventually created via
                         // attachRustTerminal → flushPendingPrefillInputIfReady.
+                        guard validateResumeRestoreIntent(intent, against: reResolvedSession, tabID: targetTabID) else {
+                            latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
+                            return
+                        }
                         reResolvedSession.prefillInput(intent.command)
                         StartupRestoreCoordinator.shared.noteQueuedResumePrefill()
                         latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
@@ -1137,12 +1145,56 @@ extension OverlayTabsModel {
                 return
             }
 
+            guard validateResumeRestoreIntent(intent, against: reResolvedSession, tabID: targetTabID) else {
+                latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
+                return
+            }
+
             // Prefill the pane-owned resume command so the user can confirm with Enter.
             reResolvedSession.prefillInput(intent.command)
             StartupRestoreCoordinator.shared.noteDeliveredResumePrefill()
             latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
-            Log.info("restoreTabState: resume command prefilling for tab=\(targetTabID) pane=\(paneID)")
+            Log.info(
+                """
+                restoreTabState: resume command prefilling for tab=\(targetTabID) pane=\(paneID) \
+                provider=\(intent.expectedProvider ?? "nil") session=\(intent.expectedSessionID?.prefix(8) ?? "nil") \
+                dir=\(intent.expectedDirectory)
+                """
+            )
         }
+    }
+
+    func validateResumeRestoreIntent(
+        _ intent: ResumeRestoreIntent,
+        against session: TerminalSessionModel,
+        tabID: UUID
+    ) -> Bool {
+        let normalizedExpectedDirectory = intent.expectedDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedCurrentDirectory = session.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedExpectedProvider = AIResumeParser.normalizeProviderName(intent.expectedProvider ?? "")
+        let normalizedCurrentProvider = session.effectiveAIProvider
+        let normalizedExpectedSessionID = OverlayTabsModel.normalizeAISessionId(intent.expectedSessionID)
+        let normalizedCurrentSessionID = OverlayTabsModel.normalizeAISessionId(session.effectiveAISessionId)
+
+        let directoryMatches = normalizedExpectedDirectory.isEmpty || normalizedExpectedDirectory == normalizedCurrentDirectory
+        let providerMatches = normalizedExpectedProvider == nil || normalizedExpectedProvider == normalizedCurrentProvider
+        let sessionMatches = normalizedExpectedSessionID == nil || normalizedExpectedSessionID == normalizedCurrentSessionID
+
+        guard directoryMatches, providerMatches, sessionMatches else {
+            Log.warn(
+                """
+                restoreTabState: rejecting resume prefill for tab=\(tabID) pane=\(intent.paneID) \
+                command=\(intent.command.prefix(40)) \
+                expected=(dir=\(normalizedExpectedDirectory), provider=\(normalizedExpectedProvider ?? "nil"), \
+                session=\(normalizedExpectedSessionID?.prefix(8) ?? "nil")) \
+                actual=(dir=\(normalizedCurrentDirectory), provider=\(normalizedCurrentProvider ?? "nil"), \
+                session=\(normalizedCurrentSessionID?.prefix(8) ?? "nil"))
+                """
+            )
+            return false
+        }
+
+        return true
     }
 
     struct ResumeRestoreIntent {

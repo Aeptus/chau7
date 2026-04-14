@@ -2300,6 +2300,62 @@ final class OverlayTabsModelTests: XCTestCase {
         wait(for: [expectationDone], timeout: 2.0)
     }
 
+    func testRestoreRejectsResumePrefillWhenPaneOwnershipDrifts() {
+        let paneID = UUID()
+        let split = SavedSplitNode(
+            kind: .terminal,
+            id: paneID.uuidString,
+            direction: nil,
+            ratio: nil,
+            first: nil,
+            second: nil,
+            textEditorPath: nil
+        )
+        let paneState = SavedTerminalPaneState(
+            paneID: paneID.uuidString,
+            directory: "/tmp/owned-pane",
+            scrollbackContent: nil,
+            aiResumeCommand: "claude --resume owned-001"
+        )
+
+        storeSavedTabStates([
+            SavedTabState(
+                customTitle: "Ownership Drift",
+                color: TabColor.red.rawValue,
+                directory: "/tmp/owned-pane",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: split,
+                focusedPaneID: paneID.uuidString,
+                paneStates: [paneState]
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+        guard let session = restoredModel.tabs.first?.splitController.root.findSession(id: paneID) else {
+            XCTFail("Expected restored pane")
+            return
+        }
+
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { capturedInputs.append($0) }
+        session.attachRustTerminal(terminalView)
+        session.updateCurrentDirectory("/tmp/drifted-pane")
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        session.status = .idle
+
+        let expectationDone = expectation(description: "resume prefill skipped when ownership validation fails")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            XCTAssertTrue(capturedInputs.isEmpty)
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 2.0)
+    }
+
     func testRestoreIgnoresInvalidPersistedResumeCommand() {
         let paneID = UUID()
         let split = SavedSplitNode(
