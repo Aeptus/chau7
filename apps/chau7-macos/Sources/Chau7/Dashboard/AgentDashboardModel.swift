@@ -144,7 +144,7 @@ final class AgentDashboardModel: Identifiable {
                 purpose: session.config.purpose,
                 parentSessionID: session.config.parentSessionID,
                 delegationDepth: session.config.delegationDepth,
-                state: session.state,
+                state: DashboardAgentState(runtimeState: session.state),
                 turnCount: session.turnCount,
                 inputTokens: cumulativeUsage.inputTokens,
                 outputTokens: cumulativeUsage.outputTokens + cumulativeUsage.reasoningOutputTokens,
@@ -152,9 +152,9 @@ final class AgentDashboardModel: Identifiable {
                 cacheReadTokens: session.cumulativeCacheReadTokens,
                 touchedFiles: tracker.touchedFiles,
                 currentTurnFiles: tracker.currentTurnFiles,
-                pendingApproval: session.pendingApproval,
+                requiresApproval: session.pendingApproval != nil,
                 lastToolUsed: lastTool,
-                latestResult: session.turnResult(),
+                latestResult: DashboardAgentResult(runtimeResult: session.turnResult()),
                 childCount: childCounts[session.id] ?? 0,
                 createdAt: session.createdAt,
                 costUSD: sessionCost
@@ -547,7 +547,7 @@ struct AgentCardData: Identifiable {
     let purpose: String?
     let parentSessionID: String?
     let delegationDepth: Int
-    let state: RuntimeSessionStateMachine.State
+    let state: DashboardAgentState
     let turnCount: Int
     let inputTokens: Int
     let outputTokens: Int
@@ -555,9 +555,9 @@ struct AgentCardData: Identifiable {
     let cacheReadTokens: Int
     let touchedFiles: Set<String>
     let currentTurnFiles: Set<String>
-    let pendingApproval: PendingApproval?
+    let requiresApproval: Bool
     let lastToolUsed: String?
-    let latestResult: RuntimeTurnResult?
+    let latestResult: DashboardAgentResult?
     let childCount: Int
     let createdAt: Date
     let costUSD: Double
@@ -579,18 +579,53 @@ struct AgentCardData: Identifiable {
         LocalizedFormatters.formatCostPrecise(costUSD)
     }
 
-    var latestResultStatus: RuntimeTurnResultStatus? {
+    var latestResultStatus: DashboardResultStatus? {
         latestResult?.status
     }
 
     var latestResultSummary: String? {
-        latestResult?.value?.objectValue?["summary"]?.stringValue
+        latestResult?.summary
     }
 
     private func formatCount(_ count: Int) -> String {
         if count > 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
         if count > 1000 { return String(format: "%.1fk", Double(count) / 1000) }
         return "\(count)"
+    }
+}
+
+private extension DashboardAgentState {
+    init(runtimeState: RuntimeSessionStateMachine.State) {
+        switch runtimeState {
+        case .ready: self = .ready
+        case .busy: self = .busy
+        case .awaitingApproval: self = .awaitingApproval
+        case .waitingInput: self = .waitingInput
+        case .interrupted: self = .interrupted
+        case .failed: self = .failed
+        case .stopped: self = .stopped
+        case .starting: self = .starting
+        }
+    }
+}
+
+private extension DashboardAgentResult {
+    init?(runtimeResult: RuntimeTurnResult?) {
+        guard let runtimeResult else { return nil }
+        self.init(
+            status: DashboardResultStatus(runtimeStatus: runtimeResult.status),
+            summary: runtimeResult.value?.objectValue?["summary"]?.stringValue
+        )
+    }
+}
+
+private extension DashboardResultStatus {
+    init(runtimeStatus: RuntimeTurnResultStatus) {
+        switch runtimeStatus {
+        case .available: self = .available
+        case .invalid: self = .invalid
+        case .missing: self = .missing
+        }
     }
 }
 

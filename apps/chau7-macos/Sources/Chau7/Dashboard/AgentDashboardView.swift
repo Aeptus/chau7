@@ -218,7 +218,7 @@ struct AgentDashboardView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                if card.pendingApproval != nil {
+                if card.requiresApproval {
                     Label(L("dashboard.awaitingApproval", "Awaiting approval"), systemImage: "clock.badge.questionmark")
                         .font(.system(size: 10))
                         .foregroundStyle(.orange)
@@ -277,7 +277,7 @@ struct AgentDashboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(card.pendingApproval != nil ? Color.orange.opacity(0.4) : Color.clear, lineWidth: 1)
+                .stroke(card.requiresApproval ? Color.orange.opacity(0.4) : Color.clear, lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(card.backendName) agent, \(card.state.rawValue), \(card.formattedTokens) tokens")
@@ -478,7 +478,7 @@ struct AgentDashboardView: View {
             .clipShape(Capsule())
     }
 
-    private func stateColor(_ state: RuntimeSessionStateMachine.State) -> Color {
+    private func stateColor(_ state: DashboardAgentState) -> Color {
         switch state {
         case .ready: return .green
         case .busy: return .orange
