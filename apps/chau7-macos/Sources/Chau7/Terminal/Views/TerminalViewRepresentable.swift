@@ -427,6 +427,10 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             cacheRetainedFrameIfAvailable(from: nsView)
         }
         nsView.applyRenderPhase(renderPhase, isInteractive: isActive, reason: "updateNSView")
+        let shouldForceAuthoritativeReveal = renderPhaseChanged && renderPhase == .active
+        if shouldForceAuthoritativeReveal {
+            nsView.requestAuthoritativeReveal(reason: "renderPhaseActivated")
+        }
         if renderPhase == .active, !metalActive {
             nsView.needsDisplay = true
         }
@@ -438,7 +442,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
                 container.rustMetalCoordinator?.pauseBlinkTimer()
             } else {
                 container.rustMetalCoordinator?.resumeBlinkTimer()
-                if renderPhaseChanged {
+                if shouldForceAuthoritativeReveal {
+                    container.rustMetalCoordinator?.forceAuthoritativeRefresh(reason: "renderPhaseActivated")
+                } else if renderPhaseChanged {
                     container.rustMetalCoordinator?.setNeedsSync()
                 }
             }
@@ -450,7 +456,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         // SwiftUI update so the visible selected tab actively revives once it
         // is attached to a real window.
         nsView.updatePollingMode(reason: "updateNSView")
-        if renderPhase == .active, nsView.window != nil, !nsView.livePollingActiveForProfiling {
+        if renderPhase == .active, nsView.window != nil, (!nsView.livePollingActiveForProfiling || shouldForceAuthoritativeReveal) {
             nsView.needsGridSync = true
             nsView.pollAndSync()
         }

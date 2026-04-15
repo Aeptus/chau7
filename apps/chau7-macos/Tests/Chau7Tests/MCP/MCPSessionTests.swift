@@ -237,11 +237,15 @@ final class MCPSessionTests: XCTestCase {
         )
 
         XCTAssertEqual(snapshot["schema_version"] as? Int, 1)
+        XCTAssertEqual(snapshot["observer_contract_version"] as? Int, 1)
         XCTAssertNotNil(snapshot["latest_seq"])
         XCTAssertNotNil(snapshot["runtime_info"] as? [String: Any])
         XCTAssertNotNil(snapshot["tabs"] as? [[String: Any]])
         XCTAssertNotNil(snapshot["approvals"] as? [[String: Any]])
         XCTAssertNotNil((snapshot["telemetry"] as? [String: Any])?["active_runs"] as? [[String: Any]])
+        let observerContract = try XCTUnwrap(snapshot["observer_contract"] as? [String: Any])
+        XCTAssertEqual(observerContract["notification_method"] as? String, "notifications/chau7.event")
+        XCTAssertEqual(observerContract["delivery_mode"] as? String, "serial")
     }
 
     func testSubscribeEmitsReplayAndNotifications() throws {

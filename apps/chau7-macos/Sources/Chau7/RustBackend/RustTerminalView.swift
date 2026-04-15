@@ -2101,6 +2101,7 @@ final class RustTerminalView: NSView {
     private var isLivePollingActive = false
     var livePollingActiveForProfiling: Bool { isLivePollingActive }
     private(set) var currentRenderPhase: TabRenderPhase = .hidden
+    private var authoritativeRevealPending = false
 
     // MARK: - Properties
 
@@ -2862,6 +2863,19 @@ final class RustTerminalView: NSView {
         setEventMonitoringEnabled(isInteractive)
         refreshRenderPipelineProfilingState(mode: "\(currentRenderLoopMode):\(phase.rawValue)")
         Log.trace("RustTerminalView[\(viewId)]: applyRenderPhase -> \(phase.rawValue) (\(reason))")
+    }
+
+    func requestAuthoritativeReveal(reason: String) {
+        authoritativeRevealPending = true
+        needsGridSync = true
+        hasRetainedFrameSourceReady = false
+        Log.trace("RustTerminalView[\(viewId)]: requestAuthoritativeReveal[\(reason)]")
+    }
+
+    func consumeAuthoritativeRevealPending() -> Bool {
+        let pending = authoritativeRevealPending
+        authoritativeRevealPending = false
+        return pending
     }
 
     override var acceptsFirstResponder: Bool {

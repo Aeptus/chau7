@@ -137,6 +137,16 @@ final class RustMetalDisplayCoordinator: NSObject {
         requestDraw()
     }
 
+    func forceAuthoritativeRefresh(reason: String) {
+        tripleBuffer.markFullRefresh()
+        needsSync = true
+        needsPresent = true
+        lastActivityTime = Date()
+        renderer.cursorBlinkPhase = true
+        Log.trace("RustMetalDisplayCoordinator: forceAuthoritativeRefresh[\(reason)]")
+        requestDraw()
+    }
+
     private func requestDraw() {
         if Thread.isMainThread {
             metalView.draw()

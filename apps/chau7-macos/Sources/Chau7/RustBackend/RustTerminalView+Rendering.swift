@@ -560,11 +560,12 @@ extension RustTerminalView {
             Self.syncCount += 1
             instanceSyncCount += 1
             needsGridSync = false
+            let requiresAuthoritativeReveal = consumeAuthoritativeRevealPending()
             // When Metal is active, skip the CPU sync — Metal reads the grid
             // directly via its gridProvider closure. This avoids ~70% CPU waste
             // from invisible RustGridView.draw() and cell array copies.
             if !isMetalRenderingActive {
-                syncGridToRenderer()
+                syncGridToRenderer(force: requiresAuthoritativeReveal)
             }
             onBufferChanged?()
         }
@@ -664,7 +665,7 @@ extension RustTerminalView {
 
         // Determine which rows have changed by comparing with previous grid
         var dirtyRows: Set<Int> = []
-        let canCompare = !dimensionsChanged && previousGrid.count == totalCells
+        let canCompare = !force && !dimensionsChanged && previousGrid.count == totalCells
         var cursorMoved = false
 
         if canCompare {
