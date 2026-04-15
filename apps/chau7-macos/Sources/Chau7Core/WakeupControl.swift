@@ -18,11 +18,14 @@ public enum WakeupSwitch: String, CaseIterable {
 }
 
 public enum WakeupControl {
+    private static let launchEnvironment = ProcessInfo.processInfo.environment
+
     public static func isEnabled(
         _ setting: WakeupSwitch,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String]? = nil
     ) -> Bool {
-        guard let rawValue = environment[setting.rawValue]?
+        let resolvedEnvironment = environment ?? launchEnvironment
+        guard let rawValue = resolvedEnvironment[setting.rawValue]?
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !rawValue.isEmpty else {
             return setting.defaultValue
