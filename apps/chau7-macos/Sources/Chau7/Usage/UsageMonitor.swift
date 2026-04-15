@@ -92,6 +92,12 @@ final class UsageMonitor {
 
     private init() {}
 
+    private var shouldAutoRefresh: Bool {
+        FeatureSettings.shared.isUsageMonitoringEnabled
+            || FeatureSettings.shared.isClaudeStatusLineQuotaCaptureEnabled
+            || FeatureSettings.shared.isUsageQuotaWarningsEnabled
+    }
+
     func selectLatencyProvider(_ provider: String?) {
         guard selectedLatencyProvider != provider else { return }
         selectedLatencyProvider = provider
@@ -99,7 +105,7 @@ final class UsageMonitor {
     }
 
     func start() {
-        guard refreshTimer == nil else { return }
+        guard settingsObserver == nil else { return }
 
         settingsObserver = NotificationCenter.default.addObserver(
             forName: .usageMonitoringSettingsChanged,
@@ -109,15 +115,14 @@ final class UsageMonitor {
             self?.handleSettingsChanged()
         }
 
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
-            self?.refreshNow()
+        if shouldAutoRefresh {
+            startRefreshTimerIfNeeded()
+            refreshNow()
         }
-        refreshNow()
     }
 
     func stop() {
-        refreshTimer?.invalidate()
-        refreshTimer = nil
+        stopRefreshTimer()
         if let settingsObserver {
             NotificationCenter.default.removeObserver(settingsObserver)
             self.settingsObserver = nil
@@ -279,7 +284,24 @@ final class UsageMonitor {
     }
 
     private func handleSettingsChanged() {
-        refreshNow()
+        if shouldAutoRefresh {
+            startRefreshTimerIfNeeded()
+            refreshNow()
+        } else {
+            stopRefreshTimer()
+        }
+    }
+
+    private func startRefreshTimerIfNeeded() {
+        guard refreshTimer == nil else { return }
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
+            self?.refreshNow()
+        }
+    }
+
+    private func stopRefreshTimer() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
     }
 
     private func refreshLatencySection() {
