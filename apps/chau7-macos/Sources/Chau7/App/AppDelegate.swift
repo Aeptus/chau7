@@ -1030,11 +1030,9 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
     #endif
 
-    private func collectVisibleWindowStates() -> [[SavedTabState]] {
+    private func collectRestorableWindowStates() -> [[SavedTabState]] {
         var allWindows: [[SavedTabState]] = []
         for host in overlayHosts {
-            let isHidden = hiddenWindowNumbers.contains(host.window.windowNumber)
-            guard !isHidden, host.window.isVisible else { continue }
             let states = host.model.exportTabStates()
             if !states.isEmpty { allWindows.append(states) }
         }
@@ -1069,12 +1067,12 @@ private final class OverlayBlurView: NSVisualEffectView {
         Log.trace("Saved \(allWindows.count) window(s) tab state [\(reason.rawValue)]")
     }
 
-    /// Save all visible windows' tab states atomically to UserDefaults and disk backups.
+    /// Save all non-empty overlay windows' tab states atomically to UserDefaults and disk backups.
     /// Window 0 → legacy key, windows 1..N → additional entries in the
     /// multi-window key.
     private func saveAllWindowStates(reason: TabStateSaveReason) {
         let reusedTerminationSnapshot = reason == .termination && shouldReuseCachedWindowStatesForTermination()
-        let allWindows = reusedTerminationSnapshot ? lastSavedWindowStates : collectVisibleWindowStates()
+        let allWindows = reusedTerminationSnapshot ? lastSavedWindowStates : collectRestorableWindowStates()
         if reusedTerminationSnapshot {
             Log.info("Reusing cached window state snapshot for termination to avoid blocking quit")
         }
@@ -1328,7 +1326,21 @@ private final class OverlayBlurView: NSVisualEffectView {
             // Clear the key so we don't restore stale windows on crash recovery
             UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         } else if let backupWindows = OverlayTabsModel.restoreAdditionalWindowStatesFromBackups() {
-            restoredWindows = Array(backupWindows.dropFirst())
+            let window0TabIDs = Set(overlayHosts.first?.model.tabs.map(\.id) ?? [])
+            let candidates = backupWindows.map { windowStates in
+                WindowStateRestorePlanner.CandidateWindow(
+                    tabIDs: windowStates.compactMap { UUID(uuidString: $0.tabID ?? "") }
+                )
+            }
+            let planned = WindowStateRestorePlanner.additionalWindowsFromBackup(
+                currentPrimaryTabIDs: window0TabIDs,
+                backupWindows: candidates
+            )
+            let plannedIDSets = Set(planned.map { Set($0.tabIDs) })
+            restoredWindows = backupWindows.filter { windowStates in
+                let ids = Set(windowStates.compactMap { UUID(uuidString: $0.tabID ?? "") })
+                return plannedIDSets.contains(ids)
+            }
             restoreSource = "disk backup"
         } else {
             return
