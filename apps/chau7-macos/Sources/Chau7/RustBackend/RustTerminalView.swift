@@ -2140,8 +2140,9 @@ final class RustTerminalView: NSView {
     /// Timer fallback if CVDisplayLink unavailable
     var pollTimer: Timer?
 
-    /// Adaptive timer interval matching the display, but capped at 60 Hz.
-    /// Higher refresh rates double terminal polling cost without helping CLI input.
+    /// Adaptive timer interval matching the display refresh rate for the active tab.
+    /// Background tabs are throttled separately, so the visible tab should track
+    /// ProMotion panels at their native cadence.
     var displayRefreshInterval: TimeInterval {
         guard let screen = window?.screen ?? NSScreen.main else {
             return 1.0 / 60.0
@@ -2149,7 +2150,7 @@ final class RustTerminalView: NSView {
         if #available(macOS 12.0, *),
            let maxFPS = screen.maximumFramesPerSecond,
            maxFPS > 0 {
-            return 1.0 / Double(min(maxFPS, 60))
+            return 1.0 / Double(maxFPS)
         }
         return 1.0 / 60.0 // Safe default for older macOS
     }
