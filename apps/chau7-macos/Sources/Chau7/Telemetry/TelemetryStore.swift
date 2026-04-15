@@ -15,6 +15,8 @@ final class TelemetryStore {
 
     private var db: OpaquePointer?
     private let queue = DispatchQueue(label: "com.chau7.telemetry.store")
+    private let checkpointLogWalThresholdBytes: Int64 = 8 * 1024 * 1024
+    private let checkpointLogRemainingFramesThreshold: Int32 = 1000
 
     private static var dbPath: String {
         let dir = RuntimeIsolation.chau7Directory()
@@ -77,6 +79,53 @@ final class TelemetryStore {
             parts.append(extra)
         }
         Log.info(parts.joined(separator: " "))
+    }
+
+    private func commitWriteTransaction(_ db: OpaquePointer?, reason: String) {
+        guard let db else { return }
+        let rc = sqlite3_exec(db, "COMMIT", nil, nil, nil)
+        if rc != SQLITE_OK {
+            let detail = String(cString: sqlite3_errmsg(db))
+            Log.warn("TelemetryStore: commit failed for \(reason): rc=\(rc) detail=\(detail)")
+            return
+        }
+        logCheckpointProbe(db, reason: reason)
+    }
+
+    private func logCheckpointProbe(_ db: OpaquePointer?, reason: String) {
+        guard let db else { return }
+        var totalFrames: Int32 = 0
+        var checkpointedFrames: Int32 = 0
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        let rc = sqlite3_wal_checkpoint_v2(
+            db,
+            nil,
+            SQLITE_CHECKPOINT_PASSIVE,
+            &totalFrames,
+            &checkpointedFrames
+        )
+        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0)
+        let remainingFrames = max(totalFrames - checkpointedFrames, 0)
+        let walBytes = Self.fileSize(atPath: "\(Self.dbPath)-wal") ?? 0
+        let detail = String(cString: sqlite3_errmsg(db))
+        let message =
+            "TelemetryStore: checkpoint probe after \(reason) " +
+            "rc=\(rc) totalFrames=\(totalFrames) checkpointedFrames=\(checkpointedFrames) " +
+            "remainingFrames=\(remainingFrames) walBytes=\(walBytes) elapsedMs=\(elapsedMs) detail=\(detail)"
+        if rc != SQLITE_OK ||
+            remainingFrames >= checkpointLogRemainingFramesThreshold ||
+            walBytes >= checkpointLogWalThresholdBytes {
+            Log.info(message)
+        } else {
+            Log.trace(message)
+        }
+    }
+
+    private static func fileSize(atPath path: String) -> Int64? {
+        guard let size = try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber else {
+            return nil
+        }
+        return size.int64Value
     }
 
     /// Quick integrity check on startup. If the database is corrupt, log and
@@ -659,7 +708,7 @@ final class TelemetryStore {
             _insertUsageEvidence(UsageEvidence.runSummary(run))
             upsertCompletedRunLatencySamples(run: run, turns: turns)
 
-            sqlite3_exec(db, "COMMIT", nil, nil, nil)
+            self.commitWriteTransaction(db, reason: "finalizeRun")
         }
     }
 
@@ -1031,7 +1080,7 @@ final class TelemetryStore {
             _insertUsageEvidence(UsageEvidence.runSummary(run))
             upsertCompletedRunLatencySamples(run: run, turns: turns)
 
-            sqlite3_exec(db, "COMMIT", nil, nil, nil)
+            commitWriteTransaction(db, reason: "rewriteCompletedRun")
         }
     }
 
