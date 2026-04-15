@@ -206,7 +206,7 @@ final class StartupRestorePolicyTests: XCTestCase {
     }
 
     func testWindowPresentationPolicyRevealsImmediatelyWhenSnapshotExists() {
-        XCTAssertTrue(
+        XCTAssertFalse(
             StartupWindowPresentationPolicy.shouldRevealWindowImmediately(
                 isStartupRestoreActive: true,
                 isSelectedSurfaceLivePresentable: false,
@@ -231,6 +231,27 @@ final class StartupRestorePolicyTests: XCTestCase {
                 isStartupRestoreActive: false,
                 isSelectedSurfaceLivePresentable: false,
                 hasSelectedSurfaceSnapshot: false
+            )
+        )
+    }
+
+    func testWindowPresentationPolicyUsesLoadingCoverForForcedRevealWithoutLiveSurface() {
+        XCTAssertTrue(
+            StartupWindowPresentationPolicy.shouldShowLoadingCoverAfterReveal(
+                revealWasForced: true,
+                isSelectedSurfaceLivePresentable: false
+            )
+        )
+        XCTAssertFalse(
+            StartupWindowPresentationPolicy.shouldShowLoadingCoverAfterReveal(
+                revealWasForced: false,
+                isSelectedSurfaceLivePresentable: false
+            )
+        )
+        XCTAssertFalse(
+            StartupWindowPresentationPolicy.shouldShowLoadingCoverAfterReveal(
+                revealWasForced: true,
+                isSelectedSurfaceLivePresentable: true
             )
         )
     }

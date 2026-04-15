@@ -256,6 +256,7 @@ public enum StartupRestoreFallbackRecoveryPolicy {
 public enum StartupWindowPresentationPolicy {
     public static let selectedTabRestoreDelay: TimeInterval = 0.05
     public static let backgroundTabRestoreDelay: TimeInterval = 1.0
+    public static let forcedRevealLoadingDelay: TimeInterval = 3.0
 
     public static func restoreExecutionDelay(
         isStartupRestoreActive: Bool,
@@ -294,7 +295,15 @@ public enum StartupWindowPresentationPolicy {
         isSelectedSurfaceLivePresentable: Bool,
         hasSelectedSurfaceSnapshot: Bool
     ) -> Bool {
+        _ = hasSelectedSurfaceSnapshot
         guard isStartupRestoreActive else { return true }
-        return isSelectedSurfaceLivePresentable || hasSelectedSurfaceSnapshot
+        return isSelectedSurfaceLivePresentable
+    }
+
+    public static func shouldShowLoadingCoverAfterReveal(
+        revealWasForced: Bool,
+        isSelectedSurfaceLivePresentable: Bool
+    ) -> Bool {
+        revealWasForced && !isSelectedSurfaceLivePresentable
     }
 }
