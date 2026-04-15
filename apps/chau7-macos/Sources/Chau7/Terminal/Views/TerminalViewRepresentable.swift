@@ -260,8 +260,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         var reasons: [String] = []
         if isActive {
             reasons.append("selected")
-        } else if renderPhase == .backgroundActive {
-            reasons.append("background-active")
         } else if renderPhase == .warm {
             reasons.append("handoff")
         }

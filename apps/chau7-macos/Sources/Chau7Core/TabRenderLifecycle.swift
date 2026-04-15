@@ -83,12 +83,8 @@ public enum TabRenderLifecyclePolicy {
     }
 
     public static func phase(for input: TabRenderLifecycleInput) -> TabRenderPhase {
-        if input.isSelectedTab, input.isInputPriorityWindow {
-            return .active
-        }
-
         if input.isSelectedTab {
-            return .backgroundActive
+            return .active
         }
 
         if input.hasBackgroundActivity {

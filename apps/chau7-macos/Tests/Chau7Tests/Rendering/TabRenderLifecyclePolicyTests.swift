@@ -82,7 +82,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
-    func testSelectedTabOutsideInputPriorityWindowUsesBackgroundActivePhase() {
+    func testSelectedTabOutsideInputPriorityWindowStaysActive() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: true,
@@ -98,7 +98,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .backgroundActive)
+        XCTAssertEqual(decision.phase, .active)
         XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
