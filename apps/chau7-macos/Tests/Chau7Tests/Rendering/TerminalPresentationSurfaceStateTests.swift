@@ -1,0 +1,64 @@
+import XCTest
+@testable import Chau7Core
+
+final class TerminalPresentationSurfaceStateTests: XCTestCase {
+    func testBeginSnapshotRevealStartsSnapshotPhaseAndAwaitsVisibleFrame() {
+        var state = TerminalPresentationSurfaceState()
+
+        let started = state.beginReveal(hasSnapshot: true, shouldAwaitVisibleFrame: true, now: 10)
+
+        XCTAssertTrue(started)
+        XCTAssertEqual(state.phase, .showingSnapshot)
+        XCTAssertEqual(state.generation, 1)
+        XCTAssertFalse(state.isLivePresentable)
+        XCTAssertTrue(state.awaitingVisibleFrameReady)
+    }
+
+    func testBeginLiveRevealSkipsSnapshotPhase() {
+        var state = TerminalPresentationSurfaceState()
+
+        let started = state.beginReveal(hasSnapshot: false, shouldAwaitVisibleFrame: false, now: 10)
+
+        XCTAssertFalse(started)
+        XCTAssertEqual(state.phase, .live)
+        XCTAssertEqual(state.generation, 0)
+        XCTAssertTrue(state.isLivePresentable)
+        XCTAssertFalse(state.awaitingVisibleFrameReady)
+    }
+
+    func testVisibleFramePresentationClearsAwaitingFlagAndRecordsFirstFrame() {
+        var state = TerminalPresentationSurfaceState()
+        _ = state.beginReveal(hasSnapshot: true, shouldAwaitVisibleFrame: true, now: 10)
+
+        XCTAssertTrue(state.noteVisibleFramePresented(now: 10.2))
+        XCTAssertFalse(state.awaitingVisibleFrameReady)
+        XCTAssertEqual(state.firstFramePresentedAt, 10.2)
+        XCTAssertFalse(state.noteVisibleFramePresented(now: 10.4))
+    }
+
+    func testCommitLiveRevealComputesTimingAndReturnsToLive() {
+        var state = TerminalPresentationSurfaceState()
+        _ = state.beginReveal(hasSnapshot: true, shouldAwaitVisibleFrame: true, now: 10)
+        _ = state.noteVisibleFramePresented(now: 10.15)
+
+        let completion = state.commitLiveReveal(now: 10.18)
+
+        XCTAssertEqual(completion?.totalMs, 180)
+        XCTAssertEqual(completion?.postPresentMs, 30)
+        XCTAssertEqual(state.phase, .live)
+        XCTAssertTrue(state.isLivePresentable)
+        XCTAssertFalse(state.awaitingVisibleFrameReady)
+    }
+
+    func testForceLiveRevealWithoutPresentedFrameClearsAwaitingState() {
+        var state = TerminalPresentationSurfaceState()
+        _ = state.beginReveal(hasSnapshot: true, shouldAwaitVisibleFrame: true, now: 10)
+
+        let completion = state.forceLiveReveal(now: 10.25)
+
+        XCTAssertEqual(completion?.totalMs, 250)
+        XCTAssertNil(completion?.postPresentMs)
+        XCTAssertEqual(state.phase, .live)
+        XCTAssertFalse(state.awaitingVisibleFrameReady)
+    }
+}

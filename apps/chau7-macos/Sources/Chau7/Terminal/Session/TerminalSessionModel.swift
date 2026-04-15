@@ -289,17 +289,45 @@ final class TerminalSessionModel {
         !backgroundLiveRenderReasons().isEmpty
     }
 
+    func beginPresentationReveal(
+        hasSnapshot: Bool,
+        shouldAwaitVisibleFrame: Bool,
+        now: TimeInterval
+    ) -> Bool {
+        presentationSurfaceState.beginReveal(
+            hasSnapshot: hasSnapshot,
+            shouldAwaitVisibleFrame: shouldAwaitVisibleFrame,
+            now: now
+        )
+    }
+
     func armVisibleFrameReadyHandoff() {
-        awaitingVisibleFrameReady = true
+        presentationSurfaceState.armVisibleFrameReadyHandoff()
     }
 
     func cancelVisibleFrameReadyHandoff() {
-        awaitingVisibleFrameReady = false
+        presentationSurfaceState.cancelVisibleFrameReadyHandoff()
+    }
+
+    @discardableResult
+    func notePresentationLiveFrame(now: TimeInterval) -> Bool {
+        presentationSurfaceState.noteVisibleFramePresented(now: now)
+    }
+
+    func commitPresentationReveal(now: TimeInterval) -> TerminalPresentationRevealCompletion? {
+        presentationSurfaceState.commitLiveReveal(now: now)
+    }
+
+    func forcePresentationLive(now: TimeInterval) -> TerminalPresentationRevealCompletion? {
+        presentationSurfaceState.forceLiveReveal(now: now)
+    }
+
+    func resetPresentationSurfaceToLive() {
+        presentationSurfaceState.resetToLive()
     }
 
     func notifyVisibleFrameReadyIfNeeded() {
-        guard awaitingVisibleFrameReady else { return }
-        awaitingVisibleFrameReady = false
+        guard notePresentationLiveFrame(now: CFAbsoluteTimeGetCurrent()) else { return }
         NotificationCenter.default.post(name: .terminalSessionVisibleFrameReady, object: self)
     }
 
@@ -626,9 +654,9 @@ final class TerminalSessionModel {
     /// Those commands should affect prompt readiness, but they must not create
     /// command blocks or changed-file tracking noise.
     @ObservationIgnored var systemRestoreCommandInFlight = false
-    /// One-shot handoff guard used when snapshot-backed tab switches wait for the
-    /// first live sync from the newly selected terminal before revealing it.
-    @ObservationIgnored private(set) var awaitingVisibleFrameReady = false
+    /// Single source of truth for snapshot-backed reveal / live-frame readiness.
+    var presentationSurfaceState = TerminalPresentationSurfaceState()
+    var awaitingVisibleFrameReady: Bool { presentationSurfaceState.awaitingVisibleFrameReady }
     var hasPendingResumePrefillActivity: Bool {
         pendingPrefillInput != nil || pendingPrefillRetries > 0 || isShellLoading
     }
