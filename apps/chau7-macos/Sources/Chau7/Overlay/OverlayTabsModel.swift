@@ -556,15 +556,13 @@ final class OverlayTabsModel {
     /// Tab kept alive briefly after selection changes so the switch can hand off
     /// from a retained frame without keeping nearby tabs permanently attached.
     var previousLiveHierarchyTabID: UUID?
-    /// Whether the terminal content is ready to display (for snapshot swap)
-    var isTerminalReady = true
-    /// Generation counter for isTerminalReady — prevents stale asyncAfter
-    /// callbacks from clobbering the state after rapid tab switches.
-    @ObservationIgnored var terminalReadyGeneration: UInt64 = 0
+    /// Selected-tab reveal lifecycle. This is the single source of truth for
+    /// whether the selected tab should still show a retained snapshot.
+    var selectedTabRevealState = SelectedTabRevealState()
+    /// Whether the selected terminal content is ready to display live.
+    var isTerminalReady: Bool { selectedTabRevealState.isTerminalReady }
     @ObservationIgnored var terminalReadyCommitWorkItem: DispatchWorkItem?
     @ObservationIgnored var terminalReadyFallbackWorkItem: DispatchWorkItem?
-    @ObservationIgnored var selectedTerminalHandoffStartedAt: CFAbsoluteTime?
-    @ObservationIgnored var selectedTerminalFramePresentedAt: CFAbsoluteTime?
     @ObservationIgnored static let terminalReadyCompositingDelay: TimeInterval = 1.0 / 60.0
     /// Set of tab IDs currently being pre-warmed (on hover)
     @ObservationIgnored var prewarmingTabIDs: Set<UUID> = []
@@ -877,13 +875,12 @@ final class OverlayTabsModel {
             guard let selected = self.selectedTab else { return }
             let isSelectedSession = selected.displaySession === session || selected.session === session
             guard isSelectedSession, selected.visibleSnapshot != nil else { return }
-            self.selectedTerminalFramePresentedAt = CFAbsoluteTimeGetCurrent()
-            if let startedAt = self.selectedTerminalHandoffStartedAt,
-               let presentedAt = self.selectedTerminalFramePresentedAt {
+            let now = CFAbsoluteTimeGetCurrent()
+            if self.selectedTabRevealState.noteLiveFramePresented(for: selected.id, now: now),
+               let startedAt = self.selectedTabRevealState.startedAt,
+               let presentedAt = self.selectedTabRevealState.firstFramePresentedAt {
                 let elapsedMs = Int((presentedAt - startedAt) * 1000)
                 Log.trace("tab handoff: first frame presented for \(selected.id) after \(elapsedMs)ms")
-            } else {
-                Log.trace("tab handoff: first frame presented for \(selected.id)")
             }
             self.scheduleSelectedTerminalPresentationCommit(
                 reason: "selected_live_frame_ready",
@@ -907,13 +904,71 @@ final class OverlayTabsModel {
 
     func scheduleSelectedTerminalPresentationCommit(reason: String, delay: TimeInterval) {
         terminalReadyCommitWorkItem?.cancel()
-        let expectedGeneration = terminalReadyGeneration
+        let expectedGeneration = selectedTabRevealState.generation
         let item = DispatchWorkItem { [weak self] in
-            guard let self, self.terminalReadyGeneration == expectedGeneration else { return }
+            guard let self, self.selectedTabRevealState.generation == expectedGeneration else { return }
             self.syncSelectedTerminalPresentation(reason: reason)
         }
         terminalReadyCommitWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    private func resetSelectedTerminalRevealScheduling() {
+        terminalReadyCommitWorkItem?.cancel()
+        terminalReadyCommitWorkItem = nil
+        terminalReadyFallbackWorkItem?.cancel()
+        terminalReadyFallbackWorkItem = nil
+    }
+
+    private func logSelectedTabRevealCompletion(
+        _ completion: SelectedTabRevealCompletion,
+        reason: String
+    ) {
+        guard let tabID = completion.tabID else { return }
+        if let totalMs = completion.totalMs, let postPresentMs = completion.postPresentMs {
+            Log.trace(
+                "tab handoff complete[\(reason)]: tab=\(tabID) total=\(totalMs)ms post_present=\(postPresentMs)ms"
+            )
+        } else if let totalMs = completion.totalMs {
+            Log.trace("tab handoff complete[\(reason)]: tab=\(tabID) total=\(totalMs)ms")
+        } else {
+            Log.trace("tab handoff complete[\(reason)]: tab=\(tabID)")
+        }
+    }
+
+    private func completeSelectedTabRevealIfNeeded(
+        for tab: OverlayTab,
+        reason: String,
+        force: Bool
+    ) {
+        let now = CFAbsoluteTimeGetCurrent()
+        let completion = force
+            ? selectedTabRevealState.forceLiveReveal(for: tab.id, now: now)
+            : selectedTabRevealState.commitLiveReveal(for: tab.id, now: now)
+        guard let completion else { return }
+
+        resetSelectedTerminalRevealScheduling()
+        tab.displaySession?.cancelVisibleFrameReadyHandoff()
+        tab.session?.cancelVisibleFrameReadyHandoff()
+        if let selectedIndex = tabs.firstIndex(where: { $0.id == tab.id }) {
+            clearRetainedSnapshots(forTabAt: selectedIndex)
+        }
+        logSelectedTabRevealCompletion(completion, reason: reason)
+    }
+
+    func forceSelectedTabRevealLive(tabID: UUID? = nil) {
+        resetSelectedTerminalRevealScheduling()
+        guard let targetID = tabID ?? selectedTab?.id else {
+            selectedTabRevealState.clearSelection()
+            return
+        }
+        _ = selectedTabRevealState.select(
+            tabID: targetID,
+            hasSnapshot: false,
+            now: CFAbsoluteTimeGetCurrent()
+        )
+        tabs.first(where: { $0.id == targetID })?.displaySession?.cancelVisibleFrameReadyHandoff()
+        tabs.first(where: { $0.id == targetID })?.session?.cancelVisibleFrameReadyHandoff()
     }
 
     func syncSelectedTerminalPresentation(reason: String) {
@@ -930,50 +985,36 @@ final class OverlayTabsModel {
         }
 
         guard let tab = selectedTab else {
-            terminalReadyCommitWorkItem?.cancel()
-            terminalReadyCommitWorkItem = nil
-            terminalReadyFallbackWorkItem?.cancel()
-            terminalReadyFallbackWorkItem = nil
-            selectedTerminalHandoffStartedAt = nil
-            selectedTerminalFramePresentedAt = nil
-            isTerminalReady = true
+            resetSelectedTerminalRevealScheduling()
+            selectedTabRevealState.clearSelection()
             return
         }
 
         let shouldShowRestorePreview = tab.restorePreviewSnapshot != nil
             && tab.displaySession?.isRestoreBootstrapPending == true
-        if isTerminalReady == !shouldShowRestorePreview {
+        if selectedTabRevealState.selectedTabID == tab.id
+            && isTerminalReady == !shouldShowRestorePreview {
             if !shouldShowRestorePreview {
                 noteStartupSelectedTabLiveFrameIfNeeded(reason: "\(reason)_steady")
             }
             return
         }
 
-        isTerminalReady = !shouldShowRestorePreview
-        if isTerminalReady {
-            terminalReadyCommitWorkItem?.cancel()
-            terminalReadyCommitWorkItem = nil
-            terminalReadyFallbackWorkItem?.cancel()
-            terminalReadyFallbackWorkItem = nil
-            tab.displaySession?.cancelVisibleFrameReadyHandoff()
-            tab.session?.cancelVisibleFrameReadyHandoff()
-            if let selectedIndex = tabs.firstIndex(where: { $0.id == tab.id }) {
-                clearRetainedSnapshots(forTabAt: selectedIndex)
+        if shouldShowRestorePreview {
+            _ = selectedTabRevealState.select(
+                tabID: tab.id,
+                hasSnapshot: tab.visibleSnapshot != nil,
+                now: CFAbsoluteTimeGetCurrent()
+            )
+        } else {
+            completeSelectedTabRevealIfNeeded(for: tab, reason: reason, force: true)
+            if selectedTabRevealState.selectedTabID != tab.id || !selectedTabRevealState.isTerminalReady {
+                _ = selectedTabRevealState.select(
+                    tabID: tab.id,
+                    hasSnapshot: false,
+                    now: CFAbsoluteTimeGetCurrent()
+                )
             }
-            let committedAt = CFAbsoluteTimeGetCurrent()
-            if let startedAt = selectedTerminalHandoffStartedAt {
-                let totalMs = Int((committedAt - startedAt) * 1000)
-                if let presentedAt = selectedTerminalFramePresentedAt {
-                    let postPresentMs = Int((committedAt - presentedAt) * 1000)
-                    Log.trace(
-                        "tab handoff complete[\(reason)]: tab=\(tab.id) total=\(totalMs)ms post_present=\(postPresentMs)ms"
-                    )
-                } else {
-                    Log.trace("tab handoff complete[\(reason)]: tab=\(tab.id) total=\(totalMs)ms")
-                }
-            }
-            selectedTerminalHandoffStartedAt = nil
-            selectedTerminalFramePresentedAt = nil
         }
         if shouldShowRestorePreview {
             StartupRestoreCoordinator.shared.noteRestorePreviewShown(
@@ -2019,19 +2060,21 @@ final class OverlayTabsModel {
         let targetSession = tabs.first(where: { $0.id == id })?.displaySession
             ?? tabs.first(where: { $0.id == id })?.session
         let shouldShowTransitionSnapshot = tabs.first(where: { $0.id == id })?.visibleSnapshot != nil
-        terminalReadyCommitWorkItem?.cancel()
-        terminalReadyCommitWorkItem = nil
-        terminalReadyFallbackWorkItem?.cancel()
-        terminalReadyFallbackWorkItem = nil
-        selectedTerminalHandoffStartedAt = nil
-        selectedTerminalFramePresentedAt = nil
+        resetSelectedTerminalRevealScheduling()
         if shouldShowTransitionSnapshot {
-            isTerminalReady = false
-            terminalReadyGeneration &+= 1
-            selectedTerminalHandoffStartedAt = CFAbsoluteTimeGetCurrent()
+            _ = selectedTabRevealState.select(
+                tabID: id,
+                hasSnapshot: true,
+                now: CFAbsoluteTimeGetCurrent()
+            )
             targetSession?.armVisibleFrameReadyHandoff()
-            Log.trace("tab handoff start: tab=\(id) generation=\(terminalReadyGeneration)")
+            Log.trace("tab handoff start: tab=\(id) generation=\(selectedTabRevealState.generation)")
         } else {
+            _ = selectedTabRevealState.select(
+                tabID: id,
+                hasSnapshot: false,
+                now: CFAbsoluteTimeGetCurrent()
+            )
             targetSession?.cancelVisibleFrameReadyHandoff()
         }
 
@@ -2082,10 +2125,11 @@ final class OverlayTabsModel {
         //    safety valve so the tab cannot remain hidden forever.
         schedulePreviousLiveHierarchyRelease()
         if shouldShowTransitionSnapshot {
-            let expectedGeneration = terminalReadyGeneration
+            let expectedGeneration = selectedTabRevealState.generation
             let item = DispatchWorkItem { [weak self] in
-                guard let self, self.terminalReadyGeneration == expectedGeneration else { return }
-                targetSession?.cancelVisibleFrameReadyHandoff()
+                guard let self, self.selectedTabRevealState.generation == expectedGeneration else { return }
+                guard let targetTab = self.tabs.first(where: { $0.id == id }) else { return }
+                self.completeSelectedTabRevealIfNeeded(for: targetTab, reason: "select_tab_fallback", force: true)
                 self.syncSelectedTerminalPresentation(reason: "select_tab_fallback")
             }
             terminalReadyFallbackWorkItem = item
@@ -2567,7 +2611,7 @@ final class OverlayTabsModel {
         dispatchPrecondition(condition: .onQueue(.main))
 
         // 1. Reset model-level gates
-        isTerminalReady = true
+        forceSelectedTabRevealLive(tabID: selectedTabID)
         cancelSuspension(for: selectedTabID)
         suspendedTabIDs.remove(selectedTabID)
 

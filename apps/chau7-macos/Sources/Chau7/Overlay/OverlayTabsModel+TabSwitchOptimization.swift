@@ -465,8 +465,8 @@ extension OverlayTabsModel {
             }
         }
 
-        // Ensure terminal is visible (recover from stuck isTerminalReady=false)
-        isTerminalReady = true
+        // Ensure the newly selected tab is back on the live reveal path.
+        forceSelectedTabRevealLive(tabID: selectedTabID)
 
         focusSelected()
 
@@ -747,7 +747,7 @@ extension OverlayTabsModel {
         if selectedTabID == targetID {
             // Already on this tab — just re-focus the terminal (handles the case
             // where focus moved to a non-terminal UI element like the search bar)
-            isTerminalReady = true
+            forceSelectedTabRevealLive(tabID: targetID)
             focusSelected()
             return
         }
