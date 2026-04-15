@@ -238,11 +238,11 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             lastRenderPhase = renderPhase
         }
 
-        func consumeRenderPhaseChange(to renderPhase: TabRenderPhase) -> Bool {
-            let previous = lastRenderPhase ?? renderPhase
+        func consumeRenderPhaseTransition(to renderPhase: TabRenderPhase) -> (previous: TabRenderPhase?, changed: Bool) {
+            let previous = lastRenderPhase
             let changed = previous != renderPhase
             lastRenderPhase = renderPhase
-            return changed
+            return (previous, changed)
         }
     }
 
@@ -455,23 +455,29 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         guard let nsView = container.rustTerminalView else { return }
         let metalActive = container.rustMetalCoordinator != nil
         nsView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
-        let renderPhaseChanged = context.coordinator.consumeRenderPhaseChange(to: renderPhase)
-        if renderPhaseChanged, renderPhase == .hidden {
+        let transition = context.coordinator.consumeRenderPhaseTransition(to: renderPhase)
+        let renderPhaseChanged = transition.changed
+        let keepsVisibleSurface = renderPhase.keepsVisibleSurface
+        let allowsLivePresentation = renderPhase.allowsLivePresentation
+        if renderPhaseChanged, !keepsVisibleSurface {
             cacheRetainedFrameIfAvailable(from: nsView)
         }
         nsView.applyRenderPhase(renderPhase, isInteractive: isActive, reason: "updateNSView")
-        let shouldForceAuthoritativeReveal = renderPhaseChanged && renderPhase == .active
+        let shouldForceAuthoritativeReveal = TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
+            previousPhase: transition.previous,
+            nextPhase: renderPhase
+        )
         if shouldForceAuthoritativeReveal {
             nsView.requestAuthoritativeReveal(reason: "renderPhaseActivated")
         }
-        if renderPhase == .active, !metalActive {
+        if keepsVisibleSurface, !metalActive {
             nsView.needsDisplay = true
         }
 
         // Suspend/resume Metal view and blink timer alongside the terminal
         if metalActive {
-            container.rustMetalCoordinator?.metalView.isHidden = renderPhase != .active
-            if renderPhase != .active {
+            container.rustMetalCoordinator?.metalView.isHidden = !keepsVisibleSurface
+            if !allowsLivePresentation {
                 container.rustMetalCoordinator?.pauseBlinkTimer()
             } else {
                 container.rustMetalCoordinator?.resumeBlinkTimer()
@@ -489,7 +495,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         // SwiftUI update so the visible selected tab actively revives once it
         // is attached to a real window.
         nsView.updatePollingMode(reason: "updateNSView")
-        if renderPhase == .active, nsView.window != nil, (!nsView.livePollingActiveForProfiling || shouldForceAuthoritativeReveal) {
+        if allowsLivePresentation,
+           nsView.window != nil,
+           (!nsView.livePollingActiveForProfiling || shouldForceAuthoritativeReveal) {
             nsView.needsGridSync = true
             nsView.pollAndSync()
         }

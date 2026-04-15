@@ -9,9 +9,10 @@ final class TerminalViewRepresentableTests: XCTestCase {
 
         coordinator.seedRenderPhase(.warm)
 
-        XCTAssertFalse(coordinator.consumeRenderPhaseChange(to: .warm))
-        XCTAssertTrue(coordinator.consumeRenderPhaseChange(to: .active))
-        XCTAssertFalse(coordinator.consumeRenderPhaseChange(to: .active))
+        XCTAssertEqual(coordinator.consumeRenderPhaseTransition(to: .warm).previous, .warm)
+        XCTAssertFalse(coordinator.consumeRenderPhaseTransition(to: .warm).changed)
+        XCTAssertEqual(coordinator.consumeRenderPhaseTransition(to: .active).previous, .warm)
+        XCTAssertTrue(coordinator.consumeRenderPhaseTransition(to: .hidden).changed)
     }
 
     func testRenderPhaseCoordinatorDetectsHideAfterReactivation() {
@@ -19,8 +20,8 @@ final class TerminalViewRepresentableTests: XCTestCase {
 
         coordinator.seedRenderPhase(.hidden)
 
-        XCTAssertFalse(coordinator.consumeRenderPhaseChange(to: .hidden))
-        XCTAssertTrue(coordinator.consumeRenderPhaseChange(to: .warm))
-        XCTAssertTrue(coordinator.consumeRenderPhaseChange(to: .hidden))
+        XCTAssertFalse(coordinator.consumeRenderPhaseTransition(to: .hidden).changed)
+        XCTAssertTrue(coordinator.consumeRenderPhaseTransition(to: .warm).changed)
+        XCTAssertTrue(coordinator.consumeRenderPhaseTransition(to: .hidden).changed)
     }
 }
