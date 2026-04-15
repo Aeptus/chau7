@@ -236,6 +236,23 @@ public enum StartupResumePrefillPolicy {
     }
 }
 
+public enum StartupRestoreFallbackRecoveryPolicy {
+    public static let retryTimeout: TimeInterval = 3
+    public static let maxRecoveryAttempts = 2
+
+    public static func shouldRetry(
+        forceRequested: Bool,
+        recordedLiveFrameWindows: Int,
+        expectedWindowCount: Int,
+        attempts: Int,
+        maxRecoveryAttempts: Int = StartupRestoreFallbackRecoveryPolicy.maxRecoveryAttempts
+    ) -> Bool {
+        guard forceRequested else { return false }
+        guard recordedLiveFrameWindows < max(1, expectedWindowCount) else { return false }
+        return attempts < maxRecoveryAttempts
+    }
+}
+
 public enum StartupWindowPresentationPolicy {
     public static let selectedTabRestoreDelay: TimeInterval = 0.05
     public static let backgroundTabRestoreDelay: TimeInterval = 1.0

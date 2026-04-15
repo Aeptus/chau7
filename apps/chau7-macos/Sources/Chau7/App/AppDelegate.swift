@@ -46,6 +46,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var didStartDeferredStartupWork = false
     private var didCompleteStartupRestore = false
     private var startupRestoreFallbackWorkItem: DispatchWorkItem?
+    private var startupRestoreRecoveryAttempts = 0
     private var lastOverlayLifecycleLogAt: CFAbsoluteTime = 0
     private var lastOverlayLifecycleReason = ""
     /// Centralized autosave timer — saves all windows atomically every 30s
@@ -174,6 +175,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         didCompleteStartupRestore = false
         startupRestoreFallbackWorkItem?.cancel()
         startupRestoreFallbackWorkItem = nil
+        startupRestoreRecoveryAttempts = 0
 
         model.bootstrap()
         beginLatencyCriticalScope(reason: "startup-restore", timeout: 90)
@@ -270,9 +272,27 @@ private final class OverlayBlurView: NSVisualEffectView {
         guard force || StartupRestoreCoordinator.shared.isReadyToComplete(expectedWindowCount: expectedWindowCount) else {
             return
         }
+        let recordedLiveFrameWindows = StartupRestoreCoordinator.shared.selectedTabLiveFrameCount
+        if StartupRestoreFallbackRecoveryPolicy.shouldRetry(
+            forceRequested: force,
+            recordedLiveFrameWindows: recordedLiveFrameWindows,
+            expectedWindowCount: expectedWindowCount,
+            attempts: startupRestoreRecoveryAttempts
+        ) {
+            startupRestoreRecoveryAttempts += 1
+            Log.warn(
+                "Startup restore recovery: reason=\(reason) liveFrames=\(recordedLiveFrameWindows)/\(expectedWindowCount) attempt=\(startupRestoreRecoveryAttempts)"
+            )
+            for host in overlayHosts {
+                host.model.forceRefreshSelectedTab()
+            }
+            scheduleStartupRestoreFallbackCompletion(timeout: StartupRestoreFallbackRecoveryPolicy.retryTimeout)
+            return
+        }
         didCompleteStartupRestore = true
         startupRestoreFallbackWorkItem?.cancel()
         startupRestoreFallbackWorkItem = nil
+        startupRestoreRecoveryAttempts = 0
         Log.info("Startup restore completion: reason=\(reason) expectedWindows=\(expectedWindowCount)")
         for host in overlayHosts {
             host.model.beginDeferredRestoreIfNeeded(reason: "startup_complete")

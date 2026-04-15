@@ -194,4 +194,50 @@ final class StartupRestorePolicyTests: XCTestCase {
             )
         )
     }
+
+    func testFallbackRecoveryPolicyRetriesForcedCompletionWithoutAllLiveFrames() {
+        XCTAssertTrue(
+            StartupRestoreFallbackRecoveryPolicy.shouldRetry(
+                forceRequested: true,
+                recordedLiveFrameWindows: 0,
+                expectedWindowCount: 2,
+                attempts: 0
+            )
+        )
+        XCTAssertTrue(
+            StartupRestoreFallbackRecoveryPolicy.shouldRetry(
+                forceRequested: true,
+                recordedLiveFrameWindows: 1,
+                expectedWindowCount: 2,
+                attempts: 1
+            )
+        )
+    }
+
+    func testFallbackRecoveryPolicyStopsRetryingOnceLimitReachedOrAllFramesRecorded() {
+        XCTAssertFalse(
+            StartupRestoreFallbackRecoveryPolicy.shouldRetry(
+                forceRequested: true,
+                recordedLiveFrameWindows: 2,
+                expectedWindowCount: 2,
+                attempts: 0
+            )
+        )
+        XCTAssertFalse(
+            StartupRestoreFallbackRecoveryPolicy.shouldRetry(
+                forceRequested: true,
+                recordedLiveFrameWindows: 1,
+                expectedWindowCount: 2,
+                attempts: StartupRestoreFallbackRecoveryPolicy.maxRecoveryAttempts
+            )
+        )
+        XCTAssertFalse(
+            StartupRestoreFallbackRecoveryPolicy.shouldRetry(
+                forceRequested: false,
+                recordedLiveFrameWindows: 0,
+                expectedWindowCount: 2,
+                attempts: 0
+            )
+        )
+    }
 }
