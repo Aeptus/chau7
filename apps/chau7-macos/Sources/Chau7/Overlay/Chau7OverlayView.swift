@@ -1694,6 +1694,11 @@ struct Chau7OverlayView: View {
                 .zIndex(11)
             }
         }
+        .overlay(alignment: .topLeading) {
+            Color.clear
+                .frame(width: 0, height: 0)
+                .id(overlayModel.renderLifecycleRefreshToken)
+        }
         .modifier(ReduceMotionAnimationModifier(
             values: [
                 overlayModel.isSearchVisible,

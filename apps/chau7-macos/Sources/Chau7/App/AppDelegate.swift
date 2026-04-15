@@ -1694,6 +1694,7 @@ private final class OverlayBlurView: NSVisualEffectView {
                 }
             }
         }
+        invalidateOverlayRenderLifecycles(reason: "didBecomeKey")
         logOverlayWindowLifecycle(reason: "didBecomeKey", window: window)
         logOverlayDiagnostics(reason: "didBecomeKey", window: window)
     }
@@ -1705,18 +1706,21 @@ private final class OverlayBlurView: NSVisualEffectView {
             subsystem: "window_lifecycle",
             detail: ["window_id": window.windowNumber]
         )
+        invalidateOverlayRenderLifecycles(reason: "didResignKey")
         logOverlayWindowLifecycle(reason: "didResignKey", window: window)
         logOverlayDiagnostics(reason: "didResignKey", window: window)
     }
 
     func windowDidBecomeMain(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        invalidateOverlayRenderLifecycles(reason: "didBecomeMain")
         logOverlayWindowLifecycle(reason: "didBecomeMain", window: window)
         logOverlayDiagnostics(reason: "didBecomeMain", window: window)
     }
 
     func windowDidResignMain(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        invalidateOverlayRenderLifecycles(reason: "didResignMain")
         logOverlayWindowLifecycle(reason: "didResignMain", window: window)
         logOverlayDiagnostics(reason: "didResignMain", window: window)
     }
@@ -1937,6 +1941,13 @@ private final class OverlayBlurView: NSVisualEffectView {
         logOverlayWindowLifecycle(reason: "showOverlayWindow-\(reason)", window: host.window)
         logOverlayDiagnostics(reason: reason, window: host.window)
         Log.info("Overlay window shown (\(reason)).")
+    }
+
+    @MainActor
+    private func invalidateOverlayRenderLifecycles(reason: String) {
+        for host in overlayHosts {
+            host.model.invalidateRenderLifecycle(reason: reason)
+        }
     }
 
     private func logOverlayWindowLifecycle(reason: String, window: NSWindow) {

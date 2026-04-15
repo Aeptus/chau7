@@ -675,6 +675,7 @@ final class OverlayTabsModel {
     @ObservationIgnored var ctoModeObserver: NSObjectProtocol?
     @ObservationIgnored var renderSuspensionObserver: NSObjectProtocol?
     @ObservationIgnored var visibleFrameReadyObserver: NSObjectProtocol?
+    var renderLifecycleRefreshToken = UUID()
     @ObservationIgnored var suspensionDebounceItem: DispatchWorkItem?
     @ObservationIgnored var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
     @ObservationIgnored var codexResumeFallbackCache: [ObjectIdentifier: CachedCodexResumeFallback] = [:]
@@ -3204,6 +3205,12 @@ final class OverlayTabsModel {
         let decision = renderLifecycleDecision(for: tab)
         guard decision.phase == .hidden else { return decision.phase }
         return suspendedTabIDs.contains(tab.id) ? .hidden : .warm
+    }
+
+    func invalidateRenderLifecycle(reason: String) {
+        renderLifecycleRefreshToken = UUID()
+        updateSuspensionState()
+        Log.trace("renderLifecycle: invalidated [\(reason)]")
     }
 
     func renderPhase(forTabID id: UUID) -> TabRenderPhase {
