@@ -994,7 +994,8 @@ final class OverlayTabsModel {
 
         let shouldShowRestorePreview = tab.restorePreviewSnapshot != nil
             && tab.displaySession?.isRestoreBootstrapPending == true
-        if shouldShowRestorePreview {
+        let shouldAwaitVisibleFrame = shouldShowRestorePreview || StartupRestoreCoordinator.shared.isActive
+        if shouldAwaitVisibleFrame {
             tab.displaySession?.armVisibleFrameReadyHandoff()
             tab.session?.armVisibleFrameReadyHandoff()
         } else {
@@ -2625,6 +2626,9 @@ final class OverlayTabsModel {
             return
         }
 
+        selectedTab?.displaySession?.armVisibleFrameReadyHandoff()
+        selectedTab?.session?.armVisibleFrameReadyHandoff()
+
         // 2. Unhide and kick the Rust terminal view + Metal coordinator
         //    Hierarchy: UnifiedTerminalContainerView → RustTerminalContainerView → RustTerminalView
         if let rustView = session.existingRustTerminalView {
@@ -2640,9 +2644,9 @@ final class OverlayTabsModel {
                     metalView.needsDisplay = true
                 }
             }
-            selectedTab?.displaySession?.armVisibleFrameReadyHandoff()
-            selectedTab?.session?.armVisibleFrameReadyHandoff()
             Log.info("forceRefreshSelectedTab: unhid Rust view + Metal for tab \(selectedTabID)")
+        } else {
+            Log.info("forceRefreshSelectedTab: armed visible-frame handoff before Rust view was attached for tab \(selectedTabID)")
         }
         // 3. Re-focus
         focusSelected()
