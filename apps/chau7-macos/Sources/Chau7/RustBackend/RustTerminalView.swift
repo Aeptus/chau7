@@ -2122,11 +2122,14 @@ final class RustTerminalView: NSView {
 
     struct InlineImagePlacement {
         let view: InlineImageView
-        let image: InlineImage
+        let args: InlineImageArgs
         var size: NSSize
         let anchorRow: Int
         let anchorCol: Int
     }
+
+    static let inlineImageRetentionRowMargin = 200
+    static let maxRetainedInlineImages = 32
 
     var inlineImages: [InlineImagePlacement] = []
     var lastDisplayOffset = 0
@@ -2611,6 +2614,7 @@ final class RustTerminalView: NSView {
         stopPollingLoop()
         stopAutoScrollTimer()
         removeEventMonitors()
+        clearInlineImages()
         Log.trace("RustTerminalView[\(viewId)]: deinit - Cleanup complete")
     }
 

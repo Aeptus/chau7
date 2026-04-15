@@ -335,8 +335,7 @@ extension RustTerminalView {
         clearLocalEchoOverlay()
 
         // Clear inline images
-        inlineImages.forEach { $0.view.removeFromSuperview() }
-        inlineImages.removeAll()
+        clearInlineImages()
 
         // Trigger a grid sync to update the display
         needsGridSync = true

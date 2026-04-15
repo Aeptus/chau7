@@ -977,10 +977,11 @@ extension RustTerminalView {
             let inline = InlineImage(image: scaled, args: image.args)
             let view = InlineImageView(image: inline, frame: .zero)
             overlayContainer.addSubview(view)
-            var placement = InlineImagePlacement(view: view, image: image, size: scaled.size, anchorRow: anchorRow, anchorCol: anchorCol)
+            var placement = InlineImagePlacement(view: view, args: image.args, size: scaled.size, anchorRow: anchorRow, anchorCol: anchorCol)
             positionInlineImage(&placement, displayOffset: displayOffset)
             inlineImages.append(placement)
         }
+        pruneInlineImagesIfNeeded(displayOffset: displayOffset, reason: "append")
     }
 
     func rescaleInlineImages() {
@@ -988,7 +989,7 @@ extension RustTerminalView {
         let cellSize = NSSize(width: cellWidth, height: cellHeight)
         let maxCells = (width: cols, height: rows)
         for index in inlineImages.indices {
-            let original = inlineImages[index].image
+            let original = InlineImage(image: inlineImages[index].view.currentImage, args: inlineImages[index].args)
             if let scaled = InlineImageHandler.shared.renderImage(original, cellSize: cellSize, maxCells: maxCells) {
                 inlineImages[index].size = scaled.size
                 inlineImages[index].view.setImage(scaled)
@@ -1000,6 +1001,7 @@ extension RustTerminalView {
     func updateInlineImagePositions() {
         guard let rust = rustTerminal else { return }
         let displayOffset = Int(rust.displayOffset)
+        pruneInlineImagesIfNeeded(displayOffset: displayOffset, reason: "scroll")
         if displayOffset == lastDisplayOffset, !inlineImages.isEmpty {
             // Still update positions on resize/layout.
         }
@@ -1024,6 +1026,42 @@ extension RustTerminalView {
         let topY = renderHeight - CGFloat(visibleRow) * cellHeight
         let y = topY - placement.size.height
         placement.view.frame = CGRect(x: x, y: y, width: placement.size.width, height: placement.size.height)
+    }
+
+    func pruneInlineImagesIfNeeded(displayOffset: Int, reason: String) {
+        guard !inlineImages.isEmpty else { return }
+
+        let retainedIndices = RenderMemoryPressurePolicy.retainedInlineImageIndices(
+            anchorRows: inlineImages.map(\.anchorRow),
+            displayOffset: displayOffset,
+            visibleRows: rows,
+            rowMargin: Self.inlineImageRetentionRowMargin,
+            maxRetained: Self.maxRetainedInlineImages
+        )
+        guard retainedIndices.count != inlineImages.count else { return }
+
+        let retainedSet = Set(retainedIndices)
+        var retainedPlacements: [InlineImagePlacement] = []
+        retainedPlacements.reserveCapacity(retainedIndices.count)
+
+        for (index, placement) in inlineImages.enumerated() {
+            if retainedSet.contains(index) {
+                retainedPlacements.append(placement)
+            } else {
+                placement.view.removeFromSuperview()
+            }
+        }
+
+        Log.warn(
+            "RustTerminalView[\(viewId)]: pruned inline images removed=\(inlineImages.count - retainedPlacements.count) remaining=\(retainedPlacements.count) reason=\(reason)"
+        )
+        inlineImages = retainedPlacements
+    }
+
+    func clearInlineImages() {
+        guard !inlineImages.isEmpty else { return }
+        inlineImages.forEach { $0.view.removeFromSuperview() }
+        inlineImages.removeAll(keepingCapacity: false)
     }
 
     // MARK: - OSC 7 Directory Parsing

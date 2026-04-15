@@ -224,6 +224,10 @@ final class InlineImageView: NSView {
         imageView.image = image
     }
 
+    var currentImage: NSImage {
+        image.image
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
