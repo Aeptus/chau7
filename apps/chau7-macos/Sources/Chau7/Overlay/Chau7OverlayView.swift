@@ -1437,6 +1437,39 @@ struct CursorPlaceholderView: View {
     }
 }
 
+struct StartupLoadingCoverView: View {
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.97)
+
+            VStack(spacing: 18) {
+                Image(nsImage: AppIcon.load())
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 72, height: 72)
+                    .cornerRadius(16)
+                    .shadow(color: .white.opacity(0.08), radius: 10)
+
+                VStack(spacing: 6) {
+                    Text("Restoring Workspace")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+
+                    Text("Preparing your selected terminal…")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.65))
+                }
+
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    .scaleEffect(0.85)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 struct Chau7OverlayView: View {
     var overlayModel: OverlayTabsModel
     var appModel: AppModel
@@ -1501,7 +1534,10 @@ struct Chau7OverlayView: View {
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
                 let hasContent = !tab.lastPromptText.isEmpty || tab.visibleSnapshot != nil
-                if isSelected, !overlayModel.selectedSurfacePresentation.isLivePresentable, hasContent {
+                if isSelected,
+                   !overlayModel.shouldShowStartupLoadingCover,
+                   !overlayModel.selectedSurfacePresentation.isLivePresentable,
+                   hasContent {
                     CursorPlaceholderView(
                         promptText: tab.lastPromptText.isEmpty ? "~" : tab.lastPromptText,
                         cursorPosition: tab.lastCursorPosition
@@ -1514,10 +1550,17 @@ struct Chau7OverlayView: View {
 
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
-                if isSelected, let session = tab.displaySession {
+                if isSelected,
+                   !overlayModel.shouldShowStartupLoadingCover,
+                   let session = tab.displaySession {
                     ShellLoadingBar(session: session)
                         .zIndex(4)
                 }
+            }
+
+            if overlayModel.shouldShowStartupLoadingCover {
+                StartupLoadingCoverView()
+                    .zIndex(5)
             }
 
             // MARK: - Tab Switch Optimization: Lazy Tab Loading + Directional Motion

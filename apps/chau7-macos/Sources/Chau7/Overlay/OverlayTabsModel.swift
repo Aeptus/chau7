@@ -608,6 +608,11 @@ final class OverlayTabsModel {
     var isTerminalReady: Bool {
         selectedSurfacePresentation.isLivePresentable
     }
+    var usesStartupLoadingCover = false
+
+    var shouldShowStartupLoadingCover: Bool {
+        usesStartupLoadingCover && !selectedSurfacePresentation.isLivePresentable
+    }
     @ObservationIgnored var terminalReadyCommitWorkItem: DispatchWorkItem?
     @ObservationIgnored var terminalReadyFallbackWorkItem: DispatchWorkItem?
     @ObservationIgnored static let terminalReadyCompositingDelay: TimeInterval = 1.0 / 60.0
