@@ -353,10 +353,10 @@ extension OverlayTabsModel {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    static let restoreDelaySeconds: TimeInterval = 0.8
-    static let resumeCommandDelaySeconds: TimeInterval = 0.6
-    static let resumeCommandRetryDelaySeconds: TimeInterval = 0.5
-    static let resumeCommandMaxRetryDelay: TimeInterval = 4.0
+    static let restoreDelaySeconds: TimeInterval = 0.2
+    static let resumeCommandDelaySeconds: TimeInterval = 0.25
+    static let resumeCommandRetryDelaySeconds: TimeInterval = 0.25
+    static let resumeCommandMaxRetryDelay: TimeInterval = 1.5
     static let resumeCommandMaxAttempts = 16
 
     static func paneStateMap(from states: [SavedTerminalPaneState]?) -> [UUID: SavedTerminalPaneState] {
@@ -825,9 +825,20 @@ extension OverlayTabsModel {
             }
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.restoreDelaySeconds) { [weak self] in
+        let isSelectedRestore = targetTabID == selectedTabID
+        let scheduledDelay = StartupWindowPresentationPolicy.restoreExecutionDelay(
+            isStartupRestoreActive: StartupRestoreCoordinator.shared.isActive,
+            isSelectedTab: isSelectedRestore,
+            defaultDelay: Self.restoreDelaySeconds
+        )
+        let restoreScheduledAt = CFAbsoluteTimeGetCurrent()
+        DispatchQueue.main.asyncAfter(deadline: .now() + scheduledDelay) { [weak self] in
             guard let self else { return }
             let restoreStartedAt = CFAbsoluteTimeGetCurrent()
+            let waitedMs = Int((restoreStartedAt - restoreScheduledAt) * 1000)
+            Log.info(
+                "restoreTabState: executing for tab=\(targetTabID) selected=\(isSelectedRestore) waited=\(waitedMs)ms scheduledDelayMs=\(Int((scheduledDelay * 1000).rounded()))"
+            )
             defer {
                 FeatureProfiler.shared.recordMainThreadStallIfNeeded(
                     operation: "OverlayTabsModel.restoreTabState",
