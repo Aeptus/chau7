@@ -59,6 +59,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// Acquired when the app is active, released 30s after it goes to background.
     private var activityToken: NSObjectProtocol?
     private var latencyReleaseWorkItem: DispatchWorkItem?
+    private var telemetryRepairWorkItem: DispatchWorkItem?
     private var appNapObservers: [Any] = []
     private var isAppActive = true
     private var latencyCriticalScopes: [String: DispatchWorkItem] = [:]
@@ -84,7 +85,6 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         // Purge oversized PTY logs on startup to prevent disk bloat
         purgeLargePTYLogs()
-        scheduleRecentTelemetryRepairSweep()
         UsageMonitor.shared.start()
 
         // Strip env vars from parent process that would confuse nested CLI tools.
@@ -470,6 +470,8 @@ private final class OverlayBlurView: NSVisualEffectView {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.isAppActive = true
+                self?.telemetryRepairWorkItem?.cancel()
+                self?.telemetryRepairWorkItem = nil
                 self?.enableLowLatency()
             }
         }
@@ -480,6 +482,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.isAppActive = false
+                self?.scheduleRecentTelemetryRepairSweep()
                 self?.scheduleLatencyRelease()
             }
         }
@@ -1455,16 +1458,23 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     /// Revisit recent incomplete transcript-derived runs after launch.
-    /// This catches delayed transcript flushes and app restarts without requiring
-    /// a manual one-shot repair.
+    /// This catches delayed transcript flushes and app restarts without forcing a
+    /// heavyweight telemetry rewrite sweep onto the active startup/input path.
     private func scheduleRecentTelemetryRepairSweep() {
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 15) {
-            let report = TelemetryRepairService.shared.rebuildRecentIncompleteRuns(limit: 250)
+        telemetryRepairWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard !self.isAppActive else { return }
+
+            let report = TelemetryRepairService.shared.rebuildRecentIncompleteRuns(limit: 50)
             guard report.inspectedRuns > 0 else { return }
             Log.info(
-                "Startup telemetry repair sweep inspected=\(report.inspectedRuns) rebuilt=\(report.rebuiltRuns) invalidated=\(report.invalidatedRuns) skipped=\(report.skippedRuns)"
+                "Deferred telemetry repair sweep inspected=\(report.inspectedRuns) rebuilt=\(report.rebuiltRuns) invalidated=\(report.invalidatedRuns) skipped=\(report.skippedRuns)"
             )
         }
+        telemetryRepairWorkItem = workItem
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 120, execute: workItem)
     }
 
     // MARK: - URL Scheme Handler (chau7://)
