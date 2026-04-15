@@ -2,7 +2,6 @@ import Foundation
 
 public enum TabRenderPhase: String, Equatable, Sendable {
     case active
-    case backgroundActive
     case warm
     case hidden
 
@@ -11,11 +10,11 @@ public enum TabRenderPhase: String, Equatable, Sendable {
     }
 
     public var allowsLivePresentation: Bool {
-        self == .active || self == .backgroundActive
+        self == .active
     }
 
     public var keepsVisibleSurface: Bool {
-        self == .active || self == .backgroundActive
+        self == .active
     }
 }
 
