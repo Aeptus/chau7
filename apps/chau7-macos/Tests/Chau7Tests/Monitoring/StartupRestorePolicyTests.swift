@@ -195,6 +195,33 @@ final class StartupRestorePolicyTests: XCTestCase {
         )
     }
 
+    func testWindowPresentationPolicyWaitsForSurfaceWhenStartupHasNoSnapshot() {
+        XCTAssertFalse(
+            StartupWindowPresentationPolicy.shouldRevealWindowImmediately(
+                isStartupRestoreActive: true,
+                hasSelectedSurfaceSnapshot: false
+            )
+        )
+    }
+
+    func testWindowPresentationPolicyRevealsImmediatelyWhenSnapshotExists() {
+        XCTAssertTrue(
+            StartupWindowPresentationPolicy.shouldRevealWindowImmediately(
+                isStartupRestoreActive: true,
+                hasSelectedSurfaceSnapshot: true
+            )
+        )
+    }
+
+    func testWindowPresentationPolicyRevealsImmediatelyOutsideStartup() {
+        XCTAssertTrue(
+            StartupWindowPresentationPolicy.shouldRevealWindowImmediately(
+                isStartupRestoreActive: false,
+                hasSelectedSurfaceSnapshot: false
+            )
+        )
+    }
+
     func testFallbackRecoveryPolicyRetriesForcedCompletionWithoutAllLiveFrames() {
         XCTAssertTrue(
             StartupRestoreFallbackRecoveryPolicy.shouldRetry(

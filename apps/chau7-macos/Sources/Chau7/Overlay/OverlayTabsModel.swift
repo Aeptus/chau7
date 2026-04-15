@@ -561,6 +561,7 @@ final class OverlayTabsModel {
     var selectedTabRevealState = SelectedTabRevealState()
     /// Whether the selected terminal content is ready to display live.
     var isTerminalReady: Bool { selectedTabRevealState.isTerminalReady }
+    var hasSelectedStartupPresentationSnapshot: Bool { selectedTab?.visibleSnapshot != nil }
     @ObservationIgnored var terminalReadyCommitWorkItem: DispatchWorkItem?
     @ObservationIgnored var terminalReadyFallbackWorkItem: DispatchWorkItem?
     @ObservationIgnored static let terminalReadyCompositingDelay: TimeInterval = 1.0 / 60.0
