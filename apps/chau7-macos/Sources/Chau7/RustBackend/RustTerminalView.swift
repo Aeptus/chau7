@@ -1996,6 +1996,10 @@ final class RustTerminalView: NSView {
     /// surface before its first draw has completed.
     var onFramePresented: (() -> Void)?
 
+    /// Callback with a refreshed retained frame while the tab is not active.
+    /// This keeps hidden/background tabs ready to reveal without full live rendering.
+    var onInactiveRetainedFrame: ((NSImage) -> Void)?
+
     /// Callback when scroll position changes
     var onScrollChanged: (() -> Void)?
 
@@ -2102,6 +2106,9 @@ final class RustTerminalView: NSView {
     var livePollingActiveForProfiling: Bool { isLivePollingActive }
     private(set) var currentRenderPhase: TabRenderPhase = .hidden
     private var authoritativeRevealPending = false
+    private var inactiveSnapshotRefreshWorkItem: DispatchWorkItem?
+    private var lastInactiveSnapshotRefreshAt: CFAbsoluteTime = 0
+    static let inactiveSnapshotRefreshMinInterval: CFAbsoluteTime = 0.25
 
     // MARK: - Properties
 
@@ -2613,6 +2620,7 @@ final class RustTerminalView: NSView {
         // Set flag to prevent CVDisplayLink callbacks from accessing deallocated view
         isBeingDeallocated = true
         shellStartupTimeoutWork?.cancel()
+        inactiveSnapshotRefreshWorkItem?.cancel()
         removeWindowNotificationObservers()
         stopPollingLoop()
         stopAutoScrollTimer()
@@ -2870,6 +2878,25 @@ final class RustTerminalView: NSView {
         needsGridSync = true
         hasRetainedFrameSourceReady = false
         Log.trace("RustTerminalView[\(viewId)]: requestAuthoritativeReveal[\(reason)]")
+    }
+
+    func scheduleInactiveRetainedFrameRefresh(reason: String) {
+        guard currentRenderPhase != .active else { return }
+        guard inactiveSnapshotRefreshWorkItem == nil else { return }
+
+        let now = CFAbsoluteTimeGetCurrent()
+        let remainingDelay = max(0, Self.inactiveSnapshotRefreshMinInterval - (now - lastInactiveSnapshotRefreshAt))
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.inactiveSnapshotRefreshWorkItem = nil
+            guard self.currentRenderPhase != .active else { return }
+            guard let snapshot = self.makeRetainedFrameImage(allowForcedSync: true) else { return }
+            self.lastInactiveSnapshotRefreshAt = CFAbsoluteTimeGetCurrent()
+            self.onInactiveRetainedFrame?(snapshot)
+            Log.trace("RustTerminalView[\(self.viewId)]: refreshed inactive retained frame [\(reason)]")
+        }
+        inactiveSnapshotRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + remainingDelay, execute: workItem)
     }
 
     func consumeAuthoritativeRevealPending() -> Bool {

@@ -328,6 +328,9 @@ extension RustTerminalView {
             isHidden: isHidden,
             hasVisibleWindow: hasVisibleWindow
         ) else {
+            if changed {
+                scheduleInactiveRetainedFrameRefresh(reason: "backgroundDrain")
+            }
             return
         }
 

@@ -280,6 +280,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.onFramePresented = { [weak model] in
                 model?.notifyVisibleFrameReadyIfNeeded()
             }
+            existingView.onInactiveRetainedFrame = { [weak model] snapshot in
+                model?.lastRenderedSnapshot = snapshot
+            }
             existingView.onFilePathClicked = onFilePathClicked
             existingView.onScrollbackCleared = { [weak model] in
                 model?.resetDangerousHighlights()
@@ -358,6 +361,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         }
         view.onFramePresented = { [weak model] in
             model?.notifyVisibleFrameReadyIfNeeded()
+        }
+        view.onInactiveRetainedFrame = { [weak model] snapshot in
+            model?.lastRenderedSnapshot = snapshot
         }
         view.onScrollChanged = { [weak model] in
             model?.scheduleHighlightAfterScroll()
