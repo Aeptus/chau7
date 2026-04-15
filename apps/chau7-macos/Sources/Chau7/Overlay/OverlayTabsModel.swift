@@ -649,7 +649,6 @@ final class OverlayTabsModel {
     @ObservationIgnored var renameOriginalTitle = ""
     @ObservationIgnored var renameOriginalColor: TabColor = .blue
     @ObservationIgnored var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
-    @ObservationIgnored var liveRenderExemptTabIDs: Set<UUID> = []
     @ObservationIgnored var previousLiveHierarchyReleaseWorkItem: DispatchWorkItem?
     /// Restored tabs need a real terminal view at least once so scrollback can be
     /// injected and resume commands can land without falling back to "no view"
@@ -681,6 +680,7 @@ final class OverlayTabsModel {
     @ObservationIgnored var suspensionDebounceItem: DispatchWorkItem?
     @ObservationIgnored var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
     @ObservationIgnored var codexResumeFallbackCache: [ObjectIdentifier: CachedCodexResumeFallback] = [:]
+    @ObservationIgnored let renderLifecycleController = TabRenderLifecycleController()
 
     /// Callback invoked when `tabs` changes — used by RemoteControlManager
     @ObservationIgnored var onTabsChanged: (() -> Void)?
@@ -3116,22 +3116,41 @@ final class OverlayTabsModel {
         suspendedTabIDs.contains(id)
     }
 
+    private func renderLifecycleSnapshot() -> TabRenderLifecycleController.Snapshot {
+        TabRenderLifecycleController.Snapshot(
+            selectedTabID: selectedTabID,
+            previousLiveHierarchyTabID: previousLiveHierarchyTabID,
+            prewarmingTabIDs: prewarmingTabIDs,
+            restoreBootstrapTabIDs: restoreBootstrapTabIDs,
+            isRenderSuspensionEnabled: isRenderSuspensionEnabled,
+            isStartupRestoreActive: StartupRestoreCoordinator.shared.isActive
+        )
+    }
+
+    private func renderLifecycleDescriptor(for tab: OverlayTab) -> TabRenderLifecycleController.TabDescriptor {
+        let hasAttachedTerminalView = !tab.splitController.terminalSessions.contains { _, session in
+            session.existingRustTerminalView == nil
+        }
+        let hasBackgroundActivity = tab.splitController.terminalSessions.contains { _, session in
+            session.shouldKeepLiveRenderingInBackground
+        }
+        return TabRenderLifecycleController.TabDescriptor(
+            id: tab.id,
+            isMCPControlled: tab.isMCPControlled,
+            hasAttachedTerminalView: hasAttachedTerminalView,
+            hasBackgroundActivity: hasBackgroundActivity
+        )
+    }
+
     /// Fresh MCP tabs need a real terminal view at least once so background
     /// exec/input requests have a PTY to land on. Once a terminal view has
     /// attached, the retained Rust view keeps the session alive even if the tab
     /// later drops out of the visible hierarchy.
     func shouldKeepTabInLiveHierarchy(tab: OverlayTab, index _: Int) -> Bool {
-        let hasAttachedTerminalView = !tab.splitController.terminalSessions.contains(where: { _, session in
-            session.existingRustTerminalView == nil
-        })
-        return StartupWindowPresentationPolicy.shouldKeepTabInLiveHierarchy(
-            isStartupRestoreActive: StartupRestoreCoordinator.shared.isActive,
-            isSelectedTab: tab.id == selectedTabID,
-            isPreviousLiveTab: tab.id == previousLiveHierarchyTabID,
-            isMCPControlled: tab.isMCPControlled,
-            hasAttachedTerminalView: hasAttachedTerminalView,
-            hasPendingRestoreBootstrap: restoreBootstrapTabIDs.contains(tab.id)
-        )
+        renderLifecycleController.decision(
+            for: renderLifecycleDescriptor(for: tab),
+            snapshot: renderLifecycleSnapshot()
+        ).keepsLiveHierarchy
     }
 
     func updateSuspensionState() {
@@ -3143,14 +3162,12 @@ final class OverlayTabsModel {
             .forEach { $0.value.cancel() }
         suspendWorkItems = suspendWorkItems.filter { validIDs.contains($0.key) }
         suspendedTabIDs = suspendedTabIDs.intersection(validIDs)
-        liveRenderExemptTabIDs = liveRenderExemptTabIDs.intersection(validIDs)
         restoreBootstrapTabIDs = restoreBootstrapTabIDs.intersection(validIDs)
 
         guard isRenderSuspensionEnabled else {
             suspendWorkItems.values.forEach { $0.cancel() }
             suspendWorkItems.removeAll()
             suspendedTabIDs.removeAll()
-            liveRenderExemptTabIDs.removeAll()
             if previousSuspended != suspendedTabIDs {
                 logVisualState(reason: "renderSuspension: cleared")
             }
@@ -3159,25 +3176,25 @@ final class OverlayTabsModel {
 
         // Selected tab should always be active.
         suspendedTabIDs.remove(selectedTabID)
-        liveRenderExemptTabIDs.remove(selectedTabID)
         cancelSuspension(for: selectedTabID)
 
+        let snapshot = renderLifecycleSnapshot()
         for tab in tabs where tab.id != selectedTabID {
-            if shouldKeepLiveRenderingInBackground(for: tab) {
+            let decision = renderLifecycleController.decision(
+                for: renderLifecycleDescriptor(for: tab),
+                snapshot: snapshot
+            )
+            if decision.phase != .hidden {
                 cancelSuspension(for: tab.id)
                 let wasSuspended = suspendedTabIDs.remove(tab.id) != nil
-                let becameExempt = liveRenderExemptTabIDs.insert(tab.id).inserted
-                if wasSuspended || becameExempt {
+                if wasSuspended {
                     Log.info(
-                        "renderSuspension: keeping tab \(tab.id) live for AI activity (\(tabRenderSuspensionSummary(tab)))"
+                        "renderSuspension: reactivated tab \(tab.id) as \(decision.phase.rawValue) (\(tabRenderSuspensionSummary(tab)))"
                     )
                 }
                 continue
             }
 
-            if liveRenderExemptTabIDs.remove(tab.id) != nil {
-                Log.info("renderSuspension: tab \(tab.id) returned to normal suspension (\(tabRenderSuspensionSummary(tab)))")
-            }
             scheduleSuspension(for: tab.id)
         }
 
@@ -3190,12 +3207,15 @@ final class OverlayTabsModel {
         guard !suspendedTabIDs.contains(id) else { return }
         guard suspendWorkItems[id] == nil else { return }
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        let decision = renderLifecycleController.decision(
+            for: renderLifecycleDescriptor(for: tab),
+            snapshot: renderLifecycleSnapshot()
+        )
 
-        if shouldKeepLiveRenderingInBackground(for: tab) {
-            let inserted = liveRenderExemptTabIDs.insert(id).inserted
-            if inserted {
-                Log.trace("renderSuspension: skipped scheduling for tab \(id) (\(tabRenderSuspensionSummary(tab)))")
-            }
+        if decision.phase != .hidden {
+            Log.trace(
+                "renderSuspension: skipped scheduling for tab \(id) because phase=\(decision.phase.rawValue) (\(tabRenderSuspensionSummary(tab)))"
+            )
             return
         }
 
@@ -3205,13 +3225,14 @@ final class OverlayTabsModel {
                 guard self.isRenderSuspensionEnabled else { return }
                 guard self.selectedTabID != id else { return }
                 guard let tab = self.tabs.first(where: { $0.id == id }) else { return }
-                guard !self.shouldKeepLiveRenderingInBackground(for: tab) else {
-                    let becameExempt = self.liveRenderExemptTabIDs.insert(id).inserted
-                    if becameExempt {
-                        Log.info(
-                            "renderSuspension: cancelled at deadline for AI-active tab \(id) (\(self.tabRenderSuspensionSummary(tab)))"
-                        )
-                    }
+                let decision = self.renderLifecycleController.decision(
+                    for: self.renderLifecycleDescriptor(for: tab),
+                    snapshot: self.renderLifecycleSnapshot()
+                )
+                guard decision.phase == .hidden else {
+                    Log.info(
+                        "renderSuspension: cancelled at deadline for tab \(id) because phase=\(decision.phase.rawValue) (\(self.tabRenderSuspensionSummary(tab)))"
+                    )
                     self.suspendWorkItems.removeValue(forKey: id)
                     return
                 }
@@ -3226,12 +3247,6 @@ final class OverlayTabsModel {
         suspendWorkItems[id] = item
         Log.trace("renderSuspension: scheduled tab \(id) in \(renderSuspensionDelay)s (\(tabRenderSuspensionSummary(tab)))")
         DispatchQueue.main.asyncAfter(deadline: .now() + renderSuspensionDelay, execute: item)
-    }
-
-    func shouldKeepLiveRenderingInBackground(for tab: OverlayTab) -> Bool {
-        tab.splitController.terminalSessions.contains { _, session in
-            session.shouldKeepLiveRenderingInBackground
-        }
     }
 
     func tabRenderSuspensionSummary(_ tab: OverlayTab) -> String {

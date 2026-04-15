@@ -23,6 +23,7 @@ extension OverlayTabsModel {
         // Clear prewarm state after a delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             self?.prewarmingTabIDs.remove(id)
+            self?.updateSuspensionState()
         }
     }
 
