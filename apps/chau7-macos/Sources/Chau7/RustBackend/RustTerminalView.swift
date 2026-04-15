@@ -2771,7 +2771,7 @@ final class RustTerminalView: NSView {
         if isShellBootstrapPending {
             return true
         }
-        guard currentRenderPhase == .active, !isHidden else { return false }
+        guard currentRenderPhase.allowsLivePresentation, !isHidden else { return false }
         guard let window else { return false }
         guard window.isVisible, !window.isMiniaturized else { return false }
         return true
@@ -2859,7 +2859,7 @@ final class RustTerminalView: NSView {
 
     func applyRenderPhase(_ phase: TabRenderPhase, isInteractive: Bool, reason: String) {
         currentRenderPhase = phase
-        let shouldHide = phase != .active
+        let shouldHide = !phase.keepsVisibleSurface
         let shouldNotifyUpdates = phase.allowsLivePresentation
 
         if notifyUpdateChanges != shouldNotifyUpdates {

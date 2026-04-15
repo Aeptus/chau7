@@ -62,7 +62,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
-    func testBackgroundActivityUsesBackgroundActivePhaseAndStaysAttached() {
+    func testBackgroundActivityUsesWarmPhaseAndStaysAttached() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -78,7 +78,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .backgroundActive)
+        XCTAssertEqual(decision.phase, .warm)
         XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
@@ -100,6 +100,16 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
 
         XCTAssertEqual(decision.phase, .backgroundActive)
         XCTAssertTrue(decision.keepsLiveHierarchy)
+    }
+
+    func testBackgroundActivePhaseKeepsLivePresentationAndVisibleSurface() {
+        XCTAssertTrue(TabRenderPhase.backgroundActive.allowsLivePresentation)
+        XCTAssertTrue(TabRenderPhase.backgroundActive.keepsVisibleSurface)
+    }
+
+    func testWarmPhaseDoesNotKeepVisibleSurface() {
+        XCTAssertFalse(TabRenderPhase.warm.allowsLivePresentation)
+        XCTAssertFalse(TabRenderPhase.warm.keepsVisibleSurface)
     }
 
     func testSuspensionDisabledKeepsNonSelectedTabsWarm() {

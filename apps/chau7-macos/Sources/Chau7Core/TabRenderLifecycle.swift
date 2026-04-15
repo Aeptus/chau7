@@ -11,7 +11,11 @@ public enum TabRenderPhase: String, Equatable, Sendable {
     }
 
     public var allowsLivePresentation: Bool {
-        self == .active
+        self == .active || self == .backgroundActive
+    }
+
+    public var keepsVisibleSurface: Bool {
+        self == .active || self == .backgroundActive
     }
 }
 
@@ -83,8 +87,12 @@ public enum TabRenderLifecyclePolicy {
             return .active
         }
 
-        if input.isSelectedTab || input.hasBackgroundActivity {
+        if input.isSelectedTab {
             return .backgroundActive
+        }
+
+        if input.hasBackgroundActivity {
+            return .warm
         }
 
         if !input.isRenderSuspensionEnabled {
