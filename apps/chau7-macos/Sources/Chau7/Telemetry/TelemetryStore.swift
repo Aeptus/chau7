@@ -59,6 +59,26 @@ final class TelemetryStore {
         }
     }
 
+    private func logStartupBackfillScan(
+        name: String,
+        scannedRows: Int,
+        touchedRows: Int,
+        startedAt: CFAbsoluteTime,
+        extra: String? = nil
+    ) {
+        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0)
+        var parts = [
+            "TelemetryStore: startup backfill \(name)",
+            "scanned=\(scannedRows)",
+            "touched=\(touchedRows)",
+            "cursorMs=\(elapsedMs)"
+        ]
+        if let extra, !extra.isEmpty {
+            parts.append(extra)
+        }
+        Log.info(parts.joined(separator: " "))
+    }
+
     /// Quick integrity check on startup. If the database is corrupt, log and
     /// recreate it rather than silently failing every insert.
     private func verifyIntegrity() {
@@ -378,13 +398,23 @@ final class TelemetryStore {
         defer { sqlite3_finalize(stmt) }
 
         var repairedRuns: [TelemetryRun] = []
+        var scannedRuns = 0
+        let scanStartedAt = CFAbsoluteTimeGetCurrent()
         while sqlite3_step(stmt) == SQLITE_ROW {
+            scannedRuns += 1
             guard let run = parseRun(stmt),
                   let repaired = TelemetryHistoricalCostBackfill.repairedRun(run) else {
                 continue
             }
             repairedRuns.append(repaired)
         }
+
+        logStartupBackfillScan(
+            name: "historical_missing_costs",
+            scannedRows: scannedRuns,
+            touchedRows: repairedRuns.count,
+            startedAt: scanStartedAt
+        )
 
         guard !repairedRuns.isEmpty else { return }
 
@@ -427,11 +457,21 @@ final class TelemetryStore {
         defer { sqlite3_finalize(stmt) }
 
         var insertedCount = 0
+        var scannedRuns = 0
+        let scanStartedAt = CFAbsoluteTimeGetCurrent()
         while sqlite3_step(stmt) == SQLITE_ROW {
+            scannedRuns += 1
             guard let run = parseRun(stmt) else { continue }
             _insertUsageEvidence(UsageEvidence.runSummary(run))
             insertedCount += 1
         }
+
+        logStartupBackfillScan(
+            name: "run_usage_evidence",
+            scannedRows: scannedRuns,
+            touchedRows: insertedCount,
+            startedAt: scanStartedAt
+        )
 
         if insertedCount > 0 {
             Log.info("TelemetryStore: backfilled usage evidence for \(insertedCount) missing run(s)")
@@ -467,6 +507,7 @@ final class TelemetryStore {
         defer { sqlite3_finalize(stmt) }
 
         var report = ProviderLatencyBackfillReport()
+        let scanStartedAt = CFAbsoluteTimeGetCurrent()
         while sqlite3_step(stmt) == SQLITE_ROW {
             guard let run = parseRun(stmt) else { continue }
             report.inspectedRuns += 1
@@ -486,6 +527,14 @@ final class TelemetryStore {
                 report.insertedSamples += 1
             }
         }
+
+        logStartupBackfillScan(
+            name: "completed_run_latency_samples",
+            scannedRows: report.inspectedRuns,
+            touchedRows: report.insertedSamples,
+            startedAt: scanStartedAt,
+            extra: "skipped=\(report.skippedRuns)"
+        )
 
         return report
     }
