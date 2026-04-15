@@ -17,6 +17,8 @@ final class StatusBarController: NSObject {
     private var globalEventMonitor: Any?
     private var localEventMonitor: Any?
     private weak var model: AppModel?
+    private var lastRenderedSymbolName: String?
+    private var lastRenderedTitle: String = ""
 
     /// Panel view model — lives as long as the controller so popover doesn't recreate state.
     private var panelViewModel: CommandCenterViewModel?
@@ -162,17 +164,28 @@ final class StatusBarController: NSObject {
         guard let button = statusItem?.button else { return }
         let isMonitoring = model?.isMonitoring ?? false
         let attentionCount = counts.attentionCount
+        let symbolName: String
+        let title: String
 
         if !isMonitoring {
-            button.image = NSImage(systemSymbolName: "bell", accessibilityDescription: L("app.name", "Chau7"))
-            button.title = ""
+            symbolName = "bell"
+            title = ""
         } else if attentionCount > 0 {
-            button.image = NSImage(systemSymbolName: "bell.badge.fill", accessibilityDescription: L("app.name", "Chau7"))
-            button.title = "\(attentionCount)"
+            symbolName = "bell.badge.fill"
+            title = "\(attentionCount)"
         } else {
-            button.image = NSImage(systemSymbolName: "bell.badge.fill", accessibilityDescription: L("app.name", "Chau7"))
-            button.title = ""
+            symbolName = "bell.badge.fill"
+            title = ""
         }
+
+        guard symbolName != lastRenderedSymbolName || title != lastRenderedTitle else {
+            return
+        }
+
+        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: L("app.name", "Chau7"))
+        button.title = title
+        lastRenderedSymbolName = symbolName
+        lastRenderedTitle = title
     }
 
     @objc private func togglePopover(_ sender: Any?) {
