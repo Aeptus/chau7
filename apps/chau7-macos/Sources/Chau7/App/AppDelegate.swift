@@ -43,6 +43,9 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var shownWindowNumbers: Set<Int> = []
     private var didFinishLaunching = false
     private var didPerformInitialSetup = false
+    private var didStartDeferredStartupWork = false
+    private var didCompleteStartupRestore = false
+    private var startupRestoreFallbackWorkItem: DispatchWorkItem?
     private var lastOverlayLifecycleLogAt: CFAbsoluteTime = 0
     private var lastOverlayLifecycleReason = ""
     /// Centralized autosave timer — saves all windows atomically every 30s
@@ -167,6 +170,10 @@ private final class OverlayBlurView: NSVisualEffectView {
             return
         }
         didPerformInitialSetup = true
+        didStartDeferredStartupWork = false
+        didCompleteStartupRestore = false
+        startupRestoreFallbackWorkItem?.cancel()
+        startupRestoreFallbackWorkItem = nil
 
         model.bootstrap()
         beginLatencyCriticalScope(reason: "startup-restore", timeout: 90)
@@ -193,17 +200,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Restore additional windows from multi-window save state
         restoreAdditionalWindows()
 
-        // Start centralized autosave timer (replaces per-window timers)
-        startMultiWindowAutoSaveTimer()
-
-        // Eagerly initialize clipboard history so polling starts immediately
-        // (not lazily on first UI open). No-op if feature is disabled.
-        _ = ClipboardHistoryManager.shared
-
-        // Initialize debug console and bug report controllers
-        DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
-        BugReportWindowController.shared.configure(appModel: model, overlayModel: overlayModel)
-
         // Ensure theme is applied after windows exist
         applyAppTheme()
 
@@ -214,38 +210,79 @@ private final class OverlayBlurView: NSVisualEffectView {
             host.window.orderOut(nil)
         }
 
-        // Wait for shell to initialize and run integration, then show
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+        Log.info("Startup foreground presentation requested immediately after setup")
+        DispatchQueue.main.async { [weak self] in
             if self?.splashController?.onWelcomeDismiss != nil {
-                // Welcome flow: mark app ready, dismiss happens when user clicks "Get Started"
                 self?.splashController?.markAppReady()
             } else {
-                // Normal splash: dismiss immediately
                 self?.finishLaunching()
             }
         }
     }
 
+    private func startDeferredStartupWorkIfNeeded() {
+        guard !didStartDeferredStartupWork else { return }
+        guard let model, let overlayModel else { return }
+        didStartDeferredStartupWork = true
+
+        Log.info("Startup deferred work: starting post-first-paint services")
+        startMultiWindowAutoSaveTimer()
+        _ = ClipboardHistoryManager.shared
+        DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
+        BugReportWindowController.shared.configure(appModel: model, overlayModel: overlayModel)
+    }
+
     private func finishLaunching() {
+        Log.info("finishLaunching: presenting overlay windows")
         // Dismiss splash and show overlay (terminal only, no settings window)
         splashController?.dismiss { [weak self] in
-            self?.splashController = nil
+            guard let self else { return }
+            self.splashController = nil
             // Show all restored overlay windows
-            if let hosts = self?.overlayHosts {
-                for host in hosts {
-                    self?.showOverlayWindow(host, reason: "finishLaunching")
-                }
+            for host in self.overlayHosts {
+                self.showOverlayWindow(host, reason: "finishLaunching")
             }
             // Ensure menu bar is anchored after splash dismissal.
             // During the splash phase no window is key/main, so macOS may
             // drop the menu bar for this app. Re-activating here forces it back.
             NSApp.activate(ignoringOtherApps: true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
-                MainActor.assumeIsolated {
-                    self?.endLatencyCriticalScope(reason: "startup-restore")
-                    StartupRestoreCoordinator.shared.end()
-                }
-            }
+            self.completeStartupRestoreIfReady(reason: "windows_shown")
+            self.scheduleStartupRestoreFallbackCompletion()
+        }
+    }
+
+    @MainActor private func scheduleStartupRestoreFallbackCompletion(timeout: TimeInterval = 12) {
+        startupRestoreFallbackWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.completeStartupRestoreIfReady(force: true, reason: "fallback_timeout")
+        }
+        startupRestoreFallbackWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: workItem)
+    }
+
+    @MainActor private func completeStartupRestoreIfReady(force: Bool = false, reason: String) {
+        guard !didCompleteStartupRestore else { return }
+        let expectedWindowCount = max(overlayHosts.count, 1)
+        guard force || StartupRestoreCoordinator.shared.isReadyToComplete(expectedWindowCount: expectedWindowCount) else {
+            return
+        }
+        didCompleteStartupRestore = true
+        startupRestoreFallbackWorkItem?.cancel()
+        startupRestoreFallbackWorkItem = nil
+        Log.info("Startup restore completion: reason=\(reason) expectedWindows=\(expectedWindowCount)")
+        for host in overlayHosts {
+            host.model.beginDeferredRestoreIfNeeded(reason: "startup_complete")
+        }
+        startDeferredStartupWorkIfNeeded()
+        endLatencyCriticalScope(reason: "startup-restore")
+        StartupRestoreCoordinator.shared.end()
+    }
+
+    @MainActor private func configureStartupCallbacks(for tabsModel: OverlayTabsModel) {
+        tabsModel.onStartupSelectedTabLiveFrameRecorded = { [weak self, weak tabsModel] in
+            guard let self else { return }
+            tabsModel?.beginDeferredRestoreIfNeeded(reason: "startup_live_frame")
+            self.completeStartupRestoreIfReady(reason: "selected_tab_live_frame")
         }
     }
 
@@ -1362,6 +1399,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             // Pass pre-decoded states directly — no UserDefaults round-trip
             let windowRestoreStartedAt = CFAbsoluteTimeGetCurrent()
             let tabsModel = OverlayTabsModel(appModel: model, restoringStates: windowStates)
+            configureStartupCallbacks(for: tabsModel)
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
@@ -1581,6 +1619,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         let windowNumber = allocateOverlayWindowNumber()
         let window = createOverlayWindow(tabsModel: overlayModel, windowNumber: windowNumber)
         overlayHosts.append(OverlayHost(window: window, model: overlayModel))
+        configureStartupCallbacks(for: overlayModel)
         activeOverlayModel = overlayModel
         wireTabMoveCallbacks()
         logOverlayDiagnostics(reason: "setup", window: window)
@@ -1877,6 +1916,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         // revival now that the overlay window is on-screen.
         host.model.forceRefreshSelectedTab()
         host.model.noteStartupSelectedTabLiveFrameIfNeeded(reason: "window_visible_\(reason)")
+        completeStartupRestoreIfReady(reason: "window_visible")
         host.model.focusSelected()
         logOverlayWindowLifecycle(reason: "showOverlayWindow-\(reason)", window: host.window)
         logOverlayDiagnostics(reason: reason, window: host.window)
