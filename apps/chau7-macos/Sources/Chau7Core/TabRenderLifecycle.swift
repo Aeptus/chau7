@@ -2,6 +2,7 @@ import Foundation
 
 public enum TabRenderPhase: String, Equatable, Sendable {
     case active
+    case passiveVisible
     case warm
     case hidden
 
@@ -14,7 +15,7 @@ public enum TabRenderPhase: String, Equatable, Sendable {
     }
 
     public var keepsVisibleSurface: Bool {
-        self == .active
+        self == .active || self == .passiveVisible
     }
 }
 
@@ -58,10 +59,12 @@ public struct TabRenderLifecycleInput: Equatable, Sendable {
 public struct TabRenderLifecycleDecision: Equatable, Sendable {
     public let phase: TabRenderPhase
     public let keepsLiveHierarchy: Bool
+    public let isInteractive: Bool
 
-    public init(phase: TabRenderPhase, keepsLiveHierarchy: Bool) {
+    public init(phase: TabRenderPhase, keepsLiveHierarchy: Bool, isInteractive: Bool) {
         self.phase = phase
         self.keepsLiveHierarchy = keepsLiveHierarchy
+        self.isInteractive = isInteractive
     }
 }
 
@@ -69,7 +72,8 @@ public enum TabRenderLifecyclePolicy {
     public static func decide(_ input: TabRenderLifecycleInput) -> TabRenderLifecycleDecision {
         TabRenderLifecycleDecision(
             phase: phase(for: input),
-            keepsLiveHierarchy: keepsLiveHierarchy(for: input)
+            keepsLiveHierarchy: keepsLiveHierarchy(for: input),
+            isInteractive: isInteractive(for: input)
         )
     }
 
@@ -78,12 +82,18 @@ public enum TabRenderLifecyclePolicy {
         nextPhase: TabRenderPhase
     ) -> Bool {
         guard let previousPhase else { return false }
+        if !previousPhase.keepsVisibleSurface && nextPhase.keepsVisibleSurface {
+            return true
+        }
         return previousPhase != .active && nextPhase == .active
     }
 
     public static func phase(for input: TabRenderLifecycleInput) -> TabRenderPhase {
         if input.isSelectedTab {
-            return .active
+            if input.isInputPriorityWindow || input.hasBackgroundActivity {
+                return .active
+            }
+            return .passiveVisible
         }
 
         if input.hasBackgroundActivity {
@@ -101,6 +111,10 @@ public enum TabRenderLifecyclePolicy {
         }
 
         return .hidden
+    }
+
+    public static func isInteractive(for input: TabRenderLifecycleInput) -> Bool {
+        input.isSelectedTab && input.isInputPriorityWindow
     }
 
     public static func keepsLiveHierarchy(for input: TabRenderLifecycleInput) -> Bool {

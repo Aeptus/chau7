@@ -248,7 +248,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 
     var model: TerminalSessionModel
     var renderPhase: TabRenderPhase
-    var isActive: Bool
+    var isInteractive: Bool
     var onFilePathClicked: ((String, Int?, Int?) -> Void)?
     var settings = FeatureSettings.shared
 
@@ -258,8 +258,10 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 
     private func liveEligibilitySummary() -> String {
         var reasons: [String] = []
-        if isActive {
+        if isInteractive {
             reasons.append("selected")
+        } else if renderPhase.keepsVisibleSurface {
+            reasons.append("selected-passive")
         } else if renderPhase == .warm {
             reasons.append("handoff")
         }
@@ -322,7 +324,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
             existingView.installHistoryKeyMonitor()
             let container = UnifiedTerminalContainerView(rustView: existingView)
-            existingView.applyRenderPhase(renderPhase, isInteractive: isActive, reason: "reuse")
+            existingView.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "reuse")
             existingView.allowMouseReporting = settings.isMouseReportingEnabled
             // Re-enable Metal rendering — the previous container (and its Metal
             // coordinator) was torn down when the tab went out of nearby range.
@@ -363,7 +365,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.applyCursorStyle(style: settings.cursorStyle, blink: settings.cursorBlink)
         view.applyBellSettings(enabled: settings.bellEnabled, sound: settings.bellSound)
         view.applyScrollbackLines(settings.scrollbackLines)
-        view.applyRenderPhase(renderPhase, isInteractive: isActive, reason: "create")
+        view.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "create")
         view.allowMouseReporting = settings.isMouseReportingEnabled
         view.onInput = { [weak model] text in
             model?.handleInput(text)
@@ -462,7 +464,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         if renderPhaseChanged, !keepsVisibleSurface {
             cacheRetainedFrameIfAvailable(from: nsView)
         }
-        nsView.applyRenderPhase(renderPhase, isInteractive: isActive, reason: "updateNSView")
+        nsView.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "updateNSView")
         let shouldForceAuthoritativeReveal = TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
             previousPhase: transition.previous,
             nextPhase: renderPhase

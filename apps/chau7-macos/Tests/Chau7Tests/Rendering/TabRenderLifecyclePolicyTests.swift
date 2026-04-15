@@ -20,6 +20,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
 
         XCTAssertEqual(decision.phase, .active)
         XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertTrue(decision.isInteractive)
     }
 
     func testPreviousLiveTabStaysWarmAndAttached() {
@@ -40,6 +41,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
 
         XCTAssertEqual(decision.phase, .warm)
         XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.isInteractive)
     }
 
     func testPrewarmingTabStaysWarmAndAttached() {
@@ -60,6 +62,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
 
         XCTAssertEqual(decision.phase, .warm)
         XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.isInteractive)
     }
 
     func testBackgroundActivityUsesWarmPhaseAndStaysAttached() {
@@ -80,9 +83,10 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
 
         XCTAssertEqual(decision.phase, .warm)
         XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.isInteractive)
     }
 
-    func testSelectedTabOutsideInputPriorityWindowStaysActive() {
+    func testSelectedTabOutsideInputPriorityWindowKeepsVisibleSurfaceWithoutInputOwnership() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: true,
@@ -98,13 +102,19 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .active)
+        XCTAssertEqual(decision.phase, .passiveVisible)
         XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.isInteractive)
     }
 
     func testActivePhaseKeepsLivePresentationAndVisibleSurface() {
         XCTAssertTrue(TabRenderPhase.active.allowsLivePresentation)
         XCTAssertTrue(TabRenderPhase.active.keepsVisibleSurface)
+    }
+
+    func testPassiveVisibleKeepsSurfaceWithoutLivePresentation() {
+        XCTAssertFalse(TabRenderPhase.passiveVisible.allowsLivePresentation)
+        XCTAssertTrue(TabRenderPhase.passiveVisible.keepsVisibleSurface)
     }
 
     func testWarmPhaseDoesNotKeepVisibleSurface() {
@@ -202,6 +212,12 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertTrue(
             TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
                 previousPhase: .warm,
+                nextPhase: .passiveVisible
+            )
+        )
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
+                previousPhase: .passiveVisible,
                 nextPhase: .active
             )
         )

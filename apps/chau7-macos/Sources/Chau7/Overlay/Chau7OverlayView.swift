@@ -1529,6 +1529,7 @@ struct Chau7OverlayView: View {
                 let isSelected = tab.id == overlayModel.selectedTabID
                 let keepLiveHierarchy = overlayModel.shouldKeepTabInLiveHierarchy(tab: tab, index: index)
                 let renderPhase = overlayModel.renderPhase(for: tab)
+                let isInteractive = overlayModel.isInteractive(tab: tab)
                 let direction = slideDirection(for: tab, isSelected: isSelected)
 
                 if keepLiveHierarchy {
@@ -1536,7 +1537,7 @@ struct Chau7OverlayView: View {
                     // Keep the selected live surface composited underneath any
                     // retained snapshot so tab switches behave like a reveal
                     // instead of exposing the grey container background.
-                    SplitPaneView(controller: tab.splitController, renderPhase: renderPhase, isActive: isSelected)
+                    SplitPaneView(controller: tab.splitController, renderPhase: renderPhase, isInteractive: isInteractive)
                         .opacity(isSelected ? 1 : 0)
                         .offset(x: isSelected ? 0 : (30 * direction)) // Subtle slide effect
                         .allowsHitTesting(isSelected)

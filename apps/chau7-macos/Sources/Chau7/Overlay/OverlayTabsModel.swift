@@ -2621,26 +2621,29 @@ final class OverlayTabsModel {
         cancelSuspension(for: selectedTabID)
         suspendedTabIDs.remove(selectedTabID)
 
-        guard let session = selectedTab?.session else {
+        guard let selectedTab,
+              let session = selectedTab.session else {
             Log.warn("forceRefreshSelectedTab: no session for selectedTabID=\(selectedTabID)")
             return
         }
 
-        selectedTab?.displaySession?.armVisibleFrameReadyHandoff()
-        selectedTab?.session?.armVisibleFrameReadyHandoff()
+        let selectedDecision = renderLifecycleDecision(for: selectedTab)
+
+        selectedTab.displaySession?.armVisibleFrameReadyHandoff()
+        selectedTab.session?.armVisibleFrameReadyHandoff()
 
         // 2. Unhide and kick the Rust terminal view + Metal coordinator
         //    Hierarchy: UnifiedTerminalContainerView → RustTerminalContainerView → RustTerminalView
         if let rustView = session.existingRustTerminalView {
-            rustView.isHidden = false
-            rustView.notifyUpdateChanges = true
+            rustView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+            rustView.notifyUpdateChanges = selectedDecision.phase.allowsLivePresentation
             rustView.needsDisplay = true
-            rustView.setEventMonitoringEnabled(true)
+            rustView.setEventMonitoringEnabled(selectedDecision.isInteractive)
             // Unhide container + Metal view
             if let container = rustView.superview as? RustTerminalContainerView {
-                container.isHidden = false
+                container.isHidden = !selectedDecision.phase.keepsVisibleSurface
                 if let metalView = container.rustMetalCoordinator?.metalView {
-                    metalView.isHidden = false
+                    metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
                     metalView.needsDisplay = true
                 }
             }
@@ -3228,6 +3231,10 @@ final class OverlayTabsModel {
     func renderPhase(forTabID id: UUID) -> TabRenderPhase {
         guard let tab = tabs.first(where: { $0.id == id }) else { return .hidden }
         return renderPhase(for: tab)
+    }
+
+    func isInteractive(tab: OverlayTab) -> Bool {
+        renderLifecycleDecision(for: tab).isInteractive
     }
 
     /// Fresh MCP tabs need a real terminal view at least once so background
