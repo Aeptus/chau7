@@ -14,6 +14,10 @@ final class RustTerminalContainerView: NSView {
 
     /// Original onBufferChanged callback saved before Metal chaining, restored on disable.
     private var preMetalBufferChangedCallback: (() -> Void)?
+    /// Original onFramePresented callback saved before Metal chaining, restored on disable.
+    private var preMetalFramePresentedCallback: (() -> Void)?
+    /// True until the Metal overlay has produced its first real frame.
+    private var awaitingFirstMetalFrame = false
 
     init(terminalView: RustTerminalView) {
         self.terminalView = terminalView
@@ -81,6 +85,7 @@ final class RustTerminalContainerView: NSView {
         let metalView = coordinator.metalView
         metalView.frame = bounds
         metalView.autoresizingMask = [.width, .height]
+        metalView.alphaValue = 0
         addSubview(metalView, positioned: .above, relativeTo: terminalView)
 
         // Move HighlightView above Metal view so search/danger highlights remain visible.
@@ -95,15 +100,18 @@ final class RustTerminalContainerView: NSView {
 
         // Save the original callback before wrapping it with Metal sync.
         preMetalBufferChangedCallback = terminalView.onBufferChanged
+        preMetalFramePresentedCallback = terminalView.onFramePresented
         chainMetalSync(coordinator: coordinator)
+        chainMetalPresentationActivation(coordinator: coordinator)
 
-        // Suppress CPU rendering — Metal handles display now.
-        // This skips syncGridToRenderer(), tickCursorBlink(), and RustGridView.draw().
-        terminalView.isMetalRenderingActive = true
+        // Keep CPU rendering authoritative until Metal has actually presented
+        // once. This avoids exposing a blank GPU surface during startup/tab
+        // reveal handoffs.
+        awaitingFirstMetalFrame = true
+        terminalView.isMetalRenderingActive = false
 
         // Force an immediate Metal render so the first frame isn't blank.
-        // The Metal view sits on top of the CPU renderer, so if we don't
-        // trigger a draw now, the user sees nothing until the next pollAndSync().
+        // Keep the Metal overlay transparent until that first frame lands.
         coordinator.setNeedsSync()
 
         Log.trace("RustTerminalContainerView: Metal rendering enabled")
@@ -115,6 +123,24 @@ final class RustTerminalContainerView: NSView {
         terminalView.onBufferChanged = { [weak coordinator] in
             baseCallback?()
             coordinator?.setNeedsSync()
+        }
+    }
+
+    /// Promotes the Metal overlay only after a confirmed presented frame.
+    func chainMetalPresentationActivation(coordinator: RustMetalDisplayCoordinator) {
+        let baseCallback = terminalView.onFramePresented
+        terminalView.onFramePresented = { [weak self, weak coordinator] in
+            guard let self else {
+                baseCallback?()
+                return
+            }
+            if self.awaitingFirstMetalFrame {
+                self.awaitingFirstMetalFrame = false
+                self.terminalView.isMetalRenderingActive = true
+                coordinator?.metalView.alphaValue = 1
+                Log.trace("RustTerminalContainerView: Metal overlay promoted after first presented frame")
+            }
+            baseCallback?()
         }
     }
 
@@ -131,6 +157,9 @@ final class RustTerminalContainerView: NSView {
             terminalView.onBufferChanged = original
         }
         preMetalBufferChangedCallback = nil
+        terminalView.onFramePresented = preMetalFramePresentedCallback
+        preMetalFramePresentedCallback = nil
+        awaitingFirstMetalFrame = false
 
         // Move HighlightView back into the terminal view
         for subview in subviews {
