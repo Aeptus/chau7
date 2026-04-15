@@ -235,8 +235,12 @@ private final class OverlayBlurView: NSVisualEffectView {
     private func finishLaunching() {
         Log.info("finishLaunching: presenting overlay windows")
         // Dismiss splash and show overlay (terminal only, no settings window)
+        let splashDismissRequestedAt = CFAbsoluteTimeGetCurrent()
+        Log.info("finishLaunching: requesting splash dismissal")
         splashController?.dismiss { [weak self] in
             guard let self else { return }
+            let dismissElapsedMs = Int(((CFAbsoluteTimeGetCurrent() - splashDismissRequestedAt) * 1000).rounded())
+            Log.info("finishLaunching: splash dismissal completed after \(dismissElapsedMs)ms")
             self.splashController = nil
             // Show all restored overlay windows
             for host in self.overlayHosts {
@@ -1904,6 +1908,9 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     private func showOverlayWindow(_ host: OverlayHost, reason: String) {
+        Log.info(
+            "showOverlayWindow: begin reason=\(reason) windowNumber=\(host.window.windowNumber) selectedTab=\(host.model.selectedTabID)"
+        )
         host.model.noteTabBarVisibilityChanged(isVisible: true)
         host.window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
