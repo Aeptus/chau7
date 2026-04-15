@@ -41,9 +41,27 @@ final class StartupRestorePolicyTests: XCTestCase {
         XCTAssertEqual(summary?.restorePreviewShown, 1)
         XCTAssertEqual(summary?.restorePreviewDiscarded, 1)
         XCTAssertEqual(summary?.selectedTabLiveFrameCount, 1)
+        XCTAssertEqual(summary?.firstWindowVisibleMs, 200)
+        XCTAssertEqual(summary?.firstSelectedTabLiveFrameSinceStartMs, 550)
         XCTAssertEqual(summary?.firstSelectedTabLiveFrameMs, 350)
         XCTAssertEqual(summary?.slowestSelectedTabLiveFrameMs, 350)
         XCTAssertFalse(tracker.isActive)
+    }
+
+    func testTrackerReadinessUsesVisibleWindowCount() {
+        var tracker = StartupRestoreTracker()
+        let startedAt = Date(timeIntervalSince1970: 100)
+        tracker.begin(at: startedAt)
+        tracker.noteWindowVisible(windowNumber: 1, at: startedAt.addingTimeInterval(0.2))
+        tracker.noteWindowVisible(windowNumber: 2, at: startedAt.addingTimeInterval(0.25))
+
+        XCTAssertFalse(tracker.isReadyForVisibleStartupCompletion(expectedWindowCount: 2))
+
+        _ = tracker.noteSelectedTabLiveFrame(windowNumber: 1, at: startedAt.addingTimeInterval(0.4))
+        XCTAssertFalse(tracker.isReadyForVisibleStartupCompletion(expectedWindowCount: 2))
+
+        _ = tracker.noteSelectedTabLiveFrame(windowNumber: 2, at: startedAt.addingTimeInterval(0.55))
+        XCTAssertTrue(tracker.isReadyForVisibleStartupCompletion(expectedWindowCount: 2))
     }
 
     func testSnippetResolvePolicyDebouncesHomePathDuringStartupRestore() {
@@ -99,5 +117,81 @@ final class StartupRestorePolicyTests: XCTestCase {
     func testResumePrefillPolicyWarnsOnlyOutsideStartupRestore() {
         XCTAssertFalse(StartupResumePrefillPolicy.shouldWarnAboutNotReady(isStartupRestoreActive: true))
         XCTAssertTrue(StartupResumePrefillPolicy.shouldWarnAboutNotReady(isStartupRestoreActive: false))
+    }
+
+    func testWindowPresentationPolicyPrioritizesSelectedRestoreDuringStartup() {
+        XCTAssertEqual(
+            StartupWindowPresentationPolicy.restoreExecutionDelay(
+                isStartupRestoreActive: true,
+                isSelectedTab: true,
+                defaultDelay: 0.8
+            ),
+            StartupWindowPresentationPolicy.selectedTabRestoreDelay
+        )
+        XCTAssertEqual(
+            StartupWindowPresentationPolicy.restoreExecutionDelay(
+                isStartupRestoreActive: true,
+                isSelectedTab: false,
+                defaultDelay: 0.8
+            ),
+            StartupWindowPresentationPolicy.backgroundTabRestoreDelay
+        )
+        XCTAssertEqual(
+            StartupWindowPresentationPolicy.restoreExecutionDelay(
+                isStartupRestoreActive: false,
+                isSelectedTab: false,
+                defaultDelay: 0.8
+            ),
+            0.8
+        )
+    }
+
+    func testWindowPresentationPolicyDefersBackgroundRestoreTabsDuringStartup() {
+        XCTAssertFalse(
+            StartupWindowPresentationPolicy.shouldKeepTabInLiveHierarchy(
+                isStartupRestoreActive: true,
+                isSelectedTab: false,
+                isPreviousLiveTab: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: false,
+                hasPendingRestoreBootstrap: true
+            )
+        )
+    }
+
+    func testWindowPresentationPolicyKeepsSelectedAndMCPTabsLiveDuringStartup() {
+        XCTAssertTrue(
+            StartupWindowPresentationPolicy.shouldKeepTabInLiveHierarchy(
+                isStartupRestoreActive: true,
+                isSelectedTab: true,
+                isPreviousLiveTab: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: false,
+                hasPendingRestoreBootstrap: true
+            )
+        )
+        XCTAssertTrue(
+            StartupWindowPresentationPolicy.shouldKeepTabInLiveHierarchy(
+                isStartupRestoreActive: true,
+                isSelectedTab: false,
+                isPreviousLiveTab: false,
+                isMCPControlled: true,
+                hasAttachedTerminalView: false,
+                hasPendingRestoreBootstrap: false
+            )
+        )
+    }
+
+    func testWindowPresentationPolicyAllowsDeferredRestoreTabsAfterStartup() {
+        XCTAssertTrue(
+            StartupWindowPresentationPolicy.shouldKeepTabInLiveHierarchy(
+                isStartupRestoreActive: false,
+                isSelectedTab: false,
+                isPreviousLiveTab: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: false,
+                hasPendingRestoreBootstrap: true
+            )
+        )
     }
 }

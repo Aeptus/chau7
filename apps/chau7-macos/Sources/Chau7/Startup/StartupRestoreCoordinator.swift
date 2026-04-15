@@ -41,10 +41,18 @@ final class StartupRestoreCoordinator {
             restorePreviewShown=\(summary.restorePreviewShown) \
             restorePreviewDiscarded=\(summary.restorePreviewDiscarded) \
             selectedTabLiveFrameCount=\(summary.selectedTabLiveFrameCount) \
+            firstWindowVisibleMs=\(summary.firstWindowVisibleMs.map(String.init) ?? "nil") \
+            firstSelectedTabLiveFrameSinceStartMs=\(summary.firstSelectedTabLiveFrameSinceStartMs.map(String.init) ?? "nil") \
             firstSelectedTabLiveFrameMs=\(summary.firstSelectedTabLiveFrameMs.map(String.init) ?? "nil") \
             slowestSelectedTabLiveFrameMs=\(summary.slowestSelectedTabLiveFrameMs.map(String.init) ?? "nil")
             """
         )
+    }
+
+    func isReadyToComplete(expectedWindowCount: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return tracker.isReadyForVisibleStartupCompletion(expectedWindowCount: expectedWindowCount)
     }
 
     func shouldLogProtectedPathDeferral(forPath path: String) -> Bool {

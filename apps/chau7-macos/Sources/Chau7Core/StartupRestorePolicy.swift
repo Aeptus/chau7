@@ -14,6 +14,8 @@ public struct StartupRestoreSummary: Equatable {
     public let restorePreviewShown: Int
     public let restorePreviewDiscarded: Int
     public let selectedTabLiveFrameCount: Int
+    public let firstWindowVisibleMs: Int?
+    public let firstSelectedTabLiveFrameSinceStartMs: Int?
     public let firstSelectedTabLiveFrameMs: Int?
     public let slowestSelectedTabLiveFrameMs: Int?
 
@@ -31,6 +33,8 @@ public struct StartupRestoreSummary: Equatable {
         restorePreviewShown: Int,
         restorePreviewDiscarded: Int,
         selectedTabLiveFrameCount: Int,
+        firstWindowVisibleMs: Int?,
+        firstSelectedTabLiveFrameSinceStartMs: Int?,
         firstSelectedTabLiveFrameMs: Int?,
         slowestSelectedTabLiveFrameMs: Int?
     ) {
@@ -47,6 +51,8 @@ public struct StartupRestoreSummary: Equatable {
         self.restorePreviewShown = restorePreviewShown
         self.restorePreviewDiscarded = restorePreviewDiscarded
         self.selectedTabLiveFrameCount = selectedTabLiveFrameCount
+        self.firstWindowVisibleMs = firstWindowVisibleMs
+        self.firstSelectedTabLiveFrameSinceStartMs = firstSelectedTabLiveFrameSinceStartMs
         self.firstSelectedTabLiveFrameMs = firstSelectedTabLiveFrameMs
         self.slowestSelectedTabLiveFrameMs = slowestSelectedTabLiveFrameMs
     }
@@ -142,6 +148,12 @@ public struct StartupRestoreTracker: Equatable {
         return elapsedMs
     }
 
+    public func isReadyForVisibleStartupCompletion(expectedWindowCount: Int) -> Bool {
+        guard isActive else { return false }
+        guard expectedWindowCount > 0 else { return false }
+        return selectedTabLiveFrameMsByWindow.count >= expectedWindowCount
+    }
+
     public mutating func end(at date: Date) -> StartupRestoreSummary? {
         guard isActive, let startedAt else { return nil }
         isActive = false
@@ -149,6 +161,14 @@ public struct StartupRestoreTracker: Equatable {
 
         let durationMs = max(0, Int((date.timeIntervalSince(startedAt) * 1000).rounded()))
         let liveFrameSamples = selectedTabLiveFrameMsByWindow.values.sorted()
+        let firstWindowVisibleMs = windowVisibleAtByNumber.values
+            .map { max(0, Int(($0.timeIntervalSince(startedAt) * 1000).rounded())) }
+            .min()
+        let firstSelectedTabLiveFrameSinceStartMs = selectedTabLiveFrameMsByWindow.keys.compactMap { windowNumber -> Int? in
+            guard let visibleAt = windowVisibleAtByNumber[windowNumber],
+                  let elapsedMs = selectedTabLiveFrameMsByWindow[windowNumber] else { return nil }
+            return max(0, Int((visibleAt.timeIntervalSince(startedAt) * 1000).rounded())) + elapsedMs
+        }.min()
         return StartupRestoreSummary(
             durationMs: durationMs,
             protectedRoots: protectedRoots.sorted(),
@@ -163,6 +183,8 @@ public struct StartupRestoreTracker: Equatable {
             restorePreviewShown: restorePreviewShown,
             restorePreviewDiscarded: restorePreviewDiscarded,
             selectedTabLiveFrameCount: liveFrameSamples.count,
+            firstWindowVisibleMs: firstWindowVisibleMs,
+            firstSelectedTabLiveFrameSinceStartMs: firstSelectedTabLiveFrameSinceStartMs,
             firstSelectedTabLiveFrameMs: liveFrameSamples.first,
             slowestSelectedTabLiveFrameMs: liveFrameSamples.last
         )
@@ -211,5 +233,42 @@ public enum StartupResumePrefillPolicy {
 
     public static func shouldWarnAboutNotReady(isStartupRestoreActive: Bool) -> Bool {
         !isStartupRestoreActive
+    }
+}
+
+public enum StartupWindowPresentationPolicy {
+    public static let selectedTabRestoreDelay: TimeInterval = 0.05
+    public static let backgroundTabRestoreDelay: TimeInterval = 1.0
+
+    public static func restoreExecutionDelay(
+        isStartupRestoreActive: Bool,
+        isSelectedTab: Bool,
+        defaultDelay: TimeInterval
+    ) -> TimeInterval {
+        guard isStartupRestoreActive else { return defaultDelay }
+        return isSelectedTab ? selectedTabRestoreDelay : backgroundTabRestoreDelay
+    }
+
+    public static func shouldKeepTabInLiveHierarchy(
+        isStartupRestoreActive: Bool,
+        isSelectedTab: Bool,
+        isPreviousLiveTab: Bool,
+        isMCPControlled: Bool,
+        hasAttachedTerminalView: Bool,
+        hasPendingRestoreBootstrap: Bool
+    ) -> Bool {
+        if isSelectedTab || isPreviousLiveTab {
+            return true
+        }
+
+        if isMCPControlled && !hasAttachedTerminalView {
+            return true
+        }
+
+        guard hasPendingRestoreBootstrap, !hasAttachedTerminalView else {
+            return false
+        }
+
+        return !isStartupRestoreActive
     }
 }
