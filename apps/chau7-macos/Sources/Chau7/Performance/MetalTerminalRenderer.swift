@@ -7,6 +7,7 @@ import Foundation
 import MetalKit
 import CoreText
 import simd
+import Chau7Core
 
 // MARK: - simd_float4x4 Orthographic Extension
 
@@ -75,6 +76,11 @@ final class MetalTerminalRenderer: NSObject {
         let cellSpan: Int // Number of terminal cells this ligature spans
     }
 
+    private enum LigatureCacheEntry {
+        case miss
+        case hit(LigatureInfo)
+    }
+
     // MARK: - Shared Caches (compiled once, reused across all renderer instances)
 
     private static var cachedLibrary: MTLLibrary?
@@ -106,7 +112,9 @@ final class MetalTerminalRenderer: NSObject {
     private var atlasHeight = 2048
     private var glyphCache: [GlyphKey: GlyphInfo] = [:]
     /// Cache for multi-character ligature glyphs. nil value = font doesn't form a ligature.
-    private var ligatureCache: [LigatureKey: LigatureInfo?] = [:]
+    private var ligatureCache: [LigatureKey: LigatureCacheEntry] = [:]
+    private var ligatureCacheInsertionOrder: [LigatureKey] = []
+    private static let maxLigatureCacheEntries = 4_096
     /// Whether ligature rendering is enabled (set from FeatureSettings)
     var ligaturesEnabled = false
 
@@ -365,6 +373,8 @@ final class MetalTerminalRenderer: NSObject {
     /// Clears glyph atlas and cache, resetting the packing cursor.
     private func resetAtlas() {
         glyphCache.removeAll()
+        ligatureCache.removeAll()
+        ligatureCacheInsertionOrder.removeAll(keepingCapacity: false)
         packX = 0
         packY = 0
         packRowHeight = 0
@@ -600,7 +610,14 @@ final class MetalTerminalRenderer: NSObject {
     /// produce a ligature for this sequence (glyph count == char count = no substitution).
     func lookupLigature(sequence: String, bold: Bool, italic: Bool) -> LigatureInfo? {
         let key = LigatureKey(sequence: sequence, bold: bold, italic: italic)
-        if let cached = ligatureCache[key] { return cached }
+        if let cached = ligatureCache[key] {
+            switch cached {
+            case .miss:
+                return nil
+            case let .hit(info):
+                return info
+            }
+        }
 
         // Ask CoreText to shape the sequence. If the resulting glyph count is less
         // than the character count, the font's GSUB table formed a ligature.
@@ -619,7 +636,7 @@ final class MetalTerminalRenderer: NSObject {
         let line = CTLineCreateWithAttributedString(attrString)
         let runs = CTLineGetGlyphRuns(line) as! [CTRun]
         guard let run = runs.first else {
-            ligatureCache[key] = nil
+            cacheLigature(.miss, for: key)
             return nil
         }
 
@@ -628,7 +645,7 @@ final class MetalTerminalRenderer: NSObject {
 
         // If glyph count equals char count, no ligature was formed
         if glyphCount >= charCount {
-            ligatureCache[key] = nil
+            cacheLigature(.miss, for: key)
             return nil
         }
 
@@ -646,14 +663,14 @@ final class MetalTerminalRenderer: NSObject {
         }
         if packY + slotHeight > CGFloat(atlasHeight) {
             // Atlas full — skip ligature
-            ligatureCache[key] = nil
+            cacheLigature(.miss, for: key)
             return nil
         }
         packRowHeight = max(packRowHeight, slotHeight)
 
         // Draw the ligature sequence into the atlas bitmap
         guard let context = atlasContext else {
-            ligatureCache[key] = nil
+            cacheLigature(.miss, for: key)
             return nil
         }
         let baselineY = CGFloat(atlasHeight) - packY - slotHeight + fontDescent
@@ -675,10 +692,35 @@ final class MetalTerminalRenderer: NSObject {
         )
 
         let info = LigatureInfo(textureRect: texRect, cellSpan: cellSpan)
-        ligatureCache[key] = info
+        cacheLigature(.hit(info), for: key)
         packX += slotWidth + padding
         atlasDirty = true
         return info
+    }
+
+    private func cacheLigature(_ entry: LigatureCacheEntry, for key: LigatureKey) {
+        if ligatureCache[key] == nil {
+            ligatureCacheInsertionOrder.append(key)
+        }
+        ligatureCache[key] = entry
+        trimLigatureCacheIfNeeded()
+    }
+
+    private func trimLigatureCacheIfNeeded() {
+        let evictionCount = RenderMemoryPressurePolicy.ligatureEvictionCount(
+            currentCount: ligatureCache.count,
+            limit: Self.maxLigatureCacheEntries
+        )
+        guard evictionCount > 0 else { return }
+
+        let keysToRemove = Array(ligatureCacheInsertionOrder.prefix(evictionCount))
+        for key in keysToRemove {
+            ligatureCache.removeValue(forKey: key)
+        }
+        ligatureCacheInsertionOrder.removeFirst(keysToRemove.count)
+        Log.warn(
+            "MetalRenderer: trimmed ligature cache by \(keysToRemove.count) entries; remaining=\(ligatureCache.count)"
+        )
     }
 
     /// Maximum lookahead for ligature detection (3-char sequences like ===, !==)
