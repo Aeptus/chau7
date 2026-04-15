@@ -192,6 +192,23 @@ final class SplashWindowController {
         }
     }
 
+    func dismissImmediately(reason: String, completion: @escaping () -> Void) {
+        guard let window else {
+            Log.info("SplashWindowController.dismissImmediately[\(reason)]: no window, completing immediately")
+            completion()
+            return
+        }
+
+        Log.info(
+            "SplashWindowController.dismissImmediately[\(reason)]: orderOut windowNumber=\(window.windowNumber) alpha=\(window.alphaValue)"
+        )
+        window.animations = [:]
+        window.alphaValue = 0
+        window.orderOut(nil)
+        self.window = nil
+        completion()
+    }
+
     private func showWindow(content: some View, width: CGFloat, height: CGFloat) {
         let hostingView = NSHostingView(rootView: content.localized())
 

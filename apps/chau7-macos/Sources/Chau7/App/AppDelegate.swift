@@ -237,7 +237,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Dismiss splash and show overlay (terminal only, no settings window)
         let splashDismissRequestedAt = CFAbsoluteTimeGetCurrent()
         Log.info("finishLaunching: requesting splash dismissal")
-        splashController?.dismiss { [weak self] in
+        splashController?.dismissImmediately(reason: "startup") { [weak self] in
             guard let self else { return }
             let dismissElapsedMs = Int(((CFAbsoluteTimeGetCurrent() - splashDismissRequestedAt) * 1000).rounded())
             Log.info("finishLaunching: splash dismissal completed after \(dismissElapsedMs)ms")
