@@ -2621,40 +2621,56 @@ final class OverlayTabsModel {
         cancelSuspension(for: selectedTabID)
         suspendedTabIDs.remove(selectedTabID)
 
-        guard let selectedTab,
-              let session = selectedTab.session else {
-            Log.warn("forceRefreshSelectedTab: no session for selectedTabID=\(selectedTabID)")
-            return
-        }
-
-        let selectedDecision = renderLifecycleDecision(for: selectedTab)
-
-        selectedTab.displaySession?.armVisibleFrameReadyHandoff()
-        selectedTab.session?.armVisibleFrameReadyHandoff()
-
-        // 2. Unhide and kick the Rust terminal view + Metal coordinator
-        //    Hierarchy: UnifiedTerminalContainerView → RustTerminalContainerView → RustTerminalView
-        if let rustView = session.existingRustTerminalView {
-            rustView.isHidden = !selectedDecision.phase.keepsVisibleSurface
-            rustView.notifyUpdateChanges = selectedDecision.phase.allowsLivePresentation
-            rustView.needsDisplay = true
-            rustView.setEventMonitoringEnabled(selectedDecision.isInteractive)
-            // Unhide container + Metal view
-            if let container = rustView.superview as? RustTerminalContainerView {
-                container.isHidden = !selectedDecision.phase.keepsVisibleSurface
-                if let metalView = container.rustMetalCoordinator?.metalView {
-                    metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
-                    metalView.needsDisplay = true
-                }
-            }
-            Log.info("forceRefreshSelectedTab: unhid Rust view + Metal for tab \(selectedTabID)")
-        } else {
-            Log.info("forceRefreshSelectedTab: armed visible-frame handoff before Rust view was attached for tab \(selectedTabID)")
-        }
+        requestSelectedTabAuthoritativeReveal(reason: "forceRefreshSelectedTab")
         // 3. Re-focus
         focusSelected()
 
         logVisualState(reason: "forceRefreshSelectedTab")
+    }
+
+    func requestSelectedTabAuthoritativeReveal(reason: String) {
+        dispatchPrecondition(condition: .onQueue(.main))
+
+        guard let selectedTab,
+              let session = selectedTab.session else {
+            Log.warn("requestSelectedTabAuthoritativeReveal[\(reason)]: no session for selectedTabID=\(selectedTabID)")
+            return
+        }
+
+        let selectedDecision = renderLifecycleDecision(for: selectedTab)
+        selectedTab.displaySession?.armVisibleFrameReadyHandoff()
+        selectedTab.session?.armVisibleFrameReadyHandoff()
+
+        guard let rustView = session.existingRustTerminalView else {
+            Log.info("requestSelectedTabAuthoritativeReveal[\(reason)]: armed visible-frame handoff before Rust view was attached for tab \(selectedTabID)")
+            return
+        }
+
+        rustView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+        rustView.setEventMonitoringEnabled(selectedDecision.isInteractive)
+        rustView.requestAuthoritativeReveal(reason: reason)
+        rustView.needsDisplay = true
+
+        if let container = rustView.superview as? RustTerminalContainerView {
+            container.isHidden = !selectedDecision.phase.keepsVisibleSurface
+            if let coordinator = container.rustMetalCoordinator {
+                coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+                coordinator.forceAuthoritativeRefresh(reason: reason)
+                coordinator.metalView.needsDisplay = true
+            }
+        }
+
+        if selectedDecision.phase.keepsVisibleSurface {
+            let shouldResumeContinuousUpdates = selectedDecision.phase.allowsLivePresentation
+            rustView.notifyUpdateChanges = true
+            rustView.needsGridSync = true
+            rustView.updatePollingMode(reason: "selectedReveal:\(reason)")
+            rustView.pollAndSync()
+            rustView.notifyUpdateChanges = shouldResumeContinuousUpdates
+            rustView.updatePollingMode(reason: "selectedRevealComplete:\(reason)")
+        }
+
+        Log.info("requestSelectedTabAuthoritativeReveal[\(reason)]: refreshed selected tab \(selectedTabID) as \(selectedDecision.phase.rawValue)")
     }
 
     /// Called by the view to report how many tabs were actually rendered.

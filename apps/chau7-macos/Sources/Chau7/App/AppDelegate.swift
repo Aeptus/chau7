@@ -1715,6 +1715,9 @@ private final class OverlayBlurView: NSVisualEffectView {
             }
         }
         invalidateOverlayRenderLifecycles(reason: "didBecomeKey")
+        if let host = overlayHosts.first(where: { $0.window == window }) {
+            host.model.requestSelectedTabAuthoritativeReveal(reason: "windowDidBecomeKey")
+        }
         logOverlayWindowLifecycle(reason: "didBecomeKey", window: window)
         logOverlayDiagnostics(reason: "didBecomeKey", window: window)
     }
@@ -1734,6 +1737,9 @@ private final class OverlayBlurView: NSVisualEffectView {
     func windowDidBecomeMain(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         invalidateOverlayRenderLifecycles(reason: "didBecomeMain")
+        if let host = overlayHosts.first(where: { $0.window == window }) {
+            host.model.requestSelectedTabAuthoritativeReveal(reason: "windowDidBecomeMain")
+        }
         logOverlayWindowLifecycle(reason: "didBecomeMain", window: window)
         logOverlayDiagnostics(reason: "didBecomeMain", window: window)
     }
@@ -1746,9 +1752,18 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     func windowDidChangeOcclusionState(_ notification: Notification) {
-        // Occlusion fires many times per second during space switches — trace-only
-        guard Log.isTraceEnabled else { return }
         guard let window = notification.object as? NSWindow else { return }
+        if let host = overlayHosts.first(where: { $0.window == window }),
+           TabSurfaceReactivationPolicy.shouldRequestAuthoritativeReveal(
+                for: .becameVisible,
+                phase: host.model.renderPhase(forTabID: host.model.selectedTabID),
+                isWindowVisible: window.isVisible,
+                isWindowMiniaturized: window.isMiniaturized,
+                isOcclusionVisible: window.occlusionState.contains(.visible)
+           ) {
+            host.model.requestSelectedTabAuthoritativeReveal(reason: "windowDidChangeOcclusionState")
+        }
+        guard Log.isTraceEnabled else { return }
         logOverlayDiagnostics(reason: "didChangeOcclusion", window: window)
     }
 
@@ -1760,6 +1775,16 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func windowDidDeminiaturize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        if let host = overlayHosts.first(where: { $0.window == window }),
+           TabSurfaceReactivationPolicy.shouldRequestAuthoritativeReveal(
+                for: .deminiaturized,
+                phase: host.model.renderPhase(forTabID: host.model.selectedTabID),
+                isWindowVisible: window.isVisible,
+                isWindowMiniaturized: window.isMiniaturized,
+                isOcclusionVisible: window.occlusionState.contains(.visible)
+           ) {
+            host.model.requestSelectedTabAuthoritativeReveal(reason: "windowDidDeminiaturize")
+        }
         logOverlayWindowLifecycle(reason: "didDeminiaturize", window: window)
         logOverlayDiagnostics(reason: "didDeminiaturize", window: window)
     }
