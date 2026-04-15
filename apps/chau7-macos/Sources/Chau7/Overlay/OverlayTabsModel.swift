@@ -994,6 +994,13 @@ final class OverlayTabsModel {
 
         let shouldShowRestorePreview = tab.restorePreviewSnapshot != nil
             && tab.displaySession?.isRestoreBootstrapPending == true
+        if shouldShowRestorePreview {
+            tab.displaySession?.armVisibleFrameReadyHandoff()
+            tab.session?.armVisibleFrameReadyHandoff()
+        } else {
+            tab.displaySession?.cancelVisibleFrameReadyHandoff()
+            tab.session?.cancelVisibleFrameReadyHandoff()
+        }
         if selectedTabRevealState.selectedTabID == tab.id
             && isTerminalReady == !shouldShowRestorePreview {
             return
