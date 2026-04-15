@@ -167,16 +167,27 @@ final class SplashWindowController {
 
     func dismiss(completion: @escaping () -> Void) {
         guard let window else {
+            Log.info("SplashWindowController.dismiss: no window, completing immediately")
             completion()
             return
         }
+
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        Log.info(
+            "SplashWindowController.dismiss: start windowNumber=\(window.windowNumber) alpha=\(window.alphaValue)"
+        )
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
             window.animator().alphaValue = 0
         } completionHandler: { [weak self] in
+            let elapsedMs = Int(((CFAbsoluteTimeGetCurrent() - startedAt) * 1000).rounded())
+            Log.info(
+                "SplashWindowController.dismiss: animation completed windowNumber=\(window.windowNumber) elapsed=\(elapsedMs)ms"
+            )
             window.orderOut(nil)
             self?.window = nil
+            Log.info("SplashWindowController.dismiss: completion callback after orderOut")
             completion()
         }
     }
