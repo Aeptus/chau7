@@ -2668,6 +2668,8 @@ final class RustTerminalView: NSView {
         let names: [Notification.Name] = [
             NSWindow.didBecomeKeyNotification,
             NSWindow.didBecomeMainNotification,
+            NSWindow.didResignKeyNotification,
+            NSWindow.didResignMainNotification,
             NSWindow.didMiniaturizeNotification,
             NSWindow.didDeminiaturizeNotification,
             NSWindow.didChangeOcclusionStateNotification,
@@ -2759,7 +2761,8 @@ final class RustTerminalView: NSView {
             return true
         }
         guard let window else { return false }
-        return window.isVisible && !window.isMiniaturized
+        guard window.isVisible, !window.isMiniaturized else { return false }
+        return window.isKeyWindow || window.isMainWindow
     }
 
     private var isRenderLoopActuallyRunning: Bool {
@@ -2798,6 +2801,8 @@ final class RustTerminalView: NSView {
         reasons.append(isHidden ? "hidden" : "visible")
         if let window {
             reasons.append(window.isVisible ? "visibleWindow" : "windowHidden")
+            reasons.append(window.isKeyWindow ? "keyWindow" : "nonKeyWindow")
+            reasons.append(window.isMainWindow ? "mainWindow" : "nonMainWindow")
             if window.isMiniaturized {
                 reasons.append("miniaturized")
             }
