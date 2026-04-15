@@ -75,13 +75,16 @@ public enum TabRenderLifecyclePolicy {
             return .active
         }
 
+        if input.hasBackgroundActivity {
+            return .active
+        }
+
         if !input.isRenderSuspensionEnabled {
             return .warm
         }
 
         if input.isPreviousLiveTab
             || input.isPrewarming
-            || input.hasBackgroundActivity
             || (input.hasPendingRestoreBootstrap && !input.hasAttachedTerminalView) {
             return .warm
         }

@@ -59,7 +59,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
-    func testBackgroundActivityKeepsTabWarmWithoutForcingHierarchy() {
+    func testBackgroundActivityKeepsTabActiveWithoutForcingHierarchy() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -74,7 +74,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .warm)
+        XCTAssertEqual(decision.phase, .active)
         XCTAssertFalse(decision.keepsLiveHierarchy)
     }
 

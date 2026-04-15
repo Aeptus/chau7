@@ -1,25 +1,26 @@
 import XCTest
+import Chau7Core
 
 @testable import Chau7
 
 final class TerminalViewRepresentableTests: XCTestCase {
-    func testSuspensionCoordinatorCapturesOnlyOnTransitionIntoSuspended() {
+    func testRenderPhaseCoordinatorTracksOnlyRealPhaseTransitions() {
         let coordinator = TerminalViewRepresentable.Coordinator()
 
-        coordinator.seedSuspensionState(false)
+        coordinator.seedRenderPhase(.warm)
 
-        XCTAssertFalse(coordinator.consumeSuspensionChange(to: false))
-        XCTAssertTrue(coordinator.consumeSuspensionChange(to: true))
-        XCTAssertFalse(coordinator.consumeSuspensionChange(to: true))
+        XCTAssertFalse(coordinator.consumeRenderPhaseChange(to: .warm))
+        XCTAssertTrue(coordinator.consumeRenderPhaseChange(to: .active))
+        XCTAssertFalse(coordinator.consumeRenderPhaseChange(to: .active))
     }
 
-    func testSuspensionCoordinatorRecapturesAfterResumeThenSuspend() {
+    func testRenderPhaseCoordinatorDetectsHideAfterReactivation() {
         let coordinator = TerminalViewRepresentable.Coordinator()
 
-        coordinator.seedSuspensionState(true)
+        coordinator.seedRenderPhase(.hidden)
 
-        XCTAssertFalse(coordinator.consumeSuspensionChange(to: true))
-        XCTAssertTrue(coordinator.consumeSuspensionChange(to: false))
-        XCTAssertTrue(coordinator.consumeSuspensionChange(to: true))
+        XCTAssertFalse(coordinator.consumeRenderPhaseChange(to: .hidden))
+        XCTAssertTrue(coordinator.consumeRenderPhaseChange(to: .warm))
+        XCTAssertTrue(coordinator.consumeRenderPhaseChange(to: .hidden))
     }
 }

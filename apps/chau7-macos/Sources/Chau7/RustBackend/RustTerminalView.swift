@@ -2100,6 +2100,7 @@ final class RustTerminalView: NSView {
     var isBackgroundDrainRegistered = false
     private var isLivePollingActive = false
     var livePollingActiveForProfiling: Bool { isLivePollingActive }
+    private(set) var currentRenderPhase: TabRenderPhase = .hidden
 
     // MARK: - Properties
 
@@ -2757,13 +2758,14 @@ final class RustTerminalView: NSView {
     }
 
     private func shouldRunLivePolling() -> Bool {
-        guard isTerminalStarted, notifyUpdateChanges, !isHidden else { return false }
+        guard isTerminalStarted, notifyUpdateChanges else { return false }
         if isShellBootstrapPending {
             return true
         }
+        guard currentRenderPhase == .active, !isHidden else { return false }
         guard let window else { return false }
         guard window.isVisible, !window.isMiniaturized else { return false }
-        return window.isKeyWindow || window.isMainWindow
+        return true
     }
 
     private var isRenderLoopActuallyRunning: Bool {
@@ -2844,6 +2846,22 @@ final class RustTerminalView: NSView {
             pauseDisplayLink()
         }
         refreshRenderPipelineProfilingState()
+    }
+
+    func applyRenderPhase(_ phase: TabRenderPhase, isInteractive: Bool, reason: String) {
+        currentRenderPhase = phase
+        let shouldHide = phase != .active
+        let shouldNotifyUpdates = phase.allowsLiveUpdates
+
+        if notifyUpdateChanges != shouldNotifyUpdates {
+            notifyUpdateChanges = shouldNotifyUpdates
+        }
+        if isHidden != shouldHide {
+            isHidden = shouldHide
+        }
+        setEventMonitoringEnabled(isInteractive)
+        refreshRenderPipelineProfilingState(mode: "\(currentRenderLoopMode):\(phase.rawValue)")
+        Log.trace("RustTerminalView[\(viewId)]: applyRenderPhase -> \(phase.rawValue) (\(reason))")
     }
 
     override var acceptsFirstResponder: Bool {

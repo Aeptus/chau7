@@ -7,14 +7,14 @@ import Chau7Core
 
 struct SplitPaneView: View {
     var controller: SplitPaneController
-    let isSuspended: Bool
+    let renderPhase: TabRenderPhase
     let isActive: Bool
 
     var body: some View {
         SplitNodeView(
             node: controller.root,
             focusedID: controller.focusedPaneID,
-            isSuspended: isSuspended,
+            renderPhase: renderPhase,
             isActive: isActive,
             onFocus: { id in
                 controller.focusedPaneID = id
@@ -36,7 +36,7 @@ struct SplitPaneView: View {
 struct SplitNodeView: View {
     let node: SplitNode
     let focusedID: UUID
-    let isSuspended: Bool
+    let renderPhase: TabRenderPhase
     let isActive: Bool
     let onFocus: (UUID) -> Void
     let onUpdateRatio: (UUID, CGFloat) -> Void
@@ -50,7 +50,7 @@ struct SplitNodeView: View {
             TerminalPaneView(
                 id: id,
                 session: session,
-                isSuspended: isSuspended,
+                renderPhase: renderPhase,
                 isActive: isActive,
                 onFocus: { onFocus(id) },
                 onFilePathClicked: onFilePathClicked
@@ -106,7 +106,7 @@ struct SplitNodeView: View {
                 second: second,
                 modelRatio: ratio,
                 focusedID: focusedID,
-                isSuspended: isSuspended,
+                renderPhase: renderPhase,
                 isActive: isActive,
                 onFocus: onFocus,
                 onUpdateRatio: onUpdateRatio,
@@ -126,7 +126,7 @@ struct SplitContainerView: View {
     let second: SplitNode
     let modelRatio: CGFloat
     let focusedID: UUID
-    let isSuspended: Bool
+    let renderPhase: TabRenderPhase
     let isActive: Bool
     let onFocus: (UUID) -> Void
     let onUpdateRatio: (UUID, CGFloat) -> Void
@@ -147,7 +147,7 @@ struct SplitContainerView: View {
                     SplitNodeView(
                         node: first,
                         focusedID: focusedID,
-                        isSuspended: isSuspended,
+                        renderPhase: renderPhase,
                         isActive: isActive,
                         onFocus: onFocus,
                         onUpdateRatio: onUpdateRatio,
@@ -168,7 +168,7 @@ struct SplitContainerView: View {
                     SplitNodeView(
                         node: second,
                         focusedID: focusedID,
-                        isSuspended: isSuspended,
+                        renderPhase: renderPhase,
                         isActive: isActive,
                         onFocus: onFocus,
                         onUpdateRatio: onUpdateRatio,
@@ -182,7 +182,7 @@ struct SplitContainerView: View {
                     SplitNodeView(
                         node: first,
                         focusedID: focusedID,
-                        isSuspended: isSuspended,
+                        renderPhase: renderPhase,
                         isActive: isActive,
                         onFocus: onFocus,
                         onUpdateRatio: onUpdateRatio,
@@ -203,7 +203,7 @@ struct SplitContainerView: View {
                     SplitNodeView(
                         node: second,
                         focusedID: focusedID,
-                        isSuspended: isSuspended,
+                        renderPhase: renderPhase,
                         isActive: isActive,
                         onFocus: onFocus,
                         onUpdateRatio: onUpdateRatio,
@@ -228,13 +228,13 @@ struct SplitContainerView: View {
 struct TerminalPaneView: View {
     let id: UUID
     let session: TerminalSessionModel
-    let isSuspended: Bool
+    let renderPhase: TabRenderPhase
     let isActive: Bool
     let onFocus: () -> Void
     var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
 
     var body: some View {
-        TerminalViewRepresentable(model: session, isSuspended: isSuspended, isActive: isActive, onFilePathClicked: onFilePathClicked)
+        TerminalViewRepresentable(model: session, renderPhase: renderPhase, isActive: isActive, onFilePathClicked: onFilePathClicked)
             // Use simultaneousGesture to allow the tap to be recognized without blocking
             // the NSView's native mouse event handling for text selection
             .simultaneousGesture(

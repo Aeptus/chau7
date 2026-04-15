@@ -3113,7 +3113,7 @@ final class OverlayTabsModel {
     }
 
     func isTabSuspended(_ id: UUID) -> Bool {
-        suspendedTabIDs.contains(id)
+        renderPhase(forTabID: id) == .hidden
     }
 
     private func renderLifecycleSnapshot() -> TabRenderLifecycleController.Snapshot {
@@ -3142,15 +3142,30 @@ final class OverlayTabsModel {
         )
     }
 
+    private func renderLifecycleDecision(for tab: OverlayTab) -> TabRenderLifecycleDecision {
+        renderLifecycleController.decision(
+            for: renderLifecycleDescriptor(for: tab),
+            snapshot: renderLifecycleSnapshot()
+        )
+    }
+
+    func renderPhase(for tab: OverlayTab) -> TabRenderPhase {
+        let decision = renderLifecycleDecision(for: tab)
+        guard decision.phase == .hidden else { return decision.phase }
+        return suspendedTabIDs.contains(tab.id) ? .hidden : .warm
+    }
+
+    func renderPhase(forTabID id: UUID) -> TabRenderPhase {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return .hidden }
+        return renderPhase(for: tab)
+    }
+
     /// Fresh MCP tabs need a real terminal view at least once so background
     /// exec/input requests have a PTY to land on. Once a terminal view has
     /// attached, the retained Rust view keeps the session alive even if the tab
     /// later drops out of the visible hierarchy.
     func shouldKeepTabInLiveHierarchy(tab: OverlayTab, index _: Int) -> Bool {
-        renderLifecycleController.decision(
-            for: renderLifecycleDescriptor(for: tab),
-            snapshot: renderLifecycleSnapshot()
-        ).keepsLiveHierarchy
+        renderLifecycleDecision(for: tab).keepsLiveHierarchy
     }
 
     func updateSuspensionState() {

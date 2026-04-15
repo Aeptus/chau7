@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import QuartzCore
+import Chau7Core
 
 /// Container view for the Rust terminal backend
 final class RustTerminalContainerView: NSView {
@@ -202,22 +203,22 @@ final class UnifiedTerminalContainerView: NSView {
 
 struct TerminalViewRepresentable: NSViewRepresentable {
     final class Coordinator {
-        var lastSuspendedState: Bool?
+        var lastRenderPhase: TabRenderPhase?
 
-        func seedSuspensionState(_ isSuspended: Bool) {
-            lastSuspendedState = isSuspended
+        func seedRenderPhase(_ renderPhase: TabRenderPhase) {
+            lastRenderPhase = renderPhase
         }
 
-        func consumeSuspensionChange(to isSuspended: Bool) -> Bool {
-            let previous = lastSuspendedState ?? isSuspended
-            let changed = previous != isSuspended
-            lastSuspendedState = isSuspended
+        func consumeRenderPhaseChange(to renderPhase: TabRenderPhase) -> Bool {
+            let previous = lastRenderPhase ?? renderPhase
+            let changed = previous != renderPhase
+            lastRenderPhase = renderPhase
             return changed
         }
     }
 
     var model: TerminalSessionModel
-    var isSuspended: Bool
+    var renderPhase: TabRenderPhase
     var isActive: Bool
     var onFilePathClicked: ((String, Int?, Int?) -> Void)?
     var settings = FeatureSettings.shared
@@ -230,7 +231,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         var reasons: [String] = []
         if isActive {
             reasons.append("selected")
-        } else if !isSuspended {
+        } else if renderPhase == .active {
+            reasons.append("background-active")
+        } else if renderPhase == .warm {
             reasons.append("handoff")
         }
         reasons.append(contentsOf: model.backgroundLiveRenderReasons())
@@ -240,7 +243,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     func makeNSView(context: Context) -> UnifiedTerminalContainerView {
         Log.trace("TerminalViewRepresentable: makeNSView — Rust backend")
         let container = makeRustTerminalView()
-        context.coordinator.seedSuspensionState(isSuspended)
+        context.coordinator.seedRenderPhase(renderPhase)
         return container
     }
 
@@ -289,9 +292,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
             existingView.installHistoryKeyMonitor()
             let container = UnifiedTerminalContainerView(rustView: existingView)
-            existingView.notifyUpdateChanges = !isSuspended
-            existingView.isHidden = isSuspended
-            existingView.setEventMonitoringEnabled(isActive && !isSuspended)
+            existingView.applyRenderPhase(renderPhase, isInteractive: isActive, reason: "reuse")
             existingView.allowMouseReporting = settings.isMouseReportingEnabled
             // Re-enable Metal rendering — the previous container (and its Metal
             // coordinator) was torn down when the tab went out of nearby range.
@@ -332,9 +333,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.applyCursorStyle(style: settings.cursorStyle, blink: settings.cursorBlink)
         view.applyBellSettings(enabled: settings.bellEnabled, sound: settings.bellSound)
         view.applyScrollbackLines(settings.scrollbackLines)
-        view.notifyUpdateChanges = !isSuspended
-        view.isHidden = isSuspended
-        view.setEventMonitoringEnabled(isActive && !isSuspended)
+        view.applyRenderPhase(renderPhase, isInteractive: isActive, reason: "create")
         view.allowMouseReporting = settings.isMouseReportingEnabled
         view.onInput = { [weak model] text in
             model?.handleInput(text)
@@ -421,35 +420,28 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 
     func updateNSView(_ container: UnifiedTerminalContainerView, context: Context) {
         guard let nsView = container.rustTerminalView else { return }
-        nsView.setEventMonitoringEnabled(isActive && !isSuspended)
-
         let metalActive = container.rustMetalCoordinator != nil
         nsView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
-        let suspensionChanged = context.coordinator.consumeSuspensionChange(to: isSuspended)
-        if suspensionChanged, isSuspended {
+        let renderPhaseChanged = context.coordinator.consumeRenderPhaseChange(to: renderPhase)
+        if renderPhaseChanged, renderPhase == .hidden {
             cacheRetainedFrameIfAvailable(from: nsView)
         }
-        if nsView.isHidden != isSuspended {
-            nsView.isHidden = isSuspended
-            if !isSuspended, !metalActive {
-                nsView.needsDisplay = true
-            }
+        nsView.applyRenderPhase(renderPhase, isInteractive: isActive, reason: "updateNSView")
+        if renderPhase == .active, !metalActive {
+            nsView.needsDisplay = true
         }
 
         // Suspend/resume Metal view and blink timer alongside the terminal
         if metalActive {
-            container.rustMetalCoordinator?.metalView.isHidden = isSuspended
-            if isSuspended {
+            container.rustMetalCoordinator?.metalView.isHidden = renderPhase != .active
+            if renderPhase != .active {
                 container.rustMetalCoordinator?.pauseBlinkTimer()
             } else {
                 container.rustMetalCoordinator?.resumeBlinkTimer()
-                if suspensionChanged {
+                if renderPhaseChanged {
                     container.rustMetalCoordinator?.setNeedsSync()
                 }
             }
-        }
-        if nsView.notifyUpdateChanges == isSuspended {
-            nsView.notifyUpdateChanges = !isSuspended
         }
         // Selected tabs can be configured as "not suspended" before their
         // window is actually visible. That pauses live polling during startup,
@@ -458,7 +450,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         // SwiftUI update so the visible selected tab actively revives once it
         // is attached to a real window.
         nsView.updatePollingMode(reason: "updateNSView")
-        if isActive, !isSuspended, nsView.window != nil, !nsView.livePollingActiveForProfiling {
+        if renderPhase == .active, nsView.window != nil, !nsView.livePollingActiveForProfiling {
             nsView.needsGridSync = true
             nsView.pollAndSync()
         }
