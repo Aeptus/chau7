@@ -451,6 +451,17 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         if nsView.notifyUpdateChanges == isSuspended {
             nsView.notifyUpdateChanges = !isSuspended
         }
+        // Selected tabs can be configured as "not suspended" before their
+        // window is actually visible. That pauses live polling during startup,
+        // and if no later lifecycle callback fires at the right moment the
+        // session remains on background drain forever. Reconcile here on every
+        // SwiftUI update so the visible selected tab actively revives once it
+        // is attached to a real window.
+        nsView.updatePollingMode(reason: "updateNSView")
+        if isActive, !isSuspended, nsView.window != nil, !nsView.livePollingActiveForProfiling {
+            nsView.needsGridSync = true
+            nsView.pollAndSync()
+        }
         nsView.setCursorLineHighlightEnabled(false)
         nsView.configureCursorLineHighlight(contextLines: false, inputHistory: false)
 

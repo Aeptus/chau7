@@ -2235,6 +2235,10 @@ final class RustTerminalView: NSView {
     /// Used to prevent duplicate handling in keyDown after monitor interception.
     var lastMonitorHandledKeyEventSignature: String?
     var isEventMonitoringEnabled = false
+    /// Window lifecycle observers for polling-mode reconciliation.
+    /// Selected tabs can be attached before their host window is actually visible,
+    /// so we must resume live polling when the window later becomes key/visible.
+    var windowNotificationObservers: [NSObjectProtocol] = []
 
     /// Path detection work item (for debouncing cursor change on hover)
     var pathDetectionWorkItem: DispatchWorkItem?
@@ -2603,6 +2607,7 @@ final class RustTerminalView: NSView {
         // Set flag to prevent CVDisplayLink callbacks from accessing deallocated view
         isBeingDeallocated = true
         shellStartupTimeoutWork?.cancel()
+        removeWindowNotificationObservers()
         stopPollingLoop()
         stopAutoScrollTimer()
         removeEventMonitors()
@@ -2631,8 +2636,11 @@ final class RustTerminalView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
 
+        removeWindowNotificationObservers()
+
         if window != nil {
             Log.trace("RustTerminalView[\(viewId)]: viewDidMoveToWindow - Added to window")
+            installWindowNotificationObservers()
             updateCellDimensions()
             if isEventMonitoringEnabled {
                 Log.trace("RustTerminalView[\(viewId)]: viewDidMoveToWindow - Setting up event monitors")
@@ -2648,6 +2656,42 @@ final class RustTerminalView: NSView {
             removeEventMonitors()
         }
         updatePollingMode(reason: "viewDidMoveToWindow")
+    }
+
+    private func installWindowNotificationObservers() {
+        guard let window else { return }
+        let center = NotificationCenter.default
+        let names: [Notification.Name] = [
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didBecomeMainNotification,
+            NSWindow.didMiniaturizeNotification,
+            NSWindow.didDeminiaturizeNotification,
+            NSWindow.didChangeOcclusionStateNotification,
+            NSWindow.didMoveNotification,
+            NSWindow.didResizeNotification
+        ]
+        windowNotificationObservers = names.map { name in
+            center.addObserver(forName: name, object: window, queue: .main) { [weak self] notification in
+                self?.handleWindowVisibilityChange(notification.name)
+            }
+        }
+    }
+
+    private func removeWindowNotificationObservers() {
+        guard !windowNotificationObservers.isEmpty else { return }
+        let center = NotificationCenter.default
+        for observer in windowNotificationObservers {
+            center.removeObserver(observer)
+        }
+        windowNotificationObservers.removeAll()
+    }
+
+    private func handleWindowVisibilityChange(_ name: Notification.Name) {
+        updatePollingMode(reason: "window:\(name.rawValue)")
+        if shouldRunLivePolling() {
+            needsGridSync = true
+            pollAndSync()
+        }
     }
 
     override func layout() {

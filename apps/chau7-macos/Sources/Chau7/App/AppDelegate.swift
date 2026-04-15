@@ -1872,6 +1872,10 @@ private final class OverlayBlurView: NSVisualEffectView {
             windowNumber: host.window.windowNumber,
             selectedTabID: host.model.selectedTabID
         )
+        // Startup can leave the selected tab attached but visually cold if it
+        // was configured before the window became visible. Force one explicit
+        // revival now that the overlay window is on-screen.
+        host.model.forceRefreshSelectedTab()
         host.model.noteStartupSelectedTabLiveFrameIfNeeded(reason: "window_visible_\(reason)")
         host.model.focusSelected()
         logOverlayWindowLifecycle(reason: "showOverlayWindow-\(reason)", window: host.window)
