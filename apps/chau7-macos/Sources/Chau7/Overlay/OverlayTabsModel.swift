@@ -556,12 +556,46 @@ final class OverlayTabsModel {
     /// Tab kept alive briefly after selection changes so the switch can hand off
     /// from a retained frame without keeping nearby tabs permanently attached.
     var previousLiveHierarchyTabID: UUID?
+    struct SelectedSurfacePresentation: Equatable {
+        let phase: TerminalPresentationPhase
+        let isAwaitingVisibleFrame: Bool
+        let hasSnapshot: Bool
+
+        var isLivePresentable: Bool {
+            phase == .live
+        }
+
+        var shouldShowSnapshot: Bool {
+            phase == .showingSnapshot && hasSnapshot
+        }
+
+        func isPresentableForStartup(isStartupRestoreActive: Bool) -> Bool {
+            guard isStartupRestoreActive else { return true }
+            return isLivePresentable || hasSnapshot
+        }
+    }
+
+    var selectedSurfacePresentation: SelectedSurfacePresentation {
+        guard let tab = selectedTab,
+              let session = selectedPresentationSession(for: tab) else {
+            return SelectedSurfacePresentation(
+                phase: .live,
+                isAwaitingVisibleFrame: false,
+                hasSnapshot: false
+            )
+        }
+        let state = session.presentationSurfaceState
+        return SelectedSurfacePresentation(
+            phase: state.phase,
+            isAwaitingVisibleFrame: state.awaitingVisibleFrameReady,
+            hasSnapshot: tab.visibleSnapshot != nil
+        )
+    }
+
     /// Whether the selected terminal content is ready to display live.
     var isTerminalReady: Bool {
-        guard let session = selectedPresentationSession(for: selectedTab) else { return true }
-        return session.presentationSurfaceState.isLivePresentable
+        selectedSurfacePresentation.isLivePresentable
     }
-    var hasSelectedStartupPresentationSnapshot: Bool { selectedTab?.visibleSnapshot != nil }
     @ObservationIgnored var terminalReadyCommitWorkItem: DispatchWorkItem?
     @ObservationIgnored var terminalReadyFallbackWorkItem: DispatchWorkItem?
     @ObservationIgnored static let terminalReadyCompositingDelay: TimeInterval = 1.0 / 60.0
@@ -1020,9 +1054,9 @@ final class OverlayTabsModel {
             presentationSessions.forEach { $0.cancelVisibleFrameReadyHandoff() }
         }
 
-        let state = session.presentationSurfaceState
-        if state.shouldShowSnapshot == shouldShowRestorePreview,
-           state.awaitingVisibleFrameReady == shouldAwaitVisibleFrame {
+        let presentation = selectedSurfacePresentation
+        if presentation.shouldShowSnapshot == shouldShowRestorePreview,
+           presentation.isAwaitingVisibleFrame == shouldAwaitVisibleFrame {
             return
         }
 

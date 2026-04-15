@@ -199,6 +199,7 @@ final class StartupRestorePolicyTests: XCTestCase {
         XCTAssertFalse(
             StartupWindowPresentationPolicy.shouldRevealWindowImmediately(
                 isStartupRestoreActive: true,
+                isSelectedSurfaceLivePresentable: false,
                 hasSelectedSurfaceSnapshot: false
             )
         )
@@ -208,7 +209,18 @@ final class StartupRestorePolicyTests: XCTestCase {
         XCTAssertTrue(
             StartupWindowPresentationPolicy.shouldRevealWindowImmediately(
                 isStartupRestoreActive: true,
+                isSelectedSurfaceLivePresentable: false,
                 hasSelectedSurfaceSnapshot: true
+            )
+        )
+    }
+
+    func testWindowPresentationPolicyRevealsImmediatelyWhenLiveSurfaceIsAlreadyReady() {
+        XCTAssertTrue(
+            StartupWindowPresentationPolicy.shouldRevealWindowImmediately(
+                isStartupRestoreActive: true,
+                isSelectedSurfaceLivePresentable: true,
+                hasSelectedSurfaceSnapshot: false
             )
         )
     }
@@ -217,6 +229,7 @@ final class StartupRestorePolicyTests: XCTestCase {
         XCTAssertTrue(
             StartupWindowPresentationPolicy.shouldRevealWindowImmediately(
                 isStartupRestoreActive: false,
+                isSelectedSurfaceLivePresentable: false,
                 hasSelectedSurfaceSnapshot: false
             )
         )

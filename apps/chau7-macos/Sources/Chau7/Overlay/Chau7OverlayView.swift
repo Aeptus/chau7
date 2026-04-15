@@ -1483,7 +1483,9 @@ struct Chau7OverlayView: View {
             // This displays a cached screenshot while the real terminal renders
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
-                if isSelected, !overlayModel.isTerminalReady, let snapshot = tab.visibleSnapshot {
+                if isSelected,
+                   overlayModel.selectedSurfacePresentation.shouldShowSnapshot,
+                   let snapshot = tab.visibleSnapshot {
                     // Show snapshot instantly while terminal renders
                     Image(nsImage: snapshot)
                         .resizable()
@@ -1499,7 +1501,7 @@ struct Chau7OverlayView: View {
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
                 let hasContent = !tab.lastPromptText.isEmpty || tab.visibleSnapshot != nil
-                if isSelected, !overlayModel.isTerminalReady, hasContent {
+                if isSelected, !overlayModel.selectedSurfacePresentation.isLivePresentable, hasContent {
                     CursorPlaceholderView(
                         promptText: tab.lastPromptText.isEmpty ? "~" : tab.lastPromptText,
                         cursorPosition: tab.lastCursorPosition

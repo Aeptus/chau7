@@ -291,9 +291,10 @@ public enum StartupWindowPresentationPolicy {
 
     public static func shouldRevealWindowImmediately(
         isStartupRestoreActive: Bool,
+        isSelectedSurfaceLivePresentable: Bool,
         hasSelectedSurfaceSnapshot: Bool
     ) -> Bool {
         guard isStartupRestoreActive else { return true }
-        return hasSelectedSurfaceSnapshot
+        return isSelectedSurfaceLivePresentable || hasSelectedSurfaceSnapshot
     }
 }
