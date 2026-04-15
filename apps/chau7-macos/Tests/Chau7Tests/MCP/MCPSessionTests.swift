@@ -270,7 +270,8 @@ final class MCPSessionTests: XCTestCase {
                     "arguments": [
                         "topics": ["runtime-events"],
                         "cursor": 0,
-                        "replay_limit": 10
+                        "replay_limit": 10,
+                        "heartbeat_interval_ms": 1_000
                     ]
                 ]
             ])
@@ -282,6 +283,11 @@ final class MCPSessionTests: XCTestCase {
         let replay = try XCTUnwrap(subscribeStructured["replay"] as? [[String: Any]])
         XCTAssertEqual(replay.count, 1)
         XCTAssertEqual(replay.first?["type"] as? String, "app_launched")
+        let subscription = try XCTUnwrap(subscribeStructured["subscription"] as? [String: Any])
+        XCTAssertEqual(subscription["observer_contract_version"] as? Int, 1)
+        let health = try XCTUnwrap(subscription["health"] as? [String: Any])
+        XCTAssertEqual(health["delivery_mode"] as? String, "serial")
+        XCTAssertEqual(health["heartbeat_interval_ms"] as? Int, 1_000)
 
         Chau7ObservabilityService.shared.recordEvent(type: "tab_created", subsystem: "tabs", detail: ["window_id": 1])
 
@@ -291,6 +297,10 @@ final class MCPSessionTests: XCTestCase {
         XCTAssertEqual(params["type"] as? String, "tab_created")
         XCTAssertEqual((params["topics"] as? [String])?.contains("runtime-events"), true)
         XCTAssertNotNil(params["subscription_id"] as? String)
+        XCTAssertEqual(params["observer_contract_version"] as? Int, 1)
+        XCTAssertNotNil(params["delivery_seq"] as? Int64 ?? params["delivery_seq"] as? Int)
+        let notificationHealth = try XCTUnwrap(params["subscription_health"] as? [String: Any])
+        XCTAssertEqual(notificationHealth["delivery_mode"] as? String, "serial")
     }
 
     func testUnsubscribeStopsNotifications() throws {
@@ -342,6 +352,78 @@ final class MCPSessionTests: XCTestCase {
         XCTAssertEqual(structured["error"] as? String, "snapshot_required")
         XCTAssertNotNil(structured["latest_seq"] as? Int64 ?? structured["latest_seq"] as? Int)
         XCTAssertNotNil(structured["oldest_available_seq"] as? Int64 ?? structured["oldest_available_seq"] as? Int)
+        XCTAssertEqual(structured["observer_contract_version"] as? Int, 1)
+    }
+
+    func testSubscriptionHeartbeatUsesStableContractShape() throws {
+        let heartbeatExpectation = expectation(description: "receives heartbeat notification")
+        var receivedNotification: [String: Any]?
+        let session = initializedSession(notificationSink: { payload in
+            if payload["method"] as? String == "notifications/chau7.event",
+               let params = payload["params"] as? [String: Any],
+               params["type"] as? String == "heartbeat" {
+                receivedNotification = payload
+                heartbeatExpectation.fulfill()
+            }
+        })
+
+        _ = try toolStructuredContent(
+            session: session,
+            name: "chau7_subscribe",
+            arguments: ["heartbeat_interval_ms": 1_000]
+        )
+
+        session.emitSubscriptionHeartbeatForTests()
+        waitForExpectations(timeout: 1)
+
+        let params = try XCTUnwrap(receivedNotification?["params"] as? [String: Any])
+        XCTAssertEqual(params["type"] as? String, "heartbeat")
+        XCTAssertEqual(params["topic"] as? String, "subscription-control")
+        XCTAssertEqual(params["observer_contract_version"] as? Int, 1)
+        XCTAssertNotNil(params["latest_seq"] as? Int64 ?? params["latest_seq"] as? Int)
+    }
+
+    func testStateSnapshotGoldenContractShape() throws {
+        Chau7ObservabilityService.shared.recordEvent(type: "app_launched", subsystem: "app_lifecycle")
+        let session = initializedSession()
+        let snapshot = try toolStructuredContent(
+            session: session,
+            name: "chau7_state_snapshot",
+            arguments: [:]
+        )
+
+        let scrubbed = scrubSnapshotContract(snapshot)
+        let encoded = try canonicalJSONString(scrubbed)
+        XCTAssertEqual(encoded, """
+{"approvals":[],"generated_at_millis":"<generated_at_millis>","latest_seq":"<latest_seq>","observer_contract":{"default_heartbeat_interval_ms":15000,"default_replay_limit":200,"delivery_mode":"serial","heartbeat_event_type":"heartbeat","max_heartbeat_interval_ms":60000,"max_replay_limit":500,"min_heartbeat_interval_ms":1000,"notification_method":"notifications\\/chau7.event","snapshot_tool":"chau7_state_snapshot","subscribe_tool":"chau7_subscribe","supported_topics":["approval-state","repo-events","runtime-events","session-state","tab-state","telemetry-runs","timer-inventory"],"unsubscribe_tool":"chau7_unsubscribe","version":1},"observer_contract_version":1,"repo_events":[],"runtime_info":{"app_version":"<app_version>","build_channel":"<build_channel>","build_number":"<build_number>","build_sha":"<build_sha>","build_timestamp":"<build_timestamp>","bundle_id":"<bundle_id>","launch_time":"<launch_time>","mcp_protocol_version":"2025-11-25","observability_schema_version":1,"process_id":"<process_id>","session_started_at":"<session_started_at>"},"schema_version":1,"tabs":[],"telemetry":{"active_runs":[],"active_sessions":[]},"timers":[]}
+""")
+    }
+
+    func testSubscriptionNotificationGoldenContractShape() throws {
+        let expectation = expectation(description: "receives golden contract notification")
+        var paramsPayload: [String: Any]?
+        let session = initializedSession(notificationSink: { payload in
+            guard payload["method"] as? String == "notifications/chau7.event",
+                  let params = payload["params"] as? [String: Any],
+                  params["type"] as? String == "tab_created" else { return }
+            paramsPayload = params
+            expectation.fulfill()
+        })
+
+        _ = try toolStructuredContent(
+            session: session,
+            name: "chau7_subscribe",
+            arguments: ["topics": ["tab-state"], "heartbeat_interval_ms": 1_000]
+        )
+
+        Chau7ObservabilityService.shared.recordEvent(type: "tab_created", subsystem: "tabs", detail: ["window_id": 1])
+        waitForExpectations(timeout: 1)
+
+        let scrubbed = try scrubNotificationContract(try XCTUnwrap(paramsPayload))
+        let encoded = try canonicalJSONString(scrubbed)
+        XCTAssertEqual(encoded, """
+{"delivery_seq":"<delivery_seq>","observer_contract_version":1,"payload":{"detail":{"window_id":1},"id":"<event_id>","seq":"<event_seq>","subsystem":"tabs","timestamp_millis":"<event_timestamp_millis>","type":"tab_created"},"seq":"<event_seq>","subscription_health":{"buffer_depth":0,"created_at_millis":"<created_at_millis>","delivery_mode":"serial","dropped_notification_count":0,"heartbeat_interval_ms":1000,"lag_state":"healthy","last_notification_at_millis":"<last_notification_at_millis>","notifications_emitted_count":1},"subscription_id":"<subscription_id>","subsystem":"tabs","timestamp_millis":"<event_timestamp_millis>","topics":["runtime-events","tab-state"],"type":"tab_created"}
+""")
     }
 
     private func initializedSession() -> MCPSession {
@@ -374,5 +456,49 @@ final class MCPSessionTests: XCTestCase {
         )
         let result = try XCTUnwrap(response["result"] as? [String: Any])
         return try XCTUnwrap(result["structuredContent"] as? [String: Any])
+    }
+
+    private func scrubSnapshotContract(_ payload: [String: Any]) -> [String: Any] {
+        var snapshot = payload
+        snapshot["generated_at_millis"] = "<generated_at_millis>"
+        snapshot["latest_seq"] = "<latest_seq>"
+        if var runtimeInfo = snapshot["runtime_info"] as? [String: Any] {
+            runtimeInfo["app_version"] = "<app_version>"
+            runtimeInfo["build_channel"] = "<build_channel>"
+            runtimeInfo["build_number"] = "<build_number>"
+            runtimeInfo["build_sha"] = "<build_sha>"
+            runtimeInfo["build_timestamp"] = "<build_timestamp>"
+            runtimeInfo["bundle_id"] = "<bundle_id>"
+            runtimeInfo["launch_time"] = "<launch_time>"
+            runtimeInfo["process_id"] = "<process_id>"
+            runtimeInfo["session_started_at"] = "<session_started_at>"
+            snapshot["runtime_info"] = runtimeInfo
+        }
+        return snapshot
+    }
+
+    private func scrubNotificationContract(_ payload: [String: Any]) throws -> [String: Any] {
+        var notification = payload
+        notification["delivery_seq"] = "<delivery_seq>"
+        notification["subscription_id"] = "<subscription_id>"
+        notification["seq"] = "<event_seq>"
+        notification["timestamp_millis"] = "<event_timestamp_millis>"
+        if var eventPayload = notification["payload"] as? [String: Any] {
+            eventPayload["id"] = "<event_id>"
+            eventPayload["seq"] = "<event_seq>"
+            eventPayload["timestamp_millis"] = "<event_timestamp_millis>"
+            notification["payload"] = eventPayload
+        }
+        if var health = notification["subscription_health"] as? [String: Any] {
+            health["created_at_millis"] = "<created_at_millis>"
+            health["last_notification_at_millis"] = "<last_notification_at_millis>"
+            notification["subscription_health"] = health
+        }
+        return notification
+    }
+
+    private func canonicalJSONString(_ object: [String: Any]) throws -> String {
+        let data = try XCTUnwrap(try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]))
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
     }
 }

@@ -202,8 +202,8 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `chau7_runtime_info` | Build and process identity for external observability: app version, build number, build sha/timestamp/channel, process id, launch time, and schema version |
 | `chau7_runtime_events` | Recent Chau7 observability events with stable sequence ids. Includes app-owned lifecycle markers plus unified non-app AI events with optional `tab_id`, `session_id`, `run_id`, and `repo_path` |
 | `chau7_timer_inventory` | Chau7-owned timer and display-link inventory for observability: stable timer ids, kind, subsystem, queue label, cadence, and active state |
-| `chau7_state_snapshot` | Aggregated observer snapshot: runtime identity, live tabs, pending approvals, repo event summaries, active telemetry runs/sessions, timers, and latest monotonic sequence |
-| `chau7_subscribe` | Open one long-lived state subscription on the current MCP connection. Returns the initial snapshot plus optional replayed changes since a cursor, then emits `notifications/chau7.event` deltas |
+| `chau7_state_snapshot` | Aggregated observer snapshot: runtime identity, live tabs, pending approvals, repo event summaries, active telemetry runs/sessions, timers, latest monotonic sequence, and observer contract metadata for deterministic eval clients |
+| `chau7_subscribe` | Open one long-lived state subscription on the current MCP connection. Returns the initial snapshot plus optional replayed changes since a cursor, exposes subscription health metadata, and emits `notifications/chau7.event` deltas plus `heartbeat` keepalives |
 | `chau7_unsubscribe` | Stop the active Chau7 state subscription for the current MCP connection |
 
 Telemetry parsing also accepts pretty-printed Codex rollout JSON when extracting quota snapshots and rate-limit windows, so multiline history files produce the same quota data as one-line JSONL.

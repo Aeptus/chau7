@@ -19,10 +19,24 @@ final class MCPSession {
     private let stateSnapshotService = Chau7StateSnapshotService.shared
     private var lifecycleState: LifecycleState = .awaitingInitialize
     private let writeQueue = DispatchQueue(label: "com.chau7.mcp.session.write")
+    private let subscriptionStateQueue = DispatchQueue(label: "com.chau7.mcp.session.subscription-state")
     private let notificationSink: (([String: Any]) -> Void)?
     private var liveNotificationWriter: (([String: Any]) -> Void)?
-    private var subscriptionToken: UUID?
-    private var subscriptionID: String?
+
+    private struct SubscriptionState {
+        let id: String
+        let topics: [String]
+        let createdAtMillis: Int64
+        let heartbeatIntervalMs: Int
+        var token: UUID?
+        var heartbeatTimer: DispatchSourceTimer?
+        var nextDeliverySequence: Int64
+        var notificationsEmittedCount: Int
+        var droppedNotificationCount: Int
+        var lastNotificationAtMillis: Int64?
+    }
+
+    private var subscriptionState: SubscriptionState?
 
     private enum LifecycleState {
         case awaitingInitialize
@@ -419,12 +433,12 @@ final class MCPSession {
             ],
             [
                 "name": "chau7_state_snapshot",
-                "description": "Get the authoritative aggregated Chau7 state snapshot for external observers. Includes runtime identity, live tabs, pending approvals, repo event summaries, active telemetry runs/sessions, timers, and the latest monotonic change sequence.",
+                "description": "Get the authoritative aggregated Chau7 state snapshot for external observers. Includes runtime identity, live tabs, pending approvals, repo event summaries, active telemetry runs/sessions, timers, the latest monotonic change sequence, and observer contract metadata.",
                 "inputSchema": ["type": "object", "properties": [:]]
             ],
             [
                 "name": "chau7_subscribe",
-                "description": "Open a long-lived Chau7 state subscription on this MCP connection. Returns an initial aggregated snapshot, the latest sequence number, and optional replayed changes since a cursor. Subsequent state deltas are emitted as JSON-RPC notifications.",
+                "description": "Open a long-lived Chau7 state subscription on this MCP connection. Returns an initial aggregated snapshot, effective topic scope, subscription health metadata, and optional replayed changes since a cursor. Subsequent state deltas and heartbeat keepalives are emitted as JSON-RPC notifications.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
@@ -434,7 +448,8 @@ final class MCPSession {
                             "description": "Optional topic filter. Supported topics include runtime-events, tab-state, approval-state, repo-events, telemetry-runs, timer-inventory, and session-state."
                         ],
                         "cursor": ["type": "integer", "description": "Optional last seen monotonic sequence number for replay."],
-                        "replay_limit": ["type": "integer", "description": "Maximum replayed changes to include in the subscribe response (default 200, max 500)."]
+                        "replay_limit": ["type": "integer", "description": "Maximum replayed changes to include in the subscribe response (default 200, max 500)."],
+                        "heartbeat_interval_ms": ["type": "integer", "description": "Optional heartbeat interval for subscription keepalive notifications (default 15000, min 1000, max 60000)."]
                     ]
                 ]
             ],
@@ -1038,14 +1053,25 @@ final class MCPSession {
             return .toolResult(
                 toolErrorResult(
                     message: "Subscriptions require a live MCP connection that can receive JSON-RPC notifications.",
-                    structuredContent: ["error": "notifications_unavailable"]
+                    structuredContent: [
+                        "error": Chau7MCPObserverContract.notificationsUnavailableError,
+                        "observer_contract_version": Chau7MCPObserverContract.version
+                    ]
                 )
             )
         }
 
-        let topics = arguments["topics"] as? [String]
+        let requestedTopics = normalizedSubscriptionTopics(arguments["topics"] as? [String])
+        let effectiveTopics = requestedTopics ?? Chau7MCPObserverContract.supportedTopics
         let cursor = (arguments["cursor"] as? Int64) ?? (arguments["cursor"] as? Int).map(Int64.init)
-        let replayLimit = min(max(arguments["replay_limit"] as? Int ?? 200, 1), 500)
+        let replayLimit = min(max(arguments["replay_limit"] as? Int ?? Chau7MCPObserverContract.defaultReplayLimit, 1), Chau7MCPObserverContract.maxReplayLimit)
+        let heartbeatIntervalMs = min(
+            max(
+                arguments["heartbeat_interval_ms"] as? Int ?? Chau7MCPObserverContract.defaultHeartbeatIntervalMs,
+                Chau7MCPObserverContract.minHeartbeatIntervalMs
+            ),
+            Chau7MCPObserverContract.maxHeartbeatIntervalMs
+        )
 
         if let cursor,
            let oldestAvailable = Chau7ObservabilityService.shared.oldestAvailableChangeSequence(),
@@ -1054,7 +1080,8 @@ final class MCPSession {
                 toolErrorResult(
                     message: "Requested cursor is no longer available. Rehydrate from a fresh snapshot.",
                     structuredContent: [
-                        "error": "snapshot_required",
+                        "error": Chau7MCPObserverContract.snapshotRequiredError,
+                        "observer_contract_version": Chau7MCPObserverContract.version,
                         "latest_seq": Chau7ObservabilityService.shared.latestSequence(),
                         "oldest_available_seq": oldestAvailable
                     ]
@@ -1066,38 +1093,68 @@ final class MCPSession {
 
         let replay = Chau7ObservabilityService.shared.changePayloads(
             sinceSeq: cursor,
-            topics: topics,
+            topics: requestedTopics,
             limit: replayLimit
         )
         let subscriptionID = "sub_\(UUID().uuidString)"
-        self.subscriptionID = subscriptionID
-        subscriptionToken = Chau7ObservabilityService.shared.addChangeListener(topics: topics) { [weak self] change in
+        let createdAtMillis = currentTimeMillis()
+        let token = Chau7ObservabilityService.shared.addChangeListener(topics: requestedTopics) { [weak self] change in
             self?.emitSubscriptionNotification(subscriptionID: subscriptionID, change: change)
+        }
+        let heartbeatTimer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "com.chau7.mcp.session.subscription-heartbeat.\(subscriptionID)"))
+        heartbeatTimer.schedule(deadline: .now() + .milliseconds(heartbeatIntervalMs), repeating: .milliseconds(heartbeatIntervalMs))
+        heartbeatTimer.setEventHandler { [weak self] in
+            self?.emitSubscriptionHeartbeat(subscriptionID: subscriptionID)
+        }
+        heartbeatTimer.resume()
+        subscriptionStateQueue.sync {
+            subscriptionState = SubscriptionState(
+                id: subscriptionID,
+                topics: effectiveTopics,
+                createdAtMillis: createdAtMillis,
+                heartbeatIntervalMs: heartbeatIntervalMs,
+                token: token,
+                heartbeatTimer: heartbeatTimer,
+                nextDeliverySequence: 1,
+                notificationsEmittedCount: 0,
+                droppedNotificationCount: 0,
+                lastNotificationAtMillis: nil
+            )
         }
 
         var payload = stateSnapshotService.snapshotPayload()
         payload["subscription_id"] = subscriptionID
-        payload["topics"] = topics ?? []
+        payload["topics"] = effectiveTopics
         if !replay.isEmpty {
             payload["replay"] = replay
         }
+        payload["subscription"] = subscriptionEnvelope(
+            subscriptionID: subscriptionID,
+            topics: effectiveTopics,
+            cursor: cursor,
+            replayCount: replay.count,
+            replayLimit: replayLimit
+        )
         return .toolResult(toolSuccessResult(payload: payload))
     }
 
     private func unsubscribeFromChau7State(arguments: [String: Any]) -> ToolCallDisposition {
         if let requestedID = arguments["subscription_id"] as? String,
-           let activeID = subscriptionID,
+           let activeID = subscriptionStateQueue.sync(execute: { subscriptionState?.id }),
            requestedID != activeID {
             return .protocolError(code: -32602, message: "Unknown subscription_id: \(requestedID)")
         }
 
-        let previousID = subscriptionID
+        let previousID = subscriptionStateQueue.sync { subscriptionState?.id }
+        let health = subscriptionStateQueue.sync { subscriptionState.map(subscriptionHealthPayloadLocked) }
         cancelSubscription()
         return .toolResult(
             toolSuccessResult(
                 payload: [
                     "ok": true,
-                    "subscription_id": previousID as Any
+                    "subscription_id": previousID as Any,
+                    "observer_contract_version": Chau7MCPObserverContract.version,
+                    "subscription_health": health as Any
                 ].compactMapValues { $0 }
             )
         )
@@ -1108,17 +1165,48 @@ final class MCPSession {
     }
 
     private func cancelSubscription() {
-        if let token = subscriptionToken {
+        let previousState = subscriptionStateQueue.sync { () -> SubscriptionState? in
+            let state = subscriptionState
+            subscriptionState = nil
+            return state
+        }
+        if let token = previousState?.token {
             Chau7ObservabilityService.shared.removeChangeListener(token)
         }
-        subscriptionToken = nil
-        subscriptionID = nil
+        if let timer = previousState?.heartbeatTimer {
+            timer.setEventHandler {}
+            timer.cancel()
+        }
     }
 
     private func emitSubscriptionNotification(subscriptionID: String, change: [String: Any]) {
+        guard let state = reserveNotificationDelivery(for: subscriptionID) else { return }
         var params = change
+        params["observer_contract_version"] = Chau7MCPObserverContract.version
         params["subscription_id"] = subscriptionID
-        sendNotification(method: "notifications/chau7.event", params: params)
+        params["delivery_seq"] = state.deliverySequence
+        params["subscription_health"] = state.health
+        sendNotification(method: Chau7MCPObserverContract.notificationMethod, params: params)
+    }
+
+    func emitSubscriptionHeartbeatForTests() {
+        guard let subscriptionID = subscriptionStateQueue.sync(execute: { subscriptionState?.id }) else { return }
+        emitSubscriptionHeartbeat(subscriptionID: subscriptionID)
+    }
+
+    private func emitSubscriptionHeartbeat(subscriptionID: String) {
+        guard let state = reserveNotificationDelivery(for: subscriptionID) else { return }
+        let params: [String: Any] = [
+            "observer_contract_version": Chau7MCPObserverContract.version,
+            "subscription_id": subscriptionID,
+            "delivery_seq": state.deliverySequence,
+            "type": Chau7MCPObserverContract.heartbeatEventType,
+            "topic": Chau7MCPObserverContract.subscriptionControlTopic,
+            "timestamp_millis": currentTimeMillis(),
+            "latest_seq": Chau7ObservabilityService.shared.latestSequence(),
+            "subscription_health": state.health
+        ]
+        sendNotification(method: Chau7MCPObserverContract.notificationMethod, params: params)
     }
 
     private func sendNotification(method: String, params: [String: Any]) {
@@ -1140,6 +1228,63 @@ final class MCPSession {
             return nil
         }
         return String(data: data, encoding: .utf8)
+    }
+
+    private func normalizedSubscriptionTopics(_ topics: [String]?) -> [String]? {
+        let normalized = (topics ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { Chau7MCPObserverContract.supportedTopics.contains($0) }
+        let unique = Array(Set(normalized)).sorted()
+        return unique.isEmpty ? nil : unique
+    }
+
+    private func subscriptionEnvelope(
+        subscriptionID: String,
+        topics: [String],
+        cursor: Int64?,
+        replayCount: Int,
+        replayLimit: Int
+    ) -> [String: Any] {
+        let health = subscriptionStateQueue.sync { subscriptionState.map(subscriptionHealthPayloadLocked) ?? [:] }
+        return [
+            "subscription_id": subscriptionID,
+            "status": "active",
+            "observer_contract_version": Chau7MCPObserverContract.version,
+            "topics": topics,
+            "cursor": cursor as Any,
+            "replay_count": replayCount,
+            "replay_limit": replayLimit,
+            "health": health
+        ].compactMapValues { $0 }
+    }
+
+    private func reserveNotificationDelivery(for subscriptionID: String) -> (deliverySequence: Int64, health: [String: Any])? {
+        subscriptionStateQueue.sync {
+            guard var state = subscriptionState, state.id == subscriptionID else { return nil }
+            let deliverySequence = state.nextDeliverySequence
+            state.nextDeliverySequence += 1
+            state.notificationsEmittedCount += 1
+            state.lastNotificationAtMillis = currentTimeMillis()
+            subscriptionState = state
+            return (deliverySequence, subscriptionHealthPayloadLocked(state))
+        }
+    }
+
+    private func subscriptionHealthPayloadLocked(_ state: SubscriptionState) -> [String: Any] {
+        [
+            "delivery_mode": Chau7MCPObserverContract.deliveryMode,
+            "lag_state": Chau7MCPObserverContract.healthyLagState,
+            "buffer_depth": 0,
+            "dropped_notification_count": state.droppedNotificationCount,
+            "notifications_emitted_count": state.notificationsEmittedCount,
+            "last_notification_at_millis": state.lastNotificationAtMillis as Any,
+            "created_at_millis": state.createdAtMillis,
+            "heartbeat_interval_ms": state.heartbeatIntervalMs
+        ].compactMapValues { $0 }
+    }
+
+    private func currentTimeMillis() -> Int64 {
+        Int64(Date().timeIntervalSince1970 * 1000)
     }
 
     static func resetSharedToolRateLimiterForTests() {
