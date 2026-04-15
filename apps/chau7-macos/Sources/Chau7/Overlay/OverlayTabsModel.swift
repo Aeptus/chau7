@@ -516,6 +516,7 @@ final class OverlayTabsModel {
     var selectedTabID: UUID {
         didSet {
             if activeDashboardGroupID != nil { activeDashboardGroupID = nil }
+            startDeferredRestoreForSelectedTabIfNeeded(reason: "selection_changed")
             onSelectedTabIDChanged?()
         }
     }
@@ -685,9 +686,15 @@ final class OverlayTabsModel {
     @ObservationIgnored var onTabsChanged: (() -> Void)?
     /// Callback invoked when `selectedTabID` changes — used by RemoteControlManager
     @ObservationIgnored var onSelectedTabIDChanged: (() -> Void)?
+    /// Callback invoked the first time startup records a selected-tab live frame.
+    @ObservationIgnored var onStartupSelectedTabLiveFrameRecorded: (() -> Void)?
 
     @ObservationIgnored weak var overlayWindow: NSWindow?
     @ObservationIgnored var onCloseLastTab: (() -> Void)?
+    @ObservationIgnored var deferredRestoreStatesByTabID: [UUID: SavedTabState] = [:]
+    @ObservationIgnored var deferredRestoreTabOrder: [UUID] = []
+    @ObservationIgnored var deferredRestoreWorkItem: DispatchWorkItem?
+    @ObservationIgnored var hasStartedDeferredRestore = false
 
     @ObservationIgnored let appModel: AppModel
     struct RestorableTabsPayload {
@@ -751,7 +758,7 @@ final class OverlayTabsModel {
         if let restoredPayload {
             self.tabs = restoredPayload.tabs
             self.selectedTabID = restoredPayload.selectedID
-            self.restoreBootstrapTabIDs = Set(restoredPayload.tabs.map(\.id))
+            self.restoreBootstrapTabIDs = Set([restoredPayload.selectedID])
             Log.info("Restored \(restoredPayload.tabs.count) tab(s) from saved state")
         } else {
             // Fallback: create a single fresh tab
@@ -768,7 +775,18 @@ final class OverlayTabsModel {
         // instance is fully initialized.
         if let sanitizedRestoredStates {
             for (index, state) in sanitizedRestoredStates.enumerated() where index < tabs.count {
-                restoreTabState(for: tabs[index], state: state)
+                let tab = tabs[index]
+                if tab.id == selectedTabID {
+                    restoreTabState(for: tab, state: state)
+                } else {
+                    deferredRestoreStatesByTabID[tab.id] = state
+                    deferredRestoreTabOrder.append(tab.id)
+                }
+            }
+            if !deferredRestoreTabOrder.isEmpty {
+                Log.info(
+                    "Deferred restore queued for \(deferredRestoreTabOrder.count) background tab(s); selectedTab=\(selectedTabID)"
+                )
             }
             syncSelectedTerminalPresentation(reason: "init_restore")
         }
@@ -982,6 +1000,59 @@ final class OverlayTabsModel {
             selectedTabID: tab.id,
             reason: reason
         )
+        onStartupSelectedTabLiveFrameRecorded?()
+    }
+
+    func beginDeferredRestoreIfNeeded(reason: String) {
+        guard !hasStartedDeferredRestore else { return }
+        guard !deferredRestoreTabOrder.isEmpty else { return }
+        hasStartedDeferredRestore = true
+        Log.info(
+            "Starting deferred restore for \(deferredRestoreTabOrder.count) background tab(s) [\(reason)]"
+        )
+        scheduleNextDeferredRestore(after: 0.05, reason: reason)
+    }
+
+    private func scheduleNextDeferredRestore(after delay: TimeInterval, reason: String) {
+        deferredRestoreWorkItem?.cancel()
+        guard !deferredRestoreTabOrder.isEmpty else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.restoreNextDeferredTabIfNeeded(reason: reason)
+        }
+        deferredRestoreWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func restoreNextDeferredTabIfNeeded(reason: String) {
+        deferredRestoreWorkItem = nil
+        guard !deferredRestoreTabOrder.isEmpty else { return }
+        let tabID = deferredRestoreTabOrder.removeFirst()
+        guard let state = deferredRestoreStatesByTabID.removeValue(forKey: tabID) else {
+            scheduleNextDeferredRestore(after: 0.05, reason: reason)
+            return
+        }
+        guard let tab = tabs.first(where: { $0.id == tabID }) else {
+            scheduleNextDeferredRestore(after: 0.05, reason: reason)
+            return
+        }
+        Log.info("Deferred restore: restoring tab=\(tabID) remaining=\(deferredRestoreTabOrder.count) [\(reason)]")
+        restoreTabState(for: tab, state: state)
+        if !deferredRestoreTabOrder.isEmpty {
+            scheduleNextDeferredRestore(after: 0.1, reason: reason)
+        }
+    }
+
+    private func startDeferredRestoreForSelectedTabIfNeeded(reason: String) {
+        guard let deferredState = deferredRestoreStatesByTabID.removeValue(forKey: selectedTabID) else { return }
+        deferredRestoreTabOrder.removeAll { $0 == selectedTabID }
+        deferredRestoreWorkItem?.cancel()
+        deferredRestoreWorkItem = nil
+        guard let tab = tabs.first(where: { $0.id == selectedTabID }) else { return }
+        Log.info("Deferred restore: prioritizing selected tab=\(selectedTabID) [\(reason)]")
+        restoreTabState(for: tab, state: deferredState)
+        if hasStartedDeferredRestore, !deferredRestoreTabOrder.isEmpty {
+            scheduleNextDeferredRestore(after: 0.05, reason: reason)
+        }
     }
 
     func encodedRestorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> Data? {
@@ -3050,19 +3121,17 @@ final class OverlayTabsModel {
     /// attached, the retained Rust view keeps the session alive even if the tab
     /// later drops out of the visible hierarchy.
     func shouldKeepTabInLiveHierarchy(tab: OverlayTab, index _: Int) -> Bool {
-        if restoreBootstrapTabIDs.contains(tab.id),
-           tab.splitController.terminalSessions.contains(where: { _, session in
-               session.existingRustTerminalView == nil
-           }) {
-            return true
-        }
-
-        if tab.id == selectedTabID || tab.id == previousLiveHierarchyTabID {
-            return true
-        }
-
-        guard tab.isMCPControlled else { return false }
-        return tab.session?.existingRustTerminalView == nil
+        let hasAttachedTerminalView = !tab.splitController.terminalSessions.contains(where: { _, session in
+            session.existingRustTerminalView == nil
+        })
+        return StartupWindowPresentationPolicy.shouldKeepTabInLiveHierarchy(
+            isStartupRestoreActive: StartupRestoreCoordinator.shared.isActive,
+            isSelectedTab: tab.id == selectedTabID,
+            isPreviousLiveTab: tab.id == previousLiveHierarchyTabID,
+            isMCPControlled: tab.isMCPControlled,
+            hasAttachedTerminalView: hasAttachedTerminalView,
+            hasPendingRestoreBootstrap: restoreBootstrapTabIDs.contains(tab.id)
+        )
     }
 
     func updateSuspensionState() {
