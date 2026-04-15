@@ -3159,8 +3159,17 @@ final class OverlayTabsModel {
     }
 
     private func renderLifecycleSnapshot() -> TabRenderLifecycleController.Snapshot {
-        TabRenderLifecycleController.Snapshot(
+        let isInputPriorityWindow: Bool
+        if StartupRestoreCoordinator.shared.isActive {
+            isInputPriorityWindow = true
+        } else if let overlayWindow {
+            isInputPriorityWindow = overlayWindow.isKeyWindow || overlayWindow.isMainWindow
+        } else {
+            isInputPriorityWindow = true
+        }
+        return TabRenderLifecycleController.Snapshot(
             selectedTabID: selectedTabID,
+            isInputPriorityWindow: isInputPriorityWindow,
             previousLiveHierarchyTabID: previousLiveHierarchyTabID,
             prewarmingTabIDs: prewarmingTabIDs,
             restoreBootstrapTabIDs: restoreBootstrapTabIDs,

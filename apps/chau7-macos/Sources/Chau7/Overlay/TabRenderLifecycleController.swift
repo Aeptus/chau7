@@ -4,6 +4,7 @@ import Chau7Core
 final class TabRenderLifecycleController {
     struct Snapshot {
         let selectedTabID: UUID
+        let isInputPriorityWindow: Bool
         let previousLiveHierarchyTabID: UUID?
         let prewarmingTabIDs: Set<UUID>
         let restoreBootstrapTabIDs: Set<UUID>
@@ -25,6 +26,7 @@ final class TabRenderLifecycleController {
         TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: descriptor.id == snapshot.selectedTabID,
+                isInputPriorityWindow: snapshot.isInputPriorityWindow,
                 isPreviousLiveTab: descriptor.id == snapshot.previousLiveHierarchyTabID,
                 isPrewarming: snapshot.prewarmingTabIDs.contains(descriptor.id),
                 hasBackgroundActivity: descriptor.hasBackgroundActivity,

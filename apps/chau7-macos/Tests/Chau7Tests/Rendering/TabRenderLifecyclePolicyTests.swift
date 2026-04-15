@@ -6,6 +6,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: true,
+                isInputPriorityWindow: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: false,
@@ -25,6 +26,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
+                isInputPriorityWindow: true,
                 isPreviousLiveTab: true,
                 isPrewarming: false,
                 hasBackgroundActivity: false,
@@ -44,6 +46,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
+                isInputPriorityWindow: true,
                 isPreviousLiveTab: false,
                 isPrewarming: true,
                 hasBackgroundActivity: false,
@@ -59,10 +62,11 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
-    func testBackgroundActivityKeepsTabActiveWithoutForcingHierarchy() {
+    func testBackgroundActivityUsesBackgroundActivePhaseAndStaysAttached() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
+                isInputPriorityWindow: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: true,
@@ -74,14 +78,35 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .active)
-        XCTAssertFalse(decision.keepsLiveHierarchy)
+        XCTAssertEqual(decision.phase, .backgroundActive)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
+    }
+
+    func testSelectedTabOutsideInputPriorityWindowUsesBackgroundActivePhase() {
+        let decision = TabRenderLifecyclePolicy.decide(
+            TabRenderLifecycleInput(
+                isSelectedTab: true,
+                isInputPriorityWindow: false,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: false,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true
+            )
+        )
+
+        XCTAssertEqual(decision.phase, .backgroundActive)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
     func testSuspensionDisabledKeepsNonSelectedTabsWarm() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
+                isInputPriorityWindow: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: false,
@@ -101,6 +126,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
+                isInputPriorityWindow: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: false,
@@ -120,6 +146,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
+                isInputPriorityWindow: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: false,
@@ -139,6 +166,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
+                isInputPriorityWindow: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: false,

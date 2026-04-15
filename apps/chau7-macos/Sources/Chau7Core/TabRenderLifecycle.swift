@@ -2,16 +2,22 @@ import Foundation
 
 public enum TabRenderPhase: String, Equatable, Sendable {
     case active
+    case backgroundActive
     case warm
     case hidden
 
-    public var allowsLiveUpdates: Bool {
+    public var keepsTerminalStateCurrent: Bool {
         self != .hidden
+    }
+
+    public var allowsLivePresentation: Bool {
+        self == .active
     }
 }
 
 public struct TabRenderLifecycleInput: Equatable, Sendable {
     public let isSelectedTab: Bool
+    public let isInputPriorityWindow: Bool
     public let isPreviousLiveTab: Bool
     public let isPrewarming: Bool
     public let hasBackgroundActivity: Bool
@@ -23,6 +29,7 @@ public struct TabRenderLifecycleInput: Equatable, Sendable {
 
     public init(
         isSelectedTab: Bool,
+        isInputPriorityWindow: Bool,
         isPreviousLiveTab: Bool,
         isPrewarming: Bool,
         hasBackgroundActivity: Bool,
@@ -33,6 +40,7 @@ public struct TabRenderLifecycleInput: Equatable, Sendable {
         hasAttachedTerminalView: Bool
     ) {
         self.isSelectedTab = isSelectedTab
+        self.isInputPriorityWindow = isInputPriorityWindow
         self.isPreviousLiveTab = isPreviousLiveTab
         self.isPrewarming = isPrewarming
         self.hasBackgroundActivity = hasBackgroundActivity
@@ -71,12 +79,12 @@ public enum TabRenderLifecyclePolicy {
     }
 
     public static func phase(for input: TabRenderLifecycleInput) -> TabRenderPhase {
-        if input.isSelectedTab {
+        if input.isSelectedTab, input.isInputPriorityWindow {
             return .active
         }
 
-        if input.hasBackgroundActivity {
-            return .active
+        if input.isSelectedTab || input.hasBackgroundActivity {
+            return .backgroundActive
         }
 
         if !input.isRenderSuspensionEnabled {
@@ -93,7 +101,7 @@ public enum TabRenderLifecyclePolicy {
     }
 
     public static func keepsLiveHierarchy(for input: TabRenderLifecycleInput) -> Bool {
-        if input.isSelectedTab || input.isPreviousLiveTab || input.isPrewarming {
+        if input.isSelectedTab || input.hasBackgroundActivity || input.isPreviousLiveTab || input.isPrewarming {
             return true
         }
 

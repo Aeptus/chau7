@@ -2852,7 +2852,7 @@ final class RustTerminalView: NSView {
     func applyRenderPhase(_ phase: TabRenderPhase, isInteractive: Bool, reason: String) {
         currentRenderPhase = phase
         let shouldHide = phase != .active
-        let shouldNotifyUpdates = phase.allowsLiveUpdates
+        let shouldNotifyUpdates = phase.allowsLivePresentation
 
         if notifyUpdateChanges != shouldNotifyUpdates {
             notifyUpdateChanges = shouldNotifyUpdates
