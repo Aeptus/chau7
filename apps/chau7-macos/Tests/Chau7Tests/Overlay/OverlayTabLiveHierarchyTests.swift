@@ -228,6 +228,84 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertEqual(model.tabs[0].visibleSnapshot?.size, NSSize(width: 120, height: 60))
     }
 
+    func testVisibleSnapshotDoesNotFallBackToPrimarySessionWhenFocusedDisplaySessionDiffers() {
+        model.splitCurrentTabHorizontally()
+        let splitSessions = model.tabs[0].splitController.terminalSessions
+        let focusedPaneID = splitSessions[1].0
+        let focusedSession = splitSessions[1].1
+        model.tabs[0].splitController.setFocusedPane(focusedPaneID)
+
+        model.tabs[0].cachedSnapshot = nil
+        model.tabs[0].restorePreviewSnapshot = nil
+        model.tabs[0].session?.lastRenderedSnapshot = makeSnapshot(size: NSSize(width: 90, height: 50))
+        focusedSession.lastRenderedSnapshot = nil
+
+        XCTAssertNil(
+            model.tabs[0].visibleSnapshot,
+            "The selected surface snapshot must come from the focused display session, not the tab's primary session"
+        )
+    }
+
+    func testRequestSelectedTabAuthoritativeRevealTargetsFocusedDisplaySession() {
+        model.splitCurrentTabHorizontally()
+        let splitSessions = model.tabs[0].splitController.terminalSessions
+        let focusedPaneID = splitSessions[1].0
+        let focusedSession = splitSessions[1].1
+        model.tabs[0].splitController.setFocusedPane(focusedPaneID)
+
+        model.tabs[0].cachedSnapshot = nil
+        model.tabs[0].restorePreviewSnapshot = makeSnapshot()
+        focusedSession.cancelVisibleFrameReadyHandoff()
+        model.tabs[0].session?.cancelVisibleFrameReadyHandoff()
+
+        model.requestSelectedTabAuthoritativeReveal(reason: "test_split_focus")
+
+        XCTAssertTrue(
+            focusedSession.awaitingVisibleFrameReady,
+            "The focused display session should own the selected reveal handoff"
+        )
+        XCTAssertFalse(
+            model.tabs[0].session?.awaitingVisibleFrameReady ?? true,
+            "The primary session must not be armed when a different focused display session is visible"
+        )
+    }
+
+    func testVisibleFrameReadyIgnoresPrimarySessionWhenFocusedDisplaySessionIsSelectedSurface() {
+        model.splitCurrentTabHorizontally()
+        let splitSessions = model.tabs[0].splitController.terminalSessions
+        let focusedPaneID = splitSessions[1].0
+        let focusedSession = splitSessions[1].1
+        model.tabs[0].splitController.setFocusedPane(focusedPaneID)
+
+        let snapshot = makeSnapshot()
+        model.tabs[0].cachedSnapshot = nil
+        model.tabs[0].restorePreviewSnapshot = nil
+        model.tabs[0].session?.lastRenderedSnapshot = nil
+        focusedSession.lastRenderedSnapshot = snapshot
+
+        model.syncSelectedTerminalPresentation(reason: "test_split_visible_frame")
+
+        XCTAssertFalse(model.isTerminalReady)
+        XCTAssertTrue(focusedSession.awaitingVisibleFrameReady)
+        XCTAssertFalse(model.tabs[0].session?.awaitingVisibleFrameReady ?? true)
+
+        model.tabs[0].session?.notifyVisibleFrameReadyIfNeeded()
+        drainMainQueue()
+
+        XCTAssertFalse(
+            model.isTerminalReady,
+            "A non-visible primary session must not complete the selected surface reveal"
+        )
+
+        focusedSession.notifyVisibleFrameReadyIfNeeded()
+        drainMainQueue()
+
+        XCTAssertTrue(
+            model.isTerminalReady,
+            "The focused display session should be the only session that can complete the selected reveal"
+        )
+    }
+
     func testCleanupDistantSnapshotsEvictsDistantTabPreviewAndSessionFrames() {
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)

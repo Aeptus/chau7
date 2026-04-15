@@ -136,7 +136,19 @@ struct OverlayTab: Identifiable, Equatable {
     var lastPromptText = ""
 
     var visibleSnapshot: NSImage? {
-        restorePreviewSnapshot ?? cachedSnapshot ?? displaySession?.lastRenderedSnapshot ?? session?.lastRenderedSnapshot
+        if let restorePreviewSnapshot {
+            return restorePreviewSnapshot
+        }
+        if let cachedSnapshot {
+            return cachedSnapshot
+        }
+        if let displaySessionSnapshot = displaySession?.lastRenderedSnapshot {
+            return displaySessionSnapshot
+        }
+        if displaySession == nil || displaySession === session {
+            return session?.lastRenderedSnapshot
+        }
+        return nil
     }
 
     /// The primary terminal session (first terminal in split tree)
@@ -773,21 +785,9 @@ final class OverlayTabsModel {
         let metadata: (provider: String, sessionId: String)?
     }
 
-    private func presentationSessions(for tab: OverlayTab) -> [TerminalSessionModel] {
-        var sessions: [TerminalSessionModel] = []
-        if let display = tab.displaySession {
-            sessions.append(display)
-        }
-        if let primary = tab.session,
-           !sessions.contains(where: { $0 === primary }) {
-            sessions.append(primary)
-        }
-        return sessions
-    }
-
     private func selectedPresentationSession(for tab: OverlayTab?) -> TerminalSessionModel? {
         guard let tab else { return nil }
-        return presentationSessions(for: tab).first
+        return tab.displaySession ?? tab.session
     }
 
     /// When `restoreState` is false, the model starts with a single fresh tab
@@ -925,7 +925,7 @@ final class OverlayTabsModel {
         ) { [weak self] note in
             guard let self, let session = note.object as? TerminalSessionModel else { return }
             guard let selected = self.selectedTab else { return }
-            let isSelectedSession = selected.displaySession === session || selected.session === session
+            let isSelectedSession = self.selectedPresentationSession(for: selected) === session
             guard isSelectedSession else { return }
             let state = session.presentationSurfaceState
             if selected.visibleSnapshot != nil,
@@ -1007,7 +1007,7 @@ final class OverlayTabsModel {
         guard let completion else { return }
 
         resetSelectedTerminalRevealScheduling()
-        presentationSessions(for: tab).forEach { $0.cancelVisibleFrameReadyHandoff() }
+        session.cancelVisibleFrameReadyHandoff()
         if let selectedIndex = tabs.firstIndex(where: { $0.id == tab.id }) {
             clearRetainedSnapshots(forTabAt: selectedIndex)
         }
@@ -1017,12 +1017,11 @@ final class OverlayTabsModel {
     func forceSelectedTabRevealLive(tabID: UUID? = nil) {
         resetSelectedTerminalRevealScheduling()
         guard let targetID = tabID ?? selectedTab?.id,
-              let tab = tabs.first(where: { $0.id == targetID }) else { return }
+              let tab = tabs.first(where: { $0.id == targetID }),
+              let session = selectedPresentationSession(for: tab) else { return }
         let now = CFAbsoluteTimeGetCurrent()
-        presentationSessions(for: tab).forEach {
-            _ = $0.forcePresentationLive(now: now)
-            $0.cancelVisibleFrameReadyHandoff()
-        }
+        _ = session.forcePresentationLive(now: now)
+        session.cancelVisibleFrameReadyHandoff()
     }
 
     func syncSelectedTerminalPresentation(reason: String) {
@@ -1043,15 +1042,14 @@ final class OverlayTabsModel {
             return
         }
 
-        let presentationSessions = presentationSessions(for: tab)
         guard let session = selectedPresentationSession(for: tab) else { return }
         let shouldShowRestorePreview = tab.restorePreviewSnapshot != nil
             && tab.displaySession?.isRestoreBootstrapPending == true
         let shouldAwaitVisibleFrame = shouldShowRestorePreview || StartupRestoreCoordinator.shared.isActive
         if shouldAwaitVisibleFrame {
-            presentationSessions.forEach { $0.armVisibleFrameReadyHandoff() }
+            session.armVisibleFrameReadyHandoff()
         } else {
-            presentationSessions.forEach { $0.cancelVisibleFrameReadyHandoff() }
+            session.cancelVisibleFrameReadyHandoff()
         }
 
         let presentation = selectedSurfacePresentation
@@ -2686,14 +2684,13 @@ final class OverlayTabsModel {
         dispatchPrecondition(condition: .onQueue(.main))
 
         guard let selectedTab,
-              let session = selectedTab.session else {
+              let session = selectedPresentationSession(for: selectedTab) else {
             Log.warn("requestSelectedTabAuthoritativeReveal[\(reason)]: no session for selectedTabID=\(selectedTabID)")
             return
         }
 
         let selectedDecision = renderLifecycleDecision(for: selectedTab)
-        selectedTab.displaySession?.armVisibleFrameReadyHandoff()
-        selectedTab.session?.armVisibleFrameReadyHandoff()
+        session.armVisibleFrameReadyHandoff()
 
         guard let rustView = session.existingRustTerminalView else {
             Log.info("requestSelectedTabAuthoritativeReveal[\(reason)]: armed visible-frame handoff before Rust view was attached for tab \(selectedTabID)")
