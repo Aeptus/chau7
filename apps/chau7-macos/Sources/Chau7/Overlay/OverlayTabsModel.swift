@@ -1108,9 +1108,10 @@ final class OverlayTabsModel {
     }
 
     func persistableRestorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> NSImage? {
-        if let preview = tab.restorePreviewSnapshot {
-            return preview
-        }
+        // Persist only frames captured from the current live session or cached
+        // retained handoff images. A restore preview loaded from disk may
+        // already be stale or visually corrupt; replaying it back into saved
+        // state causes the same bad startup frame to survive indefinitely.
         if let cached = tab.cachedSnapshot ?? tab.displaySession?.lastRenderedSnapshot ?? tab.session?.lastRenderedSnapshot {
             return cached
         }
