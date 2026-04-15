@@ -1932,7 +1932,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         // was configured before the window became visible. Force one explicit
         // revival now that the overlay window is on-screen.
         host.model.forceRefreshSelectedTab()
-        host.model.noteStartupSelectedTabLiveFrameIfNeeded(reason: "window_visible_\(reason)")
         completeStartupRestoreIfReady(reason: "window_visible")
         host.model.focusSelected()
         logOverlayWindowLifecycle(reason: "showOverlayWindow-\(reason)", window: host.window)

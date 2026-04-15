@@ -871,21 +871,22 @@ final class OverlayTabsModel {
             queue: .main
         ) { [weak self] note in
             guard let self, let session = note.object as? TerminalSessionModel else { return }
-            guard !self.isTerminalReady else { return }
             guard let selected = self.selectedTab else { return }
             let isSelectedSession = selected.displaySession === session || selected.session === session
-            guard isSelectedSession, selected.visibleSnapshot != nil else { return }
+            guard isSelectedSession else { return }
             let now = CFAbsoluteTimeGetCurrent()
-            if self.selectedTabRevealState.noteLiveFramePresented(for: selected.id, now: now),
+            if selected.visibleSnapshot != nil,
+               self.selectedTabRevealState.noteLiveFramePresented(for: selected.id, now: now),
                let startedAt = self.selectedTabRevealState.startedAt,
                let presentedAt = self.selectedTabRevealState.firstFramePresentedAt {
                 let elapsedMs = Int((presentedAt - startedAt) * 1000)
                 Log.trace("tab handoff: first frame presented for \(selected.id) after \(elapsedMs)ms")
+                self.scheduleSelectedTerminalPresentationCommit(
+                    reason: "selected_live_frame_ready",
+                    delay: Self.terminalReadyCompositingDelay
+                )
             }
-            self.scheduleSelectedTerminalPresentationCommit(
-                reason: "selected_live_frame_ready",
-                delay: Self.terminalReadyCompositingDelay
-            )
+            self.noteStartupSelectedTabLiveFrameIfNeeded(reason: "visible_frame_ready")
         }
     }
 
@@ -994,9 +995,6 @@ final class OverlayTabsModel {
             && tab.displaySession?.isRestoreBootstrapPending == true
         if selectedTabRevealState.selectedTabID == tab.id
             && isTerminalReady == !shouldShowRestorePreview {
-            if !shouldShowRestorePreview {
-                noteStartupSelectedTabLiveFrameIfNeeded(reason: "\(reason)_steady")
-            }
             return
         }
 
@@ -1022,8 +1020,6 @@ final class OverlayTabsModel {
                 windowNumber: overlayWindow?.windowNumber,
                 reason: reason
             )
-        } else {
-            noteStartupSelectedTabLiveFrameIfNeeded(reason: reason)
         }
         Log.trace("syncSelectedTerminalPresentation[\(reason)]: tab=\(tab.id) preview=\(shouldShowRestorePreview)")
     }
@@ -2635,6 +2631,8 @@ final class OverlayTabsModel {
                     metalView.needsDisplay = true
                 }
             }
+            selectedTab?.displaySession?.armVisibleFrameReadyHandoff()
+            selectedTab?.session?.armVisibleFrameReadyHandoff()
             Log.info("forceRefreshSelectedTab: unhid Rust view + Metal for tab \(selectedTabID)")
         }
         // 3. Re-focus
