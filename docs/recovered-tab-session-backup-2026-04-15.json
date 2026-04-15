@@ -1,0 +1,378 @@
+{
+  "generated_on": "2026-04-15",
+  "purpose": "Recovered backup of repo tab IDs and AI session IDs reconstructed from Chau7 logs, telemetry runs.db, and surviving tab-state backups.",
+  "sources": {
+    "log": "/Users/christophehenner/Library/Logs/Chau7.log",
+    "telemetry_runs_db": "/Users/christophehenner/.chau7/telemetry/runs.db",
+    "tab_state_backups": [
+      "/Users/christophehenner/Library/Application Support/Chau7/TabStateBackups/latest.json",
+      "/Users/christophehenner/Library/Application Support/Chau7/TabStateBackups/latest.pre-fixed-install-1776176216.json",
+      "/Users/christophehenner/Library/Application Support/Chau7/TabStateBackups/latest.pre-recovery.json",
+      "/Users/christophehenner/Library/Application Support/Chau7/TabStateBackups/latest.pre-second-recovery.json"
+    ]
+  },
+  "repos": {
+    "Chau7": {
+      "directory": "/Users/christophehenner/Downloads/Repositories/Chau7",
+      "recovered_tab_count": 5,
+      "recovered_tabs": [
+        {
+          "tab_id": "97EAE448-0637-477D-AEF0-C4B0E238AE37",
+          "provider": "codex",
+          "session_id": "019d8623-5bde-7c11-bca1-3b5a71303076",
+          "session_prefix_in_log": "019d8623",
+          "directory": "/Users/christophehenner/Downloads/Repositories/Chau7",
+          "evidence": {
+            "log_occurrences": 8,
+            "first_log_timestamp": "2026-04-14T16:27:31.980Z",
+            "last_log_timestamp": "2026-04-14T19:13:48.836Z",
+            "log_line_numbers": [
+              15232,
+              16524,
+              18550,
+              20429,
+              22087,
+              24488,
+              26531,
+              28152
+            ],
+            "sample_pane_id": "A4AFB85C-7CE5-46EE-9A51-30196716C0FA",
+            "telemetry": {
+              "provider": "codex",
+              "session_id": "019d8623-5bde-7c11-bca1-3b5a71303076",
+              "runs": 9,
+              "first_seen": "2026-04-13T09:19:17.681Z",
+              "last_seen": "2026-04-13T13:30:18.375Z"
+            },
+            "tab_state_backup_hits": []
+          }
+        },
+        {
+          "tab_id": "33C6EDE3-5FCB-409F-AA55-D0C1839A006B",
+          "provider": "codex",
+          "session_id": "019d8735-803b-7b71-8489-b9ebbb3084ba",
+          "session_prefix_in_log": "019d8735",
+          "directory": "/Users/christophehenner/Downloads/Repositories/Chau7",
+          "evidence": {
+            "log_occurrences": 8,
+            "first_log_timestamp": "2026-04-14T16:27:31.981Z",
+            "last_log_timestamp": "2026-04-14T19:13:48.836Z",
+            "log_line_numbers": [
+              15235,
+              16527,
+              18553,
+              20432,
+              22090,
+              24491,
+              26534,
+              28155
+            ],
+            "sample_pane_id": "236989D7-9998-463A-AF11-9D2726983178",
+            "telemetry": {
+              "provider": "codex",
+              "session_id": "019d8735-803b-7b71-8489-b9ebbb3084ba",
+              "runs": 2,
+              "first_seen": "2026-04-13T14:18:43.727Z",
+              "last_seen": "2026-04-13T15:10:15.222Z"
+            },
+            "tab_state_backup_hits": []
+          }
+        },
+        {
+          "tab_id": "ED471E2F-3128-46F3-9650-806EBB420EF4",
+          "provider": "claude",
+          "session_id": "53a1f65a-6b5e-413d-b96f-533e76bdccab",
+          "session_prefix_in_log": "53a1f65a",
+          "directory": "/Users/christophehenner/Downloads/Repositories/Chau7",
+          "evidence": {
+            "log_occurrences": 8,
+            "first_log_timestamp": "2026-04-14T16:27:31.981Z",
+            "last_log_timestamp": "2026-04-14T19:13:48.836Z",
+            "log_line_numbers": [
+              15238,
+              16530,
+              18556,
+              20435,
+              22093,
+              24494,
+              26537,
+              28158
+            ],
+            "sample_pane_id": "9F17E4E1-0ED3-4A51-B5D6-B19F75BA52A5",
+            "telemetry": {
+              "provider": "claude",
+              "session_id": "53a1f65a-6b5e-413d-b96f-533e76bdccab",
+              "runs": 18,
+              "first_seen": "2026-04-09T12:49:42.027Z",
+              "last_seen": "2026-04-14T14:57:34.066Z"
+            },
+            "tab_state_backup_hits": []
+          }
+        },
+        {
+          "tab_id": "50B045A5-689B-4EB5-908F-1C6E7731E150",
+          "provider": "codex",
+          "session_id": "019d8709-29da-7161-b3fa-8aff1769fc42",
+          "session_prefix_in_log": "019d8709",
+          "directory": "/Users/christophehenner/Downloads/Repositories/Chau7",
+          "evidence": {
+            "log_occurrences": 8,
+            "first_log_timestamp": "2026-04-14T16:27:31.982Z",
+            "last_log_timestamp": "2026-04-14T19:13:48.836Z",
+            "log_line_numbers": [
+              15241,
+              16533,
+              18559,
+              20438,
+              22096,
+              24497,
+              26642,
+              28161
+            ],
+            "sample_pane_id": "E396633B-CD14-47B6-A950-759249A84D64",
+            "telemetry": {
+              "provider": "codex",
+              "session_id": "019d8709-29da-7161-b3fa-8aff1769fc42",
+              "runs": 2,
+              "first_seen": "2026-04-13T14:12:17.566Z",
+              "last_seen": "2026-04-13T19:01:13.371Z"
+            },
+            "tab_state_backup_hits": []
+          }
+        },
+        {
+          "tab_id": "B53833B1-1D3E-415D-BADE-F622FDD81281",
+          "provider": "codex",
+          "session_id": "019d8bfc-7627-7ad3-bade-27f32492bd8f",
+          "session_prefix_in_log": "019d8bfc",
+          "directory": "/Users/christophehenner/Downloads/Repositories/Chau7",
+          "evidence": {
+            "log_occurrences": 6,
+            "first_log_timestamp": "2026-04-14T19:55:32.855Z",
+            "last_log_timestamp": "2026-04-14T20:27:31.256Z",
+            "log_line_numbers": [
+              30386,
+              31006,
+              31568,
+              32160,
+              32722,
+              33276
+            ],
+            "sample_pane_id": "1A6ADF16-B001-4952-9C88-E257471924A8",
+            "telemetry": {
+              "provider": "codex",
+              "session_id": "019d8bfc-7627-7ad3-bade-27f32492bd8f",
+              "runs": 4,
+              "first_seen": "2026-04-14T12:34:32.135Z",
+              "last_seen": "2026-04-14T14:10:33.993Z"
+            },
+            "tab_state_backup_hits": [
+              {
+                "file": "latest.json",
+                "window_index": 1,
+                "tab_index": 0
+              },
+              {
+                "file": "latest.pre-fixed-install-1776176216.json",
+                "window_index": 0,
+                "tab_index": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "Mockup": {
+      "directory": "/Users/christophehenner/Downloads/Repositories/Mockup",
+      "recovered_tab_count": 6,
+      "recovered_tabs": [
+        {
+          "tab_id": "1808117A-9D7F-42BB-8963-C501FC4ED5BC",
+          "provider": "codex",
+          "session_id": "019d33c5-7b42-7262-a7b5-dbcdf49ba0e0",
+          "session_prefix_in_log": "019d33c5",
+          "directory": "/Users/christophehenner/Downloads/Repositories/Mockup",
+          "evidence": {
+            "log_occurrences": 8,
+            "first_log_timestamp": "2026-04-14T16:27:31.984Z",
+            "last_log_timestamp": "2026-04-14T19:13:48.837Z",
+            "log_line_numbers": [
+              15259,
+              16551,
+              18577,
+              20456,
+              22114,
+              24515,
+              26555,
+              28179
+            ],
+            "sample_pane_id": "1EBD1AC4-9508-4071-9D6B-C0D994B83ED7",
+            "telemetry": {
+              "provider": "codex",
+              "session_id": "019d33c5-7b42-7262-a7b5-dbcdf49ba0e0",
+              "runs": 24,
+              "first_seen": "2026-03-28T09:27:53.497Z",
+              "last_seen": "2026-04-12T13:27:06.150Z"
+            },
+            "tab_state_backup_hits": []
+          }
+        },
+        {
+          "tab_id": "F63083BA-E10B-49B9-A1B8-B4C6DB0D0C85",
+          "provider": "claude",
+          "session_id": "c7d7c2db-f68f-4253-8639-8157276366e9",
+          "session_prefix_in_log": "c7d7c2db",
+          "directory": "/Users/christophehenner/Downloads/Repositories/Mockup",
+          "evidence": {
+            "log_occurrences": 8,
+            "first_log_timestamp": "2026-04-14T16:27:31.984Z",
+            "last_log_timestamp": "2026-04-14T19:13:48.837Z",
+            "log_line_numbers": [
+              15262,
+              16554,
+              18580,
+              20459,
+              22117,
+              24518,
+              26558,
+              28182
+            ],
+            "sample_pane_id": "2053CC34-463D-4BD0-9ADC-8BED77B91EA6",
+            "telemetry": {
+              "provider": "claude",
+              "session_id": "c7d7c2db-f68f-4253-8639-8157276366e9",
+              "runs": 16,
+              "first_seen": "2026-03-19T05:56:33.952Z",
+              "last_seen": "2026-04-12T08:24:09.416Z"
+            },
+            "tab_state_backup_hits": []
+          }
+        },
+        {
+          "tab_id": "314ABB9E-9D77-43B4-85B5-F0DF95ACD208",
+          "provider": "claude",
+          "session_id": "76496718-a27e-4478-a435-f71920f68c22",
+          "session_prefix_in_log": "76496718",
+          "directory": "/Users/christophehenner/Downloads/Repositories/Mockup",
+          "evidence": {
+            "log_occurrences": 8,
+            "first_log_timestamp": "2026-04-14T16:27:31.984Z",
+            "last_log_timestamp": "2026-04-14T19:13:48.837Z",
+            "log_line_numbers": [
+              15265,
+              16557,
+              18583,
+              20462,
+              22120,
+              24521,
+              26561,
+              28185
+            ],
+            "sample_pane_id": "608038A0-6F21-4650-AD26-CED84A3AB3CE",
+            "telemetry": {
+              "provider": "claude",
+              "session_id": "76496718-a27e-4478-a435-f71920f68c22",
+              "runs": 16,
+              "first_seen": "2026-03-19T16:42:13.594Z",
+              "last_seen": "2026-04-02T12:53:53.428Z"
+            },
+            "tab_state_backup_hits": []
+          }
+        },
+        {
+          "tab_id": "BF1C7F47-2882-48F5-AF13-BA7BFC52C749",
+          "provider": "codex",
+          "session_id": "019d209c-7a6c-7823-9814-730cf570c4ed",
+          "session_prefix_in_log": "019d209c",
+          "directory": "/Users/christophehenner/Downloads/Repositories/Mockup",
+          "evidence": {
+            "log_occurrences": 8,
+            "first_log_timestamp": "2026-04-14T16:27:31.984Z",
+            "last_log_timestamp": "2026-04-14T19:13:48.837Z",
+            "log_line_numbers": [
+              15268,
+              16560,
+              18586,
+              20465,
+              22123,
+              24524,
+              26564,
+              28188
+            ],
+            "sample_pane_id": "01C8E9FC-0FB4-4767-8A4C-64DF85D39588",
+            "telemetry": {
+              "provider": "codex",
+              "session_id": "019d209c-7a6c-7823-9814-730cf570c4ed",
+              "runs": 9,
+              "first_seen": "2026-03-25T14:39:29.057Z",
+              "last_seen": "2026-04-08T07:23:20.043Z"
+            },
+            "tab_state_backup_hits": []
+          }
+        },
+        {
+          "tab_id": "E1380E61-5B03-4F15-AF89-31935781CC4C",
+          "provider": "claude",
+          "session_id": "fcf0a305-ada4-4307-937e-98016ddc95d8",
+          "session_prefix_in_log": "fcf0a305",
+          "directory": "/Users/christophehenner/Downloads/Repositories/Mockup",
+          "evidence": {
+            "log_occurrences": 8,
+            "first_log_timestamp": "2026-04-14T16:27:31.984Z",
+            "last_log_timestamp": "2026-04-14T19:13:48.837Z",
+            "log_line_numbers": [
+              15271,
+              16563,
+              18589,
+              20468,
+              22126,
+              24527,
+              26567,
+              28191
+            ],
+            "sample_pane_id": "FAB44807-9808-45D7-A926-6FEFBF75958D",
+            "telemetry": {
+              "provider": "claude",
+              "session_id": "fcf0a305-ada4-4307-937e-98016ddc95d8",
+              "runs": 6,
+              "first_seen": "2026-03-30T15:01:08.146Z",
+              "last_seen": "2026-04-02T14:49:11.691Z"
+            },
+            "tab_state_backup_hits": []
+          }
+        },
+        {
+          "tab_id": "5EFB5F97-81C8-4185-A03D-927581B15DE4",
+          "provider": "codex",
+          "session_id": "019d4d45-e4a2-7cd1-8f5f-9225cf0a467a",
+          "session_prefix_in_log": "019d4d45",
+          "directory": "/Users/christophehenner/Downloads/Repositories/Mockup",
+          "evidence": {
+            "log_occurrences": 8,
+            "first_log_timestamp": "2026-04-14T16:27:31.984Z",
+            "last_log_timestamp": "2026-04-14T19:13:48.837Z",
+            "log_line_numbers": [
+              15274,
+              16566,
+              18592,
+              20471,
+              22129,
+              24530,
+              26570,
+              28194
+            ],
+            "sample_pane_id": "DC79D10F-2D13-44BE-B820-57CC36F6C406",
+            "telemetry": {
+              "provider": "codex",
+              "session_id": "019d4d45-e4a2-7cd1-8f5f-9225cf0a467a",
+              "runs": 6,
+              "first_seen": "2026-04-02T08:18:39.493Z",
+              "last_seen": "2026-04-12T08:06:20.437Z"
+            },
+            "tab_state_backup_hits": []
+          }
+        }
+      ]
+    }
+  }
+}
