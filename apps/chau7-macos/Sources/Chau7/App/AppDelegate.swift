@@ -43,6 +43,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var shownWindowNumbers: Set<Int> = []
     private var pendingSelectedTabRevealEventsByWindow: [Int: Set<TabSurfaceReactivationEvent>] = [:]
     private var pendingSelectedTabRevealWorkItemsByWindow: [Int: DispatchWorkItem] = [:]
+    private var selectedTabRevealCycleByWindow: [Int: Int] = [:]
     private var didFinishLaunching = false
     private var didPerformInitialSetup = false
     private var didStartDeferredStartupWork = false
@@ -1818,8 +1819,19 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         let windowNumber = window.windowNumber
         pendingSelectedTabRevealEventsByWindow[windowNumber, default: []].insert(event)
+        let existingCycle = selectedTabRevealCycleByWindow[windowNumber] ?? 0
+        let cycle = pendingSelectedTabRevealWorkItemsByWindow[windowNumber] == nil ? (existingCycle + 1) : existingCycle
+        if let host = overlayHosts.first(where: { $0.window == window }) {
+            let phase = host.model.renderPhase(forTabID: host.model.selectedTabID)
+            let isInteractive = host.model.selectedTab.map(host.model.isInteractive(tab:)) ?? false
+            Log.trace(
+                "selectedTabRevealCycle: queued window=\(windowNumber) cycle=\(cycle) event=\(event) phase=\(phase.rawValue) interactive=\(isInteractive) lowLatencyEligible=\(host.model.shouldHoldLowLatencyWhileInactive)"
+            )
+        }
 
         guard pendingSelectedTabRevealWorkItemsByWindow[windowNumber] == nil else { return }
+        selectedTabRevealCycleByWindow[windowNumber] = cycle
+        let activeCycle = cycle
 
         let workItem = DispatchWorkItem { [weak self, weak window] in
             guard let self, let window else { return }
@@ -1828,12 +1840,18 @@ private final class OverlayBlurView: NSVisualEffectView {
             self.pendingSelectedTabRevealWorkItemsByWindow.removeValue(forKey: windowNumber)
 
             guard let host = self.overlayHosts.first(where: { $0.window == window }) else { return }
+            let phase = host.model.renderPhase(forTabID: host.model.selectedTabID)
             let plan = TabSurfaceReactivationPolicy.plan(
                 for: events,
-                phase: host.model.renderPhase(forTabID: host.model.selectedTabID),
+                phase: phase,
                 isWindowVisible: window.isVisible,
                 isWindowMiniaturized: window.isMiniaturized,
                 isOcclusionVisible: window.occlusionState.contains(.visible)
+            )
+            let isInteractive = host.model.selectedTab.map(host.model.isInteractive(tab:)) ?? false
+            let reasonLabel = plan.reason ?? "none"
+            Log.trace(
+                "selectedTabRevealCycle: execute window=\(windowNumber) cycle=\(activeCycle) events=\(events) phase=\(phase.rawValue) interactive=\(isInteractive) lowLatencyEligible=\(host.model.shouldHoldLowLatencyWhileInactive) shouldReveal=\(plan.shouldRequestReveal) reason=\(reasonLabel)"
             )
             guard plan.shouldRequestReveal, let reason = plan.reason else { return }
             host.model.requestSelectedTabAuthoritativeReveal(reason: reason)
