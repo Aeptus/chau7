@@ -277,7 +277,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     }
 
     private func cacheRetainedFrameIfAvailable(from view: RustTerminalView) {
-        guard let snapshot = view.makeRetainedFrameImage(allowForcedSync: true) else { return }
+        guard let snapshot = view.makeRetainedFrameImage(allowForcedSync: view.requiresForcedRetainedFrameSync) else { return }
         model.lastRenderedSnapshot = snapshot
     }
 

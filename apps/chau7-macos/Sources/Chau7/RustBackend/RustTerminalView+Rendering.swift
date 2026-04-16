@@ -355,6 +355,9 @@ extension RustTerminalView {
     private func drainPTYAndProcessTerminalState(rust: RustTerminalFFI) -> Bool {
         // Safety: Check if view is being deallocated (CVDisplayLink callback protection)
         let changed = rust.poll(timeout: 0)
+        if changed {
+            retainedFrameContentVersion &+= 1
+        }
         RenderPipelineProfiler.shared.recordPoll(
             viewID: viewId,
             changed: changed
@@ -734,6 +737,7 @@ extension RustTerminalView {
         }
 
         hasRetainedFrameSourceReady = true
+        retainedFrameSourceVersion = retainedFrameContentVersion
 
         // Periodic stats logging (every 1000 syncs)
         if (fullSyncCount + partialSyncCount).isMultiple(of: 1000) {
@@ -787,6 +791,9 @@ extension RustTerminalView {
         previousCursorCol = 0
         previousCursorRow = 0
         hasRetainedFrameSourceReady = false
+        retainedFrameSourceVersion = 0
+        pendingInactiveSnapshotVersion = nil
+        pendingInactiveSnapshotNeedsForcedSync = false
         needsGridSync = true
         clearLocalEchoOverlay()
     }

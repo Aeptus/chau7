@@ -2106,8 +2106,13 @@ final class RustTerminalView: NSView {
     var livePollingActiveForProfiling: Bool { isLivePollingActive }
     private(set) var currentRenderPhase: TabRenderPhase = .hidden
     private var authoritativeRevealPending = false
-    private var inactiveSnapshotRefreshWorkItem: DispatchWorkItem?
-    private var lastInactiveSnapshotRefreshAt: CFAbsoluteTime = 0
+    var inactiveSnapshotRefreshWorkItem: DispatchWorkItem?
+    var lastInactiveSnapshotRefreshAt: CFAbsoluteTime = 0
+    var pendingInactiveSnapshotVersion: UInt64?
+    var pendingInactiveSnapshotNeedsForcedSync = false
+    var retainedFrameContentVersion: UInt64 = 0
+    var retainedFrameSourceVersion: UInt64 = 0
+    var lastInactiveRetainedFrameVersion: UInt64 = 0
     static let inactiveSnapshotRefreshMinInterval: CFAbsoluteTime = 0.25
 
     // MARK: - Properties
@@ -2221,6 +2226,10 @@ final class RustTerminalView: NSView {
     /// Unlike the static `syncCount`, this only increments when *this* tab syncs,
     /// preventing cross-tab spurious cache invalidation.
     var instanceSyncCount: UInt64 = 0
+
+    var requiresForcedRetainedFrameSync: Bool {
+        !hasRetainedFrameSourceReady || retainedFrameSourceVersion < retainedFrameContentVersion
+    }
 
     /// Selection state
     var isSelecting = false
@@ -2881,22 +2890,60 @@ final class RustTerminalView: NSView {
     }
 
     func scheduleInactiveRetainedFrameRefresh(reason: String) {
-        guard currentRenderPhase != .active else { return }
-        guard inactiveSnapshotRefreshWorkItem == nil else { return }
-
         let now = CFAbsoluteTimeGetCurrent()
-        let remainingDelay = max(0, Self.inactiveSnapshotRefreshMinInterval - (now - lastInactiveSnapshotRefreshAt))
+        let decision = InactiveRetainedFrameRefreshPolicy.decide(
+            phase: currentRenderPhase,
+            hasRetainedFrameSourceReady: hasRetainedFrameSourceReady,
+            contentVersion: retainedFrameContentVersion,
+            sourceVersion: retainedFrameSourceVersion,
+            lastRenderedVersion: lastInactiveRetainedFrameVersion,
+            pendingVersion: pendingInactiveSnapshotVersion,
+            now: now,
+            lastRefreshAt: lastInactiveSnapshotRefreshAt,
+            minInterval: Self.inactiveSnapshotRefreshMinInterval
+        )
+
+        guard let targetVersion = decision.targetVersion else { return }
+
+        switch decision.action {
+        case .skip:
+            return
+        case .updatePending:
+            pendingInactiveSnapshotVersion = targetVersion
+            pendingInactiveSnapshotNeedsForcedSync = pendingInactiveSnapshotNeedsForcedSync || decision.allowForcedSync
+            Log.trace("RustTerminalView[\(viewId)]: coalesced inactive retained frame refresh [\(reason)] -> v\(targetVersion)")
+            return
+        case .schedule:
+            pendingInactiveSnapshotVersion = targetVersion
+            pendingInactiveSnapshotNeedsForcedSync = decision.allowForcedSync
+        }
+
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.inactiveSnapshotRefreshWorkItem = nil
-            guard self.currentRenderPhase != .active else { return }
-            guard let snapshot = self.makeRetainedFrameImage(allowForcedSync: true) else { return }
+            guard self.currentRenderPhase != .active else {
+                self.pendingInactiveSnapshotVersion = nil
+                self.pendingInactiveSnapshotNeedsForcedSync = false
+                return
+            }
+
+            let targetVersion = self.pendingInactiveSnapshotVersion ?? self.retainedFrameContentVersion
+            let allowForcedSync = self.pendingInactiveSnapshotNeedsForcedSync || self.requiresForcedRetainedFrameSync
+            self.pendingInactiveSnapshotVersion = nil
+            self.pendingInactiveSnapshotNeedsForcedSync = false
+
+            guard targetVersion > self.lastInactiveRetainedFrameVersion else { return }
+            guard let snapshot = self.makeRetainedFrameImage(allowForcedSync: allowForcedSync) else { return }
+
             self.lastInactiveSnapshotRefreshAt = CFAbsoluteTimeGetCurrent()
+            self.lastInactiveRetainedFrameVersion = max(targetVersion, self.retainedFrameSourceVersion)
             self.onInactiveRetainedFrame?(snapshot)
-            Log.trace("RustTerminalView[\(self.viewId)]: refreshed inactive retained frame [\(reason)]")
+            Log.trace(
+                "RustTerminalView[\(self.viewId)]: refreshed inactive retained frame [\(reason)] v\(self.lastInactiveRetainedFrameVersion) forcedSync=\(allowForcedSync)"
+            )
         }
         inactiveSnapshotRefreshWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + remainingDelay, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + decision.delay, execute: workItem)
     }
 
     func consumeAuthoritativeRevealPending() -> Bool {
