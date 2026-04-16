@@ -800,7 +800,7 @@ extension OverlayTabsModel {
                         )
                     }
                     self?.updateSuspensionState()
-                    self?.syncSelectedTerminalPresentation(reason: "restore_bootstrap_phase")
+                    self?.requestSelectedTabAuthoritativeReveal(reason: "restore_bootstrap_phase")
                 }
             }
         }

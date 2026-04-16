@@ -2093,8 +2093,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         host.model.requestSelectedTabAuthoritativeReveal(reason: "startup_prepare")
         if StartupWindowPresentationPolicy.shouldRevealWindowImmediately(
             isStartupRestoreActive: StartupRestoreCoordinator.shared.isActive,
-            isSelectedSurfaceLivePresentable: host.model.selectedSurfacePresentation.isLivePresentable,
-            hasSelectedSurfaceSnapshot: host.model.selectedSurfacePresentation.hasSnapshot
+            isSelectedSurfaceLivePresentable: host.model.selectedSurfacePresentation.isLivePresentable
         ) {
             revealPreparedStartupOverlayWindow(
                 host,

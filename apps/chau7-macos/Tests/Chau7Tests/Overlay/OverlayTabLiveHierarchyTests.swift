@@ -122,7 +122,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertEqual(model.tabs[0].visibleSnapshot?.size.height, snapshot.size.height)
     }
 
-    func testSelectingTabUsesSessionRetainedFrameWhenTabCacheIsEmpty() {
+    func testSelectingTabIgnoresSessionRetainedFrameAndAwaitsLiveReveal() {
         model.newTab(selectNewTab: false)
         let targetID = model.tabs[1].id
         model.tabs[1].session?.lastRenderedSnapshot = makeSnapshot()
@@ -133,8 +133,9 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertEqual(model.selectedTabID, targetID)
         XCTAssertFalse(
             model.isTerminalReady,
-            "Selecting a tab with only a session-retained frame should still use the snapshot-first handoff"
+            "Selecting a tab should wait for a fresh live frame instead of presenting a retained snapshot"
         )
+        XCTAssertEqual(model.selectedSurfacePresentation.phase, .awaitingLiveFrame)
     }
 
     func testSelectingTabArmsVisibleFrameReadyHandoffForTargetSession() {
@@ -146,7 +147,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
 
         XCTAssertTrue(
             model.tabs[1].session?.awaitingVisibleFrameReady == true,
-            "Snapshot-backed tab switches should wait for the selected session's first live frame"
+            "Selected tab switches should wait for the selected session's first live frame"
         )
     }
 
@@ -161,7 +162,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         model.tabs[1].session?.notifyVisibleFrameReadyIfNeeded()
         XCTAssertFalse(
             model.isTerminalReady,
-            "The snapshot should stay visible for one compositor pass after the first frame is presented"
+            "The repaint cover should stay visible for one compositor pass after the first frame is presented"
         )
         drainMainQueue()
 
@@ -188,7 +189,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertNil(model.tabs[1].session?.lastRenderedSnapshot)
     }
 
-    func testSelectNextTabUsesSnapshotBackedHandoffPath() {
+    func testSelectNextTabUsesLiveRevealHandoffPath() {
         model.newTab(selectNewTab: false)
         let targetID = model.tabs[1].id
         model.tabs[1].session?.lastRenderedSnapshot = makeSnapshot()
@@ -200,7 +201,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertTrue(model.tabs[1].session?.awaitingVisibleFrameReady == true)
     }
 
-    func testSelectingColdTabUsesRetainedSessionSnapshotForHandoff() {
+    func testSelectingColdTabDoesNotPresentRetainedSessionSnapshotDuringHandoff() {
         model.newTab(selectNewTab: false)
         let targetID = model.tabs[1].id
         model.tabs[1].cachedSnapshot = nil
@@ -210,9 +211,10 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
 
         XCTAssertNotNil(
             model.tabs[1].visibleSnapshot,
-            "Selecting a cold tab should use its retained session snapshot during the handoff"
+            "Retained snapshots may still exist for persistence, but the selected surface should not present them during handoff"
         )
         XCTAssertFalse(model.isTerminalReady)
+        XCTAssertEqual(model.selectedSurfacePresentation.phase, .awaitingLiveFrame)
     }
 
     func testVisibleSnapshotPrefersFocusedDisplaySessionFrame() {
@@ -283,7 +285,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         model.tabs[0].session?.lastRenderedSnapshot = nil
         focusedSession.lastRenderedSnapshot = snapshot
 
-        model.syncSelectedTerminalPresentation(reason: "test_split_visible_frame")
+        model.requestSelectedTabAuthoritativeReveal(reason: "test_split_visible_frame")
 
         XCTAssertFalse(model.isTerminalReady)
         XCTAssertTrue(focusedSession.awaitingVisibleFrameReady)

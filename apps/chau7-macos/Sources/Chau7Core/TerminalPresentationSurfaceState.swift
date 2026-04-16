@@ -2,7 +2,7 @@ import Foundation
 
 public enum TerminalPresentationPhase: String, Equatable, Sendable {
     case live
-    case showingSnapshot
+    case awaitingLiveFrame
 }
 
 public struct TerminalPresentationRevealCompletion: Equatable, Sendable {
@@ -40,27 +40,22 @@ public struct TerminalPresentationSurfaceState: Equatable, Sendable {
         phase == .live
     }
 
-    public var shouldShowSnapshot: Bool {
-        phase == .showingSnapshot
-    }
-
     @discardableResult
     public mutating func beginReveal(
-        hasSnapshot: Bool,
         shouldAwaitVisibleFrame: Bool,
         now: TimeInterval
     ) -> Bool {
         firstFramePresentedAt = nil
         awaitingVisibleFrameReady = shouldAwaitVisibleFrame
 
-        guard hasSnapshot else {
+        guard shouldAwaitVisibleFrame else {
             phase = .live
             revealStartedAt = nil
             return false
         }
 
         generation &+= 1
-        phase = .showingSnapshot
+        phase = .awaitingLiveFrame
         revealStartedAt = now
         return true
     }
@@ -77,19 +72,19 @@ public struct TerminalPresentationSurfaceState: Equatable, Sendable {
     public mutating func noteVisibleFramePresented(now: TimeInterval) -> Bool {
         guard awaitingVisibleFrameReady else { return false }
         awaitingVisibleFrameReady = false
-        if phase == .showingSnapshot, firstFramePresentedAt == nil {
+        if phase == .awaitingLiveFrame, firstFramePresentedAt == nil {
             firstFramePresentedAt = now
         }
         return true
     }
 
     public mutating func commitLiveReveal(now: TimeInterval) -> TerminalPresentationRevealCompletion? {
-        guard phase == .showingSnapshot else { return nil }
+        guard phase == .awaitingLiveFrame else { return nil }
         return finishReveal(now: now)
     }
 
     public mutating func forceLiveReveal(now: TimeInterval) -> TerminalPresentationRevealCompletion? {
-        guard phase == .showingSnapshot else {
+        guard phase == .awaitingLiveFrame else {
             awaitingVisibleFrameReady = false
             return nil
         }

@@ -290,12 +290,10 @@ final class TerminalSessionModel {
     }
 
     func beginPresentationReveal(
-        hasSnapshot: Bool,
         shouldAwaitVisibleFrame: Bool,
         now: TimeInterval
     ) -> Bool {
         presentationSurfaceState.beginReveal(
-            hasSnapshot: hasSnapshot,
             shouldAwaitVisibleFrame: shouldAwaitVisibleFrame,
             now: now
         )

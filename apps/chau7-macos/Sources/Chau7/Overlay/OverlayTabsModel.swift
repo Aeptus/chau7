@@ -565,25 +565,15 @@ final class OverlayTabsModel {
 
     /// Previous tab index for directional animation
     var previousTabIndex = 0
-    /// Tab kept alive briefly after selection changes so the switch can hand off
-    /// from a retained frame without keeping nearby tabs permanently attached.
+    /// Tab kept alive briefly after selection changes so the renderer hierarchy
+    /// is not torn down mid-switch.
     var previousLiveHierarchyTabID: UUID?
     struct SelectedSurfacePresentation: Equatable {
         let phase: TerminalPresentationPhase
         let isAwaitingVisibleFrame: Bool
-        let hasSnapshot: Bool
 
         var isLivePresentable: Bool {
             phase == .live
-        }
-
-        var shouldShowSnapshot: Bool {
-            phase == .showingSnapshot && hasSnapshot
-        }
-
-        func isPresentableForStartup(isStartupRestoreActive: Bool) -> Bool {
-            guard isStartupRestoreActive else { return true }
-            return isLivePresentable || hasSnapshot
         }
     }
 
@@ -592,15 +582,13 @@ final class OverlayTabsModel {
               let session = selectedPresentationSession(for: tab) else {
             return SelectedSurfacePresentation(
                 phase: .live,
-                isAwaitingVisibleFrame: false,
-                hasSnapshot: false
+                isAwaitingVisibleFrame: false
             )
         }
         let state = session.presentationSurfaceState
         return SelectedSurfacePresentation(
             phase: state.phase,
-            isAwaitingVisibleFrame: state.awaitingVisibleFrameReady,
-            hasSnapshot: tab.visibleSnapshot != nil
+            isAwaitingVisibleFrame: state.awaitingVisibleFrameReady
         )
     }
 
@@ -613,8 +601,11 @@ final class OverlayTabsModel {
     var shouldShowStartupLoadingCover: Bool {
         usesStartupLoadingCover && !selectedSurfacePresentation.isLivePresentable
     }
+
+    var shouldShowSelectedSurfaceLiveRepaintCover: Bool {
+        !usesStartupLoadingCover && !selectedSurfacePresentation.isLivePresentable
+    }
     @ObservationIgnored var terminalReadyCommitWorkItem: DispatchWorkItem?
-    @ObservationIgnored var terminalReadyFallbackWorkItem: DispatchWorkItem?
     @ObservationIgnored static let terminalReadyCompositingDelay: TimeInterval = 1.0 / 60.0
     /// Set of tab IDs currently being pre-warmed (on hover)
     @ObservationIgnored var prewarmingTabIDs: Set<UUID> = []
@@ -844,7 +835,7 @@ final class OverlayTabsModel {
                     "Deferred restore queued for \(deferredRestoreTabOrder.count) background tab(s); selectedTab=\(selectedTabID)"
                 )
             }
-            syncSelectedTerminalPresentation(reason: "init_restore")
+            requestSelectedTabAuthoritativeReveal(reason: "init_restore")
         }
 
         // Setup task lifecycle observers (v1.1)
@@ -933,11 +924,12 @@ final class OverlayTabsModel {
             let isSelectedSession = self.selectedPresentationSession(for: selected) === session
             guard isSelectedSession else { return }
             let state = session.presentationSurfaceState
-            if selected.visibleSnapshot != nil,
-               let startedAt = state.revealStartedAt,
+            if let startedAt = state.revealStartedAt,
                let presentedAt = state.firstFramePresentedAt {
                 let elapsedMs = Int((presentedAt - startedAt) * 1000)
                 Log.trace("tab handoff: first frame presented for \(selected.id) after \(elapsedMs)ms")
+            }
+            if state.revealStartedAt != nil {
                 self.scheduleSelectedTerminalPresentationCommit(
                     reason: "selected_live_frame_ready",
                     delay: Self.terminalReadyCompositingDelay
@@ -955,7 +947,6 @@ final class OverlayTabsModel {
         if let visibleFrameReadyObserver { NotificationCenter.default.removeObserver(visibleFrameReadyObserver) }
         previousLiveHierarchyReleaseWorkItem?.cancel()
         terminalReadyCommitWorkItem?.cancel()
-        terminalReadyFallbackWorkItem?.cancel()
     }
 
     // MARK: - Tab State Persistence
@@ -967,10 +958,11 @@ final class OverlayTabsModel {
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
             guard self.selectedTabID == expectedTabID else { return }
-            guard self.selectedPresentationSession(for: self.selectedTab)?.presentationSurfaceState.generation == expectedGeneration else {
+            guard self.selectedPresentationSession(for: self.selectedTab)?.presentationSurfaceState.generation == expectedGeneration,
+                  let selectedTab = self.selectedTab else {
                 return
             }
-            self.syncSelectedTerminalPresentation(reason: reason)
+            self.completeSelectedTabRevealIfNeeded(for: selectedTab, reason: reason, force: false)
         }
         terminalReadyCommitWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
@@ -979,8 +971,6 @@ final class OverlayTabsModel {
     private func resetSelectedTerminalRevealScheduling() {
         terminalReadyCommitWorkItem?.cancel()
         terminalReadyCommitWorkItem = nil
-        terminalReadyFallbackWorkItem?.cancel()
-        terminalReadyFallbackWorkItem = nil
     }
 
     private func logSelectedTabRevealCompletion(
@@ -1027,65 +1017,6 @@ final class OverlayTabsModel {
         let now = CFAbsoluteTimeGetCurrent()
         _ = session.forcePresentationLive(now: now)
         session.cancelVisibleFrameReadyHandoff()
-    }
-
-    func syncSelectedTerminalPresentation(reason: String) {
-        for index in tabs.indices where tabs[index].restorePreviewSnapshot != nil {
-            let phase = tabs[index].displaySession?.restoreBootstrapPhase ?? .inactive
-            if phase != .replaying {
-                StartupRestoreCoordinator.shared.noteRestorePreviewDiscarded(
-                    tabID: tabs[index].id,
-                    windowNumber: overlayWindow?.windowNumber,
-                    reason: "\(reason)_phase_\(phase.rawValue)"
-                )
-                tabs[index].restorePreviewSnapshot = nil
-            }
-        }
-
-        guard let tab = selectedTab else {
-            resetSelectedTerminalRevealScheduling()
-            return
-        }
-
-        guard let session = selectedPresentationSession(for: tab) else { return }
-        let shouldShowRestorePreview = tab.restorePreviewSnapshot != nil
-            && tab.displaySession?.isRestoreBootstrapPending == true
-        let shouldAwaitVisibleFrame = shouldShowRestorePreview || StartupRestoreCoordinator.shared.isActive
-        if shouldAwaitVisibleFrame {
-            session.armVisibleFrameReadyHandoff()
-        } else {
-            session.cancelVisibleFrameReadyHandoff()
-        }
-
-        let presentation = selectedSurfacePresentation
-        if presentation.shouldShowSnapshot == shouldShowRestorePreview,
-           presentation.isAwaitingVisibleFrame == shouldAwaitVisibleFrame {
-            return
-        }
-
-        let now = CFAbsoluteTimeGetCurrent()
-        if shouldShowRestorePreview {
-            _ = session.beginPresentationReveal(
-                hasSnapshot: tab.visibleSnapshot != nil,
-                shouldAwaitVisibleFrame: shouldAwaitVisibleFrame,
-                now: now
-            )
-        } else {
-            completeSelectedTabRevealIfNeeded(for: tab, reason: reason, force: true)
-            _ = session.beginPresentationReveal(
-                hasSnapshot: false,
-                shouldAwaitVisibleFrame: shouldAwaitVisibleFrame,
-                now: now
-            )
-        }
-        if shouldShowRestorePreview {
-            StartupRestoreCoordinator.shared.noteRestorePreviewShown(
-                tabID: tab.id,
-                windowNumber: overlayWindow?.windowNumber,
-                reason: reason
-            )
-        }
-        Log.trace("syncSelectedTerminalPresentation[\(reason)]: tab=\(tab.id) preview=\(shouldShowRestorePreview)")
     }
 
     func noteStartupSelectedTabLiveFrameIfNeeded(reason: String) {
@@ -2115,27 +2046,7 @@ final class OverlayTabsModel {
         // 1. Record previous tab index for directional animation
         let oldIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
 
-        // 2. Capture the outgoing tab's last frame so inactive tabs can freeze
-        //    visually without keeping their renderer hot.
-        captureCurrentTabSnapshot()
-        let targetSession = tabs.first(where: { $0.id == id })?.displaySession
-            ?? tabs.first(where: { $0.id == id })?.session
-        let shouldShowTransitionSnapshot = tabs.first(where: { $0.id == id })?.visibleSnapshot != nil
         resetSelectedTerminalRevealScheduling()
-        if shouldShowTransitionSnapshot {
-            _ = targetSession?.beginPresentationReveal(
-                hasSnapshot: true,
-                shouldAwaitVisibleFrame: true,
-                now: CFAbsoluteTimeGetCurrent()
-            )
-            Log.trace("tab handoff start: tab=\(id) generation=\(targetSession?.presentationSurfaceState.generation ?? 0)")
-        } else {
-            _ = targetSession?.beginPresentationReveal(
-                hasSnapshot: false,
-                shouldAwaitVisibleFrame: false,
-                now: CFAbsoluteTimeGetCurrent()
-            )
-        }
 
         // 4. Batch all state changes to minimize SwiftUI diff passes
         // Using direct assignment is faster than withTransaction for simple cases
@@ -2178,28 +2089,11 @@ final class OverlayTabsModel {
             }
         }
 
-        // 6. Mark terminal as ready. When suspension is off, set immediately (no
-        //    snapshot to display). When a retained frame exists, wait for the
-        //    selected terminal's first live sync and keep a timeout only as a
-        //    safety valve so the tab cannot remain hidden forever.
+        // 6. Trigger one authoritative live repaint for the newly selected tab.
+        //    The selected surface stays covered until the first real frame is
+        //    presented instead of handing off through a retained bitmap.
         schedulePreviousLiveHierarchyRelease()
-        if shouldShowTransitionSnapshot {
-            let expectedGeneration = targetSession?.presentationSurfaceState.generation
-            let item = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                guard self.selectedTabID == id else { return }
-                guard self.selectedPresentationSession(for: self.selectedTab)?.presentationSurfaceState.generation == expectedGeneration else {
-                    return
-                }
-                guard let targetTab = self.tabs.first(where: { $0.id == id }) else { return }
-                self.completeSelectedTabRevealIfNeeded(for: targetTab, reason: "select_tab_fallback", force: true)
-                self.syncSelectedTerminalPresentation(reason: "select_tab_fallback")
-            }
-            terminalReadyFallbackWorkItem = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: item)
-        } else {
-            syncSelectedTerminalPresentation(reason: "select_tab")
-        }
+        requestSelectedTabAuthoritativeReveal(reason: "select_tab")
     }
 
     /// Handles a toolbar tab click. This dismisses the repo dashboard overlay
@@ -2229,7 +2123,7 @@ final class OverlayTabsModel {
         )
     }
 
-    // MARK: - Tab Switch Optimization: Snapshot Capture
+    // MARK: - Retained Frame Bookkeeping
 
     func cacheRetainedSnapshot(_ snapshot: NSImage, forTabAt index: Int) {
         guard tabs.indices.contains(index) else { return }
@@ -2244,37 +2138,6 @@ final class OverlayTabsModel {
         for session in tabs[index].splitController.root.allSessions {
             session.lastRenderedSnapshot = nil
         }
-    }
-
-    /// Captures a screenshot of the current terminal view for instant display during tab switch
-    func captureCurrentTabSnapshot() {
-        guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else {
-            return
-        }
-
-        let snapshotSession = tabs[currentIndex].displaySession ?? tabs[currentIndex].session
-        if let terminalView = snapshotSession?.existingRustTerminalView,
-           let image = terminalView.makeRetainedFrameImage() {
-            cacheRetainedSnapshot(image, forTabAt: currentIndex)
-        } else if let cached = snapshotSession?.lastRenderedSnapshot ?? tabs[currentIndex].session?.lastRenderedSnapshot {
-            // View is not in the hierarchy (distant-tab optimization removed it),
-            // but we have a previously cached frame from the session.
-            tabs[currentIndex].cachedSnapshot = cached
-            Log.trace("snapshot: used session-cached frame for tab \(selectedTabID)")
-        } else {
-            logVisualState(reason: "snapshot: skipped (no terminal view, no cached frame)")
-            return
-        }
-
-        // Also capture cursor position and prompt for cursor-first rendering
-        if let session = snapshotSession {
-            tabs[currentIndex].lastPromptText = session.displayPath()
-            // Cursor position would need terminal view support - using placeholder
-            tabs[currentIndex].lastCursorPosition = CGPoint(x: 50, y: 20)
-        }
-
-        // Memory optimization: clear snapshots for distant tabs (keep only ± 2)
-        cleanupDistantSnapshots(currentIndex: currentIndex)
     }
 
     /// Releases transient session-owned retained frames for distant tabs while
@@ -2695,7 +2558,10 @@ final class OverlayTabsModel {
         }
 
         let selectedDecision = renderLifecycleDecision(for: selectedTab)
-        session.armVisibleFrameReadyHandoff()
+        _ = session.beginPresentationReveal(
+            shouldAwaitVisibleFrame: true,
+            now: CFAbsoluteTimeGetCurrent()
+        )
 
         guard let rustView = session.existingRustTerminalView else {
             Log.info("requestSelectedTabAuthoritativeReveal[\(reason)]: armed visible-frame handoff before Rust view was attached for tab \(selectedTabID)")

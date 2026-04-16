@@ -1460,21 +1460,10 @@ struct Chau7OverlayView: View {
 
     private var terminalStack: some View {
         ZStack(alignment: .top) {
-
-            // MARK: - Tab Switch Optimization: Snapshot Layer (shows instantly)
-
-            // This displays a cached screenshot while the real terminal renders
-            ForEach(overlayModel.tabs) { tab in
-                let isSelected = tab.id == overlayModel.selectedTabID
-                if isSelected,
-                   overlayModel.selectedSurfacePresentation.shouldShowSnapshot,
-                   let snapshot = tab.visibleSnapshot {
-                    // Show snapshot instantly while terminal renders
-                    Image(nsImage: snapshot)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .zIndex(2) // Above terminal but below overlays
-                }
+            if overlayModel.shouldShowSelectedSurfaceLiveRepaintCover {
+                Color.black
+                    .ignoresSafeArea()
+                    .zIndex(2)
             }
 
             // MARK: - Shell Loading Bar
@@ -1497,8 +1486,8 @@ struct Chau7OverlayView: View {
             // MARK: - Tab Switch Optimization: Lazy Tab Loading + Directional Motion
 
             // Keep only the selected tab live by default. A just-unselected tab
-            // stays attached for one short handoff window so snapshot-backed tab
-            // switches still feel instant without keeping neighbors hot.
+            // stays attached for one short handoff window so the renderer
+            // hierarchy does not churn during a rapid selection change.
             // All other tabs use lightweight placeholders while their shell state
             // continues via the retained Rust terminal view on the session model.
             ForEach(Array(overlayModel.tabs.enumerated()), id: \.element.id) { index, tab in
@@ -1509,10 +1498,9 @@ struct Chau7OverlayView: View {
                 let direction = slideDirection(for: tab, isSelected: isSelected)
 
                 if keepLiveHierarchy {
-                    // Full terminal view for the selected tab and short handoff tab
-                    // Keep the selected live surface composited underneath any
-                    // retained snapshot so tab switches behave like a reveal
-                    // instead of exposing the grey container background.
+                    // Full terminal view for the selected tab and short handoff tab.
+                    // A plain cover sits above the selected surface until the
+                    // first authoritative live frame is presented.
                     SplitPaneView(controller: tab.splitController, renderPhase: renderPhase, isInteractive: isInteractive)
                         .opacity(isSelected ? 1 : 0)
                         .offset(x: isSelected ? 0 : (30 * direction)) // Subtle slide effect
