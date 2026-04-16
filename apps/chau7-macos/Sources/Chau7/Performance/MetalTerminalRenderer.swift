@@ -76,6 +76,13 @@ final class MetalTerminalRenderer: NSObject {
         let cellSpan: Int // Number of terminal cells this ligature spans
     }
 
+    private struct CursorRenderState: Equatable {
+        let row: Int
+        let col: Int
+        let style: String
+        let color: SIMD4<Float>
+    }
+
     private enum LigatureCacheEntry {
         case miss
         case hit(LigatureInfo)
@@ -167,6 +174,9 @@ final class MetalTerminalRenderer: NSObject {
     var textBlinkPhase = true
     /// Whether any cell in the current frame has the blink flag
     var hasBlinkingCells = false
+    private var rowHasBlinkingCells: [Bool] = []
+    private var blinkingRowCount = 0
+    private var lastCursorRenderState: CursorRenderState?
 
     /// Uniforms — include blinkVisible and scaleFactor for the fragment shader
     struct Uniforms {
@@ -773,6 +783,8 @@ final class MetalTerminalRenderer: NSObject {
         cells: UnsafeBufferPointer<TerminalCell>,
         rows: Int,
         cols: Int,
+        dirtyRows: IndexSet,
+        fullRefresh: Bool,
         to drawable: CAMetalDrawable,
         viewportSize: CGSize
     ) {
@@ -783,7 +795,14 @@ final class MetalTerminalRenderer: NSObject {
 
         // Update instance buffer (may trigger on-demand glyph rasterization)
         let instanceStartedAt = CFAbsoluteTimeGetCurrent()
-        updateInstanceBuffer(cells: cells, count: cellCount, cols: cols)
+        updateInstanceBuffer(
+            cells: cells,
+            count: cellCount,
+            rows: rows,
+            cols: cols,
+            dirtyRows: dirtyRows,
+            fullRefresh: fullRefresh
+        )
         let instanceDurationMs = (CFAbsoluteTimeGetCurrent() - instanceStartedAt) * 1000.0
         FeatureProfiler.shared.record(feature: .metalInstanceBuffer, durationMs: instanceDurationMs)
 
@@ -821,7 +840,14 @@ final class MetalTerminalRenderer: NSObject {
         FeatureProfiler.shared.record(feature: .metalDrawStage, durationMs: renderDurationMs)
     }
 
-    private func updateInstanceBuffer(cells: UnsafeBufferPointer<TerminalCell>, count: Int, cols: Int) {
+    private func updateInstanceBuffer(
+        cells: UnsafeBufferPointer<TerminalCell>,
+        count: Int,
+        rows: Int,
+        cols: Int,
+        dirtyRows: IndexSet,
+        fullRefresh: Bool
+    ) {
         let startingGlyphLookups = glyphLookupCount
         let startingGlyphMisses = glyphCacheMisses
         let instances = instanceBuffer.contents().bindMemory(to: CellInstance.self, capacity: count)
@@ -829,88 +855,98 @@ final class MetalTerminalRenderer: NSObject {
         let cw = Float(cellSize.width / scaleFactor)
         let ch = Float(cellSize.height / scaleFactor)
 
-        var foundBlinkingCells = false
-        var ligatureSkip = 0 // Remaining cells in current ligature
-        var ligatureRect = CGRect.zero // Atlas rect of current ligature
-        var ligatureSpan = 0 // Total cell span of current ligature
-        var ligatureSlice = 0 // Next slice index for continuation cells
-        var boxDrawCount = 0 // Diagnostic counter
+        let renderableRows = cols > 0 ? min(rows, (count + cols - 1) / cols) : 0
+        let hasRowMetadata = rowHasBlinkingCells.count == renderableRows
+        if !hasRowMetadata {
+            rowHasBlinkingCells = Array(repeating: false, count: renderableRows)
+            blinkingRowCount = 0
+        }
+
+        let currentCursorState = currentCursorRenderState(count: count, cols: cols)
+        let rowsToUpdate = MetalInstanceUpdatePlanner.rowsToRefresh(
+            totalRows: renderableRows,
+            dirtyRows: dirtyRows,
+            fullRefresh: fullRefresh || !hasRowMetadata,
+            previousCursorRow: lastCursorRenderState?.row,
+            currentCursorRow: currentCursorState?.row,
+            cursorNeedsRefresh: lastCursorRenderState != currentCursorState
+        )
+
+        var updatedCellCount = 0
+        var boxDrawCount = 0
         let traceBoxDraw = Log.isTraceEnabled && diagFrameCounter.isMultiple(of: 600)
 
-        for i in 0 ..< count {
-            let cell = cells[i]
-            let row = i / cols
-            let col = i % cols
+        for row in rowsToUpdate {
+            let rowStart = row * cols
+            let rowCellCount = min(cols, count - rowStart)
+            guard rowCellCount > 0 else { continue }
 
-            let isBold = (cell.flags & 1) != 0
-            let isItalic = (cell.flags & 2) != 0
+            var rowHasBlinking = false
+            var ligatureSkip = 0
+            var ligatureRect = CGRect.zero
+            var ligatureSpan = 0
+            var ligatureSlice = 0
 
-            // Track if any cell has the blink flag (bit 4)
-            if (cell.flags & 16) != 0 {
-                foundBlinkingCells = true
-            }
+            for col in 0 ..< rowCellCount {
+                let index = rowStart + col
+                let cell = cells[index]
+                let isBold = (cell.flags & 1) != 0
+                let isItalic = (cell.flags & 2) != 0
 
-            // Count box-drawing chars reaching Metal (diagnostic details trace-only)
-            if cell.character >= 0x2500, cell.character <= 0x257F {
-                boxDrawCount += 1
-                if traceBoxDraw, cell.character != 0x2500 || boxDrawCount == 1, boxDrawCount <= 3 {
-                    let fg = cell.foregroundColor
-                    let bg = cell.backgroundColor
-                    let ch = Unicode.Scalar(cell.character).map { String(Character($0)) } ?? "?"
-                    Log
-                        .trace(
+                if (cell.flags & 16) != 0 {
+                    rowHasBlinking = true
+                }
+
+                if cell.character >= 0x2500, cell.character <= 0x257F {
+                    boxDrawCount += 1
+                    if traceBoxDraw, cell.character != 0x2500 || boxDrawCount == 1, boxDrawCount <= 3 {
+                        let fg = cell.foregroundColor
+                        let bg = cell.backgroundColor
+                        let ch = Unicode.Scalar(cell.character).map { String(Character($0)) } ?? "?"
+                        Log.trace(
                             "[DIAG-SWIFT] box-draw: '\(ch)' U+\(String(cell.character, radix: 16)) at (\(row),\(col)) fg=(\(String(format: "%.2f", fg.x)),\(String(format: "%.2f", fg.y)),\(String(format: "%.2f", fg.z))) bg=(\(String(format: "%.2f", bg.x)),\(String(format: "%.2f", bg.y)),\(String(format: "%.2f", bg.z)))"
                         )
+                    }
                 }
-            }
 
-            // Ligature lookahead: try to form multi-char ligatures from consecutive cells.
-            // When a ligature is found, its atlas texture is split across consecutive cells
-            // (each cell gets its horizontal slice) so no shader changes are needed.
-            var texCoord: SIMD4<Float> = SIMD4(0, 0, 0, 0)
+                var texCoord: SIMD4<Float> = SIMD4(0, 0, 0, 0)
 
-            if ligaturesEnabled, cell.character >= 0x21, cell.character < 0x7F,
-               ligatureSkip <= 0 {
-                let ligInfo = tryLigature(
-                    cells: cells,
-                    index: i,
-                    count: count,
-                    cols: cols,
-                    bold: isBold,
-                    italic: isItalic
-                )
-                if let lig = ligInfo {
-                    // First cell gets the left slice of the ligature texture.
-                    // Subsequent cells (via ligatureSkip) get their slices below.
-                    let sliceWidth = Float(lig.textureRect.width) / Float(lig.cellSpan)
-                    texCoord = SIMD4(
-                        Float(lig.textureRect.origin.x),
-                        Float(lig.textureRect.origin.y),
-                        sliceWidth,
-                        Float(lig.textureRect.height)
+                if ligaturesEnabled, cell.character >= 0x21, cell.character < 0x7F, ligatureSkip <= 0 {
+                    let ligInfo = tryLigature(
+                        cells: cells,
+                        index: index,
+                        count: count,
+                        cols: cols,
+                        bold: isBold,
+                        italic: isItalic
                     )
-                    ligatureSkip = lig.cellSpan - 1
-                    ligatureRect = lig.textureRect
-                    ligatureSpan = lig.cellSpan
-                    ligatureSlice = 1 // next cell gets slice index 1
+                    if let lig = ligInfo {
+                        let sliceWidth = Float(lig.textureRect.width) / Float(lig.cellSpan)
+                        texCoord = SIMD4(
+                            Float(lig.textureRect.origin.x),
+                            Float(lig.textureRect.origin.y),
+                            sliceWidth,
+                            Float(lig.textureRect.height)
+                        )
+                        ligatureSkip = lig.cellSpan - 1
+                        ligatureRect = lig.textureRect
+                        ligatureSpan = lig.cellSpan
+                        ligatureSlice = 1
+                    }
                 }
-            }
 
-            if ligatureSkip > 0, texCoord == SIMD4(0, 0, 0, 0) {
-                // This cell is a continuation of a ligature — render its slice
-                let sliceWidth = Float(ligatureRect.width) / Float(ligatureSpan)
-                texCoord = SIMD4(
-                    Float(ligatureRect.origin.x) + sliceWidth * Float(ligatureSlice),
-                    Float(ligatureRect.origin.y),
-                    sliceWidth,
-                    Float(ligatureRect.height)
-                )
-                ligatureSlice += 1
-                ligatureSkip -= 1
-            } else if texCoord == SIMD4(0, 0, 0, 0) {
-                // Normal single-glyph path
-                let glyphInfo = lookupGlyph(codePoint: cell.character, bold: isBold, italic: isItalic)
-                if let info = glyphInfo {
+                if ligatureSkip > 0, texCoord == SIMD4(0, 0, 0, 0) {
+                    let sliceWidth = Float(ligatureRect.width) / Float(ligatureSpan)
+                    texCoord = SIMD4(
+                        Float(ligatureRect.origin.x) + sliceWidth * Float(ligatureSlice),
+                        Float(ligatureRect.origin.y),
+                        sliceWidth,
+                        Float(ligatureRect.height)
+                    )
+                    ligatureSlice += 1
+                    ligatureSkip -= 1
+                } else if texCoord == SIMD4(0, 0, 0, 0),
+                          let info = lookupGlyph(codePoint: cell.character, bold: isBold, italic: isItalic) {
                     texCoord = SIMD4(
                         Float(info.textureRect.origin.x),
                         Float(info.textureRect.origin.y),
@@ -918,57 +954,86 @@ final class MetalTerminalRenderer: NSObject {
                         Float(info.textureRect.height)
                     )
                 }
+
+                instances[index] = CellInstance(
+                    position: SIMD2(Float(col) * cw, Float(row) * ch),
+                    texCoord: texCoord,
+                    foreground: cell.foregroundColor,
+                    background: cell.backgroundColor,
+                    flags: cell.flags
+                )
             }
 
-            instances[i] = CellInstance(
-                position: SIMD2(Float(col) * cw, Float(row) * ch),
-                texCoord: texCoord,
-                foreground: cell.foregroundColor,
-                background: cell.backgroundColor,
-                flags: cell.flags
-            )
+            if rowHasBlinkingCells[row] != rowHasBlinking {
+                blinkingRowCount += rowHasBlinking ? 1 : -1
+                rowHasBlinkingCells[row] = rowHasBlinking
+            }
+
+            updatedCellCount += rowCellCount
         }
 
-        hasBlinkingCells = foundBlinkingCells
+        hasBlinkingCells = blinkingRowCount > 0
 
-        // Diagnostic: log box-drawing count (trace-only, throttled to ~1/sec at 60fps)
         if boxDrawCount > 0 {
             diagFrameCounter += 1
             if Log.isTraceEnabled, diagFrameCounter % 300 == 1 {
-                Log.trace("[DIAG-SWIFT] updateInstanceBuffer: \(boxDrawCount) box-drawing cells in frame (\(count) total cells, \(cols) cols)")
+                Log.trace(
+                    "[DIAG-SWIFT] updateInstanceBuffer: \(boxDrawCount) box-drawing cells in refreshed rows (\(updatedCellCount) updated cells, \(count) total cells, \(cols) cols)"
+                )
             }
         }
 
-        // Cursor: overwrite the cursor cell's flags to signal the shader
-        // Only show cursor when blink phase is on (or blink is disabled)
-        let showCursor = cursorVisible && (!cursorBlinkEnabled || cursorBlinkPhase)
-        if showCursor, cols > 0 {
-            let cursorIndex = cursorRow * cols + cursorCol
-            if cursorIndex >= 0, cursorIndex < count {
-                // Encode cursor type in upper bits: bit 5=cursor present, bits 6-7=style
-                var flags = instances[cursorIndex].flags | (1 << 5) // cursor present
-                switch cursorStyle {
-                case "underline": flags |= (1 << 6)
-                case "bar": flags |= (2 << 6)
-                default: break // block = 0 in bits 6-7
-                }
-                instances[cursorIndex].flags = flags
-                // Use cursor color for the foreground in cursor mode
-                instances[cursorIndex].foreground = cursorColor
-            }
-        }
+        applyCursor(to: instances, count: count, cols: cols, cursorState: currentCursorState)
+        lastCursorRenderState = currentCursorState
 
         let frameGlyphLookups = glyphLookupCount - startingGlyphLookups
         let frameGlyphMisses = glyphCacheMisses - startingGlyphMisses
         RenderPipelineProfiler.shared.recordInstanceBuffer(
-            cells: count,
-            bufferBytes: instanceBuffer.length,
+            cells: updatedCellCount,
+            bufferBytes: updatedCellCount * MemoryLayout<CellInstance>.stride,
             saturated: cells.count > maxCells,
             glyphLookups: frameGlyphLookups,
             glyphMisses: frameGlyphMisses,
             glyphCacheSize: glyphCache.count,
             ligatureCacheSize: ligatureCache.count
         )
+    }
+
+    private func currentCursorRenderState(count: Int, cols: Int) -> CursorRenderState? {
+        guard cols > 0 else { return nil }
+        let showCursor = cursorVisible && (!cursorBlinkEnabled || cursorBlinkPhase)
+        guard showCursor else { return nil }
+        let cursorIndex = cursorRow * cols + cursorCol
+        guard cursorIndex >= 0, cursorIndex < count else { return nil }
+        return CursorRenderState(
+            row: cursorRow,
+            col: cursorCol,
+            style: cursorStyle,
+            color: cursorColor
+        )
+    }
+
+    private func applyCursor(
+        to instances: UnsafeMutablePointer<CellInstance>,
+        count: Int,
+        cols: Int,
+        cursorState: CursorRenderState?
+    ) {
+        guard let cursorState, cols > 0 else { return }
+        let cursorIndex = cursorState.row * cols + cursorState.col
+        guard cursorIndex >= 0, cursorIndex < count else { return }
+
+        var flags = instances[cursorIndex].flags | (1 << 5)
+        switch cursorState.style {
+        case "underline":
+            flags |= (1 << 6)
+        case "bar":
+            flags |= (2 << 6)
+        default:
+            break
+        }
+        instances[cursorIndex].flags = flags
+        instances[cursorIndex].foreground = cursorState.color
     }
 
     private func updateUniforms(viewportSize: CGSize) {

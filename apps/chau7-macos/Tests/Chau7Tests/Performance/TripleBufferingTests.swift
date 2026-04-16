@@ -217,6 +217,23 @@ final class TripleBufferingTests: XCTestCase {
         )
     }
 
+    func testPresentFrameClearsDirtyRowsOnRecycledRenderBuffer() {
+        let buffer = TripleBufferedTerminal(rows: 4, cols: 4)
+
+        buffer.setCell(row: 1, col: 0, TerminalCell(character: 0x41))
+        buffer.commitUpdate()
+        buffer.presentFrame()
+
+        XCTAssertTrue(
+            buffer.renderBuffer.dirtyRows.isEmpty,
+            "The recycled render buffer must not carry stale dirty rows into the next incremental commit"
+        )
+        XCTAssertFalse(
+            buffer.renderBuffer.fullRefreshNeeded,
+            "The recycled render buffer must re-enter the pipeline clean"
+        )
+    }
+
     // MARK: - Clear
 
     func testClear() {

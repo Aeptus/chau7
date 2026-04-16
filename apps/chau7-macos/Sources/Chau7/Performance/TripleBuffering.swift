@@ -225,6 +225,7 @@ final class TripleBufferedTerminal {
         // Swap render and display indices
         renderIndex.store(display, ordering: .releasing)
         displayIndex.store(render, ordering: .releasing)
+        buffers[display].clearDirty()
 
         frameCount.wrappingIncrement(ordering: .relaxed)
     }

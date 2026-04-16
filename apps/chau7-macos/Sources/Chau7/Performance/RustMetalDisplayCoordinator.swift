@@ -394,6 +394,8 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
 
         // 6. Render from the triple buffer
         let sourceBuffer = shouldSync ? tripleBuffer.renderBuffer : tripleBuffer.displayBuffer
+        let dirtyRows = shouldSync ? tripleBuffer.dirtyRows : IndexSet()
+        let fullRefresh = shouldSync ? tripleBuffer.needsFullRefresh : false
         let cellCount = rows * cols
         guard cellCount > 0 else {
             let now = CFAbsoluteTimeGetCurrent()
@@ -428,6 +430,8 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             cells: cellsPtr,
             rows: rows,
             cols: cols,
+            dirtyRows: dirtyRows,
+            fullRefresh: fullRefresh,
             to: drawable,
             viewportSize: view.bounds.size
         )
