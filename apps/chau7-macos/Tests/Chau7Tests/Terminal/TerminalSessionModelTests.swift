@@ -1427,7 +1427,7 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertNil(session.lastRenderedSnapshot)
     }
 
-    func testCloseSessionShutsDownRetainedTerminalRendering() {
+    func testCloseSessionShutsDownActiveTerminalRendering() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
         let terminalView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -1437,6 +1437,22 @@ final class TerminalSessionModelTests: XCTestCase {
         session.attachRustTerminal(terminalView)
 
         session.closeSession()
+
+        XCTAssertFalse(terminalView.notifyUpdateChanges)
+        XCTAssertTrue(terminalView.isHidden)
+        XCTAssertTrue(session.existingRustTerminalView === terminalView)
+    }
+
+    func testCloseSessionForTerminationShutsDownActiveTerminalRendering() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let terminalView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        terminalView.notifyUpdateChanges = true
+        terminalView.isHidden = false
+        terminalView.setEventMonitoringEnabled(true)
+        session.attachRustTerminal(terminalView)
+
+        session.closeSessionForTermination()
 
         XCTAssertFalse(terminalView.notifyUpdateChanges)
         XCTAssertTrue(terminalView.isHidden)

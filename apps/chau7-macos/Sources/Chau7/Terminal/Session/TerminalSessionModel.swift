@@ -921,8 +921,12 @@ final class TerminalSessionModel {
         rustTerminalView ?? retainedRustTerminalView
     }
 
-    private func shutdownRetainedTerminalRendering() {
-        retainedRustTerminalView?.shutdownRenderingForSessionClosure()
+    private var activeRustTerminalView: RustTerminalView? {
+        rustTerminalView ?? retainedRustTerminalView
+    }
+
+    private func shutdownActiveTerminalRendering() {
+        activeRustTerminalView?.shutdownRenderingForSessionClosure()
     }
 
     private func releaseRetainedTerminalView() {
@@ -1406,7 +1410,7 @@ final class TerminalSessionModel {
         }
 
         lastRenderedSnapshot = nil
-        shutdownRetainedTerminalRendering()
+        shutdownActiveTerminalRendering()
 
         // Stop all background work
         stopIdleTimer()
@@ -1424,8 +1428,8 @@ final class TerminalSessionModel {
     }
 
     func closeSessionForTermination() {
+        let shellPID = activeRustTerminalView?.shellPid ?? 0
         closeSession()
-        let shellPID = existingRustTerminalView?.shellPid ?? 0
         guard shellPID > 0 else { return }
         Log.warn("App termination requested immediate shell shutdown for session '\(title)' (pid=\(shellPID))")
         sendTerminationSignal(SIGTERM, toShellPID: shellPID)
