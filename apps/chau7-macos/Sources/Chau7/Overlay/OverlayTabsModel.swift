@@ -3243,16 +3243,21 @@ final class OverlayTabsModel {
 
     private func renderLifecycleSnapshot() -> TabRenderLifecycleController.Snapshot {
         let isInputPriorityWindow: Bool
+        let isWindowVisibleForRendering: Bool
         if StartupRestoreCoordinator.shared.isActive {
             isInputPriorityWindow = true
+            isWindowVisibleForRendering = true
         } else if let overlayWindow {
             isInputPriorityWindow = overlayWindow.isKeyWindow || overlayWindow.isMainWindow
+            isWindowVisibleForRendering = overlayWindow.isVisible && !overlayWindow.isMiniaturized
         } else {
             isInputPriorityWindow = true
+            isWindowVisibleForRendering = true
         }
         return TabRenderLifecycleController.Snapshot(
             selectedTabID: selectedTabID,
             isInputPriorityWindow: isInputPriorityWindow,
+            isWindowVisibleForRendering: isWindowVisibleForRendering,
             previousLiveHierarchyTabID: previousLiveHierarchyTabID,
             prewarmingTabIDs: prewarmingTabIDs,
             restoreBootstrapTabIDs: restoreBootstrapTabIDs,

@@ -22,6 +22,7 @@ public enum TabRenderPhase: String, Equatable, Sendable {
 public struct TabRenderLifecycleInput: Equatable, Sendable {
     public let isSelectedTab: Bool
     public let isInputPriorityWindow: Bool
+    public let isWindowVisibleForRendering: Bool
     public let isPreviousLiveTab: Bool
     public let isPrewarming: Bool
     public let hasBackgroundActivity: Bool
@@ -34,6 +35,7 @@ public struct TabRenderLifecycleInput: Equatable, Sendable {
     public init(
         isSelectedTab: Bool,
         isInputPriorityWindow: Bool,
+        isWindowVisibleForRendering: Bool,
         isPreviousLiveTab: Bool,
         isPrewarming: Bool,
         hasBackgroundActivity: Bool,
@@ -45,6 +47,7 @@ public struct TabRenderLifecycleInput: Equatable, Sendable {
     ) {
         self.isSelectedTab = isSelectedTab
         self.isInputPriorityWindow = isInputPriorityWindow
+        self.isWindowVisibleForRendering = isWindowVisibleForRendering
         self.isPreviousLiveTab = isPreviousLiveTab
         self.isPrewarming = isPrewarming
         self.hasBackgroundActivity = hasBackgroundActivity
@@ -90,10 +93,10 @@ public enum TabRenderLifecyclePolicy {
 
     public static func phase(for input: TabRenderLifecycleInput) -> TabRenderPhase {
         if input.isSelectedTab {
-            if input.isInputPriorityWindow || input.hasBackgroundActivity {
+            if input.isWindowVisibleForRendering {
                 return .active
             }
-            return .passiveVisible
+            return .warm
         }
 
         if input.hasBackgroundActivity {

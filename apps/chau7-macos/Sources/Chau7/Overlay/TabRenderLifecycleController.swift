@@ -5,6 +5,7 @@ final class TabRenderLifecycleController {
     struct Snapshot {
         let selectedTabID: UUID
         let isInputPriorityWindow: Bool
+        let isWindowVisibleForRendering: Bool
         let previousLiveHierarchyTabID: UUID?
         let prewarmingTabIDs: Set<UUID>
         let restoreBootstrapTabIDs: Set<UUID>
@@ -27,6 +28,7 @@ final class TabRenderLifecycleController {
             TabRenderLifecycleInput(
                 isSelectedTab: descriptor.id == snapshot.selectedTabID,
                 isInputPriorityWindow: snapshot.isInputPriorityWindow,
+                isWindowVisibleForRendering: snapshot.isWindowVisibleForRendering,
                 isPreviousLiveTab: descriptor.id == snapshot.previousLiveHierarchyTabID,
                 isPrewarming: snapshot.prewarmingTabIDs.contains(descriptor.id),
                 hasBackgroundActivity: descriptor.hasBackgroundActivity,

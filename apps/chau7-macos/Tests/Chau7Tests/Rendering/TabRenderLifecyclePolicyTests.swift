@@ -7,6 +7,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             TabRenderLifecycleInput(
                 isSelectedTab: true,
                 isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: false,
@@ -28,6 +29,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             TabRenderLifecycleInput(
                 isSelectedTab: false,
                 isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
                 isPreviousLiveTab: true,
                 isPrewarming: false,
                 hasBackgroundActivity: false,
@@ -49,6 +51,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             TabRenderLifecycleInput(
                 isSelectedTab: false,
                 isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
                 isPreviousLiveTab: false,
                 isPrewarming: true,
                 hasBackgroundActivity: false,
@@ -70,6 +73,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             TabRenderLifecycleInput(
                 isSelectedTab: false,
                 isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: true,
@@ -86,11 +90,12 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertFalse(decision.isInteractive)
     }
 
-    func testSelectedTabOutsideInputPriorityWindowKeepsVisibleSurfaceWithoutInputOwnership() {
+    func testSelectedVisibleTabStaysActiveWithoutInputOwnership() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: true,
                 isInputPriorityWindow: false,
+                isWindowVisibleForRendering: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: false,
@@ -102,7 +107,29 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .passiveVisible)
+        XCTAssertEqual(decision.phase, .active)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.isInteractive)
+    }
+
+    func testSelectedHiddenWindowDropsToWarmWithoutInputOwnership() {
+        let decision = TabRenderLifecyclePolicy.decide(
+            TabRenderLifecycleInput(
+                isSelectedTab: true,
+                isInputPriorityWindow: false,
+                isWindowVisibleForRendering: false,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: false,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true
+            )
+        )
+
+        XCTAssertEqual(decision.phase, .warm)
         XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
@@ -127,6 +154,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             TabRenderLifecycleInput(
                 isSelectedTab: false,
                 isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: false,
@@ -147,6 +175,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             TabRenderLifecycleInput(
                 isSelectedTab: false,
                 isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: false,
@@ -167,6 +196,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             TabRenderLifecycleInput(
                 isSelectedTab: false,
                 isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: false,
@@ -187,6 +217,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             TabRenderLifecycleInput(
                 isSelectedTab: false,
                 isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: false,
