@@ -321,6 +321,34 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         )
     }
 
+    func testReactivationRevealKeepsAttachedSelectedSurfaceLive() {
+        let rustView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        model.tabs[0].session?.attachRustTerminal(rustView)
+        model.tabs[0].session?.resetPresentationSurfaceToLive()
+
+        model.requestSelectedTabAuthoritativeReveal(reason: "windowDidBecomeMain+windowDidBecomeKey")
+
+        XCTAssertTrue(
+            model.isTerminalReady,
+            "Reactivating an already-live selected tab should keep the current surface visible"
+        )
+        XCTAssertFalse(model.tabs[0].session?.awaitingVisibleFrameReady ?? true)
+        XCTAssertEqual(model.selectedSurfacePresentation.phase, .live)
+    }
+
+    func testReactivationRevealWithoutAttachedSurfaceStillAwaitsFreshFrame() {
+        model.tabs[0].session?.resetPresentationSurfaceToLive()
+
+        model.requestSelectedTabAuthoritativeReveal(reason: "windowDidBecomeMain+windowDidBecomeKey")
+
+        XCTAssertFalse(
+            model.isTerminalReady,
+            "A reactivation without an attached renderer still needs a blocking handoff"
+        )
+        XCTAssertTrue(model.tabs[0].session?.awaitingVisibleFrameReady ?? false)
+        XCTAssertEqual(model.selectedSurfacePresentation.phase, .awaitingLiveFrame)
+    }
+
     func testVisibleFrameReadyIgnoresPrimarySessionWhenFocusedDisplaySessionIsSelectedSurface() {
         model.splitCurrentTabHorizontally()
         let splitSessions = model.tabs[0].splitController.terminalSessions

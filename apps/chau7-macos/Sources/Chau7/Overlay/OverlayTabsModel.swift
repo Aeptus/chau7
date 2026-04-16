@@ -2601,16 +2601,30 @@ final class OverlayTabsModel {
         }
 
         let selectedDecision = renderLifecycleDecision(for: selectedTab)
+        let hasAttachedRenderer = session.existingRustTerminalView != nil
+        let revealTrigger = selectedTabRevealTrigger(for: reason)
+        let shouldAwaitVisibleFrame = SelectedTabRevealPolicy.shouldAwaitVisibleFrame(
+            for: SelectedTabRevealRequest(
+                trigger: revealTrigger,
+                keepsVisibleSurface: selectedDecision.phase.keepsVisibleSurface,
+                hasAttachedRenderer: hasAttachedRenderer,
+                isCurrentlyLivePresentable: session.presentationSurfaceState.isLivePresentable
+            )
+        )
         _ = session.beginPresentationReveal(
-            shouldAwaitVisibleFrame: true,
+            shouldAwaitVisibleFrame: shouldAwaitVisibleFrame,
             now: CFAbsoluteTimeGetCurrent()
         )
-        let revealGeneration = session.presentationSurfaceState.generation
-        scheduleSelectedTerminalRevealTimeout(
-            tabID: selectedTab.id,
-            generation: revealGeneration,
-            reason: reason
-        )
+        if shouldAwaitVisibleFrame {
+            let revealGeneration = session.presentationSurfaceState.generation
+            scheduleSelectedTerminalRevealTimeout(
+                tabID: selectedTab.id,
+                generation: revealGeneration,
+                reason: reason
+            )
+        } else {
+            resetSelectedTerminalRevealScheduling()
+        }
 
         guard let rustView = session.existingRustTerminalView else {
             Log.info("requestSelectedTabAuthoritativeReveal[\(reason)]: armed visible-frame handoff before Rust view was attached for tab \(selectedTabID)")
@@ -2636,7 +2650,26 @@ final class OverlayTabsModel {
             rustView.performAuthoritativeRevealPass(reason: reason)
         }
 
-        Log.info("requestSelectedTabAuthoritativeReveal[\(reason)]: refreshed selected tab \(selectedTabID) as \(selectedDecision.phase.rawValue)")
+        let blockingMode = shouldAwaitVisibleFrame ? "blocking" : "in_place"
+        Log.info("requestSelectedTabAuthoritativeReveal[\(reason)]: refreshed selected tab \(selectedTabID) as \(selectedDecision.phase.rawValue) mode=\(blockingMode)")
+    }
+
+    private func selectedTabRevealTrigger(for reason: String) -> SelectedTabRevealTrigger {
+        switch reason {
+        case "select_tab":
+            return .selectionChange
+        case "forceRefreshSelectedTab":
+            return .explicitRefresh
+        case "startup_prepare", "init_restore":
+            return .startup
+        case "restore_bootstrap_phase":
+            return .restoreBootstrap
+        default:
+            if reason.hasPrefix("windowDid") {
+                return .reactivation
+            }
+            return .other
+        }
     }
 
     /// Called by the view to report how many tabs were actually rendered.
