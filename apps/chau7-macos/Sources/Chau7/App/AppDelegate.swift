@@ -41,6 +41,8 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var hiddenWindowNumbers: Set<Int> = []
     /// Tracks windows that have been shown at least once
     private var shownWindowNumbers: Set<Int> = []
+    private var pendingSelectedTabRevealEventsByWindow: [Int: Set<TabSurfaceReactivationEvent>] = [:]
+    private var pendingSelectedTabRevealWorkItemsByWindow: [Int: DispatchWorkItem] = [:]
     private var didFinishLaunching = false
     private var didPerformInitialSetup = false
     private var didStartDeferredStartupWork = false
@@ -233,6 +235,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         Log.info("Startup deferred work: starting post-first-paint services")
         startMultiWindowAutoSaveTimer()
+        TelemetryStore.shared.scheduleDeferredMaintenance(reason: "post-first-paint")
         _ = ClipboardHistoryManager.shared
         DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
         BugReportWindowController.shared.configure(appModel: model, overlayModel: overlayModel)
@@ -1753,9 +1756,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             }
         }
         invalidateOverlayRenderLifecycles(reason: "didBecomeKey")
-        if let host = overlayHosts.first(where: { $0.window == window }) {
-            host.model.requestSelectedTabAuthoritativeReveal(reason: "windowDidBecomeKey")
-        }
+        scheduleSelectedTabAuthoritativeReveal(for: window, event: .becameKey)
         logOverlayWindowLifecycle(reason: "didBecomeKey", window: window)
         logOverlayDiagnostics(reason: "didBecomeKey", window: window)
     }
@@ -1775,9 +1776,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     func windowDidBecomeMain(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         invalidateOverlayRenderLifecycles(reason: "didBecomeMain")
-        if let host = overlayHosts.first(where: { $0.window == window }) {
-            host.model.requestSelectedTabAuthoritativeReveal(reason: "windowDidBecomeMain")
-        }
+        scheduleSelectedTabAuthoritativeReveal(for: window, event: .becameMain)
         logOverlayWindowLifecycle(reason: "didBecomeMain", window: window)
         logOverlayDiagnostics(reason: "didBecomeMain", window: window)
     }
@@ -1791,16 +1790,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func windowDidChangeOcclusionState(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
-        if let host = overlayHosts.first(where: { $0.window == window }),
-           TabSurfaceReactivationPolicy.shouldRequestAuthoritativeReveal(
-                for: .becameVisible,
-                phase: host.model.renderPhase(forTabID: host.model.selectedTabID),
-                isWindowVisible: window.isVisible,
-                isWindowMiniaturized: window.isMiniaturized,
-                isOcclusionVisible: window.occlusionState.contains(.visible)
-           ) {
-            host.model.requestSelectedTabAuthoritativeReveal(reason: "windowDidChangeOcclusionState")
-        }
+        scheduleSelectedTabAuthoritativeReveal(for: window, event: .becameVisible)
         guard Log.isTraceEnabled else { return }
         logOverlayDiagnostics(reason: "didChangeOcclusion", window: window)
     }
@@ -1813,18 +1803,45 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func windowDidDeminiaturize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
-        if let host = overlayHosts.first(where: { $0.window == window }),
-           TabSurfaceReactivationPolicy.shouldRequestAuthoritativeReveal(
-                for: .deminiaturized,
+        scheduleSelectedTabAuthoritativeReveal(for: window, event: .deminiaturized)
+        logOverlayWindowLifecycle(reason: "didDeminiaturize", window: window)
+        logOverlayDiagnostics(reason: "didDeminiaturize", window: window)
+    }
+
+    @MainActor private func scheduleSelectedTabAuthoritativeReveal(
+        for window: NSWindow,
+        event: TabSurfaceReactivationEvent
+    ) {
+        guard overlayHosts.contains(where: { $0.window == window }) else { return }
+
+        let windowNumber = window.windowNumber
+        pendingSelectedTabRevealEventsByWindow[windowNumber, default: []].insert(event)
+
+        guard pendingSelectedTabRevealWorkItemsByWindow[windowNumber] == nil else { return }
+
+        let workItem = DispatchWorkItem { [weak self, weak window] in
+            guard let self, let window else { return }
+            let windowNumber = window.windowNumber
+            let events = self.pendingSelectedTabRevealEventsByWindow.removeValue(forKey: windowNumber) ?? []
+            self.pendingSelectedTabRevealWorkItemsByWindow.removeValue(forKey: windowNumber)
+
+            guard let host = self.overlayHosts.first(where: { $0.window == window }) else { return }
+            let plan = TabSurfaceReactivationPolicy.plan(
+                for: events,
                 phase: host.model.renderPhase(forTabID: host.model.selectedTabID),
                 isWindowVisible: window.isVisible,
                 isWindowMiniaturized: window.isMiniaturized,
                 isOcclusionVisible: window.occlusionState.contains(.visible)
-           ) {
-            host.model.requestSelectedTabAuthoritativeReveal(reason: "windowDidDeminiaturize")
+            )
+            guard plan.shouldRequestReveal, let reason = plan.reason else { return }
+            host.model.requestSelectedTabAuthoritativeReveal(reason: reason)
         }
-        logOverlayWindowLifecycle(reason: "didDeminiaturize", window: window)
-        logOverlayDiagnostics(reason: "didDeminiaturize", window: window)
+
+        pendingSelectedTabRevealWorkItemsByWindow[windowNumber] = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + TabSurfaceReactivationPolicy.coalescingDelay,
+            execute: workItem
+        )
     }
 
     func windowDidResize(_ notification: Notification) {

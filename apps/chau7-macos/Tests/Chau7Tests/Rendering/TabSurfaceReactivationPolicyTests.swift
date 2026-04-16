@@ -58,4 +58,33 @@ final class TabSurfaceReactivationPolicyTests: XCTestCase {
             )
         )
     }
+
+    func testPlanCoalescesMultipleActivationEventsIntoSingleRevealReason() {
+        let plan = TabSurfaceReactivationPolicy.plan(
+            for: [.becameKey, .becameMain, .becameVisible],
+            phase: .active,
+            isWindowVisible: true,
+            isWindowMiniaturized: false,
+            isOcclusionVisible: true
+        )
+
+        XCTAssertTrue(plan.shouldRequestReveal)
+        XCTAssertEqual(
+            plan.reason,
+            "windowDidChangeOcclusionState+windowDidBecomeMain+windowDidBecomeKey"
+        )
+    }
+
+    func testPlanSkipsRevealWhenCombinedEventsAreNotEligible() {
+        let plan = TabSurfaceReactivationPolicy.plan(
+            for: [.becameVisible, .becameMain],
+            phase: .hidden,
+            isWindowVisible: true,
+            isWindowMiniaturized: false,
+            isOcclusionVisible: true
+        )
+
+        XCTAssertFalse(plan.shouldRequestReveal)
+        XCTAssertNil(plan.reason)
+    }
 }
