@@ -914,6 +914,37 @@ pub unsafe extern "C" fn chau7_terminal_set_scrollback_size(term: *mut Chau7Term
     }
 }
 
+/// Replay a historical buffer into a cleared terminal.
+///
+/// Clears scrollback history and the visible viewport, then feeds the provided
+/// bytes through the VTE processor. Used on tier promotion to re-populate a
+/// terminal from its on-disk scrollback cache.
+///
+/// # Safety
+/// - `term` must be a valid pointer
+/// - `data` must point to `len` readable bytes (or be null if `len == 0`)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_replay_buffer(
+    term: *mut Chau7Terminal,
+    data: *const u8,
+    len: usize,
+) {
+    unsafe {
+        info!("chau7_terminal_replay_buffer({:p}, {:p}, {})", term, data, len);
+        if term.is_null() {
+            warn!("chau7_terminal_replay_buffer: term is null");
+            return;
+        }
+        let slice: &[u8] = if len == 0 || data.is_null() {
+            &[]
+        } else {
+            std::slice::from_raw_parts(data, len)
+        };
+        let terminal = &*term;
+        terminal.replay_buffer(slice);
+    }
+}
+
 /// Get the current display offset (scroll position in lines)
 ///
 /// # Safety

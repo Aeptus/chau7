@@ -1487,6 +1487,45 @@ impl Chau7Terminal {
         );
     }
 
+    /// Replay a historical buffer into an empty terminal.
+    ///
+    /// Clears both scrollback history and the visible viewport, then feeds `data`
+    /// through the VTE processor. The processor naturally fills the viewport and
+    /// scrolls older content into history as new rows arrive. After replay, the
+    /// viewport shows the tail of `data` (typically the last shell prompt) and
+    /// the scrollback contains everything above it.
+    ///
+    /// Intended for tier promotion: when a previously `.hidden` tab becomes
+    /// active, we call `set_scrollback_size(cap)` to allocate the history ring
+    /// and then this method to populate it from the on-disk cache.
+    pub fn replay_buffer(&self, data: &[u8]) {
+        info!(
+            "[terminal-{}] replay_buffer: Replaying {} bytes into cleared terminal",
+            self.id,
+            data.len()
+        );
+
+        let mut term = self.term.lock();
+        let mut processor = self.processor.lock();
+
+        // Clear history ring and reset viewport (ANSI ESC[2J clears screen,
+        // ESC[H homes cursor). Using the processor ensures Alacritty's internal
+        // state stays consistent rather than poking the grid directly.
+        term.grid_mut().clear_history();
+        processor.advance(&mut *term, b"\x1b[2J\x1b[H");
+
+        if !data.is_empty() {
+            processor.advance(&mut *term, data);
+        }
+
+        self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
+        debug!(
+            "[terminal-{}] replay_buffer: Replay complete",
+            self.id
+        );
+    }
+
     /// Set Unicode ambiguous-width treatment.
     /// - `width = 1`: single-width (Western default)
     /// - `width = 2`: double-width (East Asian)

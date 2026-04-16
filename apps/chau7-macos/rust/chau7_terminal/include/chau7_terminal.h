@@ -608,6 +608,19 @@ void chau7_terminal_set_ambiguous_width(struct Chau7Terminal *term, uint8_t widt
 void chau7_terminal_set_scrollback_size(struct Chau7Terminal *term, uint32_t lines);
 
 /*
+ Replay a historical buffer into a cleared terminal.
+
+ Clears scrollback history and the visible viewport, then feeds the provided
+ bytes through the VTE processor. Used on tier promotion to re-populate a
+ terminal from its on-disk scrollback cache.
+
+ # Safety
+ - `term` must be a valid pointer
+ - `data` must point to `len` readable bytes (or be null if `len == 0`)
+ */
+void chau7_terminal_replay_buffer(struct Chau7Terminal *term, const uint8_t *data, size_t len);
+
+/*
  Get the current display offset (scroll position in lines)
 
  # Safety
