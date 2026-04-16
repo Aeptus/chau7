@@ -126,9 +126,9 @@ final class RustTerminalContainerView: NSView {
             guard let self else {
                 return
             }
-            if self.awaitingFirstMetalFrame {
-                self.awaitingFirstMetalFrame = false
-                self.terminalView.isMetalRenderingActive = true
+            if awaitingFirstMetalFrame {
+                awaitingFirstMetalFrame = false
+                terminalView.isMetalRenderingActive = true
                 coordinator?.metalView.alphaValue = 1
                 Log.trace("RustTerminalContainerView: Metal overlay promoted after first presented frame")
             }
@@ -545,7 +545,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         nsView.updatePollingMode(reason: "updateNSView")
         if allowsLivePresentation,
            nsView.window != nil,
-           (!nsView.livePollingActiveForProfiling || shouldForceAuthoritativeReveal) {
+           !nsView.livePollingActiveForProfiling || shouldForceAuthoritativeReveal {
             nsView.needsGridSync = true
             nsView.pollAndSync()
         }

@@ -253,20 +253,20 @@ private final class OverlayBlurView: NSVisualEffectView {
             guard let self else { return }
             let dismissElapsedMs = Int(((CFAbsoluteTimeGetCurrent() - splashDismissRequestedAt) * 1000).rounded())
             Log.info("finishLaunching: splash dismissal completed after \(dismissElapsedMs)ms")
-            self.splashController = nil
-            self.preparedStartupWindowNumbers.removeAll()
-            self.revealedStartupWindowNumbers.removeAll()
+            splashController = nil
+            preparedStartupWindowNumbers.removeAll()
+            revealedStartupWindowNumbers.removeAll()
             // Prepare all restored overlay windows, but only reveal them once
             // the selected surface is presentable.
-            for host in self.overlayHosts {
-                self.prepareStartupOverlayWindow(host, reason: "finishLaunching")
+            for host in overlayHosts {
+                prepareStartupOverlayWindow(host, reason: "finishLaunching")
             }
             // Ensure menu bar is anchored after splash dismissal.
             // During the splash phase no window is key/main, so macOS may
             // drop the menu bar for this app. Re-activating here forces it back.
             NSApp.activate(ignoringOtherApps: true)
-            self.completeStartupRestoreIfReady(reason: "windows_shown")
-            self.scheduleStartupRestoreFallbackCompletion()
+            completeStartupRestoreIfReady(reason: "windows_shown")
+            scheduleStartupRestoreFallbackCompletion()
         }
     }
 
@@ -342,14 +342,14 @@ private final class OverlayBlurView: NSVisualEffectView {
             guard let self else { return }
             tabsModel?.usesStartupLoadingCover = false
             if let tabsModel {
-                self.revealPreparedStartupOverlayWindow(
+                revealPreparedStartupOverlayWindow(
                     for: tabsModel,
                     reason: "selected_tab_live_frame",
                     recordSelectedLiveFrame: true,
                     revealWasForced: false
                 )
             }
-            self.completeStartupRestoreIfReady(reason: "selected_tab_live_frame")
+            completeStartupRestoreIfReady(reason: "selected_tab_live_frame")
         }
     }
 
@@ -1531,7 +1531,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            guard !self.isAppActive else { return }
+            guard !isAppActive else { return }
 
             let report = TelemetryRepairService.shared.rebuildRecentIncompleteRuns(limit: 50)
             guard report.inspectedRuns > 0 else { return }
@@ -1843,10 +1843,10 @@ private final class OverlayBlurView: NSVisualEffectView {
         let workItem = DispatchWorkItem { [weak self, weak window] in
             guard let self, let window else { return }
             let windowNumber = window.windowNumber
-            let events = self.pendingSelectedTabRevealEventsByWindow.removeValue(forKey: windowNumber) ?? []
-            self.pendingSelectedTabRevealWorkItemsByWindow.removeValue(forKey: windowNumber)
+            let events = pendingSelectedTabRevealEventsByWindow.removeValue(forKey: windowNumber) ?? []
+            pendingSelectedTabRevealWorkItemsByWindow.removeValue(forKey: windowNumber)
 
-            guard let host = self.overlayHosts.first(where: { $0.window == window }) else { return }
+            guard let host = overlayHosts.first(where: { $0.window == window }) else { return }
             let phase = host.model.renderPhase(forTabID: host.model.selectedTabID)
             let plan = TabSurfaceReactivationPolicy.plan(
                 for: events,

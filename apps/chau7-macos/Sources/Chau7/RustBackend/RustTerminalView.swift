@@ -2141,7 +2141,10 @@ final class RustTerminalView: NSView {
     /// Replaces the per-view Timer with a shared drain (see SharedBackgroundDrain).
     var isBackgroundDrainRegistered = false
     private var isLivePollingActive = false
-    var livePollingActiveForProfiling: Bool { isLivePollingActive }
+    var livePollingActiveForProfiling: Bool {
+        isLivePollingActive
+    }
+
     private(set) var currentRenderPhase: TabRenderPhase = .hidden
     private var authoritativeRevealPending = false
     var inactiveSnapshotRefreshWorkItem: DispatchWorkItem?
@@ -2975,26 +2978,26 @@ final class RustTerminalView: NSView {
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.inactiveSnapshotRefreshWorkItem = nil
-            guard self.currentRenderPhase != .active else {
-                self.pendingInactiveSnapshotVersion = nil
-                self.pendingInactiveSnapshotNeedsForcedSync = false
+            inactiveSnapshotRefreshWorkItem = nil
+            guard currentRenderPhase != .active else {
+                pendingInactiveSnapshotVersion = nil
+                pendingInactiveSnapshotNeedsForcedSync = false
                 return
             }
 
-            let targetVersion = self.pendingInactiveSnapshotVersion ?? self.retainedFrameContentVersion
-            let allowForcedSync = self.pendingInactiveSnapshotNeedsForcedSync || self.requiresForcedRetainedFrameSync
-            self.pendingInactiveSnapshotVersion = nil
-            self.pendingInactiveSnapshotNeedsForcedSync = false
+            let targetVersion = pendingInactiveSnapshotVersion ?? retainedFrameContentVersion
+            let allowForcedSync = pendingInactiveSnapshotNeedsForcedSync || requiresForcedRetainedFrameSync
+            pendingInactiveSnapshotVersion = nil
+            pendingInactiveSnapshotNeedsForcedSync = false
 
-            guard targetVersion > self.lastInactiveRetainedFrameVersion else { return }
-            guard let snapshot = self.makeRetainedFrameImage(allowForcedSync: allowForcedSync) else { return }
+            guard targetVersion > lastInactiveRetainedFrameVersion else { return }
+            guard let snapshot = makeRetainedFrameImage(allowForcedSync: allowForcedSync) else { return }
 
-            self.lastInactiveSnapshotRefreshAt = CFAbsoluteTimeGetCurrent()
-            self.lastInactiveRetainedFrameVersion = max(targetVersion, self.retainedFrameSourceVersion)
-            self.onInactiveRetainedFrame?(snapshot)
+            lastInactiveSnapshotRefreshAt = CFAbsoluteTimeGetCurrent()
+            lastInactiveRetainedFrameVersion = max(targetVersion, retainedFrameSourceVersion)
+            onInactiveRetainedFrame?(snapshot)
             Log.trace(
-                "RustTerminalView[\(self.viewId)]: refreshed inactive retained frame [\(reason)] v\(self.lastInactiveRetainedFrameVersion) forcedSync=\(allowForcedSync)"
+                "RustTerminalView[\(viewId)]: refreshed inactive retained frame [\(reason)] v\(lastInactiveRetainedFrameVersion) forcedSync=\(allowForcedSync)"
             )
         }
         inactiveSnapshotRefreshWorkItem = workItem

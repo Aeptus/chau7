@@ -594,6 +594,7 @@ final class OverlayTabsModel {
     var isTerminalReady: Bool {
         selectedSurfacePresentation.isLivePresentable
     }
+
     var usesStartupLoadingCover = false
 
     var shouldShowStartupLoadingCover: Bool {
@@ -603,6 +604,7 @@ final class OverlayTabsModel {
     var shouldShowSelectedSurfaceLiveRepaintCover: Bool {
         !usesStartupLoadingCover && !selectedSurfacePresentation.isLivePresentable
     }
+
     @ObservationIgnored var terminalReadyCommitWorkItem: DispatchWorkItem?
     @ObservationIgnored var selectedTerminalRevealTimeoutWorkItem: DispatchWorkItem?
     @ObservationIgnored static let terminalReadyCompositingDelay: TimeInterval = 1.0 / 60.0
@@ -925,8 +927,8 @@ final class OverlayTabsModel {
             queue: .main
         ) { [weak self] note in
             guard let self, let session = note.object as? TerminalSessionModel else { return }
-            guard let selected = self.selectedTab else { return }
-            let isSelectedSession = self.selectedPresentationSession(for: selected) === session
+            guard let selected = selectedTab else { return }
+            let isSelectedSession = selectedPresentationSession(for: selected) === session
             guard isSelectedSession else { return }
             let state = session.presentationSurfaceState
             if let startedAt = state.revealStartedAt,
@@ -935,12 +937,12 @@ final class OverlayTabsModel {
                 Log.trace("tab handoff: first frame presented for \(selected.id) after \(elapsedMs)ms")
             }
             if state.revealStartedAt != nil {
-                self.scheduleSelectedTerminalPresentationCommit(
+                scheduleSelectedTerminalPresentationCommit(
                     reason: "selected_live_frame_ready",
                     delay: Self.terminalReadyCompositingDelay
                 )
             }
-            self.noteStartupSelectedTabLiveFrameIfNeeded(reason: "visible_frame_ready")
+            noteStartupSelectedTabLiveFrameIfNeeded(reason: "visible_frame_ready")
         }
     }
 
@@ -963,12 +965,12 @@ final class OverlayTabsModel {
         let expectedGeneration = selectedPresentationSession(for: selectedTab)?.presentationSurfaceState.generation
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            guard self.selectedTabID == expectedTabID else { return }
-            guard self.selectedPresentationSession(for: self.selectedTab)?.presentationSurfaceState.generation == expectedGeneration,
-                  let selectedTab = self.selectedTab else {
+            guard selectedTabID == expectedTabID else { return }
+            guard selectedPresentationSession(for: self.selectedTab)?.presentationSurfaceState.generation == expectedGeneration,
+                  let selectedTab = selectedTab else {
                 return
             }
-            self.completeSelectedTabRevealIfNeeded(for: selectedTab, reason: reason, force: false)
+            completeSelectedTabRevealIfNeeded(for: selectedTab, reason: reason, force: false)
         }
         terminalReadyCommitWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
@@ -1003,9 +1005,9 @@ final class OverlayTabsModel {
         selectedTerminalRevealTimeoutWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            guard self.selectedTabID == tabID,
-                  let selectedTab = self.selectedTab,
-                  let session = self.selectedPresentationSession(for: selectedTab),
+            guard selectedTabID == tabID,
+                  let selectedTab = selectedTab,
+                  let session = selectedPresentationSession(for: selectedTab),
                   session.presentationSurfaceState.generation == generation,
                   !self.selectedSurfacePresentation.isLivePresentable else {
                 return
@@ -1013,7 +1015,7 @@ final class OverlayTabsModel {
             Log.warn(
                 "selected-tab live reveal timeout[\(reason)]: forcing live presentation for tab \(tabID) generation=\(generation)"
             )
-            self.completeSelectedTabRevealIfNeeded(for: selectedTab, reason: "\(reason)_timeout", force: true)
+            completeSelectedTabRevealIfNeeded(for: selectedTab, reason: "\(reason)_timeout", force: true)
         }
         selectedTerminalRevealTimeoutWorkItem = item
         DispatchQueue.main.asyncAfter(
@@ -2128,7 +2130,7 @@ final class OverlayTabsModel {
         // initial visual switch which should be as fast as possible.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.updateSuspensionState()
+            updateSuspensionState()
             MainActor.assumeIsolated {
                 self.updateCurrentCandidate(from: ProxyIPCServer.shared.pendingCandidates)
                 self.updateCurrentTask(from: ProxyIPCServer.shared.activeTasks)
@@ -2161,7 +2163,7 @@ final class OverlayTabsModel {
             guard let self else { return }
             guard self.previousLiveHierarchyTabID == previousLiveHierarchyTabID else { return }
             self.previousLiveHierarchyTabID = nil
-            self.updateSuspensionState()
+            updateSuspensionState()
         }
         previousLiveHierarchyReleaseWorkItem = item
         DispatchQueue.main.asyncAfter(

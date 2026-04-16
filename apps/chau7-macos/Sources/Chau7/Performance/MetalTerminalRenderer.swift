@@ -121,7 +121,7 @@ final class MetalTerminalRenderer: NSObject {
     /// Cache for multi-character ligature glyphs. nil value = font doesn't form a ligature.
     private var ligatureCache: [LigatureKey: LigatureCacheEntry] = [:]
     private var ligatureCacheInsertionOrder: [LigatureKey] = []
-    private static let maxLigatureCacheEntries = 4_096
+    private static let maxLigatureCacheEntries = 4096
     /// Whether ligature rendering is enabled (set from FeatureSettings)
     var ligaturesEnabled = false
 
