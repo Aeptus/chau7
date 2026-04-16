@@ -158,6 +158,8 @@ extension RustTerminalView {
     /// so the user sees current content without waiting for the next vsync.
     func resumeDisplayLink() {
         stopBackgroundDrain()
+        pollTimer?.invalidate()
+        pollTimer = nil
 
         if let link = displayLink, !CVDisplayLinkIsRunning(link) {
             CVDisplayLinkStart(link)
@@ -211,6 +213,48 @@ extension RustTerminalView {
         }
 
         // Force an immediate sync so the user sees fresh content
+        needsGridSync = true
+        pollAndSync()
+    }
+
+    /// Visible but noninteractive tabs stay current at a lower cadence so they
+    /// do not burn a full display link when they are simply being observed.
+    func resumeTimerPolling() {
+        stopBackgroundDrain()
+
+        if let link = displayLink, CVDisplayLinkIsRunning(link) {
+            CVDisplayLinkStop(link)
+        }
+        if pollTimer == nil {
+            pollTimer = Timer.scheduledTimer(
+                withTimeInterval: Self.passiveVisiblePollingInterval,
+                repeats: true
+            ) { [weak self] _ in
+                WakeupProfiler.shared.record("terminal.pollTimer")
+                self?.pollAndSync()
+            }
+        }
+        RenderPipelineProfiler.shared.updateRenderLoopState(
+            viewID: viewId,
+            active: true,
+            tabID: observabilityTabID,
+            sessionID: observabilitySessionID,
+            mode: "timer",
+            reasons: profilerReasons
+        )
+        Chau7ObservabilityService.shared.registerTimer(
+            id: renderLoopTimerID,
+            kind: "timer",
+            label: "terminal-render-loop",
+            subsystem: "renderer",
+            queueLabel: "com.chau7.renderer.main",
+            intervalMs: Self.passiveVisiblePollingInterval * 1000,
+            leewayMs: 0,
+            active: true,
+            tabID: observabilityTabID,
+            sessionID: observabilitySessionID
+        )
+
         needsGridSync = true
         pollAndSync()
     }

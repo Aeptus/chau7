@@ -2004,6 +2004,12 @@ struct RustDebugState {
 /// - Native renderer provides: grid-based text rendering
 /// - This view bridges them: polls Rust at 60fps, feeds the native renderer
 final class RustTerminalView: NSView {
+    private enum ActualPollingMode: Equatable {
+        case stopped
+        case backgroundDrain
+        case displayLink
+        case timer
+    }
 
     // MARK: - Public Interface
 
@@ -2145,6 +2151,7 @@ final class RustTerminalView: NSView {
         isLivePollingActive
     }
 
+    private var isInteractive = false
     private(set) var currentRenderPhase: TabRenderPhase = .hidden
     private var authoritativeRevealPending = false
     var inactiveSnapshotRefreshWorkItem: DispatchWorkItem?
@@ -2155,6 +2162,7 @@ final class RustTerminalView: NSView {
     var retainedFrameSourceVersion: UInt64 = 0
     var lastInactiveRetainedFrameVersion: UInt64 = 0
     static let inactiveSnapshotRefreshMinInterval: CFAbsoluteTime = 0.25
+    static let passiveVisiblePollingInterval: TimeInterval = 1.0 / 30.0
 
     // MARK: - Properties
 
@@ -2755,7 +2763,7 @@ final class RustTerminalView: NSView {
 
     private func handleWindowVisibilityChange(_ name: Notification.Name) {
         updatePollingMode(reason: "window:\(name.rawValue)")
-        if shouldRunLivePolling() {
+        if desiredPollingMode() != .backgroundDrain {
             needsGridSync = true
             pollAndSync()
         }
@@ -2816,42 +2824,64 @@ final class RustTerminalView: NSView {
         changed && notifyUpdateChanges && !isHidden && hasVisibleWindow
     }
 
-    private func shouldRunLivePolling() -> Bool {
-        guard isTerminalStarted, notifyUpdateChanges else { return false }
-        if isShellBootstrapPending {
+    private func desiredPollingMode() -> VisibleTerminalPollingMode {
+        let hasVisibleWindow: Bool
+        let isWindowMiniaturized: Bool
+        if let window {
+            hasVisibleWindow = window.isVisible
+            isWindowMiniaturized = window.isMiniaturized
+        } else {
+            hasVisibleWindow = false
+            isWindowMiniaturized = false
+        }
+
+        return VisibleTerminalPollingPolicy.mode(
+            for: VisibleTerminalPollingContext(
+                isTerminalStarted: isTerminalStarted,
+                notifyUpdateChanges: notifyUpdateChanges,
+                isShellBootstrapPending: isShellBootstrapPending,
+                allowsLivePresentation: currentRenderPhase.allowsLivePresentation,
+                isHidden: isHidden,
+                hasVisibleWindow: hasVisibleWindow,
+                isWindowMiniaturized: isWindowMiniaturized,
+                isInteractive: isInteractive
+            )
+        )
+    }
+
+    private static func shouldReconcilePollingMode(
+        desiredMode: VisibleTerminalPollingMode,
+        actualMode: ActualPollingMode
+    ) -> Bool {
+        switch (desiredMode, actualMode) {
+        case (.displayLink, .displayLink), (.timer, .timer), (.backgroundDrain, .backgroundDrain):
+            return false
+        default:
             return true
         }
-        guard currentRenderPhase.allowsLivePresentation, !isHidden else { return false }
-        guard let window else { return false }
-        guard window.isVisible, !window.isMiniaturized else { return false }
-        return true
-    }
-
-    private var isRenderLoopActuallyRunning: Bool {
-        if let link = displayLink {
-            return CVDisplayLinkIsRunning(link)
-        }
-        return pollTimer != nil
-    }
-
-    static func shouldReconcilePollingMode(
-        desiredLive: Bool,
-        markedLive: Bool,
-        actuallyRunning: Bool
-    ) -> Bool {
-        desiredLive != markedLive || desiredLive != actuallyRunning
     }
 
     var currentRenderLoopMode: String {
-        if isLivePollingActive {
-            if displayLink != nil {
-                return "display_link"
-            }
-            if pollTimer != nil {
-                return "timer"
-            }
+        switch actualPollingMode {
+        case .stopped:
+            return "stopped"
+        case .backgroundDrain:
+            return "background_drain"
+        case .displayLink:
+            return "display_link"
+        case .timer:
+            return "timer"
         }
-        return isBackgroundDrainRegistered ? "background_drain" : "stopped"
+    }
+
+    private var actualPollingMode: ActualPollingMode {
+        if let link = displayLink, CVDisplayLinkIsRunning(link) {
+            return .displayLink
+        }
+        if pollTimer != nil {
+            return .timer
+        }
+        return isBackgroundDrainRegistered ? .backgroundDrain : .stopped
     }
 
     var profilerReasons: String {
@@ -2886,21 +2916,26 @@ final class RustTerminalView: NSView {
     }
 
     func updatePollingMode(reason: String) {
-        let shouldRunLive = shouldRunLivePolling()
+        let desiredMode = desiredPollingMode()
+        let actualMode = actualPollingMode
         guard Self.shouldReconcilePollingMode(
-            desiredLive: shouldRunLive,
-            markedLive: isLivePollingActive,
-            actuallyRunning: isRenderLoopActuallyRunning
+            desiredMode: desiredMode,
+            actualMode: actualMode
         ) else {
+            isLivePollingActive = desiredMode != .backgroundDrain
             refreshRenderPipelineProfilingState()
             return
         }
 
-        isLivePollingActive = shouldRunLive
-        if shouldRunLive {
-            Log.trace("RustTerminalView[\(viewId)]: resuming live polling (\(reason))")
+        isLivePollingActive = desiredMode != .backgroundDrain
+        switch desiredMode {
+        case .displayLink:
+            Log.trace("RustTerminalView[\(viewId)]: switching live polling to display_link (\(reason))")
             resumeDisplayLink()
-        } else {
+        case .timer:
+            Log.trace("RustTerminalView[\(viewId)]: switching live polling to timer (\(reason))")
+            resumeTimerPolling()
+        case .backgroundDrain:
             Log.trace("RustTerminalView[\(viewId)]: pausing live polling (\(reason))")
             pauseDisplayLink()
         }
@@ -2910,6 +2945,7 @@ final class RustTerminalView: NSView {
     func applyRenderPhase(_ phase: TabRenderPhase, isInteractive: Bool, reason: String) {
         let previousPhase = currentRenderPhase
         currentRenderPhase = phase
+        self.isInteractive = isInteractive
         let shouldHide = !phase.keepsVisibleSurface
         let shouldNotifyUpdates = phase.allowsLivePresentation
 
