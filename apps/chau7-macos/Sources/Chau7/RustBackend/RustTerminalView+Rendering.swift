@@ -531,6 +531,7 @@ extension RustTerminalView {
         }
 
         onBufferChanged?()
+        onDisplaySyncNeeded?()
     }
 
     func performAuthoritativeRevealPass(reason: String) {
@@ -550,6 +551,7 @@ extension RustTerminalView {
                 syncGridToRenderer(force: requiresAuthoritativeReveal)
             }
             onBufferChanged?()
+            onDisplaySyncNeeded?()
         }
 
         if !isMetalRenderingActive {
@@ -599,6 +601,7 @@ extension RustTerminalView {
                 syncGridToRenderer(force: requiresAuthoritativeReveal)
             }
             onBufferChanged?()
+            onDisplaySyncNeeded?()
         }
 
         // Update dangerous row tints every frame (cheap lookup, scrolls in-sync with grid)

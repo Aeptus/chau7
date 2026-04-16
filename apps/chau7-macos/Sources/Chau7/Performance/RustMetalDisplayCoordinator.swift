@@ -4,8 +4,8 @@
 // The Rust terminal is the source of truth (PTY I/O, parsing, selection, scroll).
 // Metal provides GPU-accelerated display, replacing the CPU-based RustGridView.
 //
-// Architecture: RustTerminalView.pollAndSync() calls onBufferChanged
-//  → container chains setNeedsSync() → draw(in:) reads grid via closure → bridge
+// Architecture: RustTerminalView.pollAndSync() calls onDisplaySyncNeeded
+//  → container wires setNeedsSync() → draw(in:) reads grid via closure → bridge
 //  → TripleBufferedTerminal → MetalTerminalRenderer → CAMetalDrawable
 
 import Foundation
@@ -436,6 +436,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             viewportSize: view.bounds.size
         )
 
+        terminalView?.onDisplayFramePresented?()
         terminalView?.onFramePresented?()
 
         // 7. Advance triple buffer only when we consumed fresh synced terminal state.

@@ -4,28 +4,34 @@ import Chau7Core
 @testable import Chau7
 
 final class TerminalViewRepresentableTests: XCTestCase {
-    func testBufferChangedCallbackChainRunsBaseThenMetalSync() {
+    func testRendererSyncCallbackIsIndependentFromSessionBufferCallback() {
+        let view = RustTerminalView(frame: .zero)
         var events: [String] = []
-        let callback = TerminalCallbackChain.bufferChanged(base: {
+        view.onBufferChanged = {
             events.append("base")
-        }) {
+        }
+        view.onDisplaySyncNeeded = {
             events.append("metal")
         }
 
-        callback()
+        view.onBufferChanged?()
+        view.onDisplaySyncNeeded?()
 
         XCTAssertEqual(events, ["base", "metal"])
     }
 
-    func testFramePresentedCallbackChainRunsActivationBeforeBase() {
+    func testRendererPresentationCallbackIsIndependentFromSessionFrameCallback() {
+        let view = RustTerminalView(frame: .zero)
         var events: [String] = []
-        let callback = TerminalCallbackChain.framePresented(base: {
-            events.append("base")
-        }) {
+        view.onDisplayFramePresented = {
             events.append("metal")
         }
+        view.onFramePresented = {
+            events.append("base")
+        }
 
-        callback()
+        view.onDisplayFramePresented?()
+        view.onFramePresented?()
 
         XCTAssertEqual(events, ["metal", "base"])
     }

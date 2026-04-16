@@ -1991,10 +1991,20 @@ final class RustTerminalView: NSView {
     /// Callback when buffer content changes
     var onBufferChanged: (() -> Void)?
 
+    /// Internal callback used by the active renderer to request a visible repaint.
+    /// Kept separate from `onBufferChanged` so session/UI bookkeeping cannot
+    /// accidentally break live presentation.
+    var onDisplaySyncNeeded: (() -> Void)?
+
     /// Callback after the terminal has presented a visible frame.
     /// Used for snapshot-to-live handoff so the UI does not reveal a Metal
     /// surface before its first draw has completed.
     var onFramePresented: (() -> Void)?
+
+    /// Internal callback fired after the active renderer presents a frame.
+    /// Kept separate from `onFramePresented` so render-layer presentation
+    /// bookkeeping is not coupled to session/UI observers.
+    var onDisplayFramePresented: (() -> Void)?
 
     /// Callback with a refreshed retained frame while the tab is not active.
     /// This keeps hidden/background tabs ready to reveal without full live rendering.

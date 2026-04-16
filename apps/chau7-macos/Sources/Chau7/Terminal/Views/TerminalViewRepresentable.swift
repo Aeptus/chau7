@@ -3,28 +3,6 @@ import AppKit
 import QuartzCore
 import Chau7Core
 
-enum TerminalCallbackChain {
-    static func bufferChanged(
-        base: (() -> Void)?,
-        after chainedCallback: @escaping () -> Void
-    ) -> () -> Void {
-        {
-            base?()
-            chainedCallback()
-        }
-    }
-
-    static func framePresented(
-        base: (() -> Void)?,
-        after chainedCallback: @escaping () -> Void
-    ) -> () -> Void {
-        {
-            chainedCallback()
-            base?()
-        }
-    }
-}
-
 /// Container view for the Rust terminal backend
 final class RustTerminalContainerView: NSView {
     let terminalView: RustTerminalView
@@ -34,10 +12,6 @@ final class RustTerminalContainerView: NSView {
     /// Rust Metal display coordinator (nil when Metal rendering is disabled)
     private(set) var rustMetalCoordinator: RustMetalDisplayCoordinator?
 
-    /// Original onBufferChanged callback saved before Metal chaining, restored on disable.
-    private var preMetalBufferChangedCallback: (() -> Void)?
-    /// Original onFramePresented callback saved before Metal chaining, restored on disable.
-    private var preMetalFramePresentedCallback: (() -> Void)?
     /// True until the Metal overlay has produced its first real frame.
     private var awaitingFirstMetalFrame = false
 
@@ -85,7 +59,7 @@ final class RustTerminalContainerView: NSView {
     /// HighlightView (if present) is moved above Metal so highlights remain visible.
     func enableMetalRendering() {
         if let coordinator = rustMetalCoordinator {
-            refreshMetalCallbackChains(coordinator: coordinator)
+            wireMetalRendererCallbacks(coordinator: coordinator)
             Log.trace("RustTerminalContainerView: Metal rendering callbacks refreshed")
             return
         }
@@ -124,8 +98,7 @@ final class RustTerminalContainerView: NSView {
             }
         }
 
-        // Save the original callback before wrapping it with Metal sync.
-        refreshMetalCallbackChains(coordinator: coordinator)
+        wireMetalRendererCallbacks(coordinator: coordinator)
 
         // Keep CPU rendering authoritative until Metal has actually presented
         // once. This avoids exposing a blank GPU surface during startup/tab
@@ -140,25 +113,11 @@ final class RustTerminalContainerView: NSView {
         Log.trace("RustTerminalContainerView: Metal rendering enabled")
     }
 
-    private func refreshMetalCallbackChains(coordinator: RustMetalDisplayCoordinator) {
-        preMetalBufferChangedCallback = terminalView.onBufferChanged
-        preMetalFramePresentedCallback = terminalView.onFramePresented
-        chainMetalSync(coordinator: coordinator)
-        chainMetalPresentationActivation(coordinator: coordinator)
-    }
-
-    /// Re-chains the Metal sync wrapper onto the current onBufferChanged callback.
-    func chainMetalSync(coordinator: RustMetalDisplayCoordinator) {
-        let baseCallback = terminalView.onBufferChanged
-        terminalView.onBufferChanged = TerminalCallbackChain.bufferChanged(base: baseCallback) { [weak coordinator] in
+    private func wireMetalRendererCallbacks(coordinator: RustMetalDisplayCoordinator) {
+        terminalView.onDisplaySyncNeeded = { [weak coordinator] in
             coordinator?.setNeedsSync()
         }
-    }
-
-    /// Promotes the Metal overlay only after a confirmed presented frame.
-    func chainMetalPresentationActivation(coordinator: RustMetalDisplayCoordinator) {
-        let baseCallback = terminalView.onFramePresented
-        terminalView.onFramePresented = TerminalCallbackChain.framePresented(base: baseCallback) { [weak self, weak coordinator] in
+        terminalView.onDisplayFramePresented = { [weak self, weak coordinator] in
             guard let self else {
                 return
             }
@@ -179,13 +138,8 @@ final class RustTerminalContainerView: NSView {
         // Re-enable CPU rendering path
         terminalView.isMetalRenderingActive = false
 
-        // Restore the original onBufferChanged callback (before Metal chaining)
-        if let original = preMetalBufferChangedCallback {
-            terminalView.onBufferChanged = original
-        }
-        preMetalBufferChangedCallback = nil
-        terminalView.onFramePresented = preMetalFramePresentedCallback
-        preMetalFramePresentedCallback = nil
+        terminalView.onDisplaySyncNeeded = nil
+        terminalView.onDisplayFramePresented = nil
         awaitingFirstMetalFrame = false
 
         // Move HighlightView back into the terminal view
