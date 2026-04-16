@@ -1059,6 +1059,32 @@ final class MetalTerminalRenderer: NSObject {
         )
     }
 
+    // MARK: - Purgeable / Memory Volatility
+
+    /// Marks the glyph atlas and instance buffer as volatile / non-volatile.
+    ///
+    /// - `.volatile`: the OS may reclaim the GPU memory under pressure. If no
+    ///   pressure occurs, data is preserved — no cost on promotion back.
+    /// - `.nonVolatile`: reserves the memory again. Returns the PRIOR state
+    ///   (i.e. the state at the time of the call). If the prior state is
+    ///   `.empty`, the OS reclaimed the data while it was volatile and the
+    ///   caller must rebuild (call `clearGlyphCache()` and let the next draw
+    ///   re-rasterize).
+    func setAtlasPurgeableState(_ state: MTLPurgeableState) -> MTLPurgeableState {
+        let atlasPrior = glyphAtlas?.setPurgeableState(state) ?? .keepCurrent
+        _ = instanceBuffer?.setPurgeableState(state)
+        _ = uniformBuffer?.setPurgeableState(state)
+        _ = vertexBuffer?.setPurgeableState(state)
+        return atlasPrior
+    }
+
+    /// Drops the CPU-side glyph and ligature caches. Next draw will re-rasterize
+    /// all used glyphs into the atlas. Used after the OS reclaims a volatile
+    /// atlas texture so the CPU cache doesn't point at empty GPU slots.
+    func clearGlyphCache() {
+        resetAtlas()
+    }
+
     // MARK: - Error Types
 
     enum MetalError: Error {

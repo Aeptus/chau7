@@ -250,6 +250,41 @@ final class RustMetalDisplayCoordinator: NSObject {
         blinkTimer = nil
         metalView.isPaused = true
     }
+
+    // MARK: - Memory Volatility
+
+    /// Marks the renderer's GPU textures and buffers as volatile. The OS may
+    /// reclaim them under memory pressure; if it does, the next promotion will
+    /// rebuild. If no pressure occurs, the data is preserved and promotion is
+    /// free.
+    func markTexturesVolatile() {
+        _ = renderer.setAtlasPurgeableState(.volatile)
+    }
+
+    /// Marks the renderer's GPU resources as non-volatile and detects whether
+    /// the OS reclaimed them while volatile. If reclaimed, clears the CPU glyph
+    /// cache so the next draw re-rasterizes into a fresh atlas.
+    func markTexturesNonVolatileAndRebuildIfNeeded() {
+        let prior = renderer.setAtlasPurgeableState(.nonVolatile)
+        if prior == .empty {
+            Log.info("RustMetalDisplayCoordinator: atlas reclaimed by OS — rebuilding on next draw")
+            renderer.clearGlyphCache()
+            needsSync = true
+            requestDraw()
+        }
+    }
+}
+
+// MARK: - TabMetalVolatility
+
+extension RustMetalDisplayCoordinator: TabMetalVolatility {
+    func setTexturesVolatile(_ volatile: Bool) {
+        if volatile {
+            markTexturesVolatile()
+        } else {
+            markTexturesNonVolatileAndRebuildIfNeeded()
+        }
+    }
 }
 
 // MARK: - MTKViewDelegate

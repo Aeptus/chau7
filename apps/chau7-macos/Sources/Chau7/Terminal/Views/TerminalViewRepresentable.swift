@@ -80,6 +80,11 @@ final class RustTerminalContainerView: NSView {
 
         rustMetalCoordinator = coordinator
 
+        // Register this coordinator for per-phase GPU volatility control.
+        if let tabID = UUID(uuidString: terminalView.tabIdentifier) {
+            TabGraphicsMemoryManager.shared.register(metalVolatility: coordinator, forTabID: tabID)
+        }
+
         // Add Metal view on top of RustGridView. Metal is opaque and covers the CPU renderer.
         // Mouse events pass through Metal to the terminal view (hitTest returns nil).
         let metalView = coordinator.metalView
@@ -134,6 +139,9 @@ final class RustTerminalContainerView: NSView {
     func disableMetalRendering() {
         guard let coordinator = rustMetalCoordinator else { return }
         coordinator.stop()
+        if let tabID = UUID(uuidString: terminalView.tabIdentifier) {
+            TabGraphicsMemoryManager.shared.unregister(forTabID: tabID)
+        }
 
         // Re-enable CPU rendering path
         terminalView.isMetalRenderingActive = false

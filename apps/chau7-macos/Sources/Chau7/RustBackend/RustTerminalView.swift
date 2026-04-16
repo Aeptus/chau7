@@ -2921,10 +2921,16 @@ final class RustTerminalView: NSView {
         Log.trace("RustTerminalView[\(viewId)]: applyRenderPhase -> \(phase.rawValue) (\(reason))")
 
         if previousPhase != phase {
+            let resolvedTabID = UUID(uuidString: tabIdentifier)
             ScrollbackMemoryManager.shared.handlePhaseTransition(
                 viewId: String(viewId),
-                tabID: UUID(uuidString: tabIdentifier),
+                tabID: resolvedTabID,
                 rustFFI: rustTerminal,
+                from: previousPhase,
+                to: phase
+            )
+            TabGraphicsMemoryManager.shared.handlePhaseTransition(
+                tabID: resolvedTabID,
                 from: previousPhase,
                 to: phase
             )

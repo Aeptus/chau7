@@ -838,6 +838,11 @@ final class OverlayTabsModel {
             requestSelectedTabAuthoritativeReveal(reason: "init_restore")
         }
 
+        // Register for per-phase snapshot release. Multi-window safe: every
+        // window model registers, and releases are dispatched to all (each
+        // only acts on tabs it owns).
+        TabGraphicsMemoryManager.shared.addSnapshotReleaser(self)
+
         // Setup task lifecycle observers (v1.1)
         setupTaskObservers()
 
@@ -4066,5 +4071,23 @@ extension String {
         guard hasPrefix(prefix) else { return nil }
         let suffix = String(dropFirst(prefix.count))
         return suffix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : suffix
+    }
+}
+
+// MARK: - TabSnapshotReleaser
+
+extension OverlayTabsModel: TabSnapshotReleaser {
+    @MainActor
+    func releaseSnapshots(forTabID tabID: UUID, tier: TabGraphicsMemoryManager.ReleaseTier) {
+        guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+        switch tier {
+        case .keepAll:
+            break
+        case .keepCachedOnly:
+            tabs[index].restorePreviewSnapshot = nil
+        case .releaseAll:
+            clearRetainedSnapshots(forTabAt: index, includeCachedSnapshot: true)
+            tabs[index].restorePreviewSnapshot = nil
+        }
     }
 }
