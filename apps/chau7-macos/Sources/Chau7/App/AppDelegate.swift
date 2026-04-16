@@ -60,10 +60,10 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     // MARK: - App Nap Prevention
 
-    /// Activity token to prevent App Nap from throttling the terminal.
-    /// Acquired when the app is active, released 30s after it goes to background.
+    /// Activity token to prevent App Nap from throttling latency-sensitive terminal work.
+    /// Held while the app is active, while startup/restore scopes are active,
+    /// or while any visible selected terminal remains live-rendered.
     private var activityToken: NSObjectProtocol?
-    private var latencyReleaseWorkItem: DispatchWorkItem?
     private var telemetryRepairWorkItem: DispatchWorkItem?
     private var appNapObservers: [Any] = []
     private var isAppActive = true
@@ -98,9 +98,9 @@ private final class OverlayBlurView: NSVisualEffectView {
         // causing Claude Code inside Chau7 to refuse to start.
         unsetenv("CLAUDECODE")
 
-        // CRITICAL: Prevent App Nap from throttling the terminal
-        // This eliminates the "first keystroke lag" issue.
-        // Released 30s after the app goes to background to save power on laptops.
+        // Prevent App Nap from throttling latency-sensitive terminal work.
+        // The hold now follows real visible/live terminal state rather than a
+        // blind background timer, so unfocus/refocus does not fall off a cliff.
         startAppNapManagement()
 
         // Start API analytics proxy if enabled
@@ -405,7 +405,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
 
         // End App Nap prevention
-        latencyReleaseWorkItem?.cancel()
         for (_, workItem) in latencyCriticalScopes {
             workItem.cancel()
         }
@@ -544,7 +543,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             MainActor.assumeIsolated {
                 self?.isAppActive = false
                 self?.scheduleRecentTelemetryRepairSweep()
-                self?.scheduleLatencyRelease()
+                self?.refreshLowLatencyActivity()
             }
         }
         appNapObservers = [activateObs, resignObs]
@@ -552,23 +551,17 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     private func enableLowLatency() {
-        latencyReleaseWorkItem?.cancel()
-        latencyReleaseWorkItem = nil
         refreshLowLatencyActivity()
     }
 
-    private func scheduleLatencyRelease() {
-        latencyReleaseWorkItem?.cancel()
-        let item = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            refreshLowLatencyActivity()
-        }
-        latencyReleaseWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30.0, execute: item)
-    }
-
     private func refreshLowLatencyActivity() {
-        let shouldHoldLowLatency = isAppActive || !latencyCriticalScopes.isEmpty
+        let shouldHoldLowLatency = LowLatencyActivityPolicy.shouldHoldActivity(
+            LowLatencyActivityPolicyInput(
+                isAppActive: isAppActive,
+                hasLatencyCriticalScopes: !latencyCriticalScopes.isEmpty,
+                hasVisibleLiveWindows: hasVisibleLiveWindowsForLowLatency
+            )
+        )
         if shouldHoldLowLatency {
             guard activityToken == nil else { return }
             activityToken = ProcessInfo.processInfo.beginActivity(
@@ -604,6 +597,12 @@ private final class OverlayBlurView: NSVisualEffectView {
         item.cancel()
         refreshLowLatencyActivity()
         Log.info("App Nap: ended latency-critical scope reason=\(reason)")
+    }
+
+    private var hasVisibleLiveWindowsForLowLatency: Bool {
+        overlayHosts.contains { host in
+            host.model.shouldHoldLowLatencyWhileInactive
+        }
     }
 
     func showSSHManager() {
@@ -1713,6 +1712,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             if let host = overlayHosts.first(where: { $0.window == sender }) {
                 host.model.noteTabBarVisibilityChanged(isVisible: false)
             }
+            refreshLowLatencyActivity()
             logOverlayWindowLifecycle(reason: "windowShouldClose-orderOut", window: sender)
             sender.orderOut(nil)
             return false
@@ -1797,12 +1797,14 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func windowDidMiniaturize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        refreshLowLatencyActivity()
         logOverlayWindowLifecycle(reason: "didMiniaturize", window: window)
         logOverlayDiagnostics(reason: "didMiniaturize", window: window)
     }
 
     func windowDidDeminiaturize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        refreshLowLatencyActivity()
         scheduleSelectedTabAuthoritativeReveal(for: window, event: .deminiaturized)
         logOverlayWindowLifecycle(reason: "didDeminiaturize", window: window)
         logOverlayDiagnostics(reason: "didDeminiaturize", window: window)
@@ -2129,6 +2131,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         for host in overlayHosts {
             host.model.invalidateRenderLifecycle(reason: reason)
         }
+        refreshLowLatencyActivity()
     }
 
     private func logOverlayWindowLifecycle(reason: String, window: NSWindow) {

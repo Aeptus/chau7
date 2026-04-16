@@ -3241,18 +3241,22 @@ final class OverlayTabsModel {
         renderPhase(forTabID: id) == .hidden
     }
 
+    private var isWindowVisibleForRendering: Bool {
+        if StartupRestoreCoordinator.shared.isActive {
+            return true
+        }
+        guard let overlayWindow else { return true }
+        return overlayWindow.isVisible && !overlayWindow.isMiniaturized
+    }
+
     private func renderLifecycleSnapshot() -> TabRenderLifecycleController.Snapshot {
         let isInputPriorityWindow: Bool
-        let isWindowVisibleForRendering: Bool
         if StartupRestoreCoordinator.shared.isActive {
             isInputPriorityWindow = true
-            isWindowVisibleForRendering = true
         } else if let overlayWindow {
             isInputPriorityWindow = overlayWindow.isKeyWindow || overlayWindow.isMainWindow
-            isWindowVisibleForRendering = overlayWindow.isVisible && !overlayWindow.isMiniaturized
         } else {
             isInputPriorityWindow = true
-            isWindowVisibleForRendering = true
         }
         return TabRenderLifecycleController.Snapshot(
             selectedTabID: selectedTabID,
@@ -3307,6 +3311,19 @@ final class OverlayTabsModel {
 
     func isInteractive(tab: OverlayTab) -> Bool {
         renderLifecycleDecision(for: tab).isInteractive
+    }
+
+    var shouldHoldLowLatencyWhileInactive: Bool {
+        guard isWindowVisibleForRendering,
+              let selectedTab,
+              let session = selectedPresentationSession(for: selectedTab) else {
+            return false
+        }
+
+        let decision = renderLifecycleDecision(for: selectedTab)
+        guard decision.phase.allowsLivePresentation else { return false }
+
+        return session.existingRustTerminalView != nil || session.awaitingVisibleFrameReady
     }
 
     /// Fresh MCP tabs need a real terminal view at least once so background
