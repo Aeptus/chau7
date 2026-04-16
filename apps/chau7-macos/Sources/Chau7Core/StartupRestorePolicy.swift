@@ -73,6 +73,7 @@ public struct StartupRestoreTracker: Equatable {
     public private(set) var restorePreviewShown = 0
     public private(set) var restorePreviewDiscarded = 0
     public private(set) var selectedTabLiveFrameMsByWindow: [Int: Int] = [:]
+    public private(set) var windowPreparedAtByNumber: [Int: Date] = [:]
     public private(set) var windowVisibleAtByNumber: [Int: Date] = [:]
 
     public init() {}
@@ -92,6 +93,7 @@ public struct StartupRestoreTracker: Equatable {
         restorePreviewShown = 0
         restorePreviewDiscarded = 0
         selectedTabLiveFrameMsByWindow.removeAll(keepingCapacity: true)
+        windowPreparedAtByNumber.removeAll(keepingCapacity: true)
         windowVisibleAtByNumber.removeAll(keepingCapacity: true)
     }
 
@@ -136,14 +138,22 @@ public struct StartupRestoreTracker: Equatable {
         restorePreviewDiscarded += 1
     }
 
+    public mutating func noteWindowPrepared(windowNumber: Int, at date: Date) {
+        if windowPreparedAtByNumber[windowNumber] == nil {
+            windowPreparedAtByNumber[windowNumber] = date
+        }
+    }
+
     public mutating func noteWindowVisible(windowNumber: Int, at date: Date) {
         windowVisibleAtByNumber[windowNumber] = date
     }
 
     public mutating func noteSelectedTabLiveFrame(windowNumber: Int, at date: Date) -> Int? {
-        guard let visibleAt = windowVisibleAtByNumber[windowNumber] else { return nil }
         guard selectedTabLiveFrameMsByWindow[windowNumber] == nil else { return nil }
-        let elapsedMs = max(0, Int((date.timeIntervalSince(visibleAt) * 1000).rounded()))
+        guard let preparedAt = windowPreparedAtByNumber[windowNumber] ?? windowVisibleAtByNumber[windowNumber] else {
+            return nil
+        }
+        let elapsedMs = max(0, Int((date.timeIntervalSince(preparedAt) * 1000).rounded()))
         selectedTabLiveFrameMsByWindow[windowNumber] = elapsedMs
         return elapsedMs
     }

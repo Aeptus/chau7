@@ -349,7 +349,6 @@ private final class OverlayBlurView: NSVisualEffectView {
                     revealWasForced: false
                 )
             }
-            tabsModel?.beginDeferredRestoreIfNeeded(reason: "startup_live_frame")
             self.completeStartupRestoreIfReady(reason: "selected_tab_live_frame")
         }
     }
@@ -2090,6 +2089,10 @@ private final class OverlayBlurView: NSVisualEffectView {
             host.window.ignoresMouseEvents = true
             host.window.orderFront(nil)
         }
+        StartupRestoreCoordinator.shared.noteWindowPrepared(
+            windowNumber: windowNumber,
+            selectedTabID: host.model.selectedTabID
+        )
         NSApp.activate(ignoringOtherApps: true)
         host.model.requestSelectedTabAuthoritativeReveal(reason: "startup_prepare")
         if StartupWindowPresentationPolicy.shouldRevealWindowImmediately(

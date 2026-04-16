@@ -27,6 +27,15 @@ final class StartupRestoreCoordinator {
         return tracker.hasSelectedTabLiveFrame(windowNumber: windowNumber)
     }
 
+    func noteWindowPrepared(windowNumber: Int, selectedTabID: UUID?) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard tracker.isActive else { return }
+        tracker.noteWindowPrepared(windowNumber: windowNumber, at: Date())
+        let tabLabel = selectedTabID?.uuidString ?? "nil"
+        Log.info("Startup window prepared: window=\(windowNumber) selectedTab=\(tabLabel)")
+    }
+
     func begin() {
         lock.lock()
         tracker.begin(at: Date())
@@ -182,6 +191,7 @@ final class StartupRestoreCoordinator {
         lock.lock()
         defer { lock.unlock() }
         guard tracker.isActive else { return }
+        tracker.noteWindowPrepared(windowNumber: windowNumber, at: Date())
         tracker.noteWindowVisible(windowNumber: windowNumber, at: Date())
         let tabLabel = selectedTabID?.uuidString ?? "nil"
         Log.info("Startup window visible: window=\(windowNumber) selectedTab=\(tabLabel)")

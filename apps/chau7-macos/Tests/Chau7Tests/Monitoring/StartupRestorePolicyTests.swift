@@ -78,6 +78,19 @@ final class StartupRestorePolicyTests: XCTestCase {
         XCTAssertFalse(tracker.hasSelectedTabLiveFrame(windowNumber: 8))
     }
 
+    func testTrackerRecordsSelectedLiveFrameForPreparedStartupWindowBeforeReveal() {
+        var tracker = StartupRestoreTracker()
+        let startedAt = Date(timeIntervalSince1970: 100)
+        tracker.begin(at: startedAt)
+        tracker.noteWindowPrepared(windowNumber: 7, at: startedAt.addingTimeInterval(0.2))
+
+        XCTAssertEqual(
+            tracker.noteSelectedTabLiveFrame(windowNumber: 7, at: startedAt.addingTimeInterval(0.32)),
+            120
+        )
+        XCTAssertTrue(tracker.hasSelectedTabLiveFrame(windowNumber: 7))
+    }
+
     func testSnippetResolvePolicyDebouncesHomePathDuringStartupRestore() {
         XCTAssertTrue(
             StartupSnippetResolvePolicy.shouldDebounce(
