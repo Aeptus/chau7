@@ -101,6 +101,22 @@ final class TripleBufferingTests: XCTestCase {
         )
     }
 
+    func testCommitClearsDirtyRowsOnNextUpdateBufferOnly() {
+        let buffer = TripleBufferedTerminal(rows: 4, cols: 4)
+
+        buffer.setCell(row: 2, col: 0, TerminalCell(character: 0x42))
+        buffer.commitUpdate()
+
+        XCTAssertTrue(buffer.dirtyRows.contains(2))
+
+        buffer.commitUpdate()
+
+        XCTAssertTrue(
+            buffer.dirtyRows.isEmpty,
+            "A no-op commit after the dirty frame should not keep stale dirty rows alive"
+        )
+    }
+
     // MARK: - testMultipleCommits
 
     func testMultipleCommits() {
@@ -146,6 +162,23 @@ final class TripleBufferingTests: XCTestCase {
             readCell.character,
             0x43,
             "Only the last write before commit should be visible"
+        )
+    }
+
+    func testSettingIdenticalCellDoesNotMarkDirty() {
+        let buffer = TripleBufferedTerminal(rows: 4, cols: 4)
+
+        buffer.commitUpdate()
+        buffer.setCell(row: 0, col: 0, TerminalCell())
+        buffer.commitUpdate()
+
+        XCTAssertTrue(
+            buffer.dirtyRows.isEmpty,
+            "Writing the same cell contents should not mark the row dirty"
+        )
+        XCTAssertFalse(
+            buffer.needsFullRefresh,
+            "Writing the same cell contents should not force another full refresh"
         )
     }
 

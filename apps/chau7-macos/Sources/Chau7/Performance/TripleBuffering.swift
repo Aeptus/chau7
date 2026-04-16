@@ -74,9 +74,19 @@ final class TripleBufferedTerminal {
         subscript(row: Int, col: Int) -> TerminalCell {
             get { cells[row * cols + col] }
             set {
-                cells[row * cols + col] = newValue
+                let index = row * cols + col
+                let currentValue = cells[index]
+                guard Self.cellsDiffer(currentValue, newValue) else { return }
+                cells[index] = newValue
                 markDirty(row: row)
             }
+        }
+
+        private static func cellsDiffer(_ lhs: TerminalCell, _ rhs: TerminalCell) -> Bool {
+            lhs.character != rhs.character ||
+                lhs.foregroundColor != rhs.foregroundColor ||
+                lhs.backgroundColor != rhs.backgroundColor ||
+                lhs.flags != rhs.flags
         }
 
         /// Copies content from another buffer
@@ -170,8 +180,9 @@ final class TripleBufferedTerminal {
         updateIndex.store(render, ordering: .releasing)
         renderIndex.store(current, ordering: .releasing)
 
-        // Clear dirty flags on old update buffer (now render buffer)
-        buffers[current].clearDirty()
+        // Clear dirty flags on the new update buffer. The render buffer keeps
+        // the committed dirty rows so the renderer can update incrementally.
+        buffers[render].clearDirty()
 
         swapCount.wrappingIncrement(ordering: .relaxed)
         let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
