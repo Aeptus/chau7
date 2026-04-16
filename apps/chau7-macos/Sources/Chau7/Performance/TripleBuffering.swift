@@ -210,6 +210,13 @@ final class TripleBufferedTerminal {
         buffers[renderIndex.load(ordering: .acquiring)]
     }
 
+    /// Gets the currently displayed buffer.
+    /// Present-only redraws must read from this buffer so they do not regress
+    /// to the stale pre-present render surface after a swap.
+    var displayBuffer: TerminalBuffer {
+        buffers[displayIndex.load(ordering: .acquiring)]
+    }
+
     /// Swaps render buffer to display after GPU submission.
     func presentFrame() {
         let render = renderIndex.load(ordering: .relaxed)

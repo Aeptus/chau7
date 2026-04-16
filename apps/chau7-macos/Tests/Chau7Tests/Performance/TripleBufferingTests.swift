@@ -198,6 +198,25 @@ final class TripleBufferingTests: XCTestCase {
         )
     }
 
+    func testPresentFrameKeepsLatestStateInDisplayBuffer() {
+        let buffer = TripleBufferedTerminal(rows: 4, cols: 4)
+
+        buffer.setCell(row: 0, col: 0, TerminalCell(character: 0x41))
+        buffer.commitUpdate()
+        buffer.presentFrame()
+
+        XCTAssertEqual(
+            buffer.displayBuffer[0, 0].character,
+            0x41,
+            "Present-only redraws must read the last presented frame, not the recycled render buffer"
+        )
+        XCTAssertEqual(
+            buffer.renderBuffer[0, 0].character,
+            0x20,
+            "After presentFrame the recycled render buffer should no longer be treated as the visible source"
+        )
+    }
+
     // MARK: - Clear
 
     func testClear() {

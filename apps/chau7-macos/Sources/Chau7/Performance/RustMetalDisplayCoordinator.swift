@@ -393,7 +393,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         }
 
         // 6. Render from the triple buffer
-        let renderBuf = tripleBuffer.renderBuffer
+        let sourceBuffer = shouldSync ? tripleBuffer.renderBuffer : tripleBuffer.displayBuffer
         let cellCount = rows * cols
         guard cellCount > 0 else {
             let now = CFAbsoluteTimeGetCurrent()
@@ -412,7 +412,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             Log.trace("RustMetalDisplayCoordinator: Metal render — \(cols)x\(rows) (\(cellCount) cells), drawCalls=\(Self.drawCallCount), viewport=\(view.bounds.size)")
         }
 
-        let cellsPtr = UnsafeBufferPointer(renderBuf.cells)
+        let cellsPtr = UnsafeBufferPointer(sourceBuffer.cells)
         if let viewID = terminalView?.viewId {
             RenderPipelineProfiler.shared.recordDraw(
                 viewID: viewID,
