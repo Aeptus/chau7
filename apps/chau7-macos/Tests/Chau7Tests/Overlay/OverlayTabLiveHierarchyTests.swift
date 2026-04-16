@@ -189,6 +189,43 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertNil(model.tabs[1].session?.lastRenderedSnapshot)
     }
 
+    func testSelectedTabRevealTimeoutForcesLivePresentation() {
+        model.newTab(selectNewTab: false)
+        let targetID = model.tabs[1].id
+
+        model.selectTab(id: targetID)
+        XCTAssertFalse(model.isTerminalReady)
+
+        drainMainQueue(OverlayTabsModel.selectedTerminalRevealTimeout + 0.1)
+
+        XCTAssertTrue(
+            model.isTerminalReady,
+            "A missed visible-frame callback should not strand the selected tab behind the repaint cover"
+        )
+        XCTAssertFalse(model.tabs[1].session?.awaitingVisibleFrameReady ?? true)
+    }
+
+    func testOlderRevealTimeoutCannotCompleteNewerSelection() {
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+
+        let firstTargetID = model.tabs[1].id
+        let secondTargetID = model.tabs[2].id
+
+        model.selectTab(id: firstTargetID)
+        drainMainQueue(0.2)
+        model.selectTab(id: secondTargetID)
+
+        drainMainQueue(OverlayTabsModel.selectedTerminalRevealTimeout - 0.1)
+
+        XCTAssertEqual(model.selectedTabID, secondTargetID)
+        XCTAssertFalse(
+            model.isTerminalReady,
+            "An older reveal timeout must not complete a newer selected tab before its own timeout or live frame"
+        )
+        XCTAssertTrue(model.tabs[2].session?.awaitingVisibleFrameReady ?? false)
+    }
+
     func testSelectNextTabUsesLiveRevealHandoffPath() {
         model.newTab(selectNewTab: false)
         let targetID = model.tabs[1].id
@@ -245,6 +282,18 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertNil(
             model.tabs[0].visibleSnapshot,
             "The selected surface snapshot must come from the focused display session, not the tab's primary session"
+        )
+    }
+
+    func testRequestSelectedTabAuthoritativeRevealDiscardsSettledRestorePreview() {
+        model.tabs[0].restorePreviewSnapshot = makeSnapshot()
+        model.tabs[0].session?.markRestoreBootstrapReady(source: "test")
+
+        model.requestSelectedTabAuthoritativeReveal(reason: "test_restore_preview_discard")
+
+        XCTAssertNil(
+            model.tabs[0].restorePreviewSnapshot,
+            "Restore previews should be discarded once bootstrap has settled, even though selected-tab reveal no longer presents snapshots"
         )
     }
 

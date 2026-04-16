@@ -130,11 +130,9 @@ struct OverlayTab: Identifiable, Equatable {
     /// Passive preview restored from persisted state. Only shown while the
     /// shell-backed restore bootstrap is still in progress.
     var restorePreviewSnapshot: NSImage?
-    /// Last known cursor position for cursor-first rendering
-    var lastCursorPosition: CGPoint = .zero
-    /// Last known prompt text for cursor placeholder
-    var lastPromptText = ""
 
+    /// Retained frames remain for persistence and inactive-tab bookkeeping.
+    /// The selected surface no longer presents them directly during tab reveal.
     var visibleSnapshot: NSImage? {
         if let restorePreviewSnapshot {
             return restorePreviewSnapshot
@@ -606,7 +604,9 @@ final class OverlayTabsModel {
         !usesStartupLoadingCover && !selectedSurfacePresentation.isLivePresentable
     }
     @ObservationIgnored var terminalReadyCommitWorkItem: DispatchWorkItem?
+    @ObservationIgnored var selectedTerminalRevealTimeoutWorkItem: DispatchWorkItem?
     @ObservationIgnored static let terminalReadyCompositingDelay: TimeInterval = 1.0 / 60.0
+    @ObservationIgnored static let selectedTerminalRevealTimeout: TimeInterval = 0.75
     /// Set of tab IDs currently being pre-warmed (on hover)
     @ObservationIgnored var prewarmingTabIDs: Set<UUID> = []
     @ObservationIgnored static let previousLiveHierarchyKeepAliveInterval: TimeInterval = 0.5
@@ -947,6 +947,7 @@ final class OverlayTabsModel {
         if let visibleFrameReadyObserver { NotificationCenter.default.removeObserver(visibleFrameReadyObserver) }
         previousLiveHierarchyReleaseWorkItem?.cancel()
         terminalReadyCommitWorkItem?.cancel()
+        selectedTerminalRevealTimeoutWorkItem?.cancel()
     }
 
     // MARK: - Tab State Persistence
@@ -971,6 +972,49 @@ final class OverlayTabsModel {
     private func resetSelectedTerminalRevealScheduling() {
         terminalReadyCommitWorkItem?.cancel()
         terminalReadyCommitWorkItem = nil
+        selectedTerminalRevealTimeoutWorkItem?.cancel()
+        selectedTerminalRevealTimeoutWorkItem = nil
+    }
+
+    private func discardSettledRestorePreviews(reason: String) {
+        for index in tabs.indices where tabs[index].restorePreviewSnapshot != nil {
+            let phase = tabs[index].displaySession?.restoreBootstrapPhase ?? .inactive
+            if phase != .replaying {
+                StartupRestoreCoordinator.shared.noteRestorePreviewDiscarded(
+                    tabID: tabs[index].id,
+                    windowNumber: overlayWindow?.windowNumber,
+                    reason: "\(reason)_phase_\(phase.rawValue)"
+                )
+                tabs[index].restorePreviewSnapshot = nil
+            }
+        }
+    }
+
+    private func scheduleSelectedTerminalRevealTimeout(
+        tabID: UUID,
+        generation: UInt64,
+        reason: String
+    ) {
+        selectedTerminalRevealTimeoutWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.selectedTabID == tabID,
+                  let selectedTab = self.selectedTab,
+                  let session = self.selectedPresentationSession(for: selectedTab),
+                  session.presentationSurfaceState.generation == generation,
+                  !self.selectedSurfacePresentation.isLivePresentable else {
+                return
+            }
+            Log.warn(
+                "selected-tab live reveal timeout[\(reason)]: forcing live presentation for tab \(tabID) generation=\(generation)"
+            )
+            self.completeSelectedTabRevealIfNeeded(for: selectedTab, reason: "\(reason)_timeout", force: true)
+        }
+        selectedTerminalRevealTimeoutWorkItem = item
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.selectedTerminalRevealTimeout,
+            execute: item
+        )
     }
 
     private func logSelectedTabRevealCompletion(
@@ -1113,8 +1157,6 @@ final class OverlayTabsModel {
 
         if let index = tabs.firstIndex(where: { $0.id == tab.id }) {
             cacheRetainedSnapshot(snapshot, forTabAt: index)
-            let snapshotSession = tabs[index].displaySession ?? tabs[index].session
-            tabs[index].lastPromptText = snapshotSession?.displayPath() ?? tabs[index].lastPromptText
         }
         return snapshot
     }
@@ -2550,6 +2592,7 @@ final class OverlayTabsModel {
 
     func requestSelectedTabAuthoritativeReveal(reason: String) {
         dispatchPrecondition(condition: .onQueue(.main))
+        discardSettledRestorePreviews(reason: reason)
 
         guard let selectedTab,
               let session = selectedPresentationSession(for: selectedTab) else {
@@ -2561,6 +2604,12 @@ final class OverlayTabsModel {
         _ = session.beginPresentationReveal(
             shouldAwaitVisibleFrame: true,
             now: CFAbsoluteTimeGetCurrent()
+        )
+        let revealGeneration = session.presentationSurfaceState.generation
+        scheduleSelectedTerminalRevealTimeout(
+            tabID: selectedTab.id,
+            generation: revealGeneration,
+            reason: reason
         )
 
         guard let rustView = session.existingRustTerminalView else {

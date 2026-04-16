@@ -442,7 +442,6 @@ extension OverlayTabsModel {
             tab.stampOwnerTabID()
             if let preview = Self.restorePreviewImage(from: state.previewSnapshotPNGData) {
                 tab.restorePreviewSnapshot = preview
-                tab.lastPromptText = tab.session?.displayPath() ?? "~"
                 Log.info("Restore preview hydrated for tab=\(restoredTabID)")
             }
 

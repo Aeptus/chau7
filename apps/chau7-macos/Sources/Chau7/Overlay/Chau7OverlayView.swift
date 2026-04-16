@@ -1461,7 +1461,7 @@ struct Chau7OverlayView: View {
     private var terminalStack: some View {
         ZStack(alignment: .top) {
             if overlayModel.shouldShowSelectedSurfaceLiveRepaintCover {
-                Color.black
+                Color(nsColor: settings.currentColorScheme.backgroundNSColor)
                     .ignoresSafeArea()
                     .zIndex(2)
             }
