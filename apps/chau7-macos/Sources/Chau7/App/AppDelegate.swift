@@ -93,6 +93,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Purge oversized PTY logs on startup to prevent disk bloat
         purgeLargePTYLogs()
         UsageMonitor.shared.start()
+        MemoryPressureResponder.shared.start()
 
         // Strip env vars from parent process that would confuse nested CLI tools.
         // When Chau7 is launched from within a Claude Code session (e.g. via
