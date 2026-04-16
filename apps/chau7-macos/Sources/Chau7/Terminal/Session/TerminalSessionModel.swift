@@ -258,8 +258,6 @@ final class TerminalSessionModel {
         return !aiDetection.isRestored
     }
 
-    private static let backgroundLiveRenderGraceInterval: TimeInterval = 2
-
     func backgroundLiveRenderReasons(now: Date = Date()) -> [String] {
         guard activeAppName != nil else { return [] }
 
@@ -274,10 +272,9 @@ final class TerminalSessionModel {
         case .waitingForInput:
             reasons.append("waitingForInput")
         case .running, .stuck:
-            let secondsSinceActivity = now.timeIntervalSince(lastActivityDate)
-            if secondsSinceActivity <= Self.backgroundLiveRenderGraceInterval {
-                reasons.append(String(format: "recentActivity=%.1fs", max(0, secondsSinceActivity)))
-            }
+            let secondsSinceActivity = max(0, now.timeIntervalSince(lastActivityDate))
+            reasons.append(effectiveStatus.rawValue)
+            reasons.append(String(format: "lastActivity=%.1fs", secondsSinceActivity))
         case .idle, .done, .exited:
             break
         }

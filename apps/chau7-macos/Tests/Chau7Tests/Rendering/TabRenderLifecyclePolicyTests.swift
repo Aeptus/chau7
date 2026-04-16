@@ -68,12 +68,34 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertFalse(decision.isInteractive)
     }
 
-    func testBackgroundActivityUsesWarmPhaseAndStaysAttached() {
+    func testVisibleBackgroundActivityUsesActivePhaseAndStaysAttached() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
                 isInputPriorityWindow: true,
                 isWindowVisibleForRendering: true,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: true,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true
+            )
+        )
+
+        XCTAssertEqual(decision.phase, .active)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.isInteractive)
+    }
+
+    func testHiddenBackgroundActivityUsesWarmPhaseAndStaysAttached() {
+        let decision = TabRenderLifecyclePolicy.decide(
+            TabRenderLifecycleInput(
+                isSelectedTab: false,
+                isInputPriorityWindow: false,
+                isWindowVisibleForRendering: false,
                 isPreviousLiveTab: false,
                 isPrewarming: false,
                 hasBackgroundActivity: true,

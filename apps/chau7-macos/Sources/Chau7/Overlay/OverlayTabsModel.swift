@@ -3229,16 +3229,18 @@ final class OverlayTabsModel {
     }
 
     var shouldHoldLowLatencyWhileInactive: Bool {
-        guard isWindowVisibleForRendering,
-              let selectedTab,
-              let session = selectedPresentationSession(for: selectedTab) else {
+        guard isWindowVisibleForRendering else {
             return false
         }
 
-        let decision = renderLifecycleDecision(for: selectedTab)
-        guard decision.phase.allowsLivePresentation else { return false }
-
-        return session.existingRustTerminalView != nil || session.awaitingVisibleFrameReady
+        return tabs.contains { tab in
+            let decision = renderLifecycleDecision(for: tab)
+            guard decision.phase.allowsLivePresentation,
+                  let session = selectedPresentationSession(for: tab) else {
+                return false
+            }
+            return session.existingRustTerminalView != nil || session.awaitingVisibleFrameReady
+        }
     }
 
     /// Fresh MCP tabs need a real terminal view at least once so background

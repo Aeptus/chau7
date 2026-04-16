@@ -77,7 +77,7 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(session.backgroundLiveRenderReasons(), ["restoreBootstrap", "approvalRequired"])
     }
 
-    func testShouldKeepLiveRenderingInBackgroundCoolsStaleAITab() {
+    func testShouldKeepLiveRenderingInBackgroundPinsRunningAITabUntilCompletion() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
         session.activeAppName = "Codex"
@@ -85,18 +85,22 @@ final class TerminalSessionModelTests: XCTestCase {
         session.lastOutputAt = Date(timeIntervalSinceNow: -120)
         session.lastInputAt = Date(timeIntervalSinceNow: -120)
 
-        XCTAssertFalse(session.shouldKeepLiveRenderingInBackground)
+        XCTAssertTrue(session.shouldKeepLiveRenderingInBackground)
     }
 
-    func testShouldKeepLiveRenderingInBackgroundKeepsRecentRunningAIActivityWarm() {
+    func testShouldKeepLiveRenderingInBackgroundReportsRunningReasonAndLastActivityAge() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
         session.activeAppName = "Codex"
         session.status = .running
-        session.lastOutputAt = Date()
-        session.lastInputAt = Date()
+        session.lastOutputAt = Date(timeIntervalSinceNow: -3)
+        session.lastInputAt = Date(timeIntervalSinceNow: -3)
 
-        XCTAssertTrue(session.shouldKeepLiveRenderingInBackground)
+        let reasons = session.backgroundLiveRenderReasons(now: Date())
+
+        XCTAssertEqual(reasons.count, 2)
+        XCTAssertEqual(reasons.first, "running")
+        XCTAssertTrue(reasons[1].hasPrefix("lastActivity="))
     }
 
     func testShouldKeepLiveRenderingInBackgroundCoolsIdleAITabEvenWithRecentActivity() {
