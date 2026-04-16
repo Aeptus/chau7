@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP Live vs Telemetry Session Contract**: `tab_list` and `tab_status` are now documented as Chau7's primary live discovery/control path for active AI work, while `session_list` and `session_current` are explicitly framed as telemetry/history views instead of the live source of truth.
 - **MCP Lifecycle and Tool Error Semantics**: The embedded MCP server now enforces initialize/initialized ordering, negotiates supported protocol versions, returns JSON-RPC protocol errors for unknown tools and malformed tool calls, and marks execution failures with `result.isError` plus structured content instead of reporting every tool failure as plain success text.
 - **MCP Tool Abuse Guardrails**: Chau7 now ships a dedicated per-tool MCP rate limiter with more generous budgets for high-frequency polling tools, reducing same-user client hammering without breaking normal runtime/status polling.
+- **SwiftPM Docs Scan Cleanup**: Local package builds now exclude `Sources/Chau7/Performance/SIMDTerminalParser.swift` from the docs/resource scan so the performance source file is not misclassified as bundled documentation.
+- **PTY Log Output Normalization**: `tab_output(source: "pty_log")` now flushes the active AI PTY log first and normalizes ANSI redraws plus backspaces before parsing, improving live Codex/Claude transcript extraction from interactive sessions.
 - **Visible MCP Runtime Launch Failures**: `runtime_session_create` now fails explicitly when Chau7 cannot create a user-visible tab, returning structured `visible_tab_creation_failed` metadata instead of silently validating a hidden PTY-only launch path. MCP client connections also stay open longer during slower eval/debug workflows to reduce idle `Transport closed` disconnects.
 - **MCP Tab Window Routing**: `tab_create` now defaults to the active overlay window instead of always targeting the first registered window, so MCP-created tabs appear in the window the user is currently looking at.
 - **Tab Restore and Creation Regressions**: Rolled back the render-tier startup path and direct scrollback injection restore path after they caused slow `Cmd+T` tab creation and corrupted fresh post-restore AI history layout. Restore keeps artifact filtering but now replays scrollback through the shell again for stable geometry.
@@ -440,8 +442,3 @@ Initial development release
 | 0.2.1 | 2026-01-15 | Shell integration, baseline metrics |
 | 0.2.0 | 2026-01-14 | API proxy, task lifecycle, terminal header |
 | 0.1.0 | 2026-01-11 | Initial release with core features |
-# Unreleased
-
-- SwiftPM now excludes `Sources/Chau7/Performance/SIMDTerminalParser.swift` from the docs/package resource scan so local package builds do not treat the performance source file as a bundled document.
-- MCP `tab_output(source: "pty_log")` now flushes the active AI PTY log before reading so live Codex/Claude transcripts are less likely to miss the final output tail.
-- PTY log tail reads now normalize ANSI redraws and backspaces before parsing, improving extraction of structured Codex/Claude output from interactive transcripts.

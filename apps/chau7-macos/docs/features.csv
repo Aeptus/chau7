@@ -1,6 +1,7 @@
 Category,Feature,Description,Status,Differentiator
 Terminal Core,Rust Terminal Backend,"Custom terminal emulator written in Rust with FFI bridge — fast, memory-safe, and correct",Shipped,Yes
 Terminal Core,Stabilized Scrollback Restore,"Restored scrollback is replayed through the shell again, with restore-artifact filtering preserved, to avoid fresh post-relaunch history corruption while keeping fast visible startup",Shipped,Yes
+Performance,Tier-Based Graphics Memory Release,"Background tabs release NSImage snapshot caches and mark Metal textures/buffers volatile on demotion, letting the OS reclaim GPU memory under pressure with atlas rebuild on promotion",Shipped,Yes
 Performance,Retained-Frame Inactive Tab Handoff,"Suspended tabs keep a retained last-rendered frame so tab switches can show an immediate snapshot while the live terminal resynchronizes",Shipped,Yes
 Tabs,Event-Driven Retained-Frame Reveal,"Snapshot-backed tab switches keep the retained frame visible until the selected terminal reports its first live sync, avoiding brief grey flashes during cold-tab reactivation",Shipped,Yes
 Tabs,Cold Tab Snapshot Synthesis,"If a cold tab still has a retained Rust terminal view but no cached frame, Chau7 now captures a retained snapshot on selection so reused terminal views avoid a blank grey handoff",Shipped,Yes

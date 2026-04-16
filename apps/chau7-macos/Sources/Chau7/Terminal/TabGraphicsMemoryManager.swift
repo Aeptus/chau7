@@ -82,13 +82,16 @@ final class TabGraphicsMemoryManager {
     func handlePhaseTransition(tabID: UUID?, from oldPhase: TabRenderPhase, to newPhase: TabRenderPhase) {
         guard let tabID, oldPhase != newPhase else { return }
 
+        // Policy note: Chau7's render policy almost never promotes tabs to
+        // `.hidden` because most terminals report hasBackgroundActivity=true
+        // (their shell process is running). Aggressively releasing on `.warm`
+        // captures the big memory wins for the common case. Rebuilding a
+        // cached thumbnail / glyph atlas on re-entry is a fast operation.
         let tier: ReleaseTier
         switch newPhase {
         case .active, .passiveVisible:
             tier = .keepAll
-        case .warm:
-            tier = .keepCachedOnly
-        case .hidden:
+        case .warm, .hidden:
             tier = .releaseAll
         }
 

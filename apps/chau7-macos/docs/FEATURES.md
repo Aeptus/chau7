@@ -264,6 +264,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | **Predictive rendering** | Pre-cache likely output to shave display latency |
 | **Dirty region tracking** | Only re-render what changed |
 | **Feature profiler** | Per-feature timing with os.signpost integration |
+| **Tier-based graphics memory release** | Background tabs release NSImage snapshot caches and mark Metal textures/buffers volatile on demotion, letting the OS reclaim GPU memory under pressure and rebuilding on promotion |
 
 ## Tabs, Panes & Windows
 
