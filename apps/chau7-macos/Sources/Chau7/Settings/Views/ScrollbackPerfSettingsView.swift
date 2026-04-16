@@ -84,6 +84,16 @@ struct ScrollbackPerfSettingsView: View {
                     .padding(.leading, 20)
             }
 
+            SettingsPicker(
+                label: L("settings.terminal.activePollingRateCap", "Active Tab Refresh Cap"),
+                help: L(
+                    "settings.terminal.activePollingRateCap.help",
+                    "Maximum refresh rate for the focused tab. Display Native follows your screen (up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life. Idle tabs throttle automatically regardless."
+                ),
+                selection: $settings.activePollingRateCap,
+                options: ActivePollingRateCap.allCases.map { (value: $0, label: $0.displayName) }
+            )
+
             Divider()
                 .padding(.vertical, 8)
 

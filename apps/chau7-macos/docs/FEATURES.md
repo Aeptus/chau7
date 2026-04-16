@@ -265,6 +265,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | **Dirty region tracking** | Only re-render what changed |
 | **Feature profiler** | Per-feature timing with os.signpost integration |
 | **Tier-based graphics memory release** | Background tabs release NSImage snapshot caches and mark Metal textures/buffers volatile on demotion, letting the OS reclaim GPU memory under pressure and rebuilding on promotion |
+| **Adaptive render-loop throttling** | Active tab drops to ~10 Hz after idle, snaps back instantly on PTY data or user input — cuts wakeups and CPU on idle AI sessions |
+| **Configurable active-tab refresh cap** | Display Native / 60 Hz / 30 Hz picker lets users trade scroll fluidity for battery; default follows the screen's native refresh |
 
 ## Tabs, Panes & Windows
 

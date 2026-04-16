@@ -272,6 +272,10 @@ extension RustTerminalView {
             let location = convert(event.locationInWindow, from: nil)
             guard bounds.contains(location) else { return event }
 
+            // User is interacting — exit any idle throttle before we do work so
+            // the click response renders at full rate, not 10 Hz.
+            snapToFastPolling()
+
             // If a SwiftUI overlay is above us, don't intercept the click
             if let hitView = event.window?.contentView?.hitTest(event.locationInWindow),
                hitView !== self, !hitView.isDescendant(of: self) {
@@ -492,6 +496,9 @@ extension RustTerminalView {
             guard event.window === window else { return event }
             let location = convert(event.locationInWindow, from: nil)
             guard bounds.contains(location) else { return event }
+
+            // Scroll needs to animate at full rate on ProMotion displays.
+            snapToFastPolling()
 
             // Mouse reporting mode: forward scroll to the terminal program
             if isMouseReportingEnabled() {

@@ -908,6 +908,7 @@ extension Notification.Name {
     static let terminalOpacityChanged = Notification.Name("terminalOpacityChanged")
     static let terminalZoomChanged = Notification.Name("terminalZoomChanged")
     static let terminalDangerousCommandHighlightChanged = Notification.Name("terminalDangerousCommandHighlightChanged")
+    static let activePollingRateCapChanged = Notification.Name("activePollingRateCapChanged")
     static let settingsProfileChanged = Notification.Name("settingsProfileChanged")
     static let appThemeChanged = Notification.Name("appThemeChanged")
     static let fullscreenToolbarSettingChanged = Notification.Name("fullscreenToolbarSettingChanged")

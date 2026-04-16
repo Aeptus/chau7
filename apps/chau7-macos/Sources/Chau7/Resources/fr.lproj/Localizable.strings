@@ -2821,6 +2821,8 @@
 "settings.terminal.customShellPath.help" = "Chemin complet vers l'exécutable de votre shell préféré";
 "settings.terminal.metalRenderer" = "Rendu Metal";
 "settings.terminal.metalRenderer.info" = "Les nouveaux onglets utiliseront le rendu GPU Metal pour l'affichage.";
+"settings.terminal.activePollingRateCap" = "Limite de rafraîchissement de l'onglet actif";
+"settings.terminal.activePollingRateCap.help" = "Taux de rafraîchissement maximal pour l'onglet en focus. L'option « Natif de l'écran » suit votre moniteur (jusqu'à 120 Hz sur ProMotion). Les limites plus basses réduisent légèrement la fluidité du défilement en faveur de l'autonomie. Les onglets inactifs se ralentissent automatiquement.";
 "settings.terminal.rendering" = "Rendu";
 "settings.terminal.resetToDefaults" = "Réinitialiser les réglages du terminal";
 "settings.terminal.restoredScrollback" = "Historique restauré";
@@ -3052,6 +3054,11 @@
 "urlHandler.firefox" = "Firefox";
 "urlHandler.safari" = "Safari";
 "urlHandler.system" = "Par défaut du système";
+
+// MARK: - Active Polling Rate Cap
+"activePollingRateCap.displayNative" = "Natif de l'écran";
+"activePollingRateCap.hz60" = "60 Hz";
+"activePollingRateCap.hz30" = "30 Hz";
 
 // MARK: - Remote Viewers
 "viewer.approve" = "Approuver";

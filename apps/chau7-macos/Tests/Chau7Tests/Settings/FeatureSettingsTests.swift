@@ -379,6 +379,17 @@ final class FeatureSettingsTests: XCTestCase {
         XCTAssertNotNil(DangerousCommandHighlightScope(rawValue: settings.dangerousCommandHighlightScope.rawValue))
     }
 
+    func testDefaultActivePollingRateCap() {
+        let settings = FeatureSettings.shared
+        XCTAssertNotNil(ActivePollingRateCap(rawValue: settings.activePollingRateCap.rawValue))
+    }
+
+    func testActivePollingRateCapCapHz() {
+        XCTAssertNil(ActivePollingRateCap.displayNative.capHz)
+        XCTAssertEqual(ActivePollingRateCap.hz60.capHz, 60)
+        XCTAssertEqual(ActivePollingRateCap.hz30.capHz, 30)
+    }
+
     // MARK: - Shortcut Lookup and Mutation
 
     func testShortcutLookupReturnsNilForUnknownAction() {

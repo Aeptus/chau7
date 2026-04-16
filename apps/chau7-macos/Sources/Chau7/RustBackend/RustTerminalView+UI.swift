@@ -298,6 +298,7 @@ extension RustTerminalView {
             Log.info("RustTerminalView[\(viewId)]: paste - Suppressed pasted input by command guard")
             return
         }
+        snapToFastPolling()
         // Check for bracketed paste mode from Rust terminal
         // This fixes bracketed paste for vim, zsh, and other programs that enable it
         if rustTerminal?.isBracketedPasteMode() == true {

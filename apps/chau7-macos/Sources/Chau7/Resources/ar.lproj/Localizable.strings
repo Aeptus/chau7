@@ -2787,6 +2787,8 @@
 "settings.terminal.customShellPath.help" = "المسار الكامل إلى ملف تشغيل shell المفضل لديك";
 "settings.terminal.metalRenderer" = "مُصيّر Metal";
 "settings.terminal.metalRenderer.info" = "ستستخدم البطاقات الجديدة عرض Metal المعجّل بواسطة GPU.";
+"settings.terminal.activePollingRateCap" = "حد تحديث التبويب النشط";
+"settings.terminal.activePollingRateCap.help" = "الحد الأقصى لمعدل تحديث التبويب المُركَّز. «أصلي الشاشة» يتبع شاشتك (حتى 120 هرتز على ProMotion). الحدود الأقل تضحّي قليلاً بسلاسة التمرير مقابل إطالة عمر البطارية. يتم تقليل التبويبات الخاملة تلقائيًا.";
 "settings.terminal.rendering" = "العرض";
 "settings.terminal.resetToDefaults" = "إعادة ضبط الطرفية إلى الافتراضي";
 "settings.terminal.restoredScrollback" = "سجل التمرير المستعاد";
@@ -3018,6 +3020,11 @@
 "urlHandler.firefox" = "Firefox";
 "urlHandler.safari" = "Safari";
 "urlHandler.system" = "افتراضي النظام";
+
+// MARK: - Active Polling Rate Cap
+"activePollingRateCap.displayNative" = "أصلي الشاشة";
+"activePollingRateCap.hz60" = "60 هرتز";
+"activePollingRateCap.hz30" = "30 هرتز";
 
 // MARK: - Remote Viewers
 "viewer.approve" = "موافقة";

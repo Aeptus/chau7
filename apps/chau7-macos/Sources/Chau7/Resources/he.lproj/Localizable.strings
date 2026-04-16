@@ -2787,6 +2787,8 @@
 "settings.terminal.customShellPath.help" = "הנתיב המלא לקובץ ההרצה של ה-shell המועדף עליך";
 "settings.terminal.metalRenderer" = "מעבד Metal";
 "settings.terminal.metalRenderer.info" = "כרטיסיות חדשות ישתמשו בעיבוד GPU של Metal לתצוגה.";
+"settings.terminal.activePollingRateCap" = "מגבלת רענון של הכרטיסייה הפעילה";
+"settings.terminal.activePollingRateCap.help" = "קצב הרענון המרבי של הכרטיסייה הממוקדת. האפשרות «מקורי לצג» עוקבת אחרי הצג שלך (עד 120 הרץ ב-ProMotion). מגבלות נמוכות מחליפות מעט חלקות גלילה בתמורה לחיי סוללה. כרטיסיות סרק מצמצמות את הקצב אוטומטית.";
 "settings.terminal.rendering" = "עיבוד";
 "settings.terminal.resetToDefaults" = "אפס טרמינל לברירות מחדל";
 "settings.terminal.restoredScrollback" = "גלילה לאחור משוחזרת";
@@ -3018,6 +3020,11 @@
 "urlHandler.firefox" = "Firefox";
 "urlHandler.safari" = "Safari";
 "urlHandler.system" = "ברירת מחדל של המערכת";
+
+// MARK: - Active Polling Rate Cap
+"activePollingRateCap.displayNative" = "מקורי לצג";
+"activePollingRateCap.hz60" = "60 הרץ";
+"activePollingRateCap.hz30" = "30 הרץ";
 
 // MARK: - Remote Viewers
 "viewer.approve" = "אשר";

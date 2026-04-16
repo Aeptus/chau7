@@ -2162,7 +2162,7 @@ final class RustTerminalView: NSView {
     var retainedFrameSourceVersion: UInt64 = 0
     var lastInactiveRetainedFrameVersion: UInt64 = 0
     static let inactiveSnapshotRefreshMinInterval: CFAbsoluteTime = 0.25
-    static let passiveVisiblePollingInterval: TimeInterval = 1.0 / 30.0
+    static let passiveVisiblePollingInterval: TimeInterval = 1.0 / 15.0
 
     // MARK: - Properties
 
@@ -2217,6 +2217,54 @@ final class RustTerminalView: NSView {
         }
         return 1.0 / 60.0 // Safe default for older macOS
     }
+
+    // MARK: - Adaptive Polling (Fix B)
+
+    /// Consecutive `pollAndSync` calls where `drainPTYAndProcessTerminalState`
+    /// returned `changed == false`. Used to detect idle and throttle the render
+    /// loop.
+    var consecutiveIdlePolls: Int = 0
+
+    /// True when the active loop has been throttled down to
+    /// `Self.idlePollingHz`. Reset on the first change, user input, settings
+    /// change, or mode-class transition.
+    var isIdleThrottled: Bool = false
+
+    /// Polls without change required before throttling to idle mode. 90 polls
+    /// ≈ 0.75 s at 120 Hz, ≈ 1.5 s at 60 Hz.
+    static let idleEntryThreshold: Int = 90
+
+    /// Target polling rate while idle-throttled.
+    static let idlePollingHz: Int = 10
+
+    /// The Hz the active loop is currently running at, or `nil` when using
+    /// CVDisplayLink at display-native refresh. Tracked separately from
+    /// `actualPollingMode` so the reconciler can detect Hz-only changes
+    /// (idle entry/exit, cap setting change) without a class transition.
+    var currentActiveHz: Int?
+
+    /// Effective Hz for the active loop — cap overrides native, idle overrides
+    /// cap. `nil` means "run CVDisplayLink at display-native refresh".
+    func effectiveActiveHz() -> Int? {
+        if isIdleThrottled {
+            return Self.idlePollingHz
+        }
+        return FeatureSettings.shared.activePollingRateCap.capHz
+    }
+
+    /// Reset any idle-throttle state and immediately reconcile the loop so the
+    /// user sees no input lag after returning from idle. Safe to call from
+    /// input handlers — no-op when already running at the full rate.
+    func snapToFastPolling() {
+        guard isIdleThrottled || consecutiveIdlePolls > 0 else { return }
+        isIdleThrottled = false
+        consecutiveIdlePolls = 0
+        updatePollingMode(reason: "snapToFast")
+    }
+
+    /// NotificationCenter observer token for the `activePollingRateCapChanged`
+    /// broadcast. Released in `deinit`.
+    var activePollingRateCapObserver: NSObjectProtocol?
 
     /// Track startup bytes for debugging
     var startupBytesLogged = 0
@@ -2600,6 +2648,22 @@ final class RustTerminalView: NSView {
         updateCellDimensions()
 
         registerDragTypes()
+
+        // Rebuild the active polling loop whenever the user changes the cap,
+        // so the new Hz takes effect on every live terminal without a restart.
+        activePollingRateCapObserver = NotificationCenter.default.addObserver(
+            forName: .activePollingRateCapChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            // Clear idle state so the new cap rate (not the 10 Hz idle rate)
+            // is what the reconciler applies.
+            self.isIdleThrottled = false
+            self.consecutiveIdlePolls = 0
+            self.updatePollingMode(reason: "activePollingRateCapChanged")
+        }
+
         Log.info("RustTerminalView[\(viewId)]: setupViews - Views setup complete (terminal not yet started)")
     }
 
@@ -2680,6 +2744,10 @@ final class RustTerminalView: NSView {
         shellStartupTimeoutWork?.cancel()
         inactiveSnapshotRefreshWorkItem?.cancel()
         removeWindowNotificationObservers()
+        if let token = activePollingRateCapObserver {
+            NotificationCenter.default.removeObserver(token)
+            activePollingRateCapObserver = nil
+        }
         stopPollingLoop()
         stopAutoScrollTimer()
         removeEventMonitors()
@@ -2824,7 +2892,7 @@ final class RustTerminalView: NSView {
         changed && notifyUpdateChanges && !isHidden && hasVisibleWindow
     }
 
-    private func desiredPollingMode() -> VisibleTerminalPollingMode {
+    func desiredPollingMode() -> VisibleTerminalPollingMode {
         let hasVisibleWindow: Bool
         let isWindowMiniaturized: Bool
         if let window {
@@ -2851,11 +2919,25 @@ final class RustTerminalView: NSView {
 
     private static func shouldReconcilePollingMode(
         desiredMode: VisibleTerminalPollingMode,
-        actualMode: ActualPollingMode
+        desiredActiveHz: Int?,
+        actualMode: ActualPollingMode,
+        currentActiveHz: Int?
     ) -> Bool {
         switch (desiredMode, actualMode) {
-        case (.displayLink, .displayLink), (.timer, .timer), (.backgroundDrain, .backgroundDrain):
+        case (.backgroundDrain, .backgroundDrain):
             return false
+        case (.timer, .timer):
+            // Passive-visible timer uses a fixed constant, so class match is enough.
+            return false
+        case (.displayLink, .displayLink):
+            // CVDisplayLink is running — correct only when no cap/idle requires a timer.
+            return desiredActiveHz != nil
+        case (.displayLink, .timer):
+            // Timer is running for an "active" policy — correct when Hz matches.
+            if desiredActiveHz == nil {
+                return true // need to swap to CVDisplayLink
+            }
+            return desiredActiveHz != currentActiveHz
         default:
             return true
         }
@@ -2918,19 +3000,37 @@ final class RustTerminalView: NSView {
     func updatePollingMode(reason: String) {
         let desiredMode = desiredPollingMode()
         let actualMode = actualPollingMode
+        let desiredActiveHz = effectiveActiveHz()
         guard Self.shouldReconcilePollingMode(
             desiredMode: desiredMode,
-            actualMode: actualMode
+            desiredActiveHz: desiredActiveHz,
+            actualMode: actualMode,
+            currentActiveHz: currentActiveHz
         ) else {
             isLivePollingActive = desiredMode != .backgroundDrain
             refreshRenderPipelineProfilingState()
             return
         }
 
+        // Reset idle state on class transitions — idle belongs to the active
+        // loop and must not survive passive/backgroundDrain round-trips.
+        let classChanged: Bool = {
+            switch (desiredMode, actualMode) {
+            case (.displayLink, .displayLink), (.displayLink, .timer):
+                return false // staying within the active-loop family
+            default:
+                return true
+            }
+        }()
+        if classChanged {
+            consecutiveIdlePolls = 0
+            isIdleThrottled = false
+        }
+
         isLivePollingActive = desiredMode != .backgroundDrain
         switch desiredMode {
         case .displayLink:
-            Log.trace("RustTerminalView[\(viewId)]: switching live polling to display_link (\(reason))")
+            Log.trace("RustTerminalView[\(viewId)]: switching live polling to display_link hz=\(desiredActiveHz.map(String.init) ?? "native") (\(reason))")
             resumeDisplayLink()
         case .timer:
             Log.trace("RustTerminalView[\(viewId)]: switching live polling to timer (\(reason))")

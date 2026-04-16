@@ -451,6 +451,38 @@ enum URLHandler: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+// MARK: - Active Polling Rate Cap
+
+/// Upper bound on how fast the active terminal tab drives its render loop.
+/// Default `.displayNative` keeps the existing behavior (CVDisplayLink at screen
+/// refresh, up to 120 Hz on ProMotion). Lower caps switch to a timer-driven loop
+/// at the selected rate for users who want to trade fluidity for battery.
+/// Adaptive idle throttling applies on top regardless of the cap.
+enum ActivePollingRateCap: String, CaseIterable, Identifiable, Codable {
+    case displayNative
+    case hz60
+    case hz30
+
+    var id: String { rawValue }
+
+    /// Upper bound in Hz, or `nil` when the cap is "display native".
+    var capHz: Int? {
+        switch self {
+        case .displayNative: return nil
+        case .hz60: return 60
+        case .hz30: return 30
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .displayNative: return L("activePollingRateCap.displayNative", "Display Native")
+        case .hz60: return L("activePollingRateCap.hz60", "60 Hz")
+        case .hz30: return L("activePollingRateCap.hz30", "30 Hz")
+        }
+    }
+}
+
 // MARK: - Shell Event Configuration
 
 /// Configuration for shell event detection (patterns, thresholds, etc.)
@@ -1611,6 +1643,18 @@ final class FeatureSettings {
         didSet { UserDefaults.standard.set(urlHandler.rawValue, forKey: Keys.urlHandler) }
     }
 
+    /// Caps how fast the active tab's render loop runs. `.displayNative` keeps
+    /// CVDisplayLink at the screen's native refresh; other cases force a timer-
+    /// driven loop. Changes broadcast `activePollingRateCapChanged` so live
+    /// terminal views can rebuild their loop.
+    var activePollingRateCap: ActivePollingRateCap {
+        didSet {
+            guard activePollingRateCap != oldValue else { return }
+            UserDefaults.standard.set(activePollingRateCap.rawValue, forKey: Keys.activePollingRateCap)
+            NotificationCenter.default.post(name: .activePollingRateCapChanged, object: nil)
+        }
+    }
+
     // MARK: - Custom AI Detection (NEW)
 
     var customAIDetectionRules: [CustomAIDetectionRule] {
@@ -2333,6 +2377,7 @@ final class FeatureSettings {
         static let clickToPosition = "feature.clickToPosition"
         static let defaultEditor = "feature.defaultEditor"
         static let urlHandler = "feature.urlHandler"
+        static let activePollingRateCap = "feature.activePollingRateCap"
         static let customAIDetectionRules = "ai.customDetectionRules"
         /// F13
         static let broadcastEnabled = "feature.broadcastEnabled"
@@ -2688,6 +2733,12 @@ final class FeatureSettings {
             self.urlHandler = handler
         } else {
             self.urlHandler = .system
+        }
+        if let rateCapRaw = defaults.string(forKey: Keys.activePollingRateCap),
+           let rateCap = ActivePollingRateCap(rawValue: rateCapRaw) {
+            self.activePollingRateCap = rateCap
+        } else {
+            self.activePollingRateCap = .displayNative
         }
 
         // Custom AI Detection (NEW)
@@ -3112,6 +3163,7 @@ final class FeatureSettings {
         var isOptionClickCursorEnabled: Bool
         var defaultEditor: String
         var urlHandler: String?
+        var activePollingRateCap: String?
         var customAIDetectionRules: [CustomAIDetectionRule]?
         var isBroadcastEnabled: Bool
         var isClipboardHistoryEnabled: Bool
@@ -3225,6 +3277,7 @@ final class FeatureSettings {
             isOptionClickCursorEnabled: isOptionClickCursorEnabled,
             defaultEditor: defaultEditor,
             urlHandler: urlHandler.rawValue,
+            activePollingRateCap: activePollingRateCap.rawValue,
             customAIDetectionRules: customAIDetectionRules,
             isBroadcastEnabled: isBroadcastEnabled,
             isClipboardHistoryEnabled: isClipboardHistoryEnabled,
@@ -3394,6 +3447,12 @@ final class FeatureSettings {
         } else {
             urlHandler = .system
         }
+        if let rateCapRaw = imported.activePollingRateCap,
+           let rateCap = ActivePollingRateCap(rawValue: rateCapRaw) {
+            activePollingRateCap = rateCap
+        } else {
+            activePollingRateCap = .displayNative
+        }
         customAIDetectionRules = imported.customAIDetectionRules ?? []
         isBroadcastEnabled = imported.isBroadcastEnabled
         isClipboardHistoryEnabled = imported.isClipboardHistoryEnabled
@@ -3543,6 +3602,7 @@ final class FeatureSettings {
         isOptionClickCursorEnabled = true
         defaultEditor = ""
         urlHandler = .system
+        activePollingRateCap = .displayNative
         customAIDetectionRules = []
         isBroadcastEnabled = false
         isClipboardHistoryEnabled = true
@@ -3635,6 +3695,7 @@ final class FeatureSettings {
         customShellPath = ""
         startupCommand = ""
         isLsColorsEnabled = true
+        activePollingRateCap = .displayNative
     }
 
     func resetInputToDefaults() {
@@ -3873,6 +3934,7 @@ extension FeatureSettings {
             isOptionClickCursorEnabled: true,
             defaultEditor: "",
             urlHandler: "system",
+            activePollingRateCap: "displayNative",
             customAIDetectionRules: [],
             isBroadcastEnabled: false,
             isClipboardHistoryEnabled: true,

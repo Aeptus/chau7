@@ -2819,6 +2819,8 @@
 "settings.terminal.customShellPath.help" = "Full path to your preferred shell executable";
 "settings.terminal.metalRenderer" = "Metal Renderer";
 "settings.terminal.metalRenderer.info" = "New tabs will use Metal GPU rendering for display.";
+"settings.terminal.activePollingRateCap" = "Active Tab Refresh Cap";
+"settings.terminal.activePollingRateCap.help" = "Maximum refresh rate for the focused tab. Display Native follows your screen (up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life. Idle tabs throttle automatically regardless.";
 "settings.terminal.rendering" = "Rendering";
 "settings.terminal.resetToDefaults" = "Reset Terminal to Defaults";
 "settings.terminal.restoredScrollback" = "Restored Scrollback";
@@ -3050,6 +3052,11 @@
 "urlHandler.firefox" = "Firefox";
 "urlHandler.safari" = "Safari";
 "urlHandler.system" = "System Default";
+
+// MARK: - Active Polling Rate Cap
+"activePollingRateCap.displayNative" = "Display Native";
+"activePollingRateCap.hz60" = "60 Hz";
+"activePollingRateCap.hz30" = "30 Hz";
 
 // MARK: - Remote Viewers
 "viewer.approve" = "Approve";

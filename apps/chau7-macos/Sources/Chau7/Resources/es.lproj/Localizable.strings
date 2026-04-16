@@ -2867,6 +2867,8 @@
 "settings.terminal.customShellPath.help" = "Ruta completa al ejecutable de tu shell preferido";
 "settings.terminal.metalRenderer" = "Renderizador Metal";
 "settings.terminal.metalRenderer.info" = "Las nuevas pestañas usarán renderizado GPU con Metal para la visualización.";
+"settings.terminal.activePollingRateCap" = "Límite de actualización de pestaña activa";
+"settings.terminal.activePollingRateCap.help" = "Frecuencia de actualización máxima para la pestaña enfocada. «Nativa de pantalla» sigue tu monitor (hasta 120 Hz en ProMotion). Los límites más bajos reducen levemente la fluidez del desplazamiento a cambio de autonomía. Las pestañas inactivas se ralentizan automáticamente.";
 "settings.terminal.rendering" = "Renderizado";
 "settings.terminal.resetToDefaults" = "Restablecer terminal a valores predeterminados";
 "settings.terminal.restoredScrollback" = "Historial restaurado";
@@ -3098,6 +3100,11 @@
 "urlHandler.firefox" = "Firefox";
 "urlHandler.safari" = "Safari";
 "urlHandler.system" = "Predeterminado del sistema";
+
+// MARK: - Active Polling Rate Cap
+"activePollingRateCap.displayNative" = "Nativa de pantalla";
+"activePollingRateCap.hz60" = "60 Hz";
+"activePollingRateCap.hz30" = "30 Hz";
 
 // MARK: - Remote Viewers
 "viewer.approve" = "Aprobar";

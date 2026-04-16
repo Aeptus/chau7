@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Adaptive Render-Loop Throttling**: The active terminal now drops to a ~10 Hz polling cadence after a short stretch of no PTY activity, snapping back instantly on the first new byte, keystroke, mouse click, scroll, or IME commit. Idle tabs also skip redundant per-frame tint and cursor-blink work. Big reduction in wakeups/CPU for sessions that are mostly waiting on AI agents.
+- **Active Tab Refresh Cap Setting**: New Settings → Terminal → Rendering picker (Display Native / 60 Hz / 30 Hz) caps how fast the focused tab drives its render loop. Default matches current behavior (display native up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life.
+- **Lower Passive-Tab Polling Cadence**: Passive-visible tabs (split panes, unfocused windows) now poll at 15 Hz instead of 30 Hz — still smooth for glance-reading, half the wakeups.
 - **Tier-Based Graphics Memory Release**: Background tabs (`.warm`/`.hidden` phases) now release NSImage snapshot caches and mark Metal textures/buffers volatile, cutting per-tab graphics footprint for unselected tabs and letting the OS reclaim GPU memory under pressure.
 - **Spanish Language Support**: Full Spanish (es) locale with 2,612 translated keys and 41 .stringsdict plural entries. Informal "tú" form, standard Spanish computing vocabulary. Accessible from Settings > General > Language.
 - **Verbose Pre-Commit Review Flow**: `Scripts/pre-commit-review` now traces each tab/scripting step, retries transient socket reads, confirms prompt visibility before submit, and falls back to raw newline submission when needed.

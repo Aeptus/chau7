@@ -271,6 +271,9 @@ extension RustTerminalView {
             return
         }
         hideTipOverlay()
+        // Typing must not wait out an idle throttle — snap the loop back to
+        // full rate before we push the byte to the PTY.
+        snapToFastPolling()
 
         let keyCode = event.keyCode
         let modifiers = event.modifierFlags
@@ -795,6 +798,8 @@ extension RustTerminalView: NSTextInputClient {
         // Clear marked text — composition is now committed
         markedTextStorage = nil
         markedSelectedRange = NSRange(location: NSNotFound, length: 0)
+        // IME commit = real input; escape any idle throttle.
+        snapToFastPolling()
 
         let text: String
         if let s = string as? String {
