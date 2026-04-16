@@ -533,6 +533,31 @@ extension RustTerminalView {
         onBufferChanged?()
     }
 
+    func performAuthoritativeRevealPass(reason: String) {
+        guard !isBeingDeallocated else { return }
+        guard let rust = rustTerminal else { return }
+
+        updatePollingMode(reason: "authoritativeReveal:\(reason)")
+
+        let changed = drainPTYAndProcessTerminalState(rust: rust)
+        let requiresAuthoritativeReveal = consumeAuthoritativeRevealPending()
+
+        if changed || needsGridSync || requiresAuthoritativeReveal {
+            Self.syncCount += 1
+            instanceSyncCount += 1
+            needsGridSync = false
+            if !isMetalRenderingActive {
+                syncGridToRenderer(force: requiresAuthoritativeReveal)
+            }
+            onBufferChanged?()
+        }
+
+        if !isMetalRenderingActive {
+            updateDangerousRowTints()
+            gridView?.tickCursorBlink(now: CFAbsoluteTimeGetCurrent())
+        }
+    }
+
     func pollAndSync() {
         let startedAt = CFAbsoluteTimeGetCurrent()
         defer {

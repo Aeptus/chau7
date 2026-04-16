@@ -2717,13 +2717,8 @@ final class OverlayTabsModel {
         }
 
         if selectedDecision.phase.keepsVisibleSurface {
-            let shouldResumeContinuousUpdates = selectedDecision.phase.allowsLivePresentation
-            rustView.notifyUpdateChanges = true
             rustView.needsGridSync = true
-            rustView.updatePollingMode(reason: "selectedReveal:\(reason)")
-            rustView.pollAndSync()
-            rustView.notifyUpdateChanges = shouldResumeContinuousUpdates
-            rustView.updatePollingMode(reason: "selectedRevealComplete:\(reason)")
+            rustView.performAuthoritativeRevealPass(reason: reason)
         }
 
         Log.info("requestSelectedTabAuthoritativeReveal[\(reason)]: refreshed selected tab \(selectedTabID) as \(selectedDecision.phase.rawValue)")
