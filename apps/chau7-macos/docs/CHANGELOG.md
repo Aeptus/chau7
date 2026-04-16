@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Tier-Based Graphics Memory Release**: Background tabs (`.warm`/`.hidden` phases) now release NSImage snapshot caches and mark Metal textures/buffers volatile, cutting per-tab graphics footprint for unselected tabs and letting the OS reclaim GPU memory under pressure.
 - **Spanish Language Support**: Full Spanish (es) locale with 2,612 translated keys and 41 .stringsdict plural entries. Informal "tú" form, standard Spanish computing vocabulary. Accessible from Settings > General > Language.
 - **Verbose Pre-Commit Review Flow**: `Scripts/pre-commit-review` now traces each tab/scripting step, retries transient socket reads, confirms prompt visibility before submit, and falls back to raw newline submission when needed.
 - **Stored Review Event Query**: The scripting socket now exposes repo-scoped AI event queries with full messages and filtering, allowing review automation to consume Chau7’s stored finished result instead of scraping only terminal text.
