@@ -17,6 +17,8 @@ final class TelemetryStore {
     private let queue = DispatchQueue(label: "com.chau7.telemetry.store")
     private let checkpointLogWalThresholdBytes: Int64 = 8 * 1024 * 1024
     private let checkpointLogRemainingFramesThreshold: Int32 = 1000
+    private var didScheduleDeferredMaintenance = false
+    private var didRunDeferredMaintenance = false
 
     private static var dbPath: String {
         let dir = RuntimeIsolation.chau7Directory()
@@ -50,14 +52,24 @@ final class TelemetryStore {
         verifyIntegrity()
         createTables()
         applyMigrations()
-        backfillHistoricalMissingCosts()
-        backfillRunUsageEvidence()
-        let latencyBackfill = _backfillCompletedRunLatencySamples()
-        if latencyBackfill.insertedSamples > 0 {
-            Log.info(
-                "TelemetryStore: backfilled latency samples for \(latencyBackfill.insertedSamples) run(s) " +
-                "(inspected=\(latencyBackfill.inspectedRuns), skipped=\(latencyBackfill.skippedRuns))"
-            )
+    }
+
+    func scheduleDeferredMaintenance(reason: String) {
+        queue.async {
+            guard !self.didScheduleDeferredMaintenance, !self.didRunDeferredMaintenance else { return }
+            self.didScheduleDeferredMaintenance = true
+            Log.info("TelemetryStore: starting deferred maintenance [\(reason)]")
+            self.backfillHistoricalMissingCosts()
+            self.backfillRunUsageEvidence()
+            let latencyBackfill = self._backfillCompletedRunLatencySamples()
+            if latencyBackfill.insertedSamples > 0 {
+                Log.info(
+                    "TelemetryStore: backfilled latency samples for \(latencyBackfill.insertedSamples) run(s) " +
+                    "(inspected=\(latencyBackfill.inspectedRuns), skipped=\(latencyBackfill.skippedRuns))"
+                )
+            }
+            self.didRunDeferredMaintenance = true
+            self.didScheduleDeferredMaintenance = false
         }
     }
 
