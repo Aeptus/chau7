@@ -1387,56 +1387,6 @@ private struct DevServerBadge: View {
     }
 }
 
-// MARK: - Tab Switch Optimization: Cursor Placeholder
-
-/// A lightweight view that shows a blinking cursor immediately during tab switch.
-/// This creates the perception of instant responsiveness while the terminal renders.
-struct CursorPlaceholderView: View {
-    let promptText: String
-    let cursorPosition: CGPoint
-
-    /// Use TimelineView for reliable cursor blinking
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
-            let cursorVisible = Int(timeline.date.timeIntervalSinceReferenceDate * 2).isMultiple(of: 2)
-
-            GeometryReader { _ in
-                ZStack(alignment: .bottomLeading) {
-                    // Minimal dark background
-                    Color.black.opacity(0.95)
-
-                    // Prompt area with blinking cursor at bottom
-                    VStack(alignment: .leading, spacing: 0) {
-                        Spacer()
-
-                        HStack(spacing: 0) {
-                            // Show abbreviated path as prompt
-                            Text(L("$ ", "$ "))
-                                .font(.system(size: 13, design: .monospaced))
-                                .foregroundColor(.green.opacity(0.8))
-
-                            Text(promptText)
-                                .font(.system(size: 13, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.7))
-                                .lineLimit(1)
-
-                            Text(" ")
-
-                            // Blinking cursor block
-                            Rectangle()
-                                .fill(Color.white)
-                                .frame(width: 8, height: 16)
-                                .opacity(cursorVisible ? 1 : 0)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 20)
-                    }
-                }
-            }
-        }
-    }
-}
-
 struct StartupLoadingCoverView: View {
     var body: some View {
         ZStack {
@@ -1527,25 +1477,6 @@ struct Chau7OverlayView: View {
                 }
             }
 
-            // MARK: - Tab Switch Optimization: Cursor Placeholder (appears first)
-
-            // Shows a blinking cursor immediately for perceived instant response
-            // Only shows if the tab has been viewed before (has cached prompt text)
-            ForEach(overlayModel.tabs) { tab in
-                let isSelected = tab.id == overlayModel.selectedTabID
-                let hasContent = !tab.lastPromptText.isEmpty || tab.visibleSnapshot != nil
-                if isSelected,
-                   !overlayModel.shouldShowStartupLoadingCover,
-                   !overlayModel.selectedSurfacePresentation.isLivePresentable,
-                   hasContent {
-                    CursorPlaceholderView(
-                        promptText: tab.lastPromptText.isEmpty ? "~" : tab.lastPromptText,
-                        cursorPosition: tab.lastCursorPosition
-                    )
-                    .zIndex(3) // Above snapshot for immediate cursor feedback
-                }
-            }
-
             // MARK: - Shell Loading Bar
 
             ForEach(overlayModel.tabs) { tab in
@@ -1554,13 +1485,13 @@ struct Chau7OverlayView: View {
                    !overlayModel.shouldShowStartupLoadingCover,
                    let session = tab.displaySession {
                     ShellLoadingBar(session: session)
-                        .zIndex(4)
+                        .zIndex(3)
                 }
             }
 
             if overlayModel.shouldShowStartupLoadingCover {
                 StartupLoadingCoverView()
-                    .zIndex(5)
+                    .zIndex(4)
             }
 
             // MARK: - Tab Switch Optimization: Lazy Tab Loading + Directional Motion
