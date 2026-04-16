@@ -612,6 +612,36 @@ final class OverlayTabsModelTests: XCTestCase {
         )
     }
 
+    func testStartupRestoreBeginsAllQueuedBackgroundTabsImmediately() {
+        let tabIDs = (0 ..< 3).map { _ in UUID() }
+        let states = (0 ..< 3).map { index in
+            SavedTabState(
+                tabID: tabIDs[index].uuidString,
+                selectedTabID: index == 0 ? tabIDs[0].uuidString : nil,
+                customTitle: "Restored \(index)",
+                color: TabColor.allCases[index % TabColor.allCases.count].rawValue,
+                directory: "/tmp/startup-restored-\(index)",
+                selectedIndex: index == 0 ? 0 : nil,
+                tokenOptOverride: nil,
+                scrollbackContent: "echo restored \(index)",
+                aiResumeCommand: nil,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: nil
+            )
+        }
+
+        let restoredModel = OverlayTabsModel(appModel: AppModel(), restoreState: false, restoringStates: states)
+
+        XCTAssertEqual(restoredModel.deferredRestoreTabOrder.count, 2)
+
+        restoredModel.beginStartupRestoreIfNeeded(reason: "test")
+
+        XCTAssertTrue(restoredModel.hasStartedDeferredRestore)
+        XCTAssertTrue(restoredModel.deferredRestoreTabOrder.isEmpty)
+        XCTAssertTrue(restoredModel.deferredRestoreStatesByTabID.isEmpty)
+    }
+
     // MARK: - Tab Close (closeTab)
 
     func testCloseTabRemovesTab() {

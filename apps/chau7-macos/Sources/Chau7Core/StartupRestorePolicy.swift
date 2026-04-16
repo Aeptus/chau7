@@ -161,7 +161,8 @@ public struct StartupRestoreTracker: Equatable {
     public func isReadyForVisibleStartupCompletion(expectedWindowCount: Int) -> Bool {
         guard isActive else { return false }
         guard expectedWindowCount > 0 else { return false }
-        return selectedTabLiveFrameMsByWindow.count >= expectedWindowCount
+        guard selectedTabLiveFrameMsByWindow.count >= expectedWindowCount else { return false }
+        return restoreBootstrapSettled >= restoreBootstrapStarted
     }
 
     public func hasSelectedTabLiveFrame(windowNumber: Int) -> Bool {
@@ -269,7 +270,7 @@ public enum StartupRestoreFallbackRecoveryPolicy {
 
 public enum StartupWindowPresentationPolicy {
     public static let selectedTabRestoreDelay: TimeInterval = 0.05
-    public static let backgroundTabRestoreDelay: TimeInterval = 1.0
+    public static let backgroundTabRestoreDelay: TimeInterval = 0.05
     public static let forcedRevealLoadingDelay: TimeInterval = 3.0
 
     public static func restoreExecutionDelay(
@@ -278,7 +279,8 @@ public enum StartupWindowPresentationPolicy {
         defaultDelay: TimeInterval
     ) -> TimeInterval {
         guard isStartupRestoreActive else { return defaultDelay }
-        return isSelectedTab ? selectedTabRestoreDelay : backgroundTabRestoreDelay
+        _ = isSelectedTab
+        return selectedTabRestoreDelay
     }
 
     public static func shouldKeepTabInLiveHierarchy(
@@ -298,10 +300,10 @@ public enum StartupWindowPresentationPolicy {
         }
 
         guard hasPendingRestoreBootstrap, !hasAttachedTerminalView else {
-            return false
+            return hasPendingRestoreBootstrap
         }
-
-        return !isStartupRestoreActive
+        _ = isStartupRestoreActive
+        return true
     }
 
     public static func shouldRevealWindowImmediately(

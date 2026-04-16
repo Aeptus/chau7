@@ -1096,6 +1096,26 @@ final class OverlayTabsModel {
         scheduleNextDeferredRestore(after: 0.05, reason: reason)
     }
 
+    func beginStartupRestoreIfNeeded(reason: String) {
+        guard !hasStartedDeferredRestore else { return }
+        guard !deferredRestoreTabOrder.isEmpty else { return }
+        hasStartedDeferredRestore = true
+        Log.info(
+            "Startup restore: restoring \(deferredRestoreTabOrder.count) background tab(s) [\(reason)]"
+        )
+
+        let tabIDsToRestore = deferredRestoreTabOrder
+        deferredRestoreTabOrder.removeAll(keepingCapacity: false)
+
+        for tabID in tabIDsToRestore {
+            guard let state = deferredRestoreStatesByTabID.removeValue(forKey: tabID),
+                  let tab = tabs.first(where: { $0.id == tabID }) else {
+                continue
+            }
+            restoreTabState(for: tab, state: state)
+        }
+    }
+
     private func scheduleNextDeferredRestore(after delay: TimeInterval, reason: String) {
         deferredRestoreWorkItem?.cancel()
         guard !deferredRestoreTabOrder.isEmpty else { return }

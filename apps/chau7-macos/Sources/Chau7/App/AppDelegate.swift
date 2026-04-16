@@ -221,6 +221,10 @@ private final class OverlayBlurView: NSVisualEffectView {
             host.window.orderOut(nil)
         }
 
+        for host in overlayHosts {
+            host.model.beginStartupRestoreIfNeeded(reason: "startup_boot")
+        }
+
         Log.info("Startup foreground presentation requested immediately after setup")
         DispatchQueue.main.async { [weak self] in
             if self?.splashController?.onWelcomeDismiss != nil {
