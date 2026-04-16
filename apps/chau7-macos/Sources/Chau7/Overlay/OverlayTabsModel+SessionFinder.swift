@@ -800,9 +800,8 @@ extension OverlayTabsModel {
                     }
                     self?.updateSuspensionState()
                     guard let self else { return }
-                    let isSelectedTab = targetTabID == self.selectedTabID
-                    if isSelectedTab,
-                       let selectedTab = self.selectedTab,
+                    guard targetTabID == self.selectedTabID else { return }
+                    if let selectedTab = self.selectedTab,
                        let selectedSession = selectedTab.displaySession ?? selectedTab.session,
                        selectedSession.existingRustTerminalView != nil,
                        selectedSession.presentationSurfaceState.isLivePresentable {
@@ -815,7 +814,6 @@ extension OverlayTabsModel {
                         StartupRestoreCoordinator.shared.hasSelectedTabLiveFrame(windowNumber: $0.windowNumber)
                     } ?? false
                     if StartupRestoreCoordinator.shared.isActive,
-                       isSelectedTab,
                        startupLiveFrameAlreadyRecorded {
                         Log.trace(
                             "restoreBootstrap: skipping selected-tab reveal for \(targetTabID) after first startup live frame"

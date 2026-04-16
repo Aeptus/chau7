@@ -151,6 +151,23 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         )
     }
 
+    func testBackgroundRestoreBootstrapPhaseDoesNotRefreshSelectedTab() {
+        model.newTab(selectNewTab: false)
+
+        let selectedSession = try XCTUnwrap(model.tabs[0].session)
+        let backgroundSession = try XCTUnwrap(model.tabs[1].session)
+
+        XCTAssertFalse(selectedSession.awaitingVisibleFrameReady)
+
+        backgroundSession.restoreBootstrapPhase = .replaying
+        drainMainQueue()
+
+        XCTAssertFalse(
+            selectedSession.awaitingVisibleFrameReady,
+            "Background restore transitions should not force the currently selected tab back through reveal"
+        )
+    }
+
     func testSelectedSessionVisibleFrameReadyRevealsTerminal() {
         model.newTab(selectNewTab: false)
         let targetID = model.tabs[1].id
