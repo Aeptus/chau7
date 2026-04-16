@@ -64,6 +64,20 @@ final class StartupRestorePolicyTests: XCTestCase {
         XCTAssertTrue(tracker.isReadyForVisibleStartupCompletion(expectedWindowCount: 2))
     }
 
+    func testTrackerReportsWhetherWindowAlreadyHasSelectedLiveFrame() {
+        var tracker = StartupRestoreTracker()
+        let startedAt = Date(timeIntervalSince1970: 100)
+        tracker.begin(at: startedAt)
+        tracker.noteWindowVisible(windowNumber: 7, at: startedAt.addingTimeInterval(0.2))
+
+        XCTAssertFalse(tracker.hasSelectedTabLiveFrame(windowNumber: 7))
+
+        _ = tracker.noteSelectedTabLiveFrame(windowNumber: 7, at: startedAt.addingTimeInterval(0.35))
+
+        XCTAssertTrue(tracker.hasSelectedTabLiveFrame(windowNumber: 7))
+        XCTAssertFalse(tracker.hasSelectedTabLiveFrame(windowNumber: 8))
+    }
+
     func testSnippetResolvePolicyDebouncesHomePathDuringStartupRestore() {
         XCTAssertTrue(
             StartupSnippetResolvePolicy.shouldDebounce(

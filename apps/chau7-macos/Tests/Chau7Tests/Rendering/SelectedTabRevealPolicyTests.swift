@@ -40,4 +40,30 @@ final class SelectedTabRevealPolicyTests: XCTestCase {
             )
         )
     }
+
+    func testRestoreBootstrapForLiveAttachedSurfaceStaysNonBlocking() {
+        XCTAssertFalse(
+            SelectedTabRevealPolicy.shouldAwaitVisibleFrame(
+                for: SelectedTabRevealRequest(
+                    trigger: .restoreBootstrap,
+                    keepsVisibleSurface: true,
+                    hasAttachedRenderer: true,
+                    isCurrentlyLivePresentable: true
+                )
+            )
+        )
+    }
+
+    func testRestoreBootstrapWithoutLiveSurfaceStillBlocks() {
+        XCTAssertTrue(
+            SelectedTabRevealPolicy.shouldAwaitVisibleFrame(
+                for: SelectedTabRevealRequest(
+                    trigger: .restoreBootstrap,
+                    keepsVisibleSurface: true,
+                    hasAttachedRenderer: false,
+                    isCurrentlyLivePresentable: false
+                )
+            )
+        )
+    }
 }

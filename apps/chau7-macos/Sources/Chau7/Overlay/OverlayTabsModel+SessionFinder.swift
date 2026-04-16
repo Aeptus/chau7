@@ -799,7 +799,20 @@ extension OverlayTabsModel {
                         )
                     }
                     self?.updateSuspensionState()
-                    self?.requestSelectedTabAuthoritativeReveal(reason: "restore_bootstrap_phase")
+                    guard let self else { return }
+                    let isSelectedTab = targetTabID == self.selectedTabID
+                    let startupLiveFrameAlreadyRecorded = self.overlayWindow.map {
+                        StartupRestoreCoordinator.shared.hasSelectedTabLiveFrame(windowNumber: $0.windowNumber)
+                    } ?? false
+                    if StartupRestoreCoordinator.shared.isActive,
+                       isSelectedTab,
+                       startupLiveFrameAlreadyRecorded {
+                        Log.trace(
+                            "restoreBootstrap: skipping selected-tab reveal for \(targetTabID) after first startup live frame"
+                        )
+                        return
+                    }
+                    self.requestSelectedTabAuthoritativeReveal(reason: "restore_bootstrap_phase")
                 }
             }
         }

@@ -21,6 +21,12 @@ final class StartupRestoreCoordinator {
         return tracker.selectedTabLiveFrameMsByWindow.count
     }
 
+    func hasSelectedTabLiveFrame(windowNumber: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return tracker.hasSelectedTabLiveFrame(windowNumber: windowNumber)
+    }
+
     func begin() {
         lock.lock()
         tracker.begin(at: Date())

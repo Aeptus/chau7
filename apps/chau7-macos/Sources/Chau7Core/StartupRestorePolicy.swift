@@ -154,6 +154,10 @@ public struct StartupRestoreTracker: Equatable {
         return selectedTabLiveFrameMsByWindow.count >= expectedWindowCount
     }
 
+    public func hasSelectedTabLiveFrame(windowNumber: Int) -> Bool {
+        selectedTabLiveFrameMsByWindow[windowNumber] != nil
+    }
+
     public mutating func end(at date: Date) -> StartupRestoreSummary? {
         guard isActive, let startedAt else { return nil }
         isActive = false

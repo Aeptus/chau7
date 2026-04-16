@@ -37,9 +37,9 @@ public enum SelectedTabRevealPolicy {
         guard request.keepsVisibleSurface else { return false }
 
         switch request.trigger {
-        case .reactivation:
+        case .reactivation, .restoreBootstrap:
             return !(request.hasAttachedRenderer && request.isCurrentlyLivePresentable)
-        case .selectionChange, .explicitRefresh, .startup, .restoreBootstrap, .other:
+        case .selectionChange, .explicitRefresh, .startup, .other:
             return true
         }
     }
