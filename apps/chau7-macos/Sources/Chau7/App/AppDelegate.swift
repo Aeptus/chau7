@@ -1718,6 +1718,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             if let host = overlayHosts.first(where: { $0.window == sender }) {
                 host.model.noteTabBarVisibilityChanged(isVisible: false)
             }
+            clearSelectedTabRevealCycle(for: sender.windowNumber)
             refreshLowLatencyActivity()
             logOverlayWindowLifecycle(reason: "windowShouldClose-orderOut", window: sender)
             sender.orderOut(nil)
@@ -1730,6 +1731,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         guard overlayHosts.contains(where: { $0.window == window }) else { return }
+        clearSelectedTabRevealCycle(for: window.windowNumber)
         logOverlayWindowLifecycle(reason: "windowWillClose", window: window)
     }
 
@@ -1855,7 +1857,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             )
             let isInteractive = host.model.selectedTab.map(host.model.isInteractive(tab:)) ?? false
             let reasonLabel = plan.reason ?? "none"
-            Log.trace(
+            Log.info(
                 "selectedTabRevealCycle: execute window=\(windowNumber) cycle=\(activeCycle) events=\(events) phase=\(phase.rawValue) interactive=\(isInteractive) lowLatencyEligible=\(host.model.shouldHoldLowLatencyWhileInactive) shouldReveal=\(plan.shouldRequestReveal) reason=\(reasonLabel)"
             )
             guard plan.shouldRequestReveal, let reason = plan.reason else { return }
@@ -1867,6 +1869,13 @@ private final class OverlayBlurView: NSVisualEffectView {
             deadline: .now() + TabSurfaceReactivationPolicy.coalescingDelay,
             execute: workItem
         )
+    }
+
+    @MainActor
+    private func clearSelectedTabRevealCycle(for windowNumber: Int) {
+        pendingSelectedTabRevealWorkItemsByWindow.removeValue(forKey: windowNumber)?.cancel()
+        pendingSelectedTabRevealEventsByWindow.removeValue(forKey: windowNumber)
+        selectedTabRevealCycleByWindow.removeValue(forKey: windowNumber)
     }
 
     func windowDidResize(_ notification: Notification) {
