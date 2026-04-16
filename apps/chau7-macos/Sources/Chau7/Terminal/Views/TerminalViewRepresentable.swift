@@ -3,6 +3,28 @@ import AppKit
 import QuartzCore
 import Chau7Core
 
+enum TerminalCallbackChain {
+    static func bufferChanged(
+        base: (() -> Void)?,
+        after chainedCallback: @escaping () -> Void
+    ) -> () -> Void {
+        {
+            base?()
+            chainedCallback()
+        }
+    }
+
+    static func framePresented(
+        base: (() -> Void)?,
+        after chainedCallback: @escaping () -> Void
+    ) -> () -> Void {
+        {
+            chainedCallback()
+            base?()
+        }
+    }
+}
+
 /// Container view for the Rust terminal backend
 final class RustTerminalContainerView: NSView {
     let terminalView: RustTerminalView
@@ -62,7 +84,11 @@ final class RustTerminalContainerView: NSView {
     /// Metal view sits on top as an opaque display layer with event passthrough.
     /// HighlightView (if present) is moved above Metal so highlights remain visible.
     func enableMetalRendering() {
-        guard rustMetalCoordinator == nil else { return }
+        if let coordinator = rustMetalCoordinator {
+            refreshMetalCallbackChains(coordinator: coordinator)
+            Log.trace("RustTerminalContainerView: Metal rendering callbacks refreshed")
+            return
+        }
 
         // Create a grid provider closure that reads from the Rust terminal FFI
         guard let gridProvider = terminalView.makeGridProvider() else {
@@ -99,10 +125,7 @@ final class RustTerminalContainerView: NSView {
         }
 
         // Save the original callback before wrapping it with Metal sync.
-        preMetalBufferChangedCallback = terminalView.onBufferChanged
-        preMetalFramePresentedCallback = terminalView.onFramePresented
-        chainMetalSync(coordinator: coordinator)
-        chainMetalPresentationActivation(coordinator: coordinator)
+        refreshMetalCallbackChains(coordinator: coordinator)
 
         // Keep CPU rendering authoritative until Metal has actually presented
         // once. This avoids exposing a blank GPU surface during startup/tab
@@ -117,11 +140,17 @@ final class RustTerminalContainerView: NSView {
         Log.trace("RustTerminalContainerView: Metal rendering enabled")
     }
 
+    private func refreshMetalCallbackChains(coordinator: RustMetalDisplayCoordinator) {
+        preMetalBufferChangedCallback = terminalView.onBufferChanged
+        preMetalFramePresentedCallback = terminalView.onFramePresented
+        chainMetalSync(coordinator: coordinator)
+        chainMetalPresentationActivation(coordinator: coordinator)
+    }
+
     /// Re-chains the Metal sync wrapper onto the current onBufferChanged callback.
     func chainMetalSync(coordinator: RustMetalDisplayCoordinator) {
         let baseCallback = terminalView.onBufferChanged
-        terminalView.onBufferChanged = { [weak coordinator] in
-            baseCallback?()
+        terminalView.onBufferChanged = TerminalCallbackChain.bufferChanged(base: baseCallback) { [weak coordinator] in
             coordinator?.setNeedsSync()
         }
     }
@@ -129,9 +158,8 @@ final class RustTerminalContainerView: NSView {
     /// Promotes the Metal overlay only after a confirmed presented frame.
     func chainMetalPresentationActivation(coordinator: RustMetalDisplayCoordinator) {
         let baseCallback = terminalView.onFramePresented
-        terminalView.onFramePresented = { [weak self, weak coordinator] in
+        terminalView.onFramePresented = TerminalCallbackChain.framePresented(base: baseCallback) { [weak self, weak coordinator] in
             guard let self else {
-                baseCallback?()
                 return
             }
             if self.awaitingFirstMetalFrame {
@@ -140,7 +168,6 @@ final class RustTerminalContainerView: NSView {
                 coordinator?.metalView.alphaValue = 1
                 Log.trace("RustTerminalContainerView: Metal overlay promoted after first presented frame")
             }
-            baseCallback?()
         }
     }
 
@@ -328,9 +355,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             if settings.useMetalRenderer {
                 if existingContainer.rustMetalCoordinator == nil {
                     existingView.isMetalRenderingActive = false
-                    existingContainer.enableMetalRendering()
-                    Log.trace("Re-enabled Metal rendering for reused Rust terminal container")
                 }
+                existingContainer.enableMetalRendering()
+                Log.trace("Reconciled Metal rendering for reused Rust terminal container")
             } else if existingContainer.rustMetalCoordinator != nil {
                 existingContainer.disableMetalRendering()
             }
