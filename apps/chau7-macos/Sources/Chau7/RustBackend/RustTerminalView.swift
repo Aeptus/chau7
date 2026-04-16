@@ -539,6 +539,8 @@ final class RustTerminalFFI {
     private typealias InjectOutputFn = @convention(c) (OpaquePointer?, UnsafePointer<UInt8>?, Int) -> Void
     /// Scrollback size configuration
     private typealias SetScrollbackSizeFn = @convention(c) (OpaquePointer?, UInt32) -> Void
+    /// Replay historical buffer into a cleared terminal (for tier promotion)
+    private typealias ReplayBufferFn = @convention(c) (OpaquePointer?, UnsafePointer<UInt8>?, Int) -> Void
     /// Smart scroll support: get display offset (0 = at bottom)
     private typealias DisplayOffsetFn = @convention(c) (OpaquePointer?) -> UInt32
     /// Bracketed paste mode query (for proper paste handling in vim, zsh, etc.)
@@ -613,6 +615,8 @@ final class RustTerminalFFI {
         let injectOutput: InjectOutputFn? // Optional - inject UI-only output
         /// Scrollback size configuration
         let setScrollbackSize: SetScrollbackSizeFn? // Optional - older libraries may not have this
+        /// Replay historical buffer (tier promotion)
+        let replayBuffer: ReplayBufferFn? // Optional - older libraries may not have this
         /// Smart scroll support
         let displayOffset: DisplayOffsetFn? // Optional - older libraries may not have this
         /// Bracketed paste mode query
@@ -835,6 +839,12 @@ final class RustTerminalFFI {
             Log.info("RustTerminalFFI: setScrollbackSize symbol not found (optional)")
         }
 
+        // Tier promotion: replay a historical buffer into the terminal
+        let replayBufferSym = loadSymbol("chau7_terminal_replay_buffer")
+        if replayBufferSym == nil {
+            Log.info("RustTerminalFFI: replayBuffer symbol not found (optional)")
+        }
+
         // Smart scroll support: display offset symbol
         let displayOffsetSym = loadSymbol("chau7_terminal_display_offset")
         if displayOffsetSym == nil {
@@ -988,6 +998,7 @@ final class RustTerminalFFI {
             freeOutput: freeOutputSym.map { unsafeBitCast($0, to: FreeOutputFn.self) },
             injectOutput: injectOutputSym.map { unsafeBitCast($0, to: InjectOutputFn.self) },
             setScrollbackSize: setScrollbackSizeSym.map { unsafeBitCast($0, to: SetScrollbackSizeFn.self) },
+            replayBuffer: replayBufferSym.map { unsafeBitCast($0, to: ReplayBufferFn.self) },
             displayOffset: displayOffsetSym.map { unsafeBitCast($0, to: DisplayOffsetFn.self) },
             isBracketedPasteMode: isBracketedPasteModeSym.map { unsafeBitCast($0, to: IsBracketedPasteModeFn.self) },
             checkBell: checkBellSym.map { unsafeBitCast($0, to: CheckBellFn.self) },
@@ -1479,6 +1490,23 @@ final class RustTerminalFFI {
         }
         Log.info("RustTerminalFFI[\(instanceId)]: setScrollbackSize - Setting scrollback to \(lines) lines")
         setScrollbackSizeFn(terminal, lines)
+    }
+
+    /// Replay a historical buffer into a cleared terminal. Used on tier
+    /// promotion (.hidden → .active) to restore scrollback from disk cache.
+    /// Clears both history and viewport first, then feeds the bytes through
+    /// the ANSI parser so content naturally fills the screen and scrolls older
+    /// rows into history.
+    func replayBuffer(_ data: Data) {
+        guard let replayBufferFn = Self.functions?.replayBuffer else {
+            Log.warn("RustTerminalFFI[\(instanceId)]: replayBuffer - Function not available")
+            return
+        }
+        Log.info("RustTerminalFFI[\(instanceId)]: replayBuffer - Replaying \(data.count) bytes")
+        data.withUnsafeBytes { (rawBuffer: UnsafeRawBufferPointer) in
+            let basePtr = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            replayBufferFn(terminal, basePtr, data.count)
+        }
     }
 
     /// Get the current display offset (0 = at bottom, >0 = scrolled up into history)
@@ -2877,6 +2905,7 @@ final class RustTerminalView: NSView {
     }
 
     func applyRenderPhase(_ phase: TabRenderPhase, isInteractive: Bool, reason: String) {
+        let previousPhase = currentRenderPhase
         currentRenderPhase = phase
         let shouldHide = !phase.keepsVisibleSurface
         let shouldNotifyUpdates = phase.allowsLivePresentation
@@ -2890,6 +2919,16 @@ final class RustTerminalView: NSView {
         setEventMonitoringEnabled(isInteractive)
         refreshRenderPipelineProfilingState(mode: "\(currentRenderLoopMode):\(phase.rawValue)")
         Log.trace("RustTerminalView[\(viewId)]: applyRenderPhase -> \(phase.rawValue) (\(reason))")
+
+        if previousPhase != phase {
+            ScrollbackMemoryManager.shared.handlePhaseTransition(
+                viewId: String(viewId),
+                tabID: UUID(uuidString: tabIdentifier),
+                rustFFI: rustTerminal,
+                from: previousPhase,
+                to: phase
+            )
+        }
     }
 
     func requestAuthoritativeReveal(reason: String) {
