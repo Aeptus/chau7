@@ -64,6 +64,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// Activity token to prevent App Nap from throttling latency-sensitive terminal work.
     /// Held while the app is active, while startup/restore scopes are active,
     /// or while any visible selected terminal remains live-rendered.
+    /// This intentionally favors responsiveness over battery savings for visible shells.
     private var activityToken: NSObjectProtocol?
     private var telemetryRepairWorkItem: DispatchWorkItem?
     private var appNapObservers: [Any] = []
@@ -556,11 +557,13 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     private func refreshLowLatencyActivity() {
+        let hasLatencyCriticalScopes = !latencyCriticalScopes.isEmpty
+        let hasVisibleLiveWindows = hasVisibleLiveWindowsForLowLatency
         let shouldHoldLowLatency = LowLatencyActivityPolicy.shouldHoldActivity(
             LowLatencyActivityPolicyInput(
                 isAppActive: isAppActive,
-                hasLatencyCriticalScopes: !latencyCriticalScopes.isEmpty,
-                hasVisibleLiveWindows: hasVisibleLiveWindowsForLowLatency
+                hasLatencyCriticalScopes: hasLatencyCriticalScopes,
+                hasVisibleLiveWindows: hasVisibleLiveWindows
             )
         )
         if shouldHoldLowLatency {
@@ -577,7 +580,9 @@ private final class OverlayBlurView: NSVisualEffectView {
         guard let activityToken else { return }
         ProcessInfo.processInfo.endActivity(activityToken)
         self.activityToken = nil
-        Log.info("App Nap: released latency-critical activity (app inactive, no startup/restore scopes)")
+        Log.info(
+            "App Nap: released latency-critical activity active=\(isAppActive) scopes=\(hasLatencyCriticalScopes) visibleLiveWindows=\(hasVisibleLiveWindows)"
+        )
     }
 
     private func beginLatencyCriticalScope(reason: String, timeout: TimeInterval) {
