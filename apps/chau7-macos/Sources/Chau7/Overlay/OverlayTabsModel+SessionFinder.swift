@@ -803,7 +803,7 @@ extension OverlayTabsModel {
                     let isSelectedTab = targetTabID == self.selectedTabID
                     if isSelectedTab,
                        let selectedTab = self.selectedTab,
-                       let selectedSession = self.selectedPresentationSession(for: selectedTab),
+                       let selectedSession = selectedTab.displaySession ?? selectedTab.session,
                        selectedSession.existingRustTerminalView != nil,
                        selectedSession.presentationSurfaceState.isLivePresentable {
                         Log.trace(
