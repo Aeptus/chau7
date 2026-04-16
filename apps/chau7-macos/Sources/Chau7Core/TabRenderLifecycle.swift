@@ -109,7 +109,7 @@ public enum TabRenderLifecyclePolicy {
 
         if input.isPreviousLiveTab
             || input.isPrewarming
-            || (input.hasPendingRestoreBootstrap && !input.hasAttachedTerminalView) {
+            || input.hasPendingRestoreBootstrap {
             return .warm
         }
 
@@ -129,10 +129,6 @@ public enum TabRenderLifecyclePolicy {
             return true
         }
 
-        guard input.hasPendingRestoreBootstrap, !input.hasAttachedTerminalView else {
-            return false
-        }
-
-        return !input.isStartupRestoreActive
+        return input.hasPendingRestoreBootstrap
     }
 }

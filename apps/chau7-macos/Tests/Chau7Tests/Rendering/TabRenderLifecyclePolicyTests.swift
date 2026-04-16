@@ -214,7 +214,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertFalse(decision.keepsLiveHierarchy)
     }
 
-    func testStartupRestoreBootstrapWarmsTabButDefersHierarchy() {
+    func testStartupRestoreBootstrapWarmsTabAndKeepsHierarchyAttached() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -232,10 +232,10 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .warm)
-        XCTAssertFalse(decision.keepsLiveHierarchy)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
-    func testPostStartupRestoreBootstrapKeepsTabAttachedUntilViewExists() {
+    func testPostStartupRestoreBootstrapKeepsTabAttachedUntilSettled() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -249,6 +249,27 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
                 hasPendingRestoreBootstrap: true,
                 isMCPControlled: false,
                 hasAttachedTerminalView: false
+            )
+        )
+
+        XCTAssertEqual(decision.phase, .warm)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
+    }
+
+    func testStartupRestoreBootstrapKeepsAttachedTabWarmUntilSettled() {
+        let decision = TabRenderLifecyclePolicy.decide(
+            TabRenderLifecycleInput(
+                isSelectedTab: false,
+                isInputPriorityWindow: true,
+                isWindowVisibleForRendering: false,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: false,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: true,
+                hasPendingRestoreBootstrap: true,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true
             )
         )
 
