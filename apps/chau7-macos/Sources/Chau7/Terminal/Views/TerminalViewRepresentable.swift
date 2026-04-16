@@ -282,6 +282,61 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     }
 
     private func makeRustTerminalView() -> UnifiedTerminalContainerView {
+        if let existingContainer = model.existingTerminalContainerView,
+           let existingView = existingContainer.rustTerminalView {
+            Log.trace("Reusing existing Rust terminal container for session")
+            existingView.onInput = { [weak model] text in
+                model?.handleInput(text)
+            }
+            existingView.shouldAcceptUserText = { [weak model] text in
+                model?.shouldAcceptDirectUserInput(text) ?? true
+            }
+            existingView.onOutput = { [weak model] data in
+                model?.handleOutput(data)
+            }
+            existingView.onShellStartupSlow = { [weak model] in
+                model?.shellStartupSlow = true
+            }
+            existingView.onBufferChanged = { [weak model, weak existingView] in
+                model?.scheduleSearchRefresh()
+                model?.highlightView?.scheduleDisplay()
+                model?.recordOutputLatencyIfNeeded()
+                model?.noteRestoreBootstrapBufferChanged()
+                if existingView?.isMetalRenderingActive == false {
+                    model?.notifyVisibleFrameReadyIfNeeded()
+                }
+            }
+            existingView.onFramePresented = { [weak model] in
+                model?.notifyVisibleFrameReadyIfNeeded()
+            }
+            existingView.onInactiveRetainedFrame = { [weak model] snapshot in
+                model?.lastRenderedSnapshot = snapshot
+            }
+            existingView.onFilePathClicked = onFilePathClicked
+            existingView.onScrollbackCleared = { [weak model] in
+                model?.resetDangerousHighlights()
+            }
+            existingView.onScrollChanged = { [weak model] in
+                model?.scheduleHighlightAfterScroll()
+            }
+            existingView.tabIdentifier = model.tabIdentifier
+            existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
+            existingView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
+            existingView.installHistoryKeyMonitor()
+            existingView.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "reuse-container")
+            existingView.allowMouseReporting = settings.isMouseReportingEnabled
+            if settings.useMetalRenderer {
+                if existingContainer.rustMetalCoordinator == nil {
+                    existingView.isMetalRenderingActive = false
+                    existingContainer.enableMetalRendering()
+                    Log.trace("Re-enabled Metal rendering for reused Rust terminal container")
+                }
+            } else if existingContainer.rustMetalCoordinator != nil {
+                existingContainer.disableMetalRendering()
+            }
+            return existingContainer
+        }
+
         // Reuse existing Rust terminal view if available
         if let existingView = model.existingRustTerminalView {
             Log.trace("Reusing existing Rust terminal view for session")
@@ -324,6 +379,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
             existingView.installHistoryKeyMonitor()
             let container = UnifiedTerminalContainerView(rustView: existingView)
+            model.attachTerminalContainer(container)
             existingView.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "reuse")
             existingView.allowMouseReporting = settings.isMouseReportingEnabled
             // Re-enable Metal rendering — the previous container (and its Metal
@@ -433,6 +489,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         model.attachHighlightView(highlightView)
 
         let container = UnifiedTerminalContainerView(rustView: view)
+        model.attachTerminalContainer(container)
         let useMetalRenderer = settings.useMetalRenderer
         container.onFirstRustLayout = { [weak model, weak view, weak container] rustView in
             guard let model, let view else { return }

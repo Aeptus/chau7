@@ -110,6 +110,19 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertFalse(session.shouldKeepLiveRenderingInBackground)
     }
 
+    func testAttachTerminalContainerRetainsContainerAcrossViewRecreation() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let rustView = RustTerminalView(frame: .zero)
+        let container = UnifiedTerminalContainerView(rustView: rustView)
+
+        session.attachTerminalContainer(container)
+        session.attachRustTerminal(rustView)
+
+        XCTAssertTrue(session.existingTerminalContainerView === container)
+        XCTAssertTrue(session.existingRustTerminalView === rustView)
+    }
+
     // MARK: - resolveStartDirectory (static, pure)
 
     func testResolveStartDirectoryWithAbsolutePath() {

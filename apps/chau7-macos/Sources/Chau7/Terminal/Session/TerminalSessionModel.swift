@@ -638,6 +638,9 @@ final class TerminalSessionModel {
     @ObservationIgnored weak var rustTerminalView: RustTerminalView?
     /// Strong reference to keep the Rust terminal view alive across SwiftUI view recreations
     @ObservationIgnored private var retainedRustTerminalView: RustTerminalView?
+    /// Strong reference to keep the terminal container and Metal coordinator alive
+    /// across SwiftUI view recreations.
+    @ObservationIgnored private var retainedTerminalContainerView: UnifiedTerminalContainerView?
     /// Prefill command queued when restore/restoration occurs before terminal is ready.
     @ObservationIgnored private var pendingPrefillInput: String?
     @ObservationIgnored private var pendingPrefillRejectionReasonProvider: (() -> String?)?
@@ -905,6 +908,10 @@ final class TerminalSessionModel {
         retainedRustTerminalView
     }
 
+    var existingTerminalContainerView: UnifiedTerminalContainerView? {
+        retainedTerminalContainerView
+    }
+
     /// Exposed for background-tab coordination and tests.
     var autoFocusOnAttachEnabled: Bool {
         shouldAutoFocusOnAttach
@@ -928,7 +935,12 @@ final class TerminalSessionModel {
         retainedRustTerminalView?.setEventMonitoringEnabled(false)
         rustTerminalView = nil
         retainedRustTerminalView?.onProcessTerminated = nil
+        retainedTerminalContainerView = nil
         retainedRustTerminalView = nil
+    }
+
+    func attachTerminalContainer(_ container: UnifiedTerminalContainerView) {
+        retainedTerminalContainerView = container
     }
 
     func attachRustTerminal(_ view: RustTerminalView) {
