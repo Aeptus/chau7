@@ -371,6 +371,7 @@ Lifecycle,Fast Quit State Save,"Termination now reuses a recent cached multi-win
 API Analytics,Adaptive Dashboard Polling,"Dashboard polls adaptively — 2s active, 5s idle, 10s no agents — with proxy health monitoring and timeline pagination",Shipped,Yes
 API Analytics,Updated Pricing Table,"~20 new models (GPT-5.x, GPT-4.1, o3/o4-mini, Gemini 2.5), corrected Opus 4.6/Haiku 4.5 prices, fallback warning logging, documented pricing.json schema",Shipped,Yes
 API Analytics,DB Performance & Pruning,"Compound cost index, automatic 180-day data pruning, ANALYZE after migrations",Shipped,No
+API Analytics,Per-Repository Prompt Injection,"Inject content into API requests per repository via ~/.chau7/prompt-rules.json — match by repo name (portable) or path, choose prepend/append/system position, supports all providers",Shipped,Yes
 Networking,IPC Socket Retry,Proxy IPC socket retries once on broken connection before giving up,Shipped,No
 Restore,Protected Repo Identity Persistence,"Tab restore now persists each terminal pane's repo root and last-known branch, and older saved tabs can fall back to repo grouping metadata so protected-folder repos keep their passive git badge without immediate live access",Shipped,Yes
 Overlay,Passive Protected Repo Chrome,"Selected-tab branch badge, tab git indicator, hover-card branch row, and repo path label now fall back to cached repo identity for protected-folder repos when live git probing is unavailable",Shipped,Yes

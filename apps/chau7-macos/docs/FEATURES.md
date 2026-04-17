@@ -117,6 +117,7 @@ Supported commands (46 parsers):
 - **Timeline visualization** — scrubber timeline showing command blocks and metrics.
 - **Provider filtering** — include or exclude specific API providers.
 - **Correlation headers** — `X-Chau7-Context-Pack`, `X-Chau7-Tab-ID`, `X-Chau7-Project` for tracing.
+- **Per-repository prompt injection** — inject content into API requests per repository via `~/.chau7/prompt-rules.json`. Rules match by repository name (portable) or absolute path, with configurable injection position: prepend to user message (default), append, or system prompt. Supports all request formats: Anthropic Messages, OpenAI Chat Completions, OpenAI Responses (Codex), and Gemini.
 
 ## MCP Server
 

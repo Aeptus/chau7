@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Per-Repository Prompt Injection**: The proxy can now inject content into API requests on a per-repository basis. Configure rules in `~/.chau7/prompt-rules.json` matching by repository name (portable across machines) or absolute path. Each rule specifies a position: prepend to user message (default), append, or inject into system prompt. Works with Anthropic Messages, OpenAI Chat Completions, OpenAI Responses (Codex CLI), and Gemini. Rules auto-reload every 30 seconds without proxy restart.
 - **Adaptive Render-Loop Throttling**: The active terminal now drops to a ~10 Hz polling cadence after a short stretch of no PTY activity, snapping back instantly on the first new byte, keystroke, mouse click, scroll, or IME commit. Idle tabs also skip redundant per-frame tint and cursor-blink work. Big reduction in wakeups/CPU for sessions that are mostly waiting on AI agents.
 - **Active Tab Refresh Cap Setting**: New Settings → Terminal → Rendering picker (Display Native / 60 Hz / 30 Hz) caps how fast the focused tab drives its render loop. Default matches current behavior (display native up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life.
 - **Lower Passive-Tab Polling Cadence**: Passive-visible tabs (split panes, unfocused windows) now poll at 15 Hz instead of 30 Hz — still smooth for glance-reading, half the wakeups.
