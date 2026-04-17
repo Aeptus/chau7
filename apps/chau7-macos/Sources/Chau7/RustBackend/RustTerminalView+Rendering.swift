@@ -846,8 +846,11 @@ extension RustTerminalView {
             let cellBuffer = UnsafeBufferPointer(start: cells, count: totalCells)
             previousGrid.append(contentsOf: cellBuffer)
 
-            // Determine sync strategy: partial sync if less than half the rows changed
-            let usePartialSync = canCompare && !dirtyRows.isEmpty && dirtyRows.count < gridRows / 2
+            let usePartialSync = GridSyncStrategyPolicy.shouldUsePartialSync(
+                canCompare: canCompare,
+                dirtyRowCount: dirtyRows.count,
+                gridRows: gridRows
+            )
 
             if usePartialSync {
                 partialSyncCount += 1
