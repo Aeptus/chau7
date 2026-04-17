@@ -46,6 +46,15 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var defaultFgPacked: UInt32 = CellInstance.packColor(1, 1, 1, 1)
     private var defaultBgPacked: UInt32 = CellInstance.packColor(0, 0, 0, 1)
 
+    /// Per-frame profiler delta tracking
+    private var lastGlyphLookupCount = 0
+    private var lastGlyphMissCount = 0
+
+    /// Previous frame's Rust cell data for dirty-row detection.
+    /// Only rows that actually changed get reconverted + re-uploaded.
+    private var previousCells: UnsafeMutableBufferPointer<RustCellData>?
+    private var previousCellCapacity = 0
+
     // MARK: - Blink Timer
 
     private var blinkTimer: Timer?
@@ -93,6 +102,8 @@ final class RustMetalDisplayCoordinator: NSObject {
 
     deinit {
         blinkTimer?.invalidate()
+        previousCells?.baseAddress?.deinitialize(count: previousCellCapacity)
+        previousCells?.baseAddress?.deallocate()
     }
 
     // MARK: - Font
@@ -354,22 +365,94 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             return
         }
 
-        // 2. Sync settings
+        // 2. Sync settings + cursor state (needed before dirty-row detection)
         renderer.ligaturesEnabled = FeatureSettings.shared.enableLigatures
+        renderer.cursorRow = Int(snapshot.cursor.row)
+        renderer.cursorCol = Int(snapshot.cursor.col)
+        renderer.cursorStyle = FeatureSettings.shared.cursorStyle
+        renderer.cursorVisible = snapshot.cursorVisible
+
+        let scheme = FeatureSettings.shared.currentColorScheme
+        let cursorNSColor = scheme.nsColor(for: scheme.cursor)
+        if let cc = cursorNSColor.usingColorSpace(.sRGB) {
+            renderer.cursorColor = SIMD4(
+                Float(cc.redComponent), Float(cc.greenComponent), Float(cc.blueComponent), 0.8
+            )
+        }
 
         // 3. Update dangerous row tints
         updateRowTints()
 
-        // 3. Convert Rust cells directly into CellInstance ring buffer
+        // 4. Dirty-row detection: compare current Rust cells against previous frame.
+        // Only rows with actual cell changes get reconverted. Unchanged rows are
+        // copied from the previous instance buffer (a memcpy of CellInstance structs).
         let instanceStartedAt = CFAbsoluteTimeGetCurrent()
         renderer.ensureCapacity(cells: cellCount)
-        let instanceBuffer = renderer.nextInstanceBuffer()
-        let instances = instanceBuffer.contents().bindMemory(to: CellInstance.self, capacity: cellCount)
 
         let syncRows = min(gridRows, rows)
         let syncCols = min(gridCols, cols)
+        let rustCellStride = MemoryLayout<RustCellData>.stride
 
-        for row in 0 ..< syncRows {
+        // Ensure previous-frame cell buffer is allocated
+        let needsBufferRealloc = previousCellCapacity < cellCount
+        if needsBufferRealloc {
+            previousCells?.baseAddress?.deinitialize(count: previousCellCapacity)
+            previousCells?.baseAddress?.deallocate()
+            let ptr = UnsafeMutablePointer<RustCellData>.allocate(capacity: cellCount)
+            // Zero-initialize so first-frame memcmp forces full refresh
+            memset(ptr, 0, cellCount * rustCellStride)
+            previousCells = UnsafeMutableBufferPointer(start: ptr, count: cellCount)
+            previousCellCapacity = cellCount
+        }
+
+        // Determine which rows changed
+        let forceFullRefresh = needsBufferRealloc
+        var dirtyRowSet = IndexSet()
+        if forceFullRefresh {
+            dirtyRowSet = IndexSet(integersIn: 0 ..< syncRows)
+        } else if let prevCells = previousCells?.baseAddress {
+            for row in 0 ..< syncRows {
+                let rustRowStart = row * gridCols
+                let prevRowStart = row * cols
+                let compareCount = syncCols * rustCellStride
+                if memcmp(
+                    rustCells.advanced(by: rustRowStart),
+                    prevCells.advanced(by: prevRowStart),
+                    compareCount
+                ) != 0 {
+                    dirtyRowSet.insert(row)
+                }
+            }
+        }
+
+        // Also mark cursor rows dirty (old + new position)
+        let cursorState = renderer.currentCursorRenderState(cellCount: cellCount, cols: cols)
+        let cursorDirty = renderer.cursorDirtyRows(currentState: cursorState, totalRows: syncRows)
+        dirtyRowSet.formUnion(cursorDirty)
+
+        // Get the ring buffer. For unchanged rows, copy from previous instance buffer.
+        let bufCount = MetalTerminalRenderer.ringBufferCount
+        let prevRingIndex = (renderer.ringIndex + bufCount - 1) % bufCount
+        let instanceBuffer = renderer.nextInstanceBuffer()
+        let instances = instanceBuffer.contents().bindMemory(to: CellInstance.self, capacity: cellCount)
+
+        // Copy previous instance data for clean rows (if we have a previous buffer)
+        if !forceFullRefresh, !renderer.instanceBuffers.isEmpty {
+            let prevBuffer = renderer.instanceBuffers[prevRingIndex]
+            let prevInstances = prevBuffer.contents().bindMemory(to: CellInstance.self, capacity: cellCount)
+            let instanceStride = MemoryLayout<CellInstance>.stride
+            for row in 0 ..< syncRows where !dirtyRowSet.contains(row) {
+                let rowStart = row * cols
+                memcpy(
+                    instances.advanced(by: rowStart),
+                    prevInstances.advanced(by: rowStart),
+                    cols * instanceStride
+                )
+            }
+        }
+
+        // Convert only dirty rows
+        for row in dirtyRowSet where row < syncRows {
             var ligatureSkip = 0
             var ligatureRect = CGRect.zero
             var ligatureSpan = 0
@@ -499,10 +582,25 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
 
         renderer.finalizeBlinkState()
 
+        // Save current Rust cells for next-frame dirty detection
+        if let prevPtr = previousCells?.baseAddress {
+            for row in 0 ..< syncRows {
+                memcpy(
+                    prevPtr.advanced(by: row * cols),
+                    rustCells.advanced(by: row * gridCols),
+                    syncCols * rustCellStride
+                )
+            }
+        }
+
         let instanceDurationMs = (CFAbsoluteTimeGetCurrent() - instanceStartedAt) * 1000.0
         FeatureProfiler.shared.record(feature: .metalInstanceBuffer, durationMs: instanceDurationMs)
 
         // Profiler: record sync stats for the render pipeline dashboard
+        let frameGlyphLookups = renderer.glyphLookupCount - lastGlyphLookupCount
+        let frameGlyphMisses = renderer.glyphCacheMisses - lastGlyphMissCount
+        lastGlyphLookupCount = renderer.glyphLookupCount
+        lastGlyphMissCount = renderer.glyphCacheMisses
         if let viewID = terminalView?.viewId {
             RenderPipelineProfiler.shared.recordSync(
                 viewID: viewID,
@@ -517,31 +615,17 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                 cells: cellCount,
                 bufferBytes: cellCount * MemoryLayout<CellInstance>.stride,
                 saturated: false,
-                glyphLookups: renderer.glyphLookupCount,
-                glyphMisses: renderer.glyphCacheMisses,
+                glyphLookups: frameGlyphLookups,
+                glyphMisses: frameGlyphMisses,
                 glyphCacheSize: 0,
                 ligatureCacheSize: 0
             )
         }
 
-        // 4. Update cursor
-        renderer.cursorRow = Int(snapshot.cursor.row)
-        renderer.cursorCol = Int(snapshot.cursor.col)
-        renderer.cursorStyle = FeatureSettings.shared.cursorStyle
-        renderer.cursorVisible = snapshot.cursorVisible
-
-        let scheme = FeatureSettings.shared.currentColorScheme
-        let cursorNSColor = scheme.nsColor(for: scheme.cursor)
-        if let cc = cursorNSColor.usingColorSpace(.sRGB) {
-            renderer.cursorColor = SIMD4(
-                Float(cc.redComponent), Float(cc.greenComponent), Float(cc.blueComponent), 0.8
-            )
-        }
-
-        let cursorState = renderer.currentCursorRenderState(cellCount: cellCount, cols: cols)
+        // 5. Apply cursor to instance data
         renderer.applyCursor(to: instances, cellCount: cellCount, cols: cols, cursorState: cursorState)
 
-        // 5. Render
+        // 6. Render
         guard view.bounds.width > 0, view.bounds.height > 0 else {
             FeatureProfiler.shared.end(token)
             return
