@@ -497,26 +497,46 @@ extension OverlayTabsModel {
     }
 
     static func restoreAdditionalWindowStatesFromBackups() -> [[SavedTabState]]? {
-        for url in tabStateRestoreCandidateURLs() {
-            guard let data = try? Data(contentsOf: url) else { continue }
-            guard let windows = decodeBackupWindowStates(from: data), windows.count > 1 else { continue }
-            Log.info("Recovered \(windows.count) window state set(s) from backup file \(url.lastPathComponent)")
-            return windows
+        guard let windows = mergedBackupWindowStatesFromCandidates(),
+              windows.count > 1 else {
+            return nil
+        }
+        Log.info("Recovered \(windows.count) window state set(s) from merged backup candidates")
+        return windows
+    }
+
+    static func restoreSavedTabsFromBackups(appModel: AppModel) -> RestorableTabsPayload? {
+        guard let windows = mergedBackupWindowStatesFromCandidates() else { return nil }
+        for windowStates in windows where !windowStates.isEmpty {
+            guard let payload = decodeRestorableTabs(fromStates: windowStates, appModel: appModel) else { continue }
+            Log.info("Restored \(payload.tabs.count) tab(s) from merged backup candidates")
+            return payload
         }
         return nil
     }
 
-    static func restoreSavedTabsFromBackups(appModel: AppModel) -> RestorableTabsPayload? {
-        for url in tabStateRestoreCandidateURLs() {
-            guard let data = try? Data(contentsOf: url) else { continue }
-            guard let windows = decodeBackupWindowStates(from: data) else { continue }
-            for windowStates in windows where !windowStates.isEmpty {
-                guard let payload = decodeRestorableTabs(fromStates: windowStates, appModel: appModel) else { continue }
-                Log.info("Restored \(payload.tabs.count) tab(s) from backup file \(url.lastPathComponent)")
-                return payload
+    private static func mergedBackupWindowStatesFromCandidates() -> [[SavedTabState]]? {
+        let decodedCandidates = tabStateRestoreCandidateURLs().compactMap { url -> [[SavedTabState]]? in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return decodeBackupWindowStates(from: data)
+        }
+        guard let baseWindows = decodedCandidates.first else { return nil }
+
+        let fallbackByTabID = decodedCandidates.dropFirst().reduce(into: [String: SavedTabState]()) { result, windows in
+            for tabs in windows {
+                for state in tabs {
+                    guard let tabID = state.tabID, result[tabID] == nil, state.hasAIResumePayload else { continue }
+                    result[tabID] = state
+                }
             }
         }
-        return nil
+
+        return baseWindows.map { tabs in
+            tabs.map { state in
+                guard let tabID = state.tabID else { return state }
+                return state.mergedAIResumePayload(with: fallbackByTabID[tabID])
+            }
+        }
     }
 
     static func decodeBackupWindowStates(from data: Data) -> [[SavedTabState]]? {

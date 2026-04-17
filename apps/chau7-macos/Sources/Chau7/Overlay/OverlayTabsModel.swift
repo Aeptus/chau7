@@ -374,6 +374,34 @@ struct SavedTerminalPaneState: Codable {
     }
 }
 
+extension SavedTerminalPaneState {
+    var hasAIResumePayload: Bool {
+        aiProvider != nil || aiSessionId != nil || aiResumeCommand != nil
+    }
+
+    func mergedAIResumePayload(with fallback: SavedTerminalPaneState?) -> SavedTerminalPaneState {
+        guard let fallback else { return self }
+        return SavedTerminalPaneState(
+            paneID: paneID,
+            directory: directory,
+            scrollbackContent: scrollbackContent,
+            aiResumeCommand: aiResumeCommand ?? fallback.aiResumeCommand,
+            aiProvider: aiProvider ?? fallback.aiProvider,
+            aiSessionId: aiSessionId ?? fallback.aiSessionId,
+            aiSessionIdSource: aiSessionIdSource ?? fallback.aiSessionIdSource,
+            lastOutputAt: lastOutputAt,
+            lastInputAt: lastInputAt,
+            knownRepoRoot: knownRepoRoot,
+            knownGitBranch: knownGitBranch,
+            lastStatus: lastStatus,
+            agentLaunchCommand: agentLaunchCommand,
+            agentStartedAt: agentStartedAt,
+            lastExitCode: lastExitCode,
+            lastExitAt: lastExitAt
+        )
+    }
+}
+
 /// Lightweight Codable snapshot of a tab's restorable state.
 /// Captures working directory, title, color, and the last N lines of
 /// terminal scrollback so the user has context when tabs are restored.
@@ -464,6 +492,59 @@ struct SavedTabState: Codable {
         self.lastExitAt = lastExitAt
         self.commandBlocks = commandBlocks
         self.previewSnapshotPNGData = previewSnapshotPNGData
+    }
+}
+
+extension SavedTabState {
+    var hasAIResumePayload: Bool {
+        aiProvider != nil || aiSessionId != nil || aiResumeCommand != nil
+            || (paneStates?.contains(where: \.hasAIResumePayload) ?? false)
+    }
+
+    func mergedAIResumePayload(with fallback: SavedTabState?) -> SavedTabState {
+        guard let fallback else { return self }
+
+        let mergedPaneStates: [SavedTerminalPaneState]?
+        if let paneStates {
+            let fallbackByPaneID = Dictionary(
+                uniqueKeysWithValues: (fallback.paneStates ?? []).map { ($0.paneID, $0) }
+            )
+            mergedPaneStates = paneStates.map { pane in
+                pane.mergedAIResumePayload(with: fallbackByPaneID[pane.paneID])
+            }
+        } else {
+            mergedPaneStates = fallback.paneStates
+        }
+
+        return SavedTabState(
+            tabID: tabID,
+            selectedTabID: selectedTabID,
+            customTitle: customTitle,
+            color: color,
+            directory: directory,
+            selectedIndex: selectedIndex,
+            tokenOptOverride: tokenOptOverride,
+            scrollbackContent: scrollbackContent,
+            aiResumeCommand: aiResumeCommand ?? fallback.aiResumeCommand,
+            aiProvider: aiProvider ?? fallback.aiProvider,
+            aiSessionId: aiSessionId ?? fallback.aiSessionId,
+            aiSessionIdSource: aiSessionIdSource ?? fallback.aiSessionIdSource,
+            splitLayout: splitLayout,
+            focusedPaneID: focusedPaneID,
+            paneStates: mergedPaneStates,
+            createdAt: createdAt,
+            repoGroupID: repoGroupID,
+            knownRepoRoot: knownRepoRoot,
+            knownGitBranch: knownGitBranch,
+            lastInputAt: lastInputAt,
+            lastStatus: lastStatus,
+            agentLaunchCommand: agentLaunchCommand,
+            agentStartedAt: agentStartedAt,
+            lastExitCode: lastExitCode,
+            lastExitAt: lastExitAt,
+            commandBlocks: commandBlocks,
+            previewSnapshotPNGData: previewSnapshotPNGData
+        )
     }
 }
 
@@ -715,6 +796,7 @@ final class OverlayTabsModel {
     @ObservationIgnored var onCloseLastTab: (() -> Void)?
     @ObservationIgnored var deferredRestoreStatesByTabID: [UUID: SavedTabState] = [:]
     @ObservationIgnored var deferredRestoreTabOrder: [UUID] = []
+    @ObservationIgnored var persistedRestoreFallbackStatesByTabID: [UUID: SavedTabState] = [:]
     @ObservationIgnored var hasStartedDeferredRestore = false
 
     @ObservationIgnored let appModel: AppModel
@@ -802,6 +884,7 @@ final class OverlayTabsModel {
         if let sanitizedRestoredStates {
             for (index, state) in sanitizedRestoredStates.enumerated() where index < tabs.count {
                 let tab = tabs[index]
+                persistedRestoreFallbackStatesByTabID[tab.id] = state
                 if tab.id == selectedTabID {
                     restoreTabState(for: tab, state: state)
                 } else {
@@ -1244,6 +1327,8 @@ final class OverlayTabsModel {
             let terminalSessions = tab.splitController.terminalSessions
             let isSelected = tab.id == selectedID
             let overrideRaw: String? = tab.tokenOptOverride == .default ? nil : tab.tokenOptOverride.rawValue
+            let fallbackTabState = persistedRestoreFallbackStatesByTabID[tab.id]
+            let fallbackPaneStatesByID = Self.paneStateMap(from: fallbackTabState?.paneStates)
 
             var paneStates: [SavedTerminalPaneState] = []
             for (paneID, session) in terminalSessions {
@@ -1258,21 +1343,42 @@ final class OverlayTabsModel {
                     from: session,
                     claimedSessionIds: claimedSessionIds
                 )
-                let resumeCommand = Self.buildAIResumeCommand(
-                    provider: persistedIdentity.provider,
-                    sessionId: persistedIdentity.sessionId,
-                    sessionIdSource: persistedIdentity.sessionIdSource
+                let fallbackPaneState = fallbackPaneStatesByID[paneID]
+                let fallbackMetadata = fallbackPaneState.flatMap {
+                    Self.resolveAIResumeMetadataFromSavedState(
+                        paneState: $0,
+                        fallbackAIProvider: fallbackTabState?.aiProvider,
+                        fallbackAISessionId: fallbackTabState?.aiSessionId,
+                        fallbackAISessionIdSource: fallbackTabState?.aiSessionIdSource
+                    )
+                }
+                let fallbackSanitized = AIResumeOwnership.sanitizeForPersistence(
+                    provider: fallbackMetadata?.provider,
+                    sessionId: fallbackMetadata?.sessionId,
+                    claimedSessionIds: claimedSessionIds
                 )
-                if let sessionId = persistedIdentity.sessionId { claimedSessionIds.insert(sessionId) }
+                let effectiveProvider = persistedIdentity.provider ?? fallbackSanitized.provider
+                let effectiveSessionID = persistedIdentity.sessionId ?? fallbackSanitized.sessionId
+                let effectiveSessionIDSource: AISessionIdentitySource? = if effectiveSessionID == nil {
+                    nil
+                } else {
+                    persistedIdentity.sessionIdSource ?? fallbackMetadata?.sessionIdSource
+                }
+                let resumeCommand = Self.buildAIResumeCommand(
+                    provider: effectiveProvider,
+                    sessionId: effectiveSessionID,
+                    sessionIdSource: effectiveSessionIDSource
+                ) ?? Self.normalizedResumeCommand(fallbackPaneState?.aiResumeCommand)
+                if let sessionId = effectiveSessionID { claimedSessionIds.insert(sessionId) }
 
                 paneStates.append(SavedTerminalPaneState(
                     paneID: paneID.uuidString,
                     directory: dir,
                     scrollbackContent: scrollback,
                     aiResumeCommand: resumeCommand,
-                    aiProvider: persistedIdentity.provider,
-                    aiSessionId: persistedIdentity.sessionId,
-                    aiSessionIdSource: persistedIdentity.sessionIdSource,
+                    aiProvider: effectiveProvider,
+                    aiSessionId: effectiveSessionID,
+                    aiSessionIdSource: effectiveSessionIDSource,
                     lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate),
                     lastInputAt: session.lastInputDate,
                     knownRepoRoot: knownRepoIdentity?.rootPath,

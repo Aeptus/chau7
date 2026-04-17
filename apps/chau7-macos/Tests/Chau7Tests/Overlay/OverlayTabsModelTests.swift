@@ -47,6 +47,44 @@ final class OverlayTabsModelTests: XCTestCase {
         )
     }
 
+    private func makeSavedTabState(
+        tabID: UUID,
+        paneID: UUID,
+        title: String,
+        directory: String,
+        aiProvider: String?,
+        aiSessionId: String?,
+        aiResumeCommand: String?
+    ) -> SavedTabState {
+        SavedTabState(
+            tabID: tabID.uuidString,
+            selectedTabID: nil,
+            customTitle: title,
+            color: TabColor.blue.rawValue,
+            directory: directory,
+            selectedIndex: nil,
+            tokenOptOverride: nil,
+            scrollbackContent: nil,
+            aiResumeCommand: aiResumeCommand,
+            aiProvider: aiProvider,
+            aiSessionId: aiSessionId,
+            aiSessionIdSource: aiSessionId == nil ? nil : .explicit,
+            splitLayout: SavedSplitNode(kind: .terminal, id: paneID.uuidString),
+            focusedPaneID: paneID.uuidString,
+            paneStates: [
+                SavedTerminalPaneState(
+                    paneID: paneID.uuidString,
+                    directory: directory,
+                    scrollbackContent: nil,
+                    aiResumeCommand: aiResumeCommand,
+                    aiProvider: aiProvider,
+                    aiSessionId: aiSessionId,
+                    aiSessionIdSource: aiSessionId == nil ? nil : .explicit
+                )
+            ]
+        )
+    }
+
     override func setUp() {
         super.setUp()
         // Clear any saved tab state so restoreSavedTabs returns nil
@@ -120,6 +158,83 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(restored.tabs.count, 1)
         XCTAssertEqual(restored.tabs.first?.customTitle, "Window 1")
         XCTAssertEqual(restored.rawStates.first?.directory, "/tmp/one")
+    }
+
+    func testRestoreSavedTabsBackfillsMissingAIResumeMetadataFromOlderArchive() throws {
+        let tabID = UUID()
+        let paneID = UUID()
+        let latestState = makeSavedTabState(
+            tabID: tabID,
+            paneID: paneID,
+            title: "Latest",
+            directory: "/tmp/aetower",
+            aiProvider: nil,
+            aiSessionId: nil,
+            aiResumeCommand: nil
+        )
+        let archivedState = makeSavedTabState(
+            tabID: tabID,
+            paneID: paneID,
+            title: "Archived",
+            directory: "/tmp/aetower",
+            aiProvider: "codex",
+            aiSessionId: "session-123",
+            aiResumeCommand: "codex resume session-123"
+        )
+
+        let backupRoot = tabStateBackupRootURL()
+        try FileManager.default.createDirectory(
+            at: backupRoot.appendingPathComponent("archive", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try JSONEncoder().encode(SavedMultiWindowState(windows: [[latestState]])).write(
+            to: backupRoot.appendingPathComponent("latest.json")
+        )
+        try JSONEncoder().encode(SavedMultiWindowState(windows: [[archivedState]])).write(
+            to: backupRoot.appendingPathComponent("archive/0000000000001-autosave.json")
+        )
+
+        let restored = try XCTUnwrap(OverlayTabsModel.restoreSavedTabs(appModel: appModel))
+        let restoredPane = try XCTUnwrap(restored.rawStates.first?.paneStates?.first)
+
+        XCTAssertEqual(restoredPane.aiProvider, "codex")
+        XCTAssertEqual(restoredPane.aiSessionId, "session-123")
+        XCTAssertEqual(restoredPane.aiResumeCommand, "codex resume session-123")
+    }
+
+    func testExportTabStatesPreservesDeferredRestoreAIResumeMetadata() throws {
+        let selectedState = makeSavedTabState(
+            tabID: UUID(),
+            paneID: UUID(),
+            title: "Selected",
+            directory: "/tmp/selected",
+            aiProvider: "codex",
+            aiSessionId: "selected-session",
+            aiResumeCommand: "codex resume selected-session"
+        )
+        let deferredTabID = UUID()
+        let deferredPaneID = UUID()
+        let deferredState = makeSavedTabState(
+            tabID: deferredTabID,
+            paneID: deferredPaneID,
+            title: "Deferred",
+            directory: "/tmp/deferred",
+            aiProvider: "codex",
+            aiSessionId: "deferred-session",
+            aiResumeCommand: "codex resume deferred-session"
+        )
+
+        let restoredModel = OverlayTabsModel(
+            appModel: AppModel(),
+            restoringStates: [selectedState, deferredState]
+        )
+        let exported = restoredModel.exportTabStates()
+        let exportedDeferred = try XCTUnwrap(exported.first(where: { $0.tabID == deferredTabID.uuidString }))
+        let exportedDeferredPane = try XCTUnwrap(exportedDeferred.paneStates?.first)
+
+        XCTAssertEqual(exportedDeferredPane.aiProvider, "codex")
+        XCTAssertEqual(exportedDeferredPane.aiSessionId, "deferred-session")
+        XCTAssertEqual(exportedDeferredPane.aiResumeCommand, "codex resume deferred-session")
     }
 
     func testResolveAIResumeMetadataAllowsLiveProviderHintToOverrideStaleCodexRestore() {
