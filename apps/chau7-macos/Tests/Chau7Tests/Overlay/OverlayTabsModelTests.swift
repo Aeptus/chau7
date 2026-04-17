@@ -310,19 +310,6 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertFalse(model.tabs[1].hasInheritedRepoGroup)
     }
 
-    func testCloseTabClearsSessionRetainedSnapshotBeforeSessionShutdown() throws {
-        model.newTab(selectNewTab: false)
-        let closingTabID = model.tabs[1].id
-        let closingSession = try XCTUnwrap(model.tabs[1].session)
-        let snapshot = NSImage(size: NSSize(width: 120, height: 60))
-        model.tabs[1].cachedSnapshot = snapshot
-        closingSession.lastRenderedSnapshot = snapshot
-
-        model.closeTab(id: closingTabID, skipWarning: true)
-
-        XCTAssertNil(closingSession.lastRenderedSnapshot)
-    }
-
     func testDisplaySessionTracksFocusedTerminalPane() {
         model.splitCurrentTabHorizontally()
 

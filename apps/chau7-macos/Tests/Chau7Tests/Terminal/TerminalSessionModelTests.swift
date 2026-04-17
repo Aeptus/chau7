@@ -1405,28 +1405,6 @@ final class TerminalSessionModelTests: XCTestCase {
         )
     }
 
-    // MARK: - Snapshot
-
-    func testLastRenderedSnapshotNilByDefault() {
-        let model = AppModel()
-        let session = TerminalSessionModel(appModel: model)
-        XCTAssertNil(
-            session.lastRenderedSnapshot,
-            "No snapshot should exist for a fresh session"
-        )
-    }
-
-    func testCloseSessionClearsLastRenderedSnapshot() {
-        let model = AppModel()
-        let session = TerminalSessionModel(appModel: model)
-        let snapshot = NSImage(size: NSSize(width: 80, height: 40))
-        session.lastRenderedSnapshot = snapshot
-
-        session.closeSession()
-
-        XCTAssertNil(session.lastRenderedSnapshot)
-    }
-
     func testCloseSessionShutsDownActiveTerminalRendering() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)

@@ -123,31 +123,9 @@ struct OverlayTab: Identifiable, Equatable {
         return URL(fileURLWithPath: path).lastPathComponent
     }
 
-    // MARK: - Tab Switch Optimization: Cached Snapshot
-
-    /// Cached screenshot of terminal content for instant visual feedback during tab switch
-    var cachedSnapshot: NSImage?
     /// Passive preview restored from persisted state. Only shown while the
     /// shell-backed restore bootstrap is still in progress.
     var restorePreviewSnapshot: NSImage?
-
-    /// Retained frames remain for persistence and inactive-tab bookkeeping.
-    /// The selected surface no longer presents them directly during tab reveal.
-    var visibleSnapshot: NSImage? {
-        if let restorePreviewSnapshot {
-            return restorePreviewSnapshot
-        }
-        if let cachedSnapshot {
-            return cachedSnapshot
-        }
-        if let displaySessionSnapshot = displaySession?.lastRenderedSnapshot {
-            return displaySessionSnapshot
-        }
-        if displaySession == nil || displaySession === session {
-            return session?.lastRenderedSnapshot
-        }
-        return nil
-    }
 
     /// The primary terminal session (first terminal in split tree)
     var session: TerminalSessionModel? {
@@ -1055,7 +1033,7 @@ final class OverlayTabsModel {
         resetSelectedTerminalRevealScheduling()
         session.cancelVisibleFrameReadyHandoff()
         if let selectedIndex = tabs.firstIndex(where: { $0.id == tab.id }) {
-            clearRetainedSnapshots(forTabAt: selectedIndex)
+            tabs[selectedIndex].restorePreviewSnapshot = nil
         }
         logSelectedTabRevealCompletion(completion, tabID: tab.id, reason: reason)
     }
@@ -1166,14 +1144,6 @@ final class OverlayTabsModel {
     }
 
     func persistableRestorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> NSImage? {
-        // Persist only frames captured from the current live session or cached
-        // retained handoff images. A restore preview loaded from disk may
-        // already be stale or visually corrupt; replaying it back into saved
-        // state causes the same bad startup frame to survive indefinitely.
-        if let cached = tab.cachedSnapshot ?? tab.displaySession?.lastRenderedSnapshot ?? tab.session?.lastRenderedSnapshot {
-            return cached
-        }
-
         _ = isSelected
 
         guard let terminalView = (tab.displaySession ?? tab.session)?.existingRustTerminalView else {
@@ -2184,40 +2154,6 @@ final class OverlayTabsModel {
             deadline: .now() + Self.previousLiveHierarchyKeepAliveInterval,
             execute: item
         )
-    }
-
-    // MARK: - Retained Frame Bookkeeping
-
-    func cacheRetainedSnapshot(_ snapshot: NSImage, forTabAt index: Int) {
-        guard tabs.indices.contains(index) else { return }
-        tabs[index].cachedSnapshot = snapshot
-    }
-
-    func clearRetainedSnapshots(forTabAt index: Int, includeCachedSnapshot: Bool = true) {
-        guard tabs.indices.contains(index) else { return }
-        if includeCachedSnapshot {
-            tabs[index].cachedSnapshot = nil
-        }
-        for session in tabs[index].splitController.root.allSessions {
-            session.lastRenderedSnapshot = nil
-        }
-    }
-
-    /// Releases transient session-owned retained frames for distant tabs while
-    /// preserving nearby handoff frames and any persisted restore preview.
-    func cleanupDistantSnapshots(currentIndex: Int) {
-        for i in 0 ..< tabs.count {
-            let retainCachedSnapshot = TransitionSnapshotRetention.shouldRetainCachedSnapshot(
-                tabIndex: i,
-                currentIndex: currentIndex,
-                hasRestorePreview: tabs[i].restorePreviewSnapshot != nil
-            )
-            if !retainCachedSnapshot {
-                clearRetainedSnapshots(forTabAt: i, includeCachedSnapshot: true)
-            } else if abs(i - currentIndex) > TransitionSnapshotRetention.nearbyTabDistance {
-                clearRetainedSnapshots(forTabAt: i, includeCachedSnapshot: false)
-            }
-        }
     }
 
     // Tab Switch Optimization → OverlayTabsModel+TabSwitchOptimization.swift
@@ -4102,7 +4038,6 @@ extension OverlayTabsModel: TabSnapshotReleaser {
         case .keepCachedOnly:
             tabs[index].restorePreviewSnapshot = nil
         case .releaseAll:
-            clearRetainedSnapshots(forTabAt: index, includeCachedSnapshot: true)
             tabs[index].restorePreviewSnapshot = nil
         }
     }

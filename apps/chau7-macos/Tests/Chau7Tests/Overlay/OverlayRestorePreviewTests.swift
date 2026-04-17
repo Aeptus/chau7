@@ -27,18 +27,6 @@ final class OverlayRestorePreviewTests: XCTestCase {
         )
     }
 
-    func testExportTabStatesPersistsCachedRetainedSnapshot() throws {
-        let model = OverlayTabsModel(appModel: AppModel(), restoreState: false)
-        model.tabs[0].cachedSnapshot = makePreviewImage()
-
-        let states = model.exportTabStates()
-        let persistedData = try XCTUnwrap(states.first?.previewSnapshotPNGData)
-        let preview = try XCTUnwrap(OverlayTabsModel.restorePreviewImage(from: persistedData))
-
-        XCTAssertEqual(preview.size.width, 80)
-        XCTAssertEqual(preview.size.height, 40)
-    }
-
     func testRestoreSavedTabsHydratesPersistedPreviewSnapshot() throws {
         let previewData = try XCTUnwrap(OverlayTabsModel.pngData(from: makePreviewImage()))
         let state = SavedTabState(

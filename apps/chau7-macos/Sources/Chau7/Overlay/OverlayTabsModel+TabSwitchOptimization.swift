@@ -344,7 +344,7 @@ extension OverlayTabsModel {
             }
 
             let dir = inheritedStartDirectory()
-            clearRetainedSnapshots(forTabAt: idx)
+            tabs[idx].restorePreviewSnapshot = nil
             tabs[idx].splitController.root.closeAllSessions()
             if closeWindow {
                 Log.info("closeTab: last tab - user chose to close window")
@@ -428,7 +428,7 @@ extension OverlayTabsModel {
         }
 
         // Close all sessions in the split pane tree (not just primary)
-        clearRetainedSnapshots(forTabAt: index)
+        tabs[index].restorePreviewSnapshot = nil
         tabs[index].splitController.root.closeAllSessions()
 
         if isLastTabNow {
@@ -610,7 +610,7 @@ extension OverlayTabsModel {
                 CTORuntimeMonitor.shared.untrackSession(sessionID)
             }
             if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
-                clearRetainedSnapshots(forTabAt: idx)
+                tabs[idx].restorePreviewSnapshot = nil
             }
             tab.splitController.root.closeAllSessions()
         }

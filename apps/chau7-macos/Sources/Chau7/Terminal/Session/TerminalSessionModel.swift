@@ -664,9 +664,6 @@ final class TerminalSessionModel {
     @ObservationIgnored private var pendingTerminalActions: [PendingTerminalAction] = []
     @ObservationIgnored private var pendingAutomationSubmitWorkItem: DispatchWorkItem?
     @ObservationIgnored private var lastAutomationInputAt: Date?
-    /// Cached snapshot of the last rendered terminal frame, used for instant tab-switch visuals
-    /// when the actual NSView has been removed from the hierarchy (distant-tab optimization).
-    @ObservationIgnored var lastRenderedSnapshot: NSImage?
     @ObservationIgnored private var settingsObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var idleTimer: DispatchSourceTimer?
     @ObservationIgnored var lastInputAt = Date()
@@ -1409,7 +1406,6 @@ final class TerminalSessionModel {
             sigtermSentAt = nil
         }
 
-        lastRenderedSnapshot = nil
         shutdownActiveTerminalRendering()
 
         // Stop all background work
