@@ -3049,6 +3049,7 @@ final class RustTerminalView: NSView {
             isHidden = shouldHide
         }
         setEventMonitoringEnabled(isInteractive)
+        updatePollingMode(reason: "applyRenderPhase:\(phase.rawValue)")
         refreshRenderPipelineProfilingState(mode: "\(currentRenderLoopMode):\(phase.rawValue)")
         Log.trace("RustTerminalView[\(viewId)]: applyRenderPhase -> \(phase.rawValue) (\(reason))")
 

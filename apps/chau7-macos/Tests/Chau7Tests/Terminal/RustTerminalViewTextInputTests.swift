@@ -123,5 +123,35 @@ final class RustTerminalViewTextInputTests: XCTestCase {
             )
         )
     }
+
+    func testApplyRenderPhaseDemotionReconcilesPollingMode() {
+        let view = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 320, height: 160))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        let container = NSView(frame: window.contentView?.bounds ?? .zero)
+        window.contentView = container
+        container.addSubview(view)
+        window.makeKeyAndOrderFront(nil)
+        defer {
+            view.stopPollingLoop()
+            window.orderOut(nil)
+        }
+
+        view.isTerminalStarted = true
+        view.applyRenderPhase(.active, isInteractive: true, reason: "test")
+        XCTAssertTrue(view.livePollingActiveForProfiling)
+
+        view.applyRenderPhase(.active, isInteractive: false, reason: "test")
+
+        XCTAssertFalse(
+            view.livePollingActiveForProfiling,
+            "Demoting a visible tab to noninteractive should drop it out of the active polling loop immediately"
+        )
+        XCTAssertEqual(view.currentRenderLoopMode, "background_drain")
+    }
 }
 #endif
