@@ -1136,9 +1136,21 @@ final class OverlayTabsModel {
               let windowNumber = overlayWindow?.windowNumber else {
             return
         }
-        let shouldShowRestorePreview = tab.restorePreviewSnapshot != nil
-            && tab.displaySession?.isRestoreBootstrapPending == true
-        guard !shouldShowRestorePreview else { return }
+        if tab.restorePreviewSnapshot != nil,
+           tab.displaySession?.isRestoreBootstrapPending == true {
+            guard let selectedSession = selectedPresentationSession(for: tab),
+                  selectedSession.presentationSurfaceState.isLivePresentable else {
+                return
+            }
+            if let selectedIndex = tabs.firstIndex(where: { $0.id == tab.id }) {
+                StartupRestoreCoordinator.shared.noteRestorePreviewDiscarded(
+                    tabID: tab.id,
+                    windowNumber: windowNumber,
+                    reason: "\(reason)_live_surface_ready"
+                )
+                tabs[selectedIndex].restorePreviewSnapshot = nil
+            }
+        }
         StartupRestoreCoordinator.shared.noteSelectedTabLiveFrame(
             windowNumber: windowNumber,
             selectedTabID: tab.id,

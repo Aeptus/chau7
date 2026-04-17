@@ -170,7 +170,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertNil(model.tabs[1].restorePreviewSnapshot)
     }
 
-    func testRestoreBootstrapSettledRecordsStartupLiveFrameForAlreadyLiveSelectedTab() {
+    func testVisibleFrameReadyDiscardsRestorePreviewAndRecordsStartupLiveFrame() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled],
@@ -199,21 +199,8 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         }
 
         model.noteStartupSelectedTabLiveFrameIfNeeded(reason: "visible_frame_ready")
-        XCTAssertEqual(
-            callbackCount,
-            0,
-            "Restore previews should suppress the startup live-frame callback while bootstrap is still pending"
-        )
-
-        session.restoreBootstrapPhase = .settled
-
-        XCTAssertTrue(
-            model.noteStartupSelectedTabLiveFrameAfterRestoreBootstrapSettledIfNeeded(
-                tabID: model.selectedTabID,
-                reason: "restore_bootstrap_settled"
-            )
-        )
         XCTAssertEqual(callbackCount, 1)
+        XCTAssertNil(model.tabs[0].restorePreviewSnapshot)
         XCTAssertTrue(
             StartupRestoreCoordinator.shared.hasSelectedTabLiveFrame(windowNumber: window.windowNumber)
         )
