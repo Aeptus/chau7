@@ -531,12 +531,33 @@ extension OverlayTabsModel {
             }
         }
 
-        return baseWindows.map { tabs in
+        let mergedWindows = baseWindows.map { tabs in
             tabs.map { state in
                 guard let tabID = state.tabID else { return state }
                 return state.mergedAIResumePayload(with: fallbackByTabID[tabID])
             }
         }
+        maybeRepairLatestBackup(baseWindows: baseWindows, mergedWindows: mergedWindows)
+        return mergedWindows
+    }
+
+    private static func maybeRepairLatestBackup(baseWindows: [[SavedTabState]], mergedWindows: [[SavedTabState]]) {
+        guard aiResumePayloadCount(in: mergedWindows) > aiResumePayloadCount(in: baseWindows) else { return }
+        guard let payload = try? JSONEncoder().encode(SavedMultiWindowState(windows: mergedWindows)) else { return }
+        do {
+            try writeLatestTabStateBackup(payload)
+            Log.info("Repaired latest tab-state backup from archived AI resume metadata")
+        } catch {
+            Log.warn("Failed to repair latest tab-state backup: \(error)")
+        }
+    }
+
+    private static func aiResumePayloadCount(in windows: [[SavedTabState]]) -> Int {
+        windows
+            .flatMap { $0 }
+            .reduce(into: 0) { count, state in
+                count += state.hasAIResumePayload ? 1 : 0
+            }
     }
 
     static func decodeBackupWindowStates(from data: Data) -> [[SavedTabState]]? {

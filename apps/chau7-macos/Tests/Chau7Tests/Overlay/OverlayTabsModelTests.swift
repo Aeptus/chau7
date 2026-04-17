@@ -202,6 +202,51 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(restoredPane.aiResumeCommand, "codex resume session-123")
     }
 
+    func testRestoreSavedTabsRepairsLatestBackupWhenArchiveHasRicherMetadata() throws {
+        let tabID = UUID()
+        let paneID = UUID()
+        let latestState = makeSavedTabState(
+            tabID: tabID,
+            paneID: paneID,
+            title: "Latest",
+            directory: "/tmp/aetower",
+            aiProvider: nil,
+            aiSessionId: nil,
+            aiResumeCommand: nil
+        )
+        let archivedState = makeSavedTabState(
+            tabID: tabID,
+            paneID: paneID,
+            title: "Archived",
+            directory: "/tmp/aetower",
+            aiProvider: "codex",
+            aiSessionId: "session-123",
+            aiResumeCommand: "codex resume session-123"
+        )
+
+        let backupRoot = tabStateBackupRootURL()
+        try FileManager.default.createDirectory(
+            at: backupRoot.appendingPathComponent("archive", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try JSONEncoder().encode(SavedMultiWindowState(windows: [[latestState]])).write(
+            to: backupRoot.appendingPathComponent("latest.json")
+        )
+        try JSONEncoder().encode(SavedMultiWindowState(windows: [[archivedState]])).write(
+            to: backupRoot.appendingPathComponent("archive/0000000000001-autosave.json")
+        )
+
+        _ = try XCTUnwrap(OverlayTabsModel.restoreSavedTabs(appModel: appModel))
+
+        let repairedData = try Data(contentsOf: backupRoot.appendingPathComponent("latest.json"))
+        let repaired = try XCTUnwrap(OverlayTabsModel.decodeBackupWindowStates(from: repairedData))
+        let repairedPane = try XCTUnwrap(repaired.first?.first?.paneStates?.first)
+
+        XCTAssertEqual(repairedPane.aiProvider, "codex")
+        XCTAssertEqual(repairedPane.aiSessionId, "session-123")
+        XCTAssertEqual(repairedPane.aiResumeCommand, "codex resume session-123")
+    }
+
     func testExportTabStatesPreservesDeferredRestoreAIResumeMetadata() throws {
         let selectedState = makeSavedTabState(
             tabID: UUID(),
