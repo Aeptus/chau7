@@ -206,23 +206,40 @@ final class RustMetalDisplayCoordinator: NSObject {
         requestDraw()
     }
 
-    // MARK: - Blink
+    // MARK: - Blink & Watchdog
+
+    /// Whether the blink timer is in active (500ms) or watchdog (2s) mode.
+    private var blinkTimerActive = true
 
     func pauseBlinkTimer() {
-        blinkTimer?.invalidate()
-        blinkTimer = nil
+        // Don't kill the timer — downgrade to a slow watchdog that can
+        // self-recover if the tab lifecycle system fails to resume us.
+        guard blinkTimerActive else { return }
+        blinkTimerActive = false
+        installBlinkTimer()
     }
 
     func resumeBlinkTimer() {
-        guard blinkTimer == nil else { return }
-        startBlinkTimer()
+        guard !blinkTimerActive else { return }
+        blinkTimerActive = true
+        installBlinkTimer()
+        // Force an immediate sync so the user sees content right away
+        needsSync = true
+        needsPresent = true
+        requestDraw()
+    }
+
+    private func installBlinkTimer() {
+        blinkTimer?.invalidate()
+        let interval: TimeInterval = blinkTimerActive ? 0.5 : 2.0
+        blinkTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            self?.handleBlinkTick()
+        }
     }
 
     private func startBlinkTimer() {
-        blinkTimer?.invalidate()
-        blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.handleBlinkTick()
-        }
+        blinkTimerActive = true
+        installBlinkTimer()
     }
 
     private func handleBlinkTick() {
@@ -232,17 +249,40 @@ final class RustMetalDisplayCoordinator: NSObject {
             return
         }
 
-        let timeSinceActivity = Date().timeIntervalSince(lastActivityTime)
-        if timeSinceActivity < 1.0 {
-            renderer.cursorBlinkPhase = true
-        } else {
-            renderer.cursorBlinkPhase.toggle()
-        }
-        renderer.textBlinkPhase.toggle()
+        if blinkTimerActive {
+            // Normal blink mode: toggle cursor and text blink phases
+            let timeSinceActivity = Date().timeIntervalSince(lastActivityTime)
+            if timeSinceActivity < 1.0 {
+                renderer.cursorBlinkPhase = true
+            } else {
+                renderer.cursorBlinkPhase.toggle()
+            }
+            renderer.textBlinkPhase.toggle()
 
-        if renderer.cursorBlinkEnabled || renderer.hasBlinkingCells {
+            if renderer.cursorBlinkEnabled || renderer.hasBlinkingCells {
+                needsPresent = true
+                requestDraw()
+            }
+        } else {
+            // Watchdog mode: the tab lifecycle system paused us, but if the
+            // window is visible and the terminal view is supposed to be live,
+            // force a recovery. This catches the case where SwiftUI's
+            // updateNSView never fires to reconcile the polling mode.
+            guard let view = terminalView,
+                  view.notifyUpdateChanges,
+                  !view.isHidden else {
+                return
+            }
+            Log.info("RustMetalDisplayCoordinator: watchdog recovery — terminal visible but rendering paused, forcing resume")
+            blinkTimerActive = true
+            installBlinkTimer()
+            needsSync = true
             needsPresent = true
+            lastActivityTime = Date()
+            renderer.cursorBlinkPhase = true
             requestDraw()
+            // Also kick the terminal view's polling loop back to life
+            view.updatePollingMode(reason: "metalWatchdogRecovery")
         }
     }
 
