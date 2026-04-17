@@ -599,7 +599,7 @@ final class OverlayTabsModelTests: XCTestCase {
         )
     }
 
-    func testDeferredRestoreStartsQueuedBackgroundTabsWithoutImmediateConsumption() {
+    func testDeferredRestoreDefersConsumptionUntilExplicitStep() {
         let tabIDs = (0 ..< 3).map { _ in UUID() }
         let states = (0 ..< 3).map { index in
             SavedTabState(
@@ -627,6 +627,38 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertTrue(restoredModel.hasStartedDeferredRestore)
         XCTAssertEqual(restoredModel.deferredRestoreTabOrder.count, 2)
         XCTAssertEqual(restoredModel.deferredRestoreStatesByTabID.count, 2)
+    }
+
+    func testDeferredRestoreConsumesOneBackgroundTabPerStep() {
+        let tabIDs = (0 ..< 3).map { _ in UUID() }
+        let states = (0 ..< 3).map { index in
+            SavedTabState(
+                tabID: tabIDs[index].uuidString,
+                selectedTabID: index == 0 ? tabIDs[0].uuidString : nil,
+                customTitle: "Restored \(index)",
+                color: TabColor.allCases[index % TabColor.allCases.count].rawValue,
+                directory: "/tmp/startup-restored-\(index)",
+                selectedIndex: index == 0 ? 0 : nil,
+                tokenOptOverride: nil,
+                scrollbackContent: "echo restored \(index)",
+                aiResumeCommand: nil,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: nil
+            )
+        }
+
+        let restoredModel = OverlayTabsModel(appModel: AppModel(), restoreState: false, restoringStates: states)
+
+        XCTAssertTrue(restoredModel.restoreOneDeferredTabIfNeeded(reason: "test"))
+        XCTAssertEqual(restoredModel.deferredRestoreTabOrder.count, 1)
+        XCTAssertEqual(restoredModel.deferredRestoreStatesByTabID.count, 1)
+
+        XCTAssertTrue(restoredModel.restoreOneDeferredTabIfNeeded(reason: "test"))
+        XCTAssertEqual(restoredModel.deferredRestoreTabOrder.count, 0)
+        XCTAssertEqual(restoredModel.deferredRestoreStatesByTabID.count, 0)
+
+        XCTAssertFalse(restoredModel.restoreOneDeferredTabIfNeeded(reason: "test"))
     }
 
     // MARK: - Tab Close (closeTab)

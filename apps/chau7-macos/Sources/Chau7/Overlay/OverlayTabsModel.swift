@@ -715,7 +715,6 @@ final class OverlayTabsModel {
     @ObservationIgnored var onCloseLastTab: (() -> Void)?
     @ObservationIgnored var deferredRestoreStatesByTabID: [UUID: SavedTabState] = [:]
     @ObservationIgnored var deferredRestoreTabOrder: [UUID] = []
-    @ObservationIgnored var deferredRestoreWorkItem: DispatchWorkItem?
     @ObservationIgnored var hasStartedDeferredRestore = false
 
     @ObservationIgnored let appModel: AppModel
@@ -1094,69 +1093,36 @@ final class OverlayTabsModel {
         Log.info(
             "Starting deferred restore for \(deferredRestoreTabOrder.count) background tab(s) [\(reason)]"
         )
-        scheduleNextDeferredRestore(after: 0.05, reason: reason)
     }
 
-    func beginStartupRestoreIfNeeded(reason: String) {
-        guard !hasStartedDeferredRestore else { return }
-        guard !deferredRestoreTabOrder.isEmpty else { return }
-        hasStartedDeferredRestore = true
-        Log.info(
-            "Startup restore: restoring \(deferredRestoreTabOrder.count) background tab(s) [\(reason)]"
-        )
+    var hasPendingDeferredRestore: Bool {
+        !deferredRestoreTabOrder.isEmpty
+    }
 
-        let tabIDsToRestore = deferredRestoreTabOrder
-        deferredRestoreTabOrder.removeAll(keepingCapacity: false)
-
-        for tabID in tabIDsToRestore {
-            guard let state = deferredRestoreStatesByTabID.removeValue(forKey: tabID),
-                  let tab = tabs.first(where: { $0.id == tabID }) else {
-                continue
-            }
-            restoreTabState(for: tab, state: state)
+    @discardableResult
+    func restoreOneDeferredTabIfNeeded(reason: String) -> Bool {
+        if !hasStartedDeferredRestore {
+            beginDeferredRestoreIfNeeded(reason: reason)
         }
-    }
-
-    private func scheduleNextDeferredRestore(after delay: TimeInterval, reason: String) {
-        deferredRestoreWorkItem?.cancel()
-        guard !deferredRestoreTabOrder.isEmpty else { return }
-        let work = DispatchWorkItem { [weak self] in
-            self?.restoreNextDeferredTabIfNeeded(reason: reason)
-        }
-        deferredRestoreWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
-    }
-
-    private func restoreNextDeferredTabIfNeeded(reason: String) {
-        deferredRestoreWorkItem = nil
-        guard !deferredRestoreTabOrder.isEmpty else { return }
+        guard !deferredRestoreTabOrder.isEmpty else { return false }
         let tabID = deferredRestoreTabOrder.removeFirst()
         guard let state = deferredRestoreStatesByTabID.removeValue(forKey: tabID) else {
-            scheduleNextDeferredRestore(after: 0.05, reason: reason)
-            return
+            return true
         }
         guard let tab = tabs.first(where: { $0.id == tabID }) else {
-            scheduleNextDeferredRestore(after: 0.05, reason: reason)
-            return
+            return true
         }
         Log.info("Deferred restore: restoring tab=\(tabID) remaining=\(deferredRestoreTabOrder.count) [\(reason)]")
         restoreTabState(for: tab, state: state)
-        if !deferredRestoreTabOrder.isEmpty {
-            scheduleNextDeferredRestore(after: 0.1, reason: reason)
-        }
+        return true
     }
 
     private func startDeferredRestoreForSelectedTabIfNeeded(reason: String) {
         guard let deferredState = deferredRestoreStatesByTabID.removeValue(forKey: selectedTabID) else { return }
         deferredRestoreTabOrder.removeAll { $0 == selectedTabID }
-        deferredRestoreWorkItem?.cancel()
-        deferredRestoreWorkItem = nil
         guard let tab = tabs.first(where: { $0.id == selectedTabID }) else { return }
         Log.info("Deferred restore: prioritizing selected tab=\(selectedTabID) [\(reason)]")
         restoreTabState(for: tab, state: deferredState)
-        if hasStartedDeferredRestore, !deferredRestoreTabOrder.isEmpty {
-            scheduleNextDeferredRestore(after: 0.05, reason: reason)
-        }
     }
 
     func encodedRestorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> Data? {

@@ -50,6 +50,8 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var didCompleteStartupRestore = false
     private var preparedStartupWindowNumbers: Set<Int> = []
     private var revealedStartupWindowNumbers: Set<Int> = []
+    private var deferredRestoreSchedulerWorkItem: DispatchWorkItem?
+    private var deferredRestoreRoundRobinIndex = 0
     private var lastOverlayLifecycleLogAt: CFAbsoluteTime = 0
     private var lastOverlayLifecycleReason = ""
     /// Centralized autosave timer — saves all windows atomically every 30s
@@ -272,12 +274,46 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
         didCompleteStartupRestore = true
         Log.info("Startup restore completion: reason=\(reason) expectedWindows=\(expectedWindowCount)")
-        for host in overlayHosts {
-            host.model.beginDeferredRestoreIfNeeded(reason: "startup_complete")
-        }
+        startDeferredRestoreSchedulingIfNeeded(reason: "startup_complete")
         startDeferredStartupWorkIfNeeded()
         endLatencyCriticalScope(reason: "startup-restore")
         StartupRestoreCoordinator.shared.end()
+    }
+
+    @MainActor private func startDeferredRestoreSchedulingIfNeeded(reason: String) {
+        guard overlayHosts.contains(where: { $0.model.hasPendingDeferredRestore }) else { return }
+        deferredRestoreSchedulerWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.restoreNextDeferredTabAcrossWindows(reason: reason)
+        }
+        deferredRestoreSchedulerWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    @MainActor private func scheduleNextDeferredRestoreStep(reason: String, after delay: TimeInterval = 0.15) {
+        deferredRestoreSchedulerWorkItem?.cancel()
+        guard overlayHosts.contains(where: { $0.model.hasPendingDeferredRestore }) else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.restoreNextDeferredTabAcrossWindows(reason: reason)
+        }
+        deferredRestoreSchedulerWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    @MainActor private func restoreNextDeferredTabAcrossWindows(reason: String) {
+        deferredRestoreSchedulerWorkItem = nil
+        guard !overlayHosts.isEmpty else { return }
+
+        let hostCount = overlayHosts.count
+        for offset in 0 ..< hostCount {
+            let index = (deferredRestoreRoundRobinIndex + offset) % hostCount
+            let host = overlayHosts[index]
+            if host.model.restoreOneDeferredTabIfNeeded(reason: reason) {
+                deferredRestoreRoundRobinIndex = (index + 1) % hostCount
+                scheduleNextDeferredRestoreStep(reason: reason)
+                return
+            }
+        }
     }
 
     @MainActor private func configureStartupCallbacks(for tabsModel: OverlayTabsModel) {
