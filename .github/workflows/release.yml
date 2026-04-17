@@ -189,7 +189,7 @@ jobs:
           fi
 
       - name: Generate SLSA provenance attestations
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             apps/chau7-macos/dist/*.dmg
