@@ -55,7 +55,7 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
         case .lookAndFeel: return [.fontColors, .display, .tabs, .hoverCard, .repositories, .minimalMode]
         case .terminal: return [.shell, .scrollbackPerf, .dangerousCommands, .graphics]
         case .inputProductivity: return [.keyboardMouse, .snippetsTools, .editor]
-        case .integrations: return [.aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy]
+        case .integrations: return [.aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy, .promptInjection]
         case .monitoring: return [.notifications, .logsHistory]
         }
     }
@@ -91,6 +91,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case mcpControl
     case remoteControl
     case apiProxy
+    case promptInjection
     // Monitoring
     case notifications
     case logsHistory
@@ -122,6 +123,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mcpControl: return L("settings.mcpControl", "MCP Control")
         case .remoteControl: return L("settings.remoteControl", "Remote Control")
         case .apiProxy: return L("settings.apiProxy", "API Proxy")
+        case .promptInjection: return L("settings.promptInjection", "Prompt Injection")
         case .notifications: return L("settings.notifications", "Notifications")
         case .logsHistory: return L("settings.logsHistory", "Logs & History")
         }
@@ -150,6 +152,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mcpControl: return "face.dashed"
         case .remoteControl: return "antenna.radiowaves.left.and.right"
         case .apiProxy: return "network"
+        case .promptInjection: return "text.insert"
         case .notifications: return "bell.badge"
         case .logsHistory: return "doc.text.magnifyingglass"
         }
@@ -178,6 +181,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mcpControl: return L("settings.mcpControl.description", "MCP agent tab creation, limits, and approval")
         case .remoteControl: return L("settings.remoteControl.description", "Remote access, pairing, and SSH profiles")
         case .apiProxy: return L("settings.apiProxy.description", "API call tracking and analytics proxy")
+        case .promptInjection: return L("settings.promptInjection.description", "Inject context into AI requests per repository")
         case .notifications: return L("settings.notifications.description", "Alert preferences and event filters")
         case .logsHistory: return L("settings.logsHistory.description", "Log files, session tracking, and command history")
         }
@@ -193,7 +197,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             return .terminal
         case .keyboardMouse, .snippetsTools, .editor:
             return .inputProductivity
-        case .aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy:
+        case .aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy, .promptInjection:
             return .integrations
         case .notifications, .logsHistory:
             return .monitoring
@@ -733,6 +737,18 @@ extension FeatureSettings {
                 "api,proxy,analytics,cost,token,tracking"
             ),
             description: L("settings.search.apiAnalytics.description", "Track API calls and token usage")
+        ),
+
+        // Prompt Injection
+        SearchableSetting(
+            id: "promptInjection",
+            section: .promptInjection,
+            title: L("settings.search.promptInjection.title", "Prompt Injection"),
+            keywords: localizedKeywords(
+                "settings.search.promptInjection.keywords",
+                "inject,prompt,context,prefix,prepend,append,system,repository,repo,rules"
+            ),
+            description: L("settings.search.promptInjection.description", "Inject custom context into AI requests per repository")
         ),
 
         // Notifications

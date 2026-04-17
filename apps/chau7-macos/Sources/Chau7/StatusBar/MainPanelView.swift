@@ -571,6 +571,8 @@ struct SettingsDetailView: View {
                         RemoteSettingsView()
                     case .apiProxy:
                         ProxySettingsView()
+                    case .promptInjection:
+                        PromptInjectionSettingsView()
                     // Monitoring
                     case .notifications:
                         NotificationsSettingsView(model: model)
