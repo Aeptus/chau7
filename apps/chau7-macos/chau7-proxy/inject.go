@@ -31,12 +31,21 @@ type InjectionConfig struct {
 	Rules []InjectionRule `json:"rules"`
 }
 
-// Injector manages content injection rules loaded from a JSON config file.
-// Rules are cached in memory and refreshed periodically to pick up edits
-// without requiring a proxy restart.
+// repoRuleEntry caches a per-repo injection rule (or nil for "no file").
+type repoRuleEntry struct {
+	rule     *InjectionRule
+	loadedAt time.Time
+}
+
+// Injector manages content injection rules from two sources:
+//  1. Global rules file (~/.chau7/prompt-rules.json) — configurable, shared across repos
+//  2. Per-repo rules ({project}/.chau7/injection.json) — highest priority, repo-local
+//
+// Both sources are cached in memory and refreshed periodically.
 type Injector struct {
 	mu         sync.RWMutex
 	rules      []InjectionRule
+	repoCache  map[string]repoRuleEntry
 	configPath string
 	lastLoad   time.Time
 	cacheTTL   time.Duration
@@ -51,6 +60,7 @@ func NewInjector(configPath string) *Injector {
 	}
 	inj := &Injector{
 		configPath: configPath,
+		repoCache:  make(map[string]repoRuleEntry),
 		cacheTTL:   30 * time.Second,
 	}
 	inj.loadRules()
@@ -143,6 +153,11 @@ func matchRepository(pattern, project string) bool {
 		return false
 	}
 
+	// Wildcard: matches every project.
+	if pattern == "*" {
+		return true
+	}
+
 	// Absolute path: match against the full project path.
 	if strings.HasPrefix(pattern, "/") {
 		if pattern == project {
@@ -168,17 +183,72 @@ func matchRepository(pattern, project string) bool {
 	return matched
 }
 
-// InjectContent mutates a request body according to the first matching rule
-// for the given project. Returns the original body unchanged if no rule matches
-// or if mutation fails.
+// loadRepoRule checks for a per-repo injection file at {project}/.chau7/injection.json.
+// Results (including misses) are cached with the same TTL as global rules.
+func (inj *Injector) loadRepoRule(project string) *InjectionRule {
+	inj.mu.RLock()
+	if entry, ok := inj.repoCache[project]; ok && time.Since(entry.loadedAt) < inj.cacheTTL {
+		inj.mu.RUnlock()
+		return entry.rule
+	}
+	inj.mu.RUnlock()
+
+	path := filepath.Join(project, ".chau7", "injection.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		inj.mu.Lock()
+		inj.repoCache[project] = repoRuleEntry{rule: nil, loadedAt: time.Now()}
+		inj.mu.Unlock()
+		return nil
+	}
+
+	var rule InjectionRule
+	if err := json.Unmarshal(data, &rule); err != nil {
+		log.Printf("[WARN] inject: failed to parse %s: %v", path, err)
+		inj.mu.Lock()
+		inj.repoCache[project] = repoRuleEntry{rule: nil, loadedAt: time.Now()}
+		inj.mu.Unlock()
+		return nil
+	}
+
+	if rule.Position == "" {
+		rule.Position = PositionPrepend
+	}
+
+	log.Printf("[INFO] inject: loaded repo-local rule from %s", path)
+	inj.mu.Lock()
+	inj.repoCache[project] = repoRuleEntry{rule: &rule, loadedAt: time.Now()}
+	inj.mu.Unlock()
+	return &rule
+}
+
+// InjectContent mutates a request body according to the best matching rule
+// for the given project. Priority:
+//  1. Per-repo file: {project}/.chau7/injection.json (highest)
+//  2. Global rules matching by repo name or path
+//  3. Global wildcard rule (repository: "*")
+//
+// Returns the original body unchanged if no rule matches or if mutation fails.
 func (inj *Injector) InjectContent(provider Provider, body []byte, project string) []byte {
-	rule := inj.MatchProject(project)
+	// Priority 1: repo-local injection file
+	rule := inj.loadRepoRule(project)
+
+	// Priority 2+3: global rules (specific matches before * wildcard,
+	// since rules are evaluated in order — first match wins)
+	if rule == nil {
+		rule = inj.MatchProject(project)
+	}
+
 	if rule == nil {
 		return body
 	}
 
+	source := rule.Repository
+	if source == "" {
+		source = "repo-local"
+	}
 	log.Printf("[INFO] inject: matched %q → %s for project %s",
-		rule.Repository, rule.Position, project)
+		source, rule.Position, project)
 
 	var result []byte
 	switch rule.Position {

@@ -73,6 +73,79 @@ func TestMatchRepository_EmptyPattern(t *testing.T) {
 	}
 }
 
+func TestMatchRepository_Wildcard(t *testing.T) {
+	if !matchRepository("*", "/Users/me/any-repo") {
+		t.Error("* should match any project")
+	}
+	if !matchRepository("*", "/home/bob/other") {
+		t.Error("* should match any project path")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Per-repo injection.json
+// ---------------------------------------------------------------------------
+
+func TestInjectContent_RepoLocalRule(t *testing.T) {
+	// Set up a fake repo with .chau7/injection.json
+	repoDir := t.TempDir()
+	chau7Dir := filepath.Join(repoDir, ".chau7")
+	if err := os.MkdirAll(chau7Dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	ruleData := []byte(`{"content":"REPO LOCAL","position":"prepend"}`)
+	if err := os.WriteFile(filepath.Join(chau7Dir, "injection.json"), ruleData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Global rules with a different match
+	globalDir := t.TempDir()
+	globalPath := writeRulesFile(t, globalDir, []InjectionRule{
+		{Repository: "*", Content: "GLOBAL FALLBACK", Position: PositionPrepend},
+	})
+
+	inj := NewInjector(globalPath)
+
+	body := mustJSON(t, map[string]interface{}{
+		"model": "gpt-4o",
+		"input": "Hello",
+	})
+
+	// Repo-local rule should win over global wildcard
+	result := inj.InjectContent(ProviderOpenAI, body, repoDir)
+	var parsed map[string]interface{}
+	mustUnmarshal(t, result, &parsed)
+
+	if parsed["input"] != "REPO LOCAL\n\nHello" {
+		t.Errorf("repo-local rule should take precedence, got %q", parsed["input"])
+	}
+}
+
+func TestInjectContent_RepoLocalFallsBackToGlobal(t *testing.T) {
+	// Repo without .chau7/injection.json
+	repoDir := t.TempDir()
+
+	globalDir := t.TempDir()
+	globalPath := writeRulesFile(t, globalDir, []InjectionRule{
+		{Repository: "*", Content: "GLOBAL", Position: PositionAppend},
+	})
+
+	inj := NewInjector(globalPath)
+
+	body := mustJSON(t, map[string]interface{}{
+		"model": "gpt-4o",
+		"input": "Hello",
+	})
+
+	result := inj.InjectContent(ProviderOpenAI, body, repoDir)
+	var parsed map[string]interface{}
+	mustUnmarshal(t, result, &parsed)
+
+	if parsed["input"] != "Hello\n\nGLOBAL" {
+		t.Errorf("should fall back to global rule, got %q", parsed["input"])
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Injector rule loading and matching
 // ---------------------------------------------------------------------------
