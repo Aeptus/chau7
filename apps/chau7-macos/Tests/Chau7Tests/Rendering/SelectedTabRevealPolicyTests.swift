@@ -28,14 +28,27 @@ final class SelectedTabRevealPolicyTests: XCTestCase {
         )
     }
 
-    func testSelectionChangeStillBlocksUntilFreshFrame() {
-        XCTAssertTrue(
+    func testSelectionChangeWithLiveAttachedSurfaceStaysNonBlocking() {
+        XCTAssertFalse(
             SelectedTabRevealPolicy.shouldAwaitVisibleFrame(
                 for: SelectedTabRevealRequest(
                     trigger: .selectionChange,
                     keepsVisibleSurface: true,
                     hasAttachedRenderer: true,
                     isCurrentlyLivePresentable: true
+                )
+            )
+        )
+    }
+
+    func testSelectionChangeWithoutAttachedRendererRemainsBlocking() {
+        XCTAssertTrue(
+            SelectedTabRevealPolicy.shouldAwaitVisibleFrame(
+                for: SelectedTabRevealRequest(
+                    trigger: .selectionChange,
+                    keepsVisibleSurface: true,
+                    hasAttachedRenderer: false,
+                    isCurrentlyLivePresentable: false
                 )
             )
         )
