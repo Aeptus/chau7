@@ -3,7 +3,7 @@ module chau7-remote
 go 1.25.0
 
 require (
-	github.com/coder/websocket v1.8.12
+	github.com/coder/websocket v1.8.14
 	golang.org/x/crypto v0.50.0
 )
 
