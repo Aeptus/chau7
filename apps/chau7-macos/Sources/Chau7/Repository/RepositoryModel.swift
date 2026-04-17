@@ -116,6 +116,7 @@ final class RepositoryModel: Identifiable {
     }
 
     /// Load metadata from `.chau7/metadata.json` asynchronously.
+    /// Also loads per-repo injection rules from `.chau7/injection.json`.
     /// Publishes on main thread when done. Safe to call from any thread.
     /// No-op for cached models (protected path may block filesystem reads).
     func loadMetadata() {
@@ -127,6 +128,8 @@ final class RepositoryModel: Identifiable {
                 guard let self, self.metadata != loaded else { return }
                 self.metadata = loaded
             }
+            // Also discover per-repo injection rules
+            InjectionRuleStore.shared.loadLocalRule(repoRoot: root)
         }
     }
 
