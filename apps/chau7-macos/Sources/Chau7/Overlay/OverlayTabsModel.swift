@@ -1174,18 +1174,12 @@ final class OverlayTabsModel {
             return cached
         }
 
-        guard isSelected,
-              let terminalView = (tab.displaySession ?? tab.session)?.existingRustTerminalView else {
-            return nil
-        }
-        guard let snapshot = Self.captureSnapshotImage(from: terminalView, allowForcedTerminalSync: true) else {
-            return nil
-        }
+        _ = isSelected
 
-        if let index = tabs.firstIndex(where: { $0.id == tab.id }) {
-            cacheRetainedSnapshot(snapshot, forTabAt: index)
+        guard let terminalView = (tab.displaySession ?? tab.session)?.existingRustTerminalView else {
+            return nil
         }
-        return snapshot
+        return Self.captureSnapshotImage(from: terminalView, allowForcedTerminalSync: true)
     }
 
     private static func snapshotSurface(for view: NSView) -> NSView {
