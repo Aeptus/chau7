@@ -100,7 +100,7 @@ public enum TabRenderLifecyclePolicy {
         }
 
         if input.hasBackgroundActivity {
-            return input.isWindowVisibleForRendering ? .active : .warm
+            return input.isWindowVisibleForRendering ? .passiveVisible : .warm
         }
 
         if !input.isRenderSuspensionEnabled {

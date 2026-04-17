@@ -68,7 +68,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertFalse(decision.isInteractive)
     }
 
-    func testVisibleBackgroundActivityUsesActivePhaseAndStaysAttached() {
+    func testVisibleBackgroundActivityUsesPassiveVisiblePhaseAndStaysAttached() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -85,7 +85,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .active)
+        XCTAssertEqual(decision.phase, .passiveVisible)
         XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
