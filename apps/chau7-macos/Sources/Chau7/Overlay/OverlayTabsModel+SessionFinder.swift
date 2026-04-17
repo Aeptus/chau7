@@ -744,7 +744,7 @@ extension OverlayTabsModel {
     }
 
     // swiftlint:disable:next function_body_length
-    func restoreTabState(for tab: OverlayTab, state: SavedTabState) {
+    func restoreTabState(for tab: OverlayTab, state: SavedTabState, scheduledDelayOverride: TimeInterval? = nil) {
         let targetTabID = tab.id
         let terminalSessions = tab.splitController.terminalSessions
         Log.info("restoreTabState: scheduled for tab=\(targetTabID), panes=\(terminalSessions.count)")
@@ -870,7 +870,7 @@ extension OverlayTabsModel {
         }
 
         let isSelectedRestore = targetTabID == selectedTabID
-        let scheduledDelay = StartupWindowPresentationPolicy.restoreExecutionDelay(
+        let scheduledDelay = scheduledDelayOverride ?? StartupWindowPresentationPolicy.restoreExecutionDelay(
             isStartupRestoreActive: StartupRestoreCoordinator.shared.isActive,
             isSelectedTab: isSelectedRestore,
             defaultDelay: Self.restoreDelaySeconds

@@ -290,7 +290,10 @@ private final class OverlayBlurView: NSVisualEffectView {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
-    @MainActor private func scheduleNextDeferredRestoreStep(reason: String, after delay: TimeInterval = 0.15) {
+    @MainActor private func scheduleNextDeferredRestoreStep(
+        reason: String,
+        after delay: TimeInterval = OverlayTabsModel.deferredRestoreStepInterval
+    ) {
         deferredRestoreSchedulerWorkItem?.cancel()
         guard overlayHosts.contains(where: { $0.model.hasPendingDeferredRestore }) else { return }
         let work = DispatchWorkItem { [weak self] in

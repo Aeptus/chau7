@@ -668,6 +668,7 @@ final class OverlayTabsModel {
     @ObservationIgnored var selectedTerminalRevealTimeoutWorkItem: DispatchWorkItem?
     @ObservationIgnored static let terminalReadyCompositingDelay: TimeInterval = 1.0 / 60.0
     @ObservationIgnored static let selectedTerminalRevealTimeout: TimeInterval = 0.75
+    @ObservationIgnored static let deferredRestoreStepInterval: TimeInterval = 0.35
     /// Set of tab IDs currently being pre-warmed (on hover)
     @ObservationIgnored var prewarmingTabIDs: Set<UUID> = []
     @ObservationIgnored static let previousLiveHierarchyKeepAliveInterval: TimeInterval = 0.5
@@ -1196,7 +1197,7 @@ final class OverlayTabsModel {
             return true
         }
         Log.info("Deferred restore: restoring tab=\(tabID) remaining=\(deferredRestoreTabOrder.count) [\(reason)]")
-        restoreTabState(for: tab, state: state)
+        restoreTabState(for: tab, state: state, scheduledDelayOverride: 0)
         return true
     }
 
