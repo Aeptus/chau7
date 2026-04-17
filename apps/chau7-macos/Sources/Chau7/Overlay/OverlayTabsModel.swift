@@ -2145,11 +2145,10 @@ final class OverlayTabsModel {
             }
         }
 
-        // 6. Trigger one authoritative live repaint for the newly selected tab.
-        //    The selected surface stays covered until the first real frame is
-        //    presented instead of handing off through a retained bitmap.
         schedulePreviousLiveHierarchyRelease()
-        requestSelectedTabAuthoritativeReveal(reason: "select_tab")
+        if !refreshSelectedTabInPlaceIfPossible(reason: "select_tab") {
+            requestSelectedTabAuthoritativeReveal(reason: "select_tab")
+        }
     }
 
     /// Handles a toolbar tab click. This dismisses the repo dashboard overlay
@@ -2570,6 +2569,56 @@ final class OverlayTabsModel {
         logVisualState(reason: "forceRefreshSelectedTab")
     }
 
+    @discardableResult
+    private func refreshSelectedTabInPlaceIfPossible(reason: String) -> Bool {
+        guard let selectedTab,
+              let session = selectedPresentationSession(for: selectedTab) else {
+            return false
+        }
+        let selectedDecision = renderLifecycleDecision(for: selectedTab)
+        guard selectedDecision.phase.keepsVisibleSurface,
+              session.existingRustTerminalView != nil,
+              session.presentationSurfaceState.isLivePresentable else {
+            return false
+        }
+
+        session.resetPresentationSurfaceToLive()
+        resetSelectedTerminalRevealScheduling()
+        performSelectedTabInPlaceRefresh(
+            session: session,
+            selectedDecision: selectedDecision
+        )
+        Log.info(
+            "refreshSelectedTabInPlaceIfPossible[\(reason)]: refreshed selected tab \(selectedTabID) as \(selectedDecision.phase.rawValue)"
+        )
+        return true
+    }
+
+    private func performSelectedTabInPlaceRefresh(
+        session: TerminalSessionModel,
+        selectedDecision: TabRenderLifecycleDecision
+    ) {
+        guard let rustView = session.existingRustTerminalView else { return }
+
+        rustView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+        rustView.setEventMonitoringEnabled(selectedDecision.isInteractive)
+        rustView.needsDisplay = true
+
+        if let container = rustView.superview as? RustTerminalContainerView {
+            container.isHidden = !selectedDecision.phase.keepsVisibleSurface
+            if let coordinator = container.rustMetalCoordinator {
+                coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+                coordinator.metalView.needsDisplay = true
+                coordinator.setNeedsSync()
+            }
+        }
+
+        if selectedDecision.phase.keepsVisibleSurface {
+            rustView.needsGridSync = true
+            rustView.pollAndSync()
+        }
+    }
+
     func requestSelectedTabAuthoritativeReveal(reason: String) {
         dispatchPrecondition(condition: .onQueue(.main))
         discardSettledRestorePreviews(reason: reason)
@@ -2616,29 +2665,25 @@ final class OverlayTabsModel {
             return
         }
 
-        rustView.isHidden = !selectedDecision.phase.keepsVisibleSurface
-        rustView.setEventMonitoringEnabled(selectedDecision.isInteractive)
-        rustView.needsDisplay = true
-
         var blockingMode = "in_place"
-        if let container = rustView.superview as? RustTerminalContainerView {
-            container.isHidden = !selectedDecision.phase.keepsVisibleSurface
-            if let coordinator = container.rustMetalCoordinator {
-                coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
-                coordinator.metalView.needsDisplay = true
-            }
-        }
 
         switch refreshAction {
         case .liveRepaintInPlace:
-            if selectedDecision.phase.keepsVisibleSurface {
-                rustView.needsGridSync = true
-                if let coordinator = (rustView.superview as? RustTerminalContainerView)?.rustMetalCoordinator {
-                    coordinator.setNeedsSync()
-                }
-                rustView.pollAndSync()
-            }
+            performSelectedTabInPlaceRefresh(
+                session: session,
+                selectedDecision: selectedDecision
+            )
         case .authoritativeReveal(let shouldAwaitVisibleFrame):
+            rustView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+            rustView.setEventMonitoringEnabled(selectedDecision.isInteractive)
+            rustView.needsDisplay = true
+            if let container = rustView.superview as? RustTerminalContainerView {
+                container.isHidden = !selectedDecision.phase.keepsVisibleSurface
+                if let coordinator = container.rustMetalCoordinator {
+                    coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+                    coordinator.metalView.needsDisplay = true
+                }
+            }
             rustView.requestAuthoritativeReveal(reason: reason)
             if let coordinator = (rustView.superview as? RustTerminalContainerView)?.rustMetalCoordinator {
                 coordinator.forceAuthoritativeRefresh(reason: reason)
