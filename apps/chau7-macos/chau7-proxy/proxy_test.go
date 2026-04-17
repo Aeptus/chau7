@@ -40,7 +40,7 @@ func setupTestProxy(t *testing.T) (*ProxyHandler, *Database, string) {
 	if err != nil {
 		t.Fatalf("Failed to create mockup client: %v", err)
 	}
-	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, mockup)
+	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, mockup, nil)
 
 	return proxy, db, tmpDir
 }

@@ -22,11 +22,12 @@ type ProxyHandler struct {
 	taskManager *TaskManager
 	baseline    *BaselineEstimator // v1.2
 	mockup      *MockupClient      // v1.2
+	injector    *Injector
 	client      *http.Client
 }
 
 // NewProxyHandler creates a new proxy handler
-func NewProxyHandler(config *Config, db *Database, ipc *IPCNotifier, taskManager *TaskManager, baseline *BaselineEstimator, mockup *MockupClient) *ProxyHandler {
+func NewProxyHandler(config *Config, db *Database, ipc *IPCNotifier, taskManager *TaskManager, baseline *BaselineEstimator, mockup *MockupClient, injector *Injector) *ProxyHandler {
 	return &ProxyHandler{
 		config:      config,
 		db:          db,
@@ -34,6 +35,7 @@ func NewProxyHandler(config *Config, db *Database, ipc *IPCNotifier, taskManager
 		taskManager: taskManager,
 		baseline:    baseline,
 		mockup:      mockup,
+		injector:    injector,
 		client: &http.Client{
 			Timeout: 5 * time.Minute, // Long timeout for streaming responses
 			Transport: &http.Transport{
@@ -68,6 +70,13 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = r.Body.Close()
+
+	// Inject per-project content into the request body before forwarding.
+	// This must happen before prompt preview extraction so that the preview
+	// reflects the injected content and before the upstream request is built.
+	if p.injector != nil && headers.Project != "" {
+		bodyBytes = p.injector.InjectContent(DetectProvider(r), bodyBytes, headers.Project)
+	}
 
 	// Extract prompt preview for task naming (first 500 chars)
 	promptPreview := extractPromptPreview(bodyBytes, p.config.LogPrompts)

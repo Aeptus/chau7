@@ -58,6 +58,10 @@ type Config struct {
 
 	// EnableBaseline enables baseline estimation for token savings calculation
 	EnableBaseline bool
+
+	// InjectionRulesPath is the path to the prompt injection rules JSON file.
+	// If empty, defaults to ~/.chau7/prompt-rules.json.
+	InjectionRulesPath string
 }
 
 // LoadConfig loads configuration from environment variables.
@@ -144,6 +148,8 @@ func LoadConfig() *Config {
 	if os.Getenv("CHAU7_ENABLE_BASELINE") == "0" {
 		cfg.EnableBaseline = false
 	}
+
+	cfg.InjectionRulesPath = os.Getenv("CHAU7_INJECTION_RULES")
 
 	return cfg
 }

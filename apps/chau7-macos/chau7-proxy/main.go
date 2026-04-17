@@ -76,8 +76,11 @@ func main() {
 		taskManager.SetMockupClient(mockupClient)
 	}
 
+	// Initialize content injector
+	injector := NewInjector(config.InjectionRulesPath)
+
 	// Create proxy handler
-	proxy := NewProxyHandler(config, db, ipc, taskManager, baselineEstimator, mockupClient)
+	proxy := NewProxyHandler(config, db, ipc, taskManager, baselineEstimator, mockupClient, injector)
 
 	// Create task endpoints handler
 	taskEndpoints := NewTaskEndpoints(taskManager, db)

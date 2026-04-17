@@ -85,7 +85,7 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create mockup client: %v", err)
 	}
-	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, mockup)
+	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, mockup, nil)
 	taskEndpoints := NewTaskEndpoints(taskManager, db)
 
 	// === Step 1: Make API call with correlation headers ===
@@ -326,7 +326,7 @@ func TestIntegration_ManualTaskTrigger(t *testing.T) {
 	ipc.SetDatabase(db)
 	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
 	baseline := NewBaselineEstimator(db, nil)
-	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, nil)
+	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, nil, nil)
 
 	// Make API call with X-Chau7-New-Task header
 	reqBody := map[string]interface{}{
@@ -410,7 +410,7 @@ func TestIntegration_CandidateDismissal(t *testing.T) {
 	ipc.SetDatabase(db)
 	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
 	baseline := NewBaselineEstimator(db, nil)
-	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, nil)
+	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, nil, nil)
 	taskEndpoints := NewTaskEndpoints(taskManager, db)
 
 	// Step 1: Create candidate via API call
@@ -520,7 +520,7 @@ func TestIntegration_HeaderBasedDismiss(t *testing.T) {
 	ipc.SetDatabase(db)
 	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
 	baseline := NewBaselineEstimator(db, nil)
-	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, nil)
+	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, nil, nil)
 
 	// Step 1: First call creates candidate
 	reqBody := map[string]interface{}{
@@ -643,7 +643,7 @@ func TestIntegration_MultipleProviders(t *testing.T) {
 	ipc.SetDatabase(db)
 	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
 	baseline := NewBaselineEstimator(db, nil)
-	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, nil)
+	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, nil, nil)
 
 	// Test Anthropic
 	t.Run("Anthropic", func(t *testing.T) {
