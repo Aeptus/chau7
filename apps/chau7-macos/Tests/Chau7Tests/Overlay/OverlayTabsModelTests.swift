@@ -723,7 +723,7 @@ final class OverlayTabsModelTests: XCTestCase {
         )
     }
 
-    func testLiveHierarchyKeepsDistantRestoredTabUntilTerminalBootstraps() {
+    func testLiveHierarchyDoesNotKeepDistantRestoredTabAttached() {
         let tabIDs = (0 ..< 4).map { _ in UUID() }
         let states = (0 ..< 4).map { index in
             SavedTabState(
@@ -745,17 +745,9 @@ final class OverlayTabsModelTests: XCTestCase {
         let restoredModel = OverlayTabsModel(appModel: AppModel(), restoreState: false, restoringStates: states)
         let distantIndex = 3
 
-        XCTAssertTrue(
-            restoredModel.shouldKeepTabInLiveHierarchy(tab: restoredModel.tabs[distantIndex], index: distantIndex),
-            "Restored distant tabs should stay live until their terminal view attaches once"
-        )
-
-        let terminalView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        restoredModel.tabs[distantIndex].session?.attachRustTerminal(terminalView)
-
         XCTAssertFalse(
             restoredModel.shouldKeepTabInLiveHierarchy(tab: restoredModel.tabs[distantIndex], index: distantIndex),
-            "After first attach, restored distant tabs can drop back to placeholder rendering"
+            "Restored distant tabs should stay state-only until the user selects them"
         )
     }
 

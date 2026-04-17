@@ -54,7 +54,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         }
     }
 
-    func testLiveHierarchyKeepsPreviouslySelectedTabDuringShortHandoff() {
+    func testLiveHierarchyDropsPreviouslySelectedTabImmediately() {
         model.newTab()
         model.newTab()
 
@@ -63,30 +63,10 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
 
         model.selectTab(id: model.tabs[1].id)
 
-        XCTAssertEqual(model.previousLiveHierarchyTabID, originalSelectedID)
-        XCTAssertTrue(
-            model.shouldKeepTabInLiveHierarchy(tab: model.tabs[2], index: 2),
-            "The previously selected tab should stay live during the handoff window"
-        )
-    }
-
-    func testLiveHierarchyReleasesPreviouslySelectedTabAfterHandoffWindow() {
-        model.newTab()
-        model.newTab()
-
-        let originalSelectedID = model.tabs[2].id
-        model.selectTab(id: model.tabs[1].id)
-
-        RunLoop.main.run(
-            until: Date().addingTimeInterval(
-                OverlayTabsModel.previousLiveHierarchyKeepAliveInterval + 0.1
-            )
-        )
-
         XCTAssertNil(model.previousLiveHierarchyTabID)
         XCTAssertFalse(
             model.shouldKeepTabInLiveHierarchy(tab: model.tabs[2], index: 2),
-            "The previous tab should drop out of the live hierarchy after the handoff window"
+            "The previous tab should drop out of the live hierarchy as soon as selection changes"
         )
         XCTAssertNotEqual(model.selectedTabID, originalSelectedID)
     }

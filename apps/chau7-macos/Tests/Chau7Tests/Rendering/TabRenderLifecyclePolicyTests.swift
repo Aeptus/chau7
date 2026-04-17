@@ -24,7 +24,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertTrue(decision.isInteractive)
     }
 
-    func testPreviousLiveTabStaysWarmAndAttached() {
+    func testPreviousLiveTabStaysWarmButDoesNotStayAttached() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -42,11 +42,11 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .warm)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
 
-    func testPrewarmingTabStaysWarmAndAttached() {
+    func testPrewarmingTabStaysWarmButDoesNotStayAttached() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -64,11 +64,11 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .warm)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
 
-    func testVisibleBackgroundActivityUsesPassiveVisiblePhaseAndStaysAttached() {
+    func testVisibleBackgroundActivityUsesWarmPhaseWithoutLiveHierarchy() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -85,12 +85,12 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .passiveVisible)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertEqual(decision.phase, .warm)
+        XCTAssertFalse(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
 
-    func testHiddenBackgroundActivityUsesWarmPhaseAndStaysAttached() {
+    func testHiddenBackgroundActivityUsesWarmPhaseWithoutLiveHierarchy() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -108,7 +108,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .warm)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
 
@@ -214,7 +214,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertFalse(decision.keepsLiveHierarchy)
     }
 
-    func testStartupRestoreBootstrapWarmsTabAndKeepsHierarchyAttached() {
+    func testStartupRestoreBootstrapWarmsTabWithoutKeepingHierarchyAttached() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -232,10 +232,10 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .warm)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.keepsLiveHierarchy)
     }
 
-    func testPostStartupRestoreBootstrapKeepsTabAttachedUntilSettled() {
+    func testPostStartupRestoreBootstrapDoesNotKeepTabAttached() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -253,10 +253,10 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .warm)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.keepsLiveHierarchy)
     }
 
-    func testStartupRestoreBootstrapKeepsAttachedTabWarmUntilSettled() {
+    func testStartupRestoreBootstrapKeepsTabWarmWithoutKeepingHierarchyAttached() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -274,7 +274,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .warm)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.keepsLiveHierarchy)
     }
 
     func testMCPTabWithoutAttachedViewStaysAttached() {

@@ -2183,7 +2183,7 @@ final class OverlayTabsModel {
             clearRenameState(shouldFocus: false)
         }
         previousTabIndex = oldIndex
-        previousLiveHierarchyTabID = tabs[oldIndex].id
+        previousLiveHierarchyTabID = nil
         selectedTabID = id
 
         // Clear notification style when switching to a tab (user acknowledged it),
@@ -2218,7 +2218,6 @@ final class OverlayTabsModel {
             }
         }
 
-        schedulePreviousLiveHierarchyRelease()
         if !refreshSelectedTabInPlaceIfPossible(reason: "select_tab") {
             requestSelectedTabAuthoritativeReveal(reason: "select_tab")
         }
@@ -2236,19 +2235,7 @@ final class OverlayTabsModel {
 
     func schedulePreviousLiveHierarchyRelease() {
         previousLiveHierarchyReleaseWorkItem?.cancel()
-        guard let previousLiveHierarchyTabID else { return }
-
-        let item = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            guard self.previousLiveHierarchyTabID == previousLiveHierarchyTabID else { return }
-            self.previousLiveHierarchyTabID = nil
-            updateSuspensionState()
-        }
-        previousLiveHierarchyReleaseWorkItem = item
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.previousLiveHierarchyKeepAliveInterval,
-            execute: item
-        )
+        previousLiveHierarchyReleaseWorkItem = nil
     }
 
     // Tab Switch Optimization → OverlayTabsModel+TabSwitchOptimization.swift

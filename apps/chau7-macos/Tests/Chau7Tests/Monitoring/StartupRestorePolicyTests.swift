@@ -175,8 +175,8 @@ final class StartupRestorePolicyTests: XCTestCase {
         )
     }
 
-    func testWindowPresentationPolicyKeepsBackgroundRestoreTabsLiveDuringStartup() {
-        XCTAssertTrue(
+    func testWindowPresentationPolicyDoesNotKeepBackgroundRestoreTabsLiveDuringStartup() {
+        XCTAssertFalse(
             StartupWindowPresentationPolicy.shouldKeepTabInLiveHierarchy(
                 isStartupRestoreActive: true,
                 isSelectedTab: false,
@@ -211,8 +211,8 @@ final class StartupRestorePolicyTests: XCTestCase {
         )
     }
 
-    func testWindowPresentationPolicyAllowsDeferredRestoreTabsAfterStartup() {
-        XCTAssertTrue(
+    func testWindowPresentationPolicyDoesNotKeepDeferredRestoreTabsLiveAfterStartup() {
+        XCTAssertFalse(
             StartupWindowPresentationPolicy.shouldKeepTabInLiveHierarchy(
                 isStartupRestoreActive: false,
                 isSelectedTab: false,

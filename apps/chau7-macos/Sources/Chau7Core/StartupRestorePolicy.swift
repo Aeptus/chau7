@@ -273,7 +273,7 @@ public enum StartupWindowPresentationPolicy {
         hasAttachedTerminalView: Bool,
         hasPendingRestoreBootstrap: Bool
     ) -> Bool {
-        if isSelectedTab || isPreviousLiveTab {
+        if isSelectedTab {
             return true
         }
 
@@ -281,11 +281,10 @@ public enum StartupWindowPresentationPolicy {
             return true
         }
 
-        guard hasPendingRestoreBootstrap, !hasAttachedTerminalView else {
-            return hasPendingRestoreBootstrap
-        }
         _ = isStartupRestoreActive
-        return true
+        _ = isPreviousLiveTab
+        _ = hasPendingRestoreBootstrap
+        return false
     }
 
     public static func shouldRevealWindowImmediately(

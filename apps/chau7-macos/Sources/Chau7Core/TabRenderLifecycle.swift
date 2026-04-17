@@ -100,7 +100,7 @@ public enum TabRenderLifecyclePolicy {
         }
 
         if input.hasBackgroundActivity {
-            return input.isWindowVisibleForRendering ? .passiveVisible : .warm
+            return .warm
         }
 
         if !input.isRenderSuspensionEnabled {
@@ -121,7 +121,7 @@ public enum TabRenderLifecyclePolicy {
     }
 
     public static func keepsLiveHierarchy(for input: TabRenderLifecycleInput) -> Bool {
-        if input.isSelectedTab || input.hasBackgroundActivity || input.isPreviousLiveTab || input.isPrewarming {
+        if input.isSelectedTab {
             return true
         }
 
@@ -129,6 +129,6 @@ public enum TabRenderLifecyclePolicy {
             return true
         }
 
-        return input.hasPendingRestoreBootstrap
+        return false
     }
 }
