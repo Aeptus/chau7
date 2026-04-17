@@ -805,6 +805,10 @@ extension OverlayTabsModel {
                        let selectedSession = selectedTab.displaySession ?? selectedTab.session,
                        selectedSession.existingRustTerminalView != nil,
                        selectedSession.presentationSurfaceState.isLivePresentable {
+                        _ = self.noteStartupSelectedTabLiveFrameAfterRestoreBootstrapSettledIfNeeded(
+                            tabID: targetTabID,
+                            reason: "restore_bootstrap_settled"
+                        )
                         Log.trace(
                             "restoreBootstrap: skipping selected-tab reveal for \(targetTabID) because the selected surface is already live"
                         )

@@ -1064,6 +1064,29 @@ final class OverlayTabsModel {
         onStartupSelectedTabLiveFrameRecorded?()
     }
 
+    @discardableResult
+    func noteStartupSelectedTabLiveFrameAfterRestoreBootstrapSettledIfNeeded(
+        tabID: UUID,
+        reason: String
+    ) -> Bool {
+        guard StartupRestoreCoordinator.shared.isActive,
+              tabID == selectedTabID,
+              let selectedTab,
+              let selectedSession = selectedPresentationSession(for: selectedTab),
+              selectedSession.existingRustTerminalView != nil,
+              selectedSession.presentationSurfaceState.isLivePresentable else {
+            return false
+        }
+
+        let alreadyRecorded = overlayWindow.map {
+            StartupRestoreCoordinator.shared.hasSelectedTabLiveFrame(windowNumber: $0.windowNumber)
+        } ?? false
+        guard !alreadyRecorded else { return false }
+
+        noteStartupSelectedTabLiveFrameIfNeeded(reason: reason)
+        return true
+    }
+
     func beginDeferredRestoreIfNeeded(reason: String) {
         guard !hasStartedDeferredRestore else { return }
         guard !deferredRestoreTabOrder.isEmpty else { return }

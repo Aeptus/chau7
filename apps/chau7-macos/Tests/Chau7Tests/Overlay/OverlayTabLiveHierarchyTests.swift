@@ -190,6 +190,55 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertNil(model.tabs[1].restorePreviewSnapshot)
     }
 
+    func testRestoreBootstrapSettledRecordsStartupLiveFrameForAlreadyLiveSelectedTab() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        model.overlayWindow = window
+        model.tabs[0].restorePreviewSnapshot = makeSnapshot()
+
+        let session = try XCTUnwrap(model.tabs[0].session)
+        let rustView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        session.attachRustTerminal(rustView)
+        session.resetPresentationSurfaceToLive()
+        session.restoreBootstrapPhase = .replaying
+
+        StartupRestoreCoordinator.shared.begin()
+        defer { StartupRestoreCoordinator.shared.end() }
+        StartupRestoreCoordinator.shared.noteWindowPrepared(
+            windowNumber: window.windowNumber,
+            selectedTabID: model.selectedTabID
+        )
+
+        var callbackCount = 0
+        model.onStartupSelectedTabLiveFrameRecorded = {
+            callbackCount += 1
+        }
+
+        model.noteStartupSelectedTabLiveFrameIfNeeded(reason: "visible_frame_ready")
+        XCTAssertEqual(
+            callbackCount,
+            0,
+            "Restore previews should suppress the startup live-frame callback while bootstrap is still pending"
+        )
+
+        session.restoreBootstrapPhase = .settled
+
+        XCTAssertTrue(
+            model.noteStartupSelectedTabLiveFrameAfterRestoreBootstrapSettledIfNeeded(
+                tabID: model.selectedTabID,
+                reason: "restore_bootstrap_settled"
+            )
+        )
+        XCTAssertEqual(callbackCount, 1)
+        XCTAssertTrue(
+            StartupRestoreCoordinator.shared.hasSelectedTabLiveFrame(windowNumber: window.windowNumber)
+        )
+    }
+
     func testSelectedTabRevealTimeoutForcesLivePresentation() {
         model.newTab(selectNewTab: false)
         let targetID = model.tabs[1].id
