@@ -108,20 +108,22 @@ final class InjectionRuleStore {
     // MARK: - Persistence
 
     func load() {
-        queue.sync {
-            guard FileManager.default.fileExists(atPath: fileURL.path) else {
-                rules = []
+        let url = fileURL
+        queue.async { [weak self] in
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                DispatchQueue.main.async { self?.rules = [] }
                 return
             }
-            guard let data = try? Data(contentsOf: fileURL) else {
-                Log.warn("Failed to read injection rules from \(fileURL.path)")
+            guard let data = try? Data(contentsOf: url) else {
+                Log.warn("Failed to read injection rules from \(url.path)")
                 return
             }
             guard let file = try? JSONDecoder().decode(RulesFile.self, from: data) else {
-                Log.warn("Failed to decode injection rules from \(fileURL.path)")
+                Log.warn("Failed to decode injection rules from \(url.path)")
                 return
             }
-            rules = file.rules
+            let loaded = file.rules
+            DispatchQueue.main.async { self?.rules = loaded }
         }
     }
 
@@ -145,9 +147,10 @@ final class InjectionRuleStore {
         }
     }
 
-    // MARK: - Mutations
+    // MARK: - Mutations (must be called on main thread)
 
     func setGlobalRule(content: String, position: Rule.Position) {
+        dispatchPrecondition(condition: .onQueue(.main))
         if let idx = rules.firstIndex(where: { $0.repository == "*" }) {
             rules[idx].content = content
             rules[idx].position = position
@@ -159,11 +162,13 @@ final class InjectionRuleStore {
     }
 
     func removeGlobalRule() {
+        dispatchPrecondition(condition: .onQueue(.main))
         rules.removeAll { $0.repository == "*" }
         save()
     }
 
     func addRepoRule(_ rule: Rule) {
+        dispatchPrecondition(condition: .onQueue(.main))
         // Insert before any "*" wildcard to preserve priority ordering.
         if let wildcardIdx = rules.firstIndex(where: { $0.repository == "*" }) {
             rules.insert(rule, at: wildcardIdx)
@@ -174,12 +179,14 @@ final class InjectionRuleStore {
     }
 
     func updateRule(_ rule: Rule) {
+        dispatchPrecondition(condition: .onQueue(.main))
         guard let idx = rules.firstIndex(where: { $0.id == rule.id }) else { return }
         rules[idx] = rule
         save()
     }
 
     func removeRule(id: UUID) {
+        dispatchPrecondition(condition: .onQueue(.main))
         rules.removeAll { $0.id == id }
         save()
     }
@@ -208,7 +215,9 @@ final class InjectionRuleStore {
     }
 
     /// Save a rule to {repoRoot}/.chau7/injection.json.
+    /// Must be called on the main thread (mutates @Observable state).
     func saveLocalRule(_ rule: Rule, repoRoot: String) {
+        dispatchPrecondition(condition: .onQueue(.main))
         localRules[repoRoot] = rule
 
         let url = URL(fileURLWithPath: repoRoot)
@@ -227,7 +236,9 @@ final class InjectionRuleStore {
     }
 
     /// Remove the local injection file for a repo.
+    /// Must be called on the main thread (mutates @Observable state).
     func removeLocalRule(repoRoot: String) {
+        dispatchPrecondition(condition: .onQueue(.main))
         localRules.removeValue(forKey: repoRoot)
 
         let url = URL(fileURLWithPath: repoRoot)
