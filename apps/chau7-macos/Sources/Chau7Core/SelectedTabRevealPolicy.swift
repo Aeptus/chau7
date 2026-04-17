@@ -28,6 +28,11 @@ public struct SelectedTabRevealRequest: Equatable, Sendable {
     }
 }
 
+public enum SelectedTabRefreshAction: Equatable, Sendable {
+    case liveRepaintInPlace
+    case authoritativeReveal(shouldAwaitVisibleFrame: Bool)
+}
+
 public enum SelectedTabRevealPolicy {
     /// A selected-surface reveal should only block presentation when we are
     /// switching tabs or bootstrapping a surface that may not yet have a stable
@@ -42,5 +47,24 @@ public enum SelectedTabRevealPolicy {
         case .explicitRefresh, .startup, .other:
             return true
         }
+    }
+}
+
+public enum SelectedTabRefreshPolicy {
+    public static func action(for request: SelectedTabRevealRequest) -> SelectedTabRefreshAction {
+        let shouldAwaitVisibleFrame = SelectedTabRevealPolicy.shouldAwaitVisibleFrame(for: request)
+
+        switch request.trigger {
+        case .selectionChange, .reactivation, .restoreBootstrap:
+            if request.keepsVisibleSurface,
+               request.hasAttachedRenderer,
+               request.isCurrentlyLivePresentable {
+                return .liveRepaintInPlace
+            }
+        case .explicitRefresh, .startup, .other:
+            break
+        }
+
+        return .authoritativeReveal(shouldAwaitVisibleFrame: shouldAwaitVisibleFrame)
     }
 }

@@ -2560,26 +2560,31 @@ final class OverlayTabsModel {
         let selectedDecision = renderLifecycleDecision(for: selectedTab)
         let hasAttachedRenderer = session.existingRustTerminalView != nil
         let revealTrigger = selectedTabRevealTrigger(for: reason)
-        let shouldAwaitVisibleFrame = SelectedTabRevealPolicy.shouldAwaitVisibleFrame(
-            for: SelectedTabRevealRequest(
-                trigger: revealTrigger,
-                keepsVisibleSurface: selectedDecision.phase.keepsVisibleSurface,
-                hasAttachedRenderer: hasAttachedRenderer,
-                isCurrentlyLivePresentable: session.presentationSurfaceState.isLivePresentable
-            )
+        let revealRequest = SelectedTabRevealRequest(
+            trigger: revealTrigger,
+            keepsVisibleSurface: selectedDecision.phase.keepsVisibleSurface,
+            hasAttachedRenderer: hasAttachedRenderer,
+            isCurrentlyLivePresentable: session.presentationSurfaceState.isLivePresentable
         )
-        _ = session.beginPresentationReveal(
-            shouldAwaitVisibleFrame: shouldAwaitVisibleFrame,
-            now: CFAbsoluteTimeGetCurrent()
-        )
-        if shouldAwaitVisibleFrame {
-            let revealGeneration = session.presentationSurfaceState.generation
-            scheduleSelectedTerminalRevealTimeout(
-                tabID: selectedTab.id,
-                generation: revealGeneration,
-                reason: reason
+        let refreshAction = SelectedTabRefreshPolicy.action(for: revealRequest)
+
+        if case .authoritativeReveal(let shouldAwaitVisibleFrame) = refreshAction {
+            _ = session.beginPresentationReveal(
+                shouldAwaitVisibleFrame: shouldAwaitVisibleFrame,
+                now: CFAbsoluteTimeGetCurrent()
             )
+            if shouldAwaitVisibleFrame {
+                let revealGeneration = session.presentationSurfaceState.generation
+                scheduleSelectedTerminalRevealTimeout(
+                    tabID: selectedTab.id,
+                    generation: revealGeneration,
+                    reason: reason
+                )
+            } else {
+                resetSelectedTerminalRevealScheduling()
+            }
         } else {
+            session.resetPresentationSurfaceToLive()
             resetSelectedTerminalRevealScheduling()
         }
 
@@ -2590,24 +2595,37 @@ final class OverlayTabsModel {
 
         rustView.isHidden = !selectedDecision.phase.keepsVisibleSurface
         rustView.setEventMonitoringEnabled(selectedDecision.isInteractive)
-        rustView.requestAuthoritativeReveal(reason: reason)
         rustView.needsDisplay = true
 
+        var blockingMode = "in_place"
         if let container = rustView.superview as? RustTerminalContainerView {
             container.isHidden = !selectedDecision.phase.keepsVisibleSurface
             if let coordinator = container.rustMetalCoordinator {
                 coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
-                coordinator.forceAuthoritativeRefresh(reason: reason)
                 coordinator.metalView.needsDisplay = true
             }
         }
 
-        if selectedDecision.phase.keepsVisibleSurface {
-            rustView.needsGridSync = true
-            rustView.performAuthoritativeRevealPass(reason: reason)
+        switch refreshAction {
+        case .liveRepaintInPlace:
+            if selectedDecision.phase.keepsVisibleSurface {
+                rustView.needsGridSync = true
+                if let coordinator = (rustView.superview as? RustTerminalContainerView)?.rustMetalCoordinator {
+                    coordinator.setNeedsSync()
+                }
+                rustView.pollAndSync()
+            }
+        case .authoritativeReveal(let shouldAwaitVisibleFrame):
+            rustView.requestAuthoritativeReveal(reason: reason)
+            if let coordinator = (rustView.superview as? RustTerminalContainerView)?.rustMetalCoordinator {
+                coordinator.forceAuthoritativeRefresh(reason: reason)
+            }
+            if selectedDecision.phase.keepsVisibleSurface {
+                rustView.needsGridSync = true
+                rustView.performAuthoritativeRevealPass(reason: reason)
+            }
+            blockingMode = shouldAwaitVisibleFrame ? "blocking" : "in_place"
         }
-
-        let blockingMode = shouldAwaitVisibleFrame ? "blocking" : "in_place"
         Log.info("requestSelectedTabAuthoritativeReveal[\(reason)]: refreshed selected tab \(selectedTabID) as \(selectedDecision.phase.rawValue) mode=\(blockingMode)")
     }
 

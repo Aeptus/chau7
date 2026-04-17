@@ -238,6 +238,21 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertTrue(model.tabs[1].session?.awaitingVisibleFrameReady == true)
     }
 
+    func testSelectTabKeepsAttachedLiveSurfaceInPlace() {
+        model.newTab(selectNewTab: false)
+        let targetID = model.tabs[1].id
+        let rustView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        model.tabs[1].session?.attachRustTerminal(rustView)
+        model.tabs[1].session?.resetPresentationSurfaceToLive()
+
+        model.selectTab(id: targetID)
+
+        XCTAssertEqual(model.selectedTabID, targetID)
+        XCTAssertTrue(model.isTerminalReady)
+        XCTAssertFalse(model.tabs[1].session?.awaitingVisibleFrameReady ?? true)
+        XCTAssertEqual(model.selectedSurfacePresentation.phase, .live)
+    }
+
     func testRequestSelectedTabAuthoritativeRevealDiscardsSettledRestorePreview() {
         model.tabs[0].restorePreviewSnapshot = makeSnapshot()
         model.tabs[0].session?.markRestoreBootstrapReady(source: "test")

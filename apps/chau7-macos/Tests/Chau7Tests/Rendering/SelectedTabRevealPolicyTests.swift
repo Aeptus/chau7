@@ -2,6 +2,48 @@ import XCTest
 @testable import Chau7Core
 
 final class SelectedTabRevealPolicyTests: XCTestCase {
+    func testSelectionChangeWithLiveAttachedSurfaceUsesInPlaceRefresh() {
+        XCTAssertEqual(
+            SelectedTabRefreshPolicy.action(
+                for: SelectedTabRevealRequest(
+                    trigger: .selectionChange,
+                    keepsVisibleSurface: true,
+                    hasAttachedRenderer: true,
+                    isCurrentlyLivePresentable: true
+                )
+            ),
+            .liveRepaintInPlace
+        )
+    }
+
+    func testSelectionChangeWithoutLiveSurfaceUsesBlockingAuthoritativeReveal() {
+        XCTAssertEqual(
+            SelectedTabRefreshPolicy.action(
+                for: SelectedTabRevealRequest(
+                    trigger: .selectionChange,
+                    keepsVisibleSurface: true,
+                    hasAttachedRenderer: false,
+                    isCurrentlyLivePresentable: false
+                )
+            ),
+            .authoritativeReveal(shouldAwaitVisibleFrame: true)
+        )
+    }
+
+    func testExplicitRefreshStillUsesAuthoritativeRevealEvenWhenSurfaceIsLive() {
+        XCTAssertEqual(
+            SelectedTabRefreshPolicy.action(
+                for: SelectedTabRevealRequest(
+                    trigger: .explicitRefresh,
+                    keepsVisibleSurface: true,
+                    hasAttachedRenderer: true,
+                    isCurrentlyLivePresentable: true
+                )
+            ),
+            .authoritativeReveal(shouldAwaitVisibleFrame: true)
+        )
+    }
+
     func testReactivationOfLiveAttachedSurfaceStaysNonBlocking() {
         XCTAssertFalse(
             SelectedTabRevealPolicy.shouldAwaitVisibleFrame(
@@ -77,6 +119,20 @@ final class SelectedTabRevealPolicyTests: XCTestCase {
                     isCurrentlyLivePresentable: false
                 )
             )
+        )
+    }
+
+    func testRestoreBootstrapWithLiveAttachedSurfaceUsesInPlaceRefresh() {
+        XCTAssertEqual(
+            SelectedTabRefreshPolicy.action(
+                for: SelectedTabRevealRequest(
+                    trigger: .restoreBootstrap,
+                    keepsVisibleSurface: true,
+                    hasAttachedRenderer: true,
+                    isCurrentlyLivePresentable: true
+                )
+            ),
+            .liveRepaintInPlace
         )
     }
 }
