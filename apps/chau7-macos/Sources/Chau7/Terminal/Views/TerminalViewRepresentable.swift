@@ -265,11 +265,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         return container
     }
 
-    private func cacheRetainedFrameIfAvailable(from view: RustTerminalView) {
-        guard let snapshot = view.makeRetainedFrameImage(allowForcedSync: view.requiresForcedRetainedFrameSync) else { return }
-        model.lastRenderedSnapshot = snapshot
-    }
-
     private func makeRustTerminalView() -> UnifiedTerminalContainerView {
         if let existingContainer = model.existingTerminalContainerView,
            let existingView = existingContainer.rustTerminalView {
@@ -297,9 +292,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             }
             existingView.onFramePresented = { [weak model] in
                 model?.notifyVisibleFrameReadyIfNeeded()
-            }
-            existingView.onInactiveRetainedFrame = { [weak model] snapshot in
-                model?.lastRenderedSnapshot = snapshot
             }
             existingView.onFilePathClicked = onFilePathClicked
             existingView.onScrollbackCleared = { [weak model] in
@@ -352,9 +344,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             }
             existingView.onFramePresented = { [weak model] in
                 model?.notifyVisibleFrameReadyIfNeeded()
-            }
-            existingView.onInactiveRetainedFrame = { [weak model] snapshot in
-                model?.lastRenderedSnapshot = snapshot
             }
             existingView.onFilePathClicked = onFilePathClicked
             existingView.onScrollbackCleared = { [weak model] in
@@ -436,9 +425,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.onFramePresented = { [weak model] in
             model?.notifyVisibleFrameReadyIfNeeded()
         }
-        view.onInactiveRetainedFrame = { [weak model] snapshot in
-            model?.lastRenderedSnapshot = snapshot
-        }
         view.onScrollChanged = { [weak model] in
             model?.scheduleHighlightAfterScroll()
         }
@@ -507,9 +493,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let renderPhaseChanged = transition.changed
         let keepsVisibleSurface = renderPhase.keepsVisibleSurface
         let allowsLivePresentation = renderPhase.allowsLivePresentation
-        if renderPhaseChanged, !keepsVisibleSurface {
-            cacheRetainedFrameIfAvailable(from: nsView)
-        }
         nsView.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "updateNSView")
         let shouldForceAuthoritativeReveal = TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
             previousPhase: transition.previous,

@@ -396,9 +396,6 @@ extension RustTerminalView {
             isHidden: isHidden,
             hasVisibleWindow: hasVisibleWindow
         ) else {
-            if changed {
-                scheduleInactiveRetainedFrameRefresh(reason: "backgroundDrain")
-            }
             return
         }
 
@@ -919,8 +916,6 @@ extension RustTerminalView {
         previousCursorRow = 0
         hasRetainedFrameSourceReady = false
         retainedFrameSourceVersion = 0
-        pendingInactiveSnapshotVersion = nil
-        pendingInactiveSnapshotNeedsForcedSync = false
         needsGridSync = true
         clearLocalEchoOverlay()
     }
