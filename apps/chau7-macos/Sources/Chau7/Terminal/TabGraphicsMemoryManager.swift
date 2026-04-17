@@ -32,9 +32,9 @@ final class TabGraphicsMemoryManager {
     static let shared = TabGraphicsMemoryManager()
 
     enum ReleaseTier {
-        /// `.active` / `.passiveVisible`: keep everything live.
+        /// `.active`: keep everything live.
         case keepAll
-        /// `.warm`: keep small cached thumbnail; drop restore preview.
+        /// `.passiveVisible`: keep only the lightweight cached preview state.
         case keepCachedOnly
         /// `.hidden`: drop all snapshots, mark Metal volatile.
         case releaseAll
@@ -89,8 +89,10 @@ final class TabGraphicsMemoryManager {
         // cached thumbnail / glyph atlas on re-entry is a fast operation.
         let tier: ReleaseTier
         switch newPhase {
-        case .active, .passiveVisible:
+        case .active:
             tier = .keepAll
+        case .passiveVisible:
+            tier = .keepCachedOnly
         case .warm, .hidden:
             tier = .releaseAll
         }
