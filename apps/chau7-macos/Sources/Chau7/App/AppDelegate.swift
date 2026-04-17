@@ -48,8 +48,6 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var didPerformInitialSetup = false
     private var didStartDeferredStartupWork = false
     private var didCompleteStartupRestore = false
-    private var startupRestoreFallbackWorkItem: DispatchWorkItem?
-    private var startupRestoreRecoveryAttempts = 0
     private var preparedStartupWindowNumbers: Set<Int> = []
     private var revealedStartupWindowNumbers: Set<Int> = []
     private var lastOverlayLifecycleLogAt: CFAbsoluteTime = 0
@@ -180,9 +178,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         didPerformInitialSetup = true
         didStartDeferredStartupWork = false
         didCompleteStartupRestore = false
-        startupRestoreFallbackWorkItem?.cancel()
-        startupRestoreFallbackWorkItem = nil
-        startupRestoreRecoveryAttempts = 0
         preparedStartupWindowNumbers.removeAll()
         revealedStartupWindowNumbers.removeAll()
 
@@ -266,68 +261,16 @@ private final class OverlayBlurView: NSVisualEffectView {
             // drop the menu bar for this app. Re-activating here forces it back.
             NSApp.activate(ignoringOtherApps: true)
             completeStartupRestoreIfReady(reason: "windows_shown")
-            scheduleStartupRestoreFallbackCompletion()
         }
     }
 
-    @MainActor private func scheduleStartupRestoreFallbackCompletion(
-        timeout: TimeInterval = StartupWindowPresentationPolicy.forcedRevealLoadingDelay
-    ) {
-        startupRestoreFallbackWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.completeStartupRestoreIfReady(force: true, reason: "fallback_timeout")
-        }
-        startupRestoreFallbackWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: workItem)
-    }
-
-    @MainActor private func completeStartupRestoreIfReady(force: Bool = false, reason: String) {
+    @MainActor private func completeStartupRestoreIfReady(reason: String) {
         guard !didCompleteStartupRestore else { return }
         let expectedWindowCount = max(overlayHosts.count, 1)
-        guard force || StartupRestoreCoordinator.shared.isReadyToComplete(expectedWindowCount: expectedWindowCount) else {
+        guard StartupRestoreCoordinator.shared.isReadyToComplete(expectedWindowCount: expectedWindowCount) else {
             return
-        }
-        let recordedLiveFrameWindows = StartupRestoreCoordinator.shared.selectedTabLiveFrameCount
-        if StartupRestoreFallbackRecoveryPolicy.shouldRetry(
-            forceRequested: force,
-            recordedLiveFrameWindows: recordedLiveFrameWindows,
-            expectedWindowCount: expectedWindowCount,
-            attempts: startupRestoreRecoveryAttempts
-        ) {
-            if force {
-                for host in overlayHosts {
-                    revealPreparedStartupOverlayWindow(
-                        host,
-                        reason: "startup_force_loading",
-                        recordSelectedLiveFrame: false,
-                        revealWasForced: true
-                    )
-                }
-            }
-            startupRestoreRecoveryAttempts += 1
-            Log.warn(
-                "Startup restore recovery: reason=\(reason) liveFrames=\(recordedLiveFrameWindows)/\(expectedWindowCount) attempt=\(startupRestoreRecoveryAttempts)"
-            )
-            for host in overlayHosts {
-                host.model.forceRefreshSelectedTab()
-            }
-            scheduleStartupRestoreFallbackCompletion(timeout: StartupRestoreFallbackRecoveryPolicy.retryTimeout)
-            return
-        }
-        if force {
-            for host in overlayHosts {
-                revealPreparedStartupOverlayWindow(
-                    host,
-                    reason: "startup_force_reveal",
-                    recordSelectedLiveFrame: false,
-                    revealWasForced: true
-                )
-            }
         }
         didCompleteStartupRestore = true
-        startupRestoreFallbackWorkItem?.cancel()
-        startupRestoreFallbackWorkItem = nil
-        startupRestoreRecoveryAttempts = 0
         Log.info("Startup restore completion: reason=\(reason) expectedWindows=\(expectedWindowCount)")
         for host in overlayHosts {
             host.model.beginDeferredRestoreIfNeeded(reason: "startup_complete")
@@ -345,8 +288,7 @@ private final class OverlayBlurView: NSVisualEffectView {
                 revealPreparedStartupOverlayWindow(
                     for: tabsModel,
                     reason: "selected_tab_live_frame",
-                    recordSelectedLiveFrame: true,
-                    revealWasForced: false
+                    recordSelectedLiveFrame: true
                 )
             }
             completeStartupRestoreIfReady(reason: "selected_tab_live_frame")
@@ -2102,8 +2044,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             revealPreparedStartupOverlayWindow(
                 host,
                 reason: "startup_live_surface_ready",
-                recordSelectedLiveFrame: false,
-                revealWasForced: false
+                recordSelectedLiveFrame: false
             )
         }
         logOverlayWindowLifecycle(reason: "prepareStartupOverlayWindow-\(reason)", window: host.window)
@@ -2113,32 +2054,26 @@ private final class OverlayBlurView: NSVisualEffectView {
     private func revealPreparedStartupOverlayWindow(
         for tabsModel: OverlayTabsModel,
         reason: String,
-        recordSelectedLiveFrame: Bool,
-        revealWasForced: Bool
+        recordSelectedLiveFrame: Bool
     ) {
         guard let host = overlayHosts.first(where: { $0.model === tabsModel }) else { return }
         revealPreparedStartupOverlayWindow(
             host,
             reason: reason,
-            recordSelectedLiveFrame: recordSelectedLiveFrame,
-            revealWasForced: revealWasForced
+            recordSelectedLiveFrame: recordSelectedLiveFrame
         )
     }
 
     private func revealPreparedStartupOverlayWindow(
         _ host: OverlayHost,
         reason: String,
-        recordSelectedLiveFrame: Bool,
-        revealWasForced: Bool
+        recordSelectedLiveFrame: Bool
     ) {
         let windowNumber = host.window.windowNumber
         guard preparedStartupWindowNumbers.contains(windowNumber) else { return }
         guard revealedStartupWindowNumbers.insert(windowNumber).inserted else { return }
 
-        host.model.usesStartupLoadingCover = StartupWindowPresentationPolicy.shouldShowLoadingCoverAfterReveal(
-            revealWasForced: revealWasForced,
-            isSelectedSurfaceLivePresentable: host.model.selectedSurfacePresentation.isLivePresentable
-        )
+        host.model.usesStartupLoadingCover = false
         host.window.alphaValue = 1
         host.window.ignoresMouseEvents = false
         host.window.makeKeyAndOrderFront(nil)
