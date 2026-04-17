@@ -8,6 +8,7 @@ final class RenderPipelineProfiler {
         let viewID: UInt64
         let tabID: String?
         let sessionID: String?
+        let isActive: Bool
         let mode: String
         let reasons: String
         let pollCount: Int
@@ -89,6 +90,7 @@ final class RenderPipelineProfiler {
     private struct LiveViewState {
         var tabID: String?
         var sessionID: String?
+        var isActive: Bool
         var mode: String
         var reasons: String
         var pollCount: Int
@@ -124,6 +126,7 @@ final class RenderPipelineProfiler {
                 liveViews[viewID] = LiveViewState(
                     tabID: tabID,
                     sessionID: sessionID,
+                    isActive: active,
                     mode: mode,
                     reasons: reasons,
                     pollCount: existing?.pollCount ?? 0,
@@ -134,7 +137,10 @@ final class RenderPipelineProfiler {
                     updatedAt: now
                 )
             } else {
-                liveViews.removeValue(forKey: viewID)
+                guard var existing = liveViews[viewID] else { return }
+                existing.isActive = false
+                existing.updatedAt = now
+                liveViews[viewID] = existing
             }
         }
     }
@@ -228,7 +234,9 @@ final class RenderPipelineProfiler {
         defer { lock.unlock() }
         return Snapshot(
             asOf: Date(),
-            activeLiveViewIDs: liveViews.keys.sorted(),
+            activeLiveViewIDs: liveViews.compactMap { viewID, state in
+                state.isActive ? viewID : nil
+            }.sorted(),
             liveViews: liveViewSnapshots(),
             livePollCount: totals.livePollCount,
             changedPollCount: totals.changedPollCount,
@@ -268,7 +276,9 @@ final class RenderPipelineProfiler {
         if now.timeIntervalSince(lastFlushAt) >= flushInterval {
             snapshot = Snapshot(
                 asOf: now,
-                activeLiveViewIDs: liveViews.keys.sorted(),
+                activeLiveViewIDs: liveViews.compactMap { viewID, state in
+                    state.isActive ? viewID : nil
+                }.sorted(),
                 liveViews: liveViewSnapshots(),
                 livePollCount: totals.livePollCount,
                 changedPollCount: totals.changedPollCount,
@@ -290,6 +300,23 @@ final class RenderPipelineProfiler {
                 maxLigatureCacheSize: totals.maxLigatureCacheSize
             )
             totals = Totals()
+            liveViews = liveViews.reduce(into: [:]) { result, entry in
+                let (viewID, state) = entry
+                guard state.isActive else { return }
+                result[viewID] = LiveViewState(
+                    tabID: state.tabID,
+                    sessionID: state.sessionID,
+                    isActive: true,
+                    mode: state.mode,
+                    reasons: state.reasons,
+                    pollCount: 0,
+                    changedPollCount: 0,
+                    drawCount: 0,
+                    syncCallCount: 0,
+                    syncBytes: 0,
+                    updatedAt: state.updatedAt
+                )
+            }
             lastFlushAt = now
         }
         lock.unlock()
@@ -332,7 +359,8 @@ final class RenderPipelineProfiler {
             let detail = snapshot.liveViews.map { liveView in
                 let tab = liveView.tabID ?? "nil"
                 let session = liveView.sessionID ?? "nil"
-                return "view=\(liveView.viewID) tab=\(tab) session=\(session) mode=\(liveView.mode) reasons=\(liveView.reasons)"
+                let state = liveView.isActive ? "active" : "inactive"
+                return "view=\(liveView.viewID) state=\(state) tab=\(tab) session=\(session) mode=\(liveView.mode) reasons=\(liveView.reasons)"
                     + " polls=\(liveView.pollCount)"
                     + " changed=\(liveView.changedPollCount)"
                     + " draws=\(liveView.drawCount)"
@@ -350,6 +378,7 @@ final class RenderPipelineProfiler {
                     viewID: viewID,
                     tabID: state.tabID,
                     sessionID: state.sessionID,
+                    isActive: state.isActive,
                     mode: state.mode,
                     reasons: state.reasons,
                     pollCount: state.pollCount,

@@ -38,6 +38,7 @@ final class RenderPipelineProfilerTests: XCTestCase {
                 viewID: 7,
                 tabID: "tab-1",
                 sessionID: "session-1",
+                isActive: true,
                 mode: "display_link",
                 reasons: "selected,visibleWindow",
                 pollCount: 2,
@@ -89,6 +90,38 @@ final class RenderPipelineProfilerTests: XCTestCase {
         XCTAssertEqual(snapshot.syncCallCount, 0)
         XCTAssertEqual(snapshot.commitCount, 0)
         XCTAssertEqual(snapshot.glyphLookups, 0)
+    }
+
+    func testDeactivatedViewRemainsInSnapshotUntilFlush() {
+        let profiler = RenderPipelineProfiler(flushInterval: 300)
+
+        profiler.updateRenderLoopState(
+            viewID: 11,
+            active: true,
+            tabID: "tab-11",
+            sessionID: "session-11",
+            mode: "timer",
+            reasons: "selected-passive"
+        )
+        profiler.recordPoll(viewID: 11, changed: true)
+        profiler.recordSync(viewID: 11, rows: 24, cols: 80, syncedRows: 12, syncedCols: 80, mismatched: false, bytesWritten: 2048)
+        profiler.updateRenderLoopState(
+            viewID: 11,
+            active: false,
+            tabID: "tab-11",
+            sessionID: "session-11",
+            mode: "timer",
+            reasons: "selected-passive"
+        )
+
+        let snapshot = profiler.snapshot()
+        XCTAssertEqual(snapshot.activeLiveViewIDs, [])
+        XCTAssertEqual(snapshot.liveViews.count, 1)
+        XCTAssertEqual(snapshot.liveViews[0].viewID, 11)
+        XCTAssertFalse(snapshot.liveViews[0].isActive)
+        XCTAssertEqual(snapshot.liveViews[0].pollCount, 1)
+        XCTAssertEqual(snapshot.liveViews[0].syncCallCount, 1)
+        XCTAssertEqual(snapshot.liveViews[0].syncBytes, 2048)
     }
 }
 #endif
