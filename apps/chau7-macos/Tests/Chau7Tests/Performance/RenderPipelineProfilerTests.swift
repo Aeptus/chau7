@@ -101,7 +101,7 @@ final class RenderPipelineProfilerTests: XCTestCase {
             tabID: "tab-11",
             sessionID: "session-11",
             mode: "timer",
-            reasons: "selected-passive"
+            reasons: "visible-noninteractive"
         )
         profiler.recordPoll(viewID: 11, changed: true)
         profiler.recordSync(viewID: 11, rows: 24, cols: 80, syncedRows: 12, syncedCols: 80, mismatched: false, bytesWritten: 2048)
@@ -111,7 +111,7 @@ final class RenderPipelineProfilerTests: XCTestCase {
             tabID: "tab-11",
             sessionID: "session-11",
             mode: "timer",
-            reasons: "selected-passive"
+            reasons: "visible-noninteractive"
         )
 
         let snapshot = profiler.snapshot()

@@ -2140,8 +2140,11 @@ final class RustTerminalView: NSView {
     }
 
     /// Whether this view is registered for shared background PTY drain.
-    /// Replaces the per-view Timer with a shared drain (see SharedBackgroundDrain).
+    /// Background drain runs on a utility queue and blocks on PTY activity instead
+    /// of waking the main thread on a fixed cadence.
     var isBackgroundDrainRegistered = false
+    let terminalPollAccessLock = NSLock()
+    var backgroundDrainGeneration: UInt64 = 0
     private var isLivePollingActive = false
     var livePollingActiveForProfiling: Bool {
         isLivePollingActive
@@ -2153,6 +2156,7 @@ final class RustTerminalView: NSView {
     var retainedFrameContentVersion: UInt64 = 0
     var retainedFrameSourceVersion: UInt64 = 0
     static let passiveVisiblePollingInterval: TimeInterval = 1.0 / 15.0
+    static let backgroundDrainPollTimeoutMs: UInt32 = 100
 
     // MARK: - Properties
 

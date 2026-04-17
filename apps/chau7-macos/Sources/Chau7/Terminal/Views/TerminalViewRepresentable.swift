@@ -250,7 +250,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         if isInteractive {
             reasons.append("selected")
         } else if renderPhase.keepsVisibleSurface {
-            reasons.append("selected-passive")
+            reasons.append("visible-noninteractive")
         } else if renderPhase == .warm {
             reasons.append("handoff")
         }
