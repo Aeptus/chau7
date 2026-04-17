@@ -612,7 +612,7 @@ final class OverlayTabsModelTests: XCTestCase {
         )
     }
 
-    func testStartupRestoreBeginsAllQueuedBackgroundTabsImmediately() {
+    func testDeferredRestoreStartsQueuedBackgroundTabsWithoutImmediateConsumption() {
         let tabIDs = (0 ..< 3).map { _ in UUID() }
         let states = (0 ..< 3).map { index in
             SavedTabState(
@@ -635,11 +635,11 @@ final class OverlayTabsModelTests: XCTestCase {
 
         XCTAssertEqual(restoredModel.deferredRestoreTabOrder.count, 2)
 
-        restoredModel.beginStartupRestoreIfNeeded(reason: "test")
+        restoredModel.beginDeferredRestoreIfNeeded(reason: "test")
 
         XCTAssertTrue(restoredModel.hasStartedDeferredRestore)
-        XCTAssertTrue(restoredModel.deferredRestoreTabOrder.isEmpty)
-        XCTAssertTrue(restoredModel.deferredRestoreStatesByTabID.isEmpty)
+        XCTAssertEqual(restoredModel.deferredRestoreTabOrder.count, 2)
+        XCTAssertEqual(restoredModel.deferredRestoreStatesByTabID.count, 2)
     }
 
     // MARK: - Tab Close (closeTab)

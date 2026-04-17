@@ -162,7 +162,7 @@ public struct StartupRestoreTracker: Equatable {
         guard isActive else { return false }
         guard expectedWindowCount > 0 else { return false }
         guard selectedTabLiveFrameMsByWindow.count >= expectedWindowCount else { return false }
-        return restoreBootstrapSettled >= restoreBootstrapStarted
+        return true
     }
 
     public func hasSelectedTabLiveFrame(windowNumber: Int) -> Bool {

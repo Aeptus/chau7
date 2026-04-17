@@ -48,7 +48,7 @@ final class StartupRestorePolicyTests: XCTestCase {
         XCTAssertFalse(tracker.isActive)
     }
 
-    func testTrackerReadinessUsesVisibleWindowCountAndSettledRestoreBootstrap() {
+    func testTrackerReadinessUsesSelectedLiveFramesPerVisibleWindow() {
         var tracker = StartupRestoreTracker()
         let startedAt = Date(timeIntervalSince1970: 100)
         tracker.begin(at: startedAt)
@@ -63,12 +63,6 @@ final class StartupRestorePolicyTests: XCTestCase {
         XCTAssertFalse(tracker.isReadyForVisibleStartupCompletion(expectedWindowCount: 2))
 
         _ = tracker.noteSelectedTabLiveFrame(windowNumber: 2, at: startedAt.addingTimeInterval(0.55))
-        XCTAssertFalse(tracker.isReadyForVisibleStartupCompletion(expectedWindowCount: 2))
-
-        tracker.noteRestoreBootstrapSettled()
-        XCTAssertFalse(tracker.isReadyForVisibleStartupCompletion(expectedWindowCount: 2))
-
-        tracker.noteRestoreBootstrapSettled()
         XCTAssertTrue(tracker.isReadyForVisibleStartupCompletion(expectedWindowCount: 2))
     }
 
