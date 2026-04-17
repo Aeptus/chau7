@@ -18,7 +18,7 @@ final class RenderPipelineProfilerTests: XCTestCase {
         profiler.recordPoll(viewID: 7, changed: true)
         profiler.recordPoll(viewID: 7, changed: false)
         profiler.recordDraw(viewID: 7, cellCount: 120)
-        profiler.recordSync(rows: 24, cols: 80, syncedRows: 24, syncedCols: 80, mismatched: true, bytesWritten: 4096)
+        profiler.recordSync(viewID: 7, rows: 24, cols: 80, syncedRows: 24, syncedCols: 80, mismatched: true, bytesWritten: 4096)
         profiler.recordCommit(dirtyRows: 12, dirtyCells: 960, bytesCopied: 2048, fullRefresh: true)
         profiler.recordInstanceBuffer(
             cells: 120,
@@ -39,7 +39,12 @@ final class RenderPipelineProfilerTests: XCTestCase {
                 tabID: "tab-1",
                 sessionID: "session-1",
                 mode: "display_link",
-                reasons: "selected,visibleWindow"
+                reasons: "selected,visibleWindow",
+                pollCount: 2,
+                changedPollCount: 1,
+                drawCount: 1,
+                syncCallCount: 1,
+                syncBytes: 4096
             )]
         )
         XCTAssertEqual(snapshot.livePollCount, 2)

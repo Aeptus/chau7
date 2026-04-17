@@ -360,7 +360,8 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
 
             // 3. Convert grid pointer to typed pointer and sync to triple buffer.
             let gridPtr = snapshot.grid.assumingMemoryBound(to: RustGridSnapshot.self)
-            if bridge.syncToTripleBuffer(tripleBuffer, grid: gridPtr) == nil {
+            let renderViewID = terminalView?.viewId ?? 0
+            if bridge.syncToTripleBuffer(tripleBuffer, grid: gridPtr, viewID: renderViewID) == nil {
                 let gs = gridPtr.pointee
                 let newRows = Int(gs.rows)
                 let newCols = Int(gs.cols)
@@ -384,7 +385,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                         lastTripleBufferRebuildAt = rebuildStartedAt
                     }
 
-                    bridge.syncToTripleBuffer(tripleBuffer, grid: gridPtr)
+                    bridge.syncToTripleBuffer(tripleBuffer, grid: gridPtr, viewID: renderViewID)
                     FeatureProfiler.shared.recordMainThreadStallIfNeeded(
                         operation: "RustMetalDisplayCoordinator.rebuildTripleBuffer",
                         startedAt: rebuildStartedAt,

@@ -10,6 +10,11 @@ final class RenderPipelineProfiler {
         let sessionID: String?
         let mode: String
         let reasons: String
+        let pollCount: Int
+        let changedPollCount: Int
+        let drawCount: Int
+        let syncCallCount: Int
+        let syncBytes: Int64
     }
 
     struct Snapshot {
@@ -86,6 +91,11 @@ final class RenderPipelineProfiler {
         var sessionID: String?
         var mode: String
         var reasons: String
+        var pollCount: Int
+        var changedPollCount: Int
+        var drawCount: Int
+        var syncCallCount: Int
+        var syncBytes: Int64
         var updatedAt: Date
     }
 
@@ -110,11 +120,17 @@ final class RenderPipelineProfiler {
         guard WakeupControl.isEnabled(.instrumentationEnabled) else { return }
         recordMutation { now in
             if active {
+                let existing = liveViews[viewID]
                 liveViews[viewID] = LiveViewState(
                     tabID: tabID,
                     sessionID: sessionID,
                     mode: mode,
                     reasons: reasons,
+                    pollCount: existing?.pollCount ?? 0,
+                    changedPollCount: existing?.changedPollCount ?? 0,
+                    drawCount: existing?.drawCount ?? 0,
+                    syncCallCount: existing?.syncCallCount ?? 0,
+                    syncBytes: existing?.syncBytes ?? 0,
                     updatedAt: now
                 )
             } else {
@@ -130,7 +146,13 @@ final class RenderPipelineProfiler {
             if changed {
                 totals.changedPollCount += 1
             }
-            _ = viewID
+            if var state = liveViews[viewID] {
+                state.pollCount += 1
+                if changed {
+                    state.changedPollCount += 1
+                }
+                liveViews[viewID] = state
+            }
         }
     }
 
@@ -139,11 +161,14 @@ final class RenderPipelineProfiler {
         recordMutation { _ in
             totals.drawCount += 1
             totals.maxFrameCells = max(totals.maxFrameCells, cellCount)
-            _ = viewID
+            if var state = liveViews[viewID] {
+                state.drawCount += 1
+                liveViews[viewID] = state
+            }
         }
     }
 
-    func recordSync(rows: Int, cols: Int, syncedRows: Int, syncedCols: Int, mismatched: Bool, bytesWritten: Int) {
+    func recordSync(viewID: UInt64, rows: Int, cols: Int, syncedRows: Int, syncedCols: Int, mismatched: Bool, bytesWritten: Int) {
         guard WakeupControl.isEnabled(.instrumentationEnabled) else { return }
         recordMutation { _ in
             totals.syncCallCount += 1
@@ -152,6 +177,11 @@ final class RenderPipelineProfiler {
                 totals.mismatchedSyncCount += 1
             }
             totals.maxFrameCells = max(totals.maxFrameCells, syncedRows * syncedCols)
+            if var state = liveViews[viewID] {
+                state.syncCallCount += 1
+                state.syncBytes += Int64(bytesWritten)
+                liveViews[viewID] = state
+            }
             _ = rows
             _ = cols
         }
@@ -303,6 +333,11 @@ final class RenderPipelineProfiler {
                 let tab = liveView.tabID ?? "nil"
                 let session = liveView.sessionID ?? "nil"
                 return "view=\(liveView.viewID) tab=\(tab) session=\(session) mode=\(liveView.mode) reasons=\(liveView.reasons)"
+                    + " polls=\(liveView.pollCount)"
+                    + " changed=\(liveView.changedPollCount)"
+                    + " draws=\(liveView.drawCount)"
+                    + " syncCalls=\(liveView.syncCallCount)"
+                    + String(format: " sync=%.1fMiB", Double(liveView.syncBytes) / 1_048_576)
             }.joined(separator: " | ")
             Log.info("Render live views (30s): \(detail)")
         }
@@ -316,7 +351,12 @@ final class RenderPipelineProfiler {
                     tabID: state.tabID,
                     sessionID: state.sessionID,
                     mode: state.mode,
-                    reasons: state.reasons
+                    reasons: state.reasons,
+                    pollCount: state.pollCount,
+                    changedPollCount: state.changedPollCount,
+                    drawCount: state.drawCount,
+                    syncCallCount: state.syncCallCount,
+                    syncBytes: state.syncBytes
                 )
             }
             .sorted { lhs, rhs in lhs.viewID < rhs.viewID }

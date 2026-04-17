@@ -49,7 +49,11 @@ final class RustTermBridge {
     ///   - grid: Pointer to a GridSnapshot obtained from `chau7_terminal_get_grid()`
     /// - Returns: `(rows, cols)` actually synced, or `nil` if the grid should trigger a resize
     @discardableResult
-    func syncToTripleBuffer(_ buffer: TripleBufferedTerminal, grid: UnsafeMutablePointer<RustGridSnapshot>) -> (rows: Int, cols: Int)? {
+    func syncToTripleBuffer(
+        _ buffer: TripleBufferedTerminal,
+        grid: UnsafeMutablePointer<RustGridSnapshot>,
+        viewID: UInt64
+    ) -> (rows: Int, cols: Int)? {
         let startedAt = CFAbsoluteTimeGetCurrent()
         let snapshot = grid.pointee
         guard let cells = snapshot.cells else { return nil }
@@ -78,6 +82,7 @@ final class RustTermBridge {
         let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
         let bytesWritten = syncRows * syncCols * MemoryLayout<TerminalCell>.stride
         RenderPipelineProfiler.shared.recordSync(
+            viewID: viewID,
             rows: gridRows,
             cols: gridCols,
             syncedRows: syncRows,
