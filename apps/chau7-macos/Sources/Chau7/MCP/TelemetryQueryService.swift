@@ -23,6 +23,10 @@ final class TelemetryQueryService {
     /// Simple per-method rate limiter: reject calls within 500ms of the previous
     /// invocation for the same method to prevent MCP poll storms.
     private var lastCallTimes: [String: CFAbsoluteTime] = [:]
+    /// Cache for activeTranscriptFallback PTY log reads, keyed by (tabID, lines).
+    /// Each entry expires after 5 seconds to avoid re-reading on rapid MCP polls.
+    private var ptyLogCache: [String: (turns: [TelemetryTurn], cachedAt: CFAbsoluteTime)] = [:]
+    private let ptyCacheTTL: CFAbsoluteTime = 5.0
     private let rateLock = NSLock()
     private let rateLimitInterval: CFAbsoluteTime = 0.5
 
@@ -296,15 +300,24 @@ final class TelemetryQueryService {
         }
 
         guard let tabID = run.tabID else { return [] }
+
+        // Check the PTY log cache to avoid redundant reads from MCP polling.
+        let cacheKey = "\(tabID):80"
+        let now = CFAbsoluteTimeGetCurrent()
+        if let cached = ptyLogCache[cacheKey], now - cached.cachedAt < ptyCacheTTL {
+            return cached.turns
+        }
+
         let response = terminalControl.tabOutput(tabID: tabID, lines: 80, source: "pty_log")
         guard let data = response.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let output = (json["output"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !output.isEmpty else {
+            ptyLogCache[cacheKey] = (turns: [], cachedAt: now)
             return []
         }
 
-        return [
+        let turns = [
             TelemetryTurn(
                 id: "\(run.id)-live-pty",
                 runID: run.id,
@@ -314,5 +327,7 @@ final class TelemetryQueryService {
                 timestamp: Date()
             )
         ]
+        ptyLogCache[cacheKey] = (turns: turns, cachedAt: now)
+        return turns
     }
 }
