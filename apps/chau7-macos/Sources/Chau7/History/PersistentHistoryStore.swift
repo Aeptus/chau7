@@ -31,6 +31,8 @@ final class PersistentHistoryStore {
     /// In-memory count avoids SELECT COUNT(*) on every insert.
     /// Seeded once on startup; incremented on insert, decremented on trim.
     private var cachedCount: Int?
+    /// When true, insertSync skips trimIfNeeded (used during bulk import).
+    private var suppressTrim = false
 
     /// Session ID for this app launch
     let sessionID: String = UUID().uuidString
@@ -189,7 +191,9 @@ final class PersistentHistoryStore {
             cachedCount = (cachedCount ?? 0) + 1
         }
 
-        trimIfNeeded()
+        if !suppressTrim {
+            trimIfNeeded()
+        }
     }
 
     // MARK: - Query
@@ -427,11 +431,16 @@ final class PersistentHistoryStore {
             Log.error("PersistentHistoryStore: failed to decode import JSON: \(error)")
             return 0
         }
+        execute("BEGIN")
+        suppressTrim = true
         var count = 0
         for record in records {
             insertSync(record)
             count += 1
         }
+        suppressTrim = false
+        execute("COMMIT")
+        trimIfNeeded()
         Log.info("PersistentHistoryStore: imported \(count) records")
         return count
     }
