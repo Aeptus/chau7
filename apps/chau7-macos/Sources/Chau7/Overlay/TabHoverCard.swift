@@ -526,7 +526,7 @@ private struct TabHoverCardContent: View {
         let tabID = tab.id.uuidString
         // Try active run first, fall back to most recent completed run for this tab
         let run: TelemetryRun? = TelemetryRecorder.shared.activeRunForTab(tabID)
-            ?? TelemetryStore.shared.listRuns(filter: TelemetryRunFilter(limit: 1)).first(where: { $0.tabID == tabID })
+            ?? TelemetryStore.shared.latestRunForTab(tabID)
         if let run {
             VStack(alignment: .leading, spacing: 4) {
                 // Provider + model
