@@ -17,6 +17,11 @@ final class TelemetryRecorder {
     private var inProgressRuns: [String: TelemetryRun] = [:]
     private let lock = NSLock()
     private let repairQueue = DispatchQueue(label: "com.chau7.telemetry.repair", qos: .utility)
+    /// Coalesces updateRunLiveMetrics writes so they flush at most once per 2 seconds.
+    private var pendingMetricsFlush: DispatchWorkItem?
+    private var pendingMetricsRuns: [String: TelemetryRun] = [:]
+    private let metricsLock = NSLock()
+    private let metricsFlushQueue = DispatchQueue(label: "com.chau7.telemetry.metrics-flush", qos: .utility)
 
     private init() {
         self.providers = [
@@ -199,6 +204,10 @@ final class TelemetryRecorder {
             }
         }
 
+        // Flush any pending live-metrics writes before finalizing so the final run
+        // state supersedes any coalesced intermediate updates.
+        flushPendingMetrics()
+
         // Atomic: UPDATE the run row + INSERT turns + INSERT tool calls in one transaction.
         // This avoids the INSERT OR REPLACE cascade-delete problem.
         store.finalizeRun(run, turns: turns, toolCalls: toolCalls)
@@ -347,7 +356,16 @@ final class TelemetryRecorder {
         inProgressRuns[runID] = run
         lock.unlock()
 
-        store.updateRunLiveMetrics(run)
+        // Coalesce SQLite writes: buffer the latest metrics and flush after 2 seconds of quiet.
+        metricsLock.lock()
+        pendingMetricsRuns[runID] = run
+        pendingMetricsFlush?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.flushPendingMetrics()
+        }
+        pendingMetricsFlush = work
+        metricsLock.unlock()
+        metricsFlushQueue.asyncAfter(deadline: .now() + 2.0, execute: work)
         publishLiveRun(run)
         Chau7ObservabilityService.shared.recordEvent(
             type: "telemetry_run_updated",
@@ -362,6 +380,17 @@ final class TelemetryRecorder {
                 "provider": run.provider
             ]
         )
+    }
+
+    /// Flush all buffered live-metrics updates to SQLite in one batch.
+    private func flushPendingMetrics() {
+        metricsLock.lock()
+        let runsToFlush = pendingMetricsRuns
+        pendingMetricsRuns.removeAll()
+        metricsLock.unlock()
+        for (_, run) in runsToFlush {
+            store.updateRunLiveMetrics(run)
+        }
     }
 
     // MARK: - PTY Log Reading
