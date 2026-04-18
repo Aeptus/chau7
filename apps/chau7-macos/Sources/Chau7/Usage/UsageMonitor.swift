@@ -77,6 +77,8 @@ final class UsageMonitor {
     /// In-memory cache of the last snapshot per provider to avoid re-reading
     /// the entire JSONL file on every appendSnapshotIfNeeded call.
     @ObservationIgnored private var lastSnapshotByProvider: [String: ProviderQuotaSnapshot] = [:]
+    /// Avoids redundant file I/O from ensureClaudeStatusLineInstalled on every refresh cycle.
+    @ObservationIgnored private var claudeStatusLineInstalled = false
 
     private(set) var lastRefreshAt: Date?
     private(set) var lastErrorMessage: String?
@@ -344,6 +346,7 @@ final class UsageMonitor {
     }
 
     private func ensureClaudeStatusLineInstalled() {
+        if claudeStatusLineInstalled { return }
         let helperPath = RuntimeIsolation.pathInHome(".chau7/bin/\(ClaudeCodeStatusLineConfiguration.helperName)")
         let settingsPath = RuntimeIsolation.pathInHome(".claude/settings.json")
         let settingsURL = URL(fileURLWithPath: settingsPath)
@@ -384,6 +387,7 @@ final class UsageMonitor {
                 ])
             }
             try updated.write(to: settingsURL, options: .atomic)
+            claudeStatusLineInstalled = true
         } catch {
             DispatchQueue.main.async {
                 self.lastErrorMessage = "Failed to install Claude statusLine: \(error.localizedDescription)"
