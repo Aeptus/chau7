@@ -333,7 +333,7 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(deferredSession.lastAISessionId, "deferred-session")
     }
 
-    func testSelectingDeferredTabAwaitsVisibleFrameUntilRendererAttaches() throws {
+    func testSelectingDeferredTabDoesNotArmVisibleFrameHandoffBeforeRendererAttaches() throws {
         let selectedTabID = UUID()
         let selectedPaneID = UUID()
         let deferredTabID = UUID()
@@ -365,8 +365,8 @@ final class OverlayTabsModelTests: XCTestCase {
 
         let deferredSession = try XCTUnwrap(restoredModel.tabs.first(where: { $0.id == deferredTabID })?.session)
         XCTAssertEqual(restoredModel.selectedTabID, deferredTabID)
-        XCTAssertTrue(deferredSession.awaitingVisibleFrameReady)
-        XCTAssertEqual(restoredModel.selectedSurfacePresentation.phase, .awaitingLiveFrame)
+        XCTAssertFalse(deferredSession.awaitingVisibleFrameReady)
+        XCTAssertEqual(restoredModel.selectedSurfacePresentation.phase, .live)
     }
 
     func testSelectingDeferredTabRevalidatesQueuedResumePrefillBeforeDelivery() throws {

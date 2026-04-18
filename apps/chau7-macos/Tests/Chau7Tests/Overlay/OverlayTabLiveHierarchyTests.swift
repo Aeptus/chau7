@@ -127,6 +127,25 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         )
     }
 
+    func testSelectedRestoreBootstrapPhaseDoesNotRefreshSelectedTabOutsideStartup() {
+        model.newTab(selectNewTab: false)
+        let targetID = model.tabs[1].id
+
+        model.selectTab(id: targetID)
+
+        let selectedSession = try XCTUnwrap(model.tabs[1].session)
+        XCTAssertFalse(selectedSession.awaitingVisibleFrameReady)
+
+        selectedSession.restoreBootstrapPhase = .replaying
+        drainMainQueue()
+
+        XCTAssertFalse(
+            selectedSession.awaitingVisibleFrameReady,
+            "Runtime restore bootstrap should not re-enter selected-tab reveal while the selected tab is visible"
+        )
+        XCTAssertEqual(model.selectedSurfacePresentation.phase, .live)
+    }
+
     func testVisibleFrameReadyDiscardsRestorePreviewAndRecordsStartupLiveFrame() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),

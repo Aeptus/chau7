@@ -776,7 +776,8 @@ extension OverlayTabsModel {
         // Queue resume prefills directly on the session instead of retrying on
         // timers. This keeps restore mutation bound to the session lifecycle
         // and avoids post-reveal retry storms.
-        useResumeRetryScheduler: Bool = false
+        useResumeRetryScheduler: Bool = false,
+        executeSynchronouslyWhenPossible: Bool = false
     ) {
         let targetTabID = tab.id
         let terminalSessions = tab.splitController.terminalSessions
@@ -870,6 +871,12 @@ extension OverlayTabsModel {
                     }
                     self.updateSuspensionState()
                     guard targetTabID == self.selectedTabID else { return }
+                    guard StartupRestoreCoordinator.shared.isActive else {
+                        Log.trace(
+                            "restoreBootstrap: skipping runtime selected-tab reveal for \(targetTabID)"
+                        )
+                        return
+                    }
                     if let selectedTab = self.selectedTab,
                        let selectedSession = selectedTab.displaySession ?? selectedTab.session,
                        selectedSession.existingRustTerminalView != nil,
@@ -927,7 +934,7 @@ extension OverlayTabsModel {
             defaultDelay: Self.restoreDelaySeconds
         )
         let restoreScheduledAt = CFAbsoluteTimeGetCurrent()
-        DispatchQueue.main.asyncAfter(deadline: .now() + scheduledDelay) { [weak self] in
+        let executeRestore = { [weak self] in
             guard let self else { return }
             let restoreStartedAt = CFAbsoluteTimeGetCurrent()
             let waitedMs = Int((restoreStartedAt - restoreScheduledAt) * 1000)
@@ -1178,6 +1185,11 @@ extension OverlayTabsModel {
                 updateSuspensionState()
                 notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
             }
+        }
+        if executeSynchronouslyWhenPossible, scheduledDelay <= 0 {
+            executeRestore()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + scheduledDelay, execute: executeRestore)
         }
     }
 

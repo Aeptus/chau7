@@ -594,7 +594,6 @@ final class OverlayTabsModel {
     var selectedTabID: UUID {
         didSet {
             if activeDashboardGroupID != nil { activeDashboardGroupID = nil }
-            startDeferredRestoreForSelectedTabIfNeeded(reason: "selection_changed")
             onSelectedTabIDChanged?()
         }
     }
@@ -1239,7 +1238,10 @@ final class OverlayTabsModel {
         return true
     }
 
-    private func startDeferredRestoreForSelectedTabIfNeeded(reason: String) {
+    private func restoreSelectedDeferredTabIfNeeded(
+        reason: String,
+        executeSynchronouslyWhenPossible: Bool = false
+    ) {
         guard let deferredState = deferredRestoreStatesByTabID.removeValue(forKey: selectedTabID) else { return }
         let previousHadPendingWork = hasPendingStartupRestoreWork
         deferredRestoreTabOrder.removeAll { $0 == selectedTabID }
@@ -1251,7 +1253,8 @@ final class OverlayTabsModel {
             state: deferredState,
             scheduledDelayOverride: 0,
             replayScrollbackThroughShell: false,
-            useResumeRetryScheduler: false
+            useResumeRetryScheduler: false,
+            executeSynchronouslyWhenPossible: executeSynchronouslyWhenPossible
         )
         notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
     }
@@ -2241,9 +2244,13 @@ final class OverlayTabsModel {
         }
 
         // Reconcile render ownership immediately so the previously selected tab
-        // drops out of the live path before the new selection is revealed.
+        // drops out of the live path before the new selection becomes visible.
         updateSuspensionState()
-        requestSelectedTabAuthoritativeReveal(reason: "select_tab")
+        restoreSelectedDeferredTabIfNeeded(
+            reason: "selection_changed",
+            executeSynchronouslyWhenPossible: true
+        )
+        _ = refreshSelectedTabInPlaceIfPossible(reason: "select_tab")
         focusSelected()
         updateSnippetContextForSelection()
         if isSearchVisible {
