@@ -2240,6 +2240,9 @@ final class OverlayTabsModel {
             logVisualState(reason: "selectTab: unsuspended selected tab")
         }
 
+        // Reconcile render ownership immediately so the previously selected tab
+        // drops out of the live path before the new selection is revealed.
+        updateSuspensionState()
         requestSelectedTabAuthoritativeReveal(reason: "select_tab")
         focusSelected()
         updateSnippetContextForSelection()
@@ -2252,7 +2255,6 @@ final class OverlayTabsModel {
         // initial visual switch which should be as fast as possible.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            updateSuspensionState()
             MainActor.assumeIsolated {
                 self.updateCurrentCandidate(from: ProxyIPCServer.shared.pendingCandidates)
                 self.updateCurrentTask(from: ProxyIPCServer.shared.activeTasks)

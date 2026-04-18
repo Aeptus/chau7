@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 import Chau7Core
 
 @testable import Chau7
@@ -55,5 +56,23 @@ final class TerminalViewRepresentableTests: XCTestCase {
         XCTAssertFalse(coordinator.consumeRenderPhaseTransition(to: .hidden).changed)
         XCTAssertTrue(coordinator.consumeRenderPhaseTransition(to: .warm).changed)
         XCTAssertTrue(coordinator.consumeRenderPhaseTransition(to: .hidden).changed)
+    }
+
+    func testDismantleDemotesRetainedTerminalViewOutOfLivePolling() {
+        let view = RustTerminalView(frame: .zero)
+        let container = UnifiedTerminalContainerView(rustView: view)
+
+        view.applyRenderPhase(.active, isInteractive: true, reason: "test")
+        view.isHidden = false
+
+        TerminalViewRepresentable.dismantleNSView(
+            container,
+            coordinator: TerminalViewRepresentable.Coordinator()
+        )
+
+        XCTAssertEqual(view.currentRenderPhase, .hidden)
+        XCTAssertFalse(view.notifyUpdateChanges)
+        XCTAssertTrue(view.isHidden)
+        XCTAssertEqual(view.currentRenderLoopMode, "background_drain")
     }
 }

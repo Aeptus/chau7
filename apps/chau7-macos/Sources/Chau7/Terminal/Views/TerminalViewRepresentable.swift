@@ -559,6 +559,20 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         nsView.applyScrollbackLines(settings.scrollbackLines)
     }
 
+    static func dismantleNSView(_ container: UnifiedTerminalContainerView, coordinator _: Coordinator) {
+        guard let nsView = container.rustTerminalView else { return }
+
+        // When SwiftUI removes a terminal from the live hierarchy, the session
+        // still retains the view for later reuse. Force it onto the hidden
+        // background-drain path now so old selected tabs do not keep spinning
+        // display-link/timer work after a switch.
+        nsView.applyRenderPhase(.hidden, isInteractive: false, reason: "dismantleNSView")
+        nsView.isHidden = true
+        nsView.updatePollingMode(reason: "dismantleNSView")
+        container.rustMetalCoordinator?.pauseBlinkTimer()
+        container.rustMetalCoordinator?.metalView.isHidden = true
+    }
+
     private func terminalFont() -> NSFont {
         return TerminalFont.resolveFont(family: settings.fontFamily, size: model.fontSize)
     }
