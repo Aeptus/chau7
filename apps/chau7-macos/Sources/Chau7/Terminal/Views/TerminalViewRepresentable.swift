@@ -245,6 +245,42 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         Coordinator()
     }
 
+    @discardableResult
+    private static func startTerminalIfReady(
+        model: TerminalSessionModel,
+        container: UnifiedTerminalContainerView,
+        rustView: RustTerminalView,
+        useMetalRenderer: Bool,
+        reason: String
+    ) -> Bool {
+        container.layoutSubtreeIfNeeded()
+        let shouldStart = TerminalStartupPolicy.shouldStartTerminal(
+            isStarted: rustView.isTerminalStarted,
+            containerWidth: container.bounds.width,
+            containerHeight: container.bounds.height,
+            rustViewWidth: rustView.bounds.width,
+            rustViewHeight: rustView.bounds.height
+        )
+        guard shouldStart else {
+            if !rustView.isTerminalStarted {
+                Log.trace(
+                    "TerminalViewRepresentable: startTerminal deferred [\(reason)] container=\(container.bounds.debugDescription) rust=\(rustView.bounds.debugDescription)"
+                )
+            }
+            return false
+        }
+
+        let tip = PowerUserTips.randomFormattedTip()
+        let headerBox = terminalHeaderBox(cols: rustView.renderCols, message: tip)
+        rustView.startTerminal(initialOutput: headerBox)
+        model.attachRustTerminal(rustView)
+        if useMetalRenderer {
+            container.enableMetalRendering()
+        }
+        Log.info("TerminalViewRepresentable: started terminal [\(reason)]")
+        return true
+    }
+
     private func liveEligibilitySummary() -> String {
         var reasons: [String] = []
         if isInteractive {
@@ -466,21 +502,15 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let container = UnifiedTerminalContainerView(rustView: view)
         model.attachTerminalContainer(container)
         let useMetalRenderer = settings.useMetalRenderer
-        container.onFirstRustLayout = { [weak model, weak view, weak container] rustView in
-            guard let model, let view else { return }
-
-            let tip = PowerUserTips.randomFormattedTip()
-            let headerBox = terminalHeaderBox(cols: rustView.renderCols, message: tip)
-
-            // Start the Rust terminal now that we have proper dimensions
-            rustView.startTerminal(initialOutput: headerBox)
-
-            model.attachRustTerminal(view)
-
-            // Enable Metal GPU rendering if the setting is on
-            if useMetalRenderer {
-                container?.enableMetalRendering()
-            }
+        container.onFirstRustLayout = { [weak model, weak container] rustView in
+            guard let model, let container else { return }
+            _ = Self.startTerminalIfReady(
+                model: model,
+                container: container,
+                rustView: rustView,
+                useMetalRenderer: useMetalRenderer,
+                reason: "first_layout"
+            )
         }
         return container
     }
@@ -494,6 +524,13 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let keepsVisibleSurface = renderPhase.keepsVisibleSurface
         let allowsLivePresentation = renderPhase.allowsLivePresentation
         nsView.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "updateNSView")
+        _ = Self.startTerminalIfReady(
+            model: model,
+            container: container,
+            rustView: nsView,
+            useMetalRenderer: settings.useMetalRenderer,
+            reason: "update_ns_view"
+        )
         let shouldForceAuthoritativeReveal = TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
             previousPhase: transition.previous,
             nextPhase: renderPhase
