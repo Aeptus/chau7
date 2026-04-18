@@ -28,6 +28,9 @@ final class PersistentHistoryStore {
 
     private var db: OpaquePointer?
     private let dbQueue = DispatchQueue(label: "com.chau7.historyDB", qos: .utility)
+    /// In-memory count avoids SELECT COUNT(*) on every insert.
+    /// Seeded once on startup; incremented on insert, decremented on trim.
+    private var cachedCount: Int?
 
     /// Session ID for this app launch
     let sessionID: String = UUID().uuidString
@@ -38,6 +41,7 @@ final class PersistentHistoryStore {
     private init() {
         openDatabase()
         createTables()
+        cachedCount = totalCount()
         Log.info("PersistentHistoryStore initialized: \(dbPath)")
     }
 
@@ -52,6 +56,7 @@ final class PersistentHistoryStore {
         execute("PRAGMA journal_mode=WAL")
         execute("PRAGMA synchronous=NORMAL")
         createTables()
+        cachedCount = totalCount()
     }
 
     deinit {
@@ -143,6 +148,7 @@ final class PersistentHistoryStore {
             if sqlite3_step(stmt) != SQLITE_DONE {
                 Log.error("PersistentHistoryStore: insert failed: \(String(cString: sqlite3_errmsg(db)))")
             } else {
+                cachedCount = (cachedCount ?? 0) + 1
                 Log.trace("PersistentHistoryStore: inserted '\(record.command)'")
             }
 
@@ -179,6 +185,8 @@ final class PersistentHistoryStore {
 
         if sqlite3_step(stmt) != SQLITE_DONE {
             Log.error("PersistentHistoryStore: insert failed: \(String(cString: sqlite3_errmsg(db)))")
+        } else {
+            cachedCount = (cachedCount ?? 0) + 1
         }
 
         trimIfNeeded()
@@ -420,6 +428,7 @@ final class PersistentHistoryStore {
         dbQueue.sync { [self] in
             execute("DELETE FROM history")
             execute("VACUUM")
+            cachedCount = 0
         }
         Log.info("PersistentHistoryStore: cleared all history")
     }
@@ -446,7 +455,7 @@ final class PersistentHistoryStore {
 
     private func trimIfNeeded() {
         guard let db = db else { return }
-        let count = totalCount()
+        let count = cachedCount ?? totalCount()
         if count > maxRecords {
             let excess = count - maxRecords
             let sql = "DELETE FROM history WHERE id IN (SELECT id FROM history ORDER BY timestamp ASC LIMIT ?)"
@@ -456,6 +465,8 @@ final class PersistentHistoryStore {
             sqlite3_bind_int(stmt, 1, Int32(excess))
             if sqlite3_step(stmt) != SQLITE_DONE {
                 Log.error("PersistentHistoryStore: trim failed: \(String(cString: sqlite3_errmsg(db)))")
+            } else {
+                cachedCount = (cachedCount ?? count) - excess
             }
             Log.info("PersistentHistoryStore: trimmed \(excess) oldest records")
         }
