@@ -586,9 +586,11 @@ final class TelemetryStore {
     private func _backfillCompletedRunLatencySamples() -> ProviderLatencyBackfillReport {
         guard let db else { return ProviderLatencyBackfillReport() }
 
-        // Only process completed runs that have NO existing latency samples.
-        // Runs that were already backfilled are skipped entirely — their samples
-        // are durable (upsert on sample_id) and don't need recomputing.
+        // Only process completed runs that:
+        // 1. Have no existing latency samples (already backfilled = skip)
+        // 2. Have an authoritative transcript source (not null, not empty,
+        //    not pty_log/terminal_buffer — these can never produce samples,
+        //    so including them causes 541 N+1 queries every launch for nothing)
         let sql = """
         SELECT r.*
         FROM runs r
@@ -599,6 +601,9 @@ final class TelemetryStore {
              OR lower(r.provider) LIKE '%anthropic%'
              OR lower(r.provider) LIKE '%openai%'
           )
+          AND r.raw_transcript_ref IS NOT NULL
+          AND TRIM(r.raw_transcript_ref) != ''
+          AND r.raw_transcript_ref NOT IN ('pty_log', 'terminal_buffer')
           AND NOT EXISTS (
                 SELECT 1 FROM provider_latency_samples pls
                 WHERE pls.run_id = r.run_id
