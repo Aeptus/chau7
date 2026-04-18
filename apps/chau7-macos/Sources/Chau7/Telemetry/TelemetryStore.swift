@@ -336,93 +336,123 @@ final class TelemetryStore {
         }
     }
 
+    /// Current migration target. Bump this when adding new migrations.
+    private static let currentSchemaVersion = 2
+
+    private func schemaVersion() -> Int {
+        guard let db else { return 0 }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT MAX(version) FROM schema_version", -1, &stmt, nil) == SQLITE_OK else { return 0 }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return 0 }
+        return Int(sqlite3_column_int(stmt, 0))
+    }
+
+    private func setSchemaVersion(_ version: Int) {
+        guard let db else { return }
+        let sql = "INSERT OR IGNORE INTO schema_version (version) VALUES (?)"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int(stmt, 1, Int32(version))
+        sqlite3_step(stmt)
+    }
+
     private func applyMigrations() {
         guard let db else { return }
-        ensureColumn(table: "runs", name: "total_cached_input_tokens", definition: "INTEGER")
-        ensureColumn(table: "runs", name: "total_cache_creation_input_tokens", definition: "INTEGER")
-        ensureColumn(table: "runs", name: "total_cache_read_input_tokens", definition: "INTEGER")
-        ensureColumn(table: "runs", name: "total_reasoning_output_tokens", definition: "INTEGER")
-        ensureColumn(table: "runs", name: "token_usage_source", definition: "TEXT")
-        ensureColumn(table: "runs", name: "token_usage_state", definition: "TEXT")
-        ensureColumn(table: "runs", name: "cost_source", definition: "TEXT")
-        ensureColumn(table: "runs", name: "cost_state", definition: "TEXT")
+        let version = schemaVersion()
+        guard version < Self.currentSchemaVersion else { return }
 
-        ensureColumn(table: "turns", name: "cache_creation_input_tokens", definition: "INTEGER")
-        ensureColumn(table: "turns", name: "cache_read_input_tokens", definition: "INTEGER")
-        ensureColumn(table: "turns", name: "cached_input_tokens", definition: "INTEGER")
-        ensureColumn(table: "turns", name: "reasoning_output_tokens", definition: "INTEGER")
-        ensureColumn(table: "provider_latency_samples", name: "round_index", definition: "INTEGER")
+        // Version 1 → 2: add columns, backfill state fields, sanitize bad data
+        if version < 2 {
+            ensureColumn(table: "runs", name: "total_cached_input_tokens", definition: "INTEGER")
+            ensureColumn(table: "runs", name: "total_cache_creation_input_tokens", definition: "INTEGER")
+            ensureColumn(table: "runs", name: "total_cache_read_input_tokens", definition: "INTEGER")
+            ensureColumn(table: "runs", name: "total_reasoning_output_tokens", definition: "INTEGER")
+            ensureColumn(table: "runs", name: "token_usage_source", definition: "TEXT")
+            ensureColumn(table: "runs", name: "token_usage_state", definition: "TEXT")
+            ensureColumn(table: "runs", name: "cost_source", definition: "TEXT")
+            ensureColumn(table: "runs", name: "cost_state", definition: "TEXT")
 
-        sqlite3_exec(
-            db,
-            """
-            UPDATE runs
-            SET token_usage_state = COALESCE(token_usage_state,
-                CASE
-                    WHEN total_input_tokens IS NULL
-                         AND total_cache_creation_input_tokens IS NULL
-                         AND total_cache_read_input_tokens IS NULL
-                         AND total_cached_input_tokens IS NULL
-                         AND total_output_tokens IS NULL
-                         AND total_reasoning_output_tokens IS NULL
-                    THEN 'missing'
-                    ELSE 'complete'
-                END
-            ),
-            cost_state = COALESCE(cost_state,
-                CASE
-                    WHEN cost_usd IS NULL THEN 'missing'
-                    ELSE 'complete'
-                END
-            ),
-            cost_source = COALESCE(cost_source,
-                CASE
-                    WHEN cost_usd IS NULL THEN 'unavailable'
-                    ELSE 'observed'
-                END
+            ensureColumn(table: "turns", name: "cache_creation_input_tokens", definition: "INTEGER")
+            ensureColumn(table: "turns", name: "cache_read_input_tokens", definition: "INTEGER")
+            ensureColumn(table: "turns", name: "cached_input_tokens", definition: "INTEGER")
+            ensureColumn(table: "turns", name: "reasoning_output_tokens", definition: "INTEGER")
+            ensureColumn(table: "provider_latency_samples", name: "round_index", definition: "INTEGER")
+
+            sqlite3_exec(
+                db,
+                """
+                UPDATE runs
+                SET token_usage_state = COALESCE(token_usage_state,
+                    CASE
+                        WHEN total_input_tokens IS NULL
+                             AND total_cache_creation_input_tokens IS NULL
+                             AND total_cache_read_input_tokens IS NULL
+                             AND total_cached_input_tokens IS NULL
+                             AND total_output_tokens IS NULL
+                             AND total_reasoning_output_tokens IS NULL
+                        THEN 'missing'
+                        ELSE 'complete'
+                    END
+                ),
+                cost_state = COALESCE(cost_state,
+                    CASE
+                        WHEN cost_usd IS NULL THEN 'missing'
+                        ELSE 'complete'
+                    END
+                ),
+                cost_source = COALESCE(cost_source,
+                    CASE
+                        WHEN cost_usd IS NULL THEN 'unavailable'
+                        ELSE 'observed'
+                    END
+                )
+                """,
+                nil,
+                nil,
+                nil
             )
-            """,
-            nil,
-            nil,
-            nil
-        )
 
-        sqlite3_exec(
-            db,
-            """
-            UPDATE runs
-            SET total_input_tokens = NULL,
-                total_cache_creation_input_tokens = NULL,
-                total_cache_read_input_tokens = NULL,
-                total_cached_input_tokens = NULL,
-                total_output_tokens = NULL,
-                total_reasoning_output_tokens = NULL,
-                cost_usd = NULL,
-                token_usage_source = NULL,
-                token_usage_state = 'invalid',
-                cost_source = 'unavailable',
-                cost_state = 'missing',
-                error_message = COALESCE(error_message, 'invalidated historical telemetry metrics that exceeded sanity thresholds')
-            WHERE COALESCE(total_input_tokens, 0) > 100000000
-               OR COALESCE(total_cache_creation_input_tokens, 0) > 100000000
-               OR COALESCE(total_cache_read_input_tokens, 0) > 100000000
-               OR COALESCE(total_cached_input_tokens, 0) > 100000000
-               OR COALESCE(total_output_tokens, 0) > 100000000
-               OR COALESCE(total_reasoning_output_tokens, 0) > 100000000
-               OR (
-                    COALESCE(total_input_tokens, 0) +
-                    COALESCE(
-                        total_cached_input_tokens,
-                        COALESCE(total_cache_creation_input_tokens, 0) + COALESCE(total_cache_read_input_tokens, 0)
-                    ) +
-                    COALESCE(total_output_tokens, 0) +
-                    COALESCE(total_reasoning_output_tokens, 0)
-                  ) > 150000000
-            """,
-            nil,
-            nil,
-            nil
-        )
+            sqlite3_exec(
+                db,
+                """
+                UPDATE runs
+                SET total_input_tokens = NULL,
+                    total_cache_creation_input_tokens = NULL,
+                    total_cache_read_input_tokens = NULL,
+                    total_cached_input_tokens = NULL,
+                    total_output_tokens = NULL,
+                    total_reasoning_output_tokens = NULL,
+                    cost_usd = NULL,
+                    token_usage_source = NULL,
+                    token_usage_state = 'invalid',
+                    cost_source = 'unavailable',
+                    cost_state = 'missing',
+                    error_message = COALESCE(error_message, 'invalidated historical telemetry metrics that exceeded sanity thresholds')
+                WHERE COALESCE(total_input_tokens, 0) > 100000000
+                   OR COALESCE(total_cache_creation_input_tokens, 0) > 100000000
+                   OR COALESCE(total_cache_read_input_tokens, 0) > 100000000
+                   OR COALESCE(total_cached_input_tokens, 0) > 100000000
+                   OR COALESCE(total_output_tokens, 0) > 100000000
+                   OR COALESCE(total_reasoning_output_tokens, 0) > 100000000
+                   OR (
+                        COALESCE(total_input_tokens, 0) +
+                        COALESCE(
+                            total_cached_input_tokens,
+                            COALESCE(total_cache_creation_input_tokens, 0) + COALESCE(total_cache_read_input_tokens, 0)
+                        ) +
+                        COALESCE(total_output_tokens, 0) +
+                        COALESCE(total_reasoning_output_tokens, 0)
+                      ) > 150000000
+                """,
+                nil,
+                nil,
+                nil
+            )
+
+            setSchemaVersion(2)
+        }
     }
 
     private func ensureColumn(table: String, name: String, definition: String) {
@@ -446,12 +476,12 @@ final class TelemetryStore {
     private func backfillHistoricalMissingCosts() {
         guard let db else { return }
 
+        // Only scan runs that actually need cost repair. Runs with
+        // cost_state = 'complete' are already done and are skipped.
         let sql = """
         SELECT * FROM runs
-        WHERE (cost_usd IS NULL
-               OR COALESCE(cost_state, 'missing') = 'missing'
-               OR COALESCE(cost_source, 'unavailable') = 'unavailable')
-          AND COALESCE(token_usage_state, 'missing') != 'invalid'
+        WHERE cost_state IS NOT 'complete'
+          AND token_usage_state IS NOT 'invalid'
         """
 
         var stmt: OpaquePointer?
@@ -517,26 +547,34 @@ final class TelemetryStore {
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(stmt) }
 
-        var insertedCount = 0
+        var runs: [TelemetryRun] = []
         var scannedRuns = 0
         let scanStartedAt = CFAbsoluteTimeGetCurrent()
         while sqlite3_step(stmt) == SQLITE_ROW {
             scannedRuns += 1
             guard let run = parseRun(stmt) else { continue }
-            _insertUsageEvidence(UsageEvidence.runSummary(run))
-            insertedCount += 1
+            runs.append(run)
         }
+
+        guard !runs.isEmpty else {
+            logStartupBackfillScan(name: "run_usage_evidence", scannedRows: scannedRuns, touchedRows: 0, startedAt: scanStartedAt)
+            return
+        }
+
+        sqlite3_exec(db, "BEGIN", nil, nil, nil)
+        for run in runs {
+            _insertUsageEvidence(UsageEvidence.runSummary(run))
+        }
+        sqlite3_exec(db, "COMMIT", nil, nil, nil)
 
         logStartupBackfillScan(
             name: "run_usage_evidence",
             scannedRows: scannedRuns,
-            touchedRows: insertedCount,
+            touchedRows: runs.count,
             startedAt: scanStartedAt
         )
 
-        if insertedCount > 0 {
-            Log.info("TelemetryStore: backfilled usage evidence for \(insertedCount) missing run(s)")
-        }
+        Log.info("TelemetryStore: backfilled usage evidence for \(runs.count) missing run(s)")
     }
 
     func backfillCompletedRunLatencySamples() -> ProviderLatencyBackfillReport {
@@ -1022,11 +1060,9 @@ final class TelemetryStore {
             turns: turns,
             sourceKind: sourceKind
         )
-        guard !samples.isEmpty else {
-            deleteLatencySamples(runID: run.id, metricKind: .firstResponse, sourceKind: sourceKind)
-            return
-        }
-        deleteLatencySamples(runID: run.id, metricKind: .firstResponse, sourceKind: sourceKind)
+        // _insertLatencySample uses ON CONFLICT DO UPDATE — upsert is idempotent,
+        // no need to delete first. The delete-then-insert pattern was causing the
+        // startup backfill to redo all work every launch.
         for sample in samples {
             _insertLatencySample(sample)
         }
@@ -1333,6 +1369,19 @@ final class TelemetryStore {
             clauses.append("started_at <= ?")
             values.append(Self.isoString(from: v))
         }
+        if filter.needsTranscriptRepair {
+            clauses.append("""
+                ended_at IS NOT NULL
+                AND session_id IS NOT NULL AND TRIM(session_id) != ''
+                AND (lower(provider) LIKE '%claude%' OR lower(provider) LIKE '%anthropic%'
+                     OR lower(provider) LIKE '%codex%' OR lower(provider) LIKE '%openai%')
+                AND (raw_transcript_ref IS NULL
+                     OR raw_transcript_ref IN ('pty_log', 'terminal_buffer')
+                     OR token_usage_state = 'missing'
+                     OR cost_state = 'missing'
+                     OR cost_source = 'unavailable')
+                """)
+        }
 
         var sql = "SELECT * FROM runs"
         if !clauses.isEmpty {
@@ -1352,9 +1401,10 @@ final class TelemetryStore {
             bindText(stmt, Int32(i + 1), val)
         }
 
+        let map = columnIndexMap(stmt)
         var runs: [TelemetryRun] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
-            if let run = parseRun(stmt) {
+            if let run = parseRun(stmt, map) {
                 runs.append(run)
             }
         }
@@ -1560,9 +1610,12 @@ final class TelemetryStore {
     func listSessions(repoPath: String? = nil) -> [[String: Any]] {
         queue.sync {
             guard let db else { return [] }
+            // Single-pass CTE using ROW_NUMBER to pick the latest run per session,
+            // avoiding correlated subqueries that fired once per session row.
             var sql = """
             WITH filtered_runs AS (
-                SELECT *
+                SELECT *,
+                       ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY started_at DESC, created_at DESC) AS rn
                 FROM runs
                 WHERE session_id IS NOT NULL
             """
@@ -1579,28 +1632,20 @@ final class TelemetryStore {
                        MAX(started_at) AS last_active
                 FROM filtered_runs
                 GROUP BY session_id
+            ),
+            latest_run AS (
+                SELECT session_id, provider, repo_path
+                FROM filtered_runs
+                WHERE rn = 1
             )
-            SELECT session_rollup.session_id,
-                   (
-                       SELECT provider
-                       FROM filtered_runs latest
-                       WHERE latest.session_id = session_rollup.session_id
-                         AND latest.provider IS NOT NULL
-                       ORDER BY latest.started_at DESC, latest.created_at DESC
-                       LIMIT 1
-                   ) AS provider,
-                   (
-                       SELECT repo_path
-                       FROM filtered_runs latest
-                       WHERE latest.session_id = session_rollup.session_id
-                         AND latest.repo_path IS NOT NULL
-                       ORDER BY latest.started_at DESC, latest.created_at DESC
-                       LIMIT 1
-                   ) AS repo_path,
-                   session_rollup.run_count,
-                   session_rollup.last_active
-            FROM session_rollup
-            ORDER BY session_rollup.last_active DESC
+            SELECT sr.session_id,
+                   lr.provider,
+                   lr.repo_path,
+                   sr.run_count,
+                   sr.last_active
+            FROM session_rollup sr
+            LEFT JOIN latest_run lr ON lr.session_id = sr.session_id
+            ORDER BY sr.last_active DESC
             """
 
             var stmt: OpaquePointer?
@@ -1945,43 +1990,47 @@ final class TelemetryStore {
     // MARK: - Row Parsing
 
     private func parseRun(_ stmt: OpaquePointer?) -> TelemetryRun? {
+        parseRun(stmt, columnIndexMap(stmt))
+    }
+
+    private func parseRun(_ stmt: OpaquePointer?, _ map: [String: Int32]) -> TelemetryRun? {
         guard let stmt else { return nil }
-        guard let runID = colByName(stmt, "run_id"),
-              let provider = colByName(stmt, "provider"),
-              let cwd = colByName(stmt, "cwd"),
-              let startedAtStr = colByName(stmt, "started_at"),
+        guard let runID = colByName(stmt, "run_id", map),
+              let provider = colByName(stmt, "provider", map),
+              let cwd = colByName(stmt, "cwd", map),
+              let startedAtStr = colByName(stmt, "started_at", map),
               let startedAt = Self.isoDate(from: startedAtStr)
         else { return nil }
 
         return TelemetryRun(
             id: runID,
-            sessionID: colByName(stmt, "session_id"),
-            tabID: colByName(stmt, "tab_id"),
+            sessionID: colByName(stmt, "session_id", map),
+            tabID: colByName(stmt, "tab_id", map),
             provider: provider,
-            model: colByName(stmt, "model"),
+            model: colByName(stmt, "model", map),
             cwd: cwd,
-            repoPath: colByName(stmt, "repo_path"),
+            repoPath: colByName(stmt, "repo_path", map),
             startedAt: startedAt,
-            endedAt: colByName(stmt, "ended_at").flatMap { Self.isoDate(from: $0) },
-            durationMs: intByName(stmt, "duration_ms"),
-            exitStatus: intByName(stmt, "exit_status"),
-            totalInputTokens: intByName(stmt, "total_input_tokens"),
-            totalCacheCreationInputTokens: intByName(stmt, "total_cache_creation_input_tokens"),
-            totalCacheReadInputTokens: intByName(stmt, "total_cache_read_input_tokens"),
-            totalCachedInputTokens: intByName(stmt, "total_cached_input_tokens"),
-            totalOutputTokens: intByName(stmt, "total_output_tokens"),
-            totalReasoningOutputTokens: intByName(stmt, "total_reasoning_output_tokens"),
-            costUSD: doubleByName(stmt, "cost_usd"),
-            tokenUsageSource: colByName(stmt, "token_usage_source").flatMap(TokenUsageSource.init(rawValue:)),
-            tokenUsageState: colByName(stmt, "token_usage_state").flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
-            costSource: colByName(stmt, "cost_source").flatMap(CostSource.init(rawValue:)),
-            costState: colByName(stmt, "cost_state").flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
-            turnCount: intByName(stmt, "turn_count") ?? 0,
-            tags: Self.decodeJSON(colByName(stmt, "tags")) ?? [],
-            metadata: Self.decodeJSON(colByName(stmt, "metadata")) ?? [:],
-            rawTranscriptRef: colByName(stmt, "raw_transcript_ref"),
-            parentRunID: colByName(stmt, "parent_run_id"),
-            errorMessage: colByName(stmt, "error_message")
+            endedAt: colByName(stmt, "ended_at", map).flatMap { Self.isoDate(from: $0) },
+            durationMs: intByName(stmt, "duration_ms", map),
+            exitStatus: intByName(stmt, "exit_status", map),
+            totalInputTokens: intByName(stmt, "total_input_tokens", map),
+            totalCacheCreationInputTokens: intByName(stmt, "total_cache_creation_input_tokens", map),
+            totalCacheReadInputTokens: intByName(stmt, "total_cache_read_input_tokens", map),
+            totalCachedInputTokens: intByName(stmt, "total_cached_input_tokens", map),
+            totalOutputTokens: intByName(stmt, "total_output_tokens", map),
+            totalReasoningOutputTokens: intByName(stmt, "total_reasoning_output_tokens", map),
+            costUSD: doubleByName(stmt, "cost_usd", map),
+            tokenUsageSource: colByName(stmt, "token_usage_source", map).flatMap(TokenUsageSource.init(rawValue:)),
+            tokenUsageState: colByName(stmt, "token_usage_state", map).flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
+            costSource: colByName(stmt, "cost_source", map).flatMap(CostSource.init(rawValue:)),
+            costState: colByName(stmt, "cost_state", map).flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
+            turnCount: intByName(stmt, "turn_count", map) ?? 0,
+            tags: Self.decodeJSON(colByName(stmt, "tags", map)) ?? [],
+            metadata: Self.decodeJSON(colByName(stmt, "metadata", map)) ?? [:],
+            rawTranscriptRef: colByName(stmt, "raw_transcript_ref", map),
+            parentRunID: colByName(stmt, "parent_run_id", map),
+            errorMessage: colByName(stmt, "error_message", map)
         )
     }
 
@@ -2119,16 +2168,25 @@ final class TelemetryStore {
         return String(cString: ptr)
     }
 
-    private func colByName(_ stmt: OpaquePointer?, _ name: String) -> String? {
-        guard let stmt else { return nil }
+    /// Builds a column-name → index map for a prepared statement.
+    /// Call once after prepare, then use the map for O(1) lookups per field.
+    private func columnIndexMap(_ stmt: OpaquePointer?) -> [String: Int32] {
+        guard let stmt else { return [:] }
         let count = sqlite3_column_count(stmt)
+        var map: [String: Int32] = [:]
+        map.reserveCapacity(Int(count))
         for i in 0 ..< count {
-            if let cn = sqlite3_column_name(stmt, i), String(cString: cn) == name {
-                guard let ptr = sqlite3_column_text(stmt, i) else { return nil }
-                return String(cString: ptr)
+            if let cn = sqlite3_column_name(stmt, i) {
+                map[String(cString: cn)] = i
             }
         }
-        return nil
+        return map
+    }
+
+    private func colByName(_ stmt: OpaquePointer?, _ name: String, _ map: [String: Int32]) -> String? {
+        guard let stmt, let i = map[name] else { return nil }
+        guard let ptr = sqlite3_column_text(stmt, i) else { return nil }
+        return String(cString: ptr)
     }
 
     private func intByColumn(_ stmt: OpaquePointer?, _ index: Int32) -> Int? {
@@ -2137,28 +2195,30 @@ final class TelemetryStore {
         return Int(sqlite3_column_int64(stmt, index))
     }
 
+    private func intByName(_ stmt: OpaquePointer?, _ name: String, _ map: [String: Int32]) -> Int? {
+        guard let stmt, let i = map[name] else { return nil }
+        if sqlite3_column_type(stmt, i) == SQLITE_NULL { return nil }
+        return Int(sqlite3_column_int64(stmt, i))
+    }
+
+    private func doubleByName(_ stmt: OpaquePointer?, _ name: String, _ map: [String: Int32]) -> Double? {
+        guard let stmt, let i = map[name] else { return nil }
+        if sqlite3_column_type(stmt, i) == SQLITE_NULL { return nil }
+        return sqlite3_column_double(stmt, i)
+    }
+
+    // Legacy name-scan variants for callers that don't have a column map.
+    // These should be migrated over time.
+    private func colByName(_ stmt: OpaquePointer?, _ name: String) -> String? {
+        colByName(stmt, name, columnIndexMap(stmt))
+    }
+
     private func intByName(_ stmt: OpaquePointer?, _ name: String) -> Int? {
-        guard let stmt else { return nil }
-        let count = sqlite3_column_count(stmt)
-        for i in 0 ..< count {
-            if let cn = sqlite3_column_name(stmt, i), String(cString: cn) == name {
-                if sqlite3_column_type(stmt, i) == SQLITE_NULL { return nil }
-                return Int(sqlite3_column_int64(stmt, i))
-            }
-        }
-        return nil
+        intByName(stmt, name, columnIndexMap(stmt))
     }
 
     private func doubleByName(_ stmt: OpaquePointer?, _ name: String) -> Double? {
-        guard let stmt else { return nil }
-        let count = sqlite3_column_count(stmt)
-        for i in 0 ..< count {
-            if let cn = sqlite3_column_name(stmt, i), String(cString: cn) == name {
-                if sqlite3_column_type(stmt, i) == SQLITE_NULL { return nil }
-                return sqlite3_column_double(stmt, i)
-            }
-        }
-        return nil
+        doubleByName(stmt, name, columnIndexMap(stmt))
     }
 
     static let isoFormatter: ISO8601DateFormatter = {
