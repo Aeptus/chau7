@@ -195,161 +195,175 @@ final class PersistentHistoryStore {
     // MARK: - Query
 
     func search(query: String, limit: Int = 50) -> [HistoryRecord] {
-        var results: [HistoryRecord] = []
-        guard let db = db else { return results }
+        dbQueue.sync { [self] in
+            var results: [HistoryRecord] = []
+            guard let db = db else { return results }
 
-        let sql = """
-            SELECT id, command, directory, exit_code, shell, tab_id, session_id, timestamp, duration
-            FROM history WHERE command LIKE ? ORDER BY timestamp DESC LIMIT ?
-        """
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
-        defer { sqlite3_finalize(stmt) }
+            let sql = """
+                SELECT id, command, directory, exit_code, shell, tab_id, session_id, timestamp, duration
+                FROM history WHERE command LIKE ? ORDER BY timestamp DESC LIMIT ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
+            defer { sqlite3_finalize(stmt) }
 
-        let pattern = "%\(query)%"
-        sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
-        sqlite3_bind_int(stmt, 2, Int32(limit))
+            let pattern = "%\(query)%"
+            sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
+            sqlite3_bind_int(stmt, 2, Int32(limit))
 
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            results.append(readRecord(stmt))
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                results.append(readRecord(stmt))
+            }
+
+            return results
         }
-
-        return results
     }
 
     func recent(limit: Int = 100) -> [HistoryRecord] {
-        var results: [HistoryRecord] = []
-        guard let db = db else { return results }
+        dbQueue.sync { [self] in
+            var results: [HistoryRecord] = []
+            guard let db = db else { return results }
 
-        let sql = """
-            SELECT id, command, directory, exit_code, shell, tab_id, session_id, timestamp, duration
-            FROM history ORDER BY timestamp DESC LIMIT ?
-        """
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
-        defer { sqlite3_finalize(stmt) }
+            let sql = """
+                SELECT id, command, directory, exit_code, shell, tab_id, session_id, timestamp, duration
+                FROM history ORDER BY timestamp DESC LIMIT ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
+            defer { sqlite3_finalize(stmt) }
 
-        sqlite3_bind_int(stmt, 1, Int32(limit))
+            sqlite3_bind_int(stmt, 1, Int32(limit))
 
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            results.append(readRecord(stmt))
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                results.append(readRecord(stmt))
+            }
+
+            return results
         }
-
-        return results
     }
 
     func recentForDirectory(_ directory: String, limit: Int = 50) -> [HistoryRecord] {
-        var results: [HistoryRecord] = []
-        guard let db = db else { return results }
+        dbQueue.sync { [self] in
+            var results: [HistoryRecord] = []
+            guard let db = db else { return results }
 
-        let sql = """
-            SELECT id, command, directory, exit_code, shell, tab_id, session_id, timestamp, duration
-            FROM history WHERE directory = ? ORDER BY timestamp DESC LIMIT ?
-        """
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
-        defer { sqlite3_finalize(stmt) }
+            let sql = """
+                SELECT id, command, directory, exit_code, shell, tab_id, session_id, timestamp, duration
+                FROM history WHERE directory = ? ORDER BY timestamp DESC LIMIT ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
+            defer { sqlite3_finalize(stmt) }
 
-        sqlite3_bind_text(stmt, 1, (directory as NSString).utf8String, -1, nil)
-        sqlite3_bind_int(stmt, 2, Int32(limit))
+            sqlite3_bind_text(stmt, 1, (directory as NSString).utf8String, -1, nil)
+            sqlite3_bind_int(stmt, 2, Int32(limit))
 
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            results.append(readRecord(stmt))
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                results.append(readRecord(stmt))
+            }
+
+            return results
         }
-
-        return results
     }
 
     func frequentCommands(limit: Int = 20) -> [FrequentCommand] {
-        var results: [FrequentCommand] = []
-        guard let db = db else { return results }
+        dbQueue.sync { [self] in
+            var results: [FrequentCommand] = []
+            guard let db = db else { return results }
 
-        let sql = """
-            SELECT command, COUNT(*) as cnt, MAX(timestamp) as last_ts
-            FROM history GROUP BY command ORDER BY cnt DESC LIMIT ?
-        """
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
-        defer { sqlite3_finalize(stmt) }
+            let sql = """
+                SELECT command, COUNT(*) as cnt, MAX(timestamp) as last_ts
+                FROM history GROUP BY command ORDER BY cnt DESC LIMIT ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
+            defer { sqlite3_finalize(stmt) }
 
-        sqlite3_bind_int(stmt, 1, Int32(limit))
+            sqlite3_bind_int(stmt, 1, Int32(limit))
 
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            let command = String(cString: sqlite3_column_text(stmt, 0))
-            let count = Int(sqlite3_column_int(stmt, 1))
-            let ts = sqlite3_column_double(stmt, 2)
-            results.append(FrequentCommand(command: command, count: count, lastUsed: Date(timeIntervalSince1970: ts)))
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let command = String(cString: sqlite3_column_text(stmt, 0))
+                let count = Int(sqlite3_column_int(stmt, 1))
+                let ts = sqlite3_column_double(stmt, 2)
+                results.append(FrequentCommand(command: command, count: count, lastUsed: Date(timeIntervalSince1970: ts)))
+            }
+
+            return results
         }
-
-        return results
     }
 
     /// Frequently used commands within a repo (root + subdirectories), sorted by frecency.
     func frequentCommandsForRepo(repoRoot: String, limit: Int = 20) -> [FrequentCommand] {
-        var results: [FrequentCommand] = []
-        guard let db = db else { return results }
+        dbQueue.sync { [self] in
+            var results: [FrequentCommand] = []
+            guard let db = db else { return results }
 
-        let sql = """
-            SELECT command, COUNT(*) as cnt, MAX(timestamp) as last_ts
-            FROM history WHERE directory LIKE ? OR directory = ?
-            GROUP BY command ORDER BY cnt DESC LIMIT ?
-        """
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
-        defer { sqlite3_finalize(stmt) }
+            let sql = """
+                SELECT command, COUNT(*) as cnt, MAX(timestamp) as last_ts
+                FROM history WHERE directory LIKE ? OR directory = ?
+                GROUP BY command ORDER BY cnt DESC LIMIT ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
+            defer { sqlite3_finalize(stmt) }
 
-        let pattern = repoRoot + "/%"
-        sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
-        sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
-        sqlite3_bind_int(stmt, 3, Int32(limit))
+            let pattern = repoRoot + "/%"
+            sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
+            sqlite3_bind_int(stmt, 3, Int32(limit))
 
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            let command = String(cString: sqlite3_column_text(stmt, 0))
-            let count = Int(sqlite3_column_int(stmt, 1))
-            let ts = sqlite3_column_double(stmt, 2)
-            results.append(FrequentCommand(command: command, count: count, lastUsed: Date(timeIntervalSince1970: ts)))
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let command = String(cString: sqlite3_column_text(stmt, 0))
+                let count = Int(sqlite3_column_int(stmt, 1))
+                let ts = sqlite3_column_double(stmt, 2)
+                results.append(FrequentCommand(command: command, count: count, lastUsed: Date(timeIntervalSince1970: ts)))
+            }
+
+            return results.sorted { $0.frecencyScore > $1.frecencyScore }
         }
-
-        return results.sorted { $0.frecencyScore > $1.frecencyScore }
     }
 
     /// Aggregate command statistics for a repository (total, success, fail, avg duration).
     func commandStatsForRepo(repoRoot: String) -> (total: Int, successful: Int, failed: Int, avgDuration: Double) {
-        guard let db = db else { return (0, 0, 0, 0) }
-        let sql = """
-            SELECT COUNT(*) as total,
-                   SUM(CASE WHEN exit_code = 0 THEN 1 ELSE 0 END) as ok,
-                   SUM(CASE WHEN exit_code != 0 AND exit_code IS NOT NULL THEN 1 ELSE 0 END) as fail,
-                   AVG(CASE WHEN duration > 0 THEN duration ELSE NULL END) as avg_dur
-            FROM history WHERE directory LIKE ? OR directory = ?
-        """
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return (0, 0, 0, 0) }
-        defer { sqlite3_finalize(stmt) }
-        let pattern = repoRoot + "/%"
-        sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
-        sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
-        guard sqlite3_step(stmt) == SQLITE_ROW else { return (0, 0, 0, 0) }
-        let total = Int(sqlite3_column_int(stmt, 0))
-        let ok = Int(sqlite3_column_int(stmt, 1))
-        let fail = Int(sqlite3_column_int(stmt, 2))
-        let avgDur = sqlite3_column_double(stmt, 3)
-        return (total, ok, fail, avgDur)
+        dbQueue.sync { [self] in
+            guard let db = db else { return (0, 0, 0, 0) }
+            let sql = """
+                SELECT COUNT(*) as total,
+                       SUM(CASE WHEN exit_code = 0 THEN 1 ELSE 0 END) as ok,
+                       SUM(CASE WHEN exit_code != 0 AND exit_code IS NOT NULL THEN 1 ELSE 0 END) as fail,
+                       AVG(CASE WHEN duration > 0 THEN duration ELSE NULL END) as avg_dur
+                FROM history WHERE directory LIKE ? OR directory = ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return (0, 0, 0, 0) }
+            defer { sqlite3_finalize(stmt) }
+            let pattern = repoRoot + "/%"
+            sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
+            guard sqlite3_step(stmt) == SQLITE_ROW else { return (0, 0, 0, 0) }
+            let total = Int(sqlite3_column_int(stmt, 0))
+            let ok = Int(sqlite3_column_int(stmt, 1))
+            let fail = Int(sqlite3_column_int(stmt, 2))
+            let avgDur = sqlite3_column_double(stmt, 3)
+            return (total, ok, fail, avgDur)
+        }
     }
 
     /// Timestamp of the most recent command in a repository.
     func lastCommandTimestampForRepo(repoRoot: String) -> Date? {
-        guard let db = db else { return nil }
-        let sql = "SELECT MAX(timestamp) FROM history WHERE directory LIKE ? OR directory = ?"
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-        defer { sqlite3_finalize(stmt) }
-        let pattern = repoRoot + "/%"
-        sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
-        sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
-        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
-        let ts = sqlite3_column_double(stmt, 0)
-        return ts > 0 ? Date(timeIntervalSince1970: ts) : nil
+        dbQueue.sync { [self] in
+            guard let db = db else { return nil }
+            let sql = "SELECT MAX(timestamp) FROM history WHERE directory LIKE ? OR directory = ?"
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+            defer { sqlite3_finalize(stmt) }
+            let pattern = repoRoot + "/%"
+            sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
+            guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+            let ts = sqlite3_column_double(stmt, 0)
+            return ts > 0 ? Date(timeIntervalSince1970: ts) : nil
+        }
     }
 
     func totalCount() -> Int {
