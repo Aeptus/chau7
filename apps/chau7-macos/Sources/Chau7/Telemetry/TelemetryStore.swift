@@ -1099,7 +1099,7 @@ final class TelemetryStore {
     }
 
     func rewriteCompletedRun(_ run: TelemetryRun, turns: [TelemetryTurn], toolCalls: [TelemetryToolCall]) {
-        queue.sync {
+        queue.async { [self] in
             guard let db else { return }
             sqlite3_exec(db, "BEGIN", nil, nil, nil)
 
