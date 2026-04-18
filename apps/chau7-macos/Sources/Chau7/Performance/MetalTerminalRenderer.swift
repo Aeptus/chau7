@@ -1,11 +1,8 @@
-// MARK: - Metal-Based Terminal Renderer (v2)
+// MARK: - Metal-Based Terminal Renderer
 
-// GPU-accelerated terminal rendering with:
-// - Compact 32-byte cells (position computed in shader from instanceID)
-// - Single-pass background + glyph + decorations
-// - Ring-buffered instance data (3 buffers, no CPU/GPU stalls)
-// - ASCII fast-path glyph lookup (flat array, no hashing)
-// - Partial dirty-row uploads
+// GPU-accelerated terminal rendering with compact 32-byte cells,
+// single-pass compositing, ring-buffered instance data, and
+// ASCII fast-path glyph lookup.
 
 import Foundation
 import MetalKit
@@ -57,12 +54,6 @@ struct CellInstance {
     }
 }
 
-// MARK: - Terminal Cell Type
-
-// Eliminated. The old TerminalCell intermediate (64 bytes) existed only to shuttle
-// data between the bridge and renderer. The new pipeline converts RustCellData
-// directly into CellInstance in a single pass.
-
 // MARK: - Glyph Types
 
 /// Glyph cache key: codepoint + style variant
@@ -75,8 +66,6 @@ struct GlyphKey: Hashable {
 /// Glyph atlas entry
 struct GlyphInfo {
     let textureRect: CGRect // UV coordinates in atlas
-    let bearing: CGPoint // Offset from baseline
-    let advance: CGFloat // Horizontal advance
     let isWide: Bool // Double-width (CJK)
 }
 
@@ -88,14 +77,6 @@ struct LigatureInfo {
 
 // MARK: - Renderer
 
-/// Metal-based terminal renderer with GPU-accelerated text rendering.
-///
-/// Architecture changes from v1:
-/// - CellInstance is 32 bytes (was 80): no position, packed u8 colors
-/// - Single render pass (was two): fragment shader handles bg fill + glyph + decorations
-/// - Ring-buffered instance data: 3 MTLBuffers rotated per frame
-/// - ASCII glyph fast-path: flat array indexed by (cp - 32) * 4 + style, no hashing
-/// - Partial upload: only dirty rows are memcpy'd into the GPU buffer
 final class MetalTerminalRenderer {
 
     // MARK: - Shared Pipeline Cache (keyed by device)
@@ -161,7 +142,13 @@ final class MetalTerminalRenderer {
     /// Profiling counters
     private(set) var glyphCacheMisses = 0
     private(set) var glyphLookupCount = 0
-    private var diagFrameCounter = 0
+    var glyphCacheCount: Int {
+        glyphCache.count
+    }
+
+    var ligatureCacheCount: Int {
+        ligatureCache.count
+    }
 
     // MARK: - Font
 
@@ -217,9 +204,7 @@ final class MetalTerminalRenderer {
         var underlineY: Float
         var cursorBlinkVisible: Float // cursor blink: 1.0 = show, 0.0 = hide
         var cols: UInt32
-        var _pad1: UInt32 = 0
-        var _pad2: UInt32 = 0
-        var _pad3: UInt32 = 0
+        var _pad: (UInt32, UInt32, UInt32) = (0, 0, 0)
     }
 
     // MARK: - Initialization
@@ -313,11 +298,6 @@ final class MetalTerminalRenderer {
         let buffer = instanceBuffers[ringIndex]
         ringIndex = (ringIndex + 1) % Self.ringBufferCount
         return buffer
-    }
-
-    /// Returns the cell size in points (for layout calculations outside the renderer).
-    var cellSizePoints: CGSize {
-        CGSize(width: cellSize.width / scaleFactor, height: cellSize.height / scaleFactor)
     }
 
     // MARK: - Atlas
@@ -478,8 +458,6 @@ final class MetalTerminalRenderer {
         packRowHeight = max(packRowHeight, slotHeight)
 
         context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
-        var boundingRect = CGRect.zero
-        CTFontGetBoundingRectsForGlyphs(drawFont, .horizontal, glyphs, &boundingRect, 1)
         let baselineY = CGFloat(atlasHeight) - packY - slotHeight + fontDescent
         var position = CGPoint(x: packX, y: baselineY)
         CTFontDrawGlyphs(drawFont, glyphs, &position, 1, context)
@@ -493,8 +471,6 @@ final class MetalTerminalRenderer {
 
         let info = GlyphInfo(
             textureRect: texRect,
-            bearing: CGPoint(x: boundingRect.origin.x, y: boundingRect.origin.y),
-            advance: slotWidth,
             isWide: isWide
         )
         glyphCache[key] = info
