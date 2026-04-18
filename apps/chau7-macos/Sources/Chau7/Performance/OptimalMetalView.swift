@@ -122,7 +122,7 @@ final class OptimalMetalView: MTKView {
         enableSetNeedsDisplay = false
         isPaused = true // We'll use our own render loop
 
-        // Prefer background drawing for responsiveness
+        // Async presentation keeps the last frame in the layer's backing store.
         presentsWithTransaction = false
 
         // Clear color (terminal background)

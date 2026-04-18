@@ -170,7 +170,7 @@ final class RustGridView: NSView {
         lastCursor = self.cursor
         self.cursor = (col: Int(cursor.col), row: Int(cursor.row))
 
-        if lastCursor != self.cursor {
+        if !metalRenderingActive, lastCursor != self.cursor {
             setNeedsDisplay(cursorRect(for: lastCursor))
             setNeedsDisplay(cursorRect(for: self.cursor))
         }

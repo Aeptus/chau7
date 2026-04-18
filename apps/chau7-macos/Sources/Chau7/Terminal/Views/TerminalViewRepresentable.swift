@@ -111,9 +111,13 @@ final class RustTerminalContainerView: NSView {
         awaitingFirstMetalFrame = true
         terminalView.isMetalRenderingActive = false
 
-        // Force an immediate Metal render so the first frame isn't blank.
-        // Keep the Metal overlay transparent until that first frame lands.
-        coordinator.setNeedsSync()
+        // Defer the first Metal sync to the next runloop tick. The Metal view
+        // was just added to the hierarchy — its CAMetalLayer needs one layout
+        // pass to commit its size. A synchronous draw() here would find
+        // zero-size bounds → no drawable → promotion never fires.
+        DispatchQueue.main.async { [weak coordinator] in
+            coordinator?.setNeedsSync()
+        }
 
         Log.trace("RustTerminalContainerView: Metal rendering enabled")
     }
@@ -124,13 +128,14 @@ final class RustTerminalContainerView: NSView {
         }
         terminalView.onDisplayFramePresented = { [weak self, weak coordinator] in
             guard let self else {
+                Log.info("Metal promotion: skipped — container deallocated")
                 return
             }
             if awaitingFirstMetalFrame {
                 awaitingFirstMetalFrame = false
                 terminalView.isMetalRenderingActive = true
                 coordinator?.metalView.alphaValue = 1
-                Log.trace("RustTerminalContainerView: Metal overlay promoted after first presented frame")
+                Log.info("Metal promotion: CPU→Metal handoff complete (view \(terminalView.viewId))")
             }
         }
     }
@@ -273,6 +278,13 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let tip = PowerUserTips.randomFormattedTip()
         let headerBox = terminalHeaderBox(cols: rustView.renderCols, message: tip)
         rustView.startTerminal(initialOutput: headerBox)
+        // Re-apply the color scheme now that rustTerminal exists.
+        // The first applyColorScheme (during makeRustTerminalView) ran before
+        // startTerminal, so rustTerminal was nil and setColors was a no-op.
+        // Without this, the Rust terminal uses black default fg and the shell
+        // prompt is invisible.
+        rustView.appliedColorSchemeSignature = nil
+        rustView.applyColorScheme(FeatureSettings.shared.currentColorScheme)
         model.attachRustTerminal(rustView)
         if useMetalRenderer {
             container.enableMetalRendering()

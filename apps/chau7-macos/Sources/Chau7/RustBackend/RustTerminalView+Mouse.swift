@@ -459,7 +459,8 @@ extension RustTerminalView {
                 let noActiveSelection = !hasSelection
                 let clickEnabled = FeatureSettings.shared.isClickToPositionEnabled
 
-                if isSingleClick, noModifiers, noActiveSelection, clickEnabled {
+                let shellReady = isAtPrompt?() ?? false
+                if isSingleClick, noModifiers, noActiveSelection, clickEnabled, shellReady {
                     if handleClickToPosition(at: clickLocation) {
                         Log.trace("RustTerminalView[\(viewId)]: Click-to-position handled")
                         return event

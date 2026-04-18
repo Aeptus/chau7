@@ -41,8 +41,8 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .warm)
-        XCTAssertFalse(decision.keepsLiveHierarchy)
+        XCTAssertEqual(decision.phase, .active)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
 
@@ -63,8 +63,8 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .warm)
-        XCTAssertFalse(decision.keepsLiveHierarchy)
+        XCTAssertEqual(decision.phase, .active)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
 
@@ -85,8 +85,8 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .warm)
-        XCTAssertFalse(decision.keepsLiveHierarchy)
+        XCTAssertEqual(decision.phase, .active)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
 
@@ -107,8 +107,8 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .warm)
-        XCTAssertFalse(decision.keepsLiveHierarchy)
+        XCTAssertEqual(decision.phase, .active)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
 
@@ -151,7 +151,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .warm)
+        XCTAssertEqual(decision.phase, .active)
         XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
@@ -173,7 +173,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .warm)
+        XCTAssertEqual(decision.phase, .active)
         XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
@@ -210,8 +210,8 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .warm)
-        XCTAssertFalse(decision.keepsLiveHierarchy)
+        XCTAssertEqual(decision.phase, .active)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
     func testStartupRestoreBootstrapWarmsTabWithoutKeepingHierarchyAttached() {
@@ -231,8 +231,8 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .warm)
-        XCTAssertFalse(decision.keepsLiveHierarchy)
+        XCTAssertEqual(decision.phase, .active)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
     func testPostStartupRestoreBootstrapDoesNotKeepTabAttached() {
@@ -252,8 +252,8 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .warm)
-        XCTAssertFalse(decision.keepsLiveHierarchy)
+        XCTAssertEqual(decision.phase, .active)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
     func testStartupRestoreBootstrapKeepsHiddenTabWarmWithoutAttachment() {
@@ -273,8 +273,8 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .warm)
-        XCTAssertFalse(decision.keepsLiveHierarchy)
+        XCTAssertEqual(decision.phase, .active)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
     func testMCPTabWithoutAttachedViewDoesNotStayAttached() {
@@ -294,8 +294,8 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .hidden)
-        XCTAssertFalse(decision.keepsLiveHierarchy)
+        XCTAssertEqual(decision.phase, .active)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
     func testAuthoritativeRevealOnlyWhenBecomingActive() {

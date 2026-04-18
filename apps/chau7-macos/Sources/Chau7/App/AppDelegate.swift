@@ -2017,7 +2017,9 @@ private final class OverlayBlurView: NSVisualEffectView {
         TitlebarBackgroundInstaller.install(for: window)
 
         window.isOpaque = false
-        window.backgroundColor = .clear
+        window.backgroundColor = FeatureSettings.shared.currentColorScheme.nsColor(
+            for: FeatureSettings.shared.currentColorScheme.background
+        )
         window.hasShadow = true
         window.alphaValue = FeatureSettings.shared.windowOpacity
         window.level = FeatureSettings.shared.windowFloating ? .floating : .normal

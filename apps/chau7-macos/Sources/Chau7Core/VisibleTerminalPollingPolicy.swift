@@ -49,6 +49,6 @@ public enum VisibleTerminalPollingPolicy {
               !context.isWindowMiniaturized else {
             return .backgroundDrain
         }
-        return context.isInteractive ? .displayLink : .backgroundDrain
+        return .displayLink
     }
 }

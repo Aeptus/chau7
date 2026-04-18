@@ -20,7 +20,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
         )
     }
 
-    func testVisibleNonInteractiveTabUsesBackgroundDrain() {
+    func testVisibleNonInteractiveTabUsesDisplayLink() {
         XCTAssertEqual(
             VisibleTerminalPollingPolicy.mode(
                 for: VisibleTerminalPollingContext(
@@ -34,7 +34,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     isInteractive: false
                 )
             ),
-            .backgroundDrain
+            .displayLink
         )
     }
 
