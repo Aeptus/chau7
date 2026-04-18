@@ -333,6 +333,98 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(deferredSession.lastAISessionId, "deferred-session")
     }
 
+    func testSelectingDeferredTabAwaitsVisibleFrameUntilRendererAttaches() throws {
+        let selectedTabID = UUID()
+        let selectedPaneID = UUID()
+        let deferredTabID = UUID()
+        let deferredPaneID = UUID()
+        let states = [
+            makeSavedTabState(
+                tabID: selectedTabID,
+                paneID: selectedPaneID,
+                title: "Selected",
+                directory: "/tmp/selected",
+                aiProvider: "codex",
+                aiSessionId: "selected-session",
+                aiResumeCommand: "codex resume selected-session"
+            ),
+            makeSavedTabState(
+                tabID: deferredTabID,
+                paneID: deferredPaneID,
+                title: "Deferred",
+                directory: "/tmp/deferred",
+                aiProvider: "codex",
+                aiSessionId: "deferred-session",
+                aiResumeCommand: "codex resume deferred-session"
+            )
+        ]
+
+        let restoredModel = OverlayTabsModel(appModel: AppModel(), restoreState: false, restoringStates: states)
+
+        restoredModel.selectTab(id: deferredTabID)
+
+        let deferredSession = try XCTUnwrap(restoredModel.tabs.first(where: { $0.id == deferredTabID })?.session)
+        XCTAssertEqual(restoredModel.selectedTabID, deferredTabID)
+        XCTAssertTrue(deferredSession.awaitingVisibleFrameReady)
+        XCTAssertEqual(restoredModel.selectedSurfacePresentation.phase, .awaitingLiveFrame)
+    }
+
+    func testSelectingDeferredTabRevalidatesQueuedResumePrefillBeforeDelivery() throws {
+        let selectedTabID = UUID()
+        let selectedPaneID = UUID()
+        let deferredTabID = UUID()
+        let deferredPaneID = UUID()
+        let states = [
+            makeSavedTabState(
+                tabID: selectedTabID,
+                paneID: selectedPaneID,
+                title: "Selected",
+                directory: "/tmp/selected",
+                aiProvider: "codex",
+                aiSessionId: "selected-session",
+                aiResumeCommand: "codex resume selected-session"
+            ),
+            makeSavedTabState(
+                tabID: deferredTabID,
+                paneID: deferredPaneID,
+                title: "Deferred",
+                directory: "/tmp/owned-pane",
+                aiProvider: "codex",
+                aiSessionId: "deferred-session",
+                aiResumeCommand: "codex resume deferred-session"
+            )
+        ]
+
+        let restoredModel = OverlayTabsModel(appModel: AppModel(), restoreState: false, restoringStates: states)
+        restoredModel.selectTab(id: deferredTabID)
+        drainMainQueue()
+
+        let deferredSession = try XCTUnwrap(restoredModel.tabs.first(where: { $0.id == deferredTabID })?.session)
+        deferredSession.updateCurrentDirectory("/tmp/drifted-pane")
+        deferredSession.isShellLoading = false
+        deferredSession.isAtPrompt = true
+        deferredSession.status = .idle
+
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { text in
+            capturedInputs.append(text)
+        }
+        deferredSession.attachRustTerminal(terminalView)
+
+        let expectationDone = expectation(description: "selected deferred prefill is rejected after ownership drift")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            XCTAssertTrue(capturedInputs.isEmpty)
+            XCTAssertEqual(
+                restoredModel.resumeRestoreDeliveryStateByPaneID[deferredPaneID]?.outcome,
+                .rejected
+            )
+            XCTAssertNil(restoredModel.latestRestoreResumeTokenByPaneID[deferredPaneID])
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 1.0)
+    }
+
     func testResolveAIResumeMetadataAllowsLiveProviderHintToOverrideStaleCodexRestore() {
         OverlayTabsModel.registerSessionFinder(forProviderKey: "claude") { directory, _, _ in
             directory == "/tmp/aetower" ? "claude-session-1" : nil

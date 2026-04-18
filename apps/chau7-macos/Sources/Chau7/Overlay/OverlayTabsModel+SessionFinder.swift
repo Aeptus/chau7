@@ -1152,35 +1152,15 @@ extension OverlayTabsModel {
                             delay: Self.resumeCommandDelaySeconds
                         )
                     } else {
-                        let result = session.prefillInput(resumeIntent.command)
-                        switch result {
-                        case .delivered:
-                            StartupRestoreCoordinator.shared.noteDeliveredResumePrefill()
-                            recordResumeRestoreDeliveryState(
-                                paneID: paneID,
-                                token: restoreToken,
-                                outcome: .delivered,
-                                tabID: targetTabID,
-                                reason: "selected_on_demand_delivered"
-                            )
-                        case .queued:
-                            StartupRestoreCoordinator.shared.noteQueuedResumePrefill()
-                            recordResumeRestoreDeliveryState(
-                                paneID: paneID,
-                                token: restoreToken,
-                                outcome: .queued,
-                                tabID: targetTabID,
-                                reason: "selected_on_demand_queued"
-                            )
-                        case .rejected(let rejectionReason):
-                            recordResumeRestoreDeliveryState(
-                                paneID: paneID,
-                                token: restoreToken,
-                                outcome: .rejected,
-                                tabID: targetTabID,
-                                reason: rejectionReason
-                            )
-                        }
+                        latestRestoreResumeTokenByPaneID[paneID] = restoreToken
+                        _ = enqueueResumePrefill(
+                            intent: resumeIntent,
+                            into: session,
+                            targetTabID: targetTabID,
+                            restoreToken: restoreToken,
+                            queuedReason: "selected_on_demand_queued",
+                            deliveredReason: "selected_on_demand_delivered"
+                        )
                     }
                 }
             }

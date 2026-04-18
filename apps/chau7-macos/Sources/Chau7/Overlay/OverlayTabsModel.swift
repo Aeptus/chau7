@@ -2240,7 +2240,7 @@ final class OverlayTabsModel {
             logVisualState(reason: "selectTab: unsuspended selected tab")
         }
 
-        forceSelectedTabRevealLive(tabID: id)
+        requestSelectedTabAuthoritativeReveal(reason: "select_tab")
         focusSelected()
         updateSnippetContextForSelection()
         if isSearchVisible {
