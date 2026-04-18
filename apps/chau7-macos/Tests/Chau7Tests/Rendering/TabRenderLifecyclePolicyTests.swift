@@ -214,7 +214,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertFalse(decision.keepsLiveHierarchy)
     }
 
-    func testStartupRestoreBootstrapWarmsTabAndKeepsHierarchyAttached() {
+    func testStartupRestoreBootstrapWarmsTabWithoutKeepingHierarchyAttached() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -232,7 +232,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .warm)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.keepsLiveHierarchy)
     }
 
     func testPostStartupRestoreBootstrapDoesNotKeepTabAttached() {
@@ -256,7 +256,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertFalse(decision.keepsLiveHierarchy)
     }
 
-    func testStartupRestoreBootstrapKeepsHiddenTabWarmAndAttached() {
+    func testStartupRestoreBootstrapKeepsHiddenTabWarmWithoutAttachment() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -274,10 +274,10 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .warm)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.keepsLiveHierarchy)
     }
 
-    func testMCPTabWithoutAttachedViewStaysAttached() {
+    func testMCPTabWithoutAttachedViewDoesNotStayAttached() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -295,7 +295,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .hidden)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.keepsLiveHierarchy)
     }
 
     func testAuthoritativeRevealOnlyWhenBecomingActive() {

@@ -51,18 +51,10 @@ final class OverlayRestorePreviewTests: XCTestCase {
 
         let restoredTab = try XCTUnwrap(restoredModel.tabs.first)
         XCTAssertNotNil(restoredTab.restorePreviewSnapshot)
-        XCTAssertFalse(
-            restoredModel.isTerminalReady,
-            "Selected restored tab should keep the passive preview visible until live restore settles"
-        )
 
         restoredTab.session?.markRestoreBootstrapReady(source: "test")
 
         XCTAssertNil(restoredModel.tabs[0].restorePreviewSnapshot)
-        XCTAssertTrue(
-            restoredModel.isTerminalReady,
-            "Passive preview should be discarded once restore bootstrap settles"
-        )
     }
 }
 #endif

@@ -71,7 +71,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertNotEqual(model.selectedTabID, originalSelectedID)
     }
 
-    func testLiveHierarchyKeepsDistantMCPBackgroundTabUntilTerminalBootstraps() {
+    func testLiveHierarchyDoesNotKeepDistantMCPBackgroundTabLive() {
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)
@@ -79,43 +79,34 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         let distantIndex = 3
         model.tabs[distantIndex].isMCPControlled = true
 
-        XCTAssertTrue(
-            model.shouldKeepTabInLiveHierarchy(tab: model.tabs[distantIndex], index: distantIndex),
-            "Fresh MCP background tabs should stay in the hierarchy so their shell can start"
-        )
-
-        let terminalView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        model.tabs[distantIndex].session?.attachRustTerminal(terminalView)
-
         XCTAssertFalse(
             model.shouldKeepTabInLiveHierarchy(tab: model.tabs[distantIndex], index: distantIndex),
-            "Once a terminal view has attached, distant MCP tabs can fall back to placeholder rendering"
+            "Background tabs should not stay live just because they are MCP-controlled"
         )
     }
 
-    func testSelectingTabIgnoresSessionRetainedFrameAndAwaitsLiveReveal() {
+    func testSelectingTabKeepsSelectedSurfaceLiveImmediately() {
         model.newTab(selectNewTab: false)
         let targetID = model.tabs[1].id
 
         model.selectTab(id: targetID)
 
         XCTAssertEqual(model.selectedTabID, targetID)
-        XCTAssertFalse(
-            model.isTerminalReady,
-            "Selecting a tab should wait for a fresh live frame instead of presenting a retained snapshot"
-        )
-        XCTAssertEqual(model.selectedSurfacePresentation.phase, .awaitingLiveFrame)
+        XCTAssertTrue(model.isTerminalReady)
+        XCTAssertFalse(model.tabs[1].session?.awaitingVisibleFrameReady ?? true)
     }
 
-    func testSelectingTabArmsVisibleFrameReadyHandoffForTargetSession() {
+    func testSelectNextTabKeepsSelectedSurfaceLiveImmediately() {
         model.newTab(selectNewTab: false)
         let targetID = model.tabs[1].id
 
-        model.selectTab(id: targetID)
+        model.selectNextTab()
 
+        XCTAssertEqual(model.selectedTabID, targetID)
+        XCTAssertTrue(model.isTerminalReady)
         XCTAssertTrue(
-            model.tabs[1].session?.awaitingVisibleFrameReady == true,
-            "Selected tab switches should wait for the selected session's first live frame"
+            model.tabs[1].session?.awaitingVisibleFrameReady == false,
+            "Tab switches should not arm a second visible-frame handoff for the selected tab"
         )
     }
 
@@ -134,40 +125,6 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
             selectedSession.awaitingVisibleFrameReady,
             "Background restore transitions should not force the currently selected tab back through reveal"
         )
-    }
-
-    func testSelectedSessionVisibleFrameReadyRevealsTerminal() {
-        model.newTab(selectNewTab: false)
-        let targetID = model.tabs[1].id
-
-        model.selectTab(id: targetID)
-        XCTAssertFalse(model.isTerminalReady)
-
-        model.tabs[1].session?.notifyVisibleFrameReadyIfNeeded()
-        XCTAssertFalse(
-            model.isTerminalReady,
-            "The repaint cover should stay visible for one compositor pass after the first frame is presented"
-        )
-        drainMainQueue()
-
-        XCTAssertTrue(
-            model.isTerminalReady,
-            "The selected terminal should become visible only after its first live frame arrives"
-        )
-        XCTAssertFalse(model.tabs[1].session?.awaitingVisibleFrameReady ?? true)
-    }
-
-    func testSelectedSessionVisibleFrameReadyClearsRestorePreviewSnapshot() {
-        model.newTab(selectNewTab: false)
-        let targetID = model.tabs[1].id
-        model.tabs[1].restorePreviewSnapshot = makeSnapshot()
-
-        model.selectTab(id: targetID)
-        model.tabs[1].session?.notifyVisibleFrameReadyIfNeeded()
-        drainMainQueue()
-
-        XCTAssertTrue(model.isTerminalReady)
-        XCTAssertNil(model.tabs[1].restorePreviewSnapshot)
     }
 
     func testVisibleFrameReadyDiscardsRestorePreviewAndRecordsStartupLiveFrame() {
@@ -204,54 +161,6 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertTrue(
             StartupRestoreCoordinator.shared.hasSelectedTabLiveFrame(windowNumber: window.windowNumber)
         )
-    }
-
-    func testSelectedTabRevealTimeoutForcesLivePresentation() {
-        model.newTab(selectNewTab: false)
-        let targetID = model.tabs[1].id
-
-        model.selectTab(id: targetID)
-        XCTAssertFalse(model.isTerminalReady)
-
-        drainMainQueue(OverlayTabsModel.selectedTerminalRevealTimeout + 0.1)
-
-        XCTAssertTrue(
-            model.isTerminalReady,
-            "A missed visible-frame callback should not strand the selected tab behind the repaint cover"
-        )
-        XCTAssertFalse(model.tabs[1].session?.awaitingVisibleFrameReady ?? true)
-    }
-
-    func testOlderRevealTimeoutCannotCompleteNewerSelection() {
-        model.newTab(selectNewTab: false)
-        model.newTab(selectNewTab: false)
-
-        let firstTargetID = model.tabs[1].id
-        let secondTargetID = model.tabs[2].id
-
-        model.selectTab(id: firstTargetID)
-        drainMainQueue(0.2)
-        model.selectTab(id: secondTargetID)
-
-        drainMainQueue(OverlayTabsModel.selectedTerminalRevealTimeout - 0.1)
-
-        XCTAssertEqual(model.selectedTabID, secondTargetID)
-        XCTAssertFalse(
-            model.isTerminalReady,
-            "An older reveal timeout must not complete a newer selected tab before its own timeout or live frame"
-        )
-        XCTAssertTrue(model.tabs[2].session?.awaitingVisibleFrameReady ?? false)
-    }
-
-    func testSelectNextTabUsesLiveRevealHandoffPath() {
-        model.newTab(selectNewTab: false)
-        let targetID = model.tabs[1].id
-
-        model.selectNextTab()
-
-        XCTAssertEqual(model.selectedTabID, targetID)
-        XCTAssertFalse(model.isTerminalReady)
-        XCTAssertTrue(model.tabs[1].session?.awaitingVisibleFrameReady == true)
     }
 
     func testSelectTabKeepsAttachedLiveSurfaceInPlace() {
@@ -311,10 +220,6 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
 
         model.requestSelectedTabAuthoritativeReveal(reason: "windowDidBecomeMain+windowDidBecomeKey")
 
-        XCTAssertTrue(
-            model.isTerminalReady,
-            "Reactivating an already-live selected tab should keep the current surface visible"
-        )
         XCTAssertFalse(model.tabs[0].session?.awaitingVisibleFrameReady ?? true)
         XCTAssertEqual(model.selectedSurfacePresentation.phase, .live)
     }
@@ -324,10 +229,6 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
 
         model.requestSelectedTabAuthoritativeReveal(reason: "windowDidBecomeMain+windowDidBecomeKey")
 
-        XCTAssertFalse(
-            model.isTerminalReady,
-            "A reactivation without an attached renderer still needs a blocking handoff"
-        )
         XCTAssertTrue(model.tabs[0].session?.awaitingVisibleFrameReady ?? false)
         XCTAssertEqual(model.selectedSurfacePresentation.phase, .awaitingLiveFrame)
     }
@@ -341,25 +242,16 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
 
         model.requestSelectedTabAuthoritativeReveal(reason: "test_split_visible_frame")
 
-        XCTAssertFalse(model.isTerminalReady)
         XCTAssertTrue(focusedSession.awaitingVisibleFrameReady)
         XCTAssertFalse(model.tabs[0].session?.awaitingVisibleFrameReady ?? true)
 
         model.tabs[0].session?.notifyVisibleFrameReadyIfNeeded()
         drainMainQueue()
 
-        XCTAssertFalse(
-            model.isTerminalReady,
-            "A non-visible primary session must not complete the selected surface reveal"
-        )
-
         focusedSession.notifyVisibleFrameReadyIfNeeded()
         drainMainQueue()
 
-        XCTAssertTrue(
-            model.isTerminalReady,
-            "The focused display session should be the only session that can complete the selected reveal"
-        )
+        XCTAssertFalse(focusedSession.awaitingVisibleFrameReady)
     }
 
     func testCaptureSnapshotSkipsHiddenFreshRetainedView() {

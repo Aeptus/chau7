@@ -1503,28 +1503,6 @@ struct Chau7OverlayView: View {
 
     private var terminalStack: some View {
         ZStack(alignment: .top) {
-            ForEach(overlayModel.tabs) { tab in
-                let isSelected = tab.id == overlayModel.selectedTabID
-                if isSelected, !overlayModel.isTerminalReady, let snapshot = tab.cachedSnapshot {
-                    Image(nsImage: snapshot)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .zIndex(2)
-                }
-            }
-
-            ForEach(overlayModel.tabs) { tab in
-                let isSelected = tab.id == overlayModel.selectedTabID
-                let hasContent = !tab.lastPromptText.isEmpty || tab.cachedSnapshot != nil
-                if isSelected, !overlayModel.isTerminalReady, hasContent {
-                    CursorPlaceholderView(
-                        promptText: tab.lastPromptText.isEmpty ? "~" : tab.lastPromptText,
-                        cursorPosition: tab.lastCursorPosition
-                    )
-                    .zIndex(3)
-                }
-            }
-
             // MARK: - Shell Loading Bar
 
             ForEach(overlayModel.tabs) { tab in
@@ -1533,13 +1511,13 @@ struct Chau7OverlayView: View {
                    !overlayModel.shouldShowStartupLoadingCover,
                    let session = tab.displaySession {
                     ShellLoadingBar(session: session)
-                        .zIndex(3)
+                        .zIndex(2)
                 }
             }
 
             if overlayModel.shouldShowStartupLoadingCover {
                 StartupLoadingCoverView()
-                    .zIndex(4)
+                    .zIndex(3)
             }
 
             // MARK: - Tab Switch Optimization: Lazy Tab Loading + Directional Motion
@@ -1558,7 +1536,7 @@ struct Chau7OverlayView: View {
 
                 if keepLiveHierarchy {
                     SplitPaneView(controller: tab.splitController, renderPhase: renderPhase, isInteractive: isInteractive)
-                        .opacity(isSelected && overlayModel.isTerminalReady ? 1 : 0)
+                        .opacity(isSelected ? 1 : 0)
                         .offset(x: isSelected ? 0 : (30 * direction)) // Subtle slide effect
                         .allowsHitTesting(isSelected)
                         .accessibilityHidden(!isSelected)

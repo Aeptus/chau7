@@ -282,7 +282,7 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(exportedDeferredPane.aiResumeCommand, "codex resume deferred-session")
     }
 
-    func testStartupRestoreWorkDrainedCallbackFiresWhenLastPendingWorkClears() {
+    func testDeferredRestoreDoesNotCountAsStartupRestoreWork() {
         let deferredTabID = UUID()
         model.deferredRestoreTabOrder = [deferredTabID]
         model.deferredRestoreStatesByTabID[deferredTabID] = makeSavedTabState(
@@ -290,14 +290,47 @@ final class OverlayTabsModelTests: XCTestCase {
             directory: "/tmp/deferred"
         )
 
-        var drainedCount = 0
-        model.onStartupRestoreWorkDrained = {
-            drainedCount += 1
-        }
-
-        XCTAssertTrue(model.restoreOneDeferredTabIfNeeded(reason: "test"))
-        XCTAssertEqual(drainedCount, 1)
         XCTAssertFalse(model.hasPendingStartupRestoreWork)
+    }
+
+    func testSelectingDeferredTabConsumesOnlySelectedDeferredState() throws {
+        let selectedTabID = UUID()
+        let selectedPaneID = UUID()
+        let deferredTabID = UUID()
+        let deferredPaneID = UUID()
+        let states = [
+            makeSavedTabState(
+                tabID: selectedTabID,
+                paneID: selectedPaneID,
+                title: "Selected",
+                directory: "/tmp/selected",
+                aiProvider: "codex",
+                aiSessionId: "selected-session",
+                aiResumeCommand: "codex resume selected-session"
+            ),
+            makeSavedTabState(
+                tabID: deferredTabID,
+                paneID: deferredPaneID,
+                title: "Deferred",
+                directory: "/tmp/deferred",
+                aiProvider: "codex",
+                aiSessionId: "deferred-session",
+                aiResumeCommand: "codex resume deferred-session"
+            )
+        ]
+
+        let restoredModel = OverlayTabsModel(appModel: AppModel(), restoreState: false, restoringStates: states)
+        XCTAssertEqual(restoredModel.deferredRestoreTabOrder, [deferredTabID])
+
+        restoredModel.selectTab(id: deferredTabID)
+
+        XCTAssertEqual(restoredModel.selectedTabID, deferredTabID)
+        XCTAssertTrue(restoredModel.deferredRestoreTabOrder.isEmpty)
+        XCTAssertTrue(restoredModel.deferredRestoreStatesByTabID.isEmpty)
+
+        let deferredSession = try XCTUnwrap(restoredModel.tabs.first(where: { $0.id == deferredTabID })?.session)
+        XCTAssertEqual(deferredSession.activeAppName, "Codex")
+        XCTAssertEqual(deferredSession.lastAISessionId, "deferred-session")
     }
 
     func testResolveAIResumeMetadataAllowsLiveProviderHintToOverrideStaleCodexRestore() {
@@ -707,7 +740,7 @@ final class OverlayTabsModelTests: XCTestCase {
         )
     }
 
-    func testLiveHierarchyKeepsDistantMCPBackgroundTabUntilTerminalBootstraps() {
+    func testLiveHierarchyDoesNotKeepDistantMCPBackgroundTabLive() {
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)
         model.newTab(selectNewTab: false)
@@ -715,17 +748,9 @@ final class OverlayTabsModelTests: XCTestCase {
         let distantIndex = 3
         model.tabs[distantIndex].isMCPControlled = true
 
-        XCTAssertTrue(
-            model.shouldKeepTabInLiveHierarchy(tab: model.tabs[distantIndex], index: distantIndex),
-            "Fresh MCP background tabs should stay in the hierarchy so their shell can start"
-        )
-
-        let terminalView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        model.tabs[distantIndex].session?.attachRustTerminal(terminalView)
-
         XCTAssertFalse(
             model.shouldKeepTabInLiveHierarchy(tab: model.tabs[distantIndex], index: distantIndex),
-            "Once a terminal view has attached, distant MCP tabs can fall back to placeholder rendering"
+            "Background MCP tabs should not stay attached until the user selects them"
         )
     }
 

@@ -250,7 +250,6 @@ private final class OverlayBlurView: NSVisualEffectView {
             for host in overlayHosts {
                 showOverlayWindow(host, reason: "finishLaunching")
             }
-            startDeferredRestoreSchedulingIfNeeded(reason: "finishLaunching")
             NSApp.activate(ignoringOtherApps: true)
             DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
                 guard let self else { return }
@@ -1755,7 +1754,6 @@ private final class OverlayBlurView: NSVisualEffectView {
             }
         }
         invalidateOverlayRenderLifecycles(reason: "didBecomeKey")
-        scheduleSelectedTabAuthoritativeReveal(for: window, event: .becameKey)
         logOverlayWindowLifecycle(reason: "didBecomeKey", window: window)
         logOverlayDiagnostics(reason: "didBecomeKey", window: window)
     }
@@ -1775,7 +1773,6 @@ private final class OverlayBlurView: NSVisualEffectView {
     func windowDidBecomeMain(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         invalidateOverlayRenderLifecycles(reason: "didBecomeMain")
-        scheduleSelectedTabAuthoritativeReveal(for: window, event: .becameMain)
         logOverlayWindowLifecycle(reason: "didBecomeMain", window: window)
         logOverlayDiagnostics(reason: "didBecomeMain", window: window)
     }
@@ -1789,7 +1786,6 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func windowDidChangeOcclusionState(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
-        scheduleSelectedTabAuthoritativeReveal(for: window, event: .becameVisible)
         guard Log.isTraceEnabled else { return }
         logOverlayDiagnostics(reason: "didChangeOcclusion", window: window)
     }
@@ -1804,7 +1800,6 @@ private final class OverlayBlurView: NSVisualEffectView {
     func windowDidDeminiaturize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         refreshLowLatencyActivity()
-        scheduleSelectedTabAuthoritativeReveal(for: window, event: .deminiaturized)
         logOverlayWindowLifecycle(reason: "didDeminiaturize", window: window)
         logOverlayDiagnostics(reason: "didDeminiaturize", window: window)
     }

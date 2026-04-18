@@ -121,18 +121,6 @@ public enum TabRenderLifecyclePolicy {
     }
 
     public static func keepsLiveHierarchy(for input: TabRenderLifecycleInput) -> Bool {
-        if input.isSelectedTab {
-            return true
-        }
-
-        if input.isStartupRestoreActive, input.hasPendingRestoreBootstrap {
-            return true
-        }
-
-        if input.isMCPControlled, !input.hasAttachedTerminalView {
-            return true
-        }
-
-        return false
+        input.isSelectedTab
     }
 }

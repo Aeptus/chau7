@@ -1208,7 +1208,7 @@ final class OverlayTabsModel {
     }
 
     var hasPendingStartupRestoreWork: Bool {
-        !deferredRestoreTabOrder.isEmpty || !restoreBootstrapTabIDs.isEmpty
+        !restoreBootstrapTabIDs.isEmpty
     }
 
     func notifyStartupRestoreWorkIfDrained(previousHadPendingWork: Bool) {
@@ -1243,9 +1243,16 @@ final class OverlayTabsModel {
         guard let deferredState = deferredRestoreStatesByTabID.removeValue(forKey: selectedTabID) else { return }
         let previousHadPendingWork = hasPendingStartupRestoreWork
         deferredRestoreTabOrder.removeAll { $0 == selectedTabID }
+        hasStartedDeferredRestore = !deferredRestoreTabOrder.isEmpty
         guard let tab = tabs.first(where: { $0.id == selectedTabID }) else { return }
         Log.info("Deferred restore: prioritizing selected tab=\(selectedTabID) [\(reason)]")
-        restoreTabState(for: tab, state: deferredState)
+        restoreTabState(
+            for: tab,
+            state: deferredState,
+            scheduledDelayOverride: 0,
+            replayScrollbackThroughShell: false,
+            useResumeRetryScheduler: false
+        )
         notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
     }
 
@@ -2210,20 +2217,10 @@ final class OverlayTabsModel {
         dismissHoverCard()
         LogEnhanced.tab("Switching tab", tabId: id, tabCount: tabs.count)
 
-        // MARK: - Tab Switch Optimization: Capture state before switching
-
-        // 1. Record previous tab index for directional animation
         let oldIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
 
         resetSelectedTerminalRevealScheduling()
 
-        if isRenderSuspensionEnabled {
-            captureCurrentTabSnapshot()
-            isTerminalReady = false
-        }
-
-        // 4. Batch all state changes to minimize SwiftUI diff passes
-        // Using direct assignment is faster than withTransaction for simple cases
         if isRenameVisible {
             clearRenameState(shouldFocus: false)
         }
@@ -2238,12 +2235,12 @@ final class OverlayTabsModel {
             tabs[index].notificationStyle = nil
         }
 
-        // 5. Pre-cancel suspension before focus (optimization)
         cancelSuspension(for: id)
         if suspendedTabIDs.remove(id) != nil {
             logVisualState(reason: "selectTab: unsuspended selected tab")
         }
 
+        forceSelectedTabRevealLive(tabID: id)
         focusSelected()
         updateSnippetContextForSelection()
         if isSearchVisible {
@@ -2262,17 +2259,7 @@ final class OverlayTabsModel {
                 ConfigFileWatcher.shared.updateActiveDirectory(self.selectedTab?.session?.currentDirectory)
             }
         }
-
-        if isRenderSuspensionEnabled {
-            terminalReadyGeneration &+= 1
-            let expectedGeneration = terminalReadyGeneration
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
-                guard let self, terminalReadyGeneration == expectedGeneration else { return }
-                isTerminalReady = true
-            }
-        } else {
-            isTerminalReady = true
-        }
+        isTerminalReady = true
     }
 
     /// Handles a toolbar tab click. This dismisses the repo dashboard overlay
@@ -2711,13 +2698,16 @@ final class OverlayTabsModel {
     func forceRefreshSelectedTab() {
         dispatchPrecondition(condition: .onQueue(.main))
 
-        // 1. Reset model-level gates
         forceSelectedTabRevealLive(tabID: selectedTabID)
         cancelSuspension(for: selectedTabID)
         suspendedTabIDs.remove(selectedTabID)
-
-        requestSelectedTabAuthoritativeReveal(reason: "forceRefreshSelectedTab")
-        // 3. Re-focus
+        if let selectedTab,
+           let session = selectedPresentationSession(for: selectedTab) {
+            performSelectedTabInPlaceRefresh(
+                session: session,
+                selectedDecision: renderLifecycleDecision(for: selectedTab)
+            )
+        }
         focusSelected()
 
         logVisualState(reason: "forceRefreshSelectedTab")

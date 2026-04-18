@@ -20,6 +20,23 @@ final class TelemetryQueryService {
         return e
     }()
 
+    /// Simple per-method rate limiter: reject calls within 500ms of the previous
+    /// invocation for the same method to prevent MCP poll storms.
+    private var lastCallTimes: [String: CFAbsoluteTime] = [:]
+    private let rateLock = NSLock()
+    private let rateLimitInterval: CFAbsoluteTime = 0.5
+
+    private func rateLimited(_ method: String) -> Bool {
+        let now = CFAbsoluteTimeGetCurrent()
+        rateLock.lock()
+        defer { rateLock.unlock() }
+        if let last = lastCallTimes[method], now - last < rateLimitInterval {
+            return true
+        }
+        lastCallTimes[method] = now
+        return false
+    }
+
     // MARK: - Run Queries
 
     func getRun(_ runID: String) -> String {
@@ -31,6 +48,7 @@ final class TelemetryQueryService {
     }
 
     func listRuns(_ params: [String: Any] = [:]) -> String {
+        if rateLimited("listRuns") { return "[]" }
         let filter = TelemetryRunFilter(
             sessionID: params["session_id"] as? String,
             repoPath: params["repo_path"] as? String,
@@ -65,6 +83,7 @@ final class TelemetryQueryService {
     }
 
     func getTranscript(_ runID: String) -> String {
+        if rateLimited("getTranscript:\(runID)") { return "[]" }
         let turns = store.getTurns(runID: runID)
         if !turns.isEmpty {
             return encodeArray(turns)
@@ -105,6 +124,7 @@ final class TelemetryQueryService {
     // MARK: - Session Queries
 
     func listSessions(repoPath: String? = nil, activeOnly: Bool = false) -> String {
+        if rateLimited("listSessions") { return "[]" }
         let sessions = store.listSessions(repoPath: repoPath)
         let activeRuns = filteredActiveRuns(filter: TelemetryRunFilter(repoPath: repoPath))
         let activeRunsBySession = Dictionary(grouping: activeRuns.compactMap { run -> (String, TelemetryRun)? in
