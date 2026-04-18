@@ -1,6 +1,6 @@
 Category,Feature,Description,Status,Differentiator
 Terminal Core,Rust Terminal Backend,"Custom terminal emulator written in Rust with FFI bridge — fast, memory-safe, and correct",Shipped,Yes
-Terminal Core,Workspace-Wide Startup Restore Gate,"Keep the splash visible while every saved tab restores and renders once, then reveal the workspace only after startup restore work has drained",Shipped,Yes
+Terminal Core,Fixed-Delay Startup Reveal,"Reveal restored windows after a short splash delay instead of waiting for the full restore queue to drain",Shipped,Yes
 Terminal Core,Stabilized Scrollback Restore,"Restored scrollback is replayed through the shell again, with restore-artifact filtering preserved, to avoid fresh post-relaunch history corruption while keeping fast visible startup",Shipped,Yes
 Performance,Adaptive Render-Loop Throttling,"Active tab drops to ~10 Hz after idle, snaps back instantly on PTY data or user input (keys, mouse, scroll, paste, IME) — cuts wakeups and CPU on idle AI sessions without any perceptible lag",Shipped,Yes
 Performance,Configurable Active-Tab Refresh Cap,"User setting caps focused-tab refresh at Display Native / 60 Hz / 30 Hz; default follows the screen's native refresh, lower caps trade scroll fluidity for battery",Shipped,Yes

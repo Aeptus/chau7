@@ -225,7 +225,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 ## Terminal Core
 
 - **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
-- **Workspace-wide startup restore gate** — Chau7 can keep the splash visible, restore and render every saved tab once behind it, then reveal the workspace only after startup restore work has drained instead of surfacing windows first and finishing the rest of restore in front of the user.
+- **Fixed-delay startup reveal** — Chau7 reveals restored windows after a short splash delay instead of waiting for the full restore queue to drain, matching the lighter release-era startup contract.
 - **Stabilized tab restore path** — restored scrollback replays through the shell again, with restore-artifact filtering preserved, to avoid post-relaunch history corruption while keeping fast visible startup.
 - Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
 - International Option-key punctuation input preserved for programming characters like brackets and braces.

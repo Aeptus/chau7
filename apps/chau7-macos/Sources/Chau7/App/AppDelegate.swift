@@ -211,6 +211,8 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Ensure theme is applied after windows exist
         applyAppTheme()
 
+        startDeferredStartupWorkIfNeeded()
+
         // Keep overlay hidden initially
         for host in overlayHosts {
             hiddenWindowNumbers.insert(host.window.windowNumber)
@@ -218,8 +220,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             host.window.orderOut(nil)
         }
 
-        Log.info("Startup foreground presentation requested immediately after setup")
-        DispatchQueue.main.async { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             if self?.splashController?.onWelcomeDismiss != nil {
                 self?.splashController?.markAppReady()
             } else {
@@ -243,16 +244,22 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     private func finishLaunching() {
         Log.info("finishLaunching: presenting overlay windows")
-        preparedStartupWindowNumbers.removeAll()
-        revealedStartupWindowNumbers.removeAll()
-        // Prepare all restored overlay windows while the splash/logo stays visible.
-        // The app should only be revealed after every restored tab has had its
-        // startup restore work drained behind the splash.
-        for host in overlayHosts {
-            prepareStartupOverlayWindow(host, reason: "finishLaunching")
+        splashController?.dismiss { [weak self] in
+            guard let self else { return }
+            splashController = nil
+            for host in overlayHosts {
+                showOverlayWindow(host, reason: "finishLaunching")
+            }
+            startDeferredRestoreSchedulingIfNeeded(reason: "finishLaunching")
+            NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    self.endLatencyCriticalScope(reason: "startup-restore")
+                    StartupRestoreCoordinator.shared.end()
+                }
+            }
         }
-        startDeferredRestoreSchedulingIfNeeded(reason: "startup_prepare_all_tabs")
-        completeStartupRestoreIfReady(reason: "windows_prepared")
     }
 
     @MainActor private func completeStartupRestoreIfReady(reason: String) {
@@ -1459,7 +1466,6 @@ private final class OverlayBlurView: NSVisualEffectView {
             // Pass pre-decoded states directly — no UserDefaults round-trip
             let windowRestoreStartedAt = CFAbsoluteTimeGetCurrent()
             let tabsModel = OverlayTabsModel(appModel: model, restoringStates: windowStates)
-            configureStartupCallbacks(for: tabsModel)
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
@@ -1654,7 +1660,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         alert.informativeText = String(
             format: L("alert.whatsNew.message", """
                 Version %@
-
                 Recent Updates:
                 - Command Palette (⇧⌘P)
                 - SSH Connection Manager
@@ -1686,7 +1691,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         let windowNumber = allocateOverlayWindowNumber()
         let window = createOverlayWindow(tabsModel: overlayModel, windowNumber: windowNumber)
         overlayHosts.append(OverlayHost(window: window, model: overlayModel))
-        configureStartupCallbacks(for: overlayModel)
         activeOverlayModel = overlayModel
         wireTabMoveCallbacks()
         logOverlayDiagnostics(reason: "setup", window: window)
