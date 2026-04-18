@@ -468,13 +468,26 @@ final class TelemetryRecorder {
 
     private func scheduleTranscriptRepairIfNeeded(for run: TelemetryRun) {
         guard TelemetryRepairService.needsTranscriptRepair(run) else { return }
+        // Use a shared flag so later retries skip work once an earlier attempt succeeds.
+        let repairDone = NSLock()
+        var done = false
         for delaySeconds in [2, 10, 60] {
             repairQueue.asyncAfter(deadline: .now() + .seconds(delaySeconds)) {
+                repairDone.lock()
+                if done { repairDone.unlock(); return }
+                repairDone.unlock()
+
                 let result = TelemetryRepairService.shared.rebuildRunIfNeeded(runID: run.id)
                 switch result {
                 case .rebuilt:
+                    repairDone.lock()
+                    done = true
+                    repairDone.unlock()
                     Log.info("TelemetryRecorder: repaired transcript-derived metrics for run \(run.id) after \(delaySeconds)s")
                 case .invalidated:
+                    repairDone.lock()
+                    done = true
+                    repairDone.unlock()
                     Log.warn("TelemetryRecorder: transcript repair invalidated run \(run.id) after \(delaySeconds)s")
                 case .skipped:
                     break
