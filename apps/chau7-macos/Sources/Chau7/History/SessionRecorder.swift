@@ -185,15 +185,22 @@ final class SessionRecorder {
     }
 
     private func loadRecordingsList() {
-        let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(at: recordingsDir, includingPropertiesForKeys: nil) else { return }
+        let dir = recordingsDir
+        DispatchQueue.global(qos: .utility).async {
+            let fm = FileManager.default
+            guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
 
-        recordings = files
-            .filter { $0.pathExtension == "json" }
-            .compactMap { url -> SessionRecordingMeta? in
-                guard let data = try? Data(contentsOf: url) else { return nil }
-                return try? JSONDecoder().decode(SessionRecordingMeta.self, from: data)
+            let loaded = files
+                .filter { $0.pathExtension == "json" }
+                .compactMap { url -> SessionRecordingMeta? in
+                    guard let data = try? Data(contentsOf: url) else { return nil }
+                    return try? JSONDecoder().decode(SessionRecordingMeta.self, from: data)
+                }
+                .sorted { ($0.startTime) > ($1.startTime) }
+
+            DispatchQueue.main.async { [weak self] in
+                self?.recordings = loaded
             }
-            .sorted { ($0.startTime) > ($1.startTime) }
+        }
     }
 }
