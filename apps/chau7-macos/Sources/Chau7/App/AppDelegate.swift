@@ -335,6 +335,9 @@ private final class OverlayBlurView: NSVisualEffectView {
             tabsModel?.usesStartupLoadingCover = false
             completeStartupRestoreIfReady(reason: "selected_tab_live_frame")
         }
+        tabsModel.onStartupRestoreWorkDrained = { [weak self] in
+            self?.completeStartupRestoreIfReady(reason: "startup_restore_work_drained")
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

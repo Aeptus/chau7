@@ -282,6 +282,24 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(exportedDeferredPane.aiResumeCommand, "codex resume deferred-session")
     }
 
+    func testStartupRestoreWorkDrainedCallbackFiresWhenLastPendingWorkClears() {
+        let deferredTabID = UUID()
+        model.deferredRestoreTabOrder = [deferredTabID]
+        model.deferredRestoreStatesByTabID[deferredTabID] = makeSavedTabState(
+            title: "Deferred",
+            directory: "/tmp/deferred"
+        )
+
+        var drainedCount = 0
+        model.onStartupRestoreWorkDrained = {
+            drainedCount += 1
+        }
+
+        XCTAssertTrue(model.restoreOneDeferredTabIfNeeded(reason: "test"))
+        XCTAssertEqual(drainedCount, 1)
+        XCTAssertFalse(model.hasPendingStartupRestoreWork)
+    }
+
     func testResolveAIResumeMetadataAllowsLiveProviderHintToOverrideStaleCodexRestore() {
         OverlayTabsModel.registerSessionFinder(forProviderKey: "claude") { directory, _, _ in
             directory == "/tmp/aetower" ? "claude-session-1" : nil

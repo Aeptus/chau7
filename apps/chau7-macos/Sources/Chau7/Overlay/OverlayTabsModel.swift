@@ -792,6 +792,8 @@ final class OverlayTabsModel {
     @ObservationIgnored var onSelectedTabIDChanged: (() -> Void)?
     /// Callback invoked the first time startup records a selected-tab live frame.
     @ObservationIgnored var onStartupSelectedTabLiveFrameRecorded: (() -> Void)?
+    /// Callback invoked when startup restore work drains completely.
+    @ObservationIgnored var onStartupRestoreWorkDrained: (() -> Void)?
 
     @ObservationIgnored weak var overlayWindow: NSWindow?
     @ObservationIgnored var onCloseLastTab: (() -> Void)?
@@ -1199,30 +1201,42 @@ final class OverlayTabsModel {
         !deferredRestoreTabOrder.isEmpty || !restoreBootstrapTabIDs.isEmpty
     }
 
+    func notifyStartupRestoreWorkIfDrained(previousHadPendingWork: Bool) {
+        if previousHadPendingWork, !hasPendingStartupRestoreWork {
+            onStartupRestoreWorkDrained?()
+        }
+    }
+
     @discardableResult
     func restoreOneDeferredTabIfNeeded(reason: String) -> Bool {
         if !hasStartedDeferredRestore {
             beginDeferredRestoreIfNeeded(reason: reason)
         }
         guard !deferredRestoreTabOrder.isEmpty else { return false }
+        let previousHadPendingWork = hasPendingStartupRestoreWork
         let tabID = deferredRestoreTabOrder.removeFirst()
         guard let state = deferredRestoreStatesByTabID.removeValue(forKey: tabID) else {
+            notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
             return true
         }
         guard let tab = tabs.first(where: { $0.id == tabID }) else {
+            notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
             return true
         }
         Log.info("Deferred restore: restoring tab=\(tabID) remaining=\(deferredRestoreTabOrder.count) [\(reason)]")
         restoreTabState(for: tab, state: state, scheduledDelayOverride: 0)
+        notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
         return true
     }
 
     private func startDeferredRestoreForSelectedTabIfNeeded(reason: String) {
         guard let deferredState = deferredRestoreStatesByTabID.removeValue(forKey: selectedTabID) else { return }
+        let previousHadPendingWork = hasPendingStartupRestoreWork
         deferredRestoreTabOrder.removeAll { $0 == selectedTabID }
         guard let tab = tabs.first(where: { $0.id == selectedTabID }) else { return }
         Log.info("Deferred restore: prioritizing selected tab=\(selectedTabID) [\(reason)]")
         restoreTabState(for: tab, state: deferredState)
+        notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
     }
 
     func encodedRestorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> Data? {

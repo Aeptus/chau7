@@ -772,8 +772,10 @@ extension OverlayTabsModel {
         guard !terminalSessions.isEmpty else { return }
         let startupRestoreActive = StartupRestoreCoordinator.shared.isActive
         if startupRestoreActive {
+            let previousHadPendingWork = hasPendingStartupRestoreWork
             restoreBootstrapTabIDs.insert(targetTabID)
             updateSuspensionState()
+            notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
         }
 
         // Keep the restored focus for the active terminal pane (or fallback to
@@ -847,8 +849,10 @@ extension OverlayTabsModel {
                         if let restoredTab = self.tabs.first(where: { $0.id == targetTabID }) {
                             let currentSessions = restoredTab.splitController.terminalSessions.map(\.1)
                             if currentSessions.allSatisfy({ !$0.isRestoreBootstrapPending }) {
+                                let previousHadPendingWork = self.hasPendingStartupRestoreWork
                                 self.restoreBootstrapTabIDs.remove(targetTabID)
                                 self.updateSuspensionState()
+                                self.notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
                             }
                         }
                     }
@@ -1141,8 +1145,10 @@ extension OverlayTabsModel {
 
             if startupRestoreActive,
                currentSessions.allSatisfy({ !$0.1.isRestoreBootstrapPending }) {
+                let previousHadPendingWork = hasPendingStartupRestoreWork
                 restoreBootstrapTabIDs.remove(targetTabID)
                 updateSuspensionState()
+                notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
             }
         }
     }
