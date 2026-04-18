@@ -796,10 +796,12 @@ final class TelemetryStore {
 
     func insertTurns(_ turns: [TelemetryTurn]) {
         queue.async { [weak self] in
-            guard let self else { return }
+            guard let self, let db else { return }
+            if turns.count > 1 { sqlite3_exec(db, "BEGIN", nil, nil, nil) }
             for turn in turns {
                 _insertTurn(turn)
             }
+            if turns.count > 1 { commitWriteTransaction(db, reason: "insertTurns") }
         }
     }
 
@@ -840,10 +842,12 @@ final class TelemetryStore {
 
     func insertToolCalls(_ calls: [TelemetryToolCall]) {
         queue.async { [weak self] in
-            guard let self else { return }
+            guard let self, let db else { return }
+            if calls.count > 1 { sqlite3_exec(db, "BEGIN", nil, nil, nil) }
             for call in calls {
                 _insertToolCall(call)
             }
+            if calls.count > 1 { commitWriteTransaction(db, reason: "insertToolCalls") }
         }
     }
 
