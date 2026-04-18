@@ -447,7 +447,7 @@ final class UsageMonitor {
         }
 
         let after = timeRange.startDate(now: Date())
-        let runSamples = TelemetryStore.shared.listRuns(filter: TelemetryRunFilter(after: after))
+        let runSamples = TelemetryStore.shared.listRuns(filter: TelemetryRunFilter(after: after, limit: after == nil ? 2000 : nil))
             .filter { $0.endedAt != nil }
             .map { run in
                 ProviderActivitySample(
