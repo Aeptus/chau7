@@ -123,6 +123,15 @@ struct OverlayTab: Identifiable, Equatable {
         return URL(fileURLWithPath: path).lastPathComponent
     }
 
+    // MARK: - Tab Switch Optimization: Cached Snapshot
+
+    /// Cached screenshot of terminal content for instant visual feedback during tab switch
+    var cachedSnapshot: NSImage?
+    /// Last known cursor position for cursor-first rendering
+    var lastCursorPosition: CGPoint = .zero
+    /// Last known prompt text for cursor placeholder
+    var lastPromptText = ""
+
     /// Passive preview restored from persisted state. Only shown while the
     /// shell-backed restore bootstrap is still in progress.
     var restorePreviewSnapshot: NSImage?
@@ -649,21 +658,22 @@ final class OverlayTabsModel {
         )
     }
 
-    /// Whether the selected terminal content is ready to display live.
-    var isTerminalReady: Bool {
-        selectedSurfacePresentation.isLivePresentable
-    }
+    /// Whether the selected terminal content is ready to display (for snapshot swap)
+    var isTerminalReady = true
 
     var usesStartupLoadingCover = false
 
     var shouldShowStartupLoadingCover: Bool {
-        usesStartupLoadingCover && !selectedSurfacePresentation.isLivePresentable
+        false
     }
 
     var shouldShowSelectedSurfaceLiveRepaintCover: Bool {
-        !usesStartupLoadingCover && !selectedSurfacePresentation.isLivePresentable
+        false
     }
 
+    /// Generation counter for isTerminalReady — prevents stale asyncAfter
+    /// callbacks from clobbering the state after rapid tab switches.
+    @ObservationIgnored var terminalReadyGeneration: UInt64 = 0
     @ObservationIgnored var terminalReadyCommitWorkItem: DispatchWorkItem?
     @ObservationIgnored var selectedTerminalRevealTimeoutWorkItem: DispatchWorkItem?
     @ObservationIgnored static let terminalReadyCompositingDelay: TimeInterval = 1.0 / 60.0
@@ -2207,6 +2217,11 @@ final class OverlayTabsModel {
 
         resetSelectedTerminalRevealScheduling()
 
+        if isRenderSuspensionEnabled {
+            captureCurrentTabSnapshot()
+            isTerminalReady = false
+        }
+
         // 4. Batch all state changes to minimize SwiftUI diff passes
         // Using direct assignment is faster than withTransaction for simple cases
         if isRenameVisible {
@@ -2248,8 +2263,15 @@ final class OverlayTabsModel {
             }
         }
 
-        if !refreshSelectedTabInPlaceIfPossible(reason: "select_tab") {
-            requestSelectedTabAuthoritativeReveal(reason: "select_tab")
+        if isRenderSuspensionEnabled {
+            terminalReadyGeneration &+= 1
+            let expectedGeneration = terminalReadyGeneration
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
+                guard let self, terminalReadyGeneration == expectedGeneration else { return }
+                isTerminalReady = true
+            }
+        } else {
+            isTerminalReady = true
         }
     }
 
@@ -2261,6 +2283,48 @@ final class OverlayTabsModel {
         }
         guard selectedTabID != id else { return }
         selectTab(id: id)
+    }
+
+    // MARK: - Tab Switch Optimization: Snapshot Capture
+
+    /// Captures a screenshot of the current terminal view for instant display during tab switch
+    func captureCurrentTabSnapshot() {
+        guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else {
+            return
+        }
+
+        let currentTab = tabs[currentIndex]
+        let session = selectedPresentationSession(for: currentTab)
+
+        if let terminalView = session?.existingRustTerminalView,
+           let image = Self.captureSnapshotImage(from: terminalView) {
+            tabs[currentIndex].cachedSnapshot = image
+            session?.lastRenderedSnapshot = image
+        } else if let cached = session?.lastRenderedSnapshot {
+            tabs[currentIndex].cachedSnapshot = cached
+            Log.trace("snapshot: used session-cached frame for tab \(selectedTabID)")
+        } else if let preview = tabs[currentIndex].restorePreviewSnapshot {
+            tabs[currentIndex].cachedSnapshot = preview
+            Log.trace("snapshot: used restore preview for tab \(selectedTabID)")
+        } else {
+            logVisualState(reason: "snapshot: skipped (no terminal view, no cached frame)")
+            return
+        }
+
+        if let session {
+            tabs[currentIndex].lastPromptText = session.displayPath()
+            tabs[currentIndex].lastCursorPosition = CGPoint(x: 50, y: 20)
+        }
+
+        cleanupDistantSnapshots(currentIndex: currentIndex)
+    }
+
+    func cleanupDistantSnapshots(currentIndex: Int) {
+        for i in 0 ..< tabs.count {
+            if abs(i - currentIndex) > 2 {
+                tabs[i].cachedSnapshot = nil
+            }
+        }
     }
 
     func schedulePreviousLiveHierarchyRelease() {

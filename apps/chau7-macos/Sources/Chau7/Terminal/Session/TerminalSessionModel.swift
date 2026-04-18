@@ -112,6 +112,9 @@ final class TerminalSessionModel {
         didSet { onSessionStateChanged?() }
     }
 
+    /// Last rendered terminal snapshot used for snapshot-backed tab switching.
+    @ObservationIgnored var lastRenderedSnapshot: NSImage?
+
     /// Unique identifier for this terminal tab, used for task lifecycle tracking
     @ObservationIgnored let tabIdentifier: String = UUID().uuidString
 
@@ -420,6 +423,7 @@ final class TerminalSessionModel {
     var lastAISessionId: String? {
         didSet { syncRustTerminalObservabilityScope() }
     }
+
     var lastAISessionIdentitySource: AISessionIdentitySource?
     /// The last app name set by live detection (command or output).
     /// Unlike `activeAppName`, this is NOT cleared on process exit,
@@ -654,7 +658,9 @@ final class TerminalSessionModel {
     @ObservationIgnored var systemRestoreCommandInFlight = false
     /// Single source of truth for snapshot-backed reveal / live-frame readiness.
     var presentationSurfaceState = TerminalPresentationSurfaceState()
-    var awaitingVisibleFrameReady: Bool { presentationSurfaceState.awaitingVisibleFrameReady }
+    var awaitingVisibleFrameReady: Bool {
+        presentationSurfaceState.awaitingVisibleFrameReady
+    }
     var hasPendingResumePrefillActivity: Bool {
         pendingPrefillInput != nil || pendingPrefillRetries > 0 || isShellLoading
     }

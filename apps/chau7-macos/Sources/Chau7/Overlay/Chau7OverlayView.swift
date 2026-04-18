@@ -1420,6 +1420,49 @@ struct StartupLoadingCoverView: View {
     }
 }
 
+// MARK: - Tab Switch Optimization: Cursor Placeholder
+
+struct CursorPlaceholderView: View {
+    let promptText: String
+    let cursorPosition: CGPoint
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
+            let cursorVisible = Int(timeline.date.timeIntervalSinceReferenceDate * 2).isMultiple(of: 2)
+
+            GeometryReader { _ in
+                ZStack(alignment: .bottomLeading) {
+                    Color.black.opacity(0.95)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        Spacer()
+
+                        HStack(spacing: 0) {
+                            Text(L("$ ", "$ "))
+                                .font(.system(size: 13, design: .monospaced))
+                                .foregroundColor(.green.opacity(0.8))
+
+                            Text(promptText)
+                                .font(.system(size: 13, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.7))
+                                .lineLimit(1)
+
+                            Text(" ")
+
+                            Rectangle()
+                                .fill(Color.white)
+                                .frame(width: 8, height: 16)
+                                .opacity(cursorVisible ? 1 : 0)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 20)
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct Chau7OverlayView: View {
     var overlayModel: OverlayTabsModel
     var appModel: AppModel
@@ -1460,10 +1503,26 @@ struct Chau7OverlayView: View {
 
     private var terminalStack: some View {
         ZStack(alignment: .top) {
-            if overlayModel.shouldShowSelectedSurfaceLiveRepaintCover {
-                Color(nsColor: settings.currentColorScheme.backgroundNSColor)
-                    .ignoresSafeArea()
-                    .zIndex(2)
+            ForEach(overlayModel.tabs) { tab in
+                let isSelected = tab.id == overlayModel.selectedTabID
+                if isSelected, !overlayModel.isTerminalReady, let snapshot = tab.cachedSnapshot {
+                    Image(nsImage: snapshot)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .zIndex(2)
+                }
+            }
+
+            ForEach(overlayModel.tabs) { tab in
+                let isSelected = tab.id == overlayModel.selectedTabID
+                let hasContent = !tab.lastPromptText.isEmpty || tab.cachedSnapshot != nil
+                if isSelected, !overlayModel.isTerminalReady, hasContent {
+                    CursorPlaceholderView(
+                        promptText: tab.lastPromptText.isEmpty ? "~" : tab.lastPromptText,
+                        cursorPosition: tab.lastCursorPosition
+                    )
+                    .zIndex(3)
+                }
             }
 
             // MARK: - Shell Loading Bar
@@ -1498,11 +1557,8 @@ struct Chau7OverlayView: View {
                 let direction = slideDirection(for: tab, isSelected: isSelected)
 
                 if keepLiveHierarchy {
-                    // Full terminal view for the selected tab and short handoff tab.
-                    // A plain cover sits above the selected surface until the
-                    // first authoritative live frame is presented.
                     SplitPaneView(controller: tab.splitController, renderPhase: renderPhase, isInteractive: isInteractive)
-                        .opacity(isSelected ? 1 : 0)
+                        .opacity(isSelected && overlayModel.isTerminalReady ? 1 : 0)
                         .offset(x: isSelected ? 0 : (30 * direction)) // Subtle slide effect
                         .allowsHitTesting(isSelected)
                         .accessibilityHidden(!isSelected)
