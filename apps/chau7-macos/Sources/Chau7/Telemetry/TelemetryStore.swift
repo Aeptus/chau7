@@ -48,6 +48,7 @@ final class TelemetryStore {
             return
         }
         sqlite3_exec(db, "PRAGMA journal_mode=WAL", nil, nil, nil)
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nil, nil, nil)
         sqlite3_exec(db, "PRAGMA foreign_keys=ON", nil, nil, nil)
         verifyIntegrity()
         createTables()
