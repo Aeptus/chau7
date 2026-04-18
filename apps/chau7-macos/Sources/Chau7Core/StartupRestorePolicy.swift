@@ -277,13 +277,15 @@ public enum StartupWindowPresentationPolicy {
             return true
         }
 
-        if isMCPControlled && !hasAttachedTerminalView {
+        if isStartupRestoreActive, hasPendingRestoreBootstrap {
             return true
         }
 
-        _ = isStartupRestoreActive
+        if isMCPControlled, !hasAttachedTerminalView {
+            return true
+        }
+
         _ = isPreviousLiveTab
-        _ = hasPendingRestoreBootstrap
         return false
     }
 
@@ -291,7 +293,7 @@ public enum StartupWindowPresentationPolicy {
         isStartupRestoreActive: Bool,
         isSelectedSurfaceLivePresentable: Bool
     ) -> Bool {
-        guard isStartupRestoreActive else { return true }
+        guard !isStartupRestoreActive else { return false }
         return isSelectedSurfaceLivePresentable
     }
 }

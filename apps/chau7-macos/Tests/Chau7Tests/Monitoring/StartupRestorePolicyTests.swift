@@ -175,8 +175,8 @@ final class StartupRestorePolicyTests: XCTestCase {
         )
     }
 
-    func testWindowPresentationPolicyDoesNotKeepBackgroundRestoreTabsLiveDuringStartup() {
-        XCTAssertFalse(
+    func testWindowPresentationPolicyKeepsBackgroundRestoreTabsLiveDuringStartup() {
+        XCTAssertTrue(
             StartupWindowPresentationPolicy.shouldKeepTabInLiveHierarchy(
                 isStartupRestoreActive: true,
                 isSelectedTab: false,
@@ -233,8 +233,8 @@ final class StartupRestorePolicyTests: XCTestCase {
         )
     }
 
-    func testWindowPresentationPolicyRevealsImmediatelyWhenLiveSurfaceIsAlreadyReady() {
-        XCTAssertTrue(
+    func testWindowPresentationPolicyKeepsSplashVisibleEvenWhenLiveSurfaceIsAlreadyReady() {
+        XCTAssertFalse(
             StartupWindowPresentationPolicy.shouldRevealWindowImmediately(
                 isStartupRestoreActive: true,
                 isSelectedSurfaceLivePresentable: true
@@ -242,8 +242,8 @@ final class StartupRestorePolicyTests: XCTestCase {
         )
     }
 
-    func testWindowPresentationPolicyRevealsImmediatelyOutsideStartup() {
-        XCTAssertTrue(
+    func testWindowPresentationPolicyOnlyRevealsOutsideStartupWhenLiveSurfaceIsReady() {
+        XCTAssertFalse(
             StartupWindowPresentationPolicy.shouldRevealWindowImmediately(
                 isStartupRestoreActive: false,
                 isSelectedSurfaceLivePresentable: false

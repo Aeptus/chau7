@@ -85,7 +85,7 @@ public enum TabRenderLifecyclePolicy {
         nextPhase: TabRenderPhase
     ) -> Bool {
         guard let previousPhase else { return false }
-        if !previousPhase.keepsVisibleSurface && nextPhase.keepsVisibleSurface {
+        if !previousPhase.keepsVisibleSurface, nextPhase.keepsVisibleSurface {
             return true
         }
         return previousPhase != .active && nextPhase == .active
@@ -125,7 +125,11 @@ public enum TabRenderLifecyclePolicy {
             return true
         }
 
-        if input.isMCPControlled && !input.hasAttachedTerminalView {
+        if input.isStartupRestoreActive, input.hasPendingRestoreBootstrap {
+            return true
+        }
+
+        if input.isMCPControlled, !input.hasAttachedTerminalView {
             return true
         }
 
