@@ -113,7 +113,18 @@ final class ProxyAnalyticsStore {
             .path
     }
 
+    /// Persistent read-only connection, opened lazily on first query.
+    /// Eliminates per-call sqlite3_open / sqlite3_close overhead.
+    private var persistentDB: OpaquePointer?
+    private let dbLock = NSLock()
+
     private init() {}
+
+    deinit {
+        if let db = persistentDB {
+            sqlite3_close(db)
+        }
+    }
 
     func overallStats(after: Date? = nil, providerFilterKey: String? = nil, projectPath: String? = nil) -> APICallStats {
         let providers = providerStats(after: after, providerFilterKey: providerFilterKey, projectPath: projectPath)
@@ -564,6 +575,13 @@ final class ProxyAnalyticsStore {
     }
 
     private func withDatabase<T>(_ body: (OpaquePointer) -> T?) -> T? {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        if let db = persistentDB {
+            return body(db)
+        }
+
         let path = databasePath
         guard FileManager.default.fileExists(atPath: path) else { return nil }
         var db: OpaquePointer?
@@ -571,7 +589,7 @@ final class ProxyAnalyticsStore {
             Log.warn("ProxyAnalyticsStore: failed to open database at \(path)")
             return nil
         }
-        defer { sqlite3_close(db) }
+        persistentDB = db
         return body(db)
     }
 
