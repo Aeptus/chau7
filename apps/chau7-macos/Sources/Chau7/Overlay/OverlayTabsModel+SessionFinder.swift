@@ -770,6 +770,11 @@ extension OverlayTabsModel {
         let terminalSessions = tab.splitController.terminalSessions
         Log.info("restoreTabState: scheduled for tab=\(targetTabID), panes=\(terminalSessions.count)")
         guard !terminalSessions.isEmpty else { return }
+        let startupRestoreActive = StartupRestoreCoordinator.shared.isActive
+        if startupRestoreActive {
+            restoreBootstrapTabIDs.insert(targetTabID)
+            updateSuspensionState()
+        }
 
         // Keep the restored focus for the active terminal pane (or fallback to
         // first terminal if an editor pane was serialized).
@@ -832,15 +837,22 @@ extension OverlayTabsModel {
         for (paneID, session) in terminalSessions {
             session.onRestoreBootstrapPhaseChanged = { [weak self] phase in
                 DispatchQueue.main.async {
+                    guard let self else { return }
                     if phase == .settled {
                         StartupRestoreCoordinator.shared.noteRestoreBootstrapSettled(
                             tabID: targetTabID,
                             paneID: paneID,
                             source: "phase_changed"
                         )
+                        if let restoredTab = self.tabs.first(where: { $0.id == targetTabID }) {
+                            let currentSessions = restoredTab.splitController.terminalSessions.map(\.1)
+                            if currentSessions.allSatisfy({ !$0.isRestoreBootstrapPending }) {
+                                self.restoreBootstrapTabIDs.remove(targetTabID)
+                                self.updateSuspensionState()
+                            }
+                        }
                     }
-                    self?.updateSuspensionState()
-                    guard let self else { return }
+                    self.updateSuspensionState()
                     guard targetTabID == self.selectedTabID else { return }
                     if let selectedTab = self.selectedTab,
                        let selectedSession = selectedTab.displaySession ?? selectedTab.session,
@@ -1125,6 +1137,12 @@ extension OverlayTabsModel {
                         delay: Self.resumeCommandDelaySeconds
                     )
                 }
+            }
+
+            if startupRestoreActive,
+               currentSessions.allSatisfy({ !$0.1.isRestoreBootstrapPending }) {
+                restoreBootstrapTabIDs.remove(targetTabID)
+                updateSuspensionState()
             }
         }
     }

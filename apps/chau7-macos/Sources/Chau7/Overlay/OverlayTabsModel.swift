@@ -1195,6 +1195,10 @@ final class OverlayTabsModel {
         !deferredRestoreTabOrder.isEmpty
     }
 
+    var hasPendingStartupRestoreWork: Bool {
+        !deferredRestoreTabOrder.isEmpty || !restoreBootstrapTabIDs.isEmpty
+    }
+
     @discardableResult
     func restoreOneDeferredTabIfNeeded(reason: String) -> Bool {
         if !hasStartedDeferredRestore {

@@ -243,27 +243,16 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     private func finishLaunching() {
         Log.info("finishLaunching: presenting overlay windows")
-        // Dismiss splash and show overlay (terminal only, no settings window)
-        let splashDismissRequestedAt = CFAbsoluteTimeGetCurrent()
-        Log.info("finishLaunching: requesting splash dismissal")
-        splashController?.dismissImmediately(reason: "startup") { [weak self] in
-            guard let self else { return }
-            let dismissElapsedMs = Int(((CFAbsoluteTimeGetCurrent() - splashDismissRequestedAt) * 1000).rounded())
-            Log.info("finishLaunching: splash dismissal completed after \(dismissElapsedMs)ms")
-            splashController = nil
-            preparedStartupWindowNumbers.removeAll()
-            revealedStartupWindowNumbers.removeAll()
-            // Prepare all restored overlay windows, but only reveal them once
-            // the selected surface is presentable.
-            for host in overlayHosts {
-                prepareStartupOverlayWindow(host, reason: "finishLaunching")
-            }
-            // Ensure menu bar is anchored after splash dismissal.
-            // During the splash phase no window is key/main, so macOS may
-            // drop the menu bar for this app. Re-activating here forces it back.
-            NSApp.activate(ignoringOtherApps: true)
-            completeStartupRestoreIfReady(reason: "windows_shown")
+        preparedStartupWindowNumbers.removeAll()
+        revealedStartupWindowNumbers.removeAll()
+        // Prepare all restored overlay windows while the splash/logo stays visible.
+        // The app should only be revealed after every restored tab has had its
+        // startup restore work drained behind the splash.
+        for host in overlayHosts {
+            prepareStartupOverlayWindow(host, reason: "finishLaunching")
         }
+        startDeferredRestoreSchedulingIfNeeded(reason: "startup_prepare_all_tabs")
+        completeStartupRestoreIfReady(reason: "windows_prepared")
     }
 
     @MainActor private func completeStartupRestoreIfReady(reason: String) {
@@ -272,22 +261,42 @@ private final class OverlayBlurView: NSVisualEffectView {
         guard StartupRestoreCoordinator.shared.isReadyToComplete(expectedWindowCount: expectedWindowCount) else {
             return
         }
+        guard !overlayHosts.contains(where: { $0.model.hasPendingStartupRestoreWork }) else {
+            return
+        }
         didCompleteStartupRestore = true
         Log.info("Startup restore completion: reason=\(reason) expectedWindows=\(expectedWindowCount)")
-        startDeferredRestoreSchedulingIfNeeded(reason: "startup_complete")
-        startDeferredStartupWorkIfNeeded()
-        endLatencyCriticalScope(reason: "startup-restore")
-        StartupRestoreCoordinator.shared.end()
+        let finishPresentation = { [weak self] in
+            guard let self else { return }
+            revealPreparedStartupOverlayWindows(reason: "startup_ready")
+            startDeferredStartupWorkIfNeeded()
+            endLatencyCriticalScope(reason: "startup-restore")
+            StartupRestoreCoordinator.shared.end()
+        }
+        if splashController != nil {
+            let splashDismissRequestedAt = CFAbsoluteTimeGetCurrent()
+            Log.info("completeStartupRestoreIfReady: requesting splash dismissal")
+            splashController?.dismissImmediately(reason: "startup_ready") { [weak self] in
+                guard let self else { return }
+                let dismissElapsedMs = Int(((CFAbsoluteTimeGetCurrent() - splashDismissRequestedAt) * 1000).rounded())
+                Log.info("completeStartupRestoreIfReady: splash dismissal completed after \(dismissElapsedMs)ms")
+                splashController = nil
+                finishPresentation()
+            }
+        } else {
+            finishPresentation()
+        }
     }
 
     @MainActor private func startDeferredRestoreSchedulingIfNeeded(reason: String) {
         guard overlayHosts.contains(where: { $0.model.hasPendingDeferredRestore }) else { return }
         deferredRestoreSchedulerWorkItem?.cancel()
+        let delay: TimeInterval = StartupRestoreCoordinator.shared.isActive ? 0.0 : 0.25
         let work = DispatchWorkItem { [weak self] in
             self?.restoreNextDeferredTabAcrossWindows(reason: reason)
         }
         deferredRestoreSchedulerWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     @MainActor private func scheduleNextDeferredRestoreStep(
@@ -296,11 +305,12 @@ private final class OverlayBlurView: NSVisualEffectView {
     ) {
         deferredRestoreSchedulerWorkItem?.cancel()
         guard overlayHosts.contains(where: { $0.model.hasPendingDeferredRestore }) else { return }
+        let effectiveDelay = StartupRestoreCoordinator.shared.isActive ? 0.05 : delay
         let work = DispatchWorkItem { [weak self] in
             self?.restoreNextDeferredTabAcrossWindows(reason: reason)
         }
         deferredRestoreSchedulerWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + effectiveDelay, execute: work)
     }
 
     @MainActor private func restoreNextDeferredTabAcrossWindows(reason: String) {
@@ -323,13 +333,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         tabsModel.onStartupSelectedTabLiveFrameRecorded = { [weak self, weak tabsModel] in
             guard let self else { return }
             tabsModel?.usesStartupLoadingCover = false
-            if let tabsModel {
-                revealPreparedStartupOverlayWindow(
-                    for: tabsModel,
-                    reason: "selected_tab_live_frame",
-                    recordSelectedLiveFrame: true
-                )
-            }
             completeStartupRestoreIfReady(reason: "selected_tab_live_frame")
         }
     }
@@ -2076,18 +2079,20 @@ private final class OverlayBlurView: NSVisualEffectView {
         )
         NSApp.activate(ignoringOtherApps: true)
         host.model.requestSelectedTabAuthoritativeReveal(reason: "startup_prepare")
-        if StartupWindowPresentationPolicy.shouldRevealWindowImmediately(
-            isStartupRestoreActive: StartupRestoreCoordinator.shared.isActive,
-            isSelectedSurfaceLivePresentable: host.model.selectedSurfacePresentation.isLivePresentable
-        ) {
+        logOverlayWindowLifecycle(reason: "prepareStartupOverlayWindow-\(reason)", window: host.window)
+        logOverlayDiagnostics(reason: "prepare-\(reason)", window: host.window)
+    }
+
+    private func revealPreparedStartupOverlayWindows(reason: String) {
+        for host in overlayHosts {
             revealPreparedStartupOverlayWindow(
                 host,
-                reason: "startup_live_surface_ready",
+                reason: reason,
                 recordSelectedLiveFrame: false
             )
         }
-        logOverlayWindowLifecycle(reason: "prepareStartupOverlayWindow-\(reason)", window: host.window)
-        logOverlayDiagnostics(reason: "prepare-\(reason)", window: host.window)
+        // Ensure menu bar is anchored after splash dismissal and real window reveal.
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func revealPreparedStartupOverlayWindow(
