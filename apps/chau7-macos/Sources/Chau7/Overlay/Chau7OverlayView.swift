@@ -1503,6 +1503,7 @@ struct Chau7OverlayView: View {
 
     private var terminalStack: some View {
         ZStack(alignment: .top) {
+
             // MARK: - Shell Loading Bar
 
             ForEach(overlayModel.tabs) { tab in
@@ -1521,6 +1522,7 @@ struct Chau7OverlayView: View {
             }
 
             // MARK: - Tab Switch Optimization: Lazy Tab Loading + Directional Motion
+
 
             // Keep only the selected tab live by default. A just-unselected tab
             // stays attached for one short handoff window so the renderer

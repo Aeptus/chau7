@@ -75,6 +75,8 @@ Detection methods:
 - **Restore ownership validation** — pane resume prefills now verify directory and restored AI identity before insertion, so stale retries fail closed instead of landing in the wrong pane.
 - **Restore delivery ledger** — pane resume restore now records scheduled, queued, delivered, rejected, and superseded outcomes per pane so stale retries are explicit in logs and tests instead of silent.
 - **Restore supersession guard** — stale retry callbacks can no longer overwrite a newer pane’s delivered restore outcome, so the ledger keeps the winning pane state instead of regressing to `superseded`.
+- **Single Live Selected-Tab Surface** — selected tabs now render through one live surface only; the old snapshot/cursor handoff no longer stacks on top of the live terminal during tab switches.
+- **On-Demand Deferred Restore** — non-selected restored tabs stay deferred until the user selects them, instead of auto-restoring and mutating visible tabs immediately after launch.
 
 ### Context Token Optimization (CTO)
 

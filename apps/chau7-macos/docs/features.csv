@@ -1,5 +1,7 @@
 Category,Feature,Description,Status,Differentiator
 Terminal Core,Rust Terminal Backend,"Custom terminal emulator written in Rust with FFI bridge — fast, memory-safe, and correct",Shipped,Yes
+Tabs,Single Live Selected-Tab Surface,"Selected tabs now render through one live surface only; snapshot and cursor handoff overlays no longer stack on top of the live terminal during switches",Shipped,Yes
+Tabs,On-Demand Deferred Restore,"Non-selected restored tabs stay deferred until selected instead of auto-restoring and mutating visible tabs immediately after launch",Shipped,Yes
 Terminal Core,Fixed-Delay Startup Reveal,"Reveal restored windows after a short splash delay instead of waiting for the full restore queue to drain",Shipped,Yes
 Terminal Core,Stabilized Scrollback Restore,"Restored scrollback is replayed through the shell again, with restore-artifact filtering preserved, to avoid fresh post-relaunch history corruption while keeping fast visible startup",Shipped,Yes
 Performance,Adaptive Render-Loop Throttling,"Active tab drops to ~10 Hz after idle, snaps back instantly on PTY data or user input (keys, mouse, scroll, paste, IME) — cuts wakeups and CPU on idle AI sessions without any perceptible lag",Shipped,Yes
