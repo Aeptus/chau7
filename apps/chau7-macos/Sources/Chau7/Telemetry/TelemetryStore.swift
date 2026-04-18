@@ -618,14 +618,19 @@ final class TelemetryStore {
         }
         defer { sqlite3_finalize(stmt) }
 
+        let map = columnIndexMap(stmt)
         var report = ProviderLatencyBackfillReport()
         let scanStartedAt = CFAbsoluteTimeGetCurrent()
         while sqlite3_step(stmt) == SQLITE_ROW {
-            guard let run = parseRun(stmt) else { continue }
+            guard let run = parseRun(stmt, map) else { continue }
             report.inspectedRuns += 1
             let turns = _getTurns(runID: run.id)
             let samples = ProviderLatencyAnalytics.completedRunFirstResponseSamples(run: run, turns: turns)
-            guard !samples.isEmpty else {
+            if samples.isEmpty {
+                // Insert a sentinel so NOT EXISTS skips this run on future launches.
+                // Runs that produce no samples (bad timestamps, no human→assistant pairs)
+                // would otherwise be rescanned every launch via the N+1 _getTurns query.
+                _insertLatencySentinel(runID: run.id)
                 report.skippedRuns += 1
                 continue
             }
@@ -1033,6 +1038,25 @@ final class TelemetryStore {
             let err = String(cString: sqlite3_errmsg(db))
             Log.warn("TelemetryStore: insert latency sample failed for \(sample.id): \(err)")
         }
+    }
+
+    /// Insert a zero-value sentinel so the NOT EXISTS filter in the backfill
+    /// query skips this run on subsequent launches. The sentinel has a
+    /// recognizable source_kind so it can be distinguished from real samples.
+    private func _insertLatencySentinel(runID: String) {
+        guard let db else { return }
+        let sql = """
+        INSERT OR IGNORE INTO provider_latency_samples
+        (sample_id, provider, metric_kind, latency_ms, run_id, source_kind, observed_at)
+        VALUES (?, 'sentinel', 'first_response', 0, ?, 'completed_run_turns', datetime('now'))
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        let sampleID = "sentinel|\(runID)"
+        bindText(stmt, 1, sampleID)
+        bindText(stmt, 2, runID)
+        sqlite3_step(stmt)
     }
 
     private func deleteLatencySamples(
