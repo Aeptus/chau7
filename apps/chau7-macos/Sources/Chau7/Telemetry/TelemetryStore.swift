@@ -548,6 +548,9 @@ final class TelemetryStore {
     private func _backfillCompletedRunLatencySamples() -> ProviderLatencyBackfillReport {
         guard let db else { return ProviderLatencyBackfillReport() }
 
+        // Only process completed runs that have NO existing latency samples.
+        // Runs that were already backfilled are skipped entirely — their samples
+        // are durable (upsert on sample_id) and don't need recomputing.
         let sql = """
         SELECT r.*
         FROM runs r
@@ -557,6 +560,11 @@ final class TelemetryStore {
              OR lower(r.provider) LIKE '%claude%'
              OR lower(r.provider) LIKE '%anthropic%'
              OR lower(r.provider) LIKE '%openai%'
+          )
+          AND NOT EXISTS (
+                SELECT 1 FROM provider_latency_samples pls
+                WHERE pls.run_id = r.run_id
+                  AND pls.source_kind = 'completed_run_turns'
           )
         ORDER BY r.started_at ASC
         """
@@ -574,11 +582,6 @@ final class TelemetryStore {
             report.inspectedRuns += 1
             let turns = _getTurns(runID: run.id)
             let samples = ProviderLatencyAnalytics.completedRunFirstResponseSamples(run: run, turns: turns)
-            deleteLatencySamples(
-                runID: run.id,
-                metricKind: .firstResponse,
-                sourceKind: "completed_run_turns"
-            )
             guard !samples.isEmpty else {
                 report.skippedRuns += 1
                 continue
