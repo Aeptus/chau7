@@ -157,7 +157,9 @@ final class ScrollbackMemoryManager {
     private static func compress(_ data: Data) -> Data {
         data.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> Data in
             let srcBase = src.baseAddress!.assumingMemoryBound(to: UInt8.self)
-            let dstCapacity = max(data.count, 64)
+            // Account for ZLIB worst-case expansion on incompressible data:
+            // input + input/10 + 256 bytes of overhead.
+            let dstCapacity = data.count + data.count / 10 + 256
             let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: dstCapacity)
             defer { dst.deallocate() }
             let written = compression_encode_buffer(
