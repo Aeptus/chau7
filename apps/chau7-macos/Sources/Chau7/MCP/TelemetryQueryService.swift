@@ -62,8 +62,13 @@ final class TelemetryQueryService {
         )
 
         let activeRuns = filteredActiveRuns(filter: filter)
+        // Pass a bounded limit to the store instead of nil so the SQL LIMIT
+        // does the heavy lifting. Over-fetch by offset + activeRuns count to
+        // give mergeRuns enough headroom for interleaving.
         var storeFilter = filter
-        storeFilter.limit = nil
+        let requestedLimit = filter.limit ?? 50
+        let requestedOffset = filter.offset ?? 0
+        storeFilter.limit = requestedLimit + requestedOffset + activeRuns.count
         storeFilter.offset = nil
         let storedRuns = store.listRuns(filter: storeFilter)
         let activeRunIDs = Set(activeRuns.map(\.id))
@@ -106,7 +111,7 @@ final class TelemetryQueryService {
         let filter = TelemetryRunFilter(repoPath: repoPath, provider: provider)
         let activeRuns = filteredActiveRuns(filter: filter)
         var storeFilter = filter
-        storeFilter.limit = nil
+        storeFilter.limit = 1 + activeRuns.count
         storeFilter.offset = nil
         let storedRuns = store.listRuns(filter: storeFilter)
         let activeRunIDs = Set(activeRuns.map(\.id))
