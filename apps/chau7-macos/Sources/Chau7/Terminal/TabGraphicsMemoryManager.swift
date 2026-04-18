@@ -109,7 +109,9 @@ final class TabGraphicsMemoryManager {
         let shouldBeVolatile = (newPhase == .warm || newPhase == .hidden)
         let wasVolatile = (oldPhase == .warm || oldPhase == .hidden)
         if shouldBeVolatile != wasVolatile, let provider = metalVolatility(for: tabID) {
-            provider.setTexturesVolatile(shouldBeVolatile)
+            DispatchQueue.main.async {
+                provider.setTexturesVolatile(shouldBeVolatile)
+            }
         }
     }
 
