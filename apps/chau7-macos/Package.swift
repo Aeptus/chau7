@@ -52,6 +52,7 @@ let package = Package(
                 "Notifications/README.md",
                 "Overlay/README.md",
                 "Performance/README.md",
+                "Performance/SIMDTerminalParser.swift",
                 "Profiles/README.md",
                 "Proxy/README.md",
                 "Remote/README.md",
