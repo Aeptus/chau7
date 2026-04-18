@@ -116,6 +116,8 @@ final class PersistentHistoryStore {
         execute("CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp DESC)")
         execute("CREATE INDEX IF NOT EXISTS idx_history_command ON history(command)")
         execute("CREATE INDEX IF NOT EXISTS idx_history_directory ON history(directory)")
+        // Compound index for frequentCommandsForRepo GROUP BY query
+        execute("CREATE INDEX IF NOT EXISTS idx_history_dir_cmd ON history(directory, command)")
     }
 
     // MARK: - Insert
