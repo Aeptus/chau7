@@ -69,6 +69,7 @@ final class TelemetryStore {
                     "(inspected=\(latencyBackfill.inspectedRuns), skipped=\(latencyBackfill.skippedRuns))"
                 )
             }
+            self.runIncrementalVacuumIfNeeded()
             self.didRunDeferredMaintenance = true
             self.didScheduleDeferredMaintenance = false
         }
@@ -472,6 +473,23 @@ final class TelemetryStore {
         if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
             Log.warn("TelemetryStore: failed to add column \(table).\(name)")
         }
+    }
+
+    /// Run PRAGMA incremental_vacuum if more than 7 days have passed since the
+    /// last vacuum. WAL mode databases can accumulate free pages over time;
+    /// incremental vacuum reclaims them without the full-lock cost of VACUUM.
+    private func runIncrementalVacuumIfNeeded() {
+        guard let db else { return }
+        let key = "telemetry.store.lastVacuumTime"
+        let lastVacuum = UserDefaults.standard.double(forKey: key)
+        let now = CFAbsoluteTimeGetCurrent()
+        let sevenDays: CFAbsoluteTime = 7 * 24 * 60 * 60
+        guard lastVacuum == 0 || (now - lastVacuum) > sevenDays else { return }
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        sqlite3_exec(db, "PRAGMA incremental_vacuum", nil, nil, nil)
+        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0)
+        UserDefaults.standard.set(now, forKey: key)
+        Log.info("TelemetryStore: incremental vacuum completed in \(elapsedMs)ms")
     }
 
     private func backfillHistoricalMissingCosts() {
