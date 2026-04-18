@@ -132,8 +132,12 @@ final class TelemetryQueryService {
             return (sessionID, run)
         }, by: \.0).mapValues { $0.map(\.1) }
 
+        // Limit the runs scan to a reasonable multiple of the session count.
+        // The CTE already provides provider/repo for each session; we only
+        // need one run per session for latest_run_id enrichment.
+        let runsLimit = max(sessions.count * 2, 100)
         var latestStoredRunBySession: [String: TelemetryRun] = [:]
-        for run in store.listRuns(filter: TelemetryRunFilter(repoPath: repoPath)) {
+        for run in store.listRuns(filter: TelemetryRunFilter(repoPath: repoPath, limit: runsLimit)) {
             guard let sessionID = run.sessionID,
                   latestStoredRunBySession[sessionID] == nil else {
                 continue
