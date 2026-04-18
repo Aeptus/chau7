@@ -74,6 +74,9 @@ final class UsageMonitor {
     @ObservationIgnored private var warningHandler: ((AIEvent) -> Void)?
     @ObservationIgnored private var latencySamplesCache: [ProviderLatencyTimeRange: CachedLatencySamples] = [:]
     @ObservationIgnored private var activitySamplesCache: [ProviderLatencyTimeRange: CachedActivitySamples] = [:]
+    /// In-memory cache of the last snapshot per provider to avoid re-reading
+    /// the entire JSONL file on every appendSnapshotIfNeeded call.
+    @ObservationIgnored private var lastSnapshotByProvider: [String: ProviderQuotaSnapshot] = [:]
 
     private(set) var lastRefreshAt: Date?
     private(set) var lastErrorMessage: String?
@@ -603,10 +606,19 @@ final class UsageMonitor {
     }
 
     private func appendSnapshotIfNeeded(_ snapshot: ProviderQuotaSnapshot) {
-        let existing = loadSnapshots(from: Self.snapshotsFilePath)
-            .last { $0.provider.caseInsensitiveCompare(snapshot.provider) == .orderedSame }
+        let providerKey = snapshot.provider.lowercased()
 
-        if let existing, existing.windows == snapshot.windows, existing.planType == snapshot.planType {
+        // Seed the in-memory cache on first call for this provider.
+        if lastSnapshotByProvider[providerKey] == nil {
+            let existing = loadSnapshots(from: Self.snapshotsFilePath)
+                .last { $0.provider.caseInsensitiveCompare(snapshot.provider) == .orderedSame }
+            if let existing {
+                lastSnapshotByProvider[providerKey] = existing
+            }
+        }
+
+        if let existing = lastSnapshotByProvider[providerKey],
+           existing.windows == snapshot.windows, existing.planType == snapshot.planType {
             return
         }
 
@@ -622,6 +634,7 @@ final class UsageMonitor {
             } else {
                 try line.write(to: targetURL, atomically: true, encoding: .utf8)
             }
+            lastSnapshotByProvider[providerKey] = snapshot
         } catch {
             DispatchQueue.main.async {
                 self.lastErrorMessage = "Failed to store usage snapshot: \(error.localizedDescription)"
