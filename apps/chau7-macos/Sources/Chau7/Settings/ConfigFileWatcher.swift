@@ -24,6 +24,7 @@ final class ConfigFileWatcher {
 
     @ObservationIgnored private var fileMonitorSource: DispatchSourceFileSystemObject?
     @ObservationIgnored private var fileDescriptor: Int32 = -1
+    @ObservationIgnored private var reloadWorkItem: DispatchWorkItem?
 
     private var globalConfigPath: String {
         RuntimeIsolation.pathInHome(".chau7/config.toml")
@@ -176,10 +177,16 @@ final class ConfigFileWatcher {
         )
 
         source.setEventHandler { [weak self] in
-            DispatchQueue.main.async {
-                self?.loadGlobalConfig()
-                self?.applyConfig()
+            // Debounce rapid FS events (editors often write + rename in quick succession).
+            self?.reloadWorkItem?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                DispatchQueue.main.async {
+                    self?.loadGlobalConfig()
+                    self?.applyConfig()
+                }
             }
+            self?.reloadWorkItem = work
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .milliseconds(200), execute: work)
         }
 
         source.setCancelHandler { [weak self] in
