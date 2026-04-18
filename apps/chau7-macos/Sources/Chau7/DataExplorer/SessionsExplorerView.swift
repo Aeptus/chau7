@@ -38,7 +38,7 @@ struct SessionsExplorerView: View {
             let totalTurns = runs.reduce(0) { $0 + $1.turnCount }
             let lastActive = runs.map(\.startedAt).max() ?? Date.distantPast
             let cmdStats = PersistentHistoryStore.shared.commandStatsForRepo(repoRoot: path)
-            let runStats = TelemetryStore.shared.runStatsForRepo(repoPath: path)
+            let totalCost = runs.reduce(0.0) { $0 + ($1.costUSD ?? 0) }
             return RepoRunGroup(
                 repoPath: path,
                 repoName: URL(fileURLWithPath: path).lastPathComponent,
@@ -46,7 +46,7 @@ struct SessionsExplorerView: View {
                 providers: providers.sorted(),
                 totalTokens: totalTokens,
                 totalTurns: totalTurns,
-                totalCost: runStats.totalCost,
+                totalCost: totalCost,
                 totalCommands: cmdStats.total,
                 successRate: cmdStats.total > 0 ? Double(cmdStats.successful) / Double(cmdStats.total) : 0,
                 lastActive: lastActive
