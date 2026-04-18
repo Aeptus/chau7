@@ -1,12 +1,9 @@
-// MARK: - Rust Metal Display Coordinator (v2)
+// MARK: - Rust Metal Display Coordinator
 
 // Orchestrates the Metal rendering pipeline for the Rust terminal backend.
-// The Rust terminal is the source of truth (PTY I/O, parsing, selection, scroll).
-//
-// v2 Architecture: pollAndSync() calls onDisplaySyncNeeded → setNeedsSync() →
-//   draw(in:) reads grid via gridProvider → converts RustCellData directly into
-//   CellInstance ring buffer (no intermediate TerminalCell, no triple buffer) →
-//   renderer submits single-pass draw call.
+// pollAndSync() → onDisplaySyncNeeded → setNeedsSync() → draw(in:) reads grid
+// via gridProvider → converts RustCellData directly into CellInstance ring buffer
+// → renderer submits single-pass draw call.
 
 import Foundation
 import MetalKit
@@ -54,6 +51,9 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// Only rows that actually changed get reconverted + re-uploaded.
     private var previousCells: UnsafeMutableBufferPointer<RustCellData>?
     private var previousCellCapacity = 0
+    /// When true, the next sync frame skips dirty detection and converts all rows.
+    /// Set by font changes, color scheme changes, and forced refreshes.
+    private var forceFullConversion = true
 
     // MARK: - Blink Timer
 
@@ -164,6 +164,7 @@ final class RustMetalDisplayCoordinator: NSObject {
     func forceAuthoritativeRefresh(reason: String) {
         needsSync = true
         needsPresent = true
+        forceFullConversion = true
         lastActivityTime = Date()
         renderer.cursorBlinkPhase = true
         Log.trace("RustMetalDisplayCoordinator: forceAuthoritativeRefresh[\(reason)]")
@@ -188,6 +189,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         renderer.resetBlinkTracking(rows: rows)
         needsSync = true
         needsPresent = true
+        forceFullConversion = true
         Log.info("RustMetalDisplayCoordinator: Resized to \(cols)x\(rows)")
         requestDraw()
     }
@@ -196,6 +198,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         updateColorScheme()
         needsSync = true
         needsPresent = true
+        forceFullConversion = true
         requestDraw()
     }
 
@@ -203,6 +206,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         configureFont()
         needsSync = true
         needsPresent = true
+        forceFullConversion = true
         requestDraw()
     }
 
@@ -433,32 +437,38 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         let syncCols = min(gridCols, cols)
         let rustCellStride = MemoryLayout<RustCellData>.stride
 
+        // The previousCells buffer uses a fixed layout of `cols` cells per row
+        // (matching the instance buffer). We only compare `syncCols` cells per
+        // row so the comparison window is safe for both source and destination.
+        // If grid dimensions changed, force a full refresh to avoid misaligned reads.
+        let dimensionMismatch = gridCols != cols || gridRows != rows
+
         // Ensure previous-frame cell buffer is allocated
         let needsBufferRealloc = previousCellCapacity < cellCount
         if needsBufferRealloc {
             previousCells?.baseAddress?.deinitialize(count: previousCellCapacity)
             previousCells?.baseAddress?.deallocate()
             let ptr = UnsafeMutablePointer<RustCellData>.allocate(capacity: cellCount)
-            // Zero-initialize so first-frame memcmp forces full refresh
             memset(ptr, 0, cellCount * rustCellStride)
             previousCells = UnsafeMutableBufferPointer(start: ptr, count: cellCount)
             previousCellCapacity = cellCount
         }
 
-        // Determine which rows changed
-        let forceFullRefresh = needsBufferRealloc
+        // Determine which rows need conversion
+        let mustConvertAll = needsBufferRealloc || forceFullConversion || dimensionMismatch
+        forceFullConversion = false
+
         var dirtyRowSet = IndexSet()
-        if forceFullRefresh {
+        if mustConvertAll {
             dirtyRowSet = IndexSet(integersIn: 0 ..< syncRows)
         } else if let prevCells = previousCells?.baseAddress {
+            let compareBytes = syncCols * rustCellStride
             for row in 0 ..< syncRows {
-                let rustRowStart = row * gridCols
-                let prevRowStart = row * cols
-                let compareCount = syncCols * rustCellStride
+                let offset = row * cols
                 if memcmp(
-                    rustCells.advanced(by: rustRowStart),
-                    prevCells.advanced(by: prevRowStart),
-                    compareCount
+                    rustCells.advanced(by: row * gridCols),
+                    prevCells.advanced(by: offset),
+                    compareBytes
                 ) != 0 {
                     dirtyRowSet.insert(row)
                 }
@@ -471,13 +481,13 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         dirtyRowSet.formUnion(cursorDirty)
 
         // Get the ring buffer. For unchanged rows, copy from previous instance buffer.
-        let bufCount = MetalTerminalRenderer.ringBufferCount
-        let prevRingIndex = (renderer.ringIndex + bufCount - 1) % bufCount
         let instanceBuffer = renderer.nextInstanceBuffer()
         let instances = instanceBuffer.contents().bindMemory(to: CellInstance.self, capacity: cellCount)
 
         // Copy previous instance data for clean rows (if we have a previous buffer)
-        if !forceFullRefresh, !renderer.instanceBuffers.isEmpty {
+        if !mustConvertAll, renderer.instanceBuffers.count == MetalTerminalRenderer.ringBufferCount {
+            let bufCount = MetalTerminalRenderer.ringBufferCount
+            let prevRingIndex = (renderer.ringIndex + bufCount - 1) % bufCount
             let prevBuffer = renderer.instanceBuffers[prevRingIndex]
             let prevInstances = prevBuffer.contents().bindMemory(to: CellInstance.self, capacity: cellCount)
             let instanceStride = MemoryLayout<CellInstance>.stride
@@ -622,8 +632,10 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
 
         renderer.finalizeBlinkState()
 
-        // Save current Rust cells for next-frame dirty detection
-        if let prevPtr = previousCells?.baseAddress {
+        // Save current Rust cells for next-frame dirty detection.
+        // Layout: `cols` cells per row (matching instance buffer), copying
+        // only `syncCols` cells from the Rust grid per row.
+        if let prevPtr = previousCells?.baseAddress, !dimensionMismatch {
             for row in 0 ..< syncRows {
                 memcpy(
                     prevPtr.advanced(by: row * cols),
@@ -657,8 +669,8 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                 saturated: false,
                 glyphLookups: frameGlyphLookups,
                 glyphMisses: frameGlyphMisses,
-                glyphCacheSize: 0,
-                ligatureCacheSize: 0
+                glyphCacheSize: renderer.glyphCacheCount,
+                ligatureCacheSize: renderer.ligatureCacheCount
             )
         }
 
