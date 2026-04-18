@@ -948,6 +948,33 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertFalse(restoredModel.restoreOneDeferredTabIfNeeded(reason: "test"))
     }
 
+    func testRestoreDoesNotQueueShellReplayByDefault() {
+        guard let tab = model.tabs.first,
+              let session = tab.session else {
+            XCTFail("Expected initial tab session")
+            return
+        }
+
+        let state = SavedTabState(
+            customTitle: "Restored",
+            color: TabColor.blue.rawValue,
+            directory: "/tmp/chau7-stable-restore",
+            selectedIndex: 0,
+            tokenOptOverride: nil,
+            scrollbackContent: "echo restored output",
+            aiResumeCommand: nil,
+            splitLayout: nil,
+            focusedPaneID: nil,
+            paneStates: nil
+        )
+
+        model.restoreTabState(for: tab, state: state, scheduledDelayOverride: 0)
+        drainMainQueue()
+        drainMainQueue()
+
+        XCTAssertNil(session.pendingSystemRestoreInputLine)
+    }
+
     // MARK: - Tab Close (closeTab)
 
     func testCloseTabRemovesTab() {

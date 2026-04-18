@@ -769,8 +769,14 @@ extension OverlayTabsModel {
         for tab: OverlayTab,
         state: SavedTabState,
         scheduledDelayOverride: TimeInterval? = nil,
-        replayScrollbackThroughShell: Bool = true,
-        useResumeRetryScheduler: Bool = true
+        // Runtime restore must not replay shell plumbing into user-visible PTYs.
+        // Keep restore focused on directory/session metadata and let the live
+        // session redraw naturally once attached.
+        replayScrollbackThroughShell: Bool = false,
+        // Queue resume prefills directly on the session instead of retrying on
+        // timers. This keeps restore mutation bound to the session lifecycle
+        // and avoids post-reveal retry storms.
+        useResumeRetryScheduler: Bool = false
     ) {
         let targetTabID = tab.id
         let terminalSessions = tab.splitController.terminalSessions

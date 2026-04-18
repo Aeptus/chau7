@@ -250,7 +250,6 @@ private final class OverlayBlurView: NSVisualEffectView {
             for host in overlayHosts {
                 showOverlayWindow(host, reason: "finishLaunching")
             }
-            startDeferredRestoreSchedulingIfNeeded(reason: "finishLaunching")
             NSApp.activate(ignoringOtherApps: true)
             DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
                 guard let self else { return }
