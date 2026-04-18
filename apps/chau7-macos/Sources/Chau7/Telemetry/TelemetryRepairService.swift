@@ -51,8 +51,7 @@ final class TelemetryRepairService {
     }
 
     func rebuildTranscriptDerivedRuns(limit: Int = 500) -> TelemetryRepairReport {
-        let runs = store.listRuns(filter: TelemetryRunFilter(limit: limit))
-            .filter(Self.needsTranscriptRepair)
+        let runs = store.listRuns(filter: TelemetryRunFilter(limit: limit, needsTranscriptRepair: true))
             .sorted(by: Self.repairPriority(lhs:rhs:))
 
         var report = TelemetryRepairReport()
@@ -74,8 +73,7 @@ final class TelemetryRepairService {
     }
 
     func rebuildRecentIncompleteRuns(limit: Int = 200) -> TelemetryRepairReport {
-        let runs = store.listRuns(filter: TelemetryRunFilter(limit: limit))
-            .filter(Self.needsTranscriptRepair)
+        let runs = store.listRuns(filter: TelemetryRunFilter(limit: limit, needsTranscriptRepair: true))
             .sorted(by: Self.repairPriority(lhs:rhs:))
 
         var report = TelemetryRepairReport()

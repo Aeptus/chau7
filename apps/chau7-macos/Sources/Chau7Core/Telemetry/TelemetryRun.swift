@@ -120,6 +120,9 @@ public struct TelemetryRunFilter: Sendable {
     public var tags: [String]?
     public var limit: Int?
     public var offset: Int?
+    /// When true, only return completed runs that need transcript repair
+    /// (missing transcript source, missing metrics, or unavailable cost).
+    public var needsTranscriptRepair: Bool = false
 
     public init(
         sessionID: String? = nil,
@@ -130,7 +133,8 @@ public struct TelemetryRunFilter: Sendable {
         before: Date? = nil,
         tags: [String]? = nil,
         limit: Int? = nil,
-        offset: Int? = nil
+        offset: Int? = nil,
+        needsTranscriptRepair: Bool = false
     ) {
         self.sessionID = sessionID
         self.repoPath = repoPath
@@ -141,5 +145,6 @@ public struct TelemetryRunFilter: Sendable {
         self.tags = tags
         self.limit = limit
         self.offset = offset
+        self.needsTranscriptRepair = needsTranscriptRepair
     }
 }
