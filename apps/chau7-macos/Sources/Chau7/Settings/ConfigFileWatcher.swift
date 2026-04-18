@@ -76,7 +76,19 @@ final class ConfigFileWatcher {
             return
         }
         repoConfigDirectory = directory
-        loadRepoConfig(directory: directory)
+        // Read the repo config file off the main thread, then apply on main.
+        let repoPath = (directory as NSString).appendingPathComponent(".chau7/config.toml")
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let content = try? String(contentsOfFile: repoPath, encoding: .utf8)
+            let parsed = content.flatMap { ConfigFileParser.parse($0) }
+            DispatchQueue.main.async {
+                guard let self, self.repoConfigDirectory == directory else { return }
+                self.repoConfig = parsed
+                if parsed != nil {
+                    Log.info("ConfigFileWatcher: loaded repo config from \(repoPath)")
+                }
+            }
+        }
     }
 
     /// Path to the per-repo config file for the active directory.
