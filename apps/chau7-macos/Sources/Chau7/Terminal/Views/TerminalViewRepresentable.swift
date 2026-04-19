@@ -20,9 +20,20 @@ final class RustTerminalContainerView: NSView {
         fatalError("init(coder:) not implemented")
     }
 
+    /// Weak reference to the shared Metal coordinator. Set by `switchToView()`
+    /// so the container can resize it on layout without owning it.
+    weak var metalCoordinator: RustMetalDisplayCoordinator?
+
     override func layout() {
         super.layout()
         terminalView.frame = bounds
+
+        // Resize the shared Metal view if it's placed in this container
+        if let coordinator = metalCoordinator {
+            let inset = RustTerminalView.terminalInset
+            coordinator.metalView.frame = bounds.insetBy(dx: inset, dy: inset)
+            coordinator.resize(rows: terminalView.renderRows, cols: terminalView.renderCols)
+        }
 
         if !didRunFirstLayout, bounds.width > 0, bounds.height > 0 {
             didRunFirstLayout = true

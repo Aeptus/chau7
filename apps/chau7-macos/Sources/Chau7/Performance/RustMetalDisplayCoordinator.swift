@@ -258,9 +258,12 @@ final class RustMetalDisplayCoordinator: NSObject {
             return
         }
 
-        // 1. Disconnect old view's rendering callbacks
+        // 1. Disconnect old view/container
         oldView?.onDisplaySyncNeeded = nil
         oldView?.isMetalRenderingActive = false
+        if let oldContainer = oldView?.superview as? RustTerminalContainerView {
+            oldContainer.metalCoordinator = nil
+        }
 
         // 2. Swap grid provider + view reference
         gridProvider = newView.makeGridProvider()
@@ -271,6 +274,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         metalView.removeFromSuperview()
         metalView.frame = container.bounds.insetBy(dx: inset, dy: inset)
         container.addSubview(metalView, positioned: .above, relativeTo: newView)
+        container.metalCoordinator = self
         metalView.alphaValue = 1
 
         // 4. Move HighlightView above Metal in the new container
@@ -302,8 +306,14 @@ final class RustMetalDisplayCoordinator: NSObject {
         // 8. Sync color scheme
         syncClearColor()
 
-        // 9. Immediate full render so content is visible this frame
+        // 9. Render: immediate draw + deferred draw on next runloop tick.
+        // The immediate draw works when the Metal view already has valid bounds.
+        // The deferred draw catches the case where the view was just reparented
+        // and needs one layout pass before CAMetalLayer commits its size.
         forceAuthoritativeRefresh(reason: "switchToView")
+        DispatchQueue.main.async { [weak self] in
+            self?.forceAuthoritativeRefresh(reason: "switchToView-deferred")
+        }
 
         Log.info("RustMetalDisplayCoordinator: switchToView → view \(newView.viewId) (\(newCols)x\(newRows))")
     }
