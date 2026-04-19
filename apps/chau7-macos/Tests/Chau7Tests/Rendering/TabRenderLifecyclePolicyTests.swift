@@ -24,7 +24,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertTrue(decision.isInteractive)
     }
 
-    func testNonSelectedTabIsActiveAndLiveButNotInteractive() {
+    func testNonSelectedTabIsWarmAndLiveButNotInteractive() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -41,36 +41,30 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .active)
+        XCTAssertEqual(decision.phase, .warm)
         XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
 
-    func testAllTabsStayActiveRegardlessOfInputs() {
-        // Phase is always .active and keepsLiveHierarchy is always true,
-        // regardless of selection, window visibility, or background activity.
+    func testNonSelectedTabsGetWarmPhase() {
         let inputs: [TabRenderLifecycleInput] = [
-            // Prewarming
-            TabRenderLifecycleInput(isSelectedTab: false, isInputPriorityWindow: true, isWindowVisibleForRendering: true, isPreviousLiveTab: false, isPrewarming: true, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true),
-            // Background activity
+            TabRenderLifecycleInput(isSelectedTab: false, isInputPriorityWindow: true, isWindowVisibleForRendering: true, isPreviousLiveTab: true, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true),
             TabRenderLifecycleInput(isSelectedTab: false, isInputPriorityWindow: true, isWindowVisibleForRendering: true, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: true, isRenderSuspensionEnabled: true, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true),
-            // Hidden window
-            TabRenderLifecycleInput(isSelectedTab: false, isInputPriorityWindow: false, isWindowVisibleForRendering: false, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: true, isRenderSuspensionEnabled: true, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true),
-            // Selected hidden window
-            TabRenderLifecycleInput(isSelectedTab: true, isInputPriorityWindow: false, isWindowVisibleForRendering: false, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true),
-            // Suspension disabled
-            TabRenderLifecycleInput(isSelectedTab: false, isInputPriorityWindow: true, isWindowVisibleForRendering: true, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: false, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true),
-            // Startup restore bootstrap
-            TabRenderLifecycleInput(isSelectedTab: false, isInputPriorityWindow: true, isWindowVisibleForRendering: true, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: true, hasPendingRestoreBootstrap: true, isMCPControlled: false, hasAttachedTerminalView: false),
-            // MCP tab
-            TabRenderLifecycleInput(isSelectedTab: false, isInputPriorityWindow: true, isWindowVisibleForRendering: true, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: true, hasPendingRestoreBootstrap: false, isMCPControlled: true, hasAttachedTerminalView: false),
+            TabRenderLifecycleInput(isSelectedTab: false, isInputPriorityWindow: false, isWindowVisibleForRendering: false, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: true, hasPendingRestoreBootstrap: true, isMCPControlled: false, hasAttachedTerminalView: false),
         ]
-
         for input in inputs {
             let decision = TabRenderLifecyclePolicy.decide(input)
-            XCTAssertEqual(decision.phase, .active, "Expected .active for input: \(input)")
-            XCTAssertTrue(decision.keepsLiveHierarchy, "Expected keepsLiveHierarchy for input: \(input)")
+            XCTAssertEqual(decision.phase, .warm, "Expected .warm for non-selected: \(input)")
+            XCTAssertTrue(decision.keepsLiveHierarchy)
         }
+    }
+
+    func testSelectedHiddenWindowGetsWarm() {
+        let decision = TabRenderLifecyclePolicy.decide(
+            TabRenderLifecycleInput(isSelectedTab: true, isInputPriorityWindow: false, isWindowVisibleForRendering: false, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true)
+        )
+        XCTAssertEqual(decision.phase, .warm)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
     func testOnlySelectedTabIsInteractive() {

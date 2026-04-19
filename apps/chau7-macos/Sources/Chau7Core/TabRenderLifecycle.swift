@@ -92,12 +92,16 @@ public enum TabRenderLifecyclePolicy {
     }
 
     public static func phase(for input: TabRenderLifecycleInput) -> TabRenderPhase {
-        // Keep all tabs active to avoid phase transitions that cause Metal
-        // volatility marks, glyph atlas purging, and rendering flicker.
-        // Background drain and polling slowdown still happen via the polling
-        // policy (isInteractive gate) — this only affects the view visibility
-        // and texture lifecycle.
-        .active
+        if input.isSelectedTab {
+            if input.isWindowVisibleForRendering {
+                return .active
+            }
+            return .warm
+        }
+        // Non-selected tabs: warm (not hidden) so views stay unhidden in the
+        // hierarchy but don't drive active rendering. The shared background
+        // drain service handles PTY draining; no per-tab polling needed.
+        return .warm
     }
 
     public static func isInteractive(for input: TabRenderLifecycleInput) -> Bool {
