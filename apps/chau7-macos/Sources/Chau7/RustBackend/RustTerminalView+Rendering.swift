@@ -121,7 +121,7 @@ extension RustTerminalView {
             reasons: profilerReasons
         )
         Chau7ObservabilityService.shared.setTimerActive(renderLoopTimerID, active: false)
-        stopBackgroundDrain()
+        BackgroundTerminalDrainService.shared.unregister(self)
     }
 
     // MARK: - Display Link Pause/Resume (Background Tab Optimization)
@@ -159,7 +159,7 @@ extension RustTerminalView {
         )
         Chau7ObservabilityService.shared.setTimerActive(renderLoopTimerID, active: false)
 
-        startBackgroundDrain()
+        BackgroundTerminalDrainService.shared.register(self)
     }
 
     /// Resume active polling and stop the slow background drain.
@@ -167,7 +167,7 @@ extension RustTerminalView {
     /// throttled) based on `effectiveActiveHz()`. Forces an immediate full sync
     /// so the user sees current content without waiting for the next tick.
     func resumeDisplayLink() {
-        stopBackgroundDrain()
+        BackgroundTerminalDrainService.shared.unregister(self)
 
         let targetHz = effectiveActiveHz() // nil = CVDisplayLink at native refresh
 
@@ -239,7 +239,7 @@ extension RustTerminalView {
     /// Visible but noninteractive tabs stay current at a lower cadence so they
     /// do not burn a full display link when they are simply being observed.
     func resumeTimerPolling() {
-        stopBackgroundDrain()
+        BackgroundTerminalDrainService.shared.unregister(self)
 
         if let link = displayLink, CVDisplayLinkIsRunning(link) {
             CVDisplayLinkStop(link)
@@ -283,86 +283,8 @@ extension RustTerminalView {
         pollAndSync()
     }
 
-    /// Register this view for shared background PTY drain.
-    /// A background worker blocks on PTY activity and only wakes the main thread
-    /// when the terminal state actually changed.
-    func startBackgroundDrain() {
-        guard !isBackgroundDrainRegistered else { return }
-        isBackgroundDrainRegistered = true
-        backgroundDrainGeneration &+= 1
-        let generation = backgroundDrainGeneration
-        Self.backgroundDrainQueue.async { [weak self] in
-            self?.runBackgroundDrainLoop(generation: generation)
-        }
-    }
-
-    func stopBackgroundDrain() {
-        guard isBackgroundDrainRegistered else { return }
-        isBackgroundDrainRegistered = false
-        backgroundDrainGeneration &+= 1
-    }
-
-    private static let backgroundDrainQueue = DispatchQueue(
-        label: "com.chau7.renderer.background-drain",
-        qos: .utility,
-        attributes: .concurrent
-    )
-
     private var renderLoopTimerID: String {
         "terminal_render_loop_view_\(viewId)"
-    }
-
-    /// Shared PTY/session pump for tabs without a live render loop.
-    /// This keeps shell/bootstrap/session state advancing independently from
-    /// the display link. If a tab is still visible and output changed, we do
-    /// one catch-up presentation without re-enabling continuous live polling.
-    private func runBackgroundDrainLoop(generation: UInt64) {
-        while true {
-            guard isBackgroundDrainRegistered,
-                  backgroundDrainGeneration == generation,
-                  !isBeingDeallocated,
-                  let rust = rustTerminal else {
-                return
-            }
-
-            terminalPollAccessLock.lock()
-            let changed = rust.poll(timeout: Self.backgroundDrainPollTimeoutMs)
-            RenderPipelineProfiler.shared.recordPoll(
-                viewID: viewId,
-                changed: changed
-            )
-
-            guard changed else {
-                terminalPollAccessLock.unlock()
-                continue
-            }
-
-            DispatchQueue.main.sync { [weak self] in
-                guard let self else { return }
-                defer { self.terminalPollAccessLock.unlock() }
-                guard self.isBackgroundDrainRegistered,
-                      self.backgroundDrainGeneration == generation,
-                      !self.isBeingDeallocated else {
-                    return
-                }
-                let changed = self.processTerminalStateAfterPollLocked(rust: rust, changed: true)
-                let hasVisibleWindow: Bool
-                if let window = self.window {
-                    hasVisibleWindow = window.isVisible && !window.isMiniaturized
-                } else {
-                    hasVisibleWindow = false
-                }
-                guard Self.shouldRefreshVisibleTerminalFromPump(
-                    changed: changed,
-                    notifyUpdateChanges: self.notifyUpdateChanges,
-                    isHidden: self.isHidden,
-                    hasVisibleWindow: hasVisibleWindow
-                ) else {
-                    return
-                }
-                self.presentLatestTerminalStateFromPump()
-            }
-        }
     }
 
     /// Poll Rust terminal and sync to renderer if needed
@@ -388,7 +310,7 @@ extension RustTerminalView {
     }
 
     @discardableResult
-    private func processTerminalStateAfterPollLocked(rust: RustTerminalFFI, changed: Bool) -> Bool {
+    func processTerminalStateAfterPollLocked(rust: RustTerminalFFI, changed: Bool) -> Bool {
         if changed {
             retainedFrameContentVersion &+= 1
         }
