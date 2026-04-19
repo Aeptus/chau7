@@ -2905,11 +2905,12 @@ final class RustTerminalView: NSView {
             isHidden = shouldHide
         }
         setEventMonitoringEnabled(isInteractive)
-        // Let updatePollingMode decide whether to start or stop the event
-        // drain. Don't unconditionally kill it here — the selected tab of a
-        // visible-but-unfocused window temporarily loses .active phase when
-        // the app loses focus, but the polling policy may still want event
-        // drain based on window visibility.
+        // Stop event drains for tabs leaving the active phase. Without this,
+        // deselected tabs accumulate stale drain threads that hog PTY
+        // channels and starve the selected tab.
+        if !phase.allowsLivePresentation {
+            stopEventDrain()
+        }
         updatePollingMode(reason: "applyRenderPhase:\(phase.rawValue)")
         refreshRenderPipelineProfilingState(mode: "\(currentRenderLoopMode):\(phase.rawValue)")
         Log.trace("RustTerminalView[\(viewId)]: applyRenderPhase -> \(phase.rawValue) (\(reason))")
