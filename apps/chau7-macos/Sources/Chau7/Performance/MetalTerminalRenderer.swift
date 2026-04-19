@@ -163,6 +163,7 @@ final class MetalTerminalRenderer: NSObject {
     var cursorStyle = "block"
     var cursorVisible = true
     var cursorColor: SIMD4<Float> = SIMD4(1, 1, 1, 0.7)
+    var backgroundClearColor: MTLClearColor = MTLClearColorMake(0.1, 0.1, 0.1, 1.0)
 
     // MARK: - Blink State
 
@@ -815,7 +816,7 @@ final class MetalTerminalRenderer: NSObject {
         passDescriptor.colorAttachments[0].texture = drawable.texture
         passDescriptor.colorAttachments[0].loadAction = .clear
         passDescriptor.colorAttachments[0].storeAction = .store
-        passDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.1, 0.1, 0.1, 1.0)
+        passDescriptor.colorAttachments[0].clearColor = backgroundClearColor
 
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else { return }
 

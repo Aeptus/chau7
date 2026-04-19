@@ -2991,6 +2991,14 @@ final class RustTerminalView: NSView {
         let desiredMode = desiredPollingMode()
         let actualMode = actualPollingMode
         let desiredActiveHz = effectiveActiveHz()
+        // Ensure background drain registration even when the polling mode
+        // didn't change — tabs can enter .backgroundDrain before ever running
+        // a display link, so shouldReconcilePollingMode returns false but the
+        // view still needs to be registered with the shared drain service.
+        if desiredMode == .backgroundDrain {
+            BackgroundTerminalDrainService.shared.register(self)
+        }
+
         guard Self.shouldReconcilePollingMode(
             desiredMode: desiredMode,
             desiredActiveHz: desiredActiveHz,

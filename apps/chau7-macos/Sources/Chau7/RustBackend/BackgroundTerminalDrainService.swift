@@ -72,11 +72,14 @@ final class BackgroundTerminalDrainService {
 
             // Release the lock before dispatching to main — holding it across
             // main.sync would deadlock if a queued pollAndSync is waiting for
-            // the same lock on the main thread.
+            // the same lock on the main thread. Re-acquire on main to protect
+            // processTerminalStateAfterPollLocked from concurrent poll/activation.
             view.terminalPollAccessLock.unlock()
 
             DispatchQueue.main.async { [weak view] in
                 guard let view, let rust = view.rustTerminal else { return }
+                view.terminalPollAccessLock.lock()
+                defer { view.terminalPollAccessLock.unlock() }
                 _ = view.processTerminalStateAfterPollLocked(rust: rust, changed: true)
                 view.onBufferChanged?()
             }

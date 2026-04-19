@@ -187,12 +187,14 @@ final class RustMetalDisplayCoordinator: NSObject {
         let scheme = FeatureSettings.shared.currentColorScheme
         let bg = scheme.nsColor(for: scheme.background)
         if let c = bg.usingColorSpace(.sRGB) {
-            metalView.clearColor = MTLClearColor(
+            let clearColor = MTLClearColor(
                 red: Double(c.redComponent),
                 green: Double(c.greenComponent),
                 blue: Double(c.blueComponent),
                 alpha: 1.0
             )
+            metalView.clearColor = clearColor
+            renderer.backgroundClearColor = clearColor
         }
     }
 
