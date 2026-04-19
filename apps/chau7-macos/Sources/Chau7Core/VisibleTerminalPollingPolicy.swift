@@ -49,6 +49,9 @@ public enum VisibleTerminalPollingPolicy {
               !context.isWindowMiniaturized else {
             return .backgroundDrain
         }
-        return .displayLink
+        // Only the selected (interactive) tab gets the display link.
+        // Background tabs drain PTY via backgroundDrain — no rendering,
+        // no display link, no CPU cost. Same model as wezterm.
+        return context.isInteractive ? .displayLink : .backgroundDrain
     }
 }
