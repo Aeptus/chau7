@@ -1504,18 +1504,6 @@ struct Chau7OverlayView: View {
     private var terminalStack: some View {
         ZStack(alignment: .top) {
 
-            // MARK: - Shell Loading Bar
-
-            ForEach(overlayModel.tabs) { tab in
-                let isSelected = tab.id == overlayModel.selectedTabID
-                if isSelected,
-                   !overlayModel.shouldShowStartupLoadingCover,
-                   let session = tab.displaySession {
-                    ShellLoadingBar(session: session)
-                        .zIndex(2)
-                }
-            }
-
             if overlayModel.shouldShowStartupLoadingCover {
                 StartupLoadingCoverView()
                     .zIndex(3)
