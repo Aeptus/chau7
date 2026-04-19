@@ -186,15 +186,13 @@ final class RemoteControlManager {
         self.outputPipe = outputPipe
         self.errorPipe = errorPipe
 
-        outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
+        ManagedProcess.monitorOutput(of: outputPipe) { [weak self] data in
+            guard let output = String(data: data, encoding: .utf8) else { return }
             self?.logger.debug("Remote stdout: \(output, privacy: .public)")
         }
 
-        errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
+        ManagedProcess.monitorOutput(of: errorPipe) { [weak self] data in
+            guard let output = String(data: data, encoding: .utf8) else { return }
             self?.logger.warning("Remote stderr: \(output, privacy: .public)")
         }
 

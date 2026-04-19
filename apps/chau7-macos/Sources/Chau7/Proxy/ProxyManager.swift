@@ -240,19 +240,15 @@ final class ProxyManager {
         self.outputPipe = outputPipe
         self.errorPipe = errorPipe
 
-        // Handle output asynchronously.
-        // The Go proxy writes `[INFO] ...`, `[WARN] ...`, and `[ERROR] ...` to stderr.
-        // Classify each line by its prefix so normal request logs don't pollute the
-        // warning stream, and mark the content as .public so OSLog doesn't redact it.
-        outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
+        // Monitor output via ManagedProcess.monitorOutput which handles EOF
+        // correctly (nils the readabilityHandler to prevent a 100%-CPU spin).
+        ManagedProcess.monitorOutput(of: outputPipe) { [weak self] data in
+            guard let output = String(data: data, encoding: .utf8) else { return }
             self?.handleProxyOutput(output, isStderr: false)
         }
 
-        errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
+        ManagedProcess.monitorOutput(of: errorPipe) { [weak self] data in
+            guard let output = String(data: data, encoding: .utf8) else { return }
             self?.handleProxyOutput(output, isStderr: true)
         }
 
@@ -262,6 +258,9 @@ final class ProxyManager {
                 guard let self = self else { return }
                 self.isRunning = false
                 self.process = nil
+                // Stop pipe monitoring immediately on process exit to prevent
+                // the readabilityHandler spin loop on EOF.
+                ManagedProcess.cleanup(outputPipe: &self.outputPipe, errorPipe: &self.errorPipe)
 
                 if proc.terminationStatus != 0, !self.isStopping {
                     let error = "Proxy exited with status \(proc.terminationStatus)"
