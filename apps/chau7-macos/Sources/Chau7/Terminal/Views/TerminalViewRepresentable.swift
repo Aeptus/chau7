@@ -257,6 +257,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         container: UnifiedTerminalContainerView,
         rustView: RustTerminalView,
         useMetalRenderer: Bool,
+        isSelectedTab: Bool = false,
         reason: String
     ) -> Bool {
         container.layoutSubtreeIfNeeded()
@@ -276,22 +277,47 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             return false
         }
 
+        let label = "view-\(rustView.viewId)"
+
+        TerminalStartupQueue.shared.enqueue(priority: isSelectedTab, label: label) {
+            launchTerminal(model: model, container: container, rustView: rustView, useMetalRenderer: useMetalRenderer, reason: reason)
+        }
+        return true
+    }
+
+    private static func launchTerminal(
+        model: TerminalSessionModel,
+        container: UnifiedTerminalContainerView,
+        rustView: RustTerminalView,
+        useMetalRenderer: Bool,
+        reason: String
+    ) {
+        guard !rustView.isTerminalStarted else { return }
+
         let tip = PowerUserTips.randomFormattedTip()
         let headerBox = terminalHeaderBox(cols: rustView.renderCols, message: tip)
         rustView.startTerminal(initialOutput: headerBox)
-        // Re-apply the color scheme now that rustTerminal exists.
-        // The first applyColorScheme (during makeRustTerminalView) ran before
-        // startTerminal, so rustTerminal was nil and setColors was a no-op.
-        // Without this, the Rust terminal uses black default fg and the shell
-        // prompt is invisible.
         rustView.appliedColorSchemeSignature = nil
         rustView.applyColorScheme(FeatureSettings.shared.currentColorScheme)
         model.attachRustTerminal(rustView)
         if useMetalRenderer {
             container.enableMetalRendering()
         }
+
+        // Signal the queue when this terminal produces first output
+        let previousOnOutput = rustView.onOutput
+        var signaled = false
+        rustView.onOutput = { [weak rustView] data in
+            previousOnOutput?(data)
+            if !signaled {
+                signaled = true
+                TerminalStartupQueue.shared.currentTerminalReady()
+                // Restore original callback without the queue signal
+                rustView?.onOutput = previousOnOutput
+            }
+        }
+
         Log.info("TerminalViewRepresentable: started terminal [\(reason)]")
-        return true
     }
 
     private func liveEligibilitySummary() -> String {
@@ -515,6 +541,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let container = UnifiedTerminalContainerView(rustView: view)
         model.attachTerminalContainer(container)
         let useMetalRenderer = settings.useMetalRenderer
+        let isSelectedTab = isInteractive
         container.onFirstRustLayout = { [weak model, weak container] rustView in
             guard let model, let container else { return }
             _ = Self.startTerminalIfReady(
@@ -522,6 +549,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
                 container: container,
                 rustView: rustView,
                 useMetalRenderer: useMetalRenderer,
+                isSelectedTab: isSelectedTab,
                 reason: "first_layout"
             )
         }
