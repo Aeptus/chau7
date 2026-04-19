@@ -247,6 +247,17 @@ final class RustMetalDisplayCoordinator: NSObject {
     ) {
         let oldView = terminalView
 
+        // Skip if already rendering this view — avoids redundant reparenting
+        // and the brief isMetalRenderingActive=false flash during the thundering
+        // herd of terminalDidStart notifications at startup (27 tabs × 2 windows).
+        guard newView !== oldView else {
+            // Still force a sync in case grid content changed
+            if newView.isMetalRenderingActive {
+                setNeedsSync()
+            }
+            return
+        }
+
         // 1. Disconnect old view's rendering callbacks
         oldView?.onDisplaySyncNeeded = nil
         oldView?.isMetalRenderingActive = false
