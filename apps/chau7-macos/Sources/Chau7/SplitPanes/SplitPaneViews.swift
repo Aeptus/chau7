@@ -235,6 +235,7 @@ struct TerminalPaneView: View {
 
     var body: some View {
         TerminalViewRepresentable(model: session, renderPhase: renderPhase, isInteractive: isInteractive, onFilePathClicked: onFilePathClicked)
+            .padding(2)
             // Use simultaneousGesture to allow the tap to be recognized without blocking
             // the NSView's native mouse event handling for text selection
             .simultaneousGesture(
