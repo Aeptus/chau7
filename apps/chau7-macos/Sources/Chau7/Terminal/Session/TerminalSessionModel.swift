@@ -1431,10 +1431,26 @@ final class TerminalSessionModel {
 
     func closeSessionForTermination() {
         let shellPID = activeRustTerminalView?.shellPid ?? 0
-        closeSession()
+        // Cancel the graceful escalation chain — during app quit we need
+        // immediate cleanup, not a 8-second SIGINT→SIGTERM→SIGKILL cascade
+        // whose DispatchQueue.main.asyncAfter timers can't fire anyway
+        // because applicationWillTerminate blocks the runloop.
+        forcedTerminationWorkItem?.cancel()
+        forcedTerminationWorkItem = nil
+
+        shutdownActiveTerminalRendering()
+        stopIdleTimer()
+        finishAILogging(exitCode: nil)
+
         guard shellPID > 0 else { return }
-        Log.warn("App termination requested immediate shell shutdown for session '\(title)' (pid=\(shellPID))")
-        sendTerminationSignal(SIGTERM, toShellPID: shellPID)
+
+        // Kill the entire process group immediately. SIGKILL is the only
+        // signal that reliably terminates deep process trees (Codex with
+        // MCP servers, npm chains) without waiting for graceful shutdown.
+        Log.warn("App termination: SIGKILL to shell process group (pid=\(shellPID), session='\(title)')")
+        let descendants = captureDescendantPIDs(of: shellPID)
+        sendTerminationSignal(SIGKILL, toShellPID: shellPID)
+        killEscapedDescendants(descendants, shellPID: shellPID)
     }
 
     private func handleProcessTermination(exitCode: Int32?) {
