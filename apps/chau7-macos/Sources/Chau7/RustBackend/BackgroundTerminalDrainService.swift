@@ -36,7 +36,7 @@ final class BackgroundTerminalDrainService {
 
     private func startTimer() {
         let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now(), repeating: .milliseconds(200))
+        t.schedule(deadline: .now(), repeating: .seconds(1))
         t.setEventHandler { [weak self] in self?.drainAll() }
         t.resume()
         timer = t
