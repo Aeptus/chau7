@@ -93,6 +93,8 @@ final class RustMetalDisplayCoordinator: NSObject {
         // Initialize bridge with current color scheme
         bridge.colorSchemeChanged()
 
+        syncClearColor()
+
         Log.trace("RustMetalDisplayCoordinator: Initialized (\(cols)x\(rows))")
 
         // Start blink timer (500ms interval, matching standard terminal blink rate)
@@ -173,10 +175,25 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// Called when the color scheme changes.
     func colorSchemeChanged() {
         bridge.colorSchemeChanged()
+        syncClearColor()
         tripleBuffer.markFullRefresh()
         needsSync = true
         needsPresent = true
         requestDraw()
+    }
+
+    /// Syncs the Metal clear color to the terminal color scheme background.
+    private func syncClearColor() {
+        let scheme = FeatureSettings.shared.currentColorScheme
+        let bg = scheme.nsColor(for: scheme.background)
+        if let c = bg.usingColorSpace(.sRGB) {
+            metalView.clearColor = MTLClearColor(
+                red: Double(c.redComponent),
+                green: Double(c.greenComponent),
+                blue: Double(c.blueComponent),
+                alpha: 1.0
+            )
+        }
     }
 
     /// Called when the font changes.
