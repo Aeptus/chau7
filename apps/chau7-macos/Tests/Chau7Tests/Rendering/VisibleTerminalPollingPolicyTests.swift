@@ -20,7 +20,9 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
         )
     }
 
-    func testVisibleNonInteractiveTabUsesBackgroundDrain() {
+    func testVisibleNonInteractiveTabUsesEventDrain() {
+        // Selected tab in an unfocused window is still visible on multi-monitor
+        // setups — it should get event drain for smooth updates.
         XCTAssertEqual(
             VisibleTerminalPollingPolicy.mode(
                 for: VisibleTerminalPollingContext(
@@ -34,7 +36,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     isInteractive: false
                 )
             ),
-            .backgroundDrain
+            .eventDrain
         )
     }
 

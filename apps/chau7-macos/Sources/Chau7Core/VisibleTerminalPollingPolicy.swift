@@ -52,8 +52,9 @@ public enum VisibleTerminalPollingPolicy {
               !context.isWindowMiniaturized else {
             return .backgroundDrain
         }
-        // Only the selected (interactive) tab gets event-driven polling.
-        // Background tabs drain PTY via the shared BackgroundTerminalDrainService.
-        return context.isInteractive ? .eventDrain : .backgroundDrain
+        // The selected tab in any visible window gets event-driven polling —
+        // not just the focused window. On multi-monitor setups both windows
+        // are on screen and their selected tabs should update smoothly.
+        return .eventDrain
     }
 }
