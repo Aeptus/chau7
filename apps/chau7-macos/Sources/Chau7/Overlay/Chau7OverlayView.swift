@@ -1539,11 +1539,9 @@ struct Chau7OverlayView: View {
                 if keepLiveHierarchy {
                     SplitPaneView(controller: tab.splitController, renderPhase: renderPhase, isInteractive: isInteractive)
                         .opacity(isSelected ? 1 : 0)
-                        .offset(x: isSelected ? 0 : (30 * direction)) // Subtle slide effect
                         .allowsHitTesting(isSelected)
                         .accessibilityHidden(!isSelected)
                         .zIndex(isSelected ? 1 : 0)
-                        .animation(.spring(response: 0.2, dampingFraction: 0.9), value: isSelected)
                 } else {
                     // Lightweight placeholder for distant tabs
                     // The terminal process keeps running via retainedRustTerminalView
