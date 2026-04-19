@@ -3054,6 +3054,16 @@ final class RustTerminalView: NSView {
             isHidden = shouldHide
         }
         setEventMonitoringEnabled(isInteractive)
+        // For non-active phases, force-stop any lingering display links or
+        // timers before reconciling. Views created during startup restore can
+        // get stuck with active polling from their initial .active phase.
+        if !phase.allowsLivePresentation {
+            if let link = displayLink, CVDisplayLinkIsRunning(link) {
+                CVDisplayLinkStop(link)
+            }
+            pollTimer?.invalidate()
+            pollTimer = nil
+        }
         updatePollingMode(reason: "applyRenderPhase:\(phase.rawValue)")
         refreshRenderPipelineProfilingState(mode: "\(currentRenderLoopMode):\(phase.rawValue)")
         Log.trace("RustTerminalView[\(viewId)]: applyRenderPhase -> \(phase.rawValue) (\(reason))")
