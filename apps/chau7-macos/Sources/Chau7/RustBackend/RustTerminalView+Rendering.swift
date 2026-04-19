@@ -1,8 +1,7 @@
 import AppKit
-import QuartzCore
 import Chau7Core
 
-// MARK: - Rendering, Grid Sync, and Display Link
+// MARK: - Rendering, Grid Sync, and Event-Driven Polling
 
 extension RustTerminalView {
     func refreshObservabilityTimerScope() {
@@ -13,105 +12,12 @@ extension RustTerminalView {
         )
     }
 
-    // MARK: - Polling Loop
-
-    func setupPollingLoop() {
-        Log.trace("RustTerminalView[\(viewId)]: setupPollingLoop - Creating polling loop")
-
-        // Try CVDisplayLink first for vsync-aligned updates
-        var link: CVDisplayLink?
-        let result = CVDisplayLinkCreateWithActiveCGDisplays(&link)
-
-        if result == kCVReturnSuccess, let link = link {
-            let box = DisplayLinkWeakBox(self)
-            displayLinkBox = box
-            CVDisplayLinkSetOutputCallback(link, { _, _, _, _, _, userInfo -> CVReturn in
-                guard let userInfo = userInfo else { return kCVReturnSuccess }
-                let box = Unmanaged<DisplayLinkWeakBox>.fromOpaque(userInfo).takeUnretainedValue()
-                guard let view = box.view else { return kCVReturnSuccess }
-                WakeupProfiler.shared.record("terminal.displayLink")
-                DispatchQueue.main.async { [weak view] in
-                    view?.pollAndSync()
-                }
-                return kCVReturnSuccess
-            }, Unmanaged.passRetained(box).toOpaque())
-
-            CVDisplayLinkStart(link)
-            displayLink = link
-            RenderPipelineProfiler.shared.updateRenderLoopState(
-                viewID: viewId,
-                active: true,
-                tabID: observabilityTabID,
-                sessionID: observabilitySessionID,
-                mode: "display_link",
-                reasons: profilerReasons
-            )
-            Chau7ObservabilityService.shared.registerTimer(
-                id: renderLoopTimerID,
-                kind: "display_link",
-                label: "terminal-render-loop",
-                subsystem: "renderer",
-                queueLabel: "com.chau7.renderer.main",
-                intervalMs: displayRefreshInterval * 1000,
-                leewayMs: 0,
-                active: true,
-                tabID: observabilityTabID,
-                sessionID: observabilitySessionID
-            )
-            Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using CVDisplayLink for 60fps polling")
-        } else {
-            Log.warn("RustTerminalView[\(viewId)]: setupPollingLoop - CVDisplayLink failed (result=\(result)), falling back to Timer")
-            pollTimer = Timer.scheduledTimer(withTimeInterval: displayRefreshInterval, repeats: true) { [weak self] _ in
-                WakeupProfiler.shared.record("terminal.pollTimer")
-                self?.pollAndSync()
-            }
-            RenderPipelineProfiler.shared.updateRenderLoopState(
-                viewID: viewId,
-                active: true,
-                tabID: observabilityTabID,
-                sessionID: observabilitySessionID,
-                mode: "timer",
-                reasons: profilerReasons
-            )
-            Chau7ObservabilityService.shared.registerTimer(
-                id: renderLoopTimerID,
-                kind: "timer",
-                label: "terminal-render-loop",
-                subsystem: "renderer",
-                queueLabel: "com.chau7.renderer.main",
-                intervalMs: displayRefreshInterval * 1000,
-                leewayMs: 0,
-                active: true,
-                tabID: observabilityTabID,
-                sessionID: observabilitySessionID
-            )
-            Log.info("RustTerminalView[\(viewId)]: setupPollingLoop - Using Timer fallback for polling")
-        }
-        updatePollingMode(reason: "setupPollingLoop")
-    }
+    // MARK: - Polling Lifecycle
 
     func stopPollingLoop() {
-        Log.trace("RustTerminalView[\(viewId)]: stopPollingLoop - Stopping polling loop")
-        // Clear adaptive-polling state so a future setupPollingLoop starts clean.
-        consecutiveIdlePolls = 0
-        isIdleThrottled = false
-        currentActiveHz = nil
-        if let link = displayLink {
-            Log.trace("RustTerminalView[\(viewId)]: stopPollingLoop - Stopping CVDisplayLink")
-            CVDisplayLinkStop(link)
-            displayLink = nil
-        }
-        // Release the retained DisplayLinkWeakBox. After CVDisplayLinkStop
-        // completes, no more callbacks will fire, so it's safe to release.
-        if let box = displayLinkBox {
-            Unmanaged.passUnretained(box).release()
-            displayLinkBox = nil
-        }
-        if pollTimer != nil {
-            Log.trace("RustTerminalView[\(viewId)]: stopPollingLoop - Invalidating Timer")
-            pollTimer?.invalidate()
-            pollTimer = nil
-        }
+        Log.trace("RustTerminalView[\(viewId)]: stopPollingLoop - Stopping all polling")
+        stopEventDrain()
+        BackgroundTerminalDrainService.shared.unregister(self)
         RenderPipelineProfiler.shared.updateRenderLoopState(
             viewID: viewId,
             active: false,
@@ -121,166 +27,6 @@ extension RustTerminalView {
             reasons: profilerReasons
         )
         Chau7ObservabilityService.shared.setTimerActive(renderLoopTimerID, active: false)
-        BackgroundTerminalDrainService.shared.unregister(self)
-    }
-
-    // MARK: - Display Link Pause/Resume (Background Tab Optimization)
-
-    /// Pause the CVDisplayLink and start a slow background drain timer.
-    /// Background tabs only need to drain the PTY buffer to prevent the shell from
-    /// blocking — they don't need 60fps rendering. A 500ms timer is sufficient.
-    func pauseDisplayLink() {
-        // Keep shell bootstrap state alive until first PTY bytes or the actual
-        // startup timeout. An early pause during restore/window attachment must
-        // not silently end startup polling, or shells can appear hung forever.
-        if !isAwaitingInitialPTYOutput {
-            shellStartupTimeoutWork?.cancel()
-            shellStartupTimeoutWork = nil
-        }
-
-        if let link = displayLink, CVDisplayLinkIsRunning(link) {
-            CVDisplayLinkStop(link)
-            Log.info("RustTerminalView[\(viewId)]: pauseDisplayLink - CVDisplayLink paused (tab suspended)")
-        }
-        pollTimer?.invalidate()
-        pollTimer = nil
-        // Idle throttle is an active-loop concept — leaving the active loop
-        // clears it so the next resume picks the right Hz from scratch.
-        consecutiveIdlePolls = 0
-        isIdleThrottled = false
-        currentActiveHz = nil
-        RenderPipelineProfiler.shared.updateRenderLoopState(
-            viewID: viewId,
-            active: false,
-            tabID: observabilityTabID,
-            sessionID: observabilitySessionID,
-            mode: "background_drain",
-            reasons: profilerReasons
-        )
-        Chau7ObservabilityService.shared.setTimerActive(renderLoopTimerID, active: false)
-
-        BackgroundTerminalDrainService.shared.register(self)
-    }
-
-    /// Resume active polling and stop the slow background drain.
-    /// Chooses CVDisplayLink (display-native refresh) or Timer (capped or idle-
-    /// throttled) based on `effectiveActiveHz()`. Forces an immediate full sync
-    /// so the user sees current content without waiting for the next tick.
-    func resumeDisplayLink() {
-        BackgroundTerminalDrainService.shared.unregister(self)
-
-        let targetHz = effectiveActiveHz() // nil = CVDisplayLink at native refresh
-
-        if targetHz == nil {
-            // Native refresh via CVDisplayLink.
-            pollTimer?.invalidate()
-            pollTimer = nil
-            currentActiveHz = nil
-
-            if let link = displayLink, !CVDisplayLinkIsRunning(link) {
-                CVDisplayLinkStart(link)
-                publishRenderLoopProfiling(mode: "display_link", intervalMs: displayRefreshInterval * 1000, kind: "display_link")
-                Log.info("RustTerminalView[\(viewId)]: resumeDisplayLink - CVDisplayLink resumed (native refresh)")
-            } else if displayLink == nil, pollTimer == nil {
-                // Display link unavailable — fall back to a timer at native refresh.
-                installActivePollTimer(intervalSeconds: displayRefreshInterval)
-            }
-        } else {
-            // Capped or idle-throttled — drive the loop from a Timer at targetHz.
-            if let link = displayLink, CVDisplayLinkIsRunning(link) {
-                CVDisplayLinkStop(link)
-            }
-            let interval = 1.0 / Double(targetHz!)
-            if pollTimer == nil || currentActiveHz != targetHz {
-                installActivePollTimer(intervalSeconds: interval)
-                currentActiveHz = targetHz
-            }
-        }
-
-        // Force an immediate sync so the user sees fresh content
-        needsGridSync = true
-        pollAndSync()
-    }
-
-    /// Replaces `pollTimer` with a fresh `Timer.scheduledTimer` on the main run
-    /// loop at the given interval and publishes the render-loop profiling state.
-    private func installActivePollTimer(intervalSeconds: TimeInterval) {
-        pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: intervalSeconds, repeats: true) { [weak self] _ in
-            WakeupProfiler.shared.record("terminal.pollTimer")
-            self?.pollAndSync()
-        }
-        publishRenderLoopProfiling(mode: "timer", intervalMs: intervalSeconds * 1000, kind: "timer")
-    }
-
-    private func publishRenderLoopProfiling(mode: String, intervalMs: Double, kind: String) {
-        RenderPipelineProfiler.shared.updateRenderLoopState(
-            viewID: viewId,
-            active: true,
-            tabID: observabilityTabID,
-            sessionID: observabilitySessionID,
-            mode: mode,
-            reasons: profilerReasons
-        )
-        Chau7ObservabilityService.shared.registerTimer(
-            id: renderLoopTimerID,
-            kind: kind,
-            label: "terminal-render-loop",
-            subsystem: "renderer",
-            queueLabel: "com.chau7.renderer.main",
-            intervalMs: intervalMs,
-            leewayMs: 0,
-            active: true,
-            tabID: observabilityTabID,
-            sessionID: observabilitySessionID
-        )
-    }
-
-    /// Visible but noninteractive tabs stay current at a lower cadence so they
-    /// do not burn a full display link when they are simply being observed.
-    func resumeTimerPolling() {
-        BackgroundTerminalDrainService.shared.unregister(self)
-
-        if let link = displayLink, CVDisplayLinkIsRunning(link) {
-            CVDisplayLinkStop(link)
-        }
-        // Passive mode runs at its own fixed cadence — clear any active-loop
-        // idle-throttle state to avoid Hz confusion when we return to active.
-        consecutiveIdlePolls = 0
-        isIdleThrottled = false
-        currentActiveHz = nil
-        if pollTimer == nil {
-            pollTimer = Timer.scheduledTimer(
-                withTimeInterval: Self.passiveVisiblePollingInterval,
-                repeats: true
-            ) { [weak self] _ in
-                WakeupProfiler.shared.record("terminal.pollTimer")
-                self?.pollAndSync()
-            }
-        }
-        RenderPipelineProfiler.shared.updateRenderLoopState(
-            viewID: viewId,
-            active: true,
-            tabID: observabilityTabID,
-            sessionID: observabilitySessionID,
-            mode: "timer",
-            reasons: profilerReasons
-        )
-        Chau7ObservabilityService.shared.registerTimer(
-            id: renderLoopTimerID,
-            kind: "timer",
-            label: "terminal-render-loop",
-            subsystem: "renderer",
-            queueLabel: "com.chau7.renderer.main",
-            intervalMs: Self.passiveVisiblePollingInterval * 1000,
-            leewayMs: 0,
-            active: true,
-            tabID: observabilityTabID,
-            sessionID: observabilitySessionID
-        )
-
-        needsGridSync = true
-        pollAndSync()
     }
 
     private var renderLoopTimerID: String {
@@ -523,44 +269,13 @@ extension RustTerminalView {
             WakeupProfiler.shared.record("terminal.pollAndSync", durationMs: durationMs)
             FeatureProfiler.shared.record(feature: .terminalPoll, durationMs: durationMs)
         }
-        // Safety: Check if view is being deallocated (CVDisplayLink callback protection)
         guard !isBeingDeallocated else { return }
         guard let rust = rustTerminal else { return }
 
-        // ALWAYS poll the Rust terminal to drain PTY buffer, even when suspended.
-        // This prevents the PTY reader thread from blocking when the buffer fills up.
-        // (Without this, suspended state blocks the PTY by not draining its buffer)
-        //
-        // Selection preservation: Rust manages selection state internally. If poll()
-        // processes output that scrolls the terminal, Rust may clear its selection.
-        // During an active drag (isSelecting == true), the next mouseDragged event
-        // re-establishes the selection via rust.updateSelection(). However, if the
-        // user holds the mouse still during scrolling, no drag events fire and the
-        // selection stays cleared until the next mouse movement. The 60fps
-        // CVDisplayLink render loop minimizes visible flicker in the common case.
-        // If flicker becomes noticeable, a Rust FFI flag
-        // (preserve_selection_during_scroll) would be the proper fix.
+        // Poll the Rust terminal to drain PTY buffer (non-blocking).
         let changed = drainPTYAndProcessTerminalState(rust: rust)
 
-        // Adaptive-polling bookkeeping (Fix B). Must run before the snap-out
-        // reconcile so the reconciler sees fresh state. Only tracked when live —
-        // background drain maintains its own slow cadence independently.
-        if notifyUpdateChanges {
-            if changed {
-                consecutiveIdlePolls = 0
-                if isIdleThrottled {
-                    // Snap back to the full-rate loop immediately; this same poll
-                    // still finishes the UI work below so the first byte is
-                    // visible on the current frame.
-                    isIdleThrottled = false
-                    updatePollingMode(reason: "idleExit")
-                }
-            } else {
-                consecutiveIdlePolls &+= 1
-            }
-        }
-
-        // Skip UI updates when suspended, but we've already drained the PTY above
+        // Skip UI updates when suspended — PTY is drained above.
         guard notifyUpdateChanges else { return }
 
         if changed || needsGridSync {
@@ -569,8 +284,7 @@ extension RustTerminalView {
             needsGridSync = false
             let requiresAuthoritativeReveal = consumeAuthoritativeRevealPending()
             // When Metal is active, skip the CPU sync — Metal reads the grid
-            // directly via its gridProvider closure. This avoids ~70% CPU waste
-            // from invisible RustGridView.draw() and cell array copies.
+            // directly via its gridProvider closure.
             if !isMetalRenderingActive {
                 syncGridToRenderer(force: requiresAuthoritativeReveal)
             }
@@ -578,33 +292,15 @@ extension RustTerminalView {
             onDisplaySyncNeeded?()
         }
 
-        // Skip downstream per-frame work when idle-throttled — the data didn't
-        // change, so tints and cursor-blink work have nothing to do. Keeping
-        // them in the hot path would erase most of the adaptive-polling wins.
-        if !isIdleThrottled {
-            // Update dangerous row tints every frame (cheap lookup, scrolls in-sync with grid)
-            if !isMetalRenderingActive {
-                updateDangerousRowTints()
-            }
-
-            // Metal has its own cursor blink timer (RustMetalDisplayCoordinator.handleBlinkTick)
-            if !isMetalRenderingActive {
-                gridView?.tickCursorBlink(now: CFAbsoluteTimeGetCurrent())
-            }
-        }
-
-        // Enter idle throttle if we've seen enough consecutive no-data polls.
-        if !isIdleThrottled,
-           consecutiveIdlePolls >= Self.idleEntryThreshold,
-           desiredPollingMode() == .displayLink {
-            isIdleThrottled = true
-            updatePollingMode(reason: "idleEntry")
+        if !isMetalRenderingActive {
+            updateDangerousRowTints()
+            gridView?.tickCursorBlink(now: CFAbsoluteTimeGetCurrent())
         }
 
         // Rate-limited status logging
         Self.pollAndSyncCounter += 1
         let now = CFAbsoluteTimeGetCurrent()
-        if now - Self.lastPollAndSyncLogTime > 10.0 { // Log every 10 seconds
+        if now - Self.lastPollAndSyncLogTime > 10.0 {
             Log.trace("RustTerminalView[\(viewId)]: pollAndSync - Status: \(Self.pollAndSyncCounter) polls, \(Self.syncCount) syncs")
             Self.lastPollAndSyncLogTime = now
         }

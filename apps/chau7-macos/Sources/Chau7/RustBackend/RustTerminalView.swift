@@ -5,21 +5,6 @@ import QuartzCore
 import CoreText
 import Chau7Core
 
-// MARK: - CVDisplayLink Weak Reference Box
-
-/// Prevents use-after-free in CVDisplayLink callbacks.
-/// CVDisplayLink takes a raw `UnsafeMutableRawPointer` (no ARC).
-/// Using `Unmanaged.passUnretained` means the callback can access
-/// a deallocated view. This box is retained by Unmanaged and holds
-/// only a weak reference to the view, making the callback a safe no-op
-/// after deallocation.
-final class DisplayLinkWeakBox {
-    weak var view: RustTerminalView?
-    init(_ view: RustTerminalView) {
-        self.view = view
-    }
-}
-
 // MARK: - Native Rust Grid Renderer
 
 final class RustGridView: NSView {
@@ -2002,13 +1987,12 @@ struct RustDebugState {
 /// Architecture:
 /// - Rust owns: PTY, terminal state machine, scrollback, selection
 /// - Native renderer provides: grid-based text rendering
-/// - This view bridges them: polls Rust at 60fps, feeds the native renderer
+/// - This view bridges them: event-driven polling from Rust, feeds the native renderer
 final class RustTerminalView: NSView {
     private enum ActualPollingMode: Equatable {
         case stopped
         case backgroundDrain
-        case displayLink
-        case timer
+        case eventDrain
     }
 
     // MARK: - Public Interface
@@ -2151,7 +2135,6 @@ final class RustTerminalView: NSView {
     private var authoritativeRevealPending = false
     var retainedFrameContentVersion: UInt64 = 0
     var retainedFrameSourceVersion: UInt64 = 0
-    static let passiveVisiblePollingInterval: TimeInterval = 1.0 / 15.0
 
     // MARK: - Properties
 
@@ -2186,74 +2169,10 @@ final class RustTerminalView: NSView {
     var inlineImages: [InlineImagePlacement] = []
     var lastDisplayOffset = 0
 
-    /// Display link for polling and rendering at vsync rate
-    var displayLink: CVDisplayLink?
-
-    /// Timer fallback if CVDisplayLink unavailable
-    var pollTimer: Timer?
-
-    /// Adaptive timer interval matching the display refresh rate for the active tab.
-    /// Background tabs are throttled separately, so the visible tab should track
-    /// ProMotion panels at their native cadence.
-    var displayRefreshInterval: TimeInterval {
-        guard let screen = window?.screen ?? NSScreen.main else {
-            return 1.0 / 60.0
-        }
-        if #available(macOS 12.0, *),
-           let maxFPS = screen.maximumFramesPerSecond,
-           maxFPS > 0 {
-            return 1.0 / Double(maxFPS)
-        }
-        return 1.0 / 60.0 // Safe default for older macOS
-    }
-
-    // MARK: - Adaptive Polling (Fix B)
-
-    /// Consecutive `pollAndSync` calls where `drainPTYAndProcessTerminalState`
-    /// returned `changed == false`. Used to detect idle and throttle the render
-    /// loop.
-    var consecutiveIdlePolls: Int = 0
-
-    /// True when the active loop has been throttled down to
-    /// `Self.idlePollingHz`. Reset on the first change, user input, settings
-    /// change, or mode-class transition.
-    var isIdleThrottled: Bool = false
-
-    /// Polls without change required before throttling to idle mode. 90 polls
-    /// ≈ 0.75 s at 120 Hz, ≈ 1.5 s at 60 Hz.
-    static let idleEntryThreshold: Int = 90
-
-    /// Target polling rate while idle-throttled.
-    static let idlePollingHz: Int = 10
-
-    /// The Hz the active loop is currently running at, or `nil` when using
-    /// CVDisplayLink at display-native refresh. Tracked separately from
-    /// `actualPollingMode` so the reconciler can detect Hz-only changes
-    /// (idle entry/exit, cap setting change) without a class transition.
-    var currentActiveHz: Int?
-
-    /// Effective Hz for the active loop — cap overrides native, idle overrides
-    /// cap. `nil` means "run CVDisplayLink at display-native refresh".
-    func effectiveActiveHz() -> Int? {
-        if isIdleThrottled {
-            return Self.idlePollingHz
-        }
-        return FeatureSettings.shared.activePollingRateCap.capHz
-    }
-
-    /// Reset any idle-throttle state and immediately reconcile the loop so the
-    /// user sees no input lag after returning from idle. Safe to call from
-    /// input handlers — no-op when already running at the full rate.
-    func snapToFastPolling() {
-        guard isIdleThrottled || consecutiveIdlePolls > 0 else { return }
-        isIdleThrottled = false
-        consecutiveIdlePolls = 0
-        updatePollingMode(reason: "snapToFast")
-    }
-
-    /// NotificationCenter observer token for the `activePollingRateCapChanged`
-    /// broadcast. Released in `deinit`.
-    var activePollingRateCapObserver: NSObjectProtocol?
+    /// Event-driven PTY drain for the selected (active) tab. Replaces
+    /// CVDisplayLink with a blocking-poll background thread that sleeps in
+    /// the kernel when idle. See `TerminalEventDrain`.
+    var eventDrain: TerminalEventDrain?
 
     /// Track startup bytes for debugging
     var startupBytesLogged = 0
@@ -2377,14 +2296,8 @@ final class RustTerminalView: NSView {
 
     // MARK: - Lifecycle State
 
-    /// Flag to prevent CVDisplayLink callbacks from accessing deallocated view
+    /// Flag to prevent event drain callbacks from accessing deallocated view
     var isBeingDeallocated = false
-    /// Weak reference box for CVDisplayLink callback safety.
-    /// CVDisplayLink callbacks run on a separate thread with an unretained pointer,
-    /// which can access freed memory if the view deallocates between the callback
-    /// firing and the main-thread async block executing. This box holds a weak
-    /// reference so the callback safely becomes a no-op after deallocation.
-    var displayLinkBox: DisplayLinkWeakBox?
 
     // MARK: - Local Echo State (Latency Optimization)
 
@@ -2638,21 +2551,6 @@ final class RustTerminalView: NSView {
 
         registerDragTypes()
 
-        // Rebuild the active polling loop whenever the user changes the cap,
-        // so the new Hz takes effect on every live terminal without a restart.
-        activePollingRateCapObserver = NotificationCenter.default.addObserver(
-            forName: .activePollingRateCapChanged,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            guard let self else { return }
-            // Clear idle state so the new cap rate (not the 10 Hz idle rate)
-            // is what the reconciler applies.
-            self.isIdleThrottled = false
-            self.consecutiveIdlePolls = 0
-            self.updatePollingMode(reason: "activePollingRateCapChanged")
-        }
-
         Log.info("RustTerminalView[\(viewId)]: setupViews - Views setup complete (terminal not yet started)")
     }
 
@@ -2701,13 +2599,14 @@ final class RustTerminalView: NSView {
         }
 
         // Force an initial grid sync on the next poll cycle.
-        // Without this, the first pollAndSync() finds poll()==false (no PTY data yet)
+        // Without this, the first poll finds poll()==false (no PTY data yet)
         // and needsGridSync==false, so syncGridToRenderer() never runs and the screen
         // stays blank until a resize or PTY data arrives.
         needsGridSync = true
 
-        // Start polling loop now that terminal exists
-        setupPollingLoop()
+        // Start the polling mode appropriate for this tab's lifecycle phase.
+        // The event drain (for selected tabs) or background drain service
+        // (for background tabs) will handle PTY data from here.
         updatePollingMode(reason: "startTerminal")
 
         // Schedule a one-shot timeout: if no PTY output arrives within 5 seconds,
@@ -2728,14 +2627,10 @@ final class RustTerminalView: NSView {
 
     deinit {
         Log.info("RustTerminalView[\(viewId)]: deinit - Starting cleanup")
-        // Set flag to prevent CVDisplayLink callbacks from accessing deallocated view
+        // Set flag to prevent event drain callbacks from accessing deallocated view
         isBeingDeallocated = true
         shellStartupTimeoutWork?.cancel()
         removeWindowNotificationObservers()
-        if let token = activePollingRateCapObserver {
-            NotificationCenter.default.removeObserver(token)
-            activePollingRateCapObserver = nil
-        }
         stopPollingLoop()
         stopAutoScrollTimer()
         removeEventMonitors()
@@ -2821,7 +2716,7 @@ final class RustTerminalView: NSView {
         updatePollingMode(reason: "window:\(name.rawValue)")
         if desiredPollingMode() != .backgroundDrain {
             needsGridSync = true
-            pollAndSync()
+            immediateInputPoll()
         }
     }
 
@@ -2909,25 +2804,13 @@ final class RustTerminalView: NSView {
 
     private static func shouldReconcilePollingMode(
         desiredMode: VisibleTerminalPollingMode,
-        desiredActiveHz: Int?,
-        actualMode: ActualPollingMode,
-        currentActiveHz: Int?
+        actualMode: ActualPollingMode
     ) -> Bool {
         switch (desiredMode, actualMode) {
         case (.backgroundDrain, .backgroundDrain):
             return false
-        case (.timer, .timer):
-            // Passive-visible timer uses a fixed constant, so class match is enough.
+        case (.eventDrain, .eventDrain):
             return false
-        case (.displayLink, .displayLink):
-            // CVDisplayLink is running — correct only when no cap/idle requires a timer.
-            return desiredActiveHz != nil
-        case (.displayLink, .timer):
-            // Timer is running for an "active" policy — correct when Hz matches.
-            if desiredActiveHz == nil {
-                return true // need to swap to CVDisplayLink
-            }
-            return desiredActiveHz != currentActiveHz
         default:
             return true
         }
@@ -2939,19 +2822,14 @@ final class RustTerminalView: NSView {
             return "stopped"
         case .backgroundDrain:
             return "background_drain"
-        case .displayLink:
-            return "display_link"
-        case .timer:
-            return "timer"
+        case .eventDrain:
+            return "event_drain"
         }
     }
 
     private var actualPollingMode: ActualPollingMode {
-        if let link = displayLink, CVDisplayLinkIsRunning(link) {
-            return .displayLink
-        }
-        if pollTimer != nil {
-            return .timer
+        if let drain = eventDrain, drain.isRunning {
+            return .eventDrain
         }
         return .backgroundDrain
     }
@@ -2990,10 +2868,9 @@ final class RustTerminalView: NSView {
     func updatePollingMode(reason: String) {
         let desiredMode = desiredPollingMode()
         let actualMode = actualPollingMode
-        let desiredActiveHz = effectiveActiveHz()
         // Ensure background drain registration even when the polling mode
         // didn't change — tabs can enter .backgroundDrain before ever running
-        // a display link, so shouldReconcilePollingMode returns false but the
+        // an event drain, so shouldReconcilePollingMode returns false but the
         // view still needs to be registered with the shared drain service.
         if desiredMode == .backgroundDrain {
             BackgroundTerminalDrainService.shared.register(self)
@@ -3001,41 +2878,22 @@ final class RustTerminalView: NSView {
 
         guard Self.shouldReconcilePollingMode(
             desiredMode: desiredMode,
-            desiredActiveHz: desiredActiveHz,
-            actualMode: actualMode,
-            currentActiveHz: currentActiveHz
+            actualMode: actualMode
         ) else {
             isLivePollingActive = desiredMode != .backgroundDrain
             refreshRenderPipelineProfilingState()
             return
         }
 
-        // Reset idle state on class transitions — idle belongs to the active
-        // loop and must not survive passive/backgroundDrain round-trips.
-        let classChanged: Bool = {
-            switch (desiredMode, actualMode) {
-            case (.displayLink, .displayLink), (.displayLink, .timer):
-                return false // staying within the active-loop family
-            default:
-                return true
-            }
-        }()
-        if classChanged {
-            consecutiveIdlePolls = 0
-            isIdleThrottled = false
-        }
-
         isLivePollingActive = desiredMode != .backgroundDrain
         switch desiredMode {
-        case .displayLink:
-            Log.trace("RustTerminalView[\(viewId)]: switching live polling to display_link hz=\(desiredActiveHz.map(String.init) ?? "native") (\(reason))")
-            resumeDisplayLink()
-        case .timer:
-            Log.trace("RustTerminalView[\(viewId)]: switching live polling to timer (\(reason))")
-            resumeTimerPolling()
+        case .eventDrain:
+            Log.trace("RustTerminalView[\(viewId)]: switching to event drain (\(reason))")
+            startEventDrain()
         case .backgroundDrain:
-            Log.trace("RustTerminalView[\(viewId)]: pausing live polling (\(reason))")
-            pauseDisplayLink()
+            Log.trace("RustTerminalView[\(viewId)]: switching to background drain (\(reason))")
+            stopEventDrain()
+            BackgroundTerminalDrainService.shared.register(self)
         }
         refreshRenderPipelineProfilingState()
     }
@@ -3054,15 +2912,11 @@ final class RustTerminalView: NSView {
             isHidden = shouldHide
         }
         setEventMonitoringEnabled(isInteractive)
-        // For non-active phases, force-stop any lingering display links or
-        // timers before reconciling. Views created during startup restore can
-        // get stuck with active polling from their initial .active phase.
+        // For non-active phases, stop the event drain. Views created during
+        // startup restore can get stuck with active polling from their initial
+        // .active phase — this ensures they drop to background drain.
         if !phase.allowsLivePresentation {
-            if let link = displayLink, CVDisplayLinkIsRunning(link) {
-                CVDisplayLinkStop(link)
-            }
-            pollTimer?.invalidate()
-            pollTimer = nil
+            stopEventDrain()
         }
         updatePollingMode(reason: "applyRenderPhase:\(phase.rawValue)")
         refreshRenderPipelineProfilingState(mode: "\(currentRenderLoopMode):\(phase.rawValue)")
@@ -3096,6 +2950,77 @@ final class RustTerminalView: NSView {
         let pending = authoritativeRevealPending
         authoritativeRevealPending = false
         return pending
+    }
+
+    // MARK: - Event Drain (replaces CVDisplayLink)
+
+    /// Start the event-driven PTY drain for this view (selected tab).
+    /// Stops the background drain service registration first.
+    func startEventDrain() {
+        BackgroundTerminalDrainService.shared.unregister(self)
+        if eventDrain == nil {
+            eventDrain = TerminalEventDrain()
+        }
+        eventDrain?.start(for: self)
+
+        // Force an immediate sync so the user sees fresh content
+        needsGridSync = true
+        immediateInputPoll()
+    }
+
+    /// Stop the event drain (tab deselected or view deallocating).
+    func stopEventDrain() {
+        eventDrain?.stop()
+        eventDrain = nil
+    }
+
+    /// Called by `TerminalEventDrain` on the main thread when PTY data arrives.
+    /// Processes terminal state and triggers rendering.
+    func handleEventDrainData() {
+        guard !isBeingDeallocated else { return }
+        guard let rust = rustTerminal else { return }
+
+        terminalPollAccessLock.lock()
+        // Re-poll non-blocking to pick up any data that arrived since the
+        // event drain's blocking poll returned. This also processes pending
+        // events (titles, clipboard, shell integration).
+        let changed = rust.poll(timeout: 0)
+        let result = processTerminalStateAfterPollLocked(rust: rust, changed: changed || true)
+        terminalPollAccessLock.unlock()
+
+        guard notifyUpdateChanges else {
+            // Data was drained (prevents PTY blocking) but we can't render
+            // yet — the view is in .warm phase during startup restore. Mark
+            // the grid dirty so the first pollAndSync() or authoritative
+            // reveal after the phase transitions to .active picks it up.
+            if result { needsGridSync = true }
+            return
+        }
+
+        if result || needsGridSync {
+            needsGridSync = false
+
+            if !isMetalRenderingActive {
+                syncGridToRenderer(force: false)
+                updateDangerousRowTints()
+            }
+            onBufferChanged?()
+            onDisplaySyncNeeded?()
+        }
+    }
+
+    /// Trigger an immediate non-blocking poll and render. Called from user
+    /// input handlers (keyDown, insertText, paste, scroll, mouse) to ensure
+    /// the response is visible on the current frame.
+    func immediateInputPoll() {
+        pollAndSync()
+    }
+
+    /// Legacy compatibility: replaced by event-driven rendering. With the
+    /// event drain model there's no idle throttle to escape — this just
+    /// triggers an immediate poll for user interaction responsiveness.
+    func snapToFastPolling() {
+        immediateInputPoll()
     }
 
     override var acceptsFirstResponder: Bool {

@@ -2,7 +2,7 @@ import XCTest
 @testable import Chau7Core
 
 final class VisibleTerminalPollingPolicyTests: XCTestCase {
-    func testFocusedVisibleTabUsesDisplayLink() {
+    func testFocusedVisibleTabUsesEventDrain() {
         XCTAssertEqual(
             VisibleTerminalPollingPolicy.mode(
                 for: VisibleTerminalPollingContext(
@@ -16,7 +16,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     isInteractive: true
                 )
             ),
-            .displayLink
+            .eventDrain
         )
     }
 
@@ -38,7 +38,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
         )
     }
 
-    func testShellBootstrapKeepsDisplayLinkEvenWithoutInteraction() {
+    func testShellBootstrapKeepsEventDrainEvenWithoutInteraction() {
         XCTAssertEqual(
             VisibleTerminalPollingPolicy.mode(
                 for: VisibleTerminalPollingContext(
@@ -52,7 +52,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     isInteractive: false
                 )
             ),
-            .displayLink
+            .eventDrain
         )
     }
 

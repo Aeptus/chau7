@@ -83,7 +83,10 @@ final class RustMetalDisplayCoordinator: NSObject {
         super.init()
 
         metalView.isPaused = true
-        metalView.enableSetNeedsDisplay = false
+        // enableSetNeedsDisplay = true lets us mark the view dirty via
+        // needsDisplay. Core Animation coalesces multiple marks within one
+        // frame into a single draw(in:) call at vsync — automatic frame cap.
+        metalView.enableSetNeedsDisplay = true
         metalView.isEventPassthrough = true
         metalView.delegate = self
 
@@ -130,14 +133,15 @@ final class RustMetalDisplayCoordinator: NSObject {
     // MARK: - Lifecycle
 
     /// Called when Rust terminal's buffer changes. Marks that a sync + render is needed.
-    /// Dispatches to main thread if called from a background thread.
+    /// Uses `needsDisplay` for vsync-coalesced rendering — multiple calls within one
+    /// frame period produce exactly one `draw(in:)` at the next display refresh.
     func setNeedsSync() {
         needsSync = true
         needsPresent = true
         // Record activity — this pauses cursor blink for 1 second after typing
         lastActivityTime = Date()
         renderer.cursorBlinkPhase = true // Show cursor immediately on activity
-        requestDraw()
+        scheduleDisplay()
     }
 
     func forceAuthoritativeRefresh(reason: String) {
@@ -147,10 +151,26 @@ final class RustMetalDisplayCoordinator: NSObject {
         lastActivityTime = Date()
         renderer.cursorBlinkPhase = true
         Log.trace("RustMetalDisplayCoordinator: forceAuthoritativeRefresh[\(reason)]")
-        requestDraw()
+        // Force an immediate draw — bypasses vsync coalescing for tab switch
+        // and authoritative reveal paths where we need content NOW.
+        immediateDrawOnMain()
     }
 
-    private func requestDraw() {
+    /// Marks the Metal view for redraw at the next display refresh.
+    /// Core Animation coalesces multiple calls into one draw(in:).
+    private func scheduleDisplay() {
+        if Thread.isMainThread {
+            metalView.needsDisplay = true
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.metalView.needsDisplay = true
+            }
+        }
+    }
+
+    /// Forces an immediate synchronous draw. Use sparingly — only for paths
+    /// that need content visible on this frame (tab switch, authoritative reveal).
+    private func immediateDrawOnMain() {
         if Thread.isMainThread {
             metalView.draw()
         } else {
@@ -170,7 +190,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         needsSync = true
         needsPresent = true
         Log.info("RustMetalDisplayCoordinator: Resized to \(cols)x\(rows)")
-        requestDraw()
+        scheduleDisplay()
     }
 
     /// Called when the color scheme changes.
@@ -180,7 +200,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         tripleBuffer.markFullRefresh()
         needsSync = true
         needsPresent = true
-        requestDraw()
+        scheduleDisplay()
     }
 
     /// Syncs the Metal clear color to the terminal color scheme background.
@@ -210,7 +230,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         tripleBuffer.markFullRefresh()
         needsSync = true
         needsPresent = true
-        requestDraw()
+        scheduleDisplay()
     }
 
     // MARK: - Blink
@@ -260,7 +280,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         let needsRedraw = renderer.cursorBlinkEnabled || renderer.hasBlinkingCells
         if needsRedraw {
             needsPresent = true
-            requestDraw()
+            scheduleDisplay()
         }
     }
 
@@ -290,7 +310,7 @@ final class RustMetalDisplayCoordinator: NSObject {
             Log.info("RustMetalDisplayCoordinator: atlas reclaimed by OS — rebuilding on next draw")
             renderer.clearGlyphCache()
             needsSync = true
-            requestDraw()
+            scheduleDisplay()
         }
     }
 }

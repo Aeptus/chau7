@@ -1,7 +1,9 @@
 public enum VisibleTerminalPollingMode: String, Equatable {
+    /// Event-driven drain: a background thread blocks in `rust.poll(timeout:)`
+    /// and dispatches to main on data arrival. Zero CPU when idle.
+    case eventDrain
+    /// Shared background timer drains PTY at 1s intervals (non-selected tabs).
     case backgroundDrain
-    case displayLink
-    case timer
 }
 
 public struct VisibleTerminalPollingContext: Equatable {
@@ -40,8 +42,9 @@ public enum VisibleTerminalPollingPolicy {
         guard context.isTerminalStarted, context.notifyUpdateChanges else {
             return .backgroundDrain
         }
+        // Shell bootstrap needs active polling to detect first output quickly.
         if context.isShellBootstrapPending {
-            return .displayLink
+            return .eventDrain
         }
         guard context.allowsLivePresentation,
               !context.isHidden,
@@ -49,9 +52,8 @@ public enum VisibleTerminalPollingPolicy {
               !context.isWindowMiniaturized else {
             return .backgroundDrain
         }
-        // Only the selected (interactive) tab gets the display link.
-        // Background tabs drain PTY via backgroundDrain — no rendering,
-        // no display link, no CPU cost. Same model as wezterm.
-        return context.isInteractive ? .displayLink : .backgroundDrain
+        // Only the selected (interactive) tab gets event-driven polling.
+        // Background tabs drain PTY via the shared BackgroundTerminalDrainService.
+        return context.isInteractive ? .eventDrain : .backgroundDrain
     }
 }
