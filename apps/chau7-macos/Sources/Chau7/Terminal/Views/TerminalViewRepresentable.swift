@@ -128,11 +128,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             return false
         }
 
-        let label = "view-\(rustView.viewId)"
-
-        TerminalStartupQueue.shared.enqueue(priority: isSelectedTab, label: label) {
-            launchTerminal(model: model, container: container, rustView: rustView, useMetalRenderer: useMetalRenderer, reason: reason)
-        }
+        // With event-driven rendering (zero idle CPU), all terminals can
+        // launch immediately — no need to serialize via the startup queue.
+        launchTerminal(model: model, container: container, rustView: rustView, useMetalRenderer: useMetalRenderer, reason: reason)
         return true
     }
 
@@ -151,22 +149,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         rustView.appliedColorSchemeSignature = nil
         rustView.applyColorScheme(FeatureSettings.shared.currentColorScheme)
         model.attachRustTerminal(rustView)
-        // Metal rendering is now managed by the shared window-level coordinator
-        // in OverlayTabsModel. It attaches to the selected tab via switchToView()
-        // in performSelectedTabInPlaceRefresh(). No per-container Metal setup.
-
-        // Signal the queue when this terminal produces first output
-        let previousOnOutput = rustView.onOutput
-        var signaled = false
-        rustView.onOutput = { [weak rustView] data in
-            previousOnOutput?(data)
-            if !signaled {
-                signaled = true
-                TerminalStartupQueue.shared.currentTerminalReady()
-                // Restore original callback without the queue signal
-                rustView?.onOutput = previousOnOutput
-            }
-        }
 
         // Notify the window-level tabs model that a terminal started, so the
         // shared Metal coordinator can be created/attached if this is the selected tab.
