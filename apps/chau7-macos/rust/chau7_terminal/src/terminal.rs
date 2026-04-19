@@ -1,10 +1,9 @@
 //! Core terminal emulator: Chau7Terminal struct, PTY management, and terminal operations.
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use alacritty_terminal::event::Event;
@@ -95,10 +94,10 @@ pub struct Chau7Terminal {
     pub(crate) shell_pid: AtomicU64,
     /// Channel receiver for PTY output data when backed by a live shell.
     pub(crate) pty_rx: Option<Receiver<PtyMessage>>,
-    /// Flag to signal the reader thread to stop
+    /// Flag to signal the reader pool to stop monitoring this terminal
     pub(crate) running: Arc<AtomicBool>,
-    /// Reader thread handle
-    pub(crate) reader_thread: Option<JoinHandle<()>>,
+    /// Raw fd registered with the shared reader pool (for unregistration on drop)
+    pub(crate) reader_pool_fd: Option<i32>,
     /// Event receiver for terminal events
     pub(crate) event_rx: Receiver<Event>,
     /// Flag indicating if grid has changed since last poll
@@ -222,7 +221,7 @@ impl Chau7Terminal {
             shell_pid: AtomicU64::new(0),
             pty_rx: None,
             running: Arc::new(AtomicBool::new(false)),
-            reader_thread: None,
+            reader_pool_fd: None,
             event_rx,
             grid_dirty: AtomicBool::new(true),
             cols,
@@ -383,12 +382,27 @@ impl Chau7Terminal {
             }
         };
 
-        // Get reader for PTY output
-        let mut reader = pair.master.try_clone_reader().map_err(|e| {
-            error!("[terminal-{}] Failed to clone PTY reader: {}", id, e);
-            TerminalError::PtyCloneReader(e.into())
-        })?;
-        debug!("[terminal-{}] PTY reader cloned", id);
+        // Get a raw fd for the shared reader pool by dup'ing the master PTY.
+        // The pool thread will use poll()+read() on this fd.
+        let reader_fd = match pair.master.as_raw_fd() {
+            Some(raw_fd) => {
+                let duped = unsafe { libc::dup(raw_fd) };
+                if duped < 0 {
+                    error!("[terminal-{}] Failed to dup master fd for reader pool", id);
+                    -1
+                } else {
+                    debug!(
+                        "[terminal-{}] Dup'd master PTY fd {} → {} for reader pool",
+                        id, raw_fd, duped
+                    );
+                    duped
+                }
+            }
+            None => {
+                error!("[terminal-{}] MasterPty::as_raw_fd() returned None — no reader pool", id);
+                -1
+            }
+        };
 
         // Get writer for PTY input
         let writer = pair.master.take_writer().map_err(|e| {
@@ -397,97 +411,27 @@ impl Chau7Terminal {
         })?;
         debug!("[terminal-{}] PTY writer obtained", id);
 
-        // Create running flag for the reader thread
+        // Create running flag
         let running = Arc::new(AtomicBool::new(true));
-        let running_clone = running.clone();
-        let thread_terminal_id = id;
 
-        // Create channel for PTY data
+        // Create channel for PTY data (same API as before — poll() still
+        // receives from this channel)
         let (pty_tx, pty_rx) = bounded::<PtyMessage>(256);
 
-        // Spawn reader thread
-        info!("[terminal-{}] Spawning PTY reader thread", id);
-        let reader_thread = thread::Builder::new()
-            .name(format!("pty-reader-{}", id))
-            .spawn(move || {
-                debug!(
-                    "[terminal-{}] PTY reader thread started",
-                    thread_terminal_id
-                );
-                let mut buf = [0u8; 8192];
-                let mut total_bytes = 0u64;
-
-                while running_clone.load(Ordering::Acquire) {
-                    match reader.read(&mut buf) {
-                        Ok(0) => {
-                            info!(
-                                "[terminal-{}] PTY EOF received (total bytes read: {})",
-                                thread_terminal_id, total_bytes
-                            );
-                            let _ = pty_tx.send(PtyMessage::Closed);
-                            break;
-                        }
-                        Ok(n) => {
-                            total_bytes += n as u64;
-                            // Log first few reads at info level to debug startup output
-                            if total_bytes <= 4096 {
-                                let preview: String = buf[..n]
-                                    .iter()
-                                    .take(200)
-                                    .map(|&b| {
-                                        if (32..127).contains(&b) {
-                                            b as char
-                                        } else {
-                                            '.'
-                                        }
-                                    })
-                                    .collect();
-                                info!(
-                                    "[terminal-{}] PTY startup read {} bytes: {:?}",
-                                    thread_terminal_id, n, preview
-                                );
-                            } else {
-                                trace!(
-                                    "[terminal-{}] PTY read {} bytes (total: {})",
-                                    thread_terminal_id, n, total_bytes
-                                );
-                            }
-                            let data = buf[..n].to_vec();
-                            if pty_tx.send(PtyMessage::Data(data)).is_err() {
-                                warn!(
-                                    "[terminal-{}] PTY channel closed, exiting reader",
-                                    thread_terminal_id
-                                );
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            // Check if this is just because the PTY was closed
-                            if running_clone.load(Ordering::Acquire) {
-                                error!(
-                                    "[terminal-{}] PTY read error: {} (total bytes read: {})",
-                                    thread_terminal_id, e, total_bytes
-                                );
-                            } else {
-                                debug!(
-                                    "[terminal-{}] PTY read interrupted during shutdown",
-                                    thread_terminal_id
-                                );
-                            }
-                            let _ = pty_tx.send(PtyMessage::Closed);
-                            break;
-                        }
-                    }
-                }
-                info!(
-                    "[terminal-{}] PTY reader thread exiting",
-                    thread_terminal_id
-                );
-            })
-            .map_err(|e| {
-                error!("[terminal-{}] Failed to spawn reader thread: {}", id, e);
-                TerminalError::ReaderThread(e)
-            })?;
+        // Register with the shared reader pool instead of spawning a per-terminal thread.
+        // The pool's single thread uses poll() to monitor all PTY fds and dispatches
+        // PtyMessage::Data to the appropriate channel.
+        if reader_fd >= 0 {
+            crate::reader_pool::shared_reader_pool().register(
+                reader_fd,
+                id,
+                pty_tx,
+                running.clone(),
+            );
+            info!("[terminal-{}] Registered with shared PTY reader pool (fd={})", id, reader_fd);
+        } else {
+            warn!("[terminal-{}] No reader fd — PTY output will not be monitored", id);
+        }
 
         // Create the PTY handle
         let pty_handle = PtyHandle {
@@ -511,7 +455,7 @@ impl Chau7Terminal {
             shell_pid: AtomicU64::new(shell_pid as u64),
             pty_rx: Some(pty_rx),
             running,
-            reader_thread: Some(reader_thread),
+            reader_pool_fd: if reader_fd >= 0 { Some(reader_fd) } else { None },
             event_rx,
             grid_dirty: AtomicBool::new(true),
             cols,
@@ -1916,9 +1860,12 @@ impl Drop for Chau7Terminal {
             );
         }
 
-        // Signal the reader thread to stop
+        // Signal the shared reader pool to stop monitoring this terminal
         self.running.store(false, Ordering::Release);
-        debug!("[terminal-{}] Signaled reader thread to stop", self.id);
+        if let Some(fd) = self.reader_pool_fd.take() {
+            crate::reader_pool::shared_reader_pool().unregister(fd, self.id);
+            debug!("[terminal-{}] Unregistered from reader pool (fd={})", self.id, fd);
+        }
 
         // Kill the child process to unblock the reader thread.
         // CRITICAL: Do NOT block indefinitely on child.wait() — this runs on
@@ -1978,34 +1925,7 @@ impl Drop for Chau7Terminal {
             }
         }
 
-        // Join the reader thread on a background thread so we don't block the caller.
-        // The reader should exit promptly since we set running=false and killed the child,
-        // but we won't risk blocking the main thread if it doesn't.
-        if let Some(handle) = self.reader_thread.take() {
-            let id = self.id;
-            debug!(
-                "[terminal-{}] Spawning background thread to join reader",
-                id
-            );
-            std::thread::Builder::new()
-                .name(format!("term-{}-join", id))
-                .spawn(move || {
-                    let start = Instant::now();
-                    match handle.join() {
-                        Ok(()) => {
-                            debug!(
-                                "[terminal-{}] Reader thread joined in {:?}",
-                                id,
-                                start.elapsed()
-                            );
-                        }
-                        Err(e) => {
-                            error!("[terminal-{}] Reader thread panicked: {:?}", id, e);
-                        }
-                    }
-                })
-                .ok();
-        }
+        // No reader thread to join — the shared reader pool handles all PTY reads.
 
         info!("[terminal-{}] Terminal destroyed", self.id);
     }

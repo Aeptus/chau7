@@ -9,6 +9,7 @@ pub mod graphics;
 mod metrics;
 mod pool;
 mod pty;
+mod reader_pool;
 mod terminal;
 mod types;
 
