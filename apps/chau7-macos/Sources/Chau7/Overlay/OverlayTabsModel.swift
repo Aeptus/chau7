@@ -1498,7 +1498,7 @@ final class OverlayTabsModel {
                 commandBlocks: MainActor.assumeIsolated {
                     CommandBlockManager.shared.blocksForTab(tab.id.uuidString)
                 },
-                previewSnapshotPNGData: encodedRestorePreviewSnapshot(for: tab, isSelected: isSelected)
+                previewSnapshotPNGData: nil
             ))
         }
         return states
@@ -1593,7 +1593,7 @@ final class OverlayTabsModel {
             commandBlocks: MainActor.assumeIsolated {
                 CommandBlockManager.shared.blocksForTab(tab.id.uuidString)
             },
-            previewSnapshotPNGData: encodedRestorePreviewSnapshot(for: tab, isSelected: false)
+            previewSnapshotPNGData: nil
         )
 
         closedTabStack.append(ClosedTabEntry(
