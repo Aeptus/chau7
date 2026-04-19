@@ -794,6 +794,7 @@ final class OverlayTabsModel {
     @ObservationIgnored var ctoModeObserver: NSObjectProtocol?
     @ObservationIgnored var renderSuspensionObserver: NSObjectProtocol?
     @ObservationIgnored var visibleFrameReadyObserver: NSObjectProtocol?
+    @ObservationIgnored var terminalDidStartObserver: NSObjectProtocol?
     var renderLifecycleRefreshToken = UUID()
     @ObservationIgnored var suspensionDebounceItem: DispatchWorkItem?
     @ObservationIgnored var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
@@ -1021,6 +1022,19 @@ final class OverlayTabsModel {
             }
             noteStartupSelectedTabLiveFrameIfNeeded(reason: "visible_frame_ready")
         }
+
+        // When a terminal starts (any tab), re-attempt shared Metal coordinator
+        // creation for the selected tab. During startup restore, the selected tab
+        // doesn't have a view yet when selectTab() first runs, so the coordinator
+        // can't be created. This observer catches the moment the terminal is ready.
+        self.terminalDidStartObserver = NotificationCenter.default.addObserver(
+            forName: .terminalDidStart,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            _ = refreshSelectedTabInPlaceIfPossible(reason: "terminal_did_start")
+        }
     }
 
     deinit {
@@ -1029,6 +1043,8 @@ final class OverlayTabsModel {
         if let ctoModeObserver { NotificationCenter.default.removeObserver(ctoModeObserver) }
         if let renderSuspensionObserver { NotificationCenter.default.removeObserver(renderSuspensionObserver) }
         if let visibleFrameReadyObserver { NotificationCenter.default.removeObserver(visibleFrameReadyObserver) }
+        if let terminalDidStartObserver { NotificationCenter.default.removeObserver(terminalDidStartObserver) }
+        sharedMetalCoordinator?.stop()
         previousLiveHierarchyReleaseWorkItem?.cancel()
         terminalReadyCommitWorkItem?.cancel()
         selectedTerminalRevealTimeoutWorkItem?.cancel()

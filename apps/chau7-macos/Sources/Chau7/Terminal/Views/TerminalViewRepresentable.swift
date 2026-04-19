@@ -168,6 +168,10 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             }
         }
 
+        // Notify the window-level tabs model that a terminal started, so the
+        // shared Metal coordinator can be created/attached if this is the selected tab.
+        NotificationCenter.default.post(name: .terminalDidStart, object: nil)
+
         Log.info("TerminalViewRepresentable: started terminal [\(reason)]")
     }
 

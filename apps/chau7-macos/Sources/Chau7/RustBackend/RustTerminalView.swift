@@ -2986,7 +2986,13 @@ final class RustTerminalView: NSView {
             // yet — the view is in .warm phase during startup restore. Mark
             // the grid dirty so the first pollAndSync() or authoritative
             // reveal after the phase transitions to .active picks it up.
-            if result { needsGridSync = true }
+            // Fire onBufferChanged even in this path — the bootstrap settlement
+            // and visible-frame-ready notifications must still flow so the
+            // startup spinner can dismiss.
+            if result {
+                needsGridSync = true
+                onBufferChanged?()
+            }
             return
         }
 
