@@ -97,8 +97,9 @@ final class RustMetalDisplayCoordinator: NSObject {
 
         Log.trace("RustMetalDisplayCoordinator: Initialized (\(cols)x\(rows))")
 
-        // Start blink timer (500ms interval, matching standard terminal blink rate)
-        startBlinkTimer()
+        // Blink timer is NOT started at init — only the active (selected) tab's
+        // coordinator should have a running timer. The lifecycle (updateNSView)
+        // calls resumeBlinkTimer when the tab becomes interactive.
     }
 
     deinit {

@@ -583,18 +583,20 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             nsView.needsDisplay = true
         }
 
-        // Suspend/resume Metal view and blink timer alongside the terminal
+        // Suspend/resume Metal view and blink timer alongside the terminal.
+        // Only the selected (interactive) tab gets a blink timer — background
+        // tabs don't need cursor blink since they're at opacity 0.
         if metalActive {
             container.rustMetalCoordinator?.metalView.isHidden = !keepsVisibleSurface
-            if !allowsLivePresentation {
-                container.rustMetalCoordinator?.pauseBlinkTimer()
-            } else {
+            if isInteractive {
                 container.rustMetalCoordinator?.resumeBlinkTimer()
-                if shouldForceAuthoritativeReveal {
-                    container.rustMetalCoordinator?.forceAuthoritativeRefresh(reason: "renderPhaseActivated")
-                } else if renderPhaseChanged {
-                    container.rustMetalCoordinator?.setNeedsSync()
-                }
+            } else {
+                container.rustMetalCoordinator?.pauseBlinkTimer()
+            }
+            if shouldForceAuthoritativeReveal {
+                container.rustMetalCoordinator?.forceAuthoritativeRefresh(reason: "renderPhaseActivated")
+            } else if renderPhaseChanged {
+                container.rustMetalCoordinator?.setNeedsSync()
             }
         }
         // Selected tabs can be configured as "not suspended" before their
