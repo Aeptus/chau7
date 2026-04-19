@@ -419,20 +419,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             nsView.needsDisplay = true
         }
 
-        // Reconcile the shared Metal coordinator: if this is the active tab
-        // with a live terminal but the Metal view isn't in our container,
-        // trigger switchToView via notification. This catches cases where
-        // selectTab → performSelectedTabInPlaceRefresh missed (e.g., tab
-        // was already selected but the coordinator was on a different view).
-        if allowsLivePresentation,
-           settings.useMetalRenderer,
-           nsView.isTerminalStarted,
-           !nsView.isMetalRenderingActive,
-           let rustContainer = container.innerRustContainer,
-           rustContainer.metalCoordinator == nil {
-            NotificationCenter.default.post(name: .terminalDidStart, object: nil)
-        }
-
         nsView.updatePollingMode(reason: "updateNSView")
         if allowsLivePresentation,
            nsView.window != nil,
