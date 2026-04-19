@@ -9,12 +9,6 @@ final class RustTerminalContainerView: NSView {
     var onFirstLayout: ((RustTerminalView) -> Void)?
     private var didRunFirstLayout = false
 
-    /// Rust Metal display coordinator (nil when Metal rendering is disabled)
-    private(set) var rustMetalCoordinator: RustMetalDisplayCoordinator?
-
-    /// True until the Metal overlay has produced its first real frame.
-    private var awaitingFirstMetalFrame = false
-
     init(terminalView: RustTerminalView) {
         self.terminalView = terminalView
         super.init(frame: .zero)
@@ -26,26 +20,12 @@ final class RustTerminalContainerView: NSView {
         fatalError("init(coder:) not implemented")
     }
 
-    deinit {
-        disableMetalRendering()
-    }
-
     override func layout() {
         super.layout()
         terminalView.frame = bounds
-        let inset = RustTerminalView.terminalInset
-        rustMetalCoordinator?.metalView.frame = bounds.insetBy(dx: inset, dy: inset)
-
-        // Propagate terminal resize to the Metal coordinator
-        if let coordinator = rustMetalCoordinator {
-            coordinator.resize(rows: terminalView.renderRows, cols: terminalView.renderCols)
-        }
 
         if !didRunFirstLayout, bounds.width > 0, bounds.height > 0 {
             didRunFirstLayout = true
-            // Defer the first-layout callback to the next runloop pass so that
-            // this layout cycle finishes first — avoids the AppKit warning about
-            // calling layoutSubtreeIfNeeded inside an active layout pass.
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 terminalView.layoutSubtreeIfNeeded()
@@ -53,131 +33,11 @@ final class RustTerminalContainerView: NSView {
             }
         }
     }
-
-    /// Enables Metal GPU rendering overlay for the Rust terminal.
-    /// The RustGridView (CPU renderer) stays in place as a fallback.
-    /// Metal view sits on top as an opaque display layer with event passthrough.
-    /// HighlightView (if present) is moved above Metal so highlights remain visible.
-    func enableMetalRendering() {
-        if let coordinator = rustMetalCoordinator {
-            wireMetalRendererCallbacks(coordinator: coordinator)
-            Log.trace("RustTerminalContainerView: Metal rendering callbacks refreshed")
-            return
-        }
-
-        // Create a grid provider closure that reads from the Rust terminal FFI
-        guard let gridProvider = terminalView.makeGridProvider() else {
-            Log.warn("RustTerminalContainerView: Cannot create grid provider, keeping CPU rendering")
-            return
-        }
-
-        guard let coordinator = RustMetalDisplayCoordinator(
-            terminalView: terminalView,
-            gridProvider: gridProvider
-        ) else {
-            Log.warn("RustTerminalContainerView: Metal rendering unavailable, keeping CPU rendering")
-            return
-        }
-
-        rustMetalCoordinator = coordinator
-
-        // Register this coordinator for per-phase GPU volatility control.
-        if let tabID = UUID(uuidString: terminalView.tabIdentifier) {
-            TabGraphicsMemoryManager.shared.register(metalVolatility: coordinator, forTabID: tabID)
-        }
-
-        // Add Metal view on top of RustGridView. Metal is opaque and covers the CPU renderer.
-        // Mouse events pass through Metal to the terminal view (hitTest returns nil).
-        let metalView = coordinator.metalView
-        metalView.frame = bounds
-        metalView.autoresizingMask = [.width, .height]
-        metalView.alphaValue = 0
-        addSubview(metalView, positioned: .above, relativeTo: terminalView)
-
-        // Move HighlightView above Metal view so search/danger highlights remain visible.
-        for subview in terminalView.subviews {
-            if subview is TerminalHighlightView {
-                subview.removeFromSuperview()
-                subview.frame = bounds
-                addSubview(subview, positioned: .above, relativeTo: metalView)
-                break
-            }
-        }
-
-        wireMetalRendererCallbacks(coordinator: coordinator)
-
-        // Keep CPU rendering authoritative until Metal has actually presented
-        // once. This avoids exposing a blank GPU surface during startup/tab
-        // reveal handoffs.
-        awaitingFirstMetalFrame = true
-        terminalView.isMetalRenderingActive = false
-
-        // Defer the first Metal sync to the next runloop tick. The Metal view
-        // was just added to the hierarchy — its CAMetalLayer needs one layout
-        // pass to commit its size. A synchronous draw() here would find
-        // zero-size bounds → no drawable → promotion never fires.
-        DispatchQueue.main.async { [weak coordinator] in
-            coordinator?.setNeedsSync()
-        }
-
-        Log.trace("RustTerminalContainerView: Metal rendering enabled")
-    }
-
-    private func wireMetalRendererCallbacks(coordinator: RustMetalDisplayCoordinator) {
-        terminalView.onDisplaySyncNeeded = { [weak coordinator] in
-            coordinator?.setNeedsSync()
-        }
-        terminalView.onDisplayFramePresented = { [weak self, weak coordinator] in
-            guard let self else {
-                Log.info("Metal promotion: skipped — container deallocated")
-                return
-            }
-            if awaitingFirstMetalFrame {
-                awaitingFirstMetalFrame = false
-                terminalView.isMetalRenderingActive = true
-                coordinator?.metalView.alphaValue = 1
-                Log.info("Metal promotion: CPU→Metal handoff complete (view \(terminalView.viewId))")
-            }
-        }
-    }
-
-    /// Disables Metal rendering, showing the CPU RustGridView again.
-    func disableMetalRendering() {
-        guard let coordinator = rustMetalCoordinator else { return }
-        coordinator.stop()
-        if let tabID = UUID(uuidString: terminalView.tabIdentifier) {
-            TabGraphicsMemoryManager.shared.unregister(forTabID: tabID)
-        }
-
-        // Re-enable CPU rendering path
-        terminalView.isMetalRenderingActive = false
-
-        terminalView.onDisplaySyncNeeded = nil
-        terminalView.onDisplayFramePresented = nil
-        awaitingFirstMetalFrame = false
-
-        // Move HighlightView back into the terminal view
-        for subview in subviews {
-            if subview is TerminalHighlightView {
-                subview.removeFromSuperview()
-                terminalView.addSubview(subview)
-                subview.frame = terminalView.bounds
-                break
-            }
-        }
-
-        coordinator.metalView.removeFromSuperview()
-        rustMetalCoordinator = nil
-        Log.info("RustTerminalContainerView: Metal rendering disabled")
-    }
 }
 
 /// Terminal container view (Rust backend only).
 final class UnifiedTerminalContainerView: NSView {
     private var rustContainer: RustTerminalContainerView?
-
-    /// Tracks the last applied color scheme for Metal coordinator notifications.
-    var lastMetalColorSchemeSignature: String?
 
     init(rustView: RustTerminalView) {
         self.rustContainer = RustTerminalContainerView(terminalView: rustView)
@@ -204,24 +64,15 @@ final class UnifiedTerminalContainerView: NSView {
         set { rustContainer?.onFirstLayout = newValue }
     }
 
-    /// Enables Metal GPU rendering.
-    func enableMetalRendering() {
-        rustContainer?.enableMetalRendering()
+    /// The inner RustTerminalContainerView, exposed for the shared Metal
+    /// coordinator's switchToView() to reparent the Metal NSView.
+    var innerRustContainer: RustTerminalContainerView? {
+        rustContainer
     }
 
-    /// Disables Metal GPU rendering, restoring the native CPU display.
-    func disableMetalRendering() {
-        rustContainer?.disableMetalRendering()
-    }
-
-    /// The active Rust Metal coordinator, if Metal rendering is enabled.
-    var rustMetalCoordinator: RustMetalDisplayCoordinator? {
-        rustContainer?.rustMetalCoordinator
-    }
-
-    /// Whether Metal rendering is active.
+    /// Whether the contained terminal view has Metal rendering active.
     var isMetalActive: Bool {
-        rustMetalCoordinator != nil
+        rustTerminalView?.isMetalRenderingActive ?? false
     }
 }
 
@@ -300,9 +151,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         rustView.appliedColorSchemeSignature = nil
         rustView.applyColorScheme(FeatureSettings.shared.currentColorScheme)
         model.attachRustTerminal(rustView)
-        if useMetalRenderer {
-            container.enableMetalRendering()
-        }
+        // Metal rendering is now managed by the shared window-level coordinator
+        // in OverlayTabsModel. It attaches to the selected tab via switchToView()
+        // in performSelectedTabInPlaceRefresh(). No per-container Metal setup.
 
         // Signal the queue when this terminal produces first output
         let previousOnOutput = rustView.onOutput
@@ -381,14 +232,11 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.installHistoryKeyMonitor()
             existingView.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "reuse-container")
             existingView.allowMouseReporting = settings.isMouseReportingEnabled
-            if settings.useMetalRenderer {
-                if existingContainer.rustMetalCoordinator == nil {
-                    existingView.isMetalRenderingActive = false
-                }
-                existingContainer.enableMetalRendering()
-                Log.trace("Reconciled Metal rendering for reused Rust terminal container")
-            } else if existingContainer.rustMetalCoordinator != nil {
-                existingContainer.disableMetalRendering()
+            // Metal rendering is managed by the shared window-level coordinator.
+            // Ensure the view flag is correct — the coordinator will attach when
+            // this tab becomes selected via switchToView().
+            if !settings.useMetalRenderer {
+                existingView.isMetalRenderingActive = false
             }
             return existingContainer
         }
@@ -435,17 +283,10 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             model.attachTerminalContainer(container)
             existingView.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "reuse")
             existingView.allowMouseReporting = settings.isMouseReportingEnabled
-            // Re-enable Metal rendering — the previous container (and its Metal
-            // coordinator) was torn down when the tab went out of nearby range.
-            // Without this, isMetalRenderingActive stays true on the view (skipping
-            // CPU rendering) while no Metal coordinator exists (no GPU rendering
-            // either), leaving the tab blank/grey.
-            if settings.useMetalRenderer {
-                // Reset the flag so enableMetalRendering() can re-attach
-                existingView.isMetalRenderingActive = false
-                container.enableMetalRendering()
-                Log.trace("Re-enabled Metal rendering for reused Rust terminal view")
-            }
+            // Metal rendering is managed by the shared window-level coordinator.
+            // Clear the flag so the CPU renderer is active until the coordinator
+            // attaches via switchToView() when this tab becomes selected.
+            existingView.isMetalRenderingActive = false
             return container
         }
 
@@ -558,10 +399,8 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 
     func updateNSView(_ container: UnifiedTerminalContainerView, context: Context) {
         guard let nsView = container.rustTerminalView else { return }
-        let metalActive = container.rustMetalCoordinator != nil
         nsView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
         let transition = context.coordinator.consumeRenderPhaseTransition(to: renderPhase)
-        let renderPhaseChanged = transition.changed
         let keepsVisibleSurface = renderPhase.keepsVisibleSurface
         let allowsLivePresentation = renderPhase.allowsLivePresentation
         nsView.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "updateNSView")
@@ -579,32 +418,14 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         if shouldForceAuthoritativeReveal {
             nsView.requestAuthoritativeReveal(reason: "renderPhaseActivated")
         }
-        if keepsVisibleSurface, !metalActive {
+        if keepsVisibleSurface {
             nsView.needsDisplay = true
         }
 
-        // Suspend/resume Metal view and blink timer alongside the terminal.
-        // Only the selected (interactive) tab gets a blink timer — background
-        // tabs don't need cursor blink since they're at opacity 0.
-        if metalActive {
-            container.rustMetalCoordinator?.metalView.isHidden = !keepsVisibleSurface
-            if isInteractive {
-                container.rustMetalCoordinator?.resumeBlinkTimer()
-            } else {
-                container.rustMetalCoordinator?.pauseBlinkTimer()
-            }
-            if shouldForceAuthoritativeReveal {
-                container.rustMetalCoordinator?.forceAuthoritativeRefresh(reason: "renderPhaseActivated")
-            } else if renderPhaseChanged {
-                container.rustMetalCoordinator?.setNeedsSync()
-            }
-        }
-        // Selected tabs can be configured as "not suspended" before their
-        // window is actually visible. That pauses live polling during startup,
-        // and if no later lifecycle callback fires at the right moment the
-        // session remains on background drain forever. Reconcile here on every
-        // SwiftUI update so the visible selected tab actively revives once it
-        // is attached to a real window.
+        // Metal blink timer and sync are managed by the shared window-level
+        // coordinator via OverlayTabsModel.performSelectedTabInPlaceRefresh().
+        // No per-container Metal management needed here.
+
         nsView.updatePollingMode(reason: "updateNSView")
         if allowsLivePresentation,
            nsView.window != nil,
@@ -619,20 +440,10 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let fontChanged = nsView.font.fontName != desiredFont.fontName || nsView.font.pointSize != desiredFont.pointSize
         if fontChanged {
             nsView.font = desiredFont
-            container.rustMetalCoordinator?.fontChanged()
         }
 
         let scheme = settings.currentColorScheme
         nsView.applyColorScheme(scheme)
-
-        // Notify Metal coordinator only when the color scheme actually changes
-        if metalActive {
-            let sig = scheme.signature
-            if container.lastMetalColorSchemeSignature != sig {
-                container.lastMetalColorSchemeSignature = sig
-                container.rustMetalCoordinator?.colorSchemeChanged()
-            }
-        }
 
         nsView.applyCursorStyle(style: settings.cursorStyle, blink: settings.cursorBlink)
         nsView.applyBellSettings(enabled: settings.bellEnabled, sound: settings.bellSound)
@@ -645,12 +456,10 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         // When SwiftUI removes a terminal from the live hierarchy, the session
         // still retains the view for later reuse. Force it onto the hidden
         // background-drain path now so old selected tabs do not keep spinning
-        // display-link/timer work after a switch.
+        // event drain work after a switch.
         nsView.applyRenderPhase(.hidden, isInteractive: false, reason: "dismantleNSView")
         nsView.isHidden = true
         nsView.updatePollingMode(reason: "dismantleNSView")
-        container.rustMetalCoordinator?.pauseBlinkTimer()
-        container.rustMetalCoordinator?.metalView.isHidden = true
     }
 
     private func terminalFont() -> NSFont {

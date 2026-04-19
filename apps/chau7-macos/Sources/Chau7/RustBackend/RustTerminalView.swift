@@ -2648,11 +2648,7 @@ final class RustTerminalView: NSView {
         notifyUpdateChanges = false
         isHidden = true
         stopPollingLoop()
-        if let container = superview as? RustTerminalContainerView {
-            container.disableMetalRendering()
-        } else {
-            isMetalRenderingActive = false
-        }
+        isMetalRenderingActive = false
     }
 
     // MARK: - View Lifecycle
@@ -2670,11 +2666,8 @@ final class RustTerminalView: NSView {
                 Log.trace("RustTerminalView[\(viewId)]: viewDidMoveToWindow - Setting up event monitors")
                 setupEventMonitors()
             }
-            // Re-configure Metal atlas with correct backingScaleFactor now that window is available
-            if isMetalRenderingActive,
-               let container = superview as? RustTerminalContainerView {
-                container.rustMetalCoordinator?.fontChanged()
-            }
+            // The shared Metal coordinator reconfigures its font/atlas when
+            // switchToView() runs. No per-view Metal management needed.
         } else {
             Log.trace("RustTerminalView[\(viewId)]: viewDidMoveToWindow - Removed from window")
             removeEventMonitors()

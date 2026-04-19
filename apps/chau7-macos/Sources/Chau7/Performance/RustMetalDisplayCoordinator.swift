@@ -233,6 +233,70 @@ final class RustMetalDisplayCoordinator: NSObject {
         scheduleDisplay()
     }
 
+    // MARK: - Shared Renderer Tab Switch
+
+    /// Switch the shared coordinator to render a different terminal view.
+    /// Moves the Metal view into the new container, swaps the grid provider,
+    /// resizes if needed, and renders one immediate frame. ~1ms total.
+    ///
+    /// Called by `OverlayTabsModel` on tab switch. The old view's rendering
+    /// callbacks are disconnected; the new view's are wired up.
+    func switchToView(
+        _ newView: RustTerminalView,
+        container: RustTerminalContainerView
+    ) {
+        let oldView = terminalView
+
+        // 1. Disconnect old view's rendering callbacks
+        oldView?.onDisplaySyncNeeded = nil
+        oldView?.isMetalRenderingActive = false
+
+        // 2. Swap grid provider + view reference
+        gridProvider = newView.makeGridProvider()
+        terminalView = newView
+
+        // 3. Reparent Metal view into the new container
+        let inset = RustTerminalView.terminalInset
+        metalView.removeFromSuperview()
+        metalView.frame = container.bounds.insetBy(dx: inset, dy: inset)
+        container.addSubview(metalView, positioned: .above, relativeTo: newView)
+        metalView.alphaValue = 1
+
+        // 4. Move HighlightView above Metal in the new container
+        for subview in newView.subviews {
+            if subview is TerminalHighlightView {
+                subview.removeFromSuperview()
+                subview.frame = container.bounds
+                container.addSubview(subview, positioned: .above, relativeTo: metalView)
+                break
+            }
+        }
+
+        // 5. Wire new view's sync callback
+        newView.onDisplaySyncNeeded = { [weak self] in
+            self?.setNeedsSync()
+        }
+        newView.isMetalRenderingActive = true
+
+        // 6. Reconfigure font if the new view uses a different font/scale
+        configureFont()
+
+        // 7. Resize triple buffer if grid dimensions changed
+        let newRows = newView.renderRows
+        let newCols = newView.renderCols
+        if newRows != rows || newCols != cols {
+            resize(rows: newRows, cols: newCols)
+        }
+
+        // 8. Sync color scheme
+        syncClearColor()
+
+        // 9. Immediate full render so content is visible this frame
+        forceAuthoritativeRefresh(reason: "switchToView")
+
+        Log.info("RustMetalDisplayCoordinator: switchToView → view \(newView.viewId) (\(newCols)x\(newRows))")
+    }
+
     // MARK: - Blink
 
     /// Pause the blink timer when the tab is suspended (saves CPU).

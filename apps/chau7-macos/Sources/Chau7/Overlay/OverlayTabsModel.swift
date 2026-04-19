@@ -598,6 +598,11 @@ final class OverlayTabsModel {
         }
     }
 
+    /// Shared Metal renderer for this window. One coordinator renders all tabs;
+    /// `switchToView()` swaps the grid provider on tab change. Created lazily
+    /// when the first selected tab starts its terminal.
+    var sharedMetalCoordinator: RustMetalDisplayCoordinator?
+
     /// When set, the content area shows the agent dashboard for this repo group.
     var activeDashboardGroupID: String?
     private var dashboardModels: [String: AgentDashboardModel] = [:]
@@ -1296,15 +1301,9 @@ final class OverlayTabsModel {
 
     private static func isSnapshotSurfaceReady(_ view: NSView) -> Bool {
         if let unified = view as? UnifiedTerminalContainerView {
-            if let metalView = unified.rustMetalCoordinator?.metalView, !metalView.isHidden {
-                return true
-            }
             return !(unified.rustTerminalView?.isHidden ?? true)
         }
         if let container = view as? RustTerminalContainerView {
-            if let metalView = container.rustMetalCoordinator?.metalView, !metalView.isHidden {
-                return true
-            }
             return !container.terminalView.isHidden
         }
         return !view.isHidden
@@ -2759,10 +2758,23 @@ final class OverlayTabsModel {
 
         if let container = rustView.superview as? RustTerminalContainerView {
             container.isHidden = !selectedDecision.phase.keepsVisibleSurface
-            if let coordinator = container.rustMetalCoordinator {
-                coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
-                coordinator.metalView.needsDisplay = true
-                coordinator.setNeedsSync()
+
+            // Shared Metal renderer: switch the window's single coordinator
+            // to render this tab's content. Creates the coordinator lazily
+            // on first use.
+            if FeatureSettings.shared.useMetalRenderer {
+                if let coordinator = sharedMetalCoordinator {
+                    coordinator.switchToView(rustView, container: container)
+                    coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+                } else if let coordinator = RustMetalDisplayCoordinator(
+                    terminalView: rustView,
+                    gridProvider: rustView.makeGridProvider() ?? { nil }
+                ) {
+                    sharedMetalCoordinator = coordinator
+                    coordinator.switchToView(rustView, container: container)
+                    coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+                    Log.info("OverlayTabsModel: shared Metal coordinator created")
+                }
             }
         }
 
@@ -2832,13 +2844,10 @@ final class OverlayTabsModel {
             rustView.needsDisplay = true
             if let container = rustView.superview as? RustTerminalContainerView {
                 container.isHidden = !selectedDecision.phase.keepsVisibleSurface
-                if let coordinator = container.rustMetalCoordinator {
-                    coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
-                    coordinator.metalView.needsDisplay = true
-                }
             }
             rustView.requestAuthoritativeReveal(reason: reason)
-            if let coordinator = (rustView.superview as? RustTerminalContainerView)?.rustMetalCoordinator {
+            if let coordinator = sharedMetalCoordinator {
+                coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
                 coordinator.forceAuthoritativeRefresh(reason: reason)
             }
             if selectedDecision.phase.keepsVisibleSurface {
