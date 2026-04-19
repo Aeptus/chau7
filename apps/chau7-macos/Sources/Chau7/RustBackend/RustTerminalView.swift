@@ -2830,12 +2830,14 @@ final class RustTerminalView: NSView {
         }
     }
 
+    static let terminalInset: CGFloat = 4
+
     override func layout() {
         super.layout()
-        // Use bounds directly without toolbar inset calculation.
-        // The hosting view is already positioned at contentLayoutRect by OverlayBlurView.
-        gridView?.frame = bounds
-        overlayContainer?.frame = bounds
+        let inset = Self.terminalInset
+        let insetRect = bounds.insetBy(dx: inset, dy: inset)
+        gridView?.frame = insetRect
+        overlayContainer?.frame = insetRect
 
         // DEBUG: Log layout dimensions
         if let window = window {
@@ -2843,10 +2845,10 @@ final class RustTerminalView: NSView {
             Log.trace("RustTerminalView[\(viewId)]: layout - bounds=\(bounds) frame=\(frame) contentLayoutRect=\(contentRect) window.frame=\(window.frame)")
         }
 
-        // Update dimensions and resize Rust terminal
+        // Update dimensions and resize Rust terminal (based on inset area)
         updateCellDimensions()
-        let newCols = max(1, Int(bounds.width / cellWidth))
-        let newRows = max(1, Int(bounds.height / cellHeight))
+        let newCols = max(1, Int(insetRect.width / cellWidth))
+        let newRows = max(1, Int(insetRect.height / cellHeight))
 
         if newCols != cols || newRows != rows {
             Log.trace("RustTerminalView[\(viewId)]: layout - Resizing from \(cols)x\(rows) to \(newCols)x\(newRows)")

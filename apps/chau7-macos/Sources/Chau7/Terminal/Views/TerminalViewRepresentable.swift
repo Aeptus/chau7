@@ -33,7 +33,8 @@ final class RustTerminalContainerView: NSView {
     override func layout() {
         super.layout()
         terminalView.frame = bounds
-        rustMetalCoordinator?.metalView.frame = bounds
+        let inset = RustTerminalView.terminalInset
+        rustMetalCoordinator?.metalView.frame = bounds.insetBy(dx: inset, dy: inset)
 
         // Propagate terminal resize to the Metal coordinator
         if let coordinator = rustMetalCoordinator {
