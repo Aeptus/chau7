@@ -2000,6 +2000,34 @@ final class TerminalSessionModel {
         }
     }
 
+    /// Auto-submits a restore prefill when safe. Called in the same event-loop
+    /// tick as `insertSnippet`, which eliminates the race window where a user
+    /// keystroke could get appended to our Enter. The previous "insert and
+    /// wait for Enter" behavior is preserved when any precondition fails —
+    /// safety-first, not silent actions.
+    private func scheduleRestorePrefillAutoSubmit(deliveredText: String) {
+        guard FeatureSettings.shared.autoSubmitRestorePrefill else { return }
+
+        // Precondition: process tree must NOT show an AI tool already running.
+        // Auto-submitting `claude --resume ...` into a live Claude prompt would
+        // duplicate sessions or submit the resume string as a prompt message.
+        let shellPID = activeRustTerminalView?.shellPid ?? 0
+        if shellPID > 0,
+           ProcessTreeProviderResolver.resolve(shellPid: shellPID) != nil {
+            Log.info(
+                "Restore prefill auto-submit skipped for \(deliveredText.prefix(40)): AI tool already running in process tree"
+            )
+            return
+        }
+
+        guard let keyPress = try? TerminalKeyPress(key: "enter", modifiers: []) else {
+            Log.warn("Restore prefill auto-submit: failed to construct enter keypress")
+            return
+        }
+        sendKeyPress(keyPress)
+        Log.info("Restore prefill auto-submitted: \(deliveredText.prefix(60))")
+    }
+
     private func flushPendingTerminalActions() {
         guard existingRustTerminalView != nil else { return }
         let actions = pendingTerminalActions
@@ -2087,6 +2115,7 @@ final class TerminalSessionModel {
             markRestoreBootstrapReady(source: "resume_prefill")
             Log.info("Resume prefill delivered: \(text.prefix(60))")
             onDelivered?()
+            scheduleRestorePrefillAutoSubmit(deliveredText: text)
             return .delivered
         }
 

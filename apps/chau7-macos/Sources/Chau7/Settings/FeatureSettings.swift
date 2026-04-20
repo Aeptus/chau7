@@ -1067,6 +1067,15 @@ final class FeatureSettings {
         didSet { UserDefaults.standard.set(isShortcutHelperHintEnabled, forKey: Keys.shortcutHelperHint) }
     }
 
+    /// When true, restore prefills (e.g. `claude --resume <id>`) are auto-submitted
+    /// after insertion when it is safe to do so: the shell is at a prompt, no user
+    /// input arrived after the prefill, and the process tree confirms no AI tool is
+    /// already running. Defaults to true — the original "insert and wait for Enter"
+    /// behavior left tabs in a half-restored state if the user tabbed away.
+    var autoSubmitRestorePrefill: Bool {
+        didSet { UserDefaults.standard.set(autoSubmitRestorePrefill, forKey: Keys.autoSubmitRestorePrefill) }
+    }
+
     func shortcut(for action: String) -> KeyboardShortcut? {
         customShortcuts.first { $0.action == action }
     }
@@ -2307,6 +2316,7 @@ final class FeatureSettings {
         // Keyboard Shortcuts (NEW)
         static let customShortcuts = "keyboard.customShortcuts"
         static let shortcutHelperHint = "keyboard.shortcutHelperHint"
+        static let autoSubmitRestorePrefill = "restore.autoSubmitPrefill"
         // Hover Card Sections
         static let hoverCardShowDirectory = "hoverCard.showDirectory"
         static let hoverCardShowGitBranch = "hoverCard.showGitBranch"
@@ -2534,6 +2544,7 @@ final class FeatureSettings {
         }
         self.customShortcuts = Self.migratedShortcutsIfNeeded(loadedShortcuts)
         self.isShortcutHelperHintEnabled = defaults.object(forKey: Keys.shortcutHelperHint) as? Bool ?? true
+        self.autoSubmitRestorePrefill = defaults.object(forKey: Keys.autoSubmitRestorePrefill) as? Bool ?? true
 
         // Local Echo / Immediate Display Flush (default: disabled)
         // Initialize early to ensure all properties are set before any are accessed
