@@ -426,10 +426,14 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             nsView.needsDisplay = true
         }
 
-        // Reconcile shared Metal coordinator: if this is the selected tab
-        // with a terminal but Metal isn't active, directly attach the
-        // coordinator. No notification — avoids the infinite loop.
-        if allowsLivePresentation,
+        // Reconcile shared Metal coordinator: if this is the selected
+        // interactive tab with a terminal but Metal isn't active, directly
+        // attach the coordinator. Only for isInteractive (key window's
+        // selected tab) — non-interactive tabs in other windows get their
+        // coordinator via invalidateRenderLifecycle. This prevents the
+        // reconciliation from stealing the coordinator back to just-
+        // deselected tabs during the handoff window.
+        if isInteractive,
            settings.useMetalRenderer,
            nsView.isTerminalStarted,
            !nsView.isMetalRenderingActive,
