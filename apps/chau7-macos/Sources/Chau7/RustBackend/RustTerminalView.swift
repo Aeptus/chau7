@@ -2706,6 +2706,18 @@ final class RustTerminalView: NSView {
     }
 
     private func handleWindowVisibilityChange(_ name: Notification.Name) {
+        // When the window becomes key, eagerly restart the event drain for
+        // the selected tab ONLY (phase == .active). Don't wait for SwiftUI's
+        // re-evaluation cycle — the user is already typing. Non-selected tabs
+        // (.warm phase) must NOT start drains here to avoid accumulation.
+        if name == NSWindow.didBecomeKeyNotification || name == NSWindow.didBecomeMainNotification {
+            if isTerminalStarted, currentRenderPhase == .active {
+                startEventDrain()
+                needsGridSync = true
+                immediateInputPoll()
+                return
+            }
+        }
         updatePollingMode(reason: "window:\(name.rawValue)")
         if desiredPollingMode() != .backgroundDrain {
             needsGridSync = true
