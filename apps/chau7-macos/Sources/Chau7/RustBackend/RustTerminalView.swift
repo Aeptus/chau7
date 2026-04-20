@@ -2711,7 +2711,12 @@ final class RustTerminalView: NSView {
         // re-evaluation cycle — the user is already typing. Non-selected tabs
         // (.warm phase) must NOT start drains here to avoid accumulation.
         if name == NSWindow.didBecomeKeyNotification || name == NSWindow.didBecomeMainNotification {
-            if isTerminalStarted, currentRenderPhase == .active {
+            // Only restart the drain for the view that currently owns the
+            // Metal coordinator. isMetalRenderingActive is set by switchToView
+            // synchronously — it doesn't depend on SwiftUI's re-evaluation.
+            // Without this guard, just-deselected tabs (still .active phase
+            // until SwiftUI catches up) get their drains restarted.
+            if isTerminalStarted, isMetalRenderingActive {
                 startEventDrain()
                 needsGridSync = true
                 immediateInputPoll()
