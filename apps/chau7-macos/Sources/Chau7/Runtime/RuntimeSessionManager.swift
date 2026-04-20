@@ -568,25 +568,43 @@ final class RuntimeSessionManager {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// Sessions that failed adoption — don't retry on every event.
+    /// Keyed by normalized session ID (or cwd if no session ID).
+    /// Cleared when tab state changes (new tab opened, tab closed).
+    private var failedAdoptionKeys: Set<String> = []
+
+    /// Clear the failed adoption cache so new tabs can be discovered.
+    func resetAdoptionCache() {
+        failedAdoptionKeys.removeAll()
+    }
+
     /// Try to adopt an unknown Claude Code session from a monitor event.
     /// Resolves the tab by matching cwd to existing tabs.
+    /// Remembers failures to avoid retrying on every subsequent event.
     private func tryAdoptFromEvent(_ event: ClaudeCodeEvent) -> RuntimeSession? {
         guard !event.cwd.isEmpty else { return nil }
 
         let normalizedClaudeSessionID = normalizeClaudeSessionID(event.sessionId)
+        let cacheKey = normalizedClaudeSessionID ?? "cwd:\(event.cwd)"
+
+        // Don't retry sessions that already failed resolution
+        guard !failedAdoptionKeys.contains(cacheKey) else { return nil }
+
         let tabID: UUID?
         if let normalizedClaudeSessionID {
             tabID = resolveClaudeTabBySessionID(normalizedClaudeSessionID, cwd: event.cwd)
             if tabID == nil {
+                failedAdoptionKeys.insert(cacheKey)
                 Log.warn(
-                    "RuntimeSessionManager: refusing Claude auto-adopt without exact tab for session=\(normalizedClaudeSessionID) cwd=\(event.cwd)"
+                    "RuntimeSessionManager: refusing Claude auto-adopt without exact tab for session=\(normalizedClaudeSessionID) cwd=\(event.cwd) (will not retry)"
                 )
             }
         } else {
             tabID = resolveUniqueUnboundClaudeTabByCwd(event.cwd)
             if tabID == nil {
+                failedAdoptionKeys.insert(cacheKey)
                 Log.warn(
-                    "RuntimeSessionManager: refusing Claude auto-adopt without exact session ID for cwd=\(event.cwd)"
+                    "RuntimeSessionManager: refusing Claude auto-adopt without exact session ID for cwd=\(event.cwd) (will not retry)"
                 )
             }
         }
