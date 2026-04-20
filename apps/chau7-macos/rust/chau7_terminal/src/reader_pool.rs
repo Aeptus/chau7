@@ -234,9 +234,15 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                         entry.terminal_id,
                         bytes_read
                     );
-                    if entry.sender.send(PtyMessage::Data(data)).is_err() {
+                    // Use try_send to avoid blocking the pool thread when a
+                    // terminal's channel is full (consumer not draining — e.g.,
+                    // background tab with stopped event drain). A blocking send
+                    // here would starve ALL terminals since the pool is single-
+                    // threaded. Dropped data is acceptable — the terminal will
+                    // catch up on the next read when the consumer resumes.
+                    if entry.sender.try_send(PtyMessage::Data(data)).is_err() {
                         warn!(
-                            "SharedPtyReaderPool: channel closed for terminal {}",
+                            "SharedPtyReaderPool: channel full/closed for terminal {}",
                             entry.terminal_id
                         );
                     }
@@ -246,7 +252,7 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                         "SharedPtyReaderPool: EOF on terminal {} (fd={})",
                         entry.terminal_id, fd
                     );
-                    let _ = entry.sender.send(PtyMessage::Closed);
+                    let _ = entry.sender.try_send(PtyMessage::Closed);
                 } else {
                     // Error
                     let errno = std::io::Error::last_os_error();
@@ -256,7 +262,7 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                             entry.terminal_id, fd, errno
                         );
                     }
-                    let _ = entry.sender.send(PtyMessage::Closed);
+                    let _ = entry.sender.try_send(PtyMessage::Closed);
                 }
             }
 
@@ -265,7 +271,7 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                     "SharedPtyReaderPool: HUP/ERR on terminal {} (fd={})",
                     entry.terminal_id, fd
                 );
-                let _ = entry.sender.send(PtyMessage::Closed);
+                let _ = entry.sender.try_send(PtyMessage::Closed);
             }
         }
     }
