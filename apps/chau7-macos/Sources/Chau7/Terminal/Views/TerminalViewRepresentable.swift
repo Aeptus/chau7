@@ -315,6 +315,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         Log.info("Configured Rust terminal with shell: \(shell), env vars: \(environmentDict.count)")
 
         view.font = terminalFont()
+        view.tabIdentifier = model.tabIdentifier
         view.applyColorScheme(settings.currentColorScheme)
         view.applyCursorStyle(style: settings.cursorStyle, blink: settings.cursorBlink)
         view.applyBellSettings(enabled: settings.bellEnabled, sound: settings.bellSound)
@@ -355,7 +356,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.dangerousRowTintsProvider = { [weak model] top, bottom in
             model?.dangerousRowTints(top: top, bottom: bottom) ?? [:]
         }
-        view.tabIdentifier = model.tabIdentifier
         view.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
         view.liveEligibilityReasonForProfiling = liveEligibilitySummary()
         view.installHistoryKeyMonitor()

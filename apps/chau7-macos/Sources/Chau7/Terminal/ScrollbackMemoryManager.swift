@@ -10,14 +10,17 @@ import Chau7Core
 ///   .active/.passiveVisible/.warm → configured user scrollback in RAM
 ///   .hidden                       → flushed to disk, then viewport floor in RAM
 ///
-/// On demotion to .hidden: capture the full buffer text, gzip-compress it,
-/// write to ~/Library/Application Support/Chau7/ScrollbackCache/<tabID>.gz,
-/// then set scrollback size to a viewport floor to free most of the ring buffer.
+/// On demotion to .hidden: capture the full buffer text, encode it into a
+/// verified cache payload at
+/// ~/Library/Application Support/Chau7/ScrollbackCache/<tabID>.gz, then set
+/// scrollback size to a viewport floor to free most of the ring buffer.
 ///
 /// On promotion from .hidden: set scrollback size to the configured user cap,
 /// read the disk file, decompress, and replay through the Rust terminal via the
 /// replay_buffer FFI.
 final class ScrollbackMemoryManager {
+    typealias CacheWriter = (Data, URL) throws -> Void
+
     static let shared = ScrollbackMemoryManager()
 
     /// Hard floor so `.hidden` tabs keep enough ring capacity to preserve the
@@ -32,8 +35,15 @@ final class ScrollbackMemoryManager {
 
     private let stateLock = NSLock()
     private var perTabQueues: [UUID: DispatchQueue] = [:]
+    private let cacheDirectoryURL: URL
+    private let cacheWriter: CacheWriter
 
-    private init() {
+    init(
+        cacheDirectory: URL = ScrollbackMemoryManager.defaultCacheDirectory(),
+        cacheWriter: @escaping CacheWriter = ScrollbackMemoryManager.writeCachePayloadDurably
+    ) {
+        self.cacheDirectoryURL = cacheDirectory
+        self.cacheWriter = cacheWriter
         ensureCacheDirectoryExists()
     }
 
@@ -49,6 +59,33 @@ final class ScrollbackMemoryManager {
             configuredLines: configuredScrollbackLines,
             hiddenViewportFloor: Self.viewportFloor
         )
+    }
+
+    /// Apply a user-configured scrollback setting while respecting the tab's
+    /// current render phase. This keeps settings updates from bypassing hidden
+    /// tab reclamation or racing phase transitions on a different queue.
+    func applyConfiguredScrollbackLines(
+        viewId: String,
+        tabID: UUID?,
+        rustFFI: (any ScrollbackMemoryRustFFI)?,
+        phase: TabRenderPhase,
+        configuredScrollbackLines: Int
+    ) {
+        guard let rustFFI else { return }
+
+        let cap = linesCap(for: phase, configuredScrollbackLines: configuredScrollbackLines)
+        let apply = {
+            rustFFI.setScrollbackSize(UInt32(cap))
+            Log.trace("ScrollbackMemoryManager[\(viewId)]: applied configured scrollback cap=\(cap) phase=\(phase)")
+        }
+
+        guard let tabID else {
+            Log.warn("ScrollbackMemoryManager[\(viewId)]: applying scrollback without tabID; using unsynchronized phase cap")
+            apply()
+            return
+        }
+
+        perTabQueue(for: tabID).async(execute: apply)
     }
 
     /// Entry point called from RustTerminalView.applyRenderPhase.
@@ -70,7 +107,13 @@ final class ScrollbackMemoryManager {
         queue.async { [weak self] in
             guard let self else { return }
             if ScrollbackRetentionPolicy.shouldFlushToDisk(from: oldPhase, to: newPhase) {
-                flush(tabID: tabID, viewId: viewId, rustFFI: rustFFI)
+                if flush(tabID: tabID, viewId: viewId, rustFFI: rustFFI) {
+                    // Free the ring buffer only after the buffer has either
+                    // been persisted and verified, or proven empty.
+                    rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
+                } else {
+                    Log.warn("ScrollbackMemoryManager[\(viewId)]: preserving in-memory scrollback because hidden flush did not complete")
+                }
             } else if ScrollbackRetentionPolicy.shouldReloadFromDisk(from: oldPhase, to: newPhase) {
                 reload(tabID: tabID, viewId: viewId, rustFFI: rustFFI, newCap: newCap)
             } else {
@@ -94,31 +137,33 @@ final class ScrollbackMemoryManager {
 
     // MARK: - Flush (demote → .hidden)
 
-    private func flush(tabID: UUID, viewId: String, rustFFI: any ScrollbackMemoryRustFFI) {
+    private func flush(tabID: UUID, viewId: String, rustFFI: any ScrollbackMemoryRustFFI) -> Bool {
         guard let text = rustFFI.captureFullBufferText() else {
             Log.warn("ScrollbackMemoryManager[\(viewId)]: flush - no buffer text captured")
-            rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
-            return
+            return false
         }
 
         let data = Data(text.utf8)
+        let url = cacheURL(for: tabID)
         guard !data.isEmpty else {
-            rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
-            return
+            try? FileManager.default.removeItem(at: url)
+            return true
         }
 
-        let compressed = Self.compress(data)
-        let url = cacheURL(for: tabID)
+        let payload = Self.encodedCachePayload(for: data)
         do {
-            try compressed.write(to: url, options: .atomic)
-            Log.info("ScrollbackMemoryManager[\(viewId)]: flushed \(data.count)B raw / \(compressed.count)B gz to \(url.lastPathComponent)")
+            try cacheWriter(payload, url)
+            let persisted = try Data(contentsOf: url)
+            guard let decoded = Self.decodedCachePayload(persisted), decoded == data else {
+                throw ScrollbackCacheError.verificationFailed
+            }
+            Log.info("ScrollbackMemoryManager[\(viewId)]: flushed \(data.count)B raw / \(payload.count)B cache to \(url.lastPathComponent)")
+            return true
         } catch {
             Log.warn("ScrollbackMemoryManager[\(viewId)]: flush write failed: \(error)")
+            try? FileManager.default.removeItem(at: url)
+            return false
         }
-
-        // Free the ring buffer. We keep a viewport floor so the currently
-        // visible grid doesn't get clipped mid-transition.
-        rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
     }
 
     // MARK: - Reload (promote from .hidden)
@@ -133,8 +178,8 @@ final class ScrollbackMemoryManager {
             return
         }
 
-        guard let decompressed = Self.decompress(compressed) else {
-            Log.warn("ScrollbackMemoryManager[\(viewId)]: reload - decompression failed")
+        guard let decompressed = Self.decodedCachePayload(compressed) else {
+            Log.warn("ScrollbackMemoryManager[\(viewId)]: reload - cache decode failed")
             try? FileManager.default.removeItem(at: url)
             return
         }
@@ -146,7 +191,47 @@ final class ScrollbackMemoryManager {
 
     // MARK: - Compression
 
-    private static func compress(_ data: Data) -> Data {
+    private static let zlibCacheHeader = Data("CHAU7_SCROLLBACK_ZLIB_V1\n".utf8)
+    private static let rawCacheHeader = Data("CHAU7_SCROLLBACK_RAW_V1\n".utf8)
+
+    private enum ScrollbackCacheError: Error {
+        case verificationFailed
+    }
+
+    private static func encodedCachePayload(for data: Data) -> Data {
+        if let compressed = compress(data) {
+            var payload = zlibCacheHeader
+            payload.append(compressed)
+            return payload
+        }
+
+        var payload = rawCacheHeader
+        payload.append(data)
+        return payload
+    }
+
+    private static func decodedCachePayload(_ payload: Data) -> Data? {
+        if payload.starts(with: zlibCacheHeader) {
+            return decompress(Data(payload.dropFirst(zlibCacheHeader.count)))
+        }
+
+        if payload.starts(with: rawCacheHeader) {
+            return Data(payload.dropFirst(rawCacheHeader.count))
+        }
+
+        // Backward compatibility for caches written before payload headers.
+        if let decompressed = decompress(payload) {
+            return decompressed
+        }
+
+        if String(data: payload, encoding: .utf8) != nil {
+            return payload
+        }
+
+        return nil
+    }
+
+    private static func compress(_ data: Data) -> Data? {
         data.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> Data in
             let srcBase = src.baseAddress!.assumingMemoryBound(to: UInt8.self)
             // Account for ZLIB worst-case expansion on incompressible data:
@@ -161,11 +246,11 @@ final class ScrollbackMemoryManager {
                 COMPRESSION_ZLIB
             )
             if written == 0 {
-                // Fallback: store uncompressed if compressor failed
-                return data
+                return Data()
             }
             return Data(bytes: dst, count: written)
         }
+        .nilIfEmpty
     }
 
     private static func decompress(_ data: Data) -> Data? {
@@ -197,17 +282,43 @@ final class ScrollbackMemoryManager {
     // MARK: - Paths
 
     private func ensureCacheDirectoryExists() {
-        let dir = Self.cacheDirectory()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: cacheDirectoryURL, withIntermediateDirectories: true)
     }
 
     private func cacheURL(for tabID: UUID) -> URL {
-        Self.cacheDirectory().appendingPathComponent("\(tabID.uuidString).gz")
+        cacheDirectoryURL.appendingPathComponent("\(tabID.uuidString).gz")
     }
 
-    private static func cacheDirectory() -> URL {
+    private static func defaultCacheDirectory() -> URL {
         RuntimeIsolation.appSupportDirectory(named: "Chau7")
             .appendingPathComponent("ScrollbackCache", isDirectory: true)
+    }
+
+    private static func writeCachePayloadDurably(_ payload: Data, to url: URL) throws {
+        let fileManager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let tempURL = directory.appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
+        do {
+            try payload.write(to: tempURL, options: .withoutOverwriting)
+            let handle = try FileHandle(forWritingTo: tempURL)
+            do {
+                try handle.synchronize()
+                try handle.close()
+            } catch {
+                try? handle.close()
+                throw error
+            }
+
+            if fileManager.fileExists(atPath: url.path) {
+                try fileManager.removeItem(at: url)
+            }
+            try fileManager.moveItem(at: tempURL, to: url)
+        } catch {
+            try? fileManager.removeItem(at: tempURL)
+            throw error
+        }
     }
 
     // MARK: - Per-tab queues
@@ -224,6 +335,16 @@ final class ScrollbackMemoryManager {
         )
         perTabQueues[tabID] = queue
         return queue
+    }
+
+    func drainPendingOperationsForTesting(tabID: UUID) {
+        perTabQueue(for: tabID).sync {}
+    }
+}
+
+private extension Data {
+    var nilIfEmpty: Data? {
+        isEmpty ? nil : self
     }
 }
 
