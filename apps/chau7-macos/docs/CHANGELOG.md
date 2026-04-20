@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **AI Detection Simplified**: Removed the `.restored`-phase output-match lock, `shouldAllowRestoredProviderOverride`, and the `allowRestoredProviderOverride` parameter on `AIDetectionState.handleOutputMatch`. These existed to prevent output patterns from flipping persisted tab identity, but they also blocked legitimate provider switches when persistence drifted. Identity is now owned by the live process-tree signal; output patterns are gated by an explicit `authoritativeAppName` hint only. Public API of `AIDetectionState` is narrower — callers on the old parameter must drop it.
+
 ### Fixed
 - **Tab Labels Reflect the Actually-Running Agent**: The tab's displayed AI tool (label, logo, color) is now derived live from the session's shell process tree instead of persisted metadata. A tab restored with stale provider metadata — for example, one saved as "Codex" where the user is now running Claude — self-heals within ~1.5s of the real tool appearing in the process tree. Persisted provider metadata still drives explicit resume prefills; it no longer drives display.
 

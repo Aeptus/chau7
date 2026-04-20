@@ -972,17 +972,15 @@ extension TerminalSessionModel {
             activeAppName
                 ?? lastDetectedAppName
                 ?? Self.displayName(fromProvider: lastAIProvider)
-        let allowRestoredProviderOverride = shouldAllowRestoredProviderOverride(
-            matchedAppName: matchedApp,
-            authoritativeAppName: authoritativeAppName
-        )
 
-        // State machine filters: redetecting rejects different tools, and
-        // output-only detection is not allowed to flip an established provider.
+        // State machine filters: redetecting rejects different tools, and output
+        // matches must agree with any authoritative name to avoid pattern hijacking
+        // (e.g. the string "openai codex" in Claude output must not flip the tab).
+        // Cross-provider flips are owned by command detection and the live
+        // process-tree signal, never output patterns.
         guard aiDetection.handleOutputMatch(
             appName: matchedApp,
-            authoritativeAppName: authoritativeAppName,
-            allowRestoredProviderOverride: allowRestoredProviderOverride
+            authoritativeAppName: authoritativeAppName
         ),
             let app = aiDetection.currentApp else { return }
 
@@ -1379,7 +1377,6 @@ extension TerminalSessionModel {
             aiDetection.handleRestore(appName: name)
         }
         activeAppName = restoredDisplayName
-        lastDetectedAppName = nil
         lastAIProvider = normalizedProvider
         suppressWaitingInputFallbackUntilNextUserCommand = restoredDisplayName != nil
         pendingWaitingInputFallbackArmed = false
@@ -1440,27 +1437,6 @@ extension TerminalSessionModel {
         if status == .done {
             status = .running
         }
-    }
-
-    private func shouldAllowRestoredProviderOverride(
-        matchedAppName: String?,
-        authoritativeAppName: String?
-    ) -> Bool {
-        guard aiDetection.isRestored,
-              let matchedProvider = AIResumeParser.normalizeProviderName(matchedAppName ?? ""),
-              let restoredProvider = AIResumeParser.normalizeProviderName(authoritativeAppName ?? "")
-        else {
-            return false
-        }
-
-        guard matchedProvider != restoredProvider else {
-            return false
-        }
-
-        // Only allow live output to reclaim a restored tab when the restored
-        // metadata no longer has a concrete session anchor. This fixes stale
-        // provider badges without reintroducing arbitrary output hijacking.
-        return effectiveAISessionId == nil
     }
 
     private func isExitCommand(_ commandLine: String) -> Bool {

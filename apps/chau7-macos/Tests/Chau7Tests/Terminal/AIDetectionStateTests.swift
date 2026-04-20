@@ -71,25 +71,15 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertFalse(state.isRestored)
     }
 
-    func testHandleOutputMatchRejectsDifferentProviderWhenRestored() {
+    func testRestoredOutputMatchAcceptsDifferentProviderWithoutAuthoritativeHint() {
+        // Restoration no longer locks the state machine to the persisted provider.
+        // Without a live authoritativeAppName, output matching in `.restored` phase
+        // accepts a different tool — the live process-tree signal in the app layer
+        // owns identity and keeps display aligned with reality.
         var state = AIDetectionState()
         state.handleRestore(appName: "Codex")
-        // Different provider is rejected (prevents hijacking from output content)
+
         let changed = state.handleOutputMatch(appName: "Claude")
-        XCTAssertFalse(changed)
-        XCTAssertTrue(state.isRestored)
-        XCTAssertEqual(state.currentApp, "Codex")
-    }
-
-    func testHandleOutputMatchCanOverrideDifferentProviderWhenRestoredOverrideAllowed() {
-        var state = AIDetectionState()
-        state.handleRestore(appName: "Codex")
-
-        let changed = state.handleOutputMatch(
-            appName: "Claude",
-            authoritativeAppName: "Codex",
-            allowRestoredProviderOverride: true
-        )
 
         XCTAssertTrue(changed)
         XCTAssertEqual(state.currentApp, "Claude")
@@ -216,8 +206,10 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertEqual(state.currentApp, "Claude")
         XCTAssertTrue(state.isRestored)
         XCTAssertEqual(state.phase, .restored)
-        // Restored sessions set lastDetectedApp to prevent output hijacking
-        XCTAssertEqual(state.lastDetectedApp, "Claude")
+        // Restoration intentionally does NOT seed lastDetectedApp — persistence is
+        // a weak hint, not an authoritative identity. The live process-tree signal
+        // in the app layer owns identity and overrides restoration when they disagree.
+        XCTAssertNil(state.lastDetectedApp)
     }
 
     func testPromptReturnFromRestoredKeepsDimmedLogo() {
@@ -233,43 +225,43 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertEqual(state.phase, .restored)
     }
 
-    func testRestoredSessionRejectsOtherProviderOutputAfterPromptReturn() {
+    func testRestoredSessionOutputMatchGatedByAuthoritativeHint() {
         var state = AIDetectionState()
         state.handleRestore(appName: "Codex")
         state.handlePromptReturn()
         XCTAssertTrue(state.isRestored)
         XCTAssertNil(state.currentApp)
 
-        // Different provider via output is rejected (prevents hijacking)
-        XCTAssertFalse(state.handleOutputMatch(appName: "Claude"))
+        // With an authoritative hint from a live signal ("Codex"), output patterns
+        // for a different tool are still rejected — this is the residual guard that
+        // prevents "openai codex" strings in Claude output from hijacking the tab.
+        XCTAssertFalse(
+            state.handleOutputMatch(appName: "Claude", authoritativeAppName: "Codex")
+        )
         XCTAssertTrue(state.isRestored)
-        XCTAssertNil(state.currentApp)
 
-        // Same provider confirms live detection
-        state.handleOutputMatch(appName: "Codex")
-        XCTAssertFalse(state.isRestored)
-        XCTAssertEqual(state.currentApp, "Codex")
+        // Without an authoritative hint, output patterns are free to update identity —
+        // the live process-tree signal (app layer) keeps display aligned with reality.
+        XCTAssertTrue(state.handleOutputMatch(appName: "Claude"))
+        XCTAssertEqual(state.currentApp, "Claude")
         XCTAssertEqual(state.phase, .detected)
 
-        // Command-level detection CAN switch providers (high confidence)
+        // Command-level detection always switches providers regardless of restoration.
         state.handleRestore(appName: "Codex")
         state.handleCommand(appName: "Claude")
         XCTAssertFalse(state.isRestored)
         XCTAssertEqual(state.currentApp, "Claude")
     }
 
-    func testRestoredSessionAllowsOtherProviderOutputAfterPromptReturnWhenOverrideAllowed() {
+    func testRestoredSessionAcceptsOtherProviderOutputWhenNoAuthoritativeHint() {
+        // The `allowRestoredProviderOverride` parameter is gone with the hijack guard.
+        // The new equivalent: without an authoritative hint, output matching in
+        // `.restored` phase freely switches to any detected tool.
         var state = AIDetectionState()
         state.handleRestore(appName: "Codex")
         state.handlePromptReturn()
 
-        XCTAssertTrue(
-            state.handleOutputMatch(
-                appName: "Claude",
-                authoritativeAppName: "Codex",
-                allowRestoredProviderOverride: true
-            )
-        )
+        XCTAssertTrue(state.handleOutputMatch(appName: "Claude"))
         XCTAssertEqual(state.currentApp, "Claude")
         XCTAssertFalse(state.isRestored)
         XCTAssertEqual(state.phase, .detected)
@@ -398,8 +390,14 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertTrue(state.isRestored)
         XCTAssertEqual(state.currentApp, "Codex")
 
-        // 7. Output match for a different provider is rejected (prevents hijacking)
-        XCTAssertFalse(state.handleOutputMatch(appName: "Aider"))
+        // 7. Output match during restore with an authoritative hint is gated —
+        // callers supplying an authoritativeAppName (e.g. from the live signal)
+        // still block cross-provider output hijacks between tools with resume
+        // providers. Use Claude vs Codex here because both have resume keys,
+        // which is what shouldAcceptOutputMatch consults.
+        XCTAssertFalse(
+            state.handleOutputMatch(appName: "Claude", authoritativeAppName: "Codex")
+        )
         XCTAssertTrue(state.isRestored)
         XCTAssertEqual(state.currentApp, "Codex")
 

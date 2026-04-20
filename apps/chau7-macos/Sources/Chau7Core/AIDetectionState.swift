@@ -128,48 +128,35 @@ public struct AIDetectionState: Sendable {
     /// Called when pattern matching completes on prepared haystack.
     /// `appName` is the matched tool name, or nil if no match.
     /// `authoritativeAppName` is an already-established tool identity from
-    /// command detection or restored resume metadata. Output matching is
-    /// treated as confirmation only when it agrees with that provider.
+    /// command detection. Output matching is treated as confirmation only when
+    /// it agrees with that provider — cross-provider flips must come from
+    /// command detection or the live process-tree signal.
     /// Returns true if the state changed.
     @discardableResult
     public mutating func handleOutputMatch(
         appName: String?,
         authoritativeAppName: String? = nil,
-        allowRestoredProviderOverride: Bool = false,
         now: Date = Date()
     ) -> Bool {
         guard let appName else { return false }
-        if !(allowRestoredProviderOverride && phase == .restored) {
-            guard Self.shouldAcceptOutputMatch(
-                matchedAppName: appName,
-                authoritativeAppName: authoritativeAppName
-            ) else {
-                return false
-            }
+        guard Self.shouldAcceptOutputMatch(
+            matchedAppName: appName,
+            authoritativeAppName: authoritativeAppName
+        ) else {
+            return false
         }
 
         switch phase {
-        case .scanning:
-            // IMPORTANT: When lastDetectedApp is set, output-based matching can only
-            // RE-CONFIRM the same tool — never switch to a different one. Without this
-            // guard, strings like "openai.com" appearing in code output would hijack a
-            // Claude session to ChatGPT. Only command-level detection (handleCommand)
-            // is allowed to switch to a different tool.
-            if let last = lastDetectedApp, appName != last { return false }
+        case .scanning, .restored:
+            // Output pattern matches can enter detected freely. Restoration no longer
+            // locks the state machine to the persisted provider — the live process-tree
+            // signal in the Chau7 app layer owns display identity and self-heals if
+            // persistence drifted from reality.
             return setDetected(appName, now: now)
         case .redetecting:
-            // Same guard as .scanning — only the previously detected tool is accepted.
+            // Redetection still re-confirms the previously detected tool only — during
+            // this brief window we explicitly want stability, not to pick up a new tool.
             guard appName == lastDetectedApp else { return false }
-            return setDetected(appName, now: now)
-        case .restored:
-            if allowRestoredProviderOverride {
-                return setDetected(appName, now: now)
-            }
-            // Live detection overrides restoration, but only if it matches the
-            // restored provider (or no provider was restored yet). Without this
-            // guard, strings like "openai codex" in Claude's output hijack the
-            // tab icon. Only command-level detection can switch providers.
-            if let last = lastDetectedApp, appName != last { return false }
             return setDetected(appName, now: now)
         case .detected:
             // Already detected — shouldn't reach here (prepareHaystack returns nil)
@@ -232,9 +219,11 @@ public struct AIDetectionState: Sendable {
         currentApp = appName
         phase = .restored
         detectedAt = nil
-        // Set lastDetectedApp so output matching can only confirm the same provider,
-        // not switch to a different one (prevents hijacking from output content).
-        lastDetectedApp = appName
+        // Intentionally does NOT set lastDetectedApp — restoration is a weak hint,
+        // not an authoritative identity. The live process-tree signal (Chau7 app
+        // layer) is the source of truth for what's actually running. Locking
+        // output matching to the restored provider here was the root cause of the
+        // "tab says Codex but Claude is running" bug that the live signal fixes.
         return true
     }
 
