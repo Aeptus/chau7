@@ -7,32 +7,22 @@ import Chau7Core
 /// TabRenderPhases.
 ///
 /// Memory model per phase:
-///   .active         → 2500 lines in RAM  (full working scrollback)
-///   .passiveVisible →  200 lines in RAM  (pre-warmed for quick switch)
-///   .warm           →  100 lines in RAM  (minimal peek window)
-///   .hidden         →    0 lines in RAM  (flushed to disk)
+///   .active/.passiveVisible/.warm → configured user scrollback in RAM
+///   .hidden                       → flushed to disk, then viewport floor in RAM
 ///
 /// On demotion to .hidden: capture the full buffer text, gzip-compress it,
 /// write to ~/Library/Application Support/Chau7/ScrollbackCache/<tabID>.gz,
-/// then set scrollback size to 0 to free the ring buffer.
+/// then set scrollback size to a viewport floor to free most of the ring buffer.
 ///
-/// On promotion from .hidden: set scrollback size to the new tier's cap, read
-/// the disk file, decompress, and replay through the Rust terminal via the
+/// On promotion from .hidden: set scrollback size to the configured user cap,
+/// read the disk file, decompress, and replay through the Rust terminal via the
 /// replay_buffer FFI.
 final class ScrollbackMemoryManager {
     static let shared = ScrollbackMemoryManager()
 
-    // Caps by phase — proportional to the user's primary scrollback setting.
-    // The .active cap doubles as the user-visible default.
-    static let activeLines = 2500
-    static let passiveVisibleLines = 200
-    static let warmLines = 100
-    static let hiddenLines = 0
-
-    /// Hard floor to prevent absurd configurations from losing the visible
-    /// grid during tier transitions. Even `.hidden` allocates this many lines
-    /// so the ring buffer can absorb the viewport before being cleared.
-    private static let viewportFloor = 50
+    /// Hard floor so `.hidden` tabs keep enough ring capacity to preserve the
+    /// visible grid while freeing the bulk of scrollback after a disk flush.
+    private static let viewportFloor = ScrollbackRetentionPolicy.defaultHiddenViewportFloor
 
     private let ioQueue = DispatchQueue(
         label: "com.chau7.scrollback-memory",
@@ -50,12 +40,15 @@ final class ScrollbackMemoryManager {
     // MARK: - Public API
 
     func linesCap(for phase: TabRenderPhase) -> Int {
-        switch phase {
-        case .active: return Self.activeLines
-        case .passiveVisible: return Self.passiveVisibleLines
-        case .warm: return Self.warmLines
-        case .hidden: return Self.hiddenLines
-        }
+        linesCap(for: phase, configuredScrollbackLines: FeatureSettings.shared.scrollbackLines)
+    }
+
+    func linesCap(for phase: TabRenderPhase, configuredScrollbackLines: Int) -> Int {
+        ScrollbackRetentionPolicy.ringCapacity(
+            for: phase,
+            configuredLines: configuredScrollbackLines,
+            hiddenViewportFloor: Self.viewportFloor
+        )
     }
 
     /// Entry point called from RustTerminalView.applyRenderPhase.
@@ -76,14 +69,13 @@ final class ScrollbackMemoryManager {
         let queue = perTabQueue(for: tabID)
         queue.async { [weak self] in
             guard let self else { return }
-            if newPhase == .hidden, oldPhase != .hidden {
+            if ScrollbackRetentionPolicy.shouldFlushToDisk(from: oldPhase, to: newPhase) {
                 flush(tabID: tabID, viewId: viewId, rustFFI: rustFFI)
-            } else if oldPhase == .hidden, newPhase != .hidden {
+            } else if ScrollbackRetentionPolicy.shouldReloadFromDisk(from: oldPhase, to: newPhase) {
                 reload(tabID: tabID, viewId: viewId, rustFFI: rustFFI, newCap: newCap)
             } else {
-                let effectiveCap = max(newCap, Self.viewportFloor)
-                rustFFI.setScrollbackSize(UInt32(effectiveCap))
-                Log.trace("ScrollbackMemoryManager[\(viewId)]: \(oldPhase) -> \(newPhase) cap=\(effectiveCap)")
+                rustFFI.setScrollbackSize(UInt32(newCap))
+                Log.trace("ScrollbackMemoryManager[\(viewId)]: \(oldPhase) -> \(newPhase) cap=\(newCap)")
             }
         }
     }

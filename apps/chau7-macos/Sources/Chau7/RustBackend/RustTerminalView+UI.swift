@@ -55,12 +55,13 @@ extension RustTerminalView {
 
     /// Configure scrollback buffer size
     func applyScrollbackLines(_ lines: Int) {
-        guard appliedScrollbackLines != lines else {
+        let effectiveLines = ScrollbackRetentionPolicy.normalizedConfiguredLines(lines)
+        guard appliedScrollbackLines != effectiveLines else {
             return
         }
-        Log.trace("RustTerminalView[\(viewId)]: applyScrollbackLines - Setting scrollback to \(lines) lines")
-        rustTerminal?.setScrollbackSize(UInt32(lines))
-        appliedScrollbackLines = lines
+        Log.trace("RustTerminalView[\(viewId)]: applyScrollbackLines - Setting scrollback to \(effectiveLines) lines")
+        rustTerminal?.setScrollbackSize(UInt32(effectiveLines))
+        appliedScrollbackLines = effectiveLines
     }
 
     // MARK: - Scrolling

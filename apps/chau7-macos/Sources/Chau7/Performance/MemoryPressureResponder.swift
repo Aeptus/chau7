@@ -6,8 +6,8 @@ import Foundation
 /// on phase transition — the pressure signal is a secondary hint that we
 /// should be more aggressive about demoting marginal tabs.
 ///
-/// On `.warning`: log the event. Tiered scrollback already handles most of
-/// the demand.
+/// On `.warning`: log the event. Hidden-tab scrollback reclamation handles the
+/// safe cases; visible tabs keep their configured history.
 ///
 /// On `.critical`: log prominently. If we add an explicit "demote all
 /// non-active tabs" action later, this is where it will hook in.

@@ -235,7 +235,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - Kitty keyboard protocol (full progressive enhancement).
 - Inline images: iTerm2 (ESC ] 1337), Sixel, and Kitty image protocols.
 - Configurable cursor styles (block, underline, bar) with optional blinking.
-- Large configurable scrollback buffer with GPU-accelerated scrolling.
+- Large configurable scrollback buffer with GPU-accelerated scrolling; active, passive-visible, and warm tabs preserve the configured capacity across render phase changes, while hidden tabs flush to disk before RAM reclamation.
 - Shell selection: Zsh, Bash, Fish, or custom path — Apple Silicon and Intel native.
 - Dead key and IME support with proper `NSTextInputClient` marked text handling.
 - Shell integration via OSC 7 for working directory tracking.

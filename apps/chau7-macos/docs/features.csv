@@ -15,7 +15,7 @@ Terminal Core,International Option-Key Punctuation,"Option-generated programming
 Terminal Core,Kitty Keyboard Protocol,Full Kitty progressive enhancement keyboard protocol for modern key handling,Shipped,No
 Terminal Core,Inline Image Protocols,"iTerm2 (ESC ] 1337), Sixel, and Kitty image protocol — display images directly in your terminal",Shipped,No
 Terminal Core,Configurable Cursor Styles,"Block, underline, bar — with optional blinking",Shipped,No
-Terminal Core,Large Scrollback Buffer,Configurable scrollback size with GPU-accelerated scrolling,Shipped,No
+Terminal Core,Large Scrollback Buffer,"Configurable scrollback size with GPU-accelerated scrolling; active, passive-visible, and warm tabs preserve the configured capacity across render phases, while hidden tabs flush to disk before RAM reclamation",Shipped,No
 Terminal Core,Shell Selection,"Zsh, Bash, Fish, or custom shell path — Apple Silicon and Intel native",Shipped,No
 Terminal Core,Dead Key & IME Support,"Proper dead key, accent, and diacritic input via NSTextInputClient marked text",Shipped,No
 Terminal Core,Default Start Directory,Configurable default working directory for new terminals,Shipped,No
