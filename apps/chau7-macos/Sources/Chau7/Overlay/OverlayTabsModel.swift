@@ -3470,6 +3470,12 @@ final class OverlayTabsModel {
     func invalidateRenderLifecycle(reason: String) {
         renderLifecycleRefreshToken = UUID()
         updateSuspensionState()
+        // Re-attach the shared Metal coordinator to the selected tab.
+        // This is the ONLY reliable path for app-focus-restore because:
+        // - selectTab() has an early exit for already-selected tabs
+        // - .terminalDidStart only fires once at launch
+        // - updateNSView sets a flag but never calls switchToView
+        _ = refreshSelectedTabInPlaceIfPossible(reason: "invalidateRenderLifecycle:\(reason)")
         Log.trace("renderLifecycle: invalidated [\(reason)]")
     }
 
