@@ -568,43 +568,59 @@ final class RuntimeSessionManager {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    /// Sessions that failed adoption — don't retry on every event.
-    /// Keyed by normalized session ID (or cwd if no session ID).
-    /// Cleared when tab state changes (new tab opened, tab closed).
-    private var failedAdoptionKeys: Set<String> = []
+    /// Short-TTL de-dup cache for failed adoption attempts. Avoids log spam on
+    /// bursty events within a brief window but never permanently locks out —
+    /// a later event for the same session/cwd always retries once the cooldown
+    /// elapses. The old permanent-giveup cache pinned tabs to stale provider
+    /// identities when disambiguation failed even once.
+    private var recentlyFailedAdoptions: [String: Date] = [:]
+
+    /// How long to suppress retry logs for a given cache key after a failure.
+    private static let adoptionRetryCooldown: TimeInterval = 3.0
 
     /// Clear the failed adoption cache so new tabs can be discovered.
     func resetAdoptionCache() {
-        failedAdoptionKeys.removeAll()
+        recentlyFailedAdoptions.removeAll()
+    }
+
+    func shouldSkipAdoptionByCooldown(_ cacheKey: String, now: Date = Date()) -> Bool {
+        guard let last = recentlyFailedAdoptions[cacheKey] else { return false }
+        return now.timeIntervalSince(last) < Self.adoptionRetryCooldown
+    }
+
+    func recordAdoptionFailure(_ cacheKey: String, now: Date = Date()) {
+        recentlyFailedAdoptions[cacheKey] = now
     }
 
     /// Try to adopt an unknown Claude Code session from a monitor event.
-    /// Resolves the tab by matching cwd to existing tabs.
-    /// Remembers failures to avoid retrying on every subsequent event.
+    /// Resolves the tab by matching session ID or cwd to existing tabs. When
+    /// multiple tabs share a cwd without a discriminating session ID, the live
+    /// process tree is consulted — picking the tab whose shell is actually
+    /// running a Claude process. Failures use a short-TTL cooldown rather than
+    /// a permanent cache so new tabs can adopt later events.
     private func tryAdoptFromEvent(_ event: ClaudeCodeEvent) -> RuntimeSession? {
         guard !event.cwd.isEmpty else { return nil }
 
         let normalizedClaudeSessionID = normalizeClaudeSessionID(event.sessionId)
         let cacheKey = normalizedClaudeSessionID ?? "cwd:\(event.cwd)"
 
-        // Don't retry sessions that already failed resolution
-        guard !failedAdoptionKeys.contains(cacheKey) else { return nil }
+        if shouldSkipAdoptionByCooldown(cacheKey) { return nil }
 
         let tabID: UUID?
         if let normalizedClaudeSessionID {
             tabID = resolveClaudeTabBySessionID(normalizedClaudeSessionID, cwd: event.cwd)
             if tabID == nil {
-                failedAdoptionKeys.insert(cacheKey)
+                recordAdoptionFailure(cacheKey)
                 Log.warn(
-                    "RuntimeSessionManager: refusing Claude auto-adopt without exact tab for session=\(normalizedClaudeSessionID) cwd=\(event.cwd) (will not retry)"
+                    "RuntimeSessionManager: no tab match for Claude session=\(normalizedClaudeSessionID) cwd=\(event.cwd)"
                 )
             }
         } else {
-            tabID = resolveUniqueUnboundClaudeTabByCwd(event.cwd)
+            tabID = resolveUnboundClaudeTabByCwd(event.cwd)
             if tabID == nil {
-                failedAdoptionKeys.insert(cacheKey)
+                recordAdoptionFailure(cacheKey)
                 Log.warn(
-                    "RuntimeSessionManager: refusing Claude auto-adopt without exact session ID for cwd=\(event.cwd) (will not retry)"
+                    "RuntimeSessionManager: no unambiguous Claude tab for cwd=\(event.cwd) (process-tree disambiguation found 0 or >1 candidates)"
                 )
             }
         }
@@ -658,25 +674,48 @@ final class RuntimeSessionManager {
 
     private func _resolveUniqueClaudeTabByCwd(_ cwd: String) -> UUID? {
         let matches = listAITabs().filter { $0.provider == "claude" && $0.cwd == cwd }
-        guard matches.count == 1 else {
-            if !matches.isEmpty {
-                let tabIDs = matches.map(\.tabID.uuidString).joined(separator: ", ")
-                Log.warn(
-                    "RuntimeSessionManager: ambiguous Claude cwd resolution for cwd=\(cwd) matches=[\(tabIDs)]"
+        guard matches.count == 1 else { return nil }
+        return matches.first?.tabID
+    }
+
+    /// Returns an unbound Claude tab for `cwd` — uses process-tree disambiguation
+    /// when multiple tabs share the same directory, picking the tab whose shell
+    /// is actually running a Claude process. Returns nil if zero or still-
+    /// ambiguous (e.g. two Aethyme tabs both running Claude) — callers must not
+    /// adopt in that case.
+    private func resolveUnboundClaudeTabByCwd(_ cwd: String) -> UUID? {
+        // Must run on main thread since OverlayTabsModel is main-thread-only
+        return {
+            if Thread.isMainThread {
+                return _resolveUnboundClaudeTabByCwd(cwd)
+            }
+            return DispatchQueue.main.sync { _resolveUnboundClaudeTabByCwd(cwd) }
+        }()
+    }
+
+    private func _resolveUnboundClaudeTabByCwd(_ cwd: String) -> UUID? {
+        let allCandidates = listAITabs().filter { $0.provider == "claude" && $0.cwd == cwd }
+        let unbound = allCandidates.filter { sessionForTab($0.tabID) == nil }
+
+        if unbound.count == 1 {
+            return unbound.first?.tabID
+        }
+        if unbound.isEmpty {
+            if !allCandidates.isEmpty {
+                Log.trace(
+                    "RuntimeSessionManager: Claude tabs at cwd=\(cwd) are all already managed — skipping adoption"
                 )
             }
             return nil
         }
-        return matches.first?.tabID
-    }
 
-    private func resolveUniqueUnboundClaudeTabByCwd(_ cwd: String) -> UUID? {
-        guard let tabID = resolveUniqueClaudeTabByCwd(cwd) else { return nil }
-        if sessionForTab(tabID) != nil {
-            Log.warn("RuntimeSessionManager: refusing Claude auto-adopt for already managed tab \(tabID) cwd=\(cwd)")
-            return nil
-        }
-        return tabID
+        // Multiple unbound candidates — consult the live process tree and keep only
+        // tabs whose shell actually has Claude running. Ties (two tabs running
+        // Claude in the same cwd) still bail; the session-ID path on a later event
+        // will resolve them once Claude assigns distinct IDs.
+        return TerminalControlService.shared.disambiguateClaudeTabsByProcessTree(
+            candidates: unbound.map(\.tabID)
+        )
     }
 
     private func resolveClaudeTabByStrictSession(_ sessionID: String, cwd: String?) -> UUID? {

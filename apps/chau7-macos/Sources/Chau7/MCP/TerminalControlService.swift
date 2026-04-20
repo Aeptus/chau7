@@ -903,6 +903,46 @@ final class TerminalControlService {
 
     // MARK: - Helpers
 
+    /// Picks the single tab from `candidates` whose shell actually has a Claude
+    /// process running, per the live OS process tree. Used by
+    /// `RuntimeSessionManager` to disambiguate same-cwd tabs without permanently
+    /// giving up when process-tree doesn't resolve (e.g. two tabs in Aethyme
+    /// both running Claude — return nil and let a later event with a distinct
+    /// session ID resolve them).
+    func disambiguateClaudeTabsByProcessTree(candidates: [UUID]) -> UUID? {
+        onMain {
+            guard !candidates.isEmpty,
+                  let snapshot = ProcessTreeProviderResolver.captureSnapshot()
+            else { return nil }
+
+            var matchingTabIDs: [UUID] = []
+            for tabID in candidates {
+                guard let session = self.findSession(for: tabID),
+                      let shellPID = session.existingRustTerminalView?.shellPid,
+                      shellPID > 0
+                else { continue }
+                let resolved = ProcessTreeProviderResolver.resolve(
+                    shellPid: shellPID,
+                    snapshot: snapshot
+                )
+                if resolved?.lowercased() == "claude" {
+                    matchingTabIDs.append(tabID)
+                }
+            }
+            return matchingTabIDs.count == 1 ? matchingTabIDs.first : nil
+        }
+    }
+
+    private func findSession(for tabID: UUID) -> TerminalSessionModel? {
+        for (_, model) in allModels {
+            if let tab = model.tabs.first(where: { $0.id == tabID }),
+               let session = tab.session {
+                return session
+            }
+        }
+        return nil
+    }
+
     /// Returns true if a matching tab running the named tool is currently at prompt.
     /// When sessionID is provided, only that specific AI session suppresses completion events.
     func isToolAtPrompt(toolName: String, sessionID: String? = nil) -> Bool {
