@@ -2782,6 +2782,7 @@ final class OverlayTabsModel {
                 if let coordinator = sharedMetalCoordinator {
                     coordinator.switchToView(rustView, container: container)
                     coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+                    session.windowMetalCoordinator = coordinator
                 } else if let coordinator = RustMetalDisplayCoordinator(
                     terminalView: rustView,
                     gridProvider: rustView.makeGridProvider() ?? { nil }
@@ -2789,6 +2790,7 @@ final class OverlayTabsModel {
                     sharedMetalCoordinator = coordinator
                     coordinator.switchToView(rustView, container: container)
                     coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+                    session.windowMetalCoordinator = coordinator
                     Log.info("OverlayTabsModel: shared Metal coordinator created")
                 }
             }

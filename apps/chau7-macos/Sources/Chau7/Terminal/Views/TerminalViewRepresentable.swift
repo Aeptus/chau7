@@ -419,6 +419,20 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             nsView.needsDisplay = true
         }
 
+        // Reconcile shared Metal coordinator: if this is the selected tab
+        // with a terminal but Metal isn't active, directly attach the
+        // coordinator. No notification — avoids the infinite loop.
+        if allowsLivePresentation,
+           settings.useMetalRenderer,
+           nsView.isTerminalStarted,
+           !nsView.isMetalRenderingActive,
+           let rustContainer = container.innerRustContainer,
+           rustContainer.metalCoordinator == nil,
+           let coordinator = model.windowMetalCoordinator {
+            coordinator.switchToView(nsView, container: rustContainer)
+            coordinator.metalView.isHidden = !keepsVisibleSurface
+        }
+
         nsView.updatePollingMode(reason: "updateNSView")
         if allowsLivePresentation,
            nsView.window != nil,

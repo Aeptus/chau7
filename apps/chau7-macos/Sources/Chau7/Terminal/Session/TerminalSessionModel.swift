@@ -640,6 +640,10 @@ final class TerminalSessionModel {
     /// Strong reference to keep the terminal container and Metal coordinator alive
     /// across SwiftUI view recreations.
     @ObservationIgnored private var retainedTerminalContainerView: UnifiedTerminalContainerView?
+    /// Weak reference to the window's shared Metal coordinator, set by
+    /// OverlayTabsModel.performSelectedTabInPlaceRefresh. Used by
+    /// updateNSView to reattach the coordinator without notifications.
+    @ObservationIgnored weak var windowMetalCoordinator: RustMetalDisplayCoordinator?
     /// Prefill command queued when restore/restoration occurs before terminal is ready.
     @ObservationIgnored private var pendingPrefillInput: String?
     @ObservationIgnored private var pendingPrefillRejectionReasonProvider: (() -> String?)?
