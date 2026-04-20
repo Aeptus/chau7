@@ -181,10 +181,34 @@ final class TerminalSessionModel {
         }
     }
 
+    /// Live identity of the AI tool currently running under this session's shell,
+    /// resolved from the OS process tree on a shared poll. When non-nil this is the
+    /// ground truth — the tab chrome prefers it over persisted metadata so a tab
+    /// restored with a stale provider self-heals as soon as the real tool is seen.
+    @ObservationIgnored private(set) var liveAgentName: String? {
+        didSet {
+            guard liveAgentName != oldValue else { return }
+            recalculateCTOFlag()
+            onSessionStateChanged?()
+            postRuntimeReadinessChange(source: "live_agent")
+            NotificationCenter.default.post(
+                name: .terminalSessionRenderSuspensionStateChanged,
+                object: self
+            )
+        }
+    }
+
+    @ObservationIgnored private var liveAgentSubscription: ProcessTreeSnapshotService.Subscription?
+
     /// Effective app name for UI branding and diagnostics.
-    /// Falls back to the last known persisted metadata provider if active
-    /// detection from output/command history is not currently available.
+    /// Prefers the live process-tree signal. Falls back to `activeAppName` (set by
+    /// command/output detection) and finally to persisted provider metadata. Each
+    /// layer is a weaker guess — the live signal is always authoritative when present.
     var aiDisplayAppName: String? {
+        if let live = liveAgentName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !live.isEmpty {
+            return live
+        }
         if let active = activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
            !active.isEmpty {
             return active
@@ -943,7 +967,41 @@ final class TerminalSessionModel {
         retainedRustTerminalView?.onProcessTerminated = nil
         retainedTerminalContainerView = nil
         retainedRustTerminalView = nil
+        stopLiveAgentTracking()
     }
+
+    func startLiveAgentTracking() {
+        guard liveAgentSubscription == nil else { return }
+        liveAgentSubscription = ProcessTreeSnapshotService.shared.subscribe { [weak self] snapshot in
+            guard let self else { return }
+            let shellPID = activeRustTerminalView?.shellPid ?? 0
+            guard shellPID > 0 else { return }
+            let resolved = ProcessTreeProviderResolver.resolve(
+                shellPid: shellPID,
+                snapshot: snapshot
+            )
+            if resolved != liveAgentName {
+                liveAgentName = resolved
+            }
+        }
+    }
+
+    func stopLiveAgentTracking() {
+        if let sub = liveAgentSubscription {
+            ProcessTreeSnapshotService.shared.unsubscribe(sub)
+            liveAgentSubscription = nil
+        }
+        liveAgentName = nil
+    }
+
+    #if DEBUG
+    /// Test hook — production code must never call this. The live signal is owned
+    /// by `ProcessTreeSnapshotService`; any direct write risks drifting from the
+    /// process-tree ground truth that makes identity self-healing.
+    func overrideLiveAgentNameForTesting(_ name: String?) {
+        liveAgentName = name
+    }
+    #endif
 
     func attachTerminalContainer(_ container: UnifiedTerminalContainerView) {
         retainedTerminalContainerView = container
@@ -954,6 +1012,7 @@ final class TerminalSessionModel {
         retainedRustTerminalView = view // Keep strong reference to survive view recreation
         view.currentDirectory = currentDirectory
         syncRustTerminalObservabilityScope()
+        startLiveAgentTracking()
 
         // Configure scrollback buffer size from settings
         let scrollbackLines = FeatureSettings.shared.scrollbackLines
@@ -1023,6 +1082,11 @@ final class TerminalSessionModel {
         view.onShellIntegrationEvent = { [weak self] event in
             guard let self = self else { return }
             hasShellIntegration = true
+            // Shell-integration transitions are strong hints that the AI tool state
+            // may have just changed (shell returned to prompt, user launched a
+            // command, or a command finished). Refresh the live-signal poll now so
+            // tab chrome catches the change faster than the fixed poll interval.
+            ProcessTreeSnapshotService.shared.refreshNow()
             switch event {
             case .promptStart:
                 handlePromptDetected()

@@ -29,13 +29,13 @@ public enum ProcessTreeProviderResolver {
     /// Basenames skipped during matching — shells, multiplexers, jump-hosts, and common
     /// script interpreters. A tool whose foreground `comm` is `node` will be missed; that
     /// is a known limitation documented above.
-    static let skippedBasenames: Set<String> = [
+    static let skippedBasenames = Set<String>([
         "zsh", "bash", "fish", "sh", "dash", "ksh",
         "tmux", "tmux-server", "screen",
         "ssh", "sudo", "su", "login", "env",
         "node", "python", "python3", "ruby", "npx",
         "ps"
-    ]
+    ])
 
     /// Shells out to `ps -axo pid,ppid,comm` and parses it into a `Snapshot`. Returns nil
     /// if the subprocess fails; callers should treat nil as "no live signal available".
@@ -62,7 +62,11 @@ public enum ProcessTreeProviderResolver {
                 let base = basename(of: comm).lowercased()
                 if !skippedBasenames.contains(base),
                    let match = AIToolRegistry.commandNameMap[base] {
-                    if bestMatch == nil || depth > bestMatch!.depth {
+                    if let current = bestMatch {
+                        if depth > current.depth {
+                            bestMatch = (depth, match)
+                        }
+                    } else {
                         bestMatch = (depth, match)
                     }
                 }

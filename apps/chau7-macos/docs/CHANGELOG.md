@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Tab Labels Reflect the Actually-Running Agent**: The tab's displayed AI tool (label, logo, color) is now derived live from the session's shell process tree instead of persisted metadata. A tab restored with stale provider metadata — for example, one saved as "Codex" where the user is now running Claude — self-heals within ~1.5s of the real tool appearing in the process tree. Persisted provider metadata still drives explicit resume prefills; it no longer drives display.
+
 ### Added
 - **Fixed-Delay Startup Reveal**: Chau7 once again reveals restored windows after a short splash delay instead of blocking the whole app on full restore-drain completion, restoring the lighter startup contract from the stable release path.
 - **Per-Repository Prompt Injection**: The proxy can now inject content into API requests on a per-repository basis. Configure rules in `~/.chau7/prompt-rules.json` matching by repository name (portable across machines) or absolute path. Each rule specifies a position: prepend to user message (default), append, or inject into system prompt. Works with Anthropic Messages, OpenAI Chat Completions, OpenAI Responses (Codex CLI), and Gemini. Rules auto-reload every 30 seconds without proxy restart.

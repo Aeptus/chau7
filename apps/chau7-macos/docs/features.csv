@@ -35,6 +35,7 @@ Performance,Predictive Rendering,Pre-cache likely terminal output to reduce disp
 Performance,Dirty Region Tracking,Only re-render changed terminal regions — saves GPU cycles on partial updates,Shipped,Yes
 Performance,Feature Profiler,Per-feature timing metrics with os.signpost integration for performance analysis,Shipped,No
 AI Detection,AI Agent Auto-Detection,"Instantly recognizes Claude Code, Gemini CLI, Codex, ChatGPT, GitHub Copilot, Aider, Cursor",Shipped,Yes
+AI Detection,Live Process-Tree Identity,"Tab label and logo are derived live from the shell's process tree so a tab restored as Codex flips to Claude within ~1.5s when that's what's actually running",Shipped,Yes
 AI Detection,Branded Tab Logos,Each detected AI agent gets its branded logo displayed in the tab,Shipped,Yes
 AI Detection,Auto Tab Theming,Tabs automatically adopt the brand color of the active AI agent,Shipped,Yes
 AI Detection,Custom Detection Rules,Define custom patterns to detect and theme any CLI tool with display name and tab color,Shipped,Yes

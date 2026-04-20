@@ -54,6 +54,7 @@ Chau7 recognizes AI CLIs the moment they launch — no configuration required:
 - Custom-defined tools with display name, tab color, and logo.
 
 Detection methods:
+- Live process-tree resolution. Each session polls `ps` descendants of its shell PID and matches executable basenames against the registry — the OS is the ground truth for identity. A tab labeled Codex that starts running Claude updates to Claude within ~1.5s without requiring user action.
 - Command line tokenization with wrapper skipping (env, sudo, npx, bunx, pnpm). Command detection gates output scanning to prevent false positives.
 - Output banner matching for all supported CLIs. Patterns require tool-specific context to avoid substring collisions.
 - Custom detection rules with display name, tab color, and logo.
