@@ -1256,6 +1256,16 @@ final class AppModel {
             entries.append(storedEntry)
             entries.trimToLast(maxHistoryEntries)
             toolHistoryEntries[providerKey] = entries
+
+            let directory = historyEventDirectory(for: toolName, sessionID: entry.sessionId)
+            _ = adoptHistorySessionIdentity(
+                toolName: toolName,
+                sessionID: entry.sessionId,
+                directory: directory,
+                observedAt: Date(timeIntervalSince1970: entry.timestamp),
+                state: nil,
+                reason: .historyEntry
+            )
         }
     }
 
@@ -1273,6 +1283,7 @@ final class AppModel {
     /// Injected by Chau7App to resolve tab IDs for history-monitor events.
     /// Uses TabResolver with the overlay model's tabs. Set during app init.
     @ObservationIgnored var tabIDResolver: ((TabTarget) -> UUID?)?
+    @ObservationIgnored var historySessionAdopter: ((HistorySessionAdoptionRequest) -> Bool)?
 
     /// Eagerly resolve which tab a history-monitor event belongs to.
     private func resolveTabForSession(toolName: String, sessionID: String, directory: String?) -> UUID? {
@@ -1294,6 +1305,34 @@ final class AppModel {
             claudeDirectoryProvider: { ClaudeCodeMonitor.shared.activeSessions[$0]?.cwd },
             codexDirectoryProvider: { CodexSessionResolver.metadata(forSessionID: $0)?.cwd }
         )
+    }
+
+    @discardableResult
+    private func adoptHistorySessionIdentity(
+        toolName: String,
+        sessionID: String,
+        directory: String?,
+        observedAt: Date,
+        state: HistorySessionState?,
+        reason: HistorySessionAdoptionRequest.Reason
+    ) -> Bool {
+        let tabID = resolveTabForSession(
+            toolName: toolName,
+            sessionID: sessionID,
+            directory: directory
+        )
+        guard let request = HistorySessionAdoptionRequest(
+            toolName: toolName,
+            sessionId: sessionID,
+            directory: directory,
+            tabID: tabID,
+            observedAt: observedAt,
+            state: state,
+            reason: reason
+        ) else {
+            return false
+        }
+        return historySessionAdopter?(request) ?? false
     }
 
     private func updateSessionStatus(
@@ -1328,6 +1367,15 @@ final class AppModel {
                 nextState: state,
                 lastActivityKind: lastEntry?.activityKind ?? .unknown
             )
+            let directory = historyEventDirectory(for: toolName, sessionID: sessionId)
+            _ = adoptHistorySessionIdentity(
+                toolName: toolName,
+                sessionID: sessionId,
+                directory: directory,
+                observedAt: lastSeen,
+                state: state,
+                reason: .stateChange
+            )
 
             if transition.isReactivation {
                 Log.trace("History session reactivated after close: \(toolName) \(sessionId.prefix(8))")
@@ -1342,7 +1390,6 @@ final class AppModel {
                 let cooldown: TimeInterval = 30
                 if lastFired == nil || now.timeIntervalSince(lastFired!) > cooldown {
                     sessionFinishedTimestamps[statusId] = now
-                    let directory = historyEventDirectory(for: toolName, sessionID: sessionId)
                     // Resolve tabID eagerly so the notification routes to the
                     // correct tab even when multiple tabs share the same repo.
                     let tabID = resolveTabForSession(
@@ -1383,6 +1430,14 @@ final class AppModel {
                 directory: directory,
                 tabID: nil,
                 sessionID: entry.sessionId
+            )
+            _ = self?.adoptHistorySessionIdentity(
+                toolName: toolName,
+                sessionID: entry.sessionId,
+                directory: directory,
+                observedAt: Date(timeIntervalSince1970: entry.timestamp),
+                state: .idle,
+                reason: .idle
             )
             let event = AIEvent(
                 source: source,

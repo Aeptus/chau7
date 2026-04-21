@@ -484,6 +484,79 @@ final class TerminalSessionModel {
         }
     }
 
+    @discardableResult
+    func adoptAIHistorySession(_ request: HistorySessionAdoptionRequest) -> Bool {
+        let previousProvider = lastAIProvider
+        let previousSessionId = lastAISessionId
+        let previousSource = lastAISessionIdentitySource
+        let previousDetectedApp = lastDetectedAppName
+        let previousActiveApp = activeAppName
+        let previousStartedAt = agentStartedAt
+        let previousLaunchCommand = lastAgentLaunchCommand
+        let previousAIRunning = isAIRunning
+
+        updateLastDetectedApp(request.displayName)
+        lastAIProvider = request.providerKey
+        lastAISessionId = request.sessionId
+        lastAISessionIdentitySource = .observed
+
+        if previousSessionId != request.sessionId || agentStartedAt == nil {
+            agentStartedAt = request.observedAt
+        }
+
+        if shouldReplaceLaunchCommandForHistoryAdoption(
+            currentCommand: previousLaunchCommand,
+            previousSessionId: previousSessionId,
+            request: request
+        ) {
+            lastAgentLaunchCommand = historyAdoptionResumeCommand(for: request)
+        }
+
+        if request.state == .active {
+            aiDetection.handleCommand(appName: request.displayName)
+            activeAppName = request.displayName
+        }
+
+        let changed = previousProvider != lastAIProvider
+            || previousSessionId != lastAISessionId
+            || previousSource != lastAISessionIdentitySource
+            || previousDetectedApp != lastDetectedAppName
+            || previousActiveApp != activeAppName
+            || previousStartedAt != agentStartedAt
+            || previousLaunchCommand != lastAgentLaunchCommand
+            || previousAIRunning != isAIRunning
+
+        if changed {
+            Log.info(
+                "Adopted history AI identity tab=\(tabIdentifier) tool=\(request.displayName) session=\(request.sessionId.prefix(8)) reason=\(request.reason.rawValue)"
+            )
+            onSessionStateChanged?()
+        }
+
+        return changed
+    }
+
+    private func shouldReplaceLaunchCommandForHistoryAdoption(
+        currentCommand: String?,
+        previousSessionId: String?,
+        request: HistorySessionAdoptionRequest
+    ) -> Bool {
+        guard let resumeCommand = historyAdoptionResumeCommand(for: request) else { return false }
+        let trimmed = currentCommand?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return true }
+        if trimmed == resumeCommand { return false }
+        if AIResumeParser.extractMetadata(from: trimmed) != nil { return true }
+        return previousSessionId != nil && previousSessionId != request.sessionId
+    }
+
+    private func historyAdoptionResumeCommand(for request: HistorySessionAdoptionRequest) -> String? {
+        OverlayTabsModel.buildAIResumeCommand(
+            provider: request.providerKey,
+            sessionId: request.sessionId,
+            sessionIdSource: .observed
+        )
+    }
+
     var hasBackgroundRenderingAIContext: Bool {
         aiDisplayAppName != nil || effectiveAIProvider != nil || effectiveAISessionId != nil
     }

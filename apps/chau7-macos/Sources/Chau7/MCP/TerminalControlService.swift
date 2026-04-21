@@ -71,6 +71,27 @@ final class TerminalControlService {
     }
 
     @discardableResult
+    func adoptHistorySession(_ request: HistorySessionAdoptionRequest) -> Bool {
+        onMain {
+            let target = TabTarget(
+                tool: request.toolName,
+                directory: request.directory,
+                tabID: request.tabID,
+                sessionID: request.sessionId
+            )
+            guard let tab = TabResolver.resolve(target, in: self.allTabs),
+                  let session = self.historyAdoptionSession(in: tab, request: request) else {
+                Log.trace(
+                    "History adoption skipped: no compatible tab for tool=\(request.displayName) session=\(request.sessionId.prefix(8))"
+                )
+                return false
+            }
+
+            return session.adoptAIHistorySession(request)
+        }
+    }
+
+    @discardableResult
     func applyNotificationStyleAcrossWindows(to tabID: UUID, stylePreset: String, config: [String: String]) -> UUID? {
         let models = allModels
         var foundTab = false
@@ -941,6 +962,101 @@ final class TerminalControlService {
             }
         }
         return nil
+    }
+
+    private func historyAdoptionSession(
+        in tab: OverlayTab,
+        request: HistorySessionAdoptionRequest
+    ) -> TerminalSessionModel? {
+        let displaySession = tab.displaySession
+        let ranked = tab.splitController.terminalSessions.compactMap {
+            (_, session) -> (
+                session: TerminalSessionModel,
+                exactRank: Int,
+                directoryRank: Int,
+                focusRank: Int,
+                activity: Date
+            )? in
+            let storedSessionId = session.normalizedStoredAISessionId()
+            let directoryRank = historyAdoptionDirectoryRank(session: session, directory: request.directory)
+            guard canAdoptHistorySession(
+                session,
+                providerKey: request.providerKey,
+                sessionId: request.sessionId,
+                storedSessionId: storedSessionId,
+                directoryRank: directoryRank
+            ) else {
+                return nil
+            }
+
+            return (
+                session: session,
+                exactRank: storedSessionId == request.sessionId ? 0 : 1,
+                directoryRank: directoryRank ?? Int.max,
+                focusRank: session === displaySession ? 0 : 1,
+                activity: session.lastActivityDate
+            )
+        }
+
+        return ranked.sorted { lhs, rhs in
+            if lhs.exactRank != rhs.exactRank {
+                return lhs.exactRank < rhs.exactRank
+            }
+            if lhs.directoryRank != rhs.directoryRank {
+                return lhs.directoryRank < rhs.directoryRank
+            }
+            if lhs.focusRank != rhs.focusRank {
+                return lhs.focusRank < rhs.focusRank
+            }
+            return lhs.activity > rhs.activity
+        }
+        .first?.session
+    }
+
+    private func canAdoptHistorySession(
+        _ session: TerminalSessionModel,
+        providerKey: String,
+        sessionId: String,
+        storedSessionId: String?,
+        directoryRank: Int?
+    ) -> Bool {
+        let existingProvider = AIResumeParser.normalizeProviderName(session.effectiveAIProvider ?? "")
+            ?? AIResumeParser.normalizeProviderName(session.lastAIProvider ?? "")
+        if let existingProvider, existingProvider != providerKey {
+            return false
+        }
+
+        if storedSessionId == sessionId {
+            return true
+        }
+
+        guard directoryRank != nil else {
+            return false
+        }
+
+        guard storedSessionId != nil else {
+            return true
+        }
+
+        switch session.lastAISessionIdentitySource {
+        case .synthetic, .observed:
+            return true
+        case .explicit:
+            return existingProvider == providerKey
+        case nil:
+            return existingProvider == providerKey
+        }
+    }
+
+    private func historyAdoptionDirectoryRank(session: TerminalSessionModel, directory: String?) -> Int? {
+        guard let directory,
+              !directory.isEmpty else {
+            return nil
+        }
+        return DirectoryPathMatcher.bidirectionalPrefixRank(
+            targetPath: directory,
+            candidatePath: session.currentDirectory
+        )
     }
 
     /// Returns true if a matching tab running the named tool is currently at prompt.

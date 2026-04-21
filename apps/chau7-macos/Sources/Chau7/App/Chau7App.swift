@@ -44,6 +44,9 @@ struct Chau7App: App {
             let tabs = TerminalControlService.shared.allTabs
             return TabResolver.resolve(target, in: tabs)?.id
         }
+        model.historySessionAdopter = { request in
+            TerminalControlService.shared.adoptHistorySession(request)
+        }
 
         // Wire notification system — single delegate replaces 5 separate closures
         NotificationActionExecutor.shared.delegate = NotificationActionAdapter(
