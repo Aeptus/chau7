@@ -981,8 +981,7 @@ final class TerminalControlService {
             let directoryRank = historyAdoptionDirectoryRank(session: session, directory: request.directory)
             guard canAdoptHistorySession(
                 session,
-                providerKey: request.providerKey,
-                sessionId: request.sessionId,
+                request: request,
                 storedSessionId: storedSessionId,
                 directoryRank: directoryRank
             ) else {
@@ -1015,22 +1014,32 @@ final class TerminalControlService {
 
     private func canAdoptHistorySession(
         _ session: TerminalSessionModel,
-        providerKey: String,
-        sessionId: String,
+        request: HistorySessionAdoptionRequest,
         storedSessionId: String?,
         directoryRank: Int?
     ) -> Bool {
-        let existingProvider = AIResumeParser.normalizeProviderName(session.effectiveAIProvider ?? "")
+        let existingProvider = AIResumeParser.normalizeProviderName(session.aiDisplayAppName ?? "")
+            ?? AIResumeParser.normalizeProviderName(session.effectiveAIProvider ?? "")
             ?? AIResumeParser.normalizeProviderName(session.lastAIProvider ?? "")
-        if let existingProvider, existingProvider != providerKey {
+        if let existingProvider, existingProvider != request.providerKey {
             return false
         }
 
-        if storedSessionId == sessionId {
+        if storedSessionId == request.sessionId {
             return true
         }
 
+        guard request.canReplaceDifferentStoredSession else {
+            return false
+        }
+
         guard directoryRank != nil else {
+            return false
+        }
+
+        if session.lastAISessionIdentitySource == .observed,
+           let currentObservedAt = session.agentStartedAt,
+           request.observedAt < currentObservedAt {
             return false
         }
 
@@ -1042,9 +1051,9 @@ final class TerminalControlService {
         case .synthetic, .observed:
             return true
         case .explicit:
-            return existingProvider == providerKey
+            return existingProvider == request.providerKey
         case nil:
-            return existingProvider == providerKey
+            return existingProvider == request.providerKey
         }
     }
 

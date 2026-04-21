@@ -52,6 +52,14 @@ struct HistorySessionAdoptionRequest: Equatable {
         self.state = state
         self.reason = reason
     }
+
+    var canReplaceDifferentStoredSession: Bool {
+        reason == .historyEntry || state == .active
+    }
+
+    var shouldMarkSessionInactive: Bool {
+        state == .idle || state == .closed
+    }
 }
 
 private extension String {

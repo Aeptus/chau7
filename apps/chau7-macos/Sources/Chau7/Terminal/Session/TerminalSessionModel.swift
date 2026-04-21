@@ -488,6 +488,7 @@ final class TerminalSessionModel {
     func adoptAIHistorySession(_ request: HistorySessionAdoptionRequest) -> Bool {
         let previousProvider = lastAIProvider
         let previousSessionId = lastAISessionId
+        let matchedPreviousSession = normalizedStoredAISessionId() == request.sessionId
         let previousSource = lastAISessionIdentitySource
         let previousDetectedApp = lastDetectedAppName
         let previousActiveApp = activeAppName
@@ -517,6 +518,11 @@ final class TerminalSessionModel {
             activeAppName = request.displayName
         }
 
+        let inactiveStateChanged = clearActiveAIStateForInactiveHistorySession(
+            request,
+            matchedPreviousSession: matchedPreviousSession
+        )
+
         let changed = previousProvider != lastAIProvider
             || previousSessionId != lastAISessionId
             || previousSource != lastAISessionIdentitySource
@@ -525,6 +531,7 @@ final class TerminalSessionModel {
             || previousStartedAt != agentStartedAt
             || previousLaunchCommand != lastAgentLaunchCommand
             || previousAIRunning != isAIRunning
+            || inactiveStateChanged
 
         if changed {
             Log.info(
@@ -534,6 +541,41 @@ final class TerminalSessionModel {
         }
 
         return changed
+    }
+
+    private func clearActiveAIStateForInactiveHistorySession(
+        _ request: HistorySessionAdoptionRequest,
+        matchedPreviousSession: Bool
+    ) -> Bool {
+        guard request.shouldMarkSessionInactive,
+              matchedPreviousSession else {
+            return false
+        }
+
+        let activeProvider = AIResumeParser.normalizeProviderName(activeAppName ?? "")
+        guard activeProvider == nil || activeProvider == request.providerKey else {
+            return false
+        }
+
+        let detectionChanged = aiDetection.handleExit()
+        let hadActiveApp = activeAppName != nil
+        guard detectionChanged || hadActiveApp else {
+            return false
+        }
+
+        if hadActiveApp {
+            activeAppName = nil
+        }
+        if hasActiveAILogging {
+            finishAILogging(exitCode: nil)
+        }
+        return true
+    }
+
+    private var hasActiveAILogging: Bool {
+        aiLogQueue.sync {
+            aiLogSession != nil || aiLogContext != nil
+        }
     }
 
     private func shouldReplaceLaunchCommandForHistoryAdoption(
