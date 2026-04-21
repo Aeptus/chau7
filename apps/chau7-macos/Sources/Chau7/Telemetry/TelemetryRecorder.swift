@@ -8,6 +8,16 @@ import Chau7Core
 final class TelemetryRecorder {
     static let shared = TelemetryRecorder()
 
+    enum RunEndContentMode: Equatable {
+        case immediate
+        case deferred(reason: String)
+
+        var deferredReason: String? {
+            guard case let .deferred(reason) = self else { return nil }
+            return reason
+        }
+    }
+
     private let store = TelemetryStore.shared
     private let providers: [RunContentProvider]
 
@@ -103,7 +113,13 @@ final class TelemetryRecorder {
     ///   - ptyLogPath: Path to the raw PTY output log for this AI session. Used as the
     ///     primary fallback for TUI-based tools where the terminal buffer is empty
     ///     (alternate screen discards content on exit).
-    func runEnded(tabID: String, exitStatus: Int?, terminalBuffer: Data? = nil, ptyLogPath: String? = nil) {
+    func runEnded(
+        tabID: String,
+        exitStatus: Int?,
+        terminalBuffer: Data? = nil,
+        ptyLogPath: String? = nil,
+        contentMode: RunEndContentMode = .immediate
+    ) {
         lock.lock()
         guard let runID = activeRuns.removeValue(forKey: tabID),
               var run = inProgressRuns.removeValue(forKey: runID) else {
@@ -120,9 +136,13 @@ final class TelemetryRecorder {
         var turns: [TelemetryTurn] = []
         var toolCalls: [TelemetryToolCall] = []
 
-        // Extract content from provider-specific storage.
-        // The provider receives runID so all child entities are born with correct IDs.
-        if let provider = providers.first(where: { $0.canHandle(provider: run.provider) }) {
+        if let reason = contentMode.deferredReason {
+            run.metadata["content_extraction"] = "deferred"
+            run.metadata["content_extraction_reason"] = reason
+            Log.info("TelemetryRecorder: deferred content extraction for run \(runID) reason=\(reason)")
+        } else if let provider = providers.first(where: { $0.canHandle(provider: run.provider) }) {
+            // Extract content from provider-specific storage.
+            // The provider receives runID so all child entities are born with correct IDs.
             if let content = provider.extractContent(
                 runID: runID,
                 sessionID: run.sessionID,
@@ -168,7 +188,7 @@ final class TelemetryRecorder {
         // the terminal, including content rendered on the alternate screen by TUI-based
         // tools. The terminal buffer only has main-screen content, which is often just
         // a brief exit summary for TUI tools.
-        if turns.isEmpty {
+        if contentMode == .immediate, turns.isEmpty {
             var fallbackText: String?
             var fallbackSource: String?
 
@@ -211,7 +231,9 @@ final class TelemetryRecorder {
         // Atomic: UPDATE the run row + INSERT turns + INSERT tool calls in one transaction.
         // This avoids the INSERT OR REPLACE cascade-delete problem.
         store.finalizeRun(run, turns: turns, toolCalls: toolCalls)
-        scheduleTranscriptRepairIfNeeded(for: run)
+        if contentMode.deferredReason != "app_termination" {
+            scheduleTranscriptRepairIfNeeded(for: run)
+        }
         removeLiveRun(runID: run.id)
         Chau7ObservabilityService.shared.recordEvent(
             type: "telemetry_run_completed",

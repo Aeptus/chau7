@@ -9,6 +9,20 @@ import Chau7Core
 // git status refresh, dev server monitoring, process lifecycle.
 
 extension TerminalSessionModel {
+    enum AILoggingFinishMode: Equatable {
+        case normal
+        case appTermination
+
+        var telemetryContentMode: TelemetryRecorder.RunEndContentMode {
+            switch self {
+            case .normal:
+                return .immediate
+            case .appTermination:
+                return .deferred(reason: "app_termination")
+            }
+        }
+    }
+
     /// Schedules shell integration script to run after shell is ready.
     /// Instead of an arbitrary delay, we wait for initial output (prompt).
     func scheduleShellIntegration(for view: any TerminalViewLike) {
@@ -390,17 +404,21 @@ extension TerminalSessionModel {
         }
     }
 
-    func finishAILogging(exitCode: Int?) {
+    func finishAILogging(exitCode: Int?, mode: AILoggingFinishMode = .normal) {
         // Capture terminal buffer snapshot for telemetry fallback transcript.
         // Prefer a fresh capture (runs on main where the view is accessible),
         // but fall back to the cached buffer if the view was already detached.
-        let bufferSnapshot = captureRemoteSnapshot() ?? cachedBufferData
+        let bufferSnapshot = mode == .normal ? (captureRemoteSnapshot() ?? cachedBufferData) : nil
 
         // Grab the PTY log path and flush pending writes before reading.
         // For TUI-based AI tools (alternate screen), the terminal buffer will be
         // nearly empty — the PTY log is the only source of the agent's output.
         let ptyLogPath: String? = aiLogQueue.sync {
-            aiLogSession?.close() // drain write queue so readPTYLogTail sees all data
+            if mode == .normal {
+                aiLogSession?.close() // drain write queue so readPTYLogTail sees all data
+            } else {
+                aiLogSession?.closeAsync()
+            }
             return aiLogContext?.logPath
         }
         // Preserve for MCP tools that need the PTY log after the session ends
@@ -411,7 +429,8 @@ extension TerminalSessionModel {
             tabID: tabIdentifier,
             exitStatus: exitCode,
             terminalBuffer: bufferSnapshot,
-            ptyLogPath: ptyLogPath
+            ptyLogPath: ptyLogPath,
+            contentMode: mode.telemetryContentMode
         )
 
         // Notify shell event detector (outside lock to avoid potential deadlock)
@@ -420,6 +439,14 @@ extension TerminalSessionModel {
 
         // Synchronized access to AI log state
         aiLogQueue.sync {
+            guard mode == .normal else {
+                aiLogSession?.closeAsync()
+                aiLogSession = nil
+                aiLogContext = nil
+                aiLogPrefixBuffer.removeAll(keepingCapacity: true)
+                return
+            }
+
             shellEventDetector.commandFinished(exitCode: exitCode, command: aiLogContext?.commandLine)
 
             guard let context = aiLogContext else {

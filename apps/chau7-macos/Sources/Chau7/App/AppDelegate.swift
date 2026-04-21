@@ -355,8 +355,8 @@ private final class OverlayBlurView: NSVisualEffectView {
         var runningProcessNames: [String] = []
         for host in overlayHosts {
             for tab in host.model.tabs {
-                guard let session = tab.session else { continue }
-                if let children = session.processGroup?.children {
+                for session in tab.splitController.root.allSessions {
+                    guard let children = session.processGroup?.children else { continue }
                     for proc in children where !proc.name.isEmpty {
                         runningProcessNames.append(proc.name)
                     }

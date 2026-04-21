@@ -65,6 +65,13 @@ final class AITerminalLogSession {
         }
     }
 
+    func closeAsync() {
+        queue.async {
+            self.flushInputLocked()
+            self.flushOutputLocked()
+        }
+    }
+
     func sync() {
         queue.sync { [weak self] in
             self?.flushOutputLocked()

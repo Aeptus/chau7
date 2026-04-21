@@ -1614,6 +1614,14 @@ final class TerminalSessionModel {
 
     func closeSessionForTermination() {
         let shellPID = activeRustTerminalView?.shellPid ?? 0
+        terminationStateQueue.sync {
+            closeSessionRequested = true
+            closeSessionRequestedAt = Date()
+            didHandleProcessTermination = true
+            sigintSentAt = nil
+            sigtermSentAt = nil
+        }
+
         // Cancel the graceful escalation chain — during app quit we need
         // immediate cleanup, not a 8-second SIGINT→SIGTERM→SIGKILL cascade
         // whose DispatchQueue.main.asyncAfter timers can't fire anyway
@@ -1622,8 +1630,9 @@ final class TerminalSessionModel {
         forcedTerminationWorkItem = nil
 
         shutdownActiveTerminalRendering()
+        activeRustTerminalView?.onProcessTerminated = nil
         stopIdleTimer()
-        finishAILogging(exitCode: nil)
+        finishAILogging(exitCode: nil, mode: .appTermination)
 
         guard shellPID > 0 else { return }
 

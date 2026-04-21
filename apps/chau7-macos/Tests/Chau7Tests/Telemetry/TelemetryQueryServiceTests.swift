@@ -3,6 +3,36 @@ import XCTest
 @testable import Chau7
 
 final class TelemetryQueryServiceTests: XCTestCase {
+    func testRunEndedCanDeferContentExtractionForAppTermination() throws {
+        let tabID = "tab-\(UUID().uuidString)"
+        let repoPath = "/tmp/telemetry-deferred-\(UUID().uuidString)"
+        let sessionID = "session-\(UUID().uuidString)"
+
+        TelemetryRecorder.shared.runStarted(
+            tabID: tabID,
+            provider: "codex",
+            cwd: repoPath,
+            repoPath: repoPath,
+            sessionID: sessionID
+        )
+        let runID = try XCTUnwrap(TelemetryRecorder.shared.activeRunForTab(tabID)?.id)
+
+        TelemetryRecorder.shared.runEnded(
+            tabID: tabID,
+            exitStatus: nil,
+            terminalBuffer: Data("fallback that must not be parsed during quit".utf8),
+            ptyLogPath: "/tmp/chau7-quit-pty.log",
+            contentMode: .deferred(reason: "app_termination")
+        )
+
+        let completed = try XCTUnwrap(TelemetryStore.shared.getRun(runID))
+        XCTAssertEqual(completed.metadata["content_extraction"], "deferred")
+        XCTAssertEqual(completed.metadata["content_extraction_reason"], "app_termination")
+        XCTAssertNil(completed.rawTranscriptRef)
+        XCTAssertEqual(completed.turnCount, 0)
+        XCTAssertTrue(TelemetryRepairService.needsTranscriptRepair(completed))
+    }
+
     func testListRunsDoesNotDuplicateActiveRunAlreadyPersisted() throws {
         let service = TelemetryQueryService()
         let tabID = "tab-\(UUID().uuidString)"
