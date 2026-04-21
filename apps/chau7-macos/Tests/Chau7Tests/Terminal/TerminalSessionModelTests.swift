@@ -114,7 +114,7 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertFalse(session.shouldKeepLiveRenderingInBackground)
     }
 
-    func testAttachTerminalContainerRetainsContainerAcrossViewRecreation() {
+    func testAttachTerminalContainerTracksCurrentMountedContainer() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
         let rustView = RustTerminalView(frame: .zero)

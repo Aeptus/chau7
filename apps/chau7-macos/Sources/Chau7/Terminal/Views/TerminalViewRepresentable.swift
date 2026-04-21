@@ -5,13 +5,18 @@ import Chau7Core
 
 /// Container view for the Rust terminal backend
 final class RustTerminalContainerView: NSView {
-    let terminalView: RustTerminalView
+    private(set) var terminalView: RustTerminalView?
     var onFirstLayout: ((RustTerminalView) -> Void)?
     private var didRunFirstLayout = false
 
     init(terminalView: RustTerminalView) {
         self.terminalView = terminalView
         super.init(frame: .zero)
+        if let previousContainer = terminalView.superview as? RustTerminalContainerView {
+            previousContainer.detachTerminalView(terminalView, reason: "reparent")
+        } else {
+            terminalView.removeFromSuperview()
+        }
         addSubview(terminalView)
     }
 
@@ -24,8 +29,20 @@ final class RustTerminalContainerView: NSView {
     /// so the container can resize it on layout without owning it.
     weak var metalCoordinator: RustMetalDisplayCoordinator?
 
+    func detachTerminalView(_ view: RustTerminalView? = nil, reason: String) {
+        guard let current = terminalView else { return }
+        if let view, current !== view { return }
+
+        Log.trace("RustTerminalContainerView: detaching terminal view \(current.viewId) [\(reason)]")
+        metalCoordinator = nil
+        onFirstLayout = nil
+        terminalView = nil
+        current.removeFromSuperview()
+    }
+
     override func layout() {
         super.layout()
+        guard let terminalView else { return }
         terminalView.frame = bounds
 
         // Resize the shared Metal view if it's placed in this container.
@@ -45,7 +62,7 @@ final class RustTerminalContainerView: NSView {
         if !didRunFirstLayout, bounds.width > 0, bounds.height > 0 {
             didRunFirstLayout = true
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+                guard let self, let terminalView = self.terminalView else { return }
                 terminalView.layoutSubtreeIfNeeded()
                 onFirstLayout?(terminalView)
             }
@@ -56,6 +73,7 @@ final class RustTerminalContainerView: NSView {
 /// Terminal container view (Rust backend only).
 final class UnifiedTerminalContainerView: NSView {
     private var rustContainer: RustTerminalContainerView?
+    weak var ownerSession: TerminalSessionModel?
 
     init(rustView: RustTerminalView) {
         self.rustContainer = RustTerminalContainerView(terminalView: rustView)
@@ -91,6 +109,11 @@ final class UnifiedTerminalContainerView: NSView {
     /// Whether the contained terminal view has Metal rendering active.
     var isMetalActive: Bool {
         rustTerminalView?.isMetalRenderingActive ?? false
+    }
+
+    func detachRustTerminalView(_ view: RustTerminalView? = nil, reason: String) {
+        rustContainer?.detachTerminalView(view, reason: reason)
+        ownerSession = nil
     }
 }
 
@@ -196,55 +219,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     }
 
     private func makeRustTerminalView() -> UnifiedTerminalContainerView {
-        if let existingContainer = model.existingTerminalContainerView,
-           let existingView = existingContainer.rustTerminalView {
-            Log.trace("Reusing existing Rust terminal container for session")
-            existingView.onInput = { [weak model] text in
-                model?.handleInput(text)
-            }
-            existingView.shouldAcceptUserText = { [weak model] text in
-                model?.shouldAcceptDirectUserInput(text) ?? true
-            }
-            existingView.onOutput = { [weak model] data in
-                model?.handleOutput(data)
-            }
-            existingView.onShellStartupSlow = { [weak model] in
-                model?.shellStartupSlow = true
-            }
-            existingView.onBufferChanged = { [weak model, weak existingView] in
-                model?.scheduleSearchRefresh()
-                model?.highlightView?.scheduleDisplay()
-                model?.recordOutputLatencyIfNeeded()
-                model?.noteRestoreBootstrapBufferChanged()
-                if existingView?.isMetalRenderingActive == false {
-                    model?.notifyVisibleFrameReadyIfNeeded()
-                }
-            }
-            existingView.onFramePresented = { [weak model] in
-                model?.notifyVisibleFrameReadyIfNeeded()
-            }
-            existingView.onFilePathClicked = onFilePathClicked
-            existingView.onScrollbackCleared = { [weak model] in
-                model?.resetDangerousHighlights()
-            }
-            existingView.onScrollChanged = { [weak model] in
-                model?.scheduleHighlightAfterScroll()
-            }
-            existingView.tabIdentifier = model.tabIdentifier
-            existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
-            existingView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
-            existingView.installHistoryKeyMonitor()
-            existingView.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "reuse-container")
-            existingView.allowMouseReporting = settings.isMouseReportingEnabled
-            // Metal rendering is managed by the shared window-level coordinator.
-            // Ensure the view flag is correct — the coordinator will attach when
-            // this tab becomes selected via switchToView().
-            if !settings.useMetalRenderer {
-                existingView.isMetalRenderingActive = false
-            }
-            return existingContainer
-        }
-
         // Reuse existing Rust terminal view if available
         if let existingView = model.existingRustTerminalView {
             Log.trace("Reusing existing Rust terminal view for session")
@@ -478,6 +452,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         nsView.applyRenderPhase(.hidden, isInteractive: false, reason: "dismantleNSView")
         nsView.isHidden = true
         nsView.updatePollingMode(reason: "dismantleNSView")
+        container.ownerSession?.detachTerminalContainer(container, reason: "dismantleNSView")
     }
 
     private func terminalFont() -> NSFont {

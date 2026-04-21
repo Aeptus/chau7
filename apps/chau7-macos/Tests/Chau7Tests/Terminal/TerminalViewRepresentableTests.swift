@@ -1,7 +1,6 @@
 import XCTest
 import AppKit
 import Chau7Core
-
 @testable import Chau7
 
 final class TerminalViewRepresentableTests: XCTestCase {
@@ -74,5 +73,39 @@ final class TerminalViewRepresentableTests: XCTestCase {
         XCTAssertFalse(view.notifyUpdateChanges)
         XCTAssertTrue(view.isHidden)
         XCTAssertEqual(view.currentRenderLoopMode, "background_drain")
+    }
+
+    func testDismantleClearsSessionContainerWithoutDroppingTerminalView() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let view = RustTerminalView(frame: .zero)
+        let container = UnifiedTerminalContainerView(rustView: view)
+
+        session.attachTerminalContainer(container)
+        session.attachRustTerminal(view)
+
+        TerminalViewRepresentable.dismantleNSView(
+            container,
+            coordinator: TerminalViewRepresentable.Coordinator()
+        )
+
+        XCTAssertNil(session.existingTerminalContainerView)
+        XCTAssertTrue(session.existingRustTerminalView === view)
+        XCTAssertNil(container.ownerSession)
+    }
+
+    func testReparentingTerminalViewDetachesOldContainer() {
+        let view = RustTerminalView(frame: .zero)
+        let firstContainer = RustTerminalContainerView(terminalView: view)
+
+        XCTAssertTrue(firstContainer.terminalView === view)
+        XCTAssertTrue(view.superview === firstContainer)
+
+        let secondContainer = RustTerminalContainerView(terminalView: view)
+
+        XCTAssertNil(firstContainer.terminalView)
+        XCTAssertFalse(firstContainer.subviews.contains { $0 === view })
+        XCTAssertTrue(secondContainer.terminalView === view)
+        XCTAssertTrue(view.superview === secondContainer)
     }
 }

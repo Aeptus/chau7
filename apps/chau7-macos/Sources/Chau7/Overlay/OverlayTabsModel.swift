@@ -1516,7 +1516,8 @@ final class OverlayTabsModel {
             return !(unified.rustTerminalView?.isHidden ?? true)
         }
         if let container = view as? RustTerminalContainerView {
-            return !container.terminalView.isHidden
+            guard let terminalView = container.terminalView else { return false }
+            return !terminalView.isHidden
         }
         return !view.isHidden
     }
@@ -1529,8 +1530,9 @@ final class OverlayTabsModel {
            let rustView = unified.rustTerminalView {
             return rustView.makeRetainedFrameImage(allowForcedSync: allowForcedTerminalSync)
         }
-        if let container = view as? RustTerminalContainerView {
-            return container.terminalView.makeRetainedFrameImage(allowForcedSync: allowForcedTerminalSync)
+        if let container = view as? RustTerminalContainerView,
+           let rustView = container.terminalView {
+            return rustView.makeRetainedFrameImage(allowForcedSync: allowForcedTerminalSync)
         }
         let snapshotView = snapshotSurface(for: view)
         guard isSnapshotSurfaceReady(snapshotView) else {

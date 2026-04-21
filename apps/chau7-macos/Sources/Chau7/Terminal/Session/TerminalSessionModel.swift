@@ -776,9 +776,9 @@ final class TerminalSessionModel {
     @ObservationIgnored weak var rustTerminalView: RustTerminalView?
     /// Strong reference to keep the Rust terminal view alive across SwiftUI view recreations
     @ObservationIgnored private var retainedRustTerminalView: RustTerminalView?
-    /// Strong reference to keep the terminal container and Metal coordinator alive
-    /// across SwiftUI view recreations.
-    @ObservationIgnored private var retainedTerminalContainerView: UnifiedTerminalContainerView?
+    /// Tracks the currently mounted SwiftUI/AppKit container. The session owns
+    /// the terminal view, not this transient wrapper.
+    @ObservationIgnored private weak var retainedTerminalContainerView: UnifiedTerminalContainerView?
     /// Weak reference to the window's shared Metal coordinator, set by
     /// OverlayTabsModel.performSelectedTabInPlaceRefresh. Used by
     /// updateNSView to reattach the coordinator without notifications.
@@ -804,6 +804,7 @@ final class TerminalSessionModel {
     var awaitingVisibleFrameReady: Bool {
         presentationSurfaceState.awaitingVisibleFrameReady
     }
+
     var hasPendingResumePrefillActivity: Bool {
         pendingPrefillInput != nil || pendingPrefillRetries > 0 || isShellLoading
     }
@@ -1119,7 +1120,18 @@ final class TerminalSessionModel {
     #endif
 
     func attachTerminalContainer(_ container: UnifiedTerminalContainerView) {
+        if let previous = retainedTerminalContainerView, previous !== container {
+            previous.detachRustTerminalView(reason: "superseded")
+        }
+        container.ownerSession = self
         retainedTerminalContainerView = container
+    }
+
+    func detachTerminalContainer(_ container: UnifiedTerminalContainerView, reason: String) {
+        guard retainedTerminalContainerView === container else { return }
+        Log.trace("TerminalSessionModel: detached terminal container [\(reason)]")
+        retainedTerminalContainerView = nil
+        container.ownerSession = nil
     }
 
     func attachRustTerminal(_ view: RustTerminalView) {
@@ -2124,32 +2136,48 @@ final class TerminalSessionModel {
         }
     }
 
-    /// Auto-submits a restore prefill when safe. Called in the same event-loop
-    /// tick as `insertSnippet`, which eliminates the race window where a user
-    /// keystroke could get appended to our Enter. The previous "insert and
-    /// wait for Enter" behavior is preserved when any precondition fails —
-    /// safety-first, not silent actions.
+    private func hasRunningAIToolInActiveProcessTree() -> Bool {
+        let shellPID = activeRustTerminalView?.shellPid ?? 0
+        guard shellPID > 0 else { return false }
+        return ProcessTreeProviderResolver.resolve(shellPid: shellPID) != nil
+    }
+
+    /// Auto-submits a restore prefill when safe. Provider-specific submit
+    /// strategy matters here: Codex's TUI is more reliable with a delayed raw
+    /// newline after automated text insertion than with an immediate Enter key.
     private func scheduleRestorePrefillAutoSubmit(deliveredText: String) {
         guard FeatureSettings.shared.autoSubmitRestorePrefill else { return }
 
         // Precondition: process tree must NOT show an AI tool already running.
         // Auto-submitting `claude --resume ...` into a live Claude prompt would
         // duplicate sessions or submit the resume string as a prompt message.
-        let shellPID = activeRustTerminalView?.shellPid ?? 0
-        if shellPID > 0,
-           ProcessTreeProviderResolver.resolve(shellPid: shellPID) != nil {
+        if hasRunningAIToolInActiveProcessTree() {
             Log.info(
                 "Restore prefill auto-submit skipped for \(deliveredText.prefix(40)): AI tool already running in process tree"
             )
             return
         }
 
-        guard let keyPress = try? TerminalKeyPress(key: "enter", modifiers: []) else {
-            Log.warn("Restore prefill auto-submit: failed to construct enter keypress")
-            return
+        let provider = AIResumeParser.extractMetadata(from: deliveredText)?.provider ?? effectiveAIProvider
+        let plan = AIAutomationStrategy.submitPlan(provider: provider, recentAutomationInputAgeMs: 0)
+        guard plan.submitMode != .none else { return }
+
+        pendingAutomationSubmitWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            pendingAutomationSubmitWorkItem = nil
+            if hasRunningAIToolInActiveProcessTree() {
+                Log.info(
+                    "Restore prefill auto-submit skipped for \(deliveredText.prefix(40)): AI tool started before submit"
+                )
+                return
+            }
+            performAutomationSubmit(mode: plan.submitMode)
+            Log.info("Restore prefill auto-submitted: \(deliveredText.prefix(60))")
         }
-        sendKeyPress(keyPress)
-        Log.info("Restore prefill auto-submitted: \(deliveredText.prefix(60))")
+        pendingAutomationSubmitWorkItem = work
+        let deadline = DispatchTime.now() + .milliseconds(max(0, plan.submitDelayMs))
+        DispatchQueue.main.asyncAfter(deadline: deadline, execute: work)
     }
 
     private func flushPendingTerminalActions() {

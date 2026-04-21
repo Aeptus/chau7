@@ -4,11 +4,38 @@ import Chau7Core
 
 @MainActor
 final class PrefillAutoSubmitTests: XCTestCase {
-    private var originalAutoSubmit: Bool = true
+    private final class InputCapture {
+        var values: [String] = []
+    }
+
+    private var originalAutoSubmit = true
+
+    private func readySession() -> (TerminalSessionModel, InputCapture) {
+        let session = TerminalSessionModel(appModel: AppModel())
+        let view = RustTerminalView(frame: .zero)
+        let capture = InputCapture()
+        view.onInput = { capture.values.append($0) }
+
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        session.status = .idle
+        session.attachRustTerminal(view)
+
+        return (session, capture)
+    }
+
+    private func waitForAutoSubmit() async {
+        let expectation = expectation(description: "restore prefill auto submit")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            expectation.fulfill()
+        }
+        await fulfillment(of: [expectation], timeout: 1.0)
+    }
 
     override func setUp() async throws {
         try await super.setUp()
         originalAutoSubmit = FeatureSettings.shared.autoSubmitRestorePrefill
+        FeatureSettings.shared.autoSubmitRestorePrefill = true
     }
 
     override func tearDown() async throws {
@@ -38,5 +65,25 @@ final class PrefillAutoSubmitTests: XCTestCase {
         FeatureSettings.shared.autoSubmitRestorePrefill = false
         let value = UserDefaults.standard.object(forKey: "restore.autoSubmitPrefill") as? Bool
         XCTAssertEqual(value, false, "toggling must persist via UserDefaults")
+    }
+
+    func testCodexRestorePrefillAutoSubmitsWithRawNewline() async {
+        let (session, inputs) = readySession()
+        let command = "codex resume 019d25d0-d0bd-7501-99ba-1f937c17b29b"
+
+        XCTAssertEqual(session.prefillInput(command), .delivered)
+        await waitForAutoSubmit()
+
+        XCTAssertEqual(inputs.values, [command, "\n"])
+    }
+
+    func testNonCodexRestorePrefillAutoSubmitsWithEnterKey() async {
+        let (session, inputs) = readySession()
+        let command = "claude --resume abc123"
+
+        XCTAssertEqual(session.prefillInput(command), .delivered)
+        await waitForAutoSubmit()
+
+        XCTAssertEqual(inputs.values, [command, "\r"])
     }
 }
