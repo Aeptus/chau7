@@ -247,6 +247,160 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(repairedPane.aiResumeCommand, "codex resume session-123")
     }
 
+    func testRestoreSavedTabsRepairsLatestBackupWhenOnlyResumeCommandIsMissing() throws {
+        let tabID = UUID()
+        let paneID = UUID()
+        let latestState = makeSavedTabState(
+            tabID: tabID,
+            paneID: paneID,
+            title: "Latest",
+            directory: "/tmp/aetower",
+            aiProvider: "codex",
+            aiSessionId: "session-123",
+            aiResumeCommand: nil
+        )
+        let archivedState = makeSavedTabState(
+            tabID: tabID,
+            paneID: paneID,
+            title: "Archived",
+            directory: "/tmp/aetower",
+            aiProvider: "codex",
+            aiSessionId: "session-123",
+            aiResumeCommand: "codex resume session-123"
+        )
+
+        let backupRoot = tabStateBackupRootURL()
+        try FileManager.default.createDirectory(
+            at: backupRoot.appendingPathComponent("archive", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try JSONEncoder().encode(SavedMultiWindowState(windows: [[latestState]])).write(
+            to: backupRoot.appendingPathComponent("latest.json")
+        )
+        try JSONEncoder().encode(SavedMultiWindowState(windows: [[archivedState]])).write(
+            to: backupRoot.appendingPathComponent("archive/0000000000001-autosave.json")
+        )
+
+        _ = try XCTUnwrap(OverlayTabsModel.restoreSavedTabs(appModel: appModel))
+
+        let repairedData = try Data(contentsOf: backupRoot.appendingPathComponent("latest.json"))
+        let repaired = try XCTUnwrap(OverlayTabsModel.decodeBackupWindowStates(from: repairedData))
+        let repairedPane = try XCTUnwrap(repaired.first?.first?.paneStates?.first)
+
+        XCTAssertEqual(repairedPane.aiProvider, "codex")
+        XCTAssertEqual(repairedPane.aiSessionId, "session-123")
+        XCTAssertEqual(repairedPane.aiResumeCommand, "codex resume session-123")
+    }
+
+    func testRestoreSavedTabsBackfillsUserDefaultsAIResumeCommandFromArchive() throws {
+        let tabID = UUID()
+        let paneID = UUID()
+        let userDefaultsState = makeSavedTabState(
+            tabID: tabID,
+            paneID: paneID,
+            title: "User Defaults",
+            directory: "/tmp/aetower",
+            aiProvider: "codex",
+            aiSessionId: "session-123",
+            aiResumeCommand: nil
+        )
+        let archivedState = makeSavedTabState(
+            tabID: tabID,
+            paneID: paneID,
+            title: "Archived",
+            directory: "/tmp/aetower",
+            aiProvider: "codex",
+            aiSessionId: "session-123",
+            aiResumeCommand: "codex resume session-123"
+        )
+
+        let userDefaultsPayload = try JSONEncoder().encode(
+            SavedMultiWindowState(windows: [[userDefaultsState]])
+        )
+        UserDefaults.standard.set(userDefaultsPayload, forKey: SavedMultiWindowState.userDefaultsKey)
+
+        let backupRoot = tabStateBackupRootURL()
+        try FileManager.default.createDirectory(
+            at: backupRoot.appendingPathComponent("archive", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try JSONEncoder().encode(SavedMultiWindowState(windows: [[archivedState]])).write(
+            to: backupRoot.appendingPathComponent("archive/0000000000001-autosave.json")
+        )
+
+        let restored = try XCTUnwrap(OverlayTabsModel.restoreSavedTabs(appModel: appModel))
+        let restoredPane = try XCTUnwrap(restored.rawStates.first?.paneStates?.first)
+
+        XCTAssertEqual(restoredPane.aiProvider, "codex")
+        XCTAssertEqual(restoredPane.aiSessionId, "session-123")
+        XCTAssertEqual(restoredPane.aiResumeCommand, "codex resume session-123")
+
+        let repairedData = try XCTUnwrap(
+            UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey)
+        )
+        let repaired = try JSONDecoder().decode(SavedMultiWindowState.self, from: repairedData)
+        let repairedPane = try XCTUnwrap(repaired.windows.first?.first?.paneStates?.first)
+        XCTAssertEqual(repairedPane.aiResumeCommand, "codex resume session-123")
+    }
+
+    func testMergedAIResumePayloadUsesFallbackCommandIdentityWhenCurrentIsSynthetic() {
+        let paneID = UUID().uuidString
+        let current = SavedTerminalPaneState(
+            paneID: paneID,
+            directory: "/tmp/aetower",
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            aiProvider: "codex",
+            aiSessionId: "synth:codex:abc123",
+            aiSessionIdSource: .synthetic
+        )
+        let fallback = SavedTerminalPaneState(
+            paneID: paneID,
+            directory: "/tmp/aetower",
+            scrollbackContent: nil,
+            aiResumeCommand: "codex resume real-session-123",
+            aiProvider: "codex",
+            aiSessionId: "synth:codex:fallback",
+            aiSessionIdSource: .synthetic
+        )
+
+        let merged = current.mergedAIResumePayload(with: fallback)
+
+        XCTAssertEqual(merged.aiProvider, "codex")
+        XCTAssertEqual(merged.aiSessionId, "real-session-123")
+        XCTAssertEqual(merged.aiSessionIdSource, .explicit)
+        XCTAssertEqual(merged.aiResumeCommand, "codex resume real-session-123")
+    }
+
+    func testMergedAIResumePayloadDoesNotUseFallbackCommandForDifferentProvider() {
+        let paneID = UUID().uuidString
+        let current = SavedTerminalPaneState(
+            paneID: paneID,
+            directory: "/tmp/aetower",
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            aiProvider: "codex",
+            aiSessionId: nil,
+            aiSessionIdSource: nil
+        )
+        let fallback = SavedTerminalPaneState(
+            paneID: paneID,
+            directory: "/tmp/aetower",
+            scrollbackContent: nil,
+            aiResumeCommand: "claude --resume claude-session-123",
+            aiProvider: "claude",
+            aiSessionId: "claude-session-123",
+            aiSessionIdSource: .explicit
+        )
+
+        let merged = current.mergedAIResumePayload(with: fallback)
+
+        XCTAssertEqual(merged.aiProvider, "codex")
+        XCTAssertNil(merged.aiSessionId)
+        XCTAssertNil(merged.aiSessionIdSource)
+        XCTAssertNil(merged.aiResumeCommand)
+    }
+
     func testExportTabStatesPreservesDeferredRestoreAIResumeMetadata() throws {
         let selectedState = makeSavedTabState(
             tabID: UUID(),

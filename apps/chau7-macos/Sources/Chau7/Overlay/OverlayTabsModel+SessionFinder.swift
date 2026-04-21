@@ -379,12 +379,31 @@ extension OverlayTabsModel {
            let multiState = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data),
            let primaryWindowStates = multiState.windows.first,
            !primaryWindowStates.isEmpty {
-            return decodeRestorableTabs(fromStates: primaryWindowStates, appModel: appModel)
+            let mergedWindows = mergedWindowStatesWithBackupFallbacks(baseWindows: multiState.windows)
+            maybeRepairUserDefaultsMultiWindowState(
+                originalWindows: multiState.windows,
+                mergedWindows: mergedWindows
+            )
+            return decodeRestorableTabs(
+                fromStates: mergedWindows.first ?? primaryWindowStates,
+                appModel: appModel
+            )
         }
 
         if let data = UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey),
-           let restored = decodeRestorableTabs(from: data, appModel: appModel) {
-            return restored
+           let singleWindowStates = try? JSONDecoder().decode([SavedTabState].self, from: data),
+           !singleWindowStates.isEmpty {
+            let mergedWindows = mergedWindowStatesWithBackupFallbacks(baseWindows: [singleWindowStates])
+            maybeRepairUserDefaultsSingleWindowState(
+                originalWindows: [singleWindowStates],
+                mergedWindows: mergedWindows
+            )
+            if let restored = decodeRestorableTabs(
+                fromStates: mergedWindows.first ?? singleWindowStates,
+                appModel: appModel
+            ) {
+                return restored
+            }
         }
 
         return restoreSavedTabsFromBackups(appModel: appModel)
@@ -521,28 +540,52 @@ extension OverlayTabsModel {
             return decodeBackupWindowStates(from: data)
         }
         guard let baseWindows = decodedCandidates.first else { return nil }
+        let mergedWindows = mergedWindowStates(
+            baseWindows: baseWindows,
+            fallbackCandidates: Array(decodedCandidates.dropFirst())
+        )
+        maybeRepairLatestBackup(baseWindows: baseWindows, mergedWindows: mergedWindows)
+        return mergedWindows
+    }
 
-        let fallbackByTabID = decodedCandidates.dropFirst().reduce(into: [String: SavedTabState]()) { result, windows in
+    private static func mergedWindowStatesWithBackupFallbacks(baseWindows: [[SavedTabState]]) -> [[SavedTabState]] {
+        let decodedCandidates = tabStateRestoreCandidateURLs().compactMap { url -> [[SavedTabState]]? in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return decodeBackupWindowStates(from: data)
+        }
+        return mergedWindowStates(baseWindows: baseWindows, fallbackCandidates: decodedCandidates)
+    }
+
+    private static func mergedWindowStates(
+        baseWindows: [[SavedTabState]],
+        fallbackCandidates: [[[SavedTabState]]]
+    ) -> [[SavedTabState]] {
+        let fallbackByTabID = fallbackCandidates.reduce(into: [String: SavedTabState]()) { result, windows in
             for tabs in windows {
                 for state in tabs {
-                    guard let tabID = state.tabID, result[tabID] == nil, state.hasAIResumePayload else { continue }
+                    guard let tabID = state.tabID,
+                          state.aiResumeRestorationScore > 0 else {
+                        continue
+                    }
+                    if let existing = result[tabID],
+                       existing.aiResumeRestorationScore >= state.aiResumeRestorationScore {
+                        continue
+                    }
                     result[tabID] = state
                 }
             }
         }
 
-        let mergedWindows = baseWindows.map { tabs in
+        return baseWindows.map { tabs in
             tabs.map { state in
                 guard let tabID = state.tabID else { return state }
                 return state.mergedAIResumePayload(with: fallbackByTabID[tabID])
             }
         }
-        maybeRepairLatestBackup(baseWindows: baseWindows, mergedWindows: mergedWindows)
-        return mergedWindows
     }
 
     private static func maybeRepairLatestBackup(baseWindows: [[SavedTabState]], mergedWindows: [[SavedTabState]]) {
-        guard aiResumePayloadCount(in: mergedWindows) > aiResumePayloadCount(in: baseWindows) else { return }
+        guard aiResumePayloadScore(in: mergedWindows) > aiResumePayloadScore(in: baseWindows) else { return }
         guard let payload = try? JSONEncoder().encode(SavedMultiWindowState(windows: mergedWindows)) else { return }
         do {
             try writeLatestTabStateBackup(payload)
@@ -552,12 +595,33 @@ extension OverlayTabsModel {
         }
     }
 
-    private static func aiResumePayloadCount(in windows: [[SavedTabState]]) -> Int {
+    private static func maybeRepairUserDefaultsMultiWindowState(
+        originalWindows: [[SavedTabState]],
+        mergedWindows: [[SavedTabState]]
+    ) {
+        guard aiResumePayloadScore(in: mergedWindows) > aiResumePayloadScore(in: originalWindows) else { return }
+        guard let payload = try? JSONEncoder().encode(SavedMultiWindowState(windows: mergedWindows)) else { return }
+        UserDefaults.standard.set(payload, forKey: SavedMultiWindowState.userDefaultsKey)
+        Log.info("Repaired UserDefaults multi-window state from archived AI resume metadata")
+    }
+
+    private static func maybeRepairUserDefaultsSingleWindowState(
+        originalWindows: [[SavedTabState]],
+        mergedWindows: [[SavedTabState]]
+    ) {
+        guard aiResumePayloadScore(in: mergedWindows) > aiResumePayloadScore(in: originalWindows),
+              let firstWindow = mergedWindows.first,
+              let payload = try? JSONEncoder().encode(firstWindow) else {
+            return
+        }
+        UserDefaults.standard.set(payload, forKey: SavedTabState.userDefaultsKey)
+        Log.info("Repaired UserDefaults single-window state from archived AI resume metadata")
+    }
+
+    private static func aiResumePayloadScore(in windows: [[SavedTabState]]) -> Int {
         windows
             .flatMap { $0 }
-            .reduce(into: 0) { count, state in
-                count += state.hasAIResumePayload ? 1 : 0
-            }
+            .reduce(0) { $0 + $1.aiResumeRestorationScore }
     }
 
     static func decodeBackupWindowStates(from data: Data) -> [[SavedTabState]]? {

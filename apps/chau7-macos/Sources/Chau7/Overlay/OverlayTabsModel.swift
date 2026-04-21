@@ -383,21 +383,190 @@ struct SavedTerminalPaneState: Codable {
     }
 }
 
+private enum SavedAIResumePayload {
+    struct Fields {
+        let command: String?
+        let provider: String?
+        let sessionId: String?
+        let sessionIdSource: AISessionIdentitySource?
+    }
+
+    static func normalizedCommand(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty,
+              commandMetadata(trimmed) != nil else {
+            return nil
+        }
+        return trimmed
+    }
+
+    static func commandMetadata(_ value: String?) -> AIResumeParser.ResumeMetadata? {
+        guard let value else { return nil }
+        return AIResumeParser.extractMetadata(from: value)
+    }
+
+    static func concreteSessionId(_ value: String?, source: AISessionIdentitySource?) -> String? {
+        guard source != .synthetic,
+              let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              AIResumeParser.isValidSessionId(trimmed) else {
+            return nil
+        }
+        return trimmed
+    }
+
+    static func persistedSessionId(_ value: String?, source: AISessionIdentitySource?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        if source == .synthetic, trimmed.hasPrefix("synth:") {
+            return trimmed
+        }
+        return AIResumeParser.isValidSessionId(trimmed) ? trimmed : nil
+    }
+
+    static func score(_ fields: Fields) -> Int {
+        var score = 0
+        if commandMetadata(fields.command) != nil {
+            score += 100
+        }
+        if AIResumeParser.normalizeProviderName(fields.provider ?? "") != nil {
+            score += 10
+        }
+        if concreteSessionId(fields.sessionId, source: fields.sessionIdSource) != nil {
+            score += 40
+        } else if persistedSessionId(fields.sessionId, source: fields.sessionIdSource) != nil {
+            score += 1
+        }
+        return score
+    }
+
+    static func merged(current: Fields, fallback: Fields?) -> Fields {
+        guard let fallback else { return current }
+
+        let currentCommand = normalizedCommand(current.command)
+        let fallbackCommand = normalizedCommand(fallback.command)
+        let fallbackCommandMetadata = commandMetadata(fallback.command)
+        let currentConcreteSession = concreteSessionId(
+            current.sessionId,
+            source: current.sessionIdSource
+        )
+        let currentPersistedSession = persistedSessionId(
+            current.sessionId,
+            source: current.sessionIdSource
+        )
+        let currentSessionId = currentConcreteSession ?? currentPersistedSession
+        let currentSessionIdSource = currentSessionId == nil ? nil : current.sessionIdSource
+        let currentProvider = AIResumeParser.normalizeProviderName(current.provider ?? "")
+        let fallbackFieldProvider = AIResumeParser.normalizeProviderName(fallback.provider ?? "")
+        let fallbackKnownProvider = fallbackCommandMetadata?.provider ?? fallbackFieldProvider
+        let fallbackMatchesCurrentProvider = currentProvider == nil
+            || fallbackKnownProvider == nil
+            || fallbackKnownProvider == currentProvider
+        let fallbackCommandMatchesCurrent = currentConcreteSession == nil
+            || fallbackCommandMetadata?.sessionId == currentConcreteSession
+        let shouldUseFallbackCommand = currentCommand == nil
+            && fallbackCommand != nil
+            && fallbackMatchesCurrentProvider
+            && fallbackCommandMatchesCurrent
+        let shouldUseFallbackIdentity = shouldUseFallbackCommand
+            && currentConcreteSession == nil
+
+        let fallbackProvider: String?
+        let fallbackConcreteSession: String?
+        let fallbackPersistedSession: String?
+        if fallbackMatchesCurrentProvider {
+            fallbackProvider = shouldUseFallbackCommand
+                ? (fallbackCommandMetadata?.provider ?? fallback.provider)
+                : fallback.provider
+            fallbackConcreteSession = concreteSessionId(
+                fallback.sessionId,
+                source: fallback.sessionIdSource
+            )
+            fallbackPersistedSession = persistedSessionId(
+                fallback.sessionId,
+                source: fallback.sessionIdSource
+            )
+        } else {
+            fallbackProvider = nil
+            fallbackConcreteSession = nil
+            fallbackPersistedSession = nil
+        }
+        let fallbackCommandSession = shouldUseFallbackCommand ? fallbackCommandMetadata?.sessionId : nil
+        let fallbackSessionId = fallbackCommandSession
+            ?? fallbackConcreteSession
+            ?? fallbackPersistedSession
+        let fallbackSessionIdSource: AISessionIdentitySource? = {
+            if fallbackCommandSession != nil {
+                return .explicit
+            }
+            if fallbackConcreteSession != nil {
+                return fallback.sessionIdSource
+            }
+            if fallbackPersistedSession != nil {
+                return fallback.sessionIdSource
+            }
+            return nil
+        }()
+        let mergedSessionId = shouldUseFallbackIdentity
+            ? (fallbackSessionId ?? currentSessionId)
+            : (currentSessionId ?? fallbackSessionId)
+
+        return Fields(
+            command: currentCommand ?? (shouldUseFallbackCommand ? fallbackCommand : nil),
+            provider: shouldUseFallbackIdentity
+                ? (fallbackProvider ?? current.provider)
+                : (current.provider ?? fallbackProvider),
+            sessionId: mergedSessionId,
+            sessionIdSource: mergedSessionId == nil
+                ? nil
+                : (shouldUseFallbackIdentity
+                    ? (fallbackSessionIdSource ?? currentSessionIdSource)
+                    : (currentSessionIdSource ?? fallbackSessionIdSource))
+        )
+    }
+}
+
 extension SavedTerminalPaneState {
     var hasAIResumePayload: Bool {
         aiProvider != nil || aiSessionId != nil || aiResumeCommand != nil
     }
 
+    var aiResumeRestorationScore: Int {
+        SavedAIResumePayload.score(
+            SavedAIResumePayload.Fields(
+                command: aiResumeCommand,
+                provider: aiProvider,
+                sessionId: aiSessionId,
+                sessionIdSource: aiSessionIdSource
+            )
+        )
+    }
+
     func mergedAIResumePayload(with fallback: SavedTerminalPaneState?) -> SavedTerminalPaneState {
         guard let fallback else { return self }
+        let merged = SavedAIResumePayload.merged(
+            current: SavedAIResumePayload.Fields(
+                command: aiResumeCommand,
+                provider: aiProvider,
+                sessionId: aiSessionId,
+                sessionIdSource: aiSessionIdSource
+            ),
+            fallback: SavedAIResumePayload.Fields(
+                command: fallback.aiResumeCommand,
+                provider: fallback.aiProvider,
+                sessionId: fallback.aiSessionId,
+                sessionIdSource: fallback.aiSessionIdSource
+            )
+        )
         return SavedTerminalPaneState(
             paneID: paneID,
             directory: directory,
             scrollbackContent: scrollbackContent,
-            aiResumeCommand: aiResumeCommand ?? fallback.aiResumeCommand,
-            aiProvider: aiProvider ?? fallback.aiProvider,
-            aiSessionId: aiSessionId ?? fallback.aiSessionId,
-            aiSessionIdSource: aiSessionIdSource ?? fallback.aiSessionIdSource,
+            aiResumeCommand: merged.command,
+            aiProvider: merged.provider,
+            aiSessionId: merged.sessionId,
+            aiSessionIdSource: merged.sessionIdSource,
             lastOutputAt: lastOutputAt,
             lastInputAt: lastInputAt,
             knownRepoRoot: knownRepoRoot,
@@ -510,8 +679,34 @@ extension SavedTabState {
             || (paneStates?.contains(where: \.hasAIResumePayload) ?? false)
     }
 
+    var aiResumeRestorationScore: Int {
+        let topLevelScore = SavedAIResumePayload.score(
+            SavedAIResumePayload.Fields(
+                command: aiResumeCommand,
+                provider: aiProvider,
+                sessionId: aiSessionId,
+                sessionIdSource: aiSessionIdSource
+            )
+        )
+        return topLevelScore + (paneStates?.reduce(0) { $0 + $1.aiResumeRestorationScore } ?? 0)
+    }
+
     func mergedAIResumePayload(with fallback: SavedTabState?) -> SavedTabState {
         guard let fallback else { return self }
+        let merged = SavedAIResumePayload.merged(
+            current: SavedAIResumePayload.Fields(
+                command: aiResumeCommand,
+                provider: aiProvider,
+                sessionId: aiSessionId,
+                sessionIdSource: aiSessionIdSource
+            ),
+            fallback: SavedAIResumePayload.Fields(
+                command: fallback.aiResumeCommand,
+                provider: fallback.aiProvider,
+                sessionId: fallback.aiSessionId,
+                sessionIdSource: fallback.aiSessionIdSource
+            )
+        )
 
         let mergedPaneStates: [SavedTerminalPaneState]?
         if let paneStates {
@@ -534,10 +729,10 @@ extension SavedTabState {
             selectedIndex: selectedIndex,
             tokenOptOverride: tokenOptOverride,
             scrollbackContent: scrollbackContent,
-            aiResumeCommand: aiResumeCommand ?? fallback.aiResumeCommand,
-            aiProvider: aiProvider ?? fallback.aiProvider,
-            aiSessionId: aiSessionId ?? fallback.aiSessionId,
-            aiSessionIdSource: aiSessionIdSource ?? fallback.aiSessionIdSource,
+            aiResumeCommand: merged.command,
+            aiProvider: merged.provider,
+            aiSessionId: merged.sessionId,
+            aiSessionIdSource: merged.sessionIdSource,
             splitLayout: splitLayout,
             focusedPaneID: focusedPaneID,
             paneStates: mergedPaneStates,
