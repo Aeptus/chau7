@@ -704,7 +704,7 @@ extension OverlayTabsModel {
 
         // Always focus a terminal pane when switching tabs.
         if let terminalID = tab.splitController.focusedTerminalSessionID() {
-            tab.splitController.focusedPaneID = terminalID
+            tab.splitController.setFocusedPane(terminalID)
             if let focusedSession = tab.splitController.root.findSession(id: terminalID) {
                 focusedSession.focusTerminal(in: window)
                 return

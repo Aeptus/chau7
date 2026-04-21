@@ -141,10 +141,11 @@ struct OverlayTab: Identifiable, Equatable {
         splitController.primarySession
     }
 
-    /// Session shown in tab chrome, based on current split focus.
-    /// Keeps tab metadata and icons aligned with what the user currently sees.
+    /// Session shown in tab chrome, based on the current terminal presentation
+    /// pane. Non-terminal side panes keep the last focused terminal as the
+    /// presentation source so tab metadata and rendering do not drift.
     var displaySession: TerminalSessionModel? {
-        splitController.focusedSession ?? splitController.primarySession
+        splitController.presentationSession
     }
 
     var agentCount: Int {

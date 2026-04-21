@@ -613,6 +613,36 @@ final class SplitPaneControllerTests: XCTestCase {
         XCTAssertNil(controller.focusedSession, "Focused pane is an editor, not a terminal")
     }
 
+    func testPresentationSessionRemainsLastTerminalWhenEditorIsFocused() {
+        let primarySession = controller.primarySession
+
+        controller.splitWithTerminal(direction: .horizontal)
+        let secondaryPaneID = controller.focusedPaneID
+        let secondarySession = controller.focusedSession
+
+        controller.splitWithTextEditor(direction: .horizontal)
+
+        XCTAssertNotNil(controller.focusedEditor)
+        XCTAssertNil(controller.focusedSession, "Focused pane is an editor, not a terminal")
+        XCTAssertTrue(controller.presentationSession === secondarySession)
+        XCTAssertFalse(controller.presentationSession === primarySession)
+        XCTAssertEqual(controller.focusedTerminalSessionID(), secondaryPaneID)
+    }
+
+    func testPresentationSessionFallsBackWhenRememberedTerminalCloses() {
+        let primaryPaneID = controller.focusedPaneID
+        let primarySession = controller.primarySession
+
+        controller.splitWithTerminal(direction: .horizontal)
+        let secondaryPaneID = controller.focusedPaneID
+
+        controller.splitWithTextEditor(direction: .horizontal)
+        controller.closePane(id: secondaryPaneID)
+
+        XCTAssertTrue(controller.presentationSession === primarySession)
+        XCTAssertEqual(controller.focusedTerminalSessionID(), primaryPaneID)
+    }
+
     func testPrimarySession() {
         XCTAssertNotNil(controller.primarySession)
 

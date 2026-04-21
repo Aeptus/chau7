@@ -17,7 +17,7 @@ struct SplitPaneView: View {
             renderPhase: renderPhase,
             isInteractive: isInteractive,
             onFocus: { id in
-                controller.focusedPaneID = id
+                controller.setFocusedPane(id)
             },
             onUpdateRatio: { splitID, newRatio in
                 controller.updateRatio(splitID: splitID, newRatio: newRatio)

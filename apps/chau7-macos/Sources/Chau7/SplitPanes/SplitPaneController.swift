@@ -1317,8 +1317,20 @@ final class DiffViewerModel: Identifiable {
 /// Manages split pane layout for a tab
 @Observable
 final class SplitPaneController {
-    var root: SplitNode
-    var focusedPaneID: UUID
+    var root: SplitNode {
+        didSet {
+            reconcilePresentationTerminalAnchor()
+        }
+    }
+
+    var focusedPaneID: UUID {
+        didSet {
+            rememberFocusedTerminalIfNeeded()
+        }
+    }
+
+    @ObservationIgnored
+    private var presentationTerminalPaneID: UUID?
 
     @ObservationIgnored
     private weak var appModel: AppModel?
@@ -1383,6 +1395,7 @@ final class SplitPaneController {
         let id = UUID()
         self.root = .terminal(id: id, session: session)
         self.focusedPaneID = id
+        self.presentationTerminalPaneID = id
         configureTerminalSession(session)
     }
 
@@ -1392,6 +1405,7 @@ final class SplitPaneController {
         let id = UUID()
         self.root = .terminal(id: id, session: session)
         self.focusedPaneID = id
+        self.presentationTerminalPaneID = id
         configureTerminalSession(session)
     }
 
@@ -1405,6 +1419,11 @@ final class SplitPaneController {
         } else {
             self.focusedPaneID = root.allPaneIDs.first ?? UUID()
         }
+        self.presentationTerminalPaneID = Self.presentationTerminalID(
+            in: root,
+            focusedPaneID: self.focusedPaneID,
+            previousPresentationTerminalPaneID: nil
+        )
     }
 
     /// Returns all terminal sessions with their pane IDs.
@@ -1423,12 +1442,51 @@ final class SplitPaneController {
         focusedPaneID = paneID
     }
 
-    /// Returns the focused terminal pane ID when applicable; otherwise nil.
+    /// Returns the terminal pane that should receive shell focus. When a
+    /// non-terminal side pane is focused, this remains anchored to the most
+    /// recently focused terminal pane instead of drifting back to the primary
+    /// terminal.
     func focusedTerminalSessionID() -> UUID? {
         if root.paneType(for: focusedPaneID) == .terminal {
             return focusedPaneID
         }
-        return root.allTerminalIDs.first
+        return validPresentationTerminalPaneID() ?? root.allTerminalIDs.first
+    }
+
+    private static func presentationTerminalID(
+        in root: SplitNode,
+        focusedPaneID: UUID,
+        previousPresentationTerminalPaneID: UUID?
+    ) -> UUID? {
+        PresentationPaneFocusPolicy.selectedTerminalPaneID(
+            focusedPaneID: focusedPaneID,
+            terminalPaneIDs: root.allTerminalIDs,
+            previousPresentationPaneID: previousPresentationTerminalPaneID
+        )
+    }
+
+    private func validPresentationTerminalPaneID() -> UUID? {
+        guard let presentationTerminalPaneID,
+              root.findSession(id: presentationTerminalPaneID) != nil else {
+            return nil
+        }
+        return presentationTerminalPaneID
+    }
+
+    private func rememberFocusedTerminalIfNeeded() {
+        presentationTerminalPaneID = Self.presentationTerminalID(
+            in: root,
+            focusedPaneID: focusedPaneID,
+            previousPresentationTerminalPaneID: presentationTerminalPaneID
+        )
+    }
+
+    private func reconcilePresentationTerminalAnchor() {
+        presentationTerminalPaneID = Self.presentationTerminalID(
+            in: root,
+            focusedPaneID: focusedPaneID,
+            previousPresentationTerminalPaneID: presentationTerminalPaneID
+        )
     }
 
     // MARK: - Split Operations
@@ -1686,6 +1744,20 @@ final class SplitPaneController {
     /// Gets the focused session (if focused pane is a terminal)
     var focusedSession: TerminalSessionModel? {
         root.findSession(id: focusedPaneID)
+    }
+
+    /// Gets the terminal session that should drive tab chrome, snapshots, and
+    /// selected-tab render recovery. Non-terminal panes can own keyboard focus
+    /// without changing which shell pane is considered visually active.
+    var presentationSession: TerminalSessionModel? {
+        if let session = focusedSession {
+            return session
+        }
+        if let terminalPaneID = validPresentationTerminalPaneID() ?? root.allTerminalIDs.first,
+           let session = root.findSession(id: terminalPaneID) {
+            return session
+        }
+        return primarySession
     }
 
     /// Gets the focused editor (if focused pane is an editor)
