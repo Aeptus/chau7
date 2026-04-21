@@ -2968,6 +2968,10 @@ final class RustTerminalView: NSView {
     /// Stops the background drain service registration first.
     func startEventDrain() {
         BackgroundTerminalDrainService.shared.unregister(self)
+        if eventDrain?.isRunning == true {
+            needsGridSync = true
+            return
+        }
         if eventDrain == nil {
             eventDrain = TerminalEventDrain()
         }
