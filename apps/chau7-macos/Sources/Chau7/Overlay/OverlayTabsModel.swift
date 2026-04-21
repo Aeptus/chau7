@@ -179,15 +179,16 @@ struct OverlayTab: Identifiable, Equatable {
 
     var displayTitle: String {
         if isDashboard { return customTitle ?? "Overview" }
-        if let customTitle, !customTitle.isEmpty {
-            return customTitle
-        }
-        if let activeName = displaySession?.aiDisplayAppName, !activeName.isEmpty {
-            return activeName
-        }
-        if let devName = session?.devServer?.name,
-           devName.compare("Vite", options: .caseInsensitive) == .orderedSame {
-            return devName
+        let shellTitle = L("tab.shell", "Shell")
+        let resolved = TabTitleFormatter.resolvedTitle(
+            customTitle: customTitle,
+            aiDisplayAppName: displaySession?.aiDisplayAppName,
+            devServerName: session?.devServer?.name,
+            customTitleOnly: FeatureSettings.shared.customTitleOnly,
+            shellFallback: shellTitle
+        )
+        if resolved != shellTitle {
+            return resolved
         }
         // If no terminals exist, show "Editor" instead of "Shell"
         if splitController.root.allTerminalIDs.isEmpty {

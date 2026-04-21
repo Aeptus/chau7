@@ -307,21 +307,24 @@ struct CommandCenterSessionSummary: Identifiable, Equatable {
                     }
 
                     let appName = displayName(for: session)
-                    let trimmedCustomTitle = tab.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let shellTitle = L("tab.shell", "Shell")
+                    let editorTitle = L("tab.editor", "Editor")
+                    let resolvedTitle = TabTitleFormatter.resolvedTitle(
+                        customTitle: tab.customTitle,
+                        aiDisplayAppName: appName,
+                        devServerName: session.devServer?.name,
+                        customTitleOnly: FeatureSettings.shared.customTitleOnly,
+                        shellFallback: shellTitle
+                    ).trimmingCharacters(in: .whitespacesAndNewlines)
                     let title: String
-                    if let trimmedCustomTitle, !trimmedCustomTitle.isEmpty {
-                        title = trimmedCustomTitle
+                    if !resolvedTitle.isEmpty,
+                       resolvedTitle.caseInsensitiveCompare(shellTitle) != .orderedSame,
+                       resolvedTitle.caseInsensitiveCompare(editorTitle) != .orderedSame,
+                       resolvedTitle.caseInsensitiveCompare(appName) != .orderedSame {
+                        title = resolvedTitle
                     } else {
-                        let displayTitle = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !displayTitle.isEmpty,
-                           displayTitle.caseInsensitiveCompare("Shell") != .orderedSame,
-                           displayTitle.caseInsensitiveCompare("Editor") != .orderedSame,
-                           displayTitle.caseInsensitiveCompare(appName) != .orderedSame {
-                            title = displayTitle
-                        } else {
-                            let directoryName = URL(fileURLWithPath: session.currentDirectory).lastPathComponent
-                            title = directoryName.isEmpty ? appName : directoryName
-                        }
+                        let directoryName = URL(fileURLWithPath: session.currentDirectory).lastPathComponent
+                        title = directoryName.isEmpty ? appName : directoryName
                     }
 
                     let directory = session.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)

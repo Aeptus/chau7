@@ -63,7 +63,8 @@ struct IdleTabsChip: View {
     }
 
     private func idleTabRow(tab: OverlayTab) -> some View {
-        let title = tab.customTitle ?? tab.displaySession?.activeAppName ?? "Tab"
+        let resolvedTitle = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = resolvedTitle.isEmpty ? "Tab" : resolvedTitle
         let idle = idleDuration(tab)
 
         return Button {

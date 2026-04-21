@@ -427,16 +427,18 @@ struct Chau7App: App {
                 Menu(L("menu.selectTab", "Select Tab")) {
                     // Tabs 1-9 with keyboard shortcuts
                     ForEach(Array(overlayModel.tabs.prefix(9).enumerated()), id: \.element.id) { index, tab in
-                        let name = tab.customTitle ?? tab.displaySession?.activeAppName ?? "Tab \(index + 1)"
-                        Button(name) { appDelegate.selectTab(number: index + 1) }
+                        let name = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let fallbackName = name.isEmpty ? "Tab \(index + 1)" : name
+                        Button(fallbackName) { appDelegate.selectTab(number: index + 1) }
                             .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
                     }
                     // Tabs 10+ without shortcuts
                     if overlayModel.tabs.count > 9 {
                         Divider()
                         ForEach(Array(overlayModel.tabs.dropFirst(9).enumerated()), id: \.element.id) { index, tab in
-                            let name = tab.customTitle ?? tab.displaySession?.activeAppName ?? "Tab \(index + 10)"
-                            Button(name) { appDelegate.selectTab(number: index + 10) }
+                            let name = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let fallbackName = name.isEmpty ? "Tab \(index + 10)" : name
+                            Button(fallbackName) { appDelegate.selectTab(number: index + 10) }
                         }
                     }
                 }

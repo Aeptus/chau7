@@ -1492,15 +1492,6 @@ struct Chau7OverlayView: View {
             }
     }
 
-    /// Computes the slide direction based on tab indices
-    private func slideDirection(for tab: OverlayTab, isSelected: Bool) -> CGFloat {
-        guard isSelected else { return 0 }
-        let currentIndex = overlayModel.tabs.firstIndex(where: { $0.id == tab.id }) ?? 0
-        let previousIndex = overlayModel.previousTabIndex
-        // Slide from right if moving to a tab on the right, from left otherwise
-        return currentIndex > previousIndex ? 1 : -1
-    }
-
     private var terminalStack: some View {
         ZStack(alignment: .top) {
 
@@ -1509,8 +1500,7 @@ struct Chau7OverlayView: View {
                     .zIndex(3)
             }
 
-            // MARK: - Tab Switch Optimization: Lazy Tab Loading + Directional Motion
-
+            // MARK: - Tab Switch Optimization: Lazy Tab Loading
 
             // Keep only the selected tab live by default. A just-unselected tab
             // stays attached for one short handoff window so the renderer
@@ -1522,7 +1512,6 @@ struct Chau7OverlayView: View {
                 let keepLiveHierarchy = overlayModel.shouldKeepTabInLiveHierarchy(tab: tab, index: index)
                 let renderPhase = overlayModel.renderPhase(for: tab)
                 let isInteractive = overlayModel.isInteractive(tab: tab)
-                let direction = slideDirection(for: tab, isSelected: isSelected)
 
                 if keepLiveHierarchy {
                     SplitPaneView(controller: tab.splitController, renderPhase: renderPhase, isInteractive: isInteractive)
@@ -2165,17 +2154,13 @@ struct TabSessionContent: View {
     }
 
     private var resolvedTitle: String {
-        if let customTitle, !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return customTitle
-        }
-        if let activeName = session.aiDisplayAppName, !activeName.isEmpty {
-            return activeName
-        }
-        if let devName = session.devServer?.name,
-           devName.compare("Vite", options: .caseInsensitive) == .orderedSame {
-            return devName
-        }
-        return L("tab.shell", "Shell")
+        TabTitleFormatter.resolvedTitle(
+            customTitle: customTitle,
+            aiDisplayAppName: session.aiDisplayAppName,
+            devServerName: session.devServer?.name,
+            customTitleOnly: isMinimalDisplay,
+            shellFallback: L("tab.shell", "Shell")
+        )
     }
 
     var body: some View {
