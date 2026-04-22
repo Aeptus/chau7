@@ -276,110 +276,40 @@ extension OverlayTabsModel {
     }
 
     static func captureScrollback(from session: TerminalSessionModel?, maxLines: Int) -> String? {
-        guard maxLines > 0, let session else {
+        guard let session else {
             return nil
         }
 
-        let data = session.captureStyledRemoteSnapshot() ?? session.captureRemoteSnapshot()
-        guard let data, !data.isEmpty else {
-            return nil
-        }
-
-        let text = String(decoding: data, as: UTF8.self)
-        let containsANSI = text.contains("\u{1b}")
-        // Strip trailing whitespace from each line — the terminal grid pads rows
-        // to the full column width with spaces. Without this, injected scrollback
-        // has 200+ trailing spaces per line that push content to wrong positions.
-        var lines = text.components(separatedBy: "\n").map {
-            containsANSI ? $0 : $0.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
-        }
-
-        // Strip lines that are restore command artifacts — previous launches may
-        // have echoed cd/stty commands that were captured in the scrollback.
-        lines = lines.filter { !Self.isRestoreArtifactLine(Self.visibleTextForRestoreFiltering($0)) }
-
-        // Strip trailing empty lines — the terminal buffer includes blank lines below
-        // the cursor, which can otherwise pollute restore output.
-        while let last = lines.last,
-              Self.visibleTextForRestoreFiltering(last).isEmpty {
-            lines.removeLast()
-        }
-
-        if lines.isEmpty {
-            return nil
-        }
-
-        if lines.count > maxLines {
-            lines = Array(lines.suffix(maxLines))
-        }
-
-        var restored = lines.joined(separator: "\n")
-        if Self.visibleTextForRestoreFiltering(restored).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return nil
-        }
-
-        // Cap total size to avoid backup/UserDefaults bloat. ANSI styling can
-        // add enough bytes that a fixed line count is not a fixed payload size.
-        if restored.utf8.count > Self.maxPersistedScrollbackBytes {
-            guard let cappedLines = Self.scrollbackLinesWithinByteLimit(
-                lines,
-                maxBytes: Self.maxPersistedScrollbackBytes
-            ) else {
-                return nil
-            }
-            restored = cappedLines.joined(separator: "\n")
-        }
-
-        return restored
+        return captureScrollback(
+            maxLines: maxLines,
+            styledData: { session.captureStyledRemoteSnapshot() },
+            fallbackData: { session.captureRemoteSnapshot() }
+        )
     }
 
-    static let maxPersistedScrollbackBytes = 500_000
+    static func captureScrollback(
+        maxLines: Int,
+        styledData: () -> Data?,
+        fallbackData: () -> Data?
+    ) -> String? {
+        ScrollbackRestoreFilter.captureScrollback(
+            maxLines: maxLines,
+            styledData: styledData,
+            fallbackData: fallbackData
+        )
+    }
+
+    static let maxPersistedScrollbackBytes = ScrollbackRestoreFilter.maxPersistedScrollbackBytes
 
     static func scrollbackLinesWithinByteLimit(_ lines: [String], maxBytes: Int) -> [String]? {
-        guard maxBytes > 0 else { return nil }
-        var capped = lines
-        var joined = capped.joined(separator: "\n")
-        while joined.utf8.count > maxBytes {
-            guard capped.count > 1 else {
-                return nil
-            }
-            capped = Array(capped.suffix(max(1, capped.count / 2)))
-            joined = capped.joined(separator: "\n")
-        }
-        return capped
-    }
-
-    /// Returns true if a scrollback line looks like a restore command artifact.
-    /// Catches all historical restore formats:
-    /// - stty -echo && cat ... && cd ... && clear && stty echo (v1)
-    /// - cd '/path' && clear (v2)
-    /// - cd '/path' (v3 — bare cd echo)
-    /// - stty -echo; cd '/path'; stty echo (v4 — current)
-    private static func isRestoreArtifactLine(_ line: String) -> Bool {
-        let stripped = line.trimmingCharacters(in: .whitespaces)
-        // v1: full stty chain
-        if stripped.contains("stty -echo"), stripped.contains("stty echo") { return true }
-        // v2: cd + clear
-        if stripped.contains(" cd '"), stripped.hasSuffix("&& clear") { return true }
-        // v3/v4: shell echo of restore cd — double space after prompt marker
-        // from the leading space used for HIST_IGNORE_SPACE
-        if stripped.contains("%  cd '/"), stripped.hasSuffix("'") { return true }
-        // v4 with stty wrapper visible (shouldn't happen but defensive)
-        if stripped.contains("stty -echo; cd '"), stripped.contains("; stty echo") { return true }
-        return false
-    }
-
-    private static func visibleTextForRestoreFiltering(_ text: String) -> String {
-        EscapeSequenceSanitizer.containsEscapeSequences(text) ? EscapeSequenceSanitizer.sanitize(text) : text
+        ScrollbackRestoreFilter.scrollbackLinesWithinByteLimit(lines, maxBytes: maxBytes)
     }
 
     /// Strips restore command artifacts from scrollback content.
     /// Used on both save (captureScrollback) and inject (restore) paths to handle
     /// scrollback saved by older binaries that didn't have the save-side filter.
     static func stripRestoreArtifacts(from content: String) -> String {
-        content.components(separatedBy: "\n")
-            .filter { !isRestoreArtifactLine(visibleTextForRestoreFiltering($0)) }
-            .joined(separator: "\n")
+        ScrollbackRestoreFilter.stripRestoreArtifacts(from: content)
     }
 
     static func shellSafeSingleQuote(_ value: String) -> String {
