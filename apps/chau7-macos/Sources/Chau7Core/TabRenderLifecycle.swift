@@ -93,10 +93,10 @@ public enum TabRenderLifecyclePolicy {
 
     public static func phase(for input: TabRenderLifecycleInput) -> TabRenderPhase {
         if input.isSelectedTab {
-            if input.isWindowVisibleForRendering {
-                return .active
+            guard input.isWindowVisibleForRendering else {
+                return .warm
             }
-            return .warm
+            return input.isInputPriorityWindow ? .active : .passiveVisible
         }
         // Non-selected tabs: warm (not hidden) so views stay unhidden in the
         // hierarchy but don't drive active rendering. The shared background

@@ -2,7 +2,7 @@ import XCTest
 @testable import Chau7Core
 
 final class TabRenderLifecyclePolicyTests: XCTestCase {
-    func testSelectedTabIsActiveInteractiveAndLive() {
+    func testSelectedInputPriorityTabIsActiveInteractiveAndLive() {
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: true,
@@ -22,6 +22,28 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertEqual(decision.phase, .active)
         XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertTrue(decision.isInteractive)
+    }
+
+    func testSelectedVisibleBackgroundWindowIsPassiveVisible() {
+        let decision = TabRenderLifecyclePolicy.decide(
+            TabRenderLifecycleInput(
+                isSelectedTab: true,
+                isInputPriorityWindow: false,
+                isWindowVisibleForRendering: true,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: true,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true
+            )
+        )
+
+        XCTAssertEqual(decision.phase, .passiveVisible)
+        XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(decision.isInteractive)
     }
 
     func testNonSelectedTabIsWarmAndLiveButNotInteractive() {
@@ -81,6 +103,7 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertTrue(selected.isInteractive)
         XCTAssertFalse(notSelected.isInteractive)
         XCTAssertFalse(selectedNoWindow.isInteractive)
+        XCTAssertEqual(selectedNoWindow.phase, .passiveVisible)
     }
 
     func testActivePhaseProperties() {

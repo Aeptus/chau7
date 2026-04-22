@@ -1,0 +1,173 @@
+import XCTest
+import Chau7Core
+
+final class TabRenderLifecycleTests: XCTestCase {
+
+    // MARK: - TabRenderPhase
+
+    func testHiddenIsOnlyPhaseThatStopsCurrentState() {
+        XCTAssertTrue(TabRenderPhase.active.keepsTerminalStateCurrent)
+        XCTAssertTrue(TabRenderPhase.passiveVisible.keepsTerminalStateCurrent)
+        XCTAssertTrue(TabRenderPhase.warm.keepsTerminalStateCurrent)
+        XCTAssertFalse(TabRenderPhase.hidden.keepsTerminalStateCurrent)
+    }
+
+    func testOnlyActivePhaseAllowsLivePresentation() {
+        XCTAssertTrue(TabRenderPhase.active.allowsLivePresentation)
+        XCTAssertFalse(TabRenderPhase.passiveVisible.allowsLivePresentation)
+        XCTAssertFalse(TabRenderPhase.warm.allowsLivePresentation)
+        XCTAssertFalse(TabRenderPhase.hidden.allowsLivePresentation)
+    }
+
+    func testKeepsVisibleSurfaceOnlyForActiveAndPassiveVisible() {
+        XCTAssertTrue(TabRenderPhase.active.keepsVisibleSurface)
+        XCTAssertTrue(TabRenderPhase.passiveVisible.keepsVisibleSurface)
+        XCTAssertFalse(TabRenderPhase.warm.keepsVisibleSurface)
+        XCTAssertFalse(TabRenderPhase.hidden.keepsVisibleSurface)
+    }
+
+    // MARK: - phase(for:)
+
+    func testSelectedTabInInputPriorityVisibleWindowIsActive() {
+        let input = makeInput(
+            isSelectedTab: true,
+            isInputPriorityWindow: true,
+            isWindowVisibleForRendering: true
+        )
+        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: input), .active)
+    }
+
+    func testSelectedTabInVisibleBackgroundWindowIsPassiveVisible() {
+        let input = makeInput(
+            isSelectedTab: true,
+            isInputPriorityWindow: false,
+            isWindowVisibleForRendering: true
+        )
+        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: input), .passiveVisible)
+    }
+
+    func testSelectedTabInInvisibleWindowIsWarm() {
+        let input = makeInput(isSelectedTab: true, isWindowVisibleForRendering: false)
+        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: input), .warm)
+    }
+
+    func testUnselectedTabIsAlwaysWarm() {
+        let input = makeInput(isSelectedTab: false, isWindowVisibleForRendering: true)
+        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: input), .warm)
+
+        let invisibleInput = makeInput(isSelectedTab: false, isWindowVisibleForRendering: false)
+        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: invisibleInput), .warm)
+    }
+
+    // MARK: - isInteractive(for:)
+
+    func testInteractiveRequiresSelectedAndPriorityWindow() {
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.isInteractive(
+                for: makeInput(isSelectedTab: true, isInputPriorityWindow: true)
+            )
+        )
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.isInteractive(
+                for: makeInput(isSelectedTab: false, isInputPriorityWindow: true)
+            )
+        )
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.isInteractive(
+                for: makeInput(isSelectedTab: true, isInputPriorityWindow: false)
+            )
+        )
+    }
+
+    // MARK: - requiresAuthoritativeReveal
+
+    func testNoRevealNeededWithoutPreviousPhase() {
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
+                previousPhase: nil,
+                nextPhase: .active
+            )
+        )
+    }
+
+    func testRevealRequiredWhenSurfaceWasInvisibleAndBecomesVisible() {
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
+                previousPhase: .warm,
+                nextPhase: .active
+            )
+        )
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
+                previousPhase: .hidden,
+                nextPhase: .passiveVisible
+            )
+        )
+    }
+
+    func testRevealRequiredWhenMovingIntoActiveFromNonActive() {
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
+                previousPhase: .passiveVisible,
+                nextPhase: .active
+            )
+        )
+    }
+
+    func testNoRevealWhenBothPhasesKeepSurfaceAndStayOutsideActive() {
+        // active -> active: already active, no new reveal needed
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
+                previousPhase: .active,
+                nextPhase: .active
+            )
+        )
+        // passiveVisible -> passiveVisible: surface already retained, not going active
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
+                previousPhase: .passiveVisible,
+                nextPhase: .passiveVisible
+            )
+        )
+    }
+
+    func testNoRevealWhenMovingFromActiveToDormantSurface() {
+        // Leaving active doesn't require an incoming reveal.
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
+                previousPhase: .active,
+                nextPhase: .warm
+            )
+        )
+    }
+
+    // MARK: - helpers
+
+    private func makeInput(
+        isSelectedTab: Bool = false,
+        isInputPriorityWindow: Bool = false,
+        isWindowVisibleForRendering: Bool = true,
+        isPreviousLiveTab: Bool = false,
+        isPrewarming: Bool = false,
+        hasBackgroundActivity: Bool = false,
+        isRenderSuspensionEnabled: Bool = false,
+        isStartupRestoreActive: Bool = false,
+        hasPendingRestoreBootstrap: Bool = false,
+        isMCPControlled: Bool = false,
+        hasAttachedTerminalView: Bool = true
+    ) -> TabRenderLifecycleInput {
+        TabRenderLifecycleInput(
+            isSelectedTab: isSelectedTab,
+            isInputPriorityWindow: isInputPriorityWindow,
+            isWindowVisibleForRendering: isWindowVisibleForRendering,
+            isPreviousLiveTab: isPreviousLiveTab,
+            isPrewarming: isPrewarming,
+            hasBackgroundActivity: hasBackgroundActivity,
+            isRenderSuspensionEnabled: isRenderSuspensionEnabled,
+            isStartupRestoreActive: isStartupRestoreActive,
+            hasPendingRestoreBootstrap: hasPendingRestoreBootstrap,
+            isMCPControlled: isMCPControlled,
+            hasAttachedTerminalView: hasAttachedTerminalView
+        )
+    }
+}

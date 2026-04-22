@@ -49,12 +49,13 @@ public enum VisibleTerminalPollingPolicy {
         guard context.allowsLivePresentation,
               !context.isHidden,
               context.hasVisibleWindow,
-              !context.isWindowMiniaturized else {
+              !context.isWindowMiniaturized,
+              context.isInteractive else {
             return .backgroundDrain
         }
-        // The selected tab in any visible window gets event-driven polling —
-        // not just the focused window. On multi-monitor setups both windows
-        // are on screen and their selected tabs should update smoothly.
+        // Only the input-priority selected tab gets event-driven polling.
+        // Visible background windows use the shared drain path to avoid
+        // multiplying full-grid sync work across windows.
         return .eventDrain
     }
 }
