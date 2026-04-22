@@ -79,6 +79,44 @@ final class TabRenderLifecycleTests: XCTestCase {
         )
     }
 
+    func testInputPriorityRequiresKeyWindowOutsideStartupRestore() {
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.isInputPriorityWindow(
+                hasWindow: true,
+                isKeyWindow: true,
+                isMainWindow: false,
+                isStartupRestoreActive: false
+            )
+        )
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.isInputPriorityWindow(
+                hasWindow: true,
+                isKeyWindow: false,
+                isMainWindow: true,
+                isStartupRestoreActive: false
+            )
+        )
+    }
+
+    func testInputPriorityDefaultsToReadyDuringStartupOrBeforeWindowAttachment() {
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.isInputPriorityWindow(
+                hasWindow: true,
+                isKeyWindow: false,
+                isMainWindow: false,
+                isStartupRestoreActive: true
+            )
+        )
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.isInputPriorityWindow(
+                hasWindow: false,
+                isKeyWindow: false,
+                isMainWindow: false,
+                isStartupRestoreActive: false
+            )
+        )
+    }
+
     // MARK: - requiresAuthoritativeReveal
 
     func testNoRevealNeededWithoutPreviousPhase() {

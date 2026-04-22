@@ -2967,8 +2967,11 @@ final class OverlayTabsModel {
     ) {
         guard let rustView = session.existingRustTerminalView else { return }
 
-        rustView.isHidden = !selectedDecision.phase.keepsVisibleSurface
-        rustView.setEventMonitoringEnabled(selectedDecision.isInteractive)
+        rustView.applyRenderPhase(
+            selectedDecision.phase,
+            isInteractive: selectedDecision.isInteractive,
+            reason: "selectedTabInPlaceRefresh"
+        )
         rustView.needsDisplay = true
 
         if let container = rustView.superview as? RustTerminalContainerView {
@@ -2995,7 +2998,7 @@ final class OverlayTabsModel {
             }
         }
 
-        if selectedDecision.phase.keepsVisibleSurface {
+        if selectedDecision.phase.allowsLivePresentation {
             rustView.needsGridSync = true
             rustView.pollAndSync()
         }
@@ -3056,8 +3059,11 @@ final class OverlayTabsModel {
                 selectedDecision: selectedDecision
             )
         case .authoritativeReveal(let shouldAwaitVisibleFrame):
-            rustView.isHidden = !selectedDecision.phase.keepsVisibleSurface
-            rustView.setEventMonitoringEnabled(selectedDecision.isInteractive)
+            rustView.applyRenderPhase(
+                selectedDecision.phase,
+                isInteractive: selectedDecision.isInteractive,
+                reason: "authoritativeReveal"
+            )
             rustView.needsDisplay = true
             if let container = rustView.superview as? RustTerminalContainerView {
                 container.isHidden = !selectedDecision.phase.keepsVisibleSurface
@@ -3067,7 +3073,7 @@ final class OverlayTabsModel {
                 coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
                 coordinator.forceAuthoritativeRefresh(reason: reason)
             }
-            if selectedDecision.phase.keepsVisibleSurface {
+            if selectedDecision.phase.allowsLivePresentation {
                 rustView.needsGridSync = true
                 rustView.performAuthoritativeRevealPass(reason: reason)
             }
@@ -3621,12 +3627,21 @@ final class OverlayTabsModel {
 
     private func renderLifecycleSnapshot() -> TabRenderLifecycleController.Snapshot {
         let isInputPriorityWindow: Bool
-        if StartupRestoreCoordinator.shared.isActive {
-            isInputPriorityWindow = true
-        } else if let overlayWindow {
-            isInputPriorityWindow = overlayWindow.isKeyWindow || overlayWindow.isMainWindow
+        let isStartupRestoreActive = StartupRestoreCoordinator.shared.isActive
+        if let overlayWindow {
+            isInputPriorityWindow = TabRenderLifecyclePolicy.isInputPriorityWindow(
+                hasWindow: true,
+                isKeyWindow: overlayWindow.isKeyWindow,
+                isMainWindow: overlayWindow.isMainWindow,
+                isStartupRestoreActive: isStartupRestoreActive
+            )
         } else {
-            isInputPriorityWindow = true
+            isInputPriorityWindow = TabRenderLifecyclePolicy.isInputPriorityWindow(
+                hasWindow: false,
+                isKeyWindow: false,
+                isMainWindow: false,
+                isStartupRestoreActive: isStartupRestoreActive
+            )
         }
         return TabRenderLifecycleController.Snapshot(
             selectedTabID: selectedTabID,
@@ -3636,7 +3651,7 @@ final class OverlayTabsModel {
             prewarmingTabIDs: prewarmingTabIDs,
             restoreBootstrapTabIDs: restoreBootstrapTabIDs,
             isRenderSuspensionEnabled: isRenderSuspensionEnabled,
-            isStartupRestoreActive: StartupRestoreCoordinator.shared.isActive
+            isStartupRestoreActive: isStartupRestoreActive
         )
     }
 

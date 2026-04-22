@@ -108,6 +108,21 @@ public enum TabRenderLifecyclePolicy {
         input.isSelectedTab && input.isInputPriorityWindow
     }
 
+    public static func isInputPriorityWindow(
+        hasWindow: Bool,
+        isKeyWindow: Bool,
+        isMainWindow _: Bool,
+        isStartupRestoreActive: Bool
+    ) -> Bool {
+        if isStartupRestoreActive {
+            return true
+        }
+        guard hasWindow else {
+            return true
+        }
+        return isKeyWindow
+    }
+
     public static func keepsLiveHierarchy(for input: TabRenderLifecycleInput) -> Bool {
         true
     }
