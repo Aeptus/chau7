@@ -1426,8 +1426,8 @@ private final class OverlayBlurView: NSVisualEffectView {
            multiState.windows.count > 1 {
             restoredWindows = Array(multiState.windows.dropFirst())
             restoreSource = "user defaults"
-            // Clear the key so we don't restore stale windows on crash recovery
-            UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+            // Keep this until the next real save replaces it. Clearing during
+            // launch removes the strongest recovery copy for additional windows.
         } else if let backupWindows = OverlayTabsModel.restoreAdditionalWindowStatesFromBackups() {
             let window0TabIDs = Set(overlayHosts.first?.model.tabs.map(\.id) ?? [])
             let candidates = backupWindows.map { windowStates in

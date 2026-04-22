@@ -183,6 +183,7 @@ Window Management,Fullscreen Mode,Native macOS fullscreen with configurable tool
 Window Management,Minimal Mode,Strip all chrome — maximum terminal space with zero distraction,Shipped,No
 Window Management,Window Position Memory,Windows reopen exactly where you left them per workspace,Shipped,No
 Window Management,Session Restoration,All windows and tabs restored on relaunch,Shipped,No
+Window Management,Restoration Backup Isolation,"Production tab-state backups stay in the stable backup directory while dev and unidentified bundles write to bundle-scoped backup directories; launch retains multi-window recovery state until the next save so additional windows survive early exits",Shipped,Yes
 Window Management,Menu Bar Only Mode,Run as a menu bar app — no Dock icon needed,Shipped,No
 SSH, Profiles & Remote,Remote Background Approval Mode,"When Chau7 Remote backgrounds, the session briefly stays alive in approvals-only mode instead of streaming full terminal output",Shipped,Yes
 SSH, Profiles & Remote,Remote Push Approval Delivery,"Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app",Shipped,Yes

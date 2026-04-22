@@ -22,8 +22,9 @@ final class OverlayTabsModelTests: XCTestCase {
     }
 
     private func tabStateBackupRootURL() -> URL {
-        RuntimeIsolation.appSupportDirectory(named: "Chau7")
-            .appendingPathComponent("TabStateBackups", isDirectory: true)
+        OverlayTabsModel.tabStateBackupRootURL()
+            ?? RuntimeIsolation.appSupportDirectory(named: "Chau7")
+                .appendingPathComponent("TabStateBackups", isDirectory: true)
     }
 
     private func removePersistedWindowStateArtifacts() {

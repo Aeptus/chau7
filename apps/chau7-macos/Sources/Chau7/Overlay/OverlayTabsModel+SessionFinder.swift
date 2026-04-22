@@ -718,8 +718,11 @@ extension OverlayTabsModel {
     }
 
     static func tabStateBackupRootURL() -> URL? {
-        RuntimeIsolation.appSupportDirectory(named: "Chau7")
-            .appendingPathComponent("TabStateBackups", isDirectory: true)
+        let backupDirectory = TabStateBackupNamespace.directoryName(
+            bundleIdentifier: Bundle.main.bundleIdentifier
+        )
+        return RuntimeIsolation.appSupportDirectory(named: "Chau7")
+            .appendingPathComponent(backupDirectory, isDirectory: true)
     }
 
     static func ensureTabStateBackupDirectories() throws -> (root: URL, archive: URL) {

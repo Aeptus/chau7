@@ -305,6 +305,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Multiple windows (`Cmd+N`), adjustable opacity, native fullscreen.
 - Minimal mode — strip all chrome for maximum terminal space.
 - Window position memory per workspace, session restoration on relaunch.
+- Session restoration keeps production tab-state backups isolated from dev/test bundle writes and retains the multi-window recovery payload until the next save replaces it.
 - Menu bar only mode — no Dock icon.
 
 ## Productivity
