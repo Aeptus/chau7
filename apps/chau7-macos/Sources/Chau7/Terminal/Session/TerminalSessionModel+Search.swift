@@ -49,6 +49,15 @@ extension TerminalSessionModel {
         return nil
     }
 
+    func captureStyledRemoteSnapshot() -> Data? {
+        guard let view = activeTerminalView,
+              let data = view.getStyledBufferAsData(),
+              !data.isEmpty else {
+            return nil
+        }
+        return data
+    }
+
     func captureRemoteGridSnapshot() -> Data? {
         activeTerminalView?.captureRemoteGridSnapshotPayload()
     }

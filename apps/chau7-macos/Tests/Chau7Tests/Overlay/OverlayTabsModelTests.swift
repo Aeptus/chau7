@@ -3248,5 +3248,43 @@ final class OverlayTabsModelTests: XCTestCase {
 
         XCTAssertNil(OverlayTabsModel.readFirstLine(from: data, maxBytes: 16000))
     }
+
+    func testStripRestoreArtifactsPreservesAnsiStyledContent() {
+        let redLine = "\u{1B}[31mred output\u{1B}[0m"
+        let greenLine = "\u{1B}[32mgreen output\u{1B}[0m"
+        let artifact = "\u{1B}[2m stty -echo && cat '/tmp/chau7_restore.txt' && clear && stty echo\u{1B}[0m"
+
+        let stripped = OverlayTabsModel.stripRestoreArtifacts(
+            from: [redLine, artifact, greenLine].joined(separator: "\n")
+        )
+
+        XCTAssertTrue(stripped.contains(redLine))
+        XCTAssertTrue(stripped.contains(greenLine))
+        XCTAssertTrue(stripped.contains("\u{1B}[31m"))
+        XCTAssertTrue(stripped.contains("\u{1B}[32m"))
+        XCTAssertFalse(stripped.contains("stty -echo"))
+        XCTAssertFalse(stripped.contains("chau7_restore.txt"))
+    }
+
+    func testScrollbackLinesWithinByteLimitDropsOldestLines() throws {
+        let lines = (0 ..< 8).map { "line-\($0)-" + String(repeating: "x", count: 24) }
+
+        let capped = try XCTUnwrap(
+            OverlayTabsModel.scrollbackLinesWithinByteLimit(lines, maxBytes: 120)
+        )
+        let payload = capped.joined(separator: "\n")
+
+        XCTAssertLessThanOrEqual(payload.utf8.count, 120)
+        XCTAssertEqual(capped.last, lines.last)
+        XCTAssertFalse(capped.contains(lines.first!))
+    }
+
+    func testScrollbackLinesWithinByteLimitRejectsSingleOversizedLine() {
+        let oversized = String(repeating: "x", count: 128)
+
+        XCTAssertNil(
+            OverlayTabsModel.scrollbackLinesWithinByteLimit([oversized], maxBytes: 64)
+        )
+    }
 }
 #endif

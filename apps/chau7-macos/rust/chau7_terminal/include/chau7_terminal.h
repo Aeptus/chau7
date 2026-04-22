@@ -703,6 +703,15 @@ void chau7_terminal_free_debug_state(struct DebugState *state);
 char *chau7_terminal_get_full_buffer_text(struct Chau7Terminal *term);
 
 /*
+ Get the full buffer text (visible + scrollback) with ANSI SGR styling.
+
+ # Safety
+ - `term` must be a valid pointer
+ - The returned pointer must be freed with `chau7_terminal_free_string`
+ */
+char *chau7_terminal_get_full_buffer_ansi_text(struct Chau7Terminal *term);
+
+/*
  Reset performance metrics
 
  # Safety

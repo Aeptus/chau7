@@ -24,7 +24,9 @@ use crate::metrics::{AdaptivePoller, DirtyRowTracker};
 use crate::pool::get_cell_buffer_pool;
 use crate::pty::{Chau7EventListener, PtyHandle, PtyMessage, SizeInfo};
 use crate::types::{
-    CellData, DebugState, GridSnapshot, PerformanceMetrics, cell_flags_to_u8, underline_style,
+    CELL_FLAG_BOLD, CELL_FLAG_DIM, CELL_FLAG_HIDDEN, CELL_FLAG_INVERSE, CELL_FLAG_ITALIC,
+    CELL_FLAG_STRIKETHROUGH, CELL_FLAG_UNDERLINE, CellData, DebugState, GridSnapshot,
+    PerformanceMetrics, cell_flags_to_u8, underline_style,
 };
 
 /// Static counter for terminal IDs (for logging)
@@ -32,6 +34,13 @@ static TERMINAL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Type alias for the clipboard load formatter function.
 type ClipboardLoadFormatter = Arc<dyn Fn(&str) -> String + Sync + Send>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AnsiCellStyle {
+    fg: (u8, u8, u8),
+    bg: (u8, u8, u8),
+    flags: u8,
+}
 
 // ============================================================================
 // Error types
@@ -399,7 +408,10 @@ impl Chau7Terminal {
                 }
             }
             None => {
-                error!("[terminal-{}] MasterPty::as_raw_fd() returned None — no reader pool", id);
+                error!(
+                    "[terminal-{}] MasterPty::as_raw_fd() returned None — no reader pool",
+                    id
+                );
                 -1
             }
         };
@@ -428,9 +440,15 @@ impl Chau7Terminal {
                 pty_tx,
                 running.clone(),
             );
-            info!("[terminal-{}] Registered with shared PTY reader pool (fd={})", id, reader_fd);
+            info!(
+                "[terminal-{}] Registered with shared PTY reader pool (fd={})",
+                id, reader_fd
+            );
         } else {
-            warn!("[terminal-{}] No reader fd — PTY output will not be monitored", id);
+            warn!(
+                "[terminal-{}] No reader fd — PTY output will not be monitored",
+                id
+            );
         }
 
         // Create the PTY handle
@@ -455,7 +473,11 @@ impl Chau7Terminal {
             shell_pid: AtomicU64::new(shell_pid as u64),
             pty_rx: Some(pty_rx),
             running,
-            reader_pool_fd: if reader_fd >= 0 { Some(reader_fd) } else { None },
+            reader_pool_fd: if reader_fd >= 0 {
+                Some(reader_fd)
+            } else {
+                None
+            },
             event_rx,
             grid_dirty: AtomicBool::new(true),
             cols,
@@ -1108,33 +1130,7 @@ impl Chau7Terminal {
 
                     let character = cell.c as u32;
 
-                    let is_bold = cell.flags.contains(CellFlags::BOLD);
-
-                    // Bold brightening: when a cell is bold and has a standard
-                    // ANSI foreground color (indices 0-7), promote it to the
-                    // corresponding bright variant (8-15).  This matches the
-                    // traditional xterm convention used by most terminals.
-                    // Without this, CLI tools that rely on
-                    // bold+color (e.g. Claude Code, Codex) appear too dim.
-                    let fg_color = if is_bold {
-                        match cell.fg {
-                            AnsiColor::Indexed(idx) if idx < 8 => AnsiColor::Indexed(idx + 8),
-                            AnsiColor::Named(named) => match named {
-                                NamedColor::Black => AnsiColor::Named(NamedColor::BrightBlack),
-                                NamedColor::Red => AnsiColor::Named(NamedColor::BrightRed),
-                                NamedColor::Green => AnsiColor::Named(NamedColor::BrightGreen),
-                                NamedColor::Yellow => AnsiColor::Named(NamedColor::BrightYellow),
-                                NamedColor::Blue => AnsiColor::Named(NamedColor::BrightBlue),
-                                NamedColor::Magenta => AnsiColor::Named(NamedColor::BrightMagenta),
-                                NamedColor::Cyan => AnsiColor::Named(NamedColor::BrightCyan),
-                                NamedColor::White => AnsiColor::Named(NamedColor::BrightWhite),
-                                _ => cell.fg,
-                            },
-                            _ => cell.fg,
-                        }
-                    } else {
-                        cell.fg
-                    };
+                    let fg_color = Self::effective_cell_fg(cell);
 
                     let (mut fg_r, mut fg_g, mut fg_b) =
                         color_to_rgb_with_theme(fg_color, true, &theme);
@@ -1464,10 +1460,7 @@ impl Chau7Terminal {
 
         self.grid_dirty.store(true, Ordering::Release);
         self.dirty_rows.mark_all_dirty();
-        debug!(
-            "[terminal-{}] replay_buffer: Replay complete",
-            self.id
-        );
+        debug!("[terminal-{}] replay_buffer: Replay complete", self.id);
     }
 
     /// Set Unicode ambiguous-width treatment.
@@ -1728,6 +1721,44 @@ impl Chau7Terminal {
         result
     }
 
+    /// Get full buffer text (visible + scrollback) with ANSI SGR styling.
+    ///
+    /// This is used for Chau7 tab restoration: plain text loses the original
+    /// foreground/background/style attributes, so replaying it through `cat`
+    /// produces monochrome transcripts. The terminal grid still owns resolved
+    /// cell attributes, so export a compact ANSI reconstruction of the same
+    /// logical lines that `full_buffer_text` returns.
+    pub fn full_buffer_ansi_text(&self) -> String {
+        let theme = self.theme_colors.read().clone();
+        let term = self.term.lock();
+        let grid = term.grid();
+        let screen_lines = grid.screen_lines() as i32;
+        let history = grid.history_size() as i32;
+
+        let mut result = String::new();
+        let mut current_style: Option<AnsiCellStyle> = None;
+        let mut wrapped_rows = 0usize;
+        for row in (-history)..screen_lines {
+            let line = Line(row);
+            let wraps =
+                Self::grid_line_ansi_text(grid, line, &theme, &mut current_style, &mut result);
+            if wraps {
+                wrapped_rows += 1;
+            }
+        }
+        if current_style.is_some() {
+            result.push_str("\x1b[0m");
+        }
+        debug!(
+            "[terminal-{}] full_buffer_ansi_text exported {} chars from {} physical rows ({} wrapped rows)",
+            self.id,
+            result.len(),
+            history + screen_lines,
+            wrapped_rows
+        );
+        result
+    }
+
     fn grid_line_text(grid: &alacritty_terminal::grid::Grid<Cell>, line: Line) -> (String, bool) {
         let grid_line = &grid[line];
         let line_length = grid_line.line_length();
@@ -1757,6 +1788,108 @@ impl Chau7Terminal {
         }
 
         (text, wraps)
+    }
+
+    fn grid_line_ansi_text(
+        grid: &alacritty_terminal::grid::Grid<Cell>,
+        line: Line,
+        theme: &ThemeColors,
+        current_style: &mut Option<AnsiCellStyle>,
+        output: &mut String,
+    ) -> bool {
+        let grid_line = &grid[line];
+        let line_length = grid_line.line_length();
+        let wraps = Self::grid_line_wraps(grid, line);
+
+        for col in 0..line_length.0 {
+            let cell = &grid_line[Column(col)];
+            if cell
+                .flags
+                .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+            {
+                continue;
+            }
+
+            let style = Self::ansi_cell_style(cell, theme);
+            if *current_style != Some(style) {
+                output.push_str(&Self::ansi_sgr_sequence(style));
+                *current_style = Some(style);
+            }
+
+            output.push(if cell.c == '\u{0}' { ' ' } else { cell.c });
+            for ch in cell.zerowidth().into_iter().flatten() {
+                output.push(*ch);
+            }
+        }
+
+        if !wraps {
+            if current_style.is_some() {
+                output.push_str("\x1b[0m");
+                *current_style = None;
+            }
+            output.push('\n');
+        }
+
+        wraps
+    }
+
+    fn ansi_cell_style(cell: &Cell, theme: &ThemeColors) -> AnsiCellStyle {
+        let fg_color = Self::effective_cell_fg(cell);
+        AnsiCellStyle {
+            fg: color_to_rgb_with_theme(fg_color, true, theme),
+            bg: color_to_rgb_with_theme(cell.bg, false, theme),
+            flags: cell_flags_to_u8(cell.flags),
+        }
+    }
+
+    fn effective_cell_fg(cell: &Cell) -> AnsiColor {
+        if cell.flags.contains(CellFlags::BOLD) {
+            match cell.fg {
+                AnsiColor::Indexed(idx) if idx < 8 => AnsiColor::Indexed(idx + 8),
+                AnsiColor::Named(named) => match named {
+                    NamedColor::Black => AnsiColor::Named(NamedColor::BrightBlack),
+                    NamedColor::Red => AnsiColor::Named(NamedColor::BrightRed),
+                    NamedColor::Green => AnsiColor::Named(NamedColor::BrightGreen),
+                    NamedColor::Yellow => AnsiColor::Named(NamedColor::BrightYellow),
+                    NamedColor::Blue => AnsiColor::Named(NamedColor::BrightBlue),
+                    NamedColor::Magenta => AnsiColor::Named(NamedColor::BrightMagenta),
+                    NamedColor::Cyan => AnsiColor::Named(NamedColor::BrightCyan),
+                    NamedColor::White => AnsiColor::Named(NamedColor::BrightWhite),
+                    _ => cell.fg,
+                },
+                _ => cell.fg,
+            }
+        } else {
+            cell.fg
+        }
+    }
+
+    fn ansi_sgr_sequence(style: AnsiCellStyle) -> String {
+        let mut codes = vec!["0".to_string()];
+        if style.flags & CELL_FLAG_BOLD != 0 {
+            codes.push("1".to_string());
+        }
+        if style.flags & CELL_FLAG_DIM != 0 {
+            codes.push("2".to_string());
+        }
+        if style.flags & CELL_FLAG_ITALIC != 0 {
+            codes.push("3".to_string());
+        }
+        if style.flags & CELL_FLAG_UNDERLINE != 0 {
+            codes.push("4".to_string());
+        }
+        if style.flags & CELL_FLAG_INVERSE != 0 {
+            codes.push("7".to_string());
+        }
+        if style.flags & CELL_FLAG_HIDDEN != 0 {
+            codes.push("8".to_string());
+        }
+        if style.flags & CELL_FLAG_STRIKETHROUGH != 0 {
+            codes.push("9".to_string());
+        }
+        codes.push(format!("38;2;{};{};{}", style.fg.0, style.fg.1, style.fg.2));
+        codes.push(format!("48;2;{};{};{}", style.bg.0, style.bg.1, style.bg.2));
+        format!("\x1b[{}m", codes.join(";"))
     }
 
     fn grid_line_wraps(grid: &alacritty_terminal::grid::Grid<Cell>, line: Line) -> bool {
@@ -1864,7 +1997,10 @@ impl Drop for Chau7Terminal {
         self.running.store(false, Ordering::Release);
         if let Some(fd) = self.reader_pool_fd.take() {
             crate::reader_pool::shared_reader_pool().unregister(fd, self.id);
-            debug!("[terminal-{}] Unregistered from reader pool (fd={})", self.id, fd);
+            debug!(
+                "[terminal-{}] Unregistered from reader pool (fd={})",
+                self.id, fd
+            );
         }
 
         // Kill the child process to unblock the reader thread.
@@ -2034,6 +2170,26 @@ mod tests {
             !text.contains("hello\n worl"),
             "Expected no hard newline at soft-wrap boundary, got: {:?}",
             text
+        );
+    }
+
+    #[test]
+    fn test_full_buffer_ansi_text_preserves_sgr_attributes() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(20, 4, "", &[]).expect("Should create terminal");
+        term.inject_output(b"\x1b[31mred\x1b[0m plain");
+
+        let plain = term.full_buffer_text();
+        let ansi = term.full_buffer_ansi_text();
+
+        assert!(plain.contains("red plain"));
+        assert!(!plain.contains('\u{1b}'));
+        assert!(ansi.contains("red"));
+        assert!(
+            ansi.contains("\u{1b}[") && ansi.contains("38;2;"),
+            "Expected ANSI SGR truecolor styling in export, got: {:?}",
+            ansi
         );
     }
 

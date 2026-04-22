@@ -81,6 +81,10 @@ protocol TerminalViewLike: NSView {
     /// Each line is newline-terminated. Trailing spaces on each line are trimmed.
     func getBufferAsData() -> Data?
 
+    /// Returns the full terminal buffer as ANSI-styled UTF-8 Data when available.
+    /// Used for restoration paths that need to preserve color and text attributes.
+    func getStyledBufferAsData() -> Data?
+
     /// Returns a structured visible-grid snapshot for high-fidelity remote rendering.
     /// Implementations may return nil when no structured snapshot is available.
     func captureRemoteGridSnapshotPayload() -> Data?
@@ -204,6 +208,10 @@ protocol TerminalViewLike: NSView {
 }
 
 extension TerminalViewLike {
+    func getStyledBufferAsData() -> Data? {
+        nil
+    }
+
     func captureRemoteGridSnapshotPayload() -> Data? {
         nil
     }
