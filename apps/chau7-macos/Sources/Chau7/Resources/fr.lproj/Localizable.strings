@@ -557,6 +557,7 @@
 
 // MARK: - Tab States
 "tab.shell" = "Shell";
+"tab.overview" = "Vue d'ensemble";
 "tab.suspended" = "Suspendu";
 "tab.rename.placeholder" = "Entrez le nom de l'onglet";
 

@@ -178,7 +178,7 @@ struct OverlayTab: Identifiable, Equatable {
     }
 
     var displayTitle: String {
-        if isDashboard { return customTitle ?? "Overview" }
+        if isDashboard { return customTitle ?? L("tab.overview", "Overview") }
         let shellTitle = L("tab.shell", "Shell")
         let resolved = TabTitleFormatter.resolvedTitle(
             customTitle: customTitle,

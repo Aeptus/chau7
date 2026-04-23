@@ -555,6 +555,7 @@
 
 // MARK: - Tab States
 "tab.shell" = "מעטפת";
+"tab.overview" = "סקירה כללית";
 "tab.suspended" = "מושהה";
 "tab.rename.placeholder" = "הזן שם כרטיסייה";
 

@@ -557,6 +557,7 @@
 
 // MARK: - Tab States
 "tab.shell" = "Shell";
+"tab.overview" = "Resumen";
 "tab.suspended" = "Suspendido";
 "tab.rename.placeholder" = "Introduce el nombre de la pestaña";
 

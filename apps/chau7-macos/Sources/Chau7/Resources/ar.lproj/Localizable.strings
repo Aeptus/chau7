@@ -555,6 +555,7 @@
 
 // MARK: - Tab States
 "tab.shell" = "صدفة";
+"tab.overview" = "نظرة عامة";
 "tab.suspended" = "معلق";
 "tab.rename.placeholder" = "أدخل اسم التبويب";
 
