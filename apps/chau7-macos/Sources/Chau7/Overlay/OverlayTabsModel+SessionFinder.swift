@@ -424,6 +424,20 @@ extension OverlayTabsModel {
             }
             var tab = OverlayTab(appModel: appModel, splitController: controller, id: restoredTabID, createdAt: restoredCreatedAt)
             tab.customTitle = state.customTitle
+            // Mirror the custom title onto every terminal session's
+            // tabTitleOverride so notifications match the UI chrome for
+            // restored renamed tabs. The runtime rename paths (commitRename
+            // in OverlayTabsModel, renameTab in TerminalControlService) both
+            // do this mirror — but on launch, decodeRestorableTabs only
+            // hydrates the OverlayTab struct, so notifications would fall
+            // through to session.title ("Shell" or OSC-driven) or active
+            // AppName and silently diverge from what the user renamed the
+            // tab to in a previous session.
+            if let customTitle = state.customTitle {
+                for (_, session) in controller.terminalSessions {
+                    session.tabTitleOverride = customTitle
+                }
+            }
             tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
             tab.stampOwnerTabID()
             if let preview = Self.restorePreviewImage(from: state.previewSnapshotPNGData) {

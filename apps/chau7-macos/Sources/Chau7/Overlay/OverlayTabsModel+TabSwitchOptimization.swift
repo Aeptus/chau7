@@ -657,6 +657,14 @@ extension OverlayTabsModel {
             createdAt: restoredCreatedAt
         )
         tab.customTitle = state.customTitle
+        // Mirror custom title to session.tabTitleOverride so notifications
+        // on a reopened renamed tab match the UI chrome (same reasoning as
+        // the launch-time restore path in decodeRestorableTabs).
+        if let customTitle = state.customTitle {
+            for (_, session) in controller.terminalSessions {
+                session.tabTitleOverride = customTitle
+            }
+        }
         tab.color = TabColor(rawValue: state.color) ?? .blue
         tab.stampOwnerTabID()
         if let overrideRaw = state.tokenOptOverride,
