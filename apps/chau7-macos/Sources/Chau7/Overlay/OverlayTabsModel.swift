@@ -1272,6 +1272,17 @@ final class OverlayTabsModel {
         previousLiveHierarchyReleaseWorkItem?.cancel()
         terminalReadyCommitWorkItem?.cancel()
         selectedTerminalRevealTimeoutWorkItem?.cancel()
+        // Cancel pending async work that otherwise fires [weak self]→nil
+        // noops against a dead model. Each of these schedules
+        // DispatchQueue.main.asyncAfter closures that can delay
+        // deallocation of captured state (and would fire strong-self if a
+        // future refactor broke the weak-capture invariant).
+        suspendWorkItems.values.forEach { $0.cancel() }
+        suspendWorkItems.removeAll()
+        hoverCardTimer?.cancel()
+        hoverCardTimer = nil
+        hoverCardDismissTimer?.cancel()
+        hoverCardDismissTimer = nil
     }
 
     // MARK: - Tab State Persistence
