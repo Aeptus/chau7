@@ -375,10 +375,7 @@ extension OverlayTabsModel {
     /// Decode from pre-decoded states (multi-window restore — avoids UserDefaults round-trip).
     static func decodeRestorableTabs(fromStates states: [SavedTabState], appModel: AppModel) -> RestorableTabsPayload? {
         guard !states.isEmpty else { return nil }
-        // Re-encode to reuse the existing decode path (the processing after
-        // JSON decode is non-trivial and not worth duplicating).
-        guard let data = try? JSONEncoder().encode(states) else { return nil }
-        return decodeRestorableTabs(from: data, appModel: appModel)
+        return hydrateRestorableTabs(from: states, appModel: appModel)
     }
 
     static func decodeRestorableTabs(from data: Data, appModel: AppModel) -> RestorableTabsPayload? {
@@ -386,7 +383,14 @@ extension OverlayTabsModel {
               !states.isEmpty else {
             return nil
         }
+        return hydrateRestorableTabs(from: states, appModel: appModel)
+    }
 
+    /// Builds `OverlayTab` + `SplitPaneController` instances from an array
+    /// of already-decoded `SavedTabState` values. Shared by both entry
+    /// points so the multi-window restore path doesn't need to re-encode
+    /// then re-decode JSON just to reuse this hydration logic.
+    private static func hydrateRestorableTabs(from states: [SavedTabState], appModel: AppModel) -> RestorableTabsPayload? {
         let colors = TabColor.allCases
         var restoredTabs: [OverlayTab] = []
         var selectedID: UUID?
