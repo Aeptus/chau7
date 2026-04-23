@@ -8,8 +8,8 @@
 
 use std::collections::HashMap;
 use std::os::fd::RawFd;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -25,6 +25,12 @@ struct PtyEntry {
     terminal_id: u64,
     sender: Sender<PtyMessage>,
     running: Arc<AtomicBool>,
+    /// Set to true once the pool observes EOF / POLLHUP / POLLERR on this fd.
+    /// Prevents the pool from re-polling a dead fd in a tight loop between the
+    /// shell exiting and `Chau7Terminal::drop` running `unregister()`, which
+    /// on macOS latches POLLHUP and pegs one core per zombie fd, starving
+    /// every other terminal that shares the pool.
+    closed: AtomicBool,
 }
 
 /// Shared state protected by a mutex.
@@ -85,6 +91,7 @@ impl SharedPtyReaderPool {
             terminal_id,
             sender,
             running,
+            closed: AtomicBool::new(false),
         });
         debug!(
             "SharedPtyReaderPool: queued registration for terminal {} (fd={})",
@@ -153,7 +160,9 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                 s.entries.insert(fd, entry);
                 info!(
                     "SharedPtyReaderPool: registered terminal {} (fd={}), total={}",
-                    tid, fd, s.entries.len()
+                    tid,
+                    fd,
+                    s.entries.len()
                 );
             }
             let removes: Vec<RawFd> = s.pending_removes.drain(..).collect();
@@ -169,10 +178,19 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                 }
             }
 
-            // Rebuild pollfd array
+            // Rebuild pollfd array, excluding entries already observed as
+            // closed (shell exited, EOF/HUP/POLLERR latched). They stay
+            // registered until Drop runs `unregister()` to reclaim the fd,
+            // but we must not poll them in the meantime — POLLHUP on macOS
+            // is edge-latched and re-fires every iteration, spinning the
+            // single pool thread at 100% CPU and starving every other
+            // terminal.
             pollfds.clear();
             fd_list.clear();
-            for &fd in s.entries.keys() {
+            for (&fd, entry) in &s.entries {
+                if entry.closed.load(Ordering::Acquire) {
+                    continue;
+                }
                 pollfds.push(libc::pollfd {
                     fd,
                     events: libc::POLLIN,
@@ -231,8 +249,7 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                     let data = buf[..bytes_read as usize].to_vec();
                     trace!(
                         "SharedPtyReaderPool: terminal {} read {} bytes",
-                        entry.terminal_id,
-                        bytes_read
+                        entry.terminal_id, bytes_read
                     );
                     // Use try_send to avoid blocking the pool thread when a
                     // terminal's channel is full (consumer not draining — e.g.,
@@ -247,14 +264,17 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                         );
                     }
                 } else if bytes_read == 0 {
-                    // EOF
+                    // EOF — mark closed so the next pollfd rebuild excludes
+                    // this fd. Otherwise POLLIN+read==0 latches every
+                    // iteration and burns a CPU core.
                     info!(
                         "SharedPtyReaderPool: EOF on terminal {} (fd={})",
                         entry.terminal_id, fd
                     );
+                    entry.closed.store(true, Ordering::Release);
                     let _ = entry.sender.try_send(PtyMessage::Closed);
                 } else {
-                    // Error
+                    // Error — mark closed for the same reason.
                     let errno = std::io::Error::last_os_error();
                     if entry.running.load(Ordering::Acquire) {
                         error!(
@@ -262,16 +282,24 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                             entry.terminal_id, fd, errno
                         );
                     }
+                    entry.closed.store(true, Ordering::Release);
                     let _ = entry.sender.try_send(PtyMessage::Closed);
                 }
             }
 
             if pfd.revents & (libc::POLLHUP | libc::POLLERR) != 0 {
-                info!(
-                    "SharedPtyReaderPool: HUP/ERR on terminal {} (fd={})",
-                    entry.terminal_id, fd
-                );
-                let _ = entry.sender.try_send(PtyMessage::Closed);
+                // POLLHUP is edge-latched on macOS — flag the entry closed so
+                // the next pollfd rebuild drops it. A single Closed send is
+                // enough; Chau7Terminal::poll() handles the follow-up
+                // Disconnected state idempotently.
+                if !entry.closed.load(Ordering::Acquire) {
+                    info!(
+                        "SharedPtyReaderPool: HUP/ERR on terminal {} (fd={})",
+                        entry.terminal_id, fd
+                    );
+                    entry.closed.store(true, Ordering::Release);
+                    let _ = entry.sender.try_send(PtyMessage::Closed);
+                }
             }
         }
     }
