@@ -557,6 +557,7 @@
 "tab.shell" = "صدفة";
 "tab.overview" = "نظرة عامة";
 "tab.suspended" = "معلق";
+"tab.title.aiCustomFormat" = "%@ - %@";
 "tab.rename.placeholder" = "أدخل اسم التبويب";
 
 // MARK: - Menu Items

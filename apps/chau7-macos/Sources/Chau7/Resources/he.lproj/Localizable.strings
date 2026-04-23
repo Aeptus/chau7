@@ -557,6 +557,7 @@
 "tab.shell" = "מעטפת";
 "tab.overview" = "סקירה כללית";
 "tab.suspended" = "מושהה";
+"tab.title.aiCustomFormat" = "%@ - %@";
 "tab.rename.placeholder" = "הזן שם כרטיסייה";
 
 // MARK: - Menu Items

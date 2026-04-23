@@ -45,7 +45,12 @@ public enum TabTitleFormatter {
                 if containsAINameAsWord(in: custom, aiName: aiName) {
                     return custom
                 }
-                return "\(aiName) - \(custom)"
+                // Localized "<aiName> - <custom>" format. Default is the
+                // ASCII " - " separator; locales may override (e.g. a
+                // Unicode dash or RTL-safe separator) via
+                // `tab.title.aiCustomFormat`.
+                let format = LCore("tab.title.aiCustomFormat", "%@ - %@")
+                return String(format: format, aiName, custom)
             }
             return custom
         }
