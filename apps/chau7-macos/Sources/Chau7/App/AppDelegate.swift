@@ -275,6 +275,17 @@ private final class OverlayBlurView: NSVisualEffectView {
         let finishPresentation = { [weak self] in
             guard let self else { return }
             revealPreparedStartupOverlayWindows(reason: "startup_ready")
+            // Kick off the background-tab restore scheduler so non-selected
+            // tabs hydrate their deferred payload (scrollback replay,
+            // aiResumeCommand prefill, agentLaunchCommand / agentStartedAt,
+            // lastStatus). Without this call the whole scheduler chain
+            // (startDeferredRestoreSchedulingIfNeeded → restoreNextDeferred
+            // TabAcrossWindows → scheduleNextDeferredRestoreStep) is dead
+            // code — it was previously kicked from finishLaunching and
+            // completeStartupRestoreIfReady but was lost during startup
+            // refactors, leaving background tabs stuck until the user
+            // clicked each one.
+            startDeferredRestoreSchedulingIfNeeded(reason: "startup_ready")
             startDeferredStartupWorkIfNeeded()
             endLatencyCriticalScope(reason: "startup-restore")
             StartupRestoreCoordinator.shared.end()
