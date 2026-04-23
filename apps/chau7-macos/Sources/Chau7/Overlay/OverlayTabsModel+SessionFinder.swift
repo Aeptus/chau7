@@ -541,8 +541,26 @@ extension OverlayTabsModel {
 
         return baseWindows.map { tabs in
             tabs.map { state in
-                guard let tabID = state.tabID else { return state }
-                return state.mergedAIResumePayload(with: fallbackByTabID[tabID])
+                guard let tabID = state.tabID,
+                      let fallback = fallbackByTabID[tabID] else { return state }
+                let merged = state.mergedAIResumePayload(with: fallback)
+                if merged.aiResumeRestorationScore > state.aiResumeRestorationScore {
+                    // Surface exactly which tab got repaired and the score
+                    // delta so operators can trace a tab back to the
+                    // archive it was upgraded from if the merge picked a
+                    // stale record. Payload preview is provider+sessionID
+                    // prefix only — no directories, no command bodies.
+                    Log.info(
+                        """
+                        Restore AI resume metadata upgrade tab=\(tabID) \
+                        score=\(state.aiResumeRestorationScore)->\(merged.aiResumeRestorationScore) \
+                        provider=\(state.aiProvider ?? "nil")->\(merged.aiProvider ?? "nil") \
+                        session=\(state.aiSessionId?.prefix(8) ?? "nil")->\(merged.aiSessionId?.prefix(8) ?? "nil") \
+                        hadCommand=\(state.aiResumeCommand != nil)->\(merged.aiResumeCommand != nil)
+                        """
+                    )
+                }
+                return merged
             }
         }
     }
