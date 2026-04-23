@@ -1149,13 +1149,13 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Write window 0 to the legacy key so the primary model can restore it
         // even if the multi-window payload is unavailable.
         if let firstWindowStates = allWindows.first,
-           let data = try? JSONEncoder().encode(firstWindowStates) {
+           let data = Persist.encodeLogged(firstWindowStates, context: "window0.tabState") {
             UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
         }
         // Write all windows to multi-window key
         if allWindows.count > 1 {
             let multiState = SavedMultiWindowState(windows: allWindows)
-            if let data = try? JSONEncoder().encode(multiState) {
+            if let data = Persist.encodeLogged(multiState, context: "multiWindow.tabState") {
                 UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
             }
         } else {
@@ -1421,9 +1421,12 @@ private final class OverlayBlurView: NSVisualEffectView {
         let restoredWindows: [[SavedTabState]]
         let restoreSource: String
 
-        if let data = UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
-           let multiState = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data),
-           multiState.windows.count > 1 {
+        let multiState = Persist.decodeLogged(
+            SavedMultiWindowState.self,
+            from: UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
+            context: "multiWindow.restore"
+        )
+        if let multiState, multiState.windows.count > 1 {
             restoredWindows = Array(multiState.windows.dropFirst())
             restoreSource = "user defaults"
             // Keep this until the next real save replaces it. Clearing during

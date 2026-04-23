@@ -215,13 +215,16 @@ final class ClipboardHistoryManager {
     // MARK: - Persistence
 
     private func persistToDisk() {
-        guard let data = try? JSONEncoder().encode(items) else { return }
+        guard let data = Persist.encodeLogged(items, context: "clipboardHistory") else { return }
         UserDefaults.standard.set(data, forKey: Self.persistenceKey)
     }
 
     private func loadFromDisk() {
-        guard let data = UserDefaults.standard.data(forKey: Self.persistenceKey),
-              let saved = try? JSONDecoder().decode([ClipboardItem].self, from: data) else { return }
+        guard let saved = Persist.decodeLogged(
+            [ClipboardItem].self,
+            from: UserDefaults.standard.data(forKey: Self.persistenceKey),
+            context: "clipboardHistory"
+        ) else { return }
         items = saved
     }
 }

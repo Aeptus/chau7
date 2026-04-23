@@ -814,11 +814,21 @@ final class CTOManager {
         else { return }
 
         // Keep the last 500 lines
-        guard let data = try? String(contentsOf: commandLogPath, encoding: .utf8) else { return }
+        let data: String
+        do {
+            data = try String(contentsOf: commandLogPath, encoding: .utf8)
+        } catch {
+            Log.error("CTOManager: failed to read command log for rotation error=\(error)")
+            return
+        }
         let lines = data.components(separatedBy: "\n").filter { !$0.isEmpty }
         let kept = lines.suffix(500).joined(separator: "\n") + "\n"
-        try? kept.write(to: commandLogPath, atomically: true, encoding: .utf8)
-        Log.info("CTOManager: rotated command log (was \(size) bytes)")
+        do {
+            try kept.write(to: commandLogPath, atomically: true, encoding: .utf8)
+            Log.info("CTOManager: rotated command log (was \(size) bytes)")
+        } catch {
+            Log.error("CTOManager: failed to rewrite command log after rotation, log may grow unbounded error=\(error)")
+        }
     }
 
     // MARK: - Cleanup

@@ -167,8 +167,9 @@ final class KnownRepoIdentityStore {
     }
 
     private func persist() {
-        let encoder = JSONEncoder()
-        guard let data = try? encoder.encode(identities) else { return }
+        guard let data = Persist.encodeLogged(identities, context: "knownRepoIdentities") else {
+            return
+        }
         defaults.set(data, forKey: Keys.identities)
     }
 

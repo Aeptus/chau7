@@ -135,15 +135,12 @@ final class InjectionRuleStore {
 
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            guard let data = try? encoder.encode(RulesFile(rules: snapshot)) else {
-                Log.warn("Failed to encode injection rules")
-                return
-            }
-            do {
-                try data.write(to: fileURL, options: .atomic)
-            } catch {
-                Log.warn("Failed to write injection rules: \(error)")
-            }
+            Persist.saveLogged(
+                RulesFile(rules: snapshot),
+                to: fileURL,
+                context: "injectionRules.global",
+                encoder: encoder
+            )
         }
     }
 
@@ -230,8 +227,7 @@ final class InjectionRuleStore {
 
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            guard let data = try? encoder.encode(rule) else { return }
-            try? data.write(to: url, options: .atomic)
+            Persist.saveLogged(rule, to: url, context: "injectionRules.local", encoder: encoder)
         }
     }
 

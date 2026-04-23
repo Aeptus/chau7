@@ -71,10 +71,11 @@ enum RepoMetadataStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(metadata) else {
-            Log.warn("Failed to encode repo metadata for \(repoRoot)")
-            return
-        }
+        guard let data = Persist.encodeLogged(
+            metadata,
+            context: "repoMetadata.\(repoRoot)",
+            encoder: encoder
+        ) else { return }
         // Atomic write via temp file
         let tmp = url.appendingPathExtension("tmp")
         do {
@@ -82,8 +83,14 @@ enum RepoMetadataStore {
             _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
         } catch {
             try? FileManager.default.removeItem(at: tmp)
-            // Fallback: direct write
-            try? data.write(to: url, options: .atomic)
+            // Fallback: direct write, log if it also fails
+            do {
+                try data.write(to: url, options: .atomic)
+            } catch let fallbackError {
+                Log.error(
+                    "repoMetadata save failed (both replace and direct write) repo=\(repoRoot) replaceError=\(error) writeError=\(fallbackError)"
+                )
+            }
         }
     }
 
