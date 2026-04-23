@@ -1091,35 +1091,53 @@ final class MCPSession {
 
         cancelSubscription()
 
-        let replay = Chau7ObservabilityService.shared.changePayloads(
-            sinceSeq: cursor,
-            topics: requestedTopics,
-            limit: replayLimit
-        )
         let subscriptionID = "sub_\(UUID().uuidString)"
         let createdAtMillis = currentTimeMillis()
-        let token = Chau7ObservabilityService.shared.addChangeListener(topics: requestedTopics) { [weak self] change in
-            self?.emitSubscriptionNotification(subscriptionID: subscriptionID, change: change)
-        }
-        let heartbeatTimer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "com.chau7.mcp.session.subscription-heartbeat.\(subscriptionID)"))
-        heartbeatTimer.schedule(deadline: .now() + .milliseconds(heartbeatIntervalMs), repeating: .milliseconds(heartbeatIntervalMs))
-        heartbeatTimer.setEventHandler { [weak self] in
-            self?.emitSubscriptionHeartbeat(subscriptionID: subscriptionID)
-        }
-        heartbeatTimer.resume()
+
+        // Publish the subscription state BEFORE registering the change
+        // listener. If the listener were registered first, any recordEvent
+        // racing in on another thread would fire the listener → call
+        // `reserveNotificationDelivery` → see `subscriptionState == nil` →
+        // silently drop the notification (no log line, no dropped counter,
+        // since the counter lives inside the not-yet-created state). Taking
+        // the replay snapshot afterward closes the secondary gap: events
+        // fired between replay capture and listener registration used to
+        // land in neither replay nor the live stream.
         subscriptionStateQueue.sync {
             subscriptionState = SubscriptionState(
                 id: subscriptionID,
                 topics: effectiveTopics,
                 createdAtMillis: createdAtMillis,
                 heartbeatIntervalMs: heartbeatIntervalMs,
-                token: token,
-                heartbeatTimer: heartbeatTimer,
+                token: nil,
+                heartbeatTimer: nil,
                 nextDeliverySequence: 1,
                 notificationsEmittedCount: 0,
                 droppedNotificationCount: 0,
                 lastNotificationAtMillis: nil
             )
+        }
+
+        let token = Chau7ObservabilityService.shared.addChangeListener(topics: requestedTopics) { [weak self] change in
+            self?.emitSubscriptionNotification(subscriptionID: subscriptionID, change: change)
+        }
+        let replay = Chau7ObservabilityService.shared.changePayloads(
+            sinceSeq: cursor,
+            topics: requestedTopics,
+            limit: replayLimit
+        )
+        let heartbeatTimer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "com.chau7.mcp.session.subscription-heartbeat.\(subscriptionID)"))
+        heartbeatTimer.schedule(deadline: .now() + .milliseconds(heartbeatIntervalMs), repeating: .milliseconds(heartbeatIntervalMs))
+        heartbeatTimer.setEventHandler { [weak self] in
+            self?.emitSubscriptionHeartbeat(subscriptionID: subscriptionID)
+        }
+        heartbeatTimer.resume()
+
+        // Patch the token and timer into the already-published state so
+        // `cancelSubscription` can remove the listener / cancel the timer.
+        subscriptionStateQueue.sync {
+            subscriptionState?.token = token
+            subscriptionState?.heartbeatTimer = heartbeatTimer
         }
 
         var payload = stateSnapshotService.snapshotPayload()
