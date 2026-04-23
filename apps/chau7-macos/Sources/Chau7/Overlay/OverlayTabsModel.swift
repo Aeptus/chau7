@@ -967,6 +967,12 @@ final class OverlayTabsModel {
     // Git root path observation is now handled via session.onGitRootPathChanged callbacks
     @ObservationIgnored var renameTabID: UUID?
     @ObservationIgnored var renameOriginalTitle = ""
+    /// Snapshot of `tabs[index].customTitle` taken when the rename dialog
+    /// opens. Used at commit time to detect whether another mutator (MCP
+    /// `renameTab`, an extension, etc.) modified the tab's custom title
+    /// while the user was typing — so we can log the conflict instead of
+    /// silently overwriting the external change.
+    @ObservationIgnored var renameOriginalCustomTitle: String?
     @ObservationIgnored var renameOriginalColor: TabColor = .blue
     @ObservationIgnored var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
     @ObservationIgnored var previousLiveHierarchyReleaseWorkItem: DispatchWorkItem?
@@ -3653,6 +3659,7 @@ final class OverlayTabsModel {
         }
         renameColor = tab.color
         renameOriginalTitle = renameText
+        renameOriginalCustomTitle = tab.customTitle
         renameOriginalColor = renameColor
         isRenameVisible = true
         logVisualState(reason: "beginRenameSelected")
@@ -3672,6 +3679,19 @@ final class OverlayTabsModel {
         let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         let titleChanged = trimmed != renameOriginalTitle
         let colorChanged = renameColor != renameOriginalColor
+
+        // Conflict detection: if something external (MCP renameTab, extension,
+        // etc.) mutated the tab's customTitle while the rename dialog was
+        // open, the user's commit would silently overwrite that change. Log
+        // the conflict so it's visible in the log — the user's action still
+        // wins (they hit Save deliberately), but operators can reconcile
+        // after the fact if needed.
+        let currentCustomTitle = tabs[index].customTitle
+        if currentCustomTitle != renameOriginalCustomTitle {
+            Log.warn(
+                "Tab rename conflict: external mutator changed customTitle from \(renameOriginalCustomTitle ?? "nil") to \(currentCustomTitle ?? "nil") while rename dialog was open (tabID=\(renameTabID)). User's commit will overwrite."
+            )
+        }
 
         Log.info("Tab rename commit: tabID=\(renameTabID), titleChanged=\(titleChanged), colorChanged=\(colorChanged), newTitle=\"\(trimmed)\"")
 
@@ -3699,6 +3719,7 @@ final class OverlayTabsModel {
         isRenameVisible = false
         renameTabID = nil
         renameOriginalTitle = ""
+        renameOriginalCustomTitle = nil
         renameOriginalColor = renameColor
         logVisualState(reason: "renameCleared")
         if shouldFocus {
