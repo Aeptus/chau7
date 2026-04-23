@@ -39,7 +39,7 @@ final class Chau7StateSnapshotService {
                 "active_runs": queryService.currentRunObjects(),
                 "active_sessions": queryService.activeSessionObjects()
             ],
-            "timers": observability.timerInventoryPayload()["timers"] as? [[String: Any]] ?? []
+            "timers": observability.timerInventorySnapshot()["timers"] as? [[String: Any]] ?? []
         ]
     }
 }

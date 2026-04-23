@@ -174,18 +174,27 @@ final class TerminalControlService {
     }
 
     func liveTabSummaries() -> [[String: Any]] {
-        pruneTabAliasesLocked()
-        let models = allModels
-        guard !models.isEmpty else { return [] }
-        var result: [[String: Any]] = []
-        for (windowID, model) in models {
-            for tab in model.tabs {
-                var summary = tabSummary(tab)
-                summary["window_id"] = windowID
-                result.append(summary)
+        // Must run on main — `allModels` / `model.tabs` / per-session
+        // `@Observable` state are main-thread-owned, and `pruneTabAliases
+        // Locked()` mutates `mcpTabIDs`. Without this hop, callers from the
+        // MCP client queue (e.g. `Chau7StateSnapshotService.snapshotPayload`)
+        // race against tab open/close/reorder and can crash in Swift's
+        // Array COW on concurrent read+write. The class contract at the
+        // top of this file promises all methods are safe from any thread.
+        onMain {
+            self.pruneTabAliasesLocked()
+            let models = self.allModels
+            guard !models.isEmpty else { return [] }
+            var result: [[String: Any]] = []
+            for (windowID, model) in models {
+                for tab in model.tabs {
+                    var summary = self.tabSummary(tab)
+                    summary["window_id"] = windowID
+                    result.append(summary)
+                }
             }
+            return result
         }
-        return result
     }
 
     func pendingApprovalSummaries() -> [[String: Any]] {
