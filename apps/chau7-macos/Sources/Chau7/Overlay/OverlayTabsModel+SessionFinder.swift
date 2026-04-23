@@ -817,10 +817,6 @@ extension OverlayTabsModel {
         for tab: OverlayTab,
         state: SavedTabState,
         scheduledDelayOverride: TimeInterval? = nil,
-        // Runtime restore must not replay shell plumbing into user-visible PTYs.
-        // Keep restore focused on directory/session metadata and let the live
-        // session redraw naturally once attached.
-        replayScrollbackThroughShell: Bool = false,
         // Queue resume prefills directly on the session instead of retrying on
         // timers. This keeps restore mutation bound to the session lifecycle
         // and avoids post-reveal retry storms.
@@ -961,11 +957,7 @@ extension OverlayTabsModel {
                     Self.normalizedResumeCommand(state.aiResumeCommand) != nil
                         || (state.aiProvider != nil && state.aiSessionId != nil)
                 ))
-            let hasRestoreReplay = replayScrollbackThroughShell && (
-                !(paneState?.scrollbackContent?.isEmpty ?? true)
-                    || !(paneState?.directory.isEmpty ?? true)
-            )
-            if expectsResumePrefill || hasRestoreReplay {
+            if expectsResumePrefill {
                 StartupRestoreCoordinator.shared.noteRestoreBootstrapStarted(
                     tabID: targetTabID,
                     paneID: paneID,
@@ -1155,38 +1147,6 @@ extension OverlayTabsModel {
                     lastExitCode: nil,
                     lastExitAt: nil
                 )
-
-                if replayScrollbackThroughShell {
-                    // Restore scrollback via cat through the shell so the terminal re-renders
-                    // content at the current column width. Keep artifact stripping on the
-                    // saved payload so older polluted snapshots don't replay restore commands.
-                    // Leading space suppresses history in zsh/bash (HIST_IGNORE_SPACE).
-                    var commands: [String] = []
-                    if let raw = effectivePaneState.scrollbackContent,
-                       !raw.isEmpty {
-                        let scrollback = Self.stripRestoreArtifacts(from: raw)
-                        if !scrollback.isEmpty,
-                           let data = scrollback.data(using: .utf8) {
-                            let tempFile = NSTemporaryDirectory() + "chau7_restore_\(restoreToken)_\(paneID.uuidString).txt"
-                            do {
-                                try data.write(to: URL(fileURLWithPath: tempFile))
-                                let escapedTemp = Self.shellSafeSingleQuote(tempFile)
-                                commands.append("cat \(escapedTemp) && rm -f \(escapedTemp)")
-                            } catch {
-                                Log.warn("Failed to write scrollback restore file: \(error)")
-                            }
-                        }
-                    }
-
-                    if !effectivePaneState.directory.isEmpty {
-                        commands.append("cd \(Self.shellSafeSingleQuote(effectivePaneState.directory))")
-                    }
-
-                    if !commands.isEmpty {
-                        let restoreChain = commands.joined(separator: " && ")
-                        session.sendOrQueueSystemRestoreInput(" stty -echo && \(restoreChain) && clear && stty echo\n")
-                    }
-                }
 
                 if let resumeIntent = resumeIntents.first(where: { $0.paneID == paneID }) {
                     recordResumeRestoreDeliveryState(

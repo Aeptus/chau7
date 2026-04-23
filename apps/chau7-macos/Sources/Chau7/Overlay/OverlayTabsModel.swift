@@ -1476,7 +1476,6 @@ final class OverlayTabsModel {
             for: tab,
             state: deferredState,
             scheduledDelayOverride: 0,
-            replayScrollbackThroughShell: false,
             useResumeRetryScheduler: false,
             executeSynchronouslyWhenPossible: executeSynchronouslyWhenPossible
         )
