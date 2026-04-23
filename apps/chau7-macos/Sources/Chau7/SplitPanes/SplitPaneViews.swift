@@ -625,6 +625,12 @@ struct TextEditorContent: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+            if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
+                let preview = textView.string.suffix(12)
+                Log.info(
+                    "TextEditorContent: textDidChange length=\(textView.string.count) tail='\(preview)'"
+                )
+            }
             parent.text = textView.string
         }
     }

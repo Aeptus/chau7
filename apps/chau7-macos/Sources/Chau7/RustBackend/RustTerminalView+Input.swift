@@ -10,7 +10,7 @@ extension RustTerminalView {
         keyCode == UInt16(kVK_Return) || keyCode == UInt16(kVK_ANSI_KeypadEnter)
     }
 
-    private func firstResponderDebugName() -> String {
+    func firstResponderDebugName() -> String {
         guard let responder = window?.firstResponder else { return "nil" }
         return String(describing: type(of: responder))
     }
@@ -265,6 +265,12 @@ extension RustTerminalView {
         if isEventHandledByGeneralMonitor(event) {
             Log.trace("RustTerminalView[\(viewId)]: keyDown - Skipping event already handled by general monitor")
             return
+        }
+        if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
+            let preview = (event.charactersIgnoringModifiers ?? "").prefix(6)
+            Log.info(
+                "RustTerminalView[\(viewId)]: keyDown firing keyCode=\(event.keyCode) chars='\(preview)' firstResponder=\(firstResponderDebugName())"
+            )
         }
         // Command key combinations are handled by app commands (copy/paste/menus), not terminal input
         if event.modifierFlags.contains(.command) {

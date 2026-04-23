@@ -543,7 +543,14 @@ extension RustTerminalView {
         generalKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
             guard event.window === window else { return event }
-            guard isFirstResponderInTerminal() else { return event }
+            let inTerminal = isFirstResponderInTerminal()
+            if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
+                let preview = (event.charactersIgnoringModifiers ?? "").prefix(6)
+                Log.info(
+                    "RustTerminalView[\(viewId)]: generalKeyMonitor seen keyCode=\(event.keyCode) chars='\(preview)' inTerminal=\(inTerminal) firstResponder=\(firstResponderDebugName())"
+                )
+            }
+            guard inTerminal else { return event }
 
             // Let snippet and history monitors handle their specific keys first
             // (they run before this and return nil to consume)
@@ -551,6 +558,9 @@ extension RustTerminalView {
             // Route to Rust terminal
             if handleTerminalKeyEvent(event) {
                 markGeneralKeyEventHandled(event)
+                if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
+                    Log.info("RustTerminalView[\(viewId)]: generalKeyMonitor consumed keyCode=\(event.keyCode)")
+                }
                 return nil // Consume event - we handled it
             }
             return event // Let it propagate if not handled
