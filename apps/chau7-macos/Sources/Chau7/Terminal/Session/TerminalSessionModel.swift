@@ -1057,12 +1057,29 @@ final class TerminalSessionModel {
         }
         stopIdleTimer()
         repositoryModel?.onBranchChange = nil
-        searchUpdateWorkItem?.cancel()
         aiLogSession?.close()
         devServerMonitor.stop()
         processResourceMonitor.stop()
+        cancelAllPendingWorkItems()
+    }
+
+    /// Cancels every `DispatchWorkItem` the session may have scheduled, so
+    /// a deallocated session doesn't leave timers racing against a dead
+    /// model. Each individual callsite captures `[weak self]` — so the
+    /// worst-case without this is a no-op fire — but uncancelled items
+    /// extend the effective lifetime of captured state and any future
+    /// refactor that changes the capture semantics would produce
+    /// use-after-free. Keep this list complete: every new
+    /// `DispatchWorkItem` field on the class should be added here.
+    private func cancelAllPendingWorkItems() {
+        searchUpdateWorkItem?.cancel()
         forcedTerminationWorkItem?.cancel()
         restoreBootstrapFallbackWorkItem?.cancel()
+        outputLatencyFallbackWorkItem?.cancel()
+        scrollHighlightWorkItem?.cancel()
+        pendingAutomationSubmitWorkItem?.cancel()
+        dangerousOutputHighlightWorkItem?.cancel()
+        remoteOutputFlushWorkItem?.cancel()
     }
 
     // Process monitoring methods moved to TerminalSessionModel+ProcessMonitor.swift
