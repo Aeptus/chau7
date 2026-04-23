@@ -1,5 +1,22 @@
 import Foundation
 
+/// Resolves the displayed title for a tab's chrome (tab bar chip, status
+/// bar menu, accessibility label).
+///
+/// Input priority when `customTitleOnly` is false:
+///   1. `customTitle` — user-renamed or MCP-set
+///   2. `<aiDisplayAppName> - <customTitle>` — composed when both present
+///   3. `aiDisplayAppName` — detected AI tool (Codex, Claude, …)
+///   4. `devServerName` — limited to Vite (case-insensitive)
+///   5. `shellFallback` — localized "Shell" by default
+///
+/// Notably absent: `TerminalSessionModel.title`, which is populated from
+/// the shell's OSC 0/1/2 escape sequence. That value is deliberately
+/// excluded from tab chrome because it is shell-controlled — an
+/// untrusted process could spoof arbitrary titles. Notifications have
+/// their own resolver (`TerminalSessionModel.notificationTabName`) that
+/// DOES use `session.title` as its final fallback, because there the
+/// source is already trust-bounded to the target tab's own session.
 public enum TabTitleFormatter {
     public static func resolvedTitle(
         customTitle: String?,
