@@ -177,6 +177,21 @@ struct OverlayTab: Identifiable, Equatable {
         return false
     }
 
+    /// Point-in-time computation of this tab's display title.
+    ///
+    /// `OverlayTab` is a `struct`, so SwiftUI re-renders callers of this
+    /// property only when the struct itself is diffed — not when the
+    /// underlying `@Observable` session's `aiDisplayAppName`, `devServer`,
+    /// or `title` changes. For live tab chrome, use `TabSessionContent`
+    /// (which observes `session` directly and re-resolves the title
+    /// reactively). This property is safe to call from:
+    ///   - UI paths that already observe the parent `OverlayTabsModel`
+    ///     (which re-renders when `tabs` mutates) and don't need sub-
+    ///     second freshness,
+    ///   - One-shot read-and-forget callers: log messages, the Cmd+Shift+T
+    ///     closed-tab log, the MCP `listTabs` snapshot response, the
+    ///     command palette, etc. — where a slightly-stale title is
+    ///     acceptable.
     var displayTitle: String {
         if isDashboard { return customTitle ?? L("tab.overview", "Overview") }
         let shellTitle = L("tab.shell", "Shell")
