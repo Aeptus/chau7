@@ -495,10 +495,4 @@ enum DebugAssert {
         #endif
     }
 
-    /// Marks code that should never be reached
-    static func unreachable(_ message: String = "This code should be unreachable", file: String = #file, line: Int = #line) -> Never {
-        let location = "\(URL(fileURLWithPath: file).lastPathComponent):\(line)"
-        Log.error("UNREACHABLE at \(location): \(message)")
-        fatalError(message)
-    }
 }
