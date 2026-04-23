@@ -5,24 +5,6 @@ import Foundation
 // Consolidates DateFormatter instances to avoid repeated initialization
 
 enum Formatters {
-    /// Short time format (e.g., "3:45 PM")
-    @available(*, deprecated, message: "Use LocalizedFormatters instead")
-    static let shortTime: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .none
-        f.timeStyle = .short
-        return f
-    }()
-
-    /// Medium time format (e.g., "3:45:30 PM")
-    @available(*, deprecated, message: "Use LocalizedFormatters instead")
-    static let mediumTime: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .none
-        f.timeStyle = .medium
-        return f
-    }()
-
     /// Terminal login timestamp (e.g., "Mon Jan 12 14:30:00")
     static let terminalLogin: DateFormatter = {
         let f = DateFormatter()
