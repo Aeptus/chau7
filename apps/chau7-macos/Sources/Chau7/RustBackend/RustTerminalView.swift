@@ -2774,11 +2774,28 @@ final class RustTerminalView: NSView {
 
         // Update dimensions and resize Rust terminal (based on inset area)
         updateCellDimensions()
-        let newCols = max(1, Int(insetRect.width / cellWidth))
-        let newRows = max(1, Int(insetRect.height / cellHeight))
+        let rawCols = Int(insetRect.width / cellWidth)
+        let rawRows = Int(insetRect.height / cellHeight)
+        // Hard clamp against insane layout inputs. During cross-window tab
+        // reparenting we've observed layout() firing before bounds settle,
+        // producing cols/rows in the thousands. Feeding those into Rust's
+        // term.resize triggers alacritty's scrollback reflow to allocate a
+        // `scrollback_lines × new_cols` grid per terminal — at cols≈2000 and
+        // 10k scrollback that's already several GB per view, and with a few
+        // views open it spirals into tens of GB and a main-thread freeze in
+        // memmove. 2000 cols / 500 rows is well above any real window layout.
+        let maxCols = 2000
+        let maxRows = 500
+        let newCols = min(maxCols, max(1, rawCols))
+        let newRows = min(maxRows, max(1, rawRows))
+        if rawCols > maxCols || rawRows > maxRows {
+            Log.warn(
+                "RustTerminalView[\(viewId)]: layout - clamped absurd resize target rawCols=\(rawCols) rawRows=\(rawRows) bounds=\(bounds) insetRect=\(insetRect) cellWidth=\(cellWidth) cellHeight=\(cellHeight)"
+            )
+        }
 
         if newCols != cols || newRows != rows {
-            Log.trace("RustTerminalView[\(viewId)]: layout - Resizing from \(cols)x\(rows) to \(newCols)x\(newRows)")
+            Log.info("RustTerminalView[\(viewId)]: layout - Resizing from \(cols)x\(rows) to \(newCols)x\(newRows)")
             cols = newCols
             rows = newRows
             rustTerminal?.resize(cols: UInt16(cols), rows: UInt16(rows))
