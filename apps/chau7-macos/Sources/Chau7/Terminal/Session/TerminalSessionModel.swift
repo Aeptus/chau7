@@ -2253,7 +2253,19 @@ final class TerminalSessionModel {
         // After several retries the shell has had time to start — force-clear
         // isShellLoading to break the deadlock where the initial OSC 7 directory
         // matches the saved directory and handlePromptDetected is never called.
+        //
+        // Hazard: retry-4 runs ~1.2s after the first queued prefill (initial
+        // 0.3s delay + 0.3s * retries). On a genuinely slow cold boot the
+        // shell may still be starting. Once we flip isShellLoading→false,
+        // the next canPrefillInput() can pass and we type the resume command
+        // into mid-boot output. Rare in practice because `canPrefillInput`
+        // also requires the terminal view to be attached and a prompt to be
+        // detected, but worth knowing when debugging garbled prefill on
+        // boot. Log.warn the force-clear so it's greppable.
         if pendingPrefillRetries >= 4, isShellLoading {
+            Log.warn(
+                "Resume prefill: force-clearing isShellLoading after \(pendingPrefillRetries) retries to break OSC-7 deadlock (tab=\(tabIdentifier))"
+            )
             isShellLoading = false
         }
 
