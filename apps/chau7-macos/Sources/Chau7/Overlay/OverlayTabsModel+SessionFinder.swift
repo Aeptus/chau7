@@ -1398,7 +1398,15 @@ extension OverlayTabsModel {
         let normalizedExpectedSessionID = OverlayTabsModel.normalizeAISessionId(intent.expectedSessionID)
         let normalizedCurrentSessionID = OverlayTabsModel.normalizeAISessionId(session.effectiveAISessionId)
 
-        let directoryMatches = normalizedExpectedDirectory.isEmpty || normalizedExpectedDirectory == normalizedCurrentDirectory
+        // Directory ownership check. The previous `isEmpty ||` shortcut
+        // treated "expected directory unknown" as "match anything" — which
+        // silently delivered a resume command to whatever session happened
+        // to occupy the pane slot. Tighten: accept only if the normalized
+        // strings are equal (both empty is still fine — a genuinely
+        // directory-less saved state matching a directory-less live session
+        // is not a mismatch). Empty-expected + non-empty-current is now
+        // rejected with a warn that distinguishes it from a hard mismatch.
+        let directoryMatches = normalizedExpectedDirectory == normalizedCurrentDirectory
         let providerMatches = normalizedExpectedProvider == nil || normalizedExpectedProvider == normalizedCurrentProvider
         let sessionMatches = normalizedExpectedSessionID == nil || normalizedExpectedSessionID == normalizedCurrentSessionID
 
