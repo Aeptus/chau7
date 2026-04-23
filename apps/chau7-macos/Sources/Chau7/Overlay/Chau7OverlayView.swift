@@ -2027,23 +2027,18 @@ struct UnifiedTabButton: View {
 
     private var tabChip: some View {
         HStack(spacing: 8) {
-            // Session-dependent content (icon, title, path, git) in an observing subview
-            if let session = tab.displaySession {
-                TabSessionContent(
-                    session: session,
-                    customTitle: tab.customTitle,
-                    isMinimalDisplay: isMinimalDisplay,
-                    hideRepoPath: hideRepoPath,
-                    notificationStyle: notificationStyle,
-                    titleFont: titleFont,
-                    titleColor: titleColor
-                )
-            } else {
-                Text(resolvedTitle)
-                    .font(titleFont)
-                    .foregroundStyle(titleColor ?? .primary)
-                    .lineLimit(1)
-            }
+            // Session-dependent content (icon, title, path, git) in an observing
+            // subview so the Path A/B switch tracks `splitController` changes
+            // (presentationSession flipping nil → non-nil at restore completion).
+            TabLabelContent(
+                splitController: tab.splitController,
+                tab: tab,
+                isMinimalDisplay: isMinimalDisplay,
+                hideRepoPath: hideRepoPath,
+                notificationStyle: notificationStyle,
+                titleFont: titleFont,
+                titleColor: titleColor
+            )
 
             if !isMinimalDisplay {
                 // MCP indicator
@@ -2122,6 +2117,44 @@ struct UnifiedTabButton: View {
             }
         )
         // onHover, contextMenu, pulse animation, and onChange are in body
+    }
+}
+
+// MARK: - Tab Label Content (observes splitController for A/B path switch)
+
+/// Subview that owns the "do we have a live session yet?" decision. Taking
+/// `splitController` as an explicit let binding forces SwiftUI to register
+/// observation on the `@Observable` controller at this view's body scope, so
+/// `presentationSession` flipping nil → non-nil at restore completion triggers
+/// a re-render that swaps in `TabSessionContent`. Previously the switch lived
+/// inline in `UnifiedTabButton.tabChip` where observation could be missed if
+/// other body reads short-circuited before `tab.displaySession` was evaluated.
+struct TabLabelContent: View {
+    let splitController: SplitPaneController
+    let tab: OverlayTab
+    let isMinimalDisplay: Bool
+    var hideRepoPath = false
+    let notificationStyle: TabNotificationStyle?
+    let titleFont: Font
+    let titleColor: Color?
+
+    var body: some View {
+        if let session = splitController.presentationSession {
+            TabSessionContent(
+                session: session,
+                customTitle: tab.customTitle,
+                isMinimalDisplay: isMinimalDisplay,
+                hideRepoPath: hideRepoPath,
+                notificationStyle: notificationStyle,
+                titleFont: titleFont,
+                titleColor: titleColor
+            )
+        } else {
+            Text(tab.displayTitle)
+                .font(titleFont)
+                .foregroundStyle(titleColor ?? .primary)
+                .lineLimit(1)
+        }
     }
 }
 

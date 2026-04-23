@@ -185,7 +185,13 @@ final class TerminalSessionModel {
     /// resolved from the OS process tree on a shared poll. When non-nil this is the
     /// ground truth — the tab chrome prefers it over persisted metadata so a tab
     /// restored with a stale provider self-heals as soon as the real tool is seen.
-    @ObservationIgnored private(set) var liveAgentName: String? {
+    ///
+    /// Not `@ObservationIgnored`: the tab title's `aiDisplayAppName` computation
+    /// reads this first, so SwiftUI must track it or the title stays stale when
+    /// the live signal arrives after an initial render that saw only nil.
+    /// Writes are main-thread (process-tree snapshots dispatch to main) and the
+    /// `!= oldValue` guard below keeps the observation fanout quiet on no-ops.
+    private(set) var liveAgentName: String? {
         didSet {
             guard liveAgentName != oldValue else { return }
             recalculateCTOFlag()

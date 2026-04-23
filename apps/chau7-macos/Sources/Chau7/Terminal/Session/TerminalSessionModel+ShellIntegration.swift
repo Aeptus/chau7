@@ -1413,6 +1413,12 @@ extension TerminalSessionModel {
                 "Restored AI metadata for tab=\(tabIdentifier); suppressing prompt waiting_input fallback until explicit user command"
             )
         }
+        // Diagnostic: surface resolved title inputs post-restore so we can
+        // distinguish "metadata restored but title stale" from "metadata never
+        // applied to this session". Trace-level so it only fires in verbose.
+        Log.trace(
+            "restoreAIMetadata resolved session=\(tabIdentifier) provider=\(normalizedProvider ?? "nil") activeAppName=\(activeAppName ?? "nil") displayName=\(aiDisplayAppName ?? "nil")"
+        )
 
         agentStartedAt = startedAt
         if let lastInputAt {
