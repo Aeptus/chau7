@@ -612,6 +612,12 @@ struct SavedTabState: Codable {
     let lastExitCode: Int?
     let lastExitAt: Date?
     let commandBlocks: [CommandBlock]?
+    /// Legacy-only: old versions persisted PNG-encoded terminal snapshots
+    /// for the restore-preview UI. New saves always write nil (see commit
+    /// 31d08d0 "Stop encoding PNG preview snapshots in auto-save"). Kept
+    /// on SavedTabState so decoding an older on-disk backup still hydrates
+    /// `OverlayTab.restorePreviewSnapshot` — the field naturally sunsets
+    /// when the user's saved state is overwritten by a new save.
     let previewSnapshotPNGData: Data?
 
     static let userDefaultsKey = "com.chau7.savedTabState"
@@ -1475,22 +1481,6 @@ final class OverlayTabsModel {
             executeSynchronouslyWhenPossible: executeSynchronouslyWhenPossible
         )
         notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
-    }
-
-    func encodedRestorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> Data? {
-        guard let snapshot = persistableRestorePreviewSnapshot(for: tab, isSelected: isSelected) else {
-            return nil
-        }
-        return Self.pngData(from: snapshot)
-    }
-
-    func persistableRestorePreviewSnapshot(for tab: OverlayTab, isSelected: Bool) -> NSImage? {
-        _ = isSelected
-
-        guard let terminalView = (tab.displaySession ?? tab.session)?.existingRustTerminalView else {
-            return nil
-        }
-        return Self.captureSnapshotImage(from: terminalView, allowForcedTerminalSync: true)
     }
 
     private static func snapshotSurface(for view: NSView) -> NSView {
