@@ -1242,12 +1242,16 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     /// Move a tab from one window to another. Pass toWindowIndex = -1 to create a new window.
     private func moveTab(_ tabID: UUID, fromWindowIndex: Int, toWindowIndex: Int) {
+        // Diagnostic tag: correlate all rss samples from one drag operation.
+        let dragID = String(UUID().uuidString.prefix(8))
+        Self.logRSSSample("moveTab[\(dragID)] entry from=\(fromWindowIndex) to=\(toWindowIndex)")
         guard fromWindowIndex < overlayHosts.count else {
             Log.warn("moveTab: fromWindowIndex \(fromWindowIndex) out of bounds (count=\(overlayHosts.count))")
             return
         }
         let source = overlayHosts[fromWindowIndex].model
         guard let tab = source.extractTabForWindowTransfer(id: tabID) else { return }
+        Self.logRSSSample("moveTab[\(dragID)] after extractTabForWindowTransfer")
 
         if toWindowIndex == -1 {
             // Create a new window and move the tab into it
@@ -1263,9 +1267,13 @@ private final class OverlayBlurView: NSVisualEffectView {
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
             overlayHosts.append(OverlayHost(window: window, model: tabsModel))
+            Self.logRSSSample("moveTab[\(dragID)] after createOverlayWindow")
             wireTabMoveCallbacks()
+            Self.logRSSSample("moveTab[\(dragID)] after wireTabMoveCallbacks")
             hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveTab-hideEmptiedSource")
+            Self.logRSSSample("moveTab[\(dragID)] after hideEmptiedWindowIfNeeded")
             showOverlayWindow(overlayHosts.last!, reason: "moveToNewWindow")
+            Self.logRSSSample("moveTab[\(dragID)] after showOverlayWindow (newWindow)")
             Log.info("Moved tab \(tabID) to new window \(windowNumber)")
         } else {
             guard toWindowIndex < overlayHosts.count else {
@@ -1277,10 +1285,24 @@ private final class OverlayBlurView: NSVisualEffectView {
             let target = overlayHosts[toWindowIndex].model
             target.tabs.append(tab)
             target.selectTab(id: tab.id)
+            Self.logRSSSample("moveTab[\(dragID)] after target.tabs.append+selectTab")
             wireTabMoveCallbacks()
+            Self.logRSSSample("moveTab[\(dragID)] after wireTabMoveCallbacks")
             hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveTab-hideEmptiedSource")
+            Self.logRSSSample("moveTab[\(dragID)] after hideEmptiedWindowIfNeeded")
             showOverlayWindow(overlayHosts[toWindowIndex], reason: "moveToExistingWindow")
+            Self.logRSSSample("moveTab[\(dragID)] after showOverlayWindow (existingWindow)")
             Log.info("Moved tab \(tabID) from window \(fromWindowIndex) to \(toWindowIndex)")
+        }
+
+        // Schedule delayed samples across the window during which the
+        // 50GB spike was observed (~52s after drag end in historical logs).
+        // This tells us whether the leak happens inside moveTab's call chain
+        // or later during async lifecycle / render fanout.
+        for delay in [0.1, 1.0, 5.0, 15.0, 30.0, 50.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                Self.logRSSSample("moveTab[\(dragID)] +\(delay)s")
+            }
         }
     }
 
@@ -2447,5 +2469,27 @@ private final class OverlayBlurView: NSVisualEffectView {
     private func allocateOverlayWindowNumber() -> Int {
         defer { nextOverlayWindowNumber += 1 }
         return nextOverlayWindowNumber
+    }
+
+    /// Current resident memory in MB (mach task_info). Returns nil on failure.
+    private static func currentResidentMB() -> Int? {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return nil }
+        return Int(info.resident_size / 1024 / 1024)
+    }
+
+    /// Log RSS as an INFO line tagged `rssSample: …`. Always logged (not gated
+    /// by a diagnostic env var) because this is used for an active leak
+    /// investigation — remove once the cross-window-drag leak is root-caused.
+    fileprivate static func logRSSSample(_ label: String) {
+        if let mb = currentResidentMB() {
+            Log.info("rssSample: \(mb)MB — \(label)")
+        }
     }
 }
