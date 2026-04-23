@@ -281,6 +281,19 @@ extension SplitNode {
                 if !state.directory.isEmpty {
                     session.updateCurrentDirectory(state.directory)
                 }
+                // Eagerly seed the AI provider so the tab title shows
+                // "Codex"/"Claude"/etc. on first render — without this, the
+                // provider-driven fallback in `aiDisplayAppName` returns nil
+                // until the deferred per-tab `restoreTabState` runs (which
+                // only fires for the currently-selected tab at launch, plus
+                // each tab the user subsequently clicks). Setting just
+                // `lastAIProvider` is enough: the `Self.displayName(
+                // fromProvider:)` branch lights up the correct name, and
+                // the later full `restoreAIMetadata` call overwrites with
+                // the same value + fills in `activeAppName`.
+                if let normalized = AIResumeParser.normalizeProviderName(state.aiProvider ?? "") {
+                    session.lastAIProvider = normalized
+                }
             }
             return .terminal(id: resolvedID, session: session)
         case .textEditor:
