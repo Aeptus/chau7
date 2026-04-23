@@ -700,6 +700,7 @@ final class RuntimeControlService {
             task.waitUntilExit()
             return task.terminationStatus == 0
         } catch {
+            Log.warn("RuntimeControlService.binaryExistsInPath: /usr/bin/which launch failed for \(name): \(error)")
             return false
         }
     }

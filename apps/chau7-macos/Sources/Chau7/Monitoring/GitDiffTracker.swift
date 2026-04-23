@@ -275,6 +275,12 @@ final class GitDiffTracker {
         do {
             try process.run()
         } catch {
+            // Distinguish launch failure from "git returned no output":
+            // the empty-string sentinel previously collided with a clean
+            // tree, so callers (diff coloring, change detection) treated
+            // a broken git install as "nothing changed." Log at warn so
+            // the genuine launch failure is visible.
+            Log.warn("GitDiffTracker.runGit: Process launch failed at \(process.executableURL?.path ?? "<nil>") for args=\(args.prefix(4).joined(separator: " ")): \(error)")
             return ""
         }
 
