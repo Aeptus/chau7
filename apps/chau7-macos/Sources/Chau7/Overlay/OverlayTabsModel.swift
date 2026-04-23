@@ -3638,7 +3638,19 @@ final class OverlayTabsModel {
         dismissHoverCard()
         isSearchVisible = false
         renameTabID = tab.id
-        renameText = tab.displayTitle
+        // Pre-fill with the user's customTitle if one exists, otherwise
+        // fall back to displayTitle. Using displayTitle directly meant
+        // users editing an AI-prefixed tab saw the composed form
+        // ("Codex - my tab") in the field and had to manually strip the
+        // prefix to edit just their part. With this change, users with
+        // a custom title see exactly what they typed; users without one
+        // see the current displayed title (AI name or fallback) as a
+        // suggested starting point.
+        if let custom = tab.customTitle, !custom.isEmpty {
+            renameText = custom
+        } else {
+            renameText = tab.displayTitle
+        }
         renameColor = tab.color
         renameOriginalTitle = renameText
         renameOriginalColor = renameColor
