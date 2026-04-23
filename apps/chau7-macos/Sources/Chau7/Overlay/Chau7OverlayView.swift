@@ -2187,11 +2187,16 @@ struct TabSessionContent: View {
     }
 
     private var resolvedTitle: String {
+        // Pass the raw setting; the formatter internally only applies
+        // customTitleOnly when a non-empty custom title exists, so the
+        // `customTitle-is-set` derivation that `isMinimalDisplay` layers
+        // on top is redundant for title resolution (though still needed
+        // for the icon/path hiding logic below).
         TabTitleFormatter.resolvedTitle(
             customTitle: customTitle,
             aiDisplayAppName: session.aiDisplayAppName,
             devServerName: session.devServer?.name,
-            customTitleOnly: isMinimalDisplay,
+            customTitleOnly: FeatureSettings.shared.customTitleOnly,
             shellFallback: L("tab.shell", "Shell")
         )
     }
