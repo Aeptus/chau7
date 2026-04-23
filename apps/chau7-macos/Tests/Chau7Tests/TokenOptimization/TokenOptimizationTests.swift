@@ -569,7 +569,6 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
                 changed: false,
                 reason: .unchanged
             )
-            usleep(15000)
         }
 
         let snapshot = CTORuntimeMonitor.shared.snapshot()

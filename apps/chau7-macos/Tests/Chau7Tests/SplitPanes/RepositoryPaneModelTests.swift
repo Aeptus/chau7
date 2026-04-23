@@ -659,7 +659,12 @@ final class RepositoryPaneModelTests: XCTestCase {
         let journal = EventJournal(capacity: 100)
         journal.append(sessionID: "test", turnID: "t1", type: RuntimeEventType.turnStarted.rawValue)
         let firstTurnTime = Date()
-        usleep(10000)
+        // The tracker attributes a block to the latest turn whose timestamp <= block.endTime.
+        // We need t2's timestamp strictly greater than firstTurnTime so the block
+        // (endTime = firstTurnTime) is routed to t1, not t2. Date() has microsecond
+        // resolution on macOS, so wait only as long as needed for the clock to advance
+        // rather than a fixed sleep.
+        while Date() <= firstTurnTime {}
         journal.append(sessionID: "test", turnID: "t2", type: RuntimeEventType.turnStarted.rawValue)
 
         var block = CommandBlock(command: "touch Sources/OldTurn.swift", startLine: 1, directory: "/repo")

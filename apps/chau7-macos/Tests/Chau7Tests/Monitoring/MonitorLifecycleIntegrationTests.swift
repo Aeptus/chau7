@@ -94,6 +94,11 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
         wait(for: [firstPoll], timeout: 3.0)
 
         monitor.stop()
+        // ProcessResourceMonitor.stop() cancels its timer but cannot synchronously wait
+        // for an already-dispatched tick to run its `onUpdate`. Without this drain window,
+        // a racing callback could fulfill `secondPoll` before `start()` is called again.
+        // Until the monitor exposes a completion callback, this short wall-clock wait is
+        // the only way to keep the restart test deterministic.
         Thread.sleep(forTimeInterval: 0.1)
         lock.lock()
         shouldExpectSecondPoll = true
