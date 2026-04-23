@@ -1515,11 +1515,7 @@ extension TerminalSessionModel {
             currentDirectory: currentDirectory,
             searchPath: launchPATHValue()
         )
-        let measurementKind = LatencyMeasurementSemantics.inputMeasurementKind(
-            hasBackgroundAIContext: hasBackgroundRenderingAIContext,
-            detectedLaunchableApp: detectedApp
-        )
-        guard measurementKind == .aiRoundTrip else {
+        guard hasBackgroundRenderingAIContext || detectedApp != nil else {
             clearPendingAITiming()
             clearWaitingInputFallbackTracking()
             return
