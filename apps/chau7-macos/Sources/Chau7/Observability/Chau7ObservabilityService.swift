@@ -85,6 +85,16 @@ final class Chau7ObservabilityService {
         return encode(payload: payload)
     }
 
+    /// Thread-safe timer inventory snapshot. Equivalent to calling
+    /// `timerInventoryPayload()` under the observability queue lock — use
+    /// this from external callers that don't already hold the lock.
+    /// Reading `timers` without the lock races with every
+    /// `registerTimer` / `setTimerActive` / `updateTimerScope` and can
+    /// crash on concurrent dictionary mutation.
+    func timerInventorySnapshot() -> [String: Any] {
+        queue.sync { timerInventoryPayload() }
+    }
+
     func latestSequence() -> Int64 {
         queue.sync {
             max(nextSeq - 1, 0)
@@ -441,7 +451,18 @@ final class Chau7ObservabilityService {
 
     private func dispatchChangeIfNeeded(seq: Int64) {
         let listenersToNotify: [(handler: (ChangePayload) -> Void, payload: ChangePayload)] = queue.sync {
-            guard let change = changes.last, change.seq == seq else { return [] }
+            // Look up the specific change by seq rather than trusting
+            // `changes.last`. Every record-like entry point (`recordEvent`,
+            // `registerTimer`, `setTimerActive`, `updateTimerScope`) appends
+            // inside one `queue.sync` and dispatches inside a *second*
+            // `queue.sync` — a serial queue only enforces mutual exclusion
+            // per block, so a concurrent recorder can slip in between and
+            // advance `changes.last` past our seq. The old `changes.last?.seq
+            // == seq` guard would then silently drop every listener
+            // notification for our change. `last(where:)` searches backward
+            // and hits on the first element for a just-allocated seq; the
+            // bounded `changes` ring keeps worst case cheap.
+            guard let change = changes.last(where: { $0.seq == seq }) else { return [] }
             let payload = changeDictionary(change)
             return listeners.compactMap { _, listener in
                 if let topics = listener.topics, topics.isDisjoint(with: change.topics) {
