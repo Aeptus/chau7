@@ -995,7 +995,7 @@ final class TerminalSessionModel {
             return active
         }
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedTitle.isEmpty ? "Shell" : trimmedTitle
+        return trimmedTitle.isEmpty ? L("tab.shell", "Shell") : trimmedTitle
     }
 
     /// Idle timeout in seconds. Configurable via environment variable.
