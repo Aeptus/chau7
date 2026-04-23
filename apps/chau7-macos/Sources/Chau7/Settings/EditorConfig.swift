@@ -20,12 +20,8 @@ struct EditorConfig: Codable, Equatable {
 
     /// Load persisted configuration from UserDefaults.
     static func load() -> EditorConfig {
-        guard let data = UserDefaults.standard.data(forKey: "editor.config"),
-              let config = try? JSONDecoder().decode(EditorConfig.self, from: data)
-        else {
-            return .default
-        }
-        return config
+        let data = UserDefaults.standard.data(forKey: "editor.config")
+        return Persist.decodeLogged(EditorConfig.self, from: data, context: "editor.config") ?? .default
     }
 
     /// Persist configuration to UserDefaults.

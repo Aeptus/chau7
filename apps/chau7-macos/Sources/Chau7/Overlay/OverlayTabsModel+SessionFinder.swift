@@ -338,8 +338,12 @@ extension OverlayTabsModel {
     /// 2. Legacy single-window key
     /// 3. Latest backup payloads
     static func restoreSavedTabs(appModel: AppModel) -> RestorableTabsPayload? {
-        if let data = UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
-           let multiState = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data),
+        let multiData = UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey)
+        if let multiState = Persist.decodeLogged(
+            SavedMultiWindowState.self,
+            from: multiData,
+            context: "restore.multiWindowState"
+        ),
            let primaryWindowStates = multiState.windows.first,
            !primaryWindowStates.isEmpty {
             let mergedWindows = mergedWindowStatesWithBackupFallbacks(baseWindows: multiState.windows)
@@ -353,8 +357,12 @@ extension OverlayTabsModel {
             )
         }
 
-        if let data = UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey),
-           let singleWindowStates = try? JSONDecoder().decode([SavedTabState].self, from: data),
+        let singleData = UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey)
+        if let singleWindowStates = Persist.decodeLogged(
+            [SavedTabState].self,
+            from: singleData,
+            context: "restore.singleWindowState"
+        ),
            !singleWindowStates.isEmpty {
             let mergedWindows = mergedWindowStatesWithBackupFallbacks(baseWindows: [singleWindowStates])
             maybeRepairUserDefaultsSingleWindowState(
@@ -379,7 +387,11 @@ extension OverlayTabsModel {
     }
 
     static func decodeRestorableTabs(from data: Data, appModel: AppModel) -> RestorableTabsPayload? {
-        guard let states = try? JSONDecoder().decode([SavedTabState].self, from: data),
+        guard let states = Persist.decodeLogged(
+            [SavedTabState].self,
+            from: data,
+            context: "restore.restorableTabs"
+        ),
               !states.isEmpty else {
             return nil
         }
@@ -624,6 +636,11 @@ extension OverlayTabsModel {
     }
 
     static func decodeBackupWindowStates(from data: Data) -> [[SavedTabState]]? {
+        // Intentional schema probe: backup payloads may be either
+        // `SavedMultiWindowState` or a bare `[SavedTabState]` (legacy). Using
+        // `Persist.decodeLogged` here would warn on every single-window
+        // backup (the multi-window decode fails legitimately before the
+        // fallback succeeds), so keep silent `try?` for this two-format race.
         if let multiState = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data),
            !multiState.windows.isEmpty {
             return multiState.windows

@@ -2902,13 +2902,8 @@ final class FeatureSettings {
         }
         let allowedCommands = defaults.stringArray(forKey: Keys.mcpAllowedCommands) ?? []
         let blockedCommands = defaults.stringArray(forKey: Keys.mcpBlockedCommands) ?? []
-        let profiles: [MCPProfile]
-        if let profileData = defaults.data(forKey: Keys.mcpProfiles),
-           let decoded = try? JSONDecoder().decode([MCPProfile].self, from: profileData) {
-            profiles = decoded
-        } else {
-            profiles = []
-        }
+        let profileData = defaults.data(forKey: Keys.mcpProfiles)
+        let profiles = Persist.decodeLogged([MCPProfile].self, from: profileData, context: "mcp.profiles") ?? []
 
         // Remote Control (default: disabled)
         let remoteEnabled = defaults.object(forKey: Keys.remoteEnabled) as? Bool ?? false
