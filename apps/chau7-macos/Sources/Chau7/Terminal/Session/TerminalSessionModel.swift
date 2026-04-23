@@ -490,6 +490,22 @@ final class TerminalSessionModel {
         }
     }
 
+    /// Second hydration path for a session's AI identity, independent from
+    /// the main restore pipeline. Called by AppModel's history-file watcher
+    /// (not during startup restoreTabState) when a tool's on-disk history
+    /// (e.g. `~/.codex/sessions/*.jsonl`) shows an active session that
+    /// matches this shell's directory and recent activity window.
+    ///
+    /// This exists because the primary restore path only applies persisted
+    /// SavedTabState metadata (explicit source). When that metadata is nil
+    /// or degraded, adoption here back-fills `lastAIProvider`,
+    /// `lastAISessionId`, `lastAgentLaunchCommand`, etc. with `source ==
+    /// .observed` — enough data to rebuild a resume command even though
+    /// the SavedTabState itself never carried it. Emits the
+    /// "Adopted history AI identity tab=…" log line.
+    ///
+    /// Tests covering this path live in
+    /// Tests/Chau7Tests/Runtime/RuntimeSessionManagerAdoptionTests.swift.
     @discardableResult
     func adoptAIHistorySession(_ request: HistorySessionAdoptionRequest) -> Bool {
         let previousProvider = lastAIProvider
