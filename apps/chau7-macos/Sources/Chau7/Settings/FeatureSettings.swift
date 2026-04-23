@@ -1389,7 +1389,8 @@ final class FeatureSettings {
         TimeInterval(max(1, idleTabThresholdMinutes) * 60)
     }
 
-    /// Called when repoGroupingMode changes (replaces Combine $repoGroupingMode publisher).
+    /// Single-subscriber callback — assigning a new closure silently replaces the previous one.
+    /// Add a multiplexer (observer list / NotificationCenter) before introducing a second consumer.
     @ObservationIgnored var onRepoGroupingModeChanged: ((RepoGroupingMode) -> Void)?
 
     var repoGroupingMode: RepoGroupingMode = {
@@ -2177,9 +2178,11 @@ final class FeatureSettings {
 
     // MARK: - Remote Control Settings
 
-    /// Called when isRemoteEnabled changes (replaces Combine $isRemoteEnabled publisher).
+    /// Single-subscriber callback — assigning a new closure silently replaces the previous one.
+    /// Add a multiplexer (observer list / NotificationCenter) before introducing a second consumer.
     @ObservationIgnored var onRemoteEnabledChanged: ((Bool) -> Void)?
-    /// Called when remoteRelayURL changes (replaces Combine $remoteRelayURL publisher).
+    /// Single-subscriber callback — assigning a new closure silently replaces the previous one.
+    /// Add a multiplexer (observer list / NotificationCenter) before introducing a second consumer.
     @ObservationIgnored var onRemoteRelayURLChanged: ((String) -> Void)?
 
     var isRemoteEnabled: Bool {
