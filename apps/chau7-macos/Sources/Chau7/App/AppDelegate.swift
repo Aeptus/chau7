@@ -258,7 +258,30 @@ private final class OverlayBlurView: NSVisualEffectView {
                     StartupRestoreCoordinator.shared.end()
                 }
             }
+            // Watchdog: if `completeStartupRestoreIfReady` never fires (e.g.
+            // the visible-frame callback is missed, or a new regression
+            // breaks the kickoff chain again), any background tabs queued
+            // into deferredRestoreStatesByTabID stay stuck forever. Arm a
+            // 30-second backstop that force-kicks the scheduler if state
+            // is still pending. Idempotent: if the proper kickoff already
+            // ran, the scheduler is already draining and this is a no-op.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) { [weak self] in
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    self.kickDeferredRestoreIfStuck()
+                }
+            }
         }
+    }
+
+    @MainActor private func kickDeferredRestoreIfStuck() {
+        let stuck = overlayHosts.filter { $0.model.hasPendingDeferredRestore }
+        guard !stuck.isEmpty else { return }
+        let totalPending = stuck.reduce(0) { $0 + $1.model.deferredRestoreTabOrder.count }
+        Log.warn(
+            "Deferred restore watchdog: \(totalPending) tab(s) across \(stuck.count) window(s) still pending 30s after finishLaunching — force-kicking scheduler"
+        )
+        startDeferredRestoreSchedulingIfNeeded(reason: "watchdog")
     }
 
     @MainActor private func completeStartupRestoreIfReady(reason: String) {
