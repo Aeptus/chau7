@@ -1707,6 +1707,58 @@ final class OverlayTabsModel {
     /// closed-tab stack. Must be called BEFORE `closeAllSessions()` kills the shell,
     /// because we need the live scrollback buffer and active app name.
     func captureClosedTabSnapshot(tab: OverlayTab, at index: Int) {
+        // If the tab was closed before its deferred restore ran, the live
+        // session has only the eager-seeded provider and no other persisted
+        // AI metadata — scrollback, aiSessionId, agentLaunchCommand, etc.
+        // are still sitting in deferredRestoreStatesByTabID. Prefer the
+        // deferred state directly so Cmd+Shift+T gets the full last-saved
+        // record, and drain the dict/order so the state doesn't linger in
+        // memory after the tab is gone.
+        if let deferredState = deferredRestoreStatesByTabID.removeValue(forKey: tab.id) {
+            deferredRestoreTabOrder.removeAll { $0 == tab.id }
+            let archivedState = SavedTabState(
+                tabID: deferredState.tabID,
+                selectedTabID: nil,
+                customTitle: deferredState.customTitle,
+                color: deferredState.color,
+                directory: deferredState.directory,
+                selectedIndex: nil,
+                tokenOptOverride: deferredState.tokenOptOverride,
+                scrollbackContent: deferredState.scrollbackContent,
+                aiResumeCommand: deferredState.aiResumeCommand,
+                aiProvider: deferredState.aiProvider,
+                aiSessionId: deferredState.aiSessionId,
+                aiSessionIdSource: deferredState.aiSessionIdSource,
+                splitLayout: deferredState.splitLayout,
+                focusedPaneID: deferredState.focusedPaneID,
+                paneStates: deferredState.paneStates,
+                createdAt: deferredState.createdAt,
+                repoGroupID: deferredState.repoGroupID,
+                knownRepoRoot: deferredState.knownRepoRoot,
+                knownGitBranch: deferredState.knownGitBranch,
+                lastInputAt: deferredState.lastInputAt,
+                lastStatus: deferredState.lastStatus,
+                agentLaunchCommand: deferredState.agentLaunchCommand,
+                agentStartedAt: deferredState.agentStartedAt,
+                lastExitCode: deferredState.lastExitCode,
+                lastExitAt: deferredState.lastExitAt,
+                commandBlocks: deferredState.commandBlocks,
+                previewSnapshotPNGData: nil
+            )
+            closedTabStack.append(ClosedTabEntry(
+                state: archivedState,
+                originalIndex: index,
+                closedAt: Date()
+            ))
+            if closedTabStack.count > maxClosedTabs {
+                closedTabStack.removeFirst(closedTabStack.count - maxClosedTabs)
+            }
+            Log.info(
+                "Captured closed tab snapshot from deferred state: \"\(tab.displayTitle)\" at index \(index) (stack size: \(closedTabStack.count))"
+            )
+            return
+        }
+
         let maxLines = FeatureSettings.shared.restoredScrollbackLines
         let terminalSessions = tab.splitController.terminalSessions
 
@@ -3222,6 +3274,30 @@ final class OverlayTabsModel {
         }
         updateSnippetContextForSelection()
         return tab
+    }
+
+    /// Drains and returns any deferred restore state for this tab ID. The
+    /// caller (typically AppDelegate during cross-window tab transfer) is
+    /// responsible for re-queueing the state on the destination model via
+    /// `queueDeferredRestoreState` — otherwise the tab arrives on the target
+    /// without its persisted scrollback / resume command / agent metadata.
+    func drainDeferredRestoreState(tabID: UUID) -> SavedTabState? {
+        guard let state = deferredRestoreStatesByTabID.removeValue(forKey: tabID) else {
+            return nil
+        }
+        deferredRestoreTabOrder.removeAll { $0 == tabID }
+        hasStartedDeferredRestore = !deferredRestoreTabOrder.isEmpty
+        return state
+    }
+
+    /// Inject a deferred restore state for a tab that was transferred from
+    /// another model. The state is appended to the round-robin drain order
+    /// so the deferred-restore scheduler will process it on its next tick.
+    func queueDeferredRestoreState(tabID: UUID, state: SavedTabState) {
+        deferredRestoreStatesByTabID[tabID] = state
+        if !deferredRestoreTabOrder.contains(tabID) {
+            deferredRestoreTabOrder.append(tabID)
+        }
     }
 
     /// Remove all tabs in a repo group and return them for transfer to another window.

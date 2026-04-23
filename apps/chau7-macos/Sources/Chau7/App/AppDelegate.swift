@@ -1262,6 +1262,12 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
         let source = overlayHosts[fromWindowIndex].model
         guard let tab = source.extractTabForWindowTransfer(id: tabID) else { return }
+        // Carry any pending deferred restore state along with the tab. If
+        // the tab was still in the source model's deferred queue (not yet
+        // restored), the state would otherwise be orphaned there and the
+        // tab would arrive on the target without its persisted scrollback,
+        // resume command, or agent metadata.
+        let carriedDeferredState = source.drainDeferredRestoreState(tabID: tabID)
         Self.logRSSSample("moveTab[\(dragID)] after extractTabForWindowTransfer")
 
         if toWindowIndex == -1 {
@@ -1274,6 +1280,9 @@ private final class OverlayBlurView: NSVisualEffectView {
             tabsModel.selectedTabID = movedTab.id
             movedTab.stampOwnerTabID()
             tabsModel.tabs[0] = movedTab
+            if let carriedDeferredState {
+                tabsModel.queueDeferredRestoreState(tabID: movedTab.id, state: carriedDeferredState)
+            }
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
@@ -1290,11 +1299,17 @@ private final class OverlayBlurView: NSVisualEffectView {
             guard toWindowIndex < overlayHosts.count else {
                 Log.warn("moveTab: target window \(toWindowIndex) closed during drag (count=\(overlayHosts.count)), re-inserting tab into source")
                 source.tabs.append(tab)
+                if let carriedDeferredState {
+                    source.queueDeferredRestoreState(tabID: tab.id, state: carriedDeferredState)
+                }
                 source.selectTab(id: tab.id)
                 return
             }
             let target = overlayHosts[toWindowIndex].model
             target.tabs.append(tab)
+            if let carriedDeferredState {
+                target.queueDeferredRestoreState(tabID: tab.id, state: carriedDeferredState)
+            }
             target.selectTab(id: tab.id)
             Self.logRSSSample("moveTab[\(dragID)] after target.tabs.append+selectTab")
             wireTabMoveCallbacks()
@@ -1331,6 +1346,13 @@ private final class OverlayBlurView: NSVisualEffectView {
             Log.warn("moveGroup: no tabs found for group \(repoName)")
             return
         }
+        // Carry each tab's pending deferred restore state so none of them
+        // arrive on the target model stripped of their persisted AI /
+        // scrollback metadata.
+        let carriedDeferredStates: [(UUID, SavedTabState)] = groupTabs.compactMap { tab in
+            guard let state = source.drainDeferredRestoreState(tabID: tab.id) else { return nil }
+            return (tab.id, state)
+        }
         Log.info("moveGroup: extracted \(groupTabs.count) tabs from \(repoName)")
 
         if toWindowIndex == -1 {
@@ -1341,6 +1363,9 @@ private final class OverlayBlurView: NSVisualEffectView {
                 return t
             }
             tabsModel.selectedTabID = groupTabs[0].id
+            for (tabID, state) in carriedDeferredStates {
+                tabsModel.queueDeferredRestoreState(tabID: tabID, state: state)
+            }
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
@@ -1353,11 +1378,17 @@ private final class OverlayBlurView: NSVisualEffectView {
             guard toWindowIndex < overlayHosts.count else {
                 Log.warn("moveGroup: target window \(toWindowIndex) closed during drag (count=\(overlayHosts.count)), re-inserting group into source")
                 source.tabs.append(contentsOf: groupTabs)
+                for (tabID, state) in carriedDeferredStates {
+                    source.queueDeferredRestoreState(tabID: tabID, state: state)
+                }
                 source.selectTab(id: groupTabs[0].id)
                 return
             }
             let target = overlayHosts[toWindowIndex].model
             target.tabs.append(contentsOf: groupTabs)
+            for (tabID, state) in carriedDeferredStates {
+                target.queueDeferredRestoreState(tabID: tabID, state: state)
+            }
             target.selectTab(id: groupTabs[0].id)
             wireTabMoveCallbacks()
             hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveGroup-hideEmptiedSource")
