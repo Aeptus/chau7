@@ -7,7 +7,7 @@ Tab bar model, views, and hover card — the core UI for managing terminal tabs.
 | File | Purpose |
 |------|---------|
 | `OverlayTabsModel.swift` | Central model: tab lifecycle, selection, persistence, grouping, notifications |
-| `OverlayTabsModel+SessionFinder.swift` | AI resume resolution, Codex session matching, provider-specific finders |
+| `OverlayTabsModel+RestorePipeline.swift` | Session-finder registry, scrollback capture, tab-state restore/backup IO, resume-prefill delivery |
 | `OverlayTabsModel+TabSwitchOptimization.swift` | Pre-warm on hover, snapshot capture, render state caching |
 | `Chau7OverlayView.swift` | Tab bar SwiftUI views: segments, buttons, brackets, drag/drop, hit testing |
 | `TabHoverCard.swift` | Hover card: AI session summary, conflicts, process info, notification state |

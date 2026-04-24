@@ -2553,7 +2553,7 @@ final class OverlayTabsModel {
         return (provider: provider, sessionId: foundSessionId)
     }
 
-    // Session Finder Registry → OverlayTabsModel+SessionFinder.swift
+    // Session Finder Registry → OverlayTabsModel+RestorePipeline.swift
 
     // MARK: - Tab Selection
 
