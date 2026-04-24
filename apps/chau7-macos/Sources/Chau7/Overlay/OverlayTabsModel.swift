@@ -1616,13 +1616,9 @@ final class OverlayTabsModel {
     func saveTabState(reason: TabStateSaveReason = .manual) {
         let states = exportTabStates()
         guard !states.isEmpty else { return }
-        do {
-            let data = try JSONEncoder().encode(states)
-            persistTabStateBackups(data: data, reason: reason)
-            Log.trace("Saved \(states.count) tab state(s) to disk backup [\(reason.rawValue)]")
-        } catch {
-            Log.warn("Failed to save tab state: \(error)")
-        }
+        guard let data = Persist.encodeLogged(states, context: "saveTabState[\(reason.rawValue)]") else { return }
+        persistTabStateBackups(data: data, reason: reason)
+        Log.trace("Saved \(states.count) tab state(s) to disk backup [\(reason.rawValue)]")
     }
 
     /// Exports current tab states without persisting to disk.

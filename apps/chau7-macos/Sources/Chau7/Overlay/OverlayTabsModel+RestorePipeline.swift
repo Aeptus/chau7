@@ -597,7 +597,10 @@ extension OverlayTabsModel {
 
     private static func maybeRepairLatestBackup(baseWindows: [[SavedTabState]], mergedWindows: [[SavedTabState]]) {
         guard aiResumePayloadScore(in: mergedWindows) > aiResumePayloadScore(in: baseWindows) else { return }
-        guard let payload = try? JSONEncoder().encode(SavedMultiWindowState(windows: mergedWindows)) else { return }
+        guard let payload = Persist.encodeLogged(
+            SavedMultiWindowState(windows: mergedWindows),
+            context: "maybeRepairLatestBackup"
+        ) else { return }
         do {
             try writeLatestTabStateBackup(payload)
             Log.info("Repaired latest tab-state backup from archived AI resume metadata")
@@ -611,7 +614,10 @@ extension OverlayTabsModel {
         mergedWindows: [[SavedTabState]]
     ) {
         guard aiResumePayloadScore(in: mergedWindows) > aiResumePayloadScore(in: originalWindows) else { return }
-        guard let payload = try? JSONEncoder().encode(SavedMultiWindowState(windows: mergedWindows)) else { return }
+        guard let payload = Persist.encodeLogged(
+            SavedMultiWindowState(windows: mergedWindows),
+            context: "maybeRepairUserDefaultsMultiWindowState"
+        ) else { return }
         UserDefaults.standard.set(payload, forKey: SavedMultiWindowState.userDefaultsKey)
         Log.info("Repaired UserDefaults multi-window state from archived AI resume metadata")
     }
@@ -622,7 +628,10 @@ extension OverlayTabsModel {
     ) {
         guard aiResumePayloadScore(in: mergedWindows) > aiResumePayloadScore(in: originalWindows),
               let firstWindow = mergedWindows.first,
-              let payload = try? JSONEncoder().encode(firstWindow) else {
+              let payload = Persist.encodeLogged(
+                  firstWindow,
+                  context: "maybeRepairUserDefaultsSingleWindowState"
+              ) else {
             return
         }
         UserDefaults.standard.set(payload, forKey: SavedTabState.userDefaultsKey)
@@ -654,13 +663,20 @@ extension OverlayTabsModel {
 
     static func persistWindowStateBackups(windowStates: [[SavedTabState]], reason: TabStateSaveReason) {
         guard !windowStates.isEmpty else { return }
-        let payload: Data
+        let payload: Data?
+        if windowStates.count == 1 {
+            payload = Persist.encodeLogged(
+                windowStates[0],
+                context: "persistWindowStateBackups.single[\(reason.rawValue)]"
+            )
+        } else {
+            payload = Persist.encodeLogged(
+                SavedMultiWindowState(windows: windowStates),
+                context: "persistWindowStateBackups.multi[\(reason.rawValue)]"
+            )
+        }
+        guard let payload else { return }
         do {
-            if windowStates.count == 1 {
-                payload = try JSONEncoder().encode(windowStates[0])
-            } else {
-                payload = try JSONEncoder().encode(SavedMultiWindowState(windows: windowStates))
-            }
             try writeLatestTabStateBackup(payload)
             if shouldArchiveMultiWindowBackup(data: payload, reason: reason) {
                 try writeArchivedTabStateBackup(payload, reason: reason)
