@@ -976,12 +976,14 @@ extension TerminalSessionModel {
         var matchedApp: String?
         var matchedPattern: String?
 
-        // Fast path: Rust Aho-Corasick on the lowercased haystack
-        if let index = RustPatternMatcher.outputPatterns.firstMatchIndex(haystack: haystack, patterns: patternStrings) {
-            if index >= 0, index < patterns.count {
-                matchedApp = patterns[index].appName
-                matchedPattern = patterns[index].pattern
-            }
+        // Fast path: Rust Aho-Corasick on the lowercased haystack. `index`
+        // is guaranteed >= 0; the upper-bound check protects against a
+        // pattern-list shape drift between the matcher's handle and the
+        // caller's local `patterns` array.
+        if let index = RustPatternMatcher.outputPatterns.firstMatchIndex(haystack: haystack, patterns: patternStrings),
+           index < patterns.count {
+            matchedApp = patterns[index].appName
+            matchedPattern = patterns[index].pattern
         }
 
         // Fallback: linear scan (patterns already lowercased, haystack already lowercased)

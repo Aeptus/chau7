@@ -197,14 +197,16 @@ final class RustPatternMatcherTests: XCTestCase {
 
     // MARK: - Empty Patterns Short-Circuit
 
-    func testFirstMatchIndex_emptyPatterns_returnsMinusOne() {
-        // The implementation short-circuits: empty patterns returns -1
-        // (wrapped as Int?) without loading the Rust dylib.
+    func testFirstMatchIndex_emptyPatterns_returnsNil() {
+        // Empty patterns short-circuits before touching the Rust dylib and
+        // returns nil — same as every other "not found" outcome. Pre-W3.1
+        // this returned the sentinel `-1` which collided with Rust's
+        // own no-match signal.
         let result = RustPatternMatcher.outputPatterns.firstMatchIndex(
             haystack: "some text",
             patterns: []
         )
-        XCTAssertEqual(result, -1)
+        XCTAssertNil(result)
     }
 
     func testContainsAny_emptyPatterns_returnsFalse() {
@@ -257,12 +259,12 @@ final class RustPatternMatcherTests: XCTestCase {
         )
     }
 
-    func testFirstMatchIndex_emptyHaystackAndPatterns_returnsMinusOne() {
+    func testFirstMatchIndex_emptyHaystackAndPatterns_returnsNil() {
         let result = RustPatternMatcher.outputPatterns.firstMatchIndex(
             haystack: "",
             patterns: []
         )
-        XCTAssertEqual(result, -1)
+        XCTAssertNil(result)
     }
 
     func testContainsAny_emptyHaystackAndPatterns_returnsFalse() {

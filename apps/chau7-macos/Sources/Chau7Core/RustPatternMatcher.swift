@@ -34,15 +34,24 @@ public final class RustPatternMatcher {
         }
     }
 
+    /// Returns the index of the first pattern that matches `haystack`, or
+    /// `nil` for every "not found" outcome — empty pattern list, no match,
+    /// FFI unavailable, or handle-allocation failure. Callers should not
+    /// distinguish between these; there's nothing useful to do differently.
+    ///
+    /// Indices are guaranteed `>= 0`. The Rust side signals "no match" via
+    /// `Int32(-1)`; this wrapper normalizes it to `nil` so Swift callers
+    /// don't have to carry a secondary sentinel.
     public func firstMatchIndex(haystack: String, patterns: [String]) -> Int? {
-        guard !patterns.isEmpty else { return -1 }
+        guard !patterns.isEmpty else { return nil }
         guard ensureLoaded() else { return nil }
         let hash = patternHash(for: patterns)
         lock.lock()
         defer { lock.unlock() }
         guard let handle = ensurePatternHandle(for: patterns, hash: hash) else { return nil }
         return haystack.withCString { cHaystack in
-            Int(functions?.matchFirst(handle, cHaystack) ?? -1)
+            let raw = Int(functions?.matchFirst(handle, cHaystack) ?? -1)
+            return raw >= 0 ? raw : nil
         }
     }
 
