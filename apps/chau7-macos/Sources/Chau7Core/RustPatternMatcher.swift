@@ -1,10 +1,6 @@
 import Foundation
 import Darwin
 
-private func stderrPrint(_ message: String) {
-    fputs(message + "\n", stderr)
-}
-
 public final class RustPatternMatcher {
     public static let outputPatterns = RustPatternMatcher()
     public static let waitPatterns = RustPatternMatcher()
@@ -23,7 +19,6 @@ public final class RustPatternMatcher {
 
     private let lock = NSLock()
     private var loadAttempted = false
-    private var dylibHandle: UnsafeMutableRawPointer?
     private var functions: Functions?
     private var patternHash: Int?
     private var patternsHandle: UnsafeMutableRawPointer?
@@ -70,44 +65,11 @@ public final class RustPatternMatcher {
         if loadAttempted { return false }
         loadAttempted = true
 
-        let candidates = libraryCandidates()
-        var lastError: String?
-        for path in candidates {
-            if let handle = dlopen(path, RTLD_NOW) {
-                dylibHandle = handle
-                if let f = loadFunctions(from: handle) {
-                    functions = f
-                    return true
-                } else {
-                    dlclose(handle)
-                    dylibHandle = nil
-                    lastError = "symbols not found in \(path)"
-                }
-            } else {
-                lastError = String(cString: dlerror())
-            }
+        guard let loaded = RustDylib.load(label: "RustPatternMatcher", resolver: loadFunctions(from:)) else {
+            return false
         }
-        if !candidates.isEmpty {
-            stderrPrint("[RustPatternMatcher] dlopen failed. Tried: \(candidates). Last error: \(lastError ?? "unknown")")
-        }
-        return false
-    }
-
-    private func libraryCandidates() -> [String] {
-        var paths: [String] = []
-        if let envPath = ProcessInfo.processInfo.environment["CHAU7_RUST_LIB_PATH"], !envPath.isEmpty {
-            paths.append(envPath)
-        }
-        if let resourcePath = Bundle.main.path(forResource: "libchau7_parse", ofType: "dylib") {
-            paths.append(resourcePath)
-        }
-        if let resourceRoot = Bundle.main.resourcePath {
-            paths.append("\(resourceRoot)/libchau7_parse.dylib")
-        }
-        if let frameworksRoot = Bundle.main.privateFrameworksPath {
-            paths.append("\(frameworksRoot)/libchau7_parse.dylib")
-        }
-        return paths
+        functions = loaded.functions
+        return true
     }
 
     private func loadFunctions(from handle: UnsafeMutableRawPointer) -> Functions? {
