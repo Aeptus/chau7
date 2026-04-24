@@ -157,7 +157,12 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
     /// Confidence class used for routing and fallback suppression.
     public let reliability: AIEventReliability
 
+    /// Single initializer covering both "mint a fresh event" and "reconstruct
+    /// with a preserved identity" call sites. Pass `id: nil` (or omit the
+    /// argument) to auto-generate; pass an explicit `UUID` to preserve
+    /// identity across copies or deserialization.
     public init(
+        id: UUID? = nil,
         source: AIEventSource = .unknown,
         type: String,
         rawType: String? = nil,
@@ -173,41 +178,7 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         producer: String? = nil,
         reliability: AIEventReliability? = nil
     ) {
-        self.id = UUID()
-        self.source = source
-        self.type = type
-        self.rawType = rawType
-        self.tool = tool
-        self.title = title
-        self.message = message
-        self.notificationType = notificationType
-        self.ts = ts
-        self.directory = directory
-        self.repoPath = repoPath
-        self.tabID = tabID
-        self.sessionID = sessionID
-        self.producer = producer
-        self.reliability = reliability ?? Self.defaultReliability(for: source)
-    }
-
-    public init(
-        id: UUID,
-        source: AIEventSource = .unknown,
-        type: String,
-        rawType: String? = nil,
-        tool: String,
-        title: String? = nil,
-        message: String,
-        notificationType: String? = nil,
-        ts: String,
-        directory: String? = nil,
-        repoPath: String? = nil,
-        tabID: UUID? = nil,
-        sessionID: String? = nil,
-        producer: String? = nil,
-        reliability: AIEventReliability? = nil
-    ) {
-        self.id = id
+        self.id = id ?? UUID()
         self.source = source
         self.type = type
         self.rawType = rawType
