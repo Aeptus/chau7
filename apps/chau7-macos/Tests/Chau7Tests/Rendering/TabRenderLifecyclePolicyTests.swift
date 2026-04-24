@@ -24,7 +24,14 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertTrue(decision.isInteractive)
     }
 
-    func testSelectedVisibleBackgroundWindowIsPassiveVisible() {
+    func testSelectedVisibleBackgroundWindowWithActivityStaysActive() {
+        // W3.18 policy: a selected tab in a visible-but-not-key window
+        // stays in `.active` when the session is actively producing output
+        // (hasBackgroundActivity=true). Previously dropped to
+        // `.passiveVisible` and paused Metal presentation, so users
+        // couldn't see AI-agent streaming progress when glancing at
+        // another app. The PTY always drained regardless; only the
+        // Metal presentation was paused.
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: true,
@@ -41,8 +48,36 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .passiveVisible)
+        XCTAssertEqual(decision.phase, .active)
         XCTAssertTrue(decision.keepsLiveHierarchy)
+        XCTAssertFalse(
+            decision.isInteractive,
+            "Interactive still requires input-priority window — background-activity promotion only affects rendering, not input focus"
+        )
+    }
+
+    func testSelectedVisibleBackgroundWindowWithoutActivityFallsToPassiveVisible() {
+        // Mirror of the above: without background activity, a selected
+        // tab in a non-key visible window drops to `.passiveVisible` as
+        // before. This is the "save GPU when nothing's happening"
+        // branch that W3.18 did NOT touch.
+        let decision = TabRenderLifecyclePolicy.decide(
+            TabRenderLifecycleInput(
+                isSelectedTab: true,
+                isInputPriorityWindow: false,
+                isWindowVisibleForRendering: true,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: false,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true
+            )
+        )
+
+        XCTAssertEqual(decision.phase, .passiveVisible)
         XCTAssertFalse(decision.isInteractive)
     }
 

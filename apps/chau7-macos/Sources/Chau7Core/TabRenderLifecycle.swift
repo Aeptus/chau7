@@ -96,7 +96,23 @@ public enum TabRenderLifecyclePolicy {
             guard input.isWindowVisibleForRendering else {
                 return .warm
             }
-            return input.isInputPriorityWindow ? .active : .passiveVisible
+            if input.isInputPriorityWindow {
+                return .active
+            }
+            // Promote to `.active` when the session is actively producing
+            // output even though the window isn't the input-priority
+            // (key/main) window. AI-agent observation is a primary use
+            // case of Chau7: users expect to see streaming output continue
+            // when they glance at another app. The PTY always drains into
+            // the Rust grid; what `.passiveVisible` was pausing is just
+            // Metal presentation. When there's genuine activity to present,
+            // keep presenting. Pre-W3.18 this was `.passiveVisible` and the
+            // user-visible symptom was "tab content freezes, then catches
+            // up in a burst when I come back."
+            if input.hasBackgroundActivity {
+                return .active
+            }
+            return .passiveVisible
         }
         // Non-selected tabs: warm (not hidden) so views stay unhidden in the
         // hierarchy but don't drive active rendering. The shared background
