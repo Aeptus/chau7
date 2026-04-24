@@ -128,6 +128,7 @@ final class TerminalSessionModel {
     @ObservationIgnored var lastRenderedSnapshot: NSImage?
 
     // MARK: - Session state model
+
     //
     // The session exposes four *orthogonal* state axes. They are deliberately
     // not collapsed into one enum because they answer different questions
@@ -522,6 +523,7 @@ final class TerminalSessionModel {
         lastAISessionId = record.sessionId
         lastAISessionIdentitySource = record.source
     }
+
     /// The last app name set by live detection (command or output).
     /// Unlike `activeAppName`, this is NOT cleared on process exit,
     /// so it survives across save/restore boundaries.
