@@ -2786,20 +2786,32 @@ final class RustTerminalView: NSView {
         // memmove. 2000 cols / 500 rows is well above any real window layout.
         let maxCols = 2000
         let maxRows = 500
-        let newCols = min(maxCols, max(1, rawCols))
-        let newRows = min(maxRows, max(1, rawRows))
         if rawCols > maxCols || rawRows > maxRows {
             Log.warn(
                 "RustTerminalView[\(viewId)]: layout - clamped absurd resize target rawCols=\(rawCols) rawRows=\(rawRows) bounds=\(bounds) insetRect=\(insetRect) cellWidth=\(cellWidth) cellHeight=\(cellHeight)"
             )
         }
 
-        if newCols != cols || newRows != rows {
-            Log.info("RustTerminalView[\(viewId)]: layout - Resizing from \(cols)x\(rows) to \(newCols)x\(newRows)")
-            cols = newCols
-            rows = newRows
-            rustTerminal?.resize(cols: UInt16(cols), rows: UInt16(rows))
-            needsGridSync = true
+        // Skip resize when bounds collapse to a degenerate cell count.
+        // A real 1×1 `term.resize` in Rust alacritty reallocates the
+        // scrollback grid and reflows every row, corrupting the Metal
+        // triple buffer during the same churn window that caused the
+        // collapse (fullscreen toggle / window reparent / split pane
+        // teardown). The next layout() call will fire again with settled
+        // bounds and catch up; the container already applies the same
+        // `> 1` guard to its Metal resize path in TerminalViewRepresentable.layout().
+        if rawCols > 1, rawRows > 1 {
+            let newCols = min(maxCols, rawCols)
+            let newRows = min(maxRows, rawRows)
+            if newCols != cols || newRows != rows {
+                Log.info("RustTerminalView[\(viewId)]: layout - Resizing from \(cols)x\(rows) to \(newCols)x\(newRows)")
+                cols = newCols
+                rows = newRows
+                rustTerminal?.resize(cols: UInt16(cols), rows: UInt16(rows))
+                needsGridSync = true
+            }
+        } else {
+            Log.debug("RustTerminalView[\(viewId)]: layout - skipping degenerate resize target rawCols=\(rawCols) rawRows=\(rawRows) bounds=\(bounds)")
         }
 
         updateTipOverlayPosition()
