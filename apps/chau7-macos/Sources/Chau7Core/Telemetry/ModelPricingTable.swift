@@ -119,50 +119,52 @@ public enum ModelPricingTable {
         )
     ]
 
+    /// Prefix → canonical-alias mapping for model IDs that didn't match an
+    /// exact entry. Sorted by descending prefix length at static-init so the
+    /// longest prefix wins — this makes the ordering explicit instead of
+    /// hidden in the old sequential `if` ladder, where reorder would silently
+    /// reroute, e.g., `gpt-5.2-codex` to `gpt-5.2` pricing.
+    private struct PrefixRule: Sendable {
+        let prefix: String
+        let canonical: String
+    }
+
+    private static let prefixRules: [PrefixRule] = {
+        let unsorted: [PrefixRule] = [
+            // GPT-5.4 family — tier-specific variants before the bare model.
+            PrefixRule(prefix: "gpt-5.4-mini", canonical: "gpt-5.4-mini"),
+            PrefixRule(prefix: "gpt-5.4-nano", canonical: "gpt-5.4-nano"),
+            PrefixRule(prefix: "gpt-5.4", canonical: "gpt-5.4"),
+            // Codex models — 5.3/5.2 codex share pricing, 5.1/5 codex share pricing.
+            PrefixRule(prefix: "gpt-5.3-codex", canonical: "gpt-5.3-codex"),
+            PrefixRule(prefix: "gpt-5.2-codex", canonical: "gpt-5.3-codex"),
+            PrefixRule(prefix: "gpt-5.1-codex", canonical: "gpt-5.1-codex"),
+            PrefixRule(prefix: "gpt-5-codex", canonical: "gpt-5.1-codex"),
+            // GPT-5.x and GPT-5 tiers — specific tiers before bare model.
+            PrefixRule(prefix: "gpt-5.2", canonical: "gpt-5.2"),
+            PrefixRule(prefix: "gpt-5.1", canonical: "gpt-5.1"),
+            PrefixRule(prefix: "gpt-5-mini", canonical: "gpt-5-mini"),
+            PrefixRule(prefix: "gpt-5-nano", canonical: "gpt-5-nano"),
+            // Claude family fallback.
+            PrefixRule(prefix: "claude-opus", canonical: "claude-opus-4.1"),
+            PrefixRule(prefix: "claude-sonnet", canonical: "claude-sonnet-4"),
+            PrefixRule(prefix: "claude-haiku", canonical: "claude-haiku-3.5"),
+            // Gemini — flash-lite before flash (longest-prefix-wins handles this,
+            // but keep adjacent for readability).
+            PrefixRule(prefix: "gemini-2.5-pro", canonical: "gemini-2.5-pro"),
+            PrefixRule(prefix: "gemini-2.5-flash-lite", canonical: "gemini-2.5-flash-lite"),
+            PrefixRule(prefix: "gemini-2.5-flash", canonical: "gemini-2.5-flash")
+        ]
+        return unsorted.sorted { $0.prefix.count > $1.prefix.count }
+    }()
+
     public static func pricing(for modelID: String?, providerHint: String? = nil) -> ModelPricing? {
         guard let normalized = normalize(modelID, providerHint: providerHint) else { return nil }
         if let exact = entries.first(where: { $0.aliases.contains(normalized) }) {
             return exact.pricing
         }
-
-        if normalized.hasPrefix("claude-opus") {
-            return pricing(for: "claude-opus-4.1", providerHint: providerHint)
-        }
-        if normalized.hasPrefix("claude-sonnet") {
-            return pricing(for: "claude-sonnet-4", providerHint: providerHint)
-        }
-        if normalized.hasPrefix("claude-haiku") {
-            return pricing(for: "claude-haiku-3.5", providerHint: providerHint)
-        }
-        if normalized.hasPrefix("gpt-5.4") {
-            return pricing(for: normalized.contains("mini") ? "gpt-5.4-mini" : normalized.contains("nano") ? "gpt-5.4-nano" : "gpt-5.4")
-        }
-        if normalized.hasPrefix("gpt-5.3-codex") || normalized.hasPrefix("gpt-5.2-codex") {
-            return pricing(for: "gpt-5.3-codex")
-        }
-        if normalized.hasPrefix("gpt-5.1-codex") || normalized.hasPrefix("gpt-5-codex") {
-            return pricing(for: "gpt-5.1-codex")
-        }
-        if normalized.hasPrefix("gpt-5.2") {
-            return pricing(for: "gpt-5.2")
-        }
-        if normalized.hasPrefix("gpt-5.1") || normalized == "gpt-5" {
-            return pricing(for: "gpt-5.1")
-        }
-        if normalized.hasPrefix("gpt-5-mini") {
-            return pricing(for: "gpt-5-mini")
-        }
-        if normalized.hasPrefix("gpt-5-nano") {
-            return pricing(for: "gpt-5-nano")
-        }
-        if normalized.hasPrefix("gemini-2.5-pro") {
-            return pricing(for: "gemini-2.5-pro")
-        }
-        if normalized.hasPrefix("gemini-2.5-flash-lite") {
-            return pricing(for: "gemini-2.5-flash-lite")
-        }
-        if normalized.hasPrefix("gemini-2.5-flash") {
-            return pricing(for: "gemini-2.5-flash")
+        for rule in prefixRules where normalized.hasPrefix(rule.prefix) {
+            return pricing(for: rule.canonical, providerHint: providerHint)
         }
         return nil
     }
