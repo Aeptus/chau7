@@ -290,7 +290,6 @@ struct CommandCenterSessionSummary: Identifiable, Equatable {
         }
     }
 
-    @MainActor
     static func collectLiveSessions(in overlayModel: OverlayTabsModel?) -> [CommandCenterSessionSummary] {
         guard let overlayModel else { return [] }
 

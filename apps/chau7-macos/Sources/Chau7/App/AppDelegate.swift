@@ -170,7 +170,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         attemptInitialSetupIfReady()
     }
 
-    @MainActor private func attemptInitialSetupIfReady() {
+    private func attemptInitialSetupIfReady() {
         guard didFinishLaunching else { return }
         guard !didPerformInitialSetup else { return }
         guard let model, let overlayModel else {
@@ -274,7 +274,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
-    @MainActor private func kickDeferredRestoreIfStuck() {
+    private func kickDeferredRestoreIfStuck() {
         let stuck = overlayHosts.filter { $0.model.hasPendingDeferredRestore }
         guard !stuck.isEmpty else { return }
         let totalPending = stuck.reduce(0) { $0 + $1.model.deferredRestoreTabOrder.count }
@@ -284,7 +284,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         startDeferredRestoreSchedulingIfNeeded(reason: "watchdog")
     }
 
-    @MainActor private func completeStartupRestoreIfReady(reason: String) {
+    private func completeStartupRestoreIfReady(reason: String) {
         guard !didCompleteStartupRestore else { return }
         let expectedWindowCount = max(overlayHosts.count, 1)
         guard StartupRestoreCoordinator.shared.isReadyToComplete(expectedWindowCount: expectedWindowCount) else {
@@ -328,7 +328,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
-    @MainActor private func startDeferredRestoreSchedulingIfNeeded(reason: String) {
+    private func startDeferredRestoreSchedulingIfNeeded(reason: String) {
         guard overlayHosts.contains(where: { $0.model.hasPendingDeferredRestore }) else { return }
         deferredRestoreSchedulerWorkItem?.cancel()
         let delay: TimeInterval = StartupRestoreCoordinator.shared.isActive ? 0.0 : 0.25
@@ -339,7 +339,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    @MainActor private func scheduleNextDeferredRestoreStep(
+    private func scheduleNextDeferredRestoreStep(
         reason: String,
         after delay: TimeInterval = OverlayTabsModel.deferredRestoreStepInterval
     ) {
@@ -353,7 +353,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         DispatchQueue.main.asyncAfter(deadline: .now() + effectiveDelay, execute: work)
     }
 
-    @MainActor private func restoreNextDeferredTabAcrossWindows(reason: String) {
+    private func restoreNextDeferredTabAcrossWindows(reason: String) {
         deferredRestoreSchedulerWorkItem = nil
         guard !overlayHosts.isEmpty else { return }
 
@@ -369,7 +369,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
-    @MainActor private func configureStartupCallbacks(for tabsModel: OverlayTabsModel) {
+    private func configureStartupCallbacks(for tabsModel: OverlayTabsModel) {
         tabsModel.onStartupSelectedTabLiveFrameRecorded = { [weak self, weak tabsModel] in
             guard let self else { return }
             tabsModel?.usesStartupLoadingCover = false
@@ -1894,7 +1894,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         logOverlayDiagnostics(reason: "didDeminiaturize", window: window)
     }
 
-    @MainActor private func scheduleSelectedTabAuthoritativeReveal(
+    private func scheduleSelectedTabAuthoritativeReveal(
         for window: NSWindow,
         event: TabSurfaceReactivationEvent
     ) {
@@ -1947,7 +1947,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         )
     }
 
-    @MainActor
     private func clearSelectedTabRevealCycle(for windowNumber: Int) {
         pendingSelectedTabRevealWorkItemsByWindow.removeValue(forKey: windowNumber)?.cancel()
         pendingSelectedTabRevealEventsByWindow.removeValue(forKey: windowNumber)
@@ -2234,7 +2233,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         Log.info("Startup overlay window revealed (\(reason)).")
     }
 
-    @MainActor
     private func invalidateOverlayRenderLifecycle(for window: NSWindow, reason: String) {
         guard let host = overlayHosts.first(where: { $0.window == window }) else { return }
         host.model.invalidateRenderLifecycle(reason: reason)

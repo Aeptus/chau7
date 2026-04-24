@@ -361,7 +361,6 @@ final class DangerousCommandGuard {
     ///
     /// Width: 480pt (comfortable for an NSAlert).
     /// Height: clamped to the screen so there's always room for header + buttons.
-    @MainActor
     static func makeCommandAccessoryView(command: String) -> NSView {
         let width: CGFloat = 480
         // Reserve 220pt for alert header, informative text, and button row so
