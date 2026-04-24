@@ -58,4 +58,46 @@ final class ClaudeTranscriptParserTests: XCTestCase {
         XCTAssertEqual(state.tokenUsage.outputTokens, 20)
         XCTAssertEqual(state.tokenUsage.reasoningOutputTokens, 7)
     }
+
+    func testIngest_logsWarningOnMalformedJSONLine() {
+        let startedAt = ClaudeTranscriptUsageParser.parseDate("2026-04-01T09:00:00.000Z")!
+        let captured = MalformedLineLogCapture()
+        let savedWarn = Chau7CoreLog.warn
+        Chau7CoreLog.warn = { message in captured.append(message) }
+        defer { Chau7CoreLog.warn = savedWarn }
+
+        let jsonl = [
+            "{not valid json",
+            #"{"timestamp":"2026-04-01T09:00:01.000Z","message":{"role":"assistant","model":"claude-sonnet","usage":{"input_tokens":100,"output_tokens":20}}}"#
+        ].joined(separator: "\n")
+
+        var state = ClaudeTranscriptUsageParser.State()
+        ClaudeTranscriptUsageParser.ingest(jsonl: jsonl, runID: "run-malformed", startedAt: startedAt, state: &state)
+
+        XCTAssertEqual(state.tokenUsage.inputTokens, 100, "second (well-formed) line should still be ingested")
+        let warnings = captured.snapshot()
+        XCTAssertEqual(warnings.count, 1, "malformed line should produce exactly one warn")
+        XCTAssertTrue(
+            warnings.first?.contains("run-malformed") == true,
+            "warn message should carry the runID for debugging: \(warnings)"
+        )
+    }
+}
+
+/// Thread-safe capture buffer for the injected `Chau7CoreLog.warn` hook — the
+/// hook's type is `@Sendable`, so we can't mutate a free variable from inside
+/// it without synchronization even in a single-threaded test.
+private final class MalformedLineLogCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var messages: [String] = []
+
+    func append(_ message: String) {
+        lock.lock(); defer { lock.unlock() }
+        messages.append(message)
+    }
+
+    func snapshot() -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return messages
+    }
 }

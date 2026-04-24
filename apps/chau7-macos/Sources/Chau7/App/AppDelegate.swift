@@ -94,6 +94,13 @@ private final class OverlayBlurView: NSVisualEffectView {
             L(key, defaultValue)
         }
 
+        // Wire Chau7Core's log hooks to the Chau7 app's Log enum so Core-side
+        // diagnostics (telemetry parser schema drift, hook-config decode
+        // failures, etc.) land in the same rotating file and follow the same
+        // verbosity rules as the rest of the app.
+        Chau7CoreLog.warn = { message in Log.warn(message) }
+        Chau7CoreLog.error = { message in Log.error(message) }
+
         // Ignore SIGPIPE process-wide: broken socket/pipe writes return EPIPE error
         // instead of killing the app. Per-socket SO_NOSIGPIPE is also set where possible,
         // but this catches any unprotected write paths (proxies, IPC, MCP bridges).

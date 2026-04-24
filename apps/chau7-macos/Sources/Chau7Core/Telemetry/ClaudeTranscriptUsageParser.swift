@@ -41,8 +41,17 @@ public enum ClaudeTranscriptUsageParser {
             }
 
             guard !line.isEmpty else { continue }
-            guard let lineData = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+            guard let lineData = line.data(using: .utf8) else { continue }
+            let rawObject: Any
+            do {
+                rawObject = try JSONSerialization.jsonObject(with: lineData)
+            } catch {
+                Chau7CoreLog.warn(
+                    "claudeTranscriptUsageParser: skipping malformed jsonl line runID=\(runID) bytes=\(lineData.count) error=\(error)"
+                )
+                continue
+            }
+            guard let obj = rawObject as? [String: Any],
                   let message = obj["message"] as? [String: Any]
             else { continue }
 
@@ -106,9 +115,15 @@ public enum ClaudeTranscriptUsageParser {
                         let turnID = "\(runID)-t\(state.turnIndex)"
                         let toolName = (block["name"] as? String) ?? "unknown"
                         var argsJSON: String?
-                        if let input = block["input"],
-                           let data = try? JSONSerialization.data(withJSONObject: input) {
-                            argsJSON = String(data: data, encoding: .utf8)
+                        if let input = block["input"] {
+                            do {
+                                let data = try JSONSerialization.data(withJSONObject: input)
+                                argsJSON = String(data: data, encoding: .utf8)
+                            } catch {
+                                Chau7CoreLog.warn(
+                                    "claudeTranscriptUsageParser: failed to serialize tool_use input runID=\(runID) tool=\(toolName) error=\(error)"
+                                )
+                            }
                         }
                         let call = TelemetryToolCall(
                             id: (block["id"] as? String) ?? UUID().uuidString,
