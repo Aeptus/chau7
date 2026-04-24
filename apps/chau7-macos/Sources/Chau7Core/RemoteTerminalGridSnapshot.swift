@@ -113,16 +113,4 @@ public struct RemoteTerminalGridSnapshot: Equatable, Sendable {
     }
 }
 
-extension Data {
-    mutating func appendUInt16LE(_ value: UInt16) {
-        append(UInt8(truncatingIfNeeded: value))
-        append(UInt8(truncatingIfNeeded: value >> 8))
-    }
-
-    func readUInt16LE(at offset: Int) throws -> UInt16 {
-        guard count >= offset + 2 else { throw RemoteFrameError.insufficientData }
-        let b0 = UInt16(self[offset])
-        let b1 = UInt16(self[offset + 1]) << 8
-        return b0 | b1
-    }
-}
+// `appendUInt16LE` / `readUInt16LE` live in `DataLittleEndian.swift` now.
