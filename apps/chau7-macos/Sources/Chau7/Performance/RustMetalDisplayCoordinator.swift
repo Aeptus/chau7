@@ -432,8 +432,11 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         let shouldSync = needsSync
         let shouldPresent = needsPresent || shouldSync
         guard shouldPresent else { return }
-        needsSync = false
-        needsPresent = false
+        // Do NOT clear needsSync/needsPresent here — any of the early-return
+        // guards below (font / gridProvider / bounds / drawable / cellCount)
+        // would otherwise eat the request and strand the view on a stale
+        // frame. Flags are cleared only at the end of draw() once we've
+        // committed to rendering past every bail path.
 
         // Ensure font is configured (may not be ready at init if window isn't available yet)
         if !fontConfigured { configureFont() }
@@ -605,6 +608,14 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         if shouldSync {
             tripleBuffer.presentFrame()
         }
+
+        // Clear the flags only now that the frame has committed. Any
+        // earlier `return` leaves them set so the next draw() tick retries —
+        // MTKView keeps ticking at the display rate, so a transient bail
+        // (window.bounds zero during fullscreen toggle, drawable vending nil
+        // for a frame, etc.) self-heals instead of stranding the view.
+        needsSync = false
+        needsPresent = false
 
         FeatureProfiler.shared.end(token)
     }
