@@ -49,9 +49,13 @@ public struct AINotificationPrimaryPreference: Equatable, Sendable {
 }
 
 public enum AINotificationSettingsBridge {
-    private static let managedActionTypes: Set<NotificationActionType> = [
-        .showNotification, .styleTab, .playSound, .dockBounce
-    ]
+    /// Actions surfaced as the primary AI-coding toggles. Derived from
+    /// `NotificationActionType.isAICodingPrimary` so adding a new action
+    /// to the catalog is a single switch-case decision rather than a
+    /// separate edit to this file.
+    private static let managedActionTypes: Set<NotificationActionType> = Set(
+        NotificationActionType.allCases.filter(\.isAICodingPrimary)
+    )
 
     public static func managedTriggerTypes(for event: AINotificationPrimaryEvent) -> [String] {
         switch event {

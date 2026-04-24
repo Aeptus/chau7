@@ -341,4 +341,31 @@ final class ActionConfigFieldTests: XCTestCase {
         )
         XCTAssertEqual(field.options?.count, 2)
     }
+
+    // MARK: - isAICodingPrimary (W3.8)
+
+    func testAICodingPrimarySetLockedIn() {
+        // Pre-W3.8 this was a hardcoded `Set<NotificationActionType>` inside
+        // `AINotificationSettingsBridge`. Now it lives on the enum as an
+        // exhaustive-switch property — adding a new case is a compile-time
+        // forced decision. Locking the current set here so flipping a bit
+        // silently is a test regression.
+        let primary = NotificationActionType.allCases
+            .filter(\.isAICodingPrimary)
+            .map(\.rawValue)
+            .sorted()
+        XCTAssertEqual(primary, ["dock_bounce", "play_sound", "show_notification", "style_tab"])
+    }
+
+    func testAICodingPrimaryExcludesExtras() {
+        // Extras (webhook, scripts, clipboard, etc.) must NOT be primary.
+        // If a future UI adds a webhook to the primary row, it's a
+        // deliberate flip, not a side-effect of adding the action to
+        // the catalog.
+        XCTAssertFalse(NotificationActionType.webhook.isAICodingPrimary)
+        XCTAssertFalse(NotificationActionType.runScript.isAICodingPrimary)
+        XCTAssertFalse(NotificationActionType.copyToClipboard.isAICodingPrimary)
+        XCTAssertFalse(NotificationActionType.focusWindow.isAICodingPrimary)
+        XCTAssertFalse(NotificationActionType.badgeTab.isAICodingPrimary)
+    }
 }

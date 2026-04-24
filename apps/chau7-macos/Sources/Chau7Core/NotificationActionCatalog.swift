@@ -46,6 +46,29 @@ public enum NotificationActionType: String, Codable, CaseIterable, Identifiable,
     public var id: String {
         rawValue
     }
+
+    /// Whether this action appears as a primary toggle in the AI-coding
+    /// notification-settings panel (the quick-switches next to each
+    /// notification-kind row). All other actions are "extras" — the user
+    /// opts into them through the Advanced editor.
+    ///
+    /// Declared here (on the enum) rather than as a hardcoded `Set` in
+    /// `AINotificationSettingsBridge` so Swift forces every future case
+    /// to be categorized via exhaustive switch. Pre-W3.8 the set was
+    /// four literals and a new action added to the catalog had to be
+    /// manually echoed in the bridge.
+    public var isAICodingPrimary: Bool {
+        switch self {
+        case .showNotification, .styleTab, .playSound, .dockBounce:
+            return true
+        case .focusWindow, .badgeTab, .runScript, .runShortcut, .executeSnippet,
+             .webhook, .sendSlack, .sendDiscord, .dockerBump, .dockerCompose,
+             .kubernetesRollout, .copyToClipboard, .writeToFile, .openURL,
+             .gitCommit, .voiceAnnounce, .flashScreen, .menuBarAlert,
+             .startTimer, .stopTimer, .logTime:
+            return false
+        }
+    }
 }
 
 // MARK: - Action Metadata
