@@ -102,8 +102,7 @@ public enum AISubmitHeuristics {
     }
 
     private static func supports(toolName: String) -> Bool {
-        let normalized = toolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.contains("codex") || normalized.contains("claude")
+        AIToolRegistry.usesTerminalUIHeuristics(forName: toolName)
     }
 
     private static func normalize(_ text: String) -> String {

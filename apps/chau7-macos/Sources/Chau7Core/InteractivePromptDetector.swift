@@ -36,8 +36,7 @@ public enum InteractivePromptDetector {
     }
 
     private static func supports(toolName: String) -> Bool {
-        let normalized = toolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.contains("claude") || normalized.contains("codex")
+        AIToolRegistry.usesTerminalUIHeuristics(forName: toolName)
     }
 
     private static func normalize(_ text: String) -> String {

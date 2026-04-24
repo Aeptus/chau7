@@ -29,6 +29,34 @@ public struct AIToolDefinition: Sendable {
     /// Must match the `rawValue` of the corresponding `AIEventSource` static constant.
     /// Nil means this tool has no dedicated event source (falls back to `.historyMonitor`).
     public let eventSourceRawValue: String?
+    /// Whether this tool renders the full-screen TUI that `InteractivePrompt
+    /// Detector` scans for numbered-option prompts and that `AISubmitHeuristics`
+    /// detects two-phase Enter submissions against. Non-TUI tools (Cursor,
+    /// Windsurf, Aider, …) skip those code paths — they interact through
+    /// their own UI, not through terminal prompt scraping.
+    public let usesTerminalUIHeuristics: Bool
+
+    public init(
+        displayName: String,
+        commandNames: [String],
+        outputPatterns: [String],
+        resumeProviderKey: String?,
+        resumeFormat: ResumeFormat?,
+        logoAssetName: String?,
+        tabColorName: String?,
+        eventSourceRawValue: String?,
+        usesTerminalUIHeuristics: Bool = false
+    ) {
+        self.displayName = displayName
+        self.commandNames = commandNames
+        self.outputPatterns = outputPatterns
+        self.resumeProviderKey = resumeProviderKey
+        self.resumeFormat = resumeFormat
+        self.logoAssetName = logoAssetName
+        self.tabColorName = tabColorName
+        self.eventSourceRawValue = eventSourceRawValue
+        self.usesTerminalUIHeuristics = usesTerminalUIHeuristics
+    }
 
     /// How to construct a resume command for this tool.
     public enum ResumeFormat: Sendable {
@@ -82,7 +110,8 @@ public enum AIToolRegistry {
             resumeFormat: .dashFlag(command: "claude", flag: "--resume"),
             logoAssetName: "claude-logo",
             tabColorName: "purple",
-            eventSourceRawValue: "claude_code"
+            eventSourceRawValue: "claude_code",
+            usesTerminalUIHeuristics: true
         ),
         // — Codex (OpenAI) —
         AIToolDefinition(
@@ -95,7 +124,8 @@ public enum AIToolRegistry {
             resumeFormat: .subcommand(command: "codex", subcommand: "resume"),
             logoAssetName: "codex-logo",
             tabColorName: "green",
-            eventSourceRawValue: "codex"
+            eventSourceRawValue: "codex",
+            usesTerminalUIHeuristics: true
         ),
         // — Gemini (Google) —
         AIToolDefinition(
@@ -342,6 +372,22 @@ public enum AIToolRegistry {
             logoAssetName: definition.logoAssetName,
             tabColorName: definition.tabColorName
         )
+    }
+
+    /// Returns `true` when the named tool uses the full-screen TUI prompt
+    /// patterns that `InteractivePromptDetector` scans for and
+    /// `AISubmitHeuristics` reacts to. Matches by substring on display
+    /// name (lowercased) — "Claude Code", "Codex CLI", etc. all resolve
+    /// to their root tool. Previously every caller hardcoded
+    /// `normalized.contains("claude") || normalized.contains("codex")`;
+    /// centralizing here means adding a new TUI tool is one
+    /// registry edit.
+    public static func usesTerminalUIHeuristics(forName name: String) -> Bool {
+        let lowered = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !lowered.isEmpty else { return false }
+        return allTools.contains { tool in
+            tool.usesTerminalUIHeuristics && lowered.contains(tool.displayName.lowercased())
+        }
     }
 
     /// Returns the `AIEventSource` raw value for a tool name, checking display name,

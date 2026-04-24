@@ -205,4 +205,40 @@ final class AIToolRegistryTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - usesTerminalUIHeuristics (W3.7)
+
+    func testUsesTerminalUIHeuristicsTrueForClaudeAndCodexVariants() {
+        let positives = [
+            "Claude", "Claude Code", "CLAUDE",
+            "Codex", "Codex CLI", "codex"
+        ]
+        for name in positives {
+            XCTAssertTrue(
+                AIToolRegistry.usesTerminalUIHeuristics(forName: name),
+                "\(name) should be treated as a TUI-heuristics tool"
+            )
+        }
+    }
+
+    func testUsesTerminalUIHeuristicsFalseForNonTUITools() {
+        XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: "Cursor"))
+        XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: "Windsurf"))
+        XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: "Aider"))
+        XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: "Copilot"))
+        XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: "ChatGPT"))
+        XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: "Gemini"))
+        XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: ""))
+        XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: "random-shell"))
+    }
+
+    func testUsesTerminalUIHeuristicsFlagMatchesExpectedTools() {
+        // Lock in the current set so adding a new TUI-heuristics tool is
+        // a deliberate choice, not a drive-by flag flip.
+        let flagged = AIToolRegistry.allTools
+            .filter(\.usesTerminalUIHeuristics)
+            .map(\.displayName)
+            .sorted()
+        XCTAssertEqual(flagged, ["Claude", "Codex"])
+    }
 }
