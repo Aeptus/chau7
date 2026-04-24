@@ -1016,6 +1016,16 @@ extension OverlayTabsModel {
             Log.info(
                 "restoreTabState: executing for tab=\(targetTabID) selected=\(isSelectedRestore) waited=\(waitedMs)ms scheduledDelayMs=\(Int((scheduledDelay * 1000).rounded()))"
             )
+            // Sub-phase timing so profiling can identify which branch of
+            // `executeRestore` consumes the main-thread budget. Previously
+            // only the aggregate stall was logged; with 15-tab restores
+            // each 200ms, that's 3s of main-thread blocking with no signal
+            // which phase to target for batching.
+            var phaseTimings: [(name: String, ms: Int)] = []
+            func recordPhase(_ name: String, startedAt: CFAbsoluteTime) {
+                let elapsed = Int(((CFAbsoluteTimeGetCurrent() - startedAt) * 1000).rounded())
+                phaseTimings.append((name: name, ms: elapsed))
+            }
             defer {
                 FeatureProfiler.shared.recordMainThreadStallIfNeeded(
                     operation: "OverlayTabsModel.restoreTabState",
@@ -1023,12 +1033,18 @@ extension OverlayTabsModel {
                     thresholdMs: 150,
                     metadata: "tab=\(targetTabID) panes=\(terminalSessions.count)"
                 )
+                let totalMs = Int(((CFAbsoluteTimeGetCurrent() - restoreStartedAt) * 1000).rounded())
+                if totalMs >= 50 {
+                    let breakdown = phaseTimings.map { "\($0.name)=\($0.ms)ms" }.joined(separator: " ")
+                    Log.trace("restoreTabState: phase breakdown tab=\(targetTabID) total=\(totalMs)ms \(breakdown)")
+                }
             }
             guard let restoredTab = tabs.first(where: { $0.id == targetTabID }) else {
                 Log.warn("restoreTabState: tab no longer exists for id=\(targetTabID)")
                 return
             }
 
+            let phaseBlocksStart = CFAbsoluteTimeGetCurrent()
             if let restoredBlocks = state.commandBlocks {
                 MainActor.assumeIsolated {
                     CommandBlockManager.shared.restoreBlocks(restoredBlocks, for: targetTabID.uuidString)
@@ -1038,6 +1054,7 @@ extension OverlayTabsModel {
                     CommandBlockManager.shared.clearBlocks(tabID: targetTabID.uuidString)
                 }
             }
+            recordPhase("blocks", startedAt: phaseBlocksStart)
 
             let currentSessions = restoredTab.splitController.terminalSessions
             guard !currentSessions.isEmpty else {
@@ -1057,6 +1074,7 @@ extension OverlayTabsModel {
                 restoredTab.splitController.setFocusedPane(focusedTerminalPaneID)
             }
 
+            let phaseMetadataStart = CFAbsoluteTimeGetCurrent()
             var resolvedPaneStates: [UUID: SavedTerminalPaneState] = [:]
             let paneMapKeys = Set(paneStatesToRestore.keys.map { String($0.uuidString.prefix(8)) })
             for (paneID, session) in currentSessions {
@@ -1142,7 +1160,9 @@ extension OverlayTabsModel {
                 resolvedPaneStates[paneID] = effectivePaneState
                 paneStatesToRestore[paneID] = effectivePaneState
             }
+            recordPhase("metadata", startedAt: phaseMetadataStart)
 
+            let phaseResumeStart = CFAbsoluteTimeGetCurrent()
             let resumeIntents = currentSessions.compactMap { paneID, _ -> ResumeRestoreIntent? in
                 guard let paneState = resolvedPaneStates[paneID],
                       let command = Self.normalizedResumeCommand(paneState.aiResumeCommand) else {
@@ -1220,6 +1240,8 @@ extension OverlayTabsModel {
                     }
                 }
             }
+
+            recordPhase("resume", startedAt: phaseResumeStart)
 
             if startupRestoreActive,
                currentSessions.allSatisfy({ !$0.1.isRestoreBootstrapPending }) {
