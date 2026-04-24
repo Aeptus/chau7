@@ -34,6 +34,11 @@ final class RustTerminalContainerView: NSView {
         if let view, current !== view { return }
 
         Log.trace("RustTerminalContainerView: detaching terminal view \(current.viewId) [\(reason)]")
+        // Keep container.metalCoordinator and view.isMetalRenderingActive in
+        // sync: the reattach predicate in updateNSView gates on both, and a
+        // stale-true isMetalRenderingActive after reparent orphans the
+        // coordinator (view drains on CPU, Metal path stops presenting).
+        current.isMetalRenderingActive = false
         metalCoordinator = nil
         onFirstLayout = nil
         terminalView = nil
