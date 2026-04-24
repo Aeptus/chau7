@@ -282,9 +282,20 @@ public enum FileTrackingParser {
     }
 }
 
+/// Tracks which agents are working on which files so the fleet overview can
+/// surface overlap conflicts (multiple agents touching the same file).
+///
+/// - Thread safety: `agentsByFile` and `filesByAgent` are both mutated under
+///   `lock`. Every public entry point acquires the lock. The
+///   `@unchecked Sendable` conformance relies on this invariant — callers
+///   must not hold `lock` across a `publish`/`remove`/`overlappingFiles`
+///   call (no re-entrancy). `agentsByFile` was previously exposed as
+///   `public private(set)` but had zero external readers and is now private:
+///   external reads must go through `overlappingFiles(minAgents:)` so they
+///   can never see the dict mid-mutation.
 public final class FleetFileIndex: @unchecked Sendable {
     private let lock = NSLock()
-    public private(set) var agentsByFile: [String: Set<String>] = [:]
+    private var agentsByFile: [String: Set<String>] = [:]
     private var filesByAgent: [String: Set<String>] = [:]
 
     public init() {}

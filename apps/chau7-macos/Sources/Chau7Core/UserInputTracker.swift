@@ -18,6 +18,15 @@ public struct TerminalInputRecord: Equatable, Codable, Sendable {
     }
 }
 
+/// Records per-row input classifications (user / agent / system) so the
+/// terminal view can render input provenance as a margin decoration.
+///
+/// - Thread safety: `recordsByRow` is mutated from main-thread PTY handlers
+///   and read from the main-thread render pass, but the pruner
+///   (`pruneIfNeeded`) can be called transitively from any queue. `lock`
+///   serializes every read/write; the `@unchecked Sendable` conformance
+///   relies on that invariant. Callers must not hold `lock` across a
+///   tracker method call (no re-entrancy).
 public final class UserInputTracker: @unchecked Sendable {
     private let maxEntries: Int
     private var recordsByRow: [Int: TerminalInputRecord] = [:]

@@ -4,6 +4,14 @@ import Foundation
 ///
 /// Thread-safe via `NSLock` (same pattern as `TelemetryRecorder`).
 /// Supports cursor-based reads so orchestrators can poll efficiently.
+///
+/// - Thread safety: all mutable state (`buffer`, `writeIndex`, `totalAppended`,
+///   `wrapped`) is guarded by `lock`. Every public entry point acquires the
+///   lock before touching these fields and releases it before returning. The
+///   `@unchecked Sendable` conformance is load-bearing: callers must not hold
+///   `lock` across an `append`/`events` call on the same instance (no
+///   re-entrancy). Reads do not yield events out to the lock, so lock hold
+///   times are O(buffer size) at worst.
 public final class EventJournal: @unchecked Sendable {
 
     /// Maximum events retained. Oldest events are evicted when full.
