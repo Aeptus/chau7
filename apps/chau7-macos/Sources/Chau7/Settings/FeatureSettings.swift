@@ -472,7 +472,9 @@ enum ActivePollingRateCap: String, CaseIterable, Identifiable, Codable {
     case hz60
     case hz30
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     /// Upper bound in Hz, or `nil` when the cap is "display native".
     var capHz: Int? {

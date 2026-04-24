@@ -66,7 +66,7 @@ final class TelemetryStore {
             if latencyBackfill.insertedSamples > 0 {
                 Log.info(
                     "TelemetryStore: backfilled latency samples for \(latencyBackfill.insertedSamples) run(s) " +
-                    "(inspected=\(latencyBackfill.inspectedRuns), skipped=\(latencyBackfill.skippedRuns))"
+                        "(inspected=\(latencyBackfill.inspectedRuns), skipped=\(latencyBackfill.skippedRuns))"
                 )
             }
             self.runIncrementalVacuumIfNeeded()
@@ -790,7 +790,7 @@ final class TelemetryStore {
             _insertUsageEvidence(UsageEvidence.runSummary(run))
             upsertCompletedRunLatencySamples(run: run, turns: turns)
 
-            self.commitWriteTransaction(db, reason: "finalizeRun")
+            commitWriteTransaction(db, reason: "finalizeRun")
         }
     }
 
@@ -1423,16 +1423,16 @@ final class TelemetryStore {
         }
         if filter.needsTranscriptRepair {
             clauses.append("""
-                ended_at IS NOT NULL
-                AND session_id IS NOT NULL AND TRIM(session_id) != ''
-                AND (lower(provider) LIKE '%claude%' OR lower(provider) LIKE '%anthropic%'
-                     OR lower(provider) LIKE '%codex%' OR lower(provider) LIKE '%openai%')
-                AND (raw_transcript_ref IS NULL
-                     OR raw_transcript_ref IN ('pty_log', 'terminal_buffer')
-                     OR token_usage_state = 'missing'
-                     OR cost_state = 'missing'
-                     OR cost_source = 'unavailable')
-                """)
+            ended_at IS NOT NULL
+            AND session_id IS NOT NULL AND TRIM(session_id) != ''
+            AND (lower(provider) LIKE '%claude%' OR lower(provider) LIKE '%anthropic%'
+                 OR lower(provider) LIKE '%codex%' OR lower(provider) LIKE '%openai%')
+            AND (raw_transcript_ref IS NULL
+                 OR raw_transcript_ref IN ('pty_log', 'terminal_buffer')
+                 OR token_usage_state = 'missing'
+                 OR cost_state = 'missing'
+                 OR cost_source = 'unavailable')
+            """)
         }
 
         var sql = "SELECT * FROM runs"
@@ -2259,8 +2259,8 @@ final class TelemetryStore {
         return sqlite3_column_double(stmt, i)
     }
 
-    // Legacy name-scan variants for callers that don't have a column map.
-    // These should be migrated over time.
+    /// Legacy name-scan variants for callers that don't have a column map.
+    /// These should be migrated over time.
     private func colByName(_ stmt: OpaquePointer?, _ name: String) -> String? {
         colByName(stmt, name, columnIndexMap(stmt))
     }
