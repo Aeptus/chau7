@@ -578,9 +578,31 @@ final class RuntimeSessionManager {
     /// How long to suppress retry logs for a given cache key after a failure.
     private static let adoptionRetryCooldown: TimeInterval = 3.0
 
+    /// Second tier: chronic-orphan tracking. A session ID that has failed
+    /// adoption repeatedly across at least
+    /// `chronicOrphanSuppressionDuration` and at least
+    /// `chronicOrphanSuppressionThreshold` attempts is genuinely orphaned
+    /// (process exited, tab was closed long ago, stale event backlog,
+    /// etc.). Log warnings forever for such sessions are pure noise, so
+    /// we emit one "permanently suppressing" line and then go quiet for
+    /// the rest of the process lifetime. A single `resetAdoptionCache`
+    /// call (e.g. on window refresh) clears both tiers so subsequent
+    /// retries can log again.
+    private struct ChronicOrphanTracking {
+        let firstSeenAt: Date
+        var failureCount: Int
+        var suppressionLogged: Bool
+    }
+
+    private var chronicOrphanTracking: [String: ChronicOrphanTracking] = [:]
+
+    private static let chronicOrphanSuppressionThreshold = 6
+    private static let chronicOrphanSuppressionDuration: TimeInterval = 60.0
+
     /// Clear the failed adoption cache so new tabs can be discovered.
     func resetAdoptionCache() {
         recentlyFailedAdoptions.removeAll()
+        chronicOrphanTracking.removeAll()
     }
 
     func shouldSkipAdoptionByCooldown(_ cacheKey: String, now: Date = Date()) -> Bool {
@@ -590,6 +612,65 @@ final class RuntimeSessionManager {
 
     func recordAdoptionFailure(_ cacheKey: String, now: Date = Date()) {
         recentlyFailedAdoptions[cacheKey] = now
+    }
+
+    /// Returns a tri-state describing how the caller should log a chronic
+    /// adoption failure for `sessionID`:
+    ///   - `.log` — below the suppression threshold; emit the normal
+    ///     "no tab match" warning.
+    ///   - `.logSuppressionMarker` — crossing the threshold for the first
+    ///     time; emit a distinct "permanently suppressing" line so the
+    ///     operator knows further retries on this session will be silent.
+    ///   - `.suppress` — already past the threshold; emit nothing.
+    ///
+    /// `sessionID` is expected to be a non-empty trimmed string; pass
+    /// the same value you'd embed in the log (the `normalizedClaudeSessionID`).
+    enum ChronicOrphanLogDecision {
+        case log
+        case logSuppressionMarker
+        case suppress
+    }
+
+    /// Compact "no tab match" diagnostic line. Factored out so the log
+    /// string is identical regardless of which log-decision branch emits
+    /// it (normal vs. suppression-marker path).
+    private func emitNoTabMatchWarning(sessionID: String, cwd: String) {
+        let aiTabs = listAITabs()
+        let withSession = aiTabs.filter { !($0.sessionID?.isEmpty ?? true) }
+        let samplePrefixes = withSession
+            .prefix(6)
+            .compactMap { $0.sessionID.map { String($0.prefix(8)) } }
+            .joined(separator: ",")
+        Log.warn(
+            "RuntimeSessionManager: no tab match for Claude session=\(sessionID) cwd=\(cwd) " +
+                "aiTabs=\(aiTabs.count) withSessionID=\(withSession.count) knownSessionPrefixes=[\(samplePrefixes)]"
+        )
+    }
+
+    func decideChronicOrphanLog(sessionID: String, now: Date = Date()) -> ChronicOrphanLogDecision {
+        let tracking: ChronicOrphanTracking
+        if let existing = chronicOrphanTracking[sessionID] {
+            tracking = ChronicOrphanTracking(
+                firstSeenAt: existing.firstSeenAt,
+                failureCount: existing.failureCount + 1,
+                suppressionLogged: existing.suppressionLogged
+            )
+        } else {
+            tracking = ChronicOrphanTracking(firstSeenAt: now, failureCount: 1, suppressionLogged: false)
+        }
+        let elapsed = now.timeIntervalSince(tracking.firstSeenAt)
+        let isPastThreshold = tracking.failureCount >= Self.chronicOrphanSuppressionThreshold
+            && elapsed >= Self.chronicOrphanSuppressionDuration
+        let updated = ChronicOrphanTracking(
+            firstSeenAt: tracking.firstSeenAt,
+            failureCount: tracking.failureCount,
+            suppressionLogged: tracking.suppressionLogged || isPastThreshold
+        )
+        chronicOrphanTracking[sessionID] = updated
+        if isPastThreshold {
+            return tracking.suppressionLogged ? .suppress : .logSuppressionMarker
+        }
+        return .log
     }
 
     /// Try to adopt an unknown Claude Code session from a monitor event.
@@ -611,21 +692,31 @@ final class RuntimeSessionManager {
             tabID = resolveClaudeTabBySessionID(normalizedClaudeSessionID, cwd: event.cwd)
             if tabID == nil {
                 recordAdoptionFailure(cacheKey)
-                // Emit a compact snapshot of what tabs *were* present so
-                // chronic "no match" noise is diagnosable from the log
-                // alone: how many AI tabs total, how many had a sessionID
-                // at all, and a sample of current sessionID prefixes the
-                // incoming event did not match.
-                let aiTabs = listAITabs()
-                let withSession = aiTabs.filter { !($0.sessionID?.isEmpty ?? true) }
-                let samplePrefixes = withSession
-                    .prefix(6)
-                    .compactMap { $0.sessionID.map { String($0.prefix(8)) } }
-                    .joined(separator: ",")
-                Log.warn(
-                    "RuntimeSessionManager: no tab match for Claude session=\(normalizedClaudeSessionID) cwd=\(event.cwd) " +
-                        "aiTabs=\(aiTabs.count) withSessionID=\(withSession.count) knownSessionPrefixes=[\(samplePrefixes)]"
-                )
+                // Consult the chronic-orphan tracker — it returns exactly
+                // one of: .log (below threshold), .logSuppressionMarker
+                // (just crossed threshold), .suppress (already past). The
+                // call mutates internal state so it's invoked exactly
+                // once per failure.
+                let decision = decideChronicOrphanLog(sessionID: normalizedClaudeSessionID)
+                switch decision {
+                case .suppress:
+                    break
+                case .log:
+                    emitNoTabMatchWarning(
+                        sessionID: normalizedClaudeSessionID,
+                        cwd: event.cwd
+                    )
+                case .logSuppressionMarker:
+                    emitNoTabMatchWarning(
+                        sessionID: normalizedClaudeSessionID,
+                        cwd: event.cwd
+                    )
+                    Log.warn(
+                        "RuntimeSessionManager: permanently suppressing further 'no tab match' warnings for Claude session=\(normalizedClaudeSessionID) — " +
+                            "crossed \(Self.chronicOrphanSuppressionThreshold)-failure threshold over \(Int(Self.chronicOrphanSuppressionDuration))s. " +
+                            "Session is likely orphaned (process exited, tab closed). resetAdoptionCache() clears suppression."
+                    )
+                }
             }
         } else {
             tabID = resolveUnboundClaudeTabByCwd(event.cwd)
@@ -1222,6 +1313,8 @@ final class RuntimeSessionManager {
         transcriptReaders.removeAll()
         pendingToolInvocations.removeAll()
         outputJournalStates.removeAll()
+        recentlyFailedAdoptions.removeAll()
+        chronicOrphanTracking.removeAll()
         lock.unlock()
     }
 }
