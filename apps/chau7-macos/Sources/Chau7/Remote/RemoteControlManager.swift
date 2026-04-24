@@ -41,7 +41,19 @@ final class RemoteControlManager {
 
     @ObservationIgnored private let ipc = RemoteIPCServer.shared
 
+    @ObservationIgnored private var remoteEnabledObserver: NSObjectProtocol?
+    @ObservationIgnored private var remoteRelayURLObserver: NSObjectProtocol?
+
     private init() {}
+
+    deinit {
+        if let observer = remoteEnabledObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = remoteRelayURLObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
 
     func configure(overlayModel: OverlayTabsModel) {
         self.overlayModel = overlayModel
@@ -66,15 +78,24 @@ final class RemoteControlManager {
         ipc.start()
         refreshPairedDevices()
 
-        FeatureSettings.shared.onRemoteEnabledChanged = { [weak self] enabled in
-            if enabled {
-                self?.startAgent()
+        remoteEnabledObserver = NotificationCenter.default.addObserver(
+            forName: .remoteEnabledChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            if FeatureSettings.shared.isRemoteEnabled {
+                self.startAgent()
             } else {
-                self?.stopAgent()
+                self.stopAgent()
             }
         }
 
-        FeatureSettings.shared.onRemoteRelayURLChanged = { [weak self] _ in
+        remoteRelayURLObserver = NotificationCenter.default.addObserver(
+            forName: .remoteRelayURLChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
             self?.restartAgentIfRunning()
         }
 

@@ -7,6 +7,15 @@ import Chau7Core
 // Note: AppLanguage is defined in Localization.swift
 // Note: TerminalColorScheme is defined in TerminalColorScheme.swift
 
+extension Notification.Name {
+    /// Posted by FeatureSettings when `repoGroupingMode` is written.
+    static let repoGroupingModeChanged = Notification.Name("com.chau7.feature.repoGroupingModeChanged")
+    /// Posted by FeatureSettings when `isRemoteEnabled` is written.
+    static let remoteEnabledChanged = Notification.Name("com.chau7.feature.remoteEnabledChanged")
+    /// Posted by FeatureSettings when `remoteRelayURL` is written (post-trim).
+    static let remoteRelayURLChanged = Notification.Name("com.chau7.feature.remoteRelayURLChanged")
+}
+
 // MARK: - Keyboard Shortcut
 
 struct KeyboardShortcut: Codable, Identifiable, Equatable {
@@ -1389,10 +1398,6 @@ final class FeatureSettings {
         TimeInterval(max(1, idleTabThresholdMinutes) * 60)
     }
 
-    /// Single-subscriber callback — assigning a new closure silently replaces the previous one.
-    /// Add a multiplexer (observer list / NotificationCenter) before introducing a second consumer.
-    @ObservationIgnored var onRepoGroupingModeChanged: ((RepoGroupingMode) -> Void)?
-
     var repoGroupingMode: RepoGroupingMode = {
         guard let raw = UserDefaults.standard.string(forKey: "tabs.repoGroupingMode"),
               let mode = RepoGroupingMode(rawValue: raw) else { return .off }
@@ -1400,7 +1405,7 @@ final class FeatureSettings {
     }() {
         didSet {
             UserDefaults.standard.set(repoGroupingMode.rawValue, forKey: "tabs.repoGroupingMode")
-            onRepoGroupingModeChanged?(repoGroupingMode)
+            NotificationCenter.default.post(name: .repoGroupingModeChanged, object: self)
         }
     }
 
@@ -2178,17 +2183,10 @@ final class FeatureSettings {
 
     // MARK: - Remote Control Settings
 
-    /// Single-subscriber callback — assigning a new closure silently replaces the previous one.
-    /// Add a multiplexer (observer list / NotificationCenter) before introducing a second consumer.
-    @ObservationIgnored var onRemoteEnabledChanged: ((Bool) -> Void)?
-    /// Single-subscriber callback — assigning a new closure silently replaces the previous one.
-    /// Add a multiplexer (observer list / NotificationCenter) before introducing a second consumer.
-    @ObservationIgnored var onRemoteRelayURLChanged: ((String) -> Void)?
-
     var isRemoteEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isRemoteEnabled, forKey: Keys.remoteEnabled)
-            onRemoteEnabledChanged?(isRemoteEnabled)
+            NotificationCenter.default.post(name: .remoteEnabledChanged, object: self)
         }
     }
 
@@ -2200,7 +2198,7 @@ final class FeatureSettings {
                 return
             }
             UserDefaults.standard.set(remoteRelayURL, forKey: Keys.remoteRelayURL)
-            onRemoteRelayURLChanged?(remoteRelayURL)
+            NotificationCenter.default.post(name: .remoteRelayURLChanged, object: self)
         }
     }
 

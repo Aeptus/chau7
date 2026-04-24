@@ -1019,6 +1019,7 @@ final class OverlayTabsModel {
     @ObservationIgnored var renderSuspensionObserver: NSObjectProtocol?
     @ObservationIgnored var visibleFrameReadyObserver: NSObjectProtocol?
     @ObservationIgnored var terminalDidStartObserver: NSObjectProtocol?
+    @ObservationIgnored var repoGroupingModeObserver: NSObjectProtocol?
     var renderLifecycleRefreshToken = UUID()
     @ObservationIgnored var suspensionDebounceItem: DispatchWorkItem?
     @ObservationIgnored var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
@@ -1266,6 +1267,7 @@ final class OverlayTabsModel {
         stopTabBarWatchdog()
         if let ctoModeObserver { NotificationCenter.default.removeObserver(ctoModeObserver) }
         if let renderSuspensionObserver { NotificationCenter.default.removeObserver(renderSuspensionObserver) }
+        if let repoGroupingModeObserver { NotificationCenter.default.removeObserver(repoGroupingModeObserver) }
         if let visibleFrameReadyObserver { NotificationCenter.default.removeObserver(visibleFrameReadyObserver) }
         if let terminalDidStartObserver { NotificationCenter.default.removeObserver(terminalDidStartObserver) }
         sharedMetalCoordinator?.stop()
@@ -4281,9 +4283,12 @@ final class OverlayTabsModel {
     // MARK: - Repo Tab Grouping
 
     func setupRepoGrouping() {
-        // Observe mode changes via didSet callback
-        FeatureSettings.shared.onRepoGroupingModeChanged = { [weak self] newMode in
-            self?.handleRepoGroupingModeChange(newMode)
+        repoGroupingModeObserver = NotificationCenter.default.addObserver(
+            forName: .repoGroupingModeChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleRepoGroupingModeChange(FeatureSettings.shared.repoGroupingMode)
         }
 
         // Set initial state
