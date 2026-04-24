@@ -27,7 +27,9 @@ final class InjectionRuleStore {
             case append
             case system
 
-            var id: String { rawValue }
+            var id: String {
+                rawValue
+            }
 
             var label: String {
                 switch self {

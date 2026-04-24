@@ -43,7 +43,7 @@ final class PersistentHistoryStore {
     private init() {
         openDatabase()
         createTables()
-        cachedCount = totalCount()
+        self.cachedCount = totalCount()
         Log.info("PersistentHistoryStore initialized: \(dbPath)")
     }
 
@@ -58,7 +58,7 @@ final class PersistentHistoryStore {
         execute("PRAGMA journal_mode=WAL")
         execute("PRAGMA synchronous=NORMAL")
         createTables()
-        cachedCount = totalCount()
+        self.cachedCount = totalCount()
     }
 
     deinit {

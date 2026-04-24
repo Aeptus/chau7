@@ -85,9 +85,9 @@ final class RemoteControlManager {
         ) { [weak self] _ in
             guard let self else { return }
             if FeatureSettings.shared.isRemoteEnabled {
-                self.startAgent()
+                startAgent()
             } else {
-                self.stopAgent()
+                stopAgent()
             }
         }
 

@@ -16,7 +16,7 @@ final class OverlayRestorePreviewTests: XCTestCase {
         return image
     }
 
-    func testExportTabStatesDoesNotRepersistHydratedRestorePreviewSnapshot() throws {
+    func testExportTabStatesDoesNotRepersistHydratedRestorePreviewSnapshot() {
         let model = OverlayTabsModel(appModel: AppModel(), restoreState: false)
         model.tabs[0].restorePreviewSnapshot = makePreviewImage()
 

@@ -22,7 +22,7 @@ final class RenderPipelineProfilerTests: XCTestCase {
         profiler.recordCommit(dirtyRows: 12, dirtyCells: 960, bytesCopied: 2048, fullRefresh: true)
         profiler.recordInstanceBuffer(
             cells: 120,
-            bufferBytes: 16_384,
+            bufferBytes: 16384,
             saturated: true,
             glyphLookups: 300,
             glyphMisses: 12,
@@ -60,7 +60,7 @@ final class RenderPipelineProfilerTests: XCTestCase {
         XCTAssertEqual(snapshot.maxDirtyRows, 12)
         XCTAssertEqual(snapshot.maxDirtyCells, 960)
         XCTAssertEqual(snapshot.maxFrameCells, 1920)
-        XCTAssertEqual(snapshot.maxInstanceBufferBytes, 16_384)
+        XCTAssertEqual(snapshot.maxInstanceBufferBytes, 16384)
         XCTAssertEqual(snapshot.saturatedInstanceFrames, 1)
         XCTAssertEqual(snapshot.glyphLookups, 300)
         XCTAssertEqual(snapshot.glyphMisses, 12)

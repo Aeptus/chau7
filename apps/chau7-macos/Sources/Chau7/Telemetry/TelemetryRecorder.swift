@@ -496,7 +496,9 @@ final class TelemetryRecorder {
         for delaySeconds in [2, 10, 60] {
             repairQueue.asyncAfter(deadline: .now() + .seconds(delaySeconds)) {
                 repairDone.lock()
-                if done { repairDone.unlock(); return }
+                if done { repairDone.unlock()
+                    return
+                }
                 repairDone.unlock()
 
                 let result = TelemetryRepairService.shared.rebuildRunIfNeeded(runID: run.id)

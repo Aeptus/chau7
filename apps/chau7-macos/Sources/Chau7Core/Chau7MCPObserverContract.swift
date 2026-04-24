@@ -13,9 +13,9 @@ public enum Chau7MCPObserverContract {
 
     public static let defaultReplayLimit = 200
     public static let maxReplayLimit = 500
-    public static let defaultHeartbeatIntervalMs = 15_000
-    public static let minHeartbeatIntervalMs = 1_000
-    public static let maxHeartbeatIntervalMs = 60_000
+    public static let defaultHeartbeatIntervalMs = 15000
+    public static let minHeartbeatIntervalMs = 1000
+    public static let maxHeartbeatIntervalMs = 60000
 
     public static let deliveryMode = "serial"
     public static let healthyLagState = "healthy"

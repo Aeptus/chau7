@@ -409,7 +409,7 @@ final class TerminalControlService {
                     "provider": run.provider,
                     "started_at": TelemetryStore.isoString(from: run.startedAt),
                     "session_id": run.sessionID as Any,
-                    "duration_so_far_ms": Int(Date().timeIntervalSince(run.startedAt) * 1_000)
+                    "duration_so_far_ms": Int(Date().timeIntervalSince(run.startedAt) * 1000)
                 ] as [String: Any]
             }
 
@@ -417,7 +417,7 @@ final class TerminalControlService {
         }
     }
 
-    func waitForTabReady(tabID: String, timeoutMs: Int = 30_000) -> String {
+    func waitForTabReady(tabID: String, timeoutMs: Int = 30000) -> String {
         let boundedTimeoutMs = max(0, min(timeoutMs, 120_000))
         let start = Date()
 
@@ -979,7 +979,7 @@ final class TerminalControlService {
     ) -> TerminalSessionModel? {
         let displaySession = tab.displaySession
         let ranked = tab.splitController.terminalSessions.compactMap {
-            (_, session) -> (
+            _, session -> (
                 session: TerminalSessionModel,
                 exactRank: Int,
                 directoryRank: Int,

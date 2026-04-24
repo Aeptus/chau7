@@ -490,7 +490,7 @@ public enum ProviderLatencyAnalytics {
                         sourceKind: sourceKind
                     )
                 )
-                self.clearPendingHuman(&pendingHuman)
+                clearPendingHuman(&pendingHuman)
             default:
                 continue
             }

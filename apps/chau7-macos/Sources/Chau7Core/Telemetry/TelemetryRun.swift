@@ -122,7 +122,7 @@ public struct TelemetryRunFilter: Sendable {
     public var offset: Int?
     /// When true, only return completed runs that need transcript repair
     /// (missing transcript source, missing metrics, or unavailable cost).
-    public var needsTranscriptRepair: Bool = false
+    public var needsTranscriptRepair = false
 
     public init(
         sessionID: String? = nil,

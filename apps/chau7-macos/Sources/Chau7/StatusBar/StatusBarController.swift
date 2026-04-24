@@ -18,7 +18,7 @@ final class StatusBarController: NSObject {
     private var localEventMonitor: Any?
     private weak var model: AppModel?
     private var lastRenderedSymbolName: String?
-    private var lastRenderedTitle: String = ""
+    private var lastRenderedTitle = ""
 
     /// Panel view model — lives as long as the controller so popover doesn't recreate state.
     private var panelViewModel: CommandCenterViewModel?

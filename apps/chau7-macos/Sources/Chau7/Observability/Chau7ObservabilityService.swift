@@ -46,8 +46,8 @@ final class Chau7ObservabilityService {
         let handler: (ChangePayload) -> Void
     }
 
-    private static let eventLimit = 1_000
-    private static let changeLimit = 2_000
+    private static let eventLimit = 1000
+    private static let changeLimit = 2000
     private let queue = DispatchQueue(label: "com.chau7.observability")
     private let launchedAt = Date()
     private var nextSeq: Int64 = 1

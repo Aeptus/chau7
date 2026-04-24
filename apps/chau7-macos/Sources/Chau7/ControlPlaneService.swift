@@ -35,7 +35,7 @@ final class ControlPlaneService {
             }
             return terminalControl.waitForTabReady(
                 tabID: tabID,
-                timeoutMs: arguments["timeout_ms"] as? Int ?? 30_000
+                timeoutMs: arguments["timeout_ms"] as? Int ?? 30000
             )
         case "tab_send_input":
             guard let tabID = arguments["tab_id"] as? String,

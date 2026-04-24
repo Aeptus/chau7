@@ -1038,11 +1038,11 @@ final class AppModel {
                 guard let self else { break }
                 switch notification {
                 case .event(let event):
-                    self.handleClaudeCodeMonitorEvent(event)
+                    handleClaudeCodeMonitorEvent(event)
                 case .sessionIdle(let session):
-                    self.handleClaudeCodeSessionIdle(session)
+                    handleClaudeCodeSessionIdle(session)
                 case .responseComplete(let event):
-                    self.handleClaudeCodeResponseComplete(event)
+                    handleClaudeCodeResponseComplete(event)
                 }
             }
         }

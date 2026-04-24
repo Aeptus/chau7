@@ -15,7 +15,7 @@ final class RuntimeSessionManagerAdoptionCooldownTests: XCTestCase {
     func testCooldownSkipsRepeatedFailuresWithinWindow() {
         let manager = RuntimeSessionManager.shared
         let key = "cwd:/tmp/cooldown-\(UUID().uuidString)"
-        let t0 = Date(timeIntervalSince1970: 1_000)
+        let t0 = Date(timeIntervalSince1970: 1000)
 
         XCTAssertFalse(
             manager.shouldSkipAdoptionByCooldown(key, now: t0),
@@ -32,7 +32,7 @@ final class RuntimeSessionManagerAdoptionCooldownTests: XCTestCase {
     func testCooldownElapsesAndRetries() {
         let manager = RuntimeSessionManager.shared
         let key = "cwd:/tmp/cooldown-\(UUID().uuidString)"
-        let t0 = Date(timeIntervalSince1970: 1_000)
+        let t0 = Date(timeIntervalSince1970: 1000)
 
         manager.recordAdoptionFailure(key, now: t0)
 
@@ -48,7 +48,7 @@ final class RuntimeSessionManagerAdoptionCooldownTests: XCTestCase {
     func testResetAdoptionCacheClearsFailures() {
         let manager = RuntimeSessionManager.shared
         let key = "cwd:/tmp/cooldown-\(UUID().uuidString)"
-        let t0 = Date(timeIntervalSince1970: 1_000)
+        let t0 = Date(timeIntervalSince1970: 1000)
 
         manager.recordAdoptionFailure(key, now: t0)
         XCTAssertTrue(manager.shouldSkipAdoptionByCooldown(key, now: t0))
@@ -64,7 +64,7 @@ final class RuntimeSessionManagerAdoptionCooldownTests: XCTestCase {
         let manager = RuntimeSessionManager.shared
         let keyA = "cwd:/tmp/a-\(UUID().uuidString)"
         let keyB = "cwd:/tmp/b-\(UUID().uuidString)"
-        let t0 = Date(timeIntervalSince1970: 1_000)
+        let t0 = Date(timeIntervalSince1970: 1000)
 
         manager.recordAdoptionFailure(keyA, now: t0)
         XCTAssertTrue(manager.shouldSkipAdoptionByCooldown(keyA, now: t0))

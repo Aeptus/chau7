@@ -10,8 +10,8 @@ final class ProviderLatencyAnalyticsTests: XCTestCase {
 
     func testPreferredAPILatencyPrefersTimeToFirstToken() {
         XCTAssertEqual(
-            ProviderLatencyAnalytics.preferredAPILatencyMs(roundTripMs: 52_000, timeToFirstTokenMs: 1_450),
-            1_450
+            ProviderLatencyAnalytics.preferredAPILatencyMs(roundTripMs: 52000, timeToFirstTokenMs: 1450),
+            1450
         )
         XCTAssertEqual(
             ProviderLatencyAnalytics.preferredAPILatencyMs(roundTripMs: 980, timeToFirstTokenMs: nil),
@@ -109,7 +109,7 @@ final class ProviderLatencyAnalyticsTests: XCTestCase {
 
         XCTAssertEqual(sample?.provider, "codex")
         XCTAssertEqual(sample?.metricKind, .firstResponse)
-        XCTAssertEqual(sample?.latencyMs, 3_000)
+        XCTAssertEqual(sample?.latencyMs, 3000)
         XCTAssertEqual(sample?.timestamp, date(2026, 4, 14, 9, 0, 8))
     }
 
@@ -163,7 +163,7 @@ final class ProviderLatencyAnalyticsTests: XCTestCase {
 
         let sample = ProviderLatencyAnalytics.completedRunFirstResponseSample(run: run, turns: turns)
 
-        XCTAssertEqual(sample?.latencyMs, 12_000)
+        XCTAssertEqual(sample?.latencyMs, 12000)
         XCTAssertEqual(sample?.timestamp, date(2026, 4, 14, 20, 0, 12))
     }
 
@@ -172,7 +172,7 @@ final class ProviderLatencyAnalyticsTests: XCTestCase {
             id: "terminal",
             provider: "claude",
             metricKind: .firstResponse,
-            latencyMs: 9_000,
+            latencyMs: 9000,
             timestamp: date(2026, 4, 14, 20, 0, 9),
             runID: "run-5",
             sourceKind: "terminal_first_output"
@@ -181,7 +181,7 @@ final class ProviderLatencyAnalyticsTests: XCTestCase {
             id: "completed",
             provider: "claude",
             metricKind: .firstResponse,
-            latencyMs: 11_000,
+            latencyMs: 11000,
             timestamp: date(2026, 4, 14, 20, 0, 11),
             runID: "run-5",
             sourceKind: "completed_run_turns"

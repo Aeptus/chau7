@@ -70,9 +70,45 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
 
     func testNonSelectedTabsGetWarmPhase() {
         let inputs: [TabRenderLifecycleInput] = [
-            TabRenderLifecycleInput(isSelectedTab: false, isInputPriorityWindow: true, isWindowVisibleForRendering: true, isPreviousLiveTab: true, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true),
-            TabRenderLifecycleInput(isSelectedTab: false, isInputPriorityWindow: true, isWindowVisibleForRendering: true, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: true, isRenderSuspensionEnabled: true, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true),
-            TabRenderLifecycleInput(isSelectedTab: false, isInputPriorityWindow: false, isWindowVisibleForRendering: false, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: true, hasPendingRestoreBootstrap: true, isMCPControlled: false, hasAttachedTerminalView: false),
+            TabRenderLifecycleInput(
+                isSelectedTab: false,
+                isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
+                isPreviousLiveTab: true,
+                isPrewarming: false,
+                hasBackgroundActivity: false,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true
+            ),
+            TabRenderLifecycleInput(
+                isSelectedTab: false,
+                isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: true,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true
+            ),
+            TabRenderLifecycleInput(
+                isSelectedTab: false,
+                isInputPriorityWindow: false,
+                isWindowVisibleForRendering: false,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: false,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: true,
+                hasPendingRestoreBootstrap: true,
+                isMCPControlled: false,
+                hasAttachedTerminalView: false
+            )
         ]
         for input in inputs {
             let decision = TabRenderLifecyclePolicy.decide(input)
@@ -83,7 +119,19 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
 
     func testSelectedHiddenWindowGetsWarm() {
         let decision = TabRenderLifecyclePolicy.decide(
-            TabRenderLifecycleInput(isSelectedTab: true, isInputPriorityWindow: false, isWindowVisibleForRendering: false, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true)
+            TabRenderLifecycleInput(
+                isSelectedTab: true,
+                isInputPriorityWindow: false,
+                isWindowVisibleForRendering: false,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: false,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true
+            )
         )
         XCTAssertEqual(decision.phase, .warm)
         XCTAssertTrue(decision.keepsLiveHierarchy)
@@ -91,13 +139,49 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
 
     func testOnlySelectedTabIsInteractive() {
         let selected = TabRenderLifecyclePolicy.decide(
-            TabRenderLifecycleInput(isSelectedTab: true, isInputPriorityWindow: true, isWindowVisibleForRendering: true, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true)
+            TabRenderLifecycleInput(
+                isSelectedTab: true,
+                isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: false,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true
+            )
         )
         let notSelected = TabRenderLifecyclePolicy.decide(
-            TabRenderLifecycleInput(isSelectedTab: false, isInputPriorityWindow: true, isWindowVisibleForRendering: true, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true)
+            TabRenderLifecycleInput(
+                isSelectedTab: false,
+                isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: false,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true
+            )
         )
         let selectedNoWindow = TabRenderLifecyclePolicy.decide(
-            TabRenderLifecycleInput(isSelectedTab: true, isInputPriorityWindow: false, isWindowVisibleForRendering: true, isPreviousLiveTab: false, isPrewarming: false, hasBackgroundActivity: false, isRenderSuspensionEnabled: true, isStartupRestoreActive: false, hasPendingRestoreBootstrap: false, isMCPControlled: false, hasAttachedTerminalView: true)
+            TabRenderLifecycleInput(
+                isSelectedTab: true,
+                isInputPriorityWindow: false,
+                isWindowVisibleForRendering: true,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: false,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true
+            )
         )
 
         XCTAssertTrue(selected.isInteractive)

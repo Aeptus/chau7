@@ -85,7 +85,7 @@ struct PromptInjectionSettingsView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            if store.repoRules.isEmpty && store.localRules.isEmpty {
+            if store.repoRules.isEmpty, store.localRules.isEmpty {
                 Text(L("settings.injection.perRepo.empty", "No repository rules configured."))
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 4)

@@ -78,8 +78,8 @@ final class Chau7ObservabilityServiceTests: XCTestCase {
             label: "mcp-health-check",
             subsystem: "mcp_server",
             queueLabel: "com.chau7.mcp.server",
-            intervalMs: 15_000,
-            leewayMs: 3_000,
+            intervalMs: 15000,
+            leewayMs: 3000,
             active: true
         )
         Chau7ObservabilityService.shared.setTimerActive("mcp_health_check", active: false)
@@ -129,8 +129,8 @@ final class Chau7ObservabilityServiceTests: XCTestCase {
             label: "mcp-health-check",
             subsystem: "mcp_server",
             queueLabel: "com.chau7.mcp.server",
-            intervalMs: 15_000,
-            leewayMs: 3_000,
+            intervalMs: 15000,
+            leewayMs: 3000,
             active: true
         )
 
@@ -176,8 +176,8 @@ final class Chau7ObservabilityServiceTests: XCTestCase {
             label: "mcp-health-check",
             subsystem: "mcp_server",
             queueLabel: "com.chau7.mcp.server",
-            intervalMs: 15_000,
-            leewayMs: 3_000,
+            intervalMs: 15000,
+            leewayMs: 3000,
             active: true
         )
 

@@ -9,7 +9,7 @@ final class WindowStateRestorePlannerTests: XCTestCase {
 
         let backup = [
             WindowStateRestorePlanner.CandidateWindow(tabIDs: [primaryOnly]),
-            WindowStateRestorePlanner.CandidateWindow(tabIDs: [a, b]),
+            WindowStateRestorePlanner.CandidateWindow(tabIDs: [a, b])
         ]
 
         let restored = WindowStateRestorePlanner.additionalWindowsFromBackup(
@@ -23,7 +23,7 @@ final class WindowStateRestorePlannerTests: XCTestCase {
     func testBackupRestoreFallsBackToDropFirstWhenNoWindowMatchesPrimary() {
         let backup = [
             WindowStateRestorePlanner.CandidateWindow(tabIDs: [UUID()]),
-            WindowStateRestorePlanner.CandidateWindow(tabIDs: [UUID(), UUID()]),
+            WindowStateRestorePlanner.CandidateWindow(tabIDs: [UUID(), UUID()])
         ]
 
         let restored = WindowStateRestorePlanner.additionalWindowsFromBackup(
@@ -36,7 +36,7 @@ final class WindowStateRestorePlannerTests: XCTestCase {
 
     func testBackupRestoreReturnsNoAdditionalWindowsForSingleWindowBackup() {
         let backup = [
-            WindowStateRestorePlanner.CandidateWindow(tabIDs: [UUID(), UUID()]),
+            WindowStateRestorePlanner.CandidateWindow(tabIDs: [UUID(), UUID()])
         ]
 
         let restored = WindowStateRestorePlanner.additionalWindowsFromBackup(

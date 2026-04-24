@@ -35,7 +35,7 @@ public enum ClaudeTranscriptUsageParser {
         var lineStart = text.startIndex
         while lineStart < text.endIndex {
             let lineEnd = text[lineStart...].firstIndex(where: \.isNewline) ?? text.endIndex
-            let line = String(text[lineStart..<lineEnd])
+            let line = String(text[lineStart ..< lineEnd])
             defer {
                 lineStart = lineEnd == text.endIndex ? text.endIndex : text.index(after: lineEnd)
             }

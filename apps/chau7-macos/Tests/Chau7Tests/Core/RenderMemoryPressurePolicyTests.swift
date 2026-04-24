@@ -8,7 +8,7 @@ final class RenderMemoryPressurePolicyTests: XCTestCase {
     }
 
     func testLigatureEvictionCountTrimsInBatches() {
-        XCTAssertEqual(RenderMemoryPressurePolicy.ligatureEvictionCount(currentCount: 4_097, limit: 4_096), 256)
+        XCTAssertEqual(RenderMemoryPressurePolicy.ligatureEvictionCount(currentCount: 4097, limit: 4096), 256)
         XCTAssertEqual(RenderMemoryPressurePolicy.ligatureEvictionCount(currentCount: 80, limit: 64), 16)
     }
 
@@ -26,7 +26,7 @@ final class RenderMemoryPressurePolicyTests: XCTestCase {
 
     func testRetainedInlineImageIndicesKeepsNewestRowsWhenOverLimit() {
         let retained = RenderMemoryPressurePolicy.retainedInlineImageIndices(
-            anchorRows: Array(0..<10),
+            anchorRows: Array(0 ..< 10),
             displayOffset: 0,
             visibleRows: 200,
             rowMargin: 0,

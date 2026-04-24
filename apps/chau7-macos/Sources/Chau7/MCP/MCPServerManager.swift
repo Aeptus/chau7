@@ -475,8 +475,8 @@ final class MCPServerManager {
             label: "mcp-health-check",
             subsystem: "mcp_server",
             queueLabel: "com.chau7.mcp.server",
-            intervalMs: 15_000,
-            leewayMs: 3_000,
+            intervalMs: 15000,
+            leewayMs: 3000,
             active: true
         )
     }

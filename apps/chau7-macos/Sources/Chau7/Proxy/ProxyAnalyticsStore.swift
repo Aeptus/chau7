@@ -246,13 +246,13 @@ final class ProxyAnalyticsStore {
                       AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
                       let provider = AnalyticsProvider.key(for: rawProvider),
                       ProviderLatencyAnalytics.isLatencyRelevantAPIEndpoint(
-                        provider: provider,
-                        endpoint: colText(stmt, 2)
+                          provider: provider,
+                          endpoint: colText(stmt, 2)
                       ),
                       let timestamp = colText(stmt, 5).flatMap(isoDate),
                       let latencyMs = ProviderLatencyAnalytics.preferredAPILatencyMs(
-                        roundTripMs: Int(sqlite3_column_int64(stmt, 3)),
-                        timeToFirstTokenMs: Int(sqlite3_column_int64(stmt, 4))
+                          roundTripMs: Int(sqlite3_column_int64(stmt, 3)),
+                          timeToFirstTokenMs: Int(sqlite3_column_int64(stmt, 4))
                       ) else {
                     continue
                 }
@@ -308,8 +308,8 @@ final class ProxyAnalyticsStore {
                       AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
                       let provider = AnalyticsProvider.key(for: rawProvider),
                       ProviderLatencyAnalytics.isLatencyRelevantAPIEndpoint(
-                        provider: provider,
-                        endpoint: colText(stmt, 1)
+                          provider: provider,
+                          endpoint: colText(stmt, 1)
                       ),
                       let timestamp = colText(stmt, 2).flatMap(isoDate) else {
                     continue
