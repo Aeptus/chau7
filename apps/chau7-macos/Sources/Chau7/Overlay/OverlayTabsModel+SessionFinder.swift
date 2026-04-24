@@ -344,8 +344,8 @@ extension OverlayTabsModel {
             from: multiData,
             context: "restore.multiWindowState"
         ),
-           let primaryWindowStates = multiState.windows.first,
-           !primaryWindowStates.isEmpty {
+            let primaryWindowStates = multiState.windows.first,
+            !primaryWindowStates.isEmpty {
             let mergedWindows = mergedWindowStatesWithBackupFallbacks(baseWindows: multiState.windows)
             maybeRepairUserDefaultsMultiWindowState(
                 originalWindows: multiState.windows,
@@ -363,7 +363,7 @@ extension OverlayTabsModel {
             from: singleData,
             context: "restore.singleWindowState"
         ),
-           !singleWindowStates.isEmpty {
+            !singleWindowStates.isEmpty {
             let mergedWindows = mergedWindowStatesWithBackupFallbacks(baseWindows: [singleWindowStates])
             maybeRepairUserDefaultsSingleWindowState(
                 originalWindows: [singleWindowStates],
@@ -392,7 +392,7 @@ extension OverlayTabsModel {
             from: data,
             context: "restore.restorableTabs"
         ),
-              !states.isEmpty else {
+            !states.isEmpty else {
             return nil
         }
         return hydrateRestorableTabs(from: states, appModel: appModel)

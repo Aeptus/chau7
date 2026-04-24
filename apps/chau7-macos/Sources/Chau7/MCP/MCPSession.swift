@@ -89,7 +89,7 @@ final class MCPSession {
 
         liveNotificationWriter = { [weak self] payload in
             guard let self else { return }
-            self.writeJSON(to: writeStream, json: payload, mirrorToNotificationSink: true)
+            writeJSON(to: writeStream, json: payload, mirrorToNotificationSink: true)
         }
 
         while true {
