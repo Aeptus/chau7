@@ -76,11 +76,22 @@ public struct TelemetryRun: Codable, Identifiable, Sendable {
         self.totalInputTokens = totalInputTokens
         self.totalCacheCreationInputTokens = totalCacheCreationInputTokens
         self.totalCacheReadInputTokens = totalCacheReadInputTokens
-        let explicitCachedTotal = max(0, (totalCacheCreationInputTokens ?? 0) + (totalCacheReadInputTokens ?? 0))
+        // Reuse TokenUsage's shared reconciliation so persisted runs obey
+        // the same `cached ≥ creation + read` invariant as runtime
+        // aggregates. Optional handling is local: nil input + zero
+        // explicit breakdown stays nil (distinguishes "no signal" from
+        // "zero cached input" in persisted snapshots).
+        let creation = max(0, totalCacheCreationInputTokens ?? 0)
+        let read = max(0, totalCacheReadInputTokens ?? 0)
         if let totalCachedInputTokens {
-            self.totalCachedInputTokens = max(totalCachedInputTokens, explicitCachedTotal)
+            self.totalCachedInputTokens = TokenUsage.reconcileCachedInputTokens(
+                supplied: totalCachedInputTokens,
+                creation: creation,
+                read: read
+            )
         } else {
-            self.totalCachedInputTokens = explicitCachedTotal > 0 ? explicitCachedTotal : nil
+            let explicit = creation + read
+            self.totalCachedInputTokens = explicit > 0 ? explicit : nil
         }
         self.totalOutputTokens = totalOutputTokens
         self.totalReasoningOutputTokens = totalReasoningOutputTokens

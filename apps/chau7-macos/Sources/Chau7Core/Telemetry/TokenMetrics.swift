@@ -49,10 +49,32 @@ public struct TokenUsage: Codable, Equatable, Sendable {
         self.inputTokens = max(0, inputTokens)
         self.cacheCreationInputTokens = max(0, cacheCreationInputTokens)
         self.cacheReadInputTokens = max(0, cacheReadInputTokens)
-        let explicitCachedTotal = self.cacheCreationInputTokens + self.cacheReadInputTokens
-        self.cachedInputTokens = max(max(0, cachedInputTokens), explicitCachedTotal)
+        self.cachedInputTokens = TokenUsage.reconcileCachedInputTokens(
+            supplied: cachedInputTokens,
+            creation: self.cacheCreationInputTokens,
+            read: self.cacheReadInputTokens
+        )
         self.outputTokens = max(0, outputTokens)
         self.reasoningOutputTokens = max(0, reasoningOutputTokens)
+    }
+
+    /// Enforces the invariant `cachedInputTokens ≥ cacheCreationInputTokens +
+    /// cacheReadInputTokens` across every call site that stores a cached-input
+    /// total. The explicit breakdown is authoritative — a provider that
+    /// reports only a combined `supplied` counter can't validly claim less
+    /// than the sum of components seen, so the result is clamped up. All
+    /// inputs are clamped non-negative.
+    ///
+    /// Shared by `TokenUsage.init` (runtime aggregates) and
+    /// `TelemetryRun.init` (persisted run snapshots) so billing math reads
+    /// one reconciliation rule instead of two parallel implementations.
+    public static func reconcileCachedInputTokens(
+        supplied: Int,
+        creation: Int,
+        read: Int
+    ) -> Int {
+        let explicit = max(0, creation) + max(0, read)
+        return max(max(0, supplied), explicit)
     }
 
     public var hasAnyTokens: Bool {

@@ -150,4 +150,71 @@ final class TokenUsageTests: XCTestCase {
         let decoded = try JSONDecoder().decode(TokenUsage.self, from: data)
         XCTAssertEqual(decoded, usage)
     }
+
+    // MARK: - Reconciliation helper
+
+    func testReconcileCachedInputTokensReturnsMaxOfSuppliedAndExplicit() {
+        XCTAssertEqual(
+            TokenUsage.reconcileCachedInputTokens(supplied: 100, creation: 30, read: 20),
+            100,
+            "supplied > explicit stays supplied"
+        )
+        XCTAssertEqual(
+            TokenUsage.reconcileCachedInputTokens(supplied: 10, creation: 30, read: 40),
+            70,
+            "supplied < explicit bumps to explicit sum"
+        )
+        XCTAssertEqual(
+            TokenUsage.reconcileCachedInputTokens(supplied: 0, creation: 0, read: 0),
+            0
+        )
+    }
+
+    func testReconcileCachedInputTokensClampsNegatives() {
+        XCTAssertEqual(
+            TokenUsage.reconcileCachedInputTokens(supplied: -5, creation: -2, read: -3),
+            0,
+            "all-negative reconciliation returns 0"
+        )
+        XCTAssertEqual(
+            TokenUsage.reconcileCachedInputTokens(supplied: -10, creation: 20, read: 30),
+            50,
+            "negative supplied but positive explicit returns explicit sum"
+        )
+    }
+
+    func testReconcileAppliedIdenticallyByTokenUsageInitAndTelemetryRunInit() {
+        // Both callers should produce the same reconciled cached-input total
+        // given the same inputs. Lock in the "one rule, two wrappers" shape
+        // introduced in W2.2.
+        let usage = TokenUsage(
+            inputTokens: 0,
+            cacheCreationInputTokens: 30,
+            cacheReadInputTokens: 40,
+            cachedInputTokens: 10
+        )
+        let run = TelemetryRun(
+            id: "run-1",
+            sessionID: "s",
+            provider: "claude",
+            cwd: "/tmp",
+            startedAt: Date(timeIntervalSince1970: 0),
+            totalInputTokens: nil,
+            totalCacheCreationInputTokens: 30,
+            totalCacheReadInputTokens: 40,
+            totalCachedInputTokens: 10,
+            totalOutputTokens: nil,
+            totalReasoningOutputTokens: nil,
+            costUSD: nil,
+            tokenUsageSource: .unknown,
+            tokenUsageState: .missing,
+            costSource: .unavailable,
+            costState: .missing,
+            turnCount: 0,
+            tags: [],
+            metadata: [:]
+        )
+        XCTAssertEqual(usage.cachedInputTokens, 70)
+        XCTAssertEqual(run.totalCachedInputTokens, 70)
+    }
 }
