@@ -123,7 +123,37 @@ public enum TabRenderLifecyclePolicy {
         return isKeyWindow
     }
 
+    /// Decides whether a tab should remain in SwiftUI's live view hierarchy.
+    ///
+    /// Non-selected tabs rendered as full `SplitPaneView` instances cost
+    /// one Metal surface + layout tree per tab — a tab-count linear cost
+    /// that defeats the point of retaining the Rust terminal view on the
+    /// session model. The live hierarchy is reserved for tabs that need
+    /// SwiftUI mounting right now; every other tab falls back to a
+    /// lightweight placeholder (`Color.clear.frame(width:0, height:0)`)
+    /// while its PTY keeps draining against the retained RustTerminalView.
+    ///
+    /// Positive signals (keep live):
+    ///   - `isSelectedTab` — the user is looking at it.
+    ///   - `isPreviousLiveTab` — recently deselected; stays for one short
+    ///     handoff window so a rapid re-selection doesn't churn SwiftUI.
+    ///   - `isStartupRestoreActive && hasPendingRestoreBootstrap` —
+    ///     background tabs whose scrollback replay is still in flight
+    ///     during a cold restore.
+    ///   - `isMCPControlled && !hasAttachedTerminalView` — MCP-driven
+    ///     tabs without a real view need the hierarchy mount so the next
+    ///     background exec has a PTY to land on.
+    ///
+    /// All other tabs — including non-selected tabs that happen to have
+    /// `hasBackgroundActivity` — drop to the placeholder. Background
+    /// activity is a *polling* concern, not a *mounting* concern: the
+    /// shared drain service keeps the session alive regardless of
+    /// SwiftUI mount state.
     public static func keepsLiveHierarchy(for input: TabRenderLifecycleInput) -> Bool {
-        true
+        if input.isSelectedTab { return true }
+        if input.isPreviousLiveTab { return true }
+        if input.isStartupRestoreActive, input.hasPendingRestoreBootstrap { return true }
+        if input.isMCPControlled, !input.hasAttachedTerminalView { return true }
+        return false
     }
 }
