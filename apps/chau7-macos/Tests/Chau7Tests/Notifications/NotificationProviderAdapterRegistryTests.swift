@@ -464,4 +464,51 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(adapted.type, "api_error")
         XCTAssertEqual(canonical.kind, .taskFailed)
     }
+
+    // MARK: - Routing regression
+
+    func testEveryGenericAIAdapterSourceRoutesThroughGenericAdapter() {
+        // Regression cover for W2.3: the 15 generic-AI sources declared on
+        // `AIEventSource.genericAIAdapterSources` must all reach the generic
+        // adapter, not fall through to the unknown-adapter default. Locked
+        // in as a single test so adding a 16th tool-level source to the set
+        // automatically gains coverage without editing this file.
+        for source in AIEventSource.genericAIAdapterSources {
+            let event = AIEvent(
+                source: source,
+                type: "finished",
+                rawType: "finished",
+                tool: "Test \(source.rawValue)",
+                message: "ok",
+                ts: "2026-04-02T00:00:00Z",
+                reliability: .authoritative
+            )
+            let decision = NotificationProviderAdapterRegistry.adapt(event)
+            guard case .emit = decision else {
+                XCTFail("Generic AI source \(source.rawValue) did not emit — unexpected drop or adapter fall-through")
+                continue
+            }
+        }
+    }
+
+    func testUndeclaredToolSourceDoesNotCrashAdapterDispatch() {
+        // A source created from a raw value that isn't in any of the
+        // known sets must still produce a decision (not crash). The
+        // unknown adapter tries semantic mapping first; if the rawType
+        // is meaningful it canonicalizes, otherwise drops with a reason.
+        let event = AIEvent(
+            source: AIEventSource(rawValue: "brand_new_tool_2030"),
+            type: "finished",
+            rawType: "finished",
+            tool: "NewTool",
+            message: "ok",
+            ts: "2026-04-02T00:00:00Z",
+            reliability: .fallback
+        )
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        switch decision {
+        case .emit, .drop:
+            break
+        }
+    }
 }

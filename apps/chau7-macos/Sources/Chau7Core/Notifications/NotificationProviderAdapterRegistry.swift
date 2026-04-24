@@ -25,13 +25,14 @@ public enum NotificationProviderAdapterRegistry {
     }
 
     public static func adapt(_ event: AIEvent) -> Decision {
+        // Dedicated-adapter sources first — each has provider-specific
+        // event shape handling (Claude permission payloads, Codex turn-
+        // complete wire format, etc.).
         switch event.source {
         case .claudeCode:
             return adaptClaudeCodeEvent(event)
         case .codex:
             return adaptCodexEvent(event)
-        case .runtime, .gemini, .chatgpt, .cursor, .windsurf, .copilot, .aider, .cline, .cody, .amazonQ, .devin, .goose, .mentat, .amp, .continueAI:
-            return adaptGenericAIEvent(event)
         case .historyMonitor, .eventsLog:
             return adaptFallbackAIEvent(event)
         case .terminalSession:
@@ -42,9 +43,15 @@ public enum NotificationProviderAdapterRegistry {
             return adaptAppEvent(event)
         case .apiProxy:
             return adaptAPIProxyEvent(event)
-        case .unknown:
-            return adaptUnknownEvent(event)
         default:
+            // Generic AI sources (15 tool-level sources that share the
+            // semantic-mapping path) route via the set declared on
+            // `AIEventSource` so adding a new tool only touches that file.
+            // Any source that's neither dedicated nor in the generic set
+            // falls through to the unknown-source adapter.
+            if AIEventSource.genericAIAdapterSources.contains(event.source) {
+                return adaptGenericAIEvent(event)
+            }
             return adaptUnknownEvent(event)
         }
     }

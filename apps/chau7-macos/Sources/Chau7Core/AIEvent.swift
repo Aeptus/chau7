@@ -94,6 +94,31 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
     public static let amp = AIEventSource(rawValue: "amp")
     public static let continueAI = AIEventSource(rawValue: "continue_ai")
 
+    /// Sources that route through the "generic AI" notification adapter —
+    /// tool-level sources that emit `AIEvent` payloads but don't have a
+    /// dedicated adapter like ClaudeCode or Codex. When adding a new
+    /// tool-level source, include it here so `NotificationProviderAdapter
+    /// Registry.adapt(_:)` routes it through the generic path. A source
+    /// that's declared-but-omitted from this set will fall through the
+    /// registry's `default:` branch to `.unknown`-style handling.
+    public static let genericAIAdapterSources: Set<AIEventSource> = [
+        .runtime,
+        .gemini,
+        .chatgpt,
+        .cursor,
+        .windsurf,
+        .copilot,
+        .aider,
+        .cline,
+        .cody,
+        .amazonQ,
+        .devin,
+        .goose,
+        .mentat,
+        .amp,
+        .continueAI
+    ]
+
     public static func forProvider(_ provider: String?) -> AIEventSource? {
         guard let trimmed = provider?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               !trimmed.isEmpty else {
