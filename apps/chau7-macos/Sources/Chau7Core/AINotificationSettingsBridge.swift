@@ -129,10 +129,21 @@ public enum AINotificationSettingsBridge {
     ) -> [NotificationActionConfig] {
         let resolvedActions = currentActions.isEmpty ? defaultActions : currentActions
         let unmanagedActions = resolvedActions.filter { !managedActionTypes.contains($0.actionType) }
-        let managedTemplates = Dictionary(
-            (resolvedActions + defaultActions).map { ($0.actionType, $0) },
-            uniquingKeysWith: { existing, _ in existing }
+        // Build the managed-action template dictionary base from defaults,
+        // then override with resolved (user-customized) values. Written this
+        // way so the merge semantics are obvious without cross-referencing
+        // Swift's `Dictionary(_:uniquingKeysWith:)` — `uniquingKeysWith`
+        // fires on duplicate *inserts* and the `existing` closure parameter
+        // refers to the *first* insert. Previously this built the dict from
+        // `resolvedActions + defaultActions` with `existing` wins, which
+        // meant "resolved wins over default" via ordering + closure — two
+        // layers of indirection to get a simple override.
+        var managedTemplates: [NotificationActionType: NotificationActionConfig] = Dictionary(
+            uniqueKeysWithValues: defaultActions.map { ($0.actionType, $0) }
         )
+        for action in resolvedActions {
+            managedTemplates[action.actionType] = action
+        }
 
         let desiredOrder: [(NotificationActionType, Bool)] = [
             (.showNotification, preference.showNotification),

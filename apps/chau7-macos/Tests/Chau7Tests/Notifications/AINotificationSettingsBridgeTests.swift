@@ -172,4 +172,69 @@ final class AINotificationSettingsBridgeTests: XCTestCase {
         XCTAssertEqual(updated.groupOverrides["ai_coding.waiting_input"], false)
         XCTAssertEqual(updated.groupOverrides["ai_coding.attention_required"], false)
     }
+
+    // MARK: - Merge regression (W3.5)
+
+    func testUpdatedActionsOverridesDefaultConfigWithCurrentConfig() {
+        // When both current and default have an entry for the same
+        // actionType, the current (user-customized) config wins. Pre-W3.5
+        // this was encoded as an `existing` closure on
+        // `Dictionary(_:uniquingKeysWith:)` paired with `resolved +
+        // defaults` ordering — two layers of indirection for what
+        // should read as "defaults then overrides".
+        let currentStyleTab = NotificationActionConfig(
+            actionType: .styleTab,
+            enabled: true,
+            config: ["color": "#ff0000"]
+        )
+        let defaultStyleTab = NotificationActionConfig(
+            actionType: .styleTab,
+            enabled: true,
+            config: ["color": "#0000ff"]
+        )
+        let result = AINotificationSettingsBridge.updatedActions(
+            for: .finished,
+            preference: AINotificationPrimaryPreference(
+                showNotification: false,
+                styleTab: true,
+                playSound: false,
+                dockBounce: false,
+                hasAdditionalActions: false
+            ),
+            currentActions: [currentStyleTab],
+            defaultActions: [defaultStyleTab]
+        )
+        let styleTab = result.first(where: { $0.actionType == .styleTab })
+        XCTAssertEqual(styleTab?.config["color"], "#ff0000", "current (user) config must override default")
+    }
+
+    func testUpdatedActionsFallsBackToDefaultsForMissingCurrent() {
+        // When current has no entry for an actionType, the template for
+        // the managed action is taken from defaults.
+        let currentStyleOnly = NotificationActionConfig(
+            actionType: .styleTab,
+            enabled: true,
+            config: ["color": "#ff0000"]
+        )
+        let defaultPlaySound = NotificationActionConfig(
+            actionType: .playSound,
+            enabled: false,
+            config: ["sound": "Glass"]
+        )
+        let result = AINotificationSettingsBridge.updatedActions(
+            for: .finished,
+            preference: AINotificationPrimaryPreference(
+                showNotification: false,
+                styleTab: true,
+                playSound: true,
+                dockBounce: false,
+                hasAdditionalActions: false
+            ),
+            currentActions: [currentStyleOnly],
+            defaultActions: [currentStyleOnly, defaultPlaySound]
+        )
+        let playSound = result.first(where: { $0.actionType == .playSound })
+        XCTAssertEqual(playSound?.config["sound"], "Glass", "default-only action keeps its default config")
+        XCTAssertEqual(playSound?.enabled, true, "preference flag flips enabled regardless of source template")
+    }
 }
