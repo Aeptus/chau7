@@ -119,7 +119,7 @@ final class RemoteControlManager {
         guard connectedClientStreamMode == .full else { return }
         guard let overlayModel else { return }
         let targetTab: OverlayTab?
-        if tabID == 0 {
+        if tabID == RemoteTabRegistry.unscopedTabID {
             targetTab = overlayModel.selectedTab
         } else if let uuid = tabRegistry.uuid(for: tabID) {
             targetTab = overlayModel.tabs.first { $0.id == uuid }
@@ -134,7 +134,7 @@ final class RemoteControlManager {
     func sendGridSnapshot(for tabID: UInt32) {
         guard let overlayModel else { return }
         let targetTab: OverlayTab?
-        if tabID == 0 {
+        if tabID == RemoteTabRegistry.unscopedTabID {
             targetTab = overlayModel.selectedTab
         } else if let uuid = tabRegistry.uuid(for: tabID) {
             targetTab = overlayModel.tabs.first { $0.id == uuid }
@@ -328,7 +328,7 @@ final class RemoteControlManager {
     func sendApprovalRequest(requestID: String, payload: Data) {
         guard isIPCConnected else { return }
         registerApprovalContext(requestID: requestID, payload: payload)
-        sendFrame(type: .approvalRequest, tabID: 0, payload: payload)
+        sendFrame(type: .approvalRequest, tabID: RemoteTabRegistry.unscopedTabID, payload: payload)
         sendRemoteActivity()
         logger.info("Remote: sent approval request \(requestID, privacy: .public)")
     }
@@ -451,7 +451,7 @@ final class RemoteControlManager {
                let payload = try? JSONEncoder().encode(nextActivity) {
                 sendFrame(type: .activityState, tabID: nextActivity.tabID, payload: payload)
             } else {
-                sendFrame(type: .activityCleared, tabID: 0, payload: Data())
+                sendFrame(type: .activityCleared, tabID: RemoteTabRegistry.unscopedTabID, payload: Data())
             }
         }
         sendInteractivePrompts(force: force)
@@ -477,7 +477,7 @@ final class RemoteControlManager {
                 sessionID: context.sessionID
             )
             guard let data = try? JSONEncoder().encode(payload) else { continue }
-            sendFrame(type: .approvalRequest, tabID: 0, payload: data)
+            sendFrame(type: .approvalRequest, tabID: RemoteTabRegistry.unscopedTabID, payload: data)
         }
     }
 
@@ -490,7 +490,7 @@ final class RemoteControlManager {
               let payload = try? JSONEncoder().encode(RemoteInteractivePromptListPayload(prompts: nextPrompts)) else {
             return
         }
-        sendFrame(type: .interactivePromptList, tabID: 0, payload: payload)
+        sendFrame(type: .interactivePromptList, tabID: RemoteTabRegistry.unscopedTabID, payload: payload)
     }
 
     private func currentRemoteActivity(now: Date = Date()) -> RemoteActivityState? {
@@ -780,7 +780,7 @@ final class RemoteControlManager {
 
         do {
             let payload = try JSONEncoder().encode(RemoteTabListPayload(tabs: tabPayloads))
-            sendFrame(type: .tabList, tabID: 0, payload: payload)
+            sendFrame(type: .tabList, tabID: RemoteTabRegistry.unscopedTabID, payload: payload)
             // Only log at .info on tab-count change; steady-state refreshes are
             // ~1 per second and drown out every other chau7 log entry.
             if lastSentTabListCount != tabPayloads.count {
@@ -891,7 +891,7 @@ final class RemoteControlManager {
 
     private func resolveInputTarget(for tabID: UInt32) -> (TerminalSessionModel, UInt32)? {
         guard let overlayModel else { return nil }
-        if tabID == 0 {
+        if tabID == RemoteTabRegistry.unscopedTabID {
             guard let selectedTab = overlayModel.selectedTab?.session,
                   let resolvedTabID = tabRegistry.tabID(for: overlayModel.selectedTabID) else {
                 return nil
@@ -907,7 +907,7 @@ final class RemoteControlManager {
     }
 
     private func session(for tabID: UInt32) -> TerminalSessionModel? {
-        if tabID == 0 {
+        if tabID == RemoteTabRegistry.unscopedTabID {
             return overlayModel?.selectedTab?.session
         }
 

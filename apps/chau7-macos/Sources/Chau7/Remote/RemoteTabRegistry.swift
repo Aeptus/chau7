@@ -11,6 +11,14 @@ struct RemoteTabRegistryEntry {
 }
 
 struct RemoteTabRegistry {
+    /// Sentinel tabID in remote IPC payloads meaning "not scoped to a
+    /// specific registry entry". On the request side (snapshots,
+    /// switches), it resolves to the currently-selected tab. On the
+    /// send side (approval requests, activity broadcasts, tab list
+    /// frames), it marks the frame as non-tab-scoped. Using the named
+    /// constant keeps the protocol contract obvious at call sites.
+    static let unscopedTabID: UInt32 = 0
+
     private(set) var tabIDByUUID: [UUID: UInt32] = [:]
     private(set) var uuidByTabID: [UInt32: UUID] = [:]
     private(set) var tabIDBySessionIdentifier: [String: UInt32] = [:]
