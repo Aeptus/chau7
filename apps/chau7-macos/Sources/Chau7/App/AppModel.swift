@@ -306,6 +306,7 @@ final class AppModel {
     @ObservationIgnored private var idleMonitors: [HistoryIdleMonitor] = []
     @ObservationIgnored private var codexTerminalTailer: FileTailer<String>?
     @ObservationIgnored private var claudeTerminalTailer: FileTailer<String>?
+    @ObservationIgnored private var claudeMonitorNotificationTask: Task<Void, Never>?
     @ObservationIgnored private var cleanupTimer: DispatchSourceTimer?
     @ObservationIgnored private var appEventEmitter: AppEventEmitter?
     @ObservationIgnored private var pendingClaudeWaitingInputFallbacks: [String: DispatchWorkItem] = [:]
@@ -449,6 +450,7 @@ final class AppModel {
 
     deinit {
         pendingClaudeWaitingInputFallbacks.values.forEach { $0.cancel() }
+        claudeMonitorNotificationTask?.cancel()
         Log.warn("AppModel deinit — possible SwiftUI scene recreation (pid=\(ProcessInfo.processInfo.processIdentifier))")
     }
 
@@ -1026,17 +1028,23 @@ final class AppModel {
     private func startClaudeCodeMonitor() {
         let monitor = ClaudeCodeMonitor.shared
 
-        // Set up callbacks (all called on main thread)
-        monitor.onEvent = { [weak self] event in
-            self?.handleClaudeCodeMonitorEvent(event)
-        }
-
-        monitor.onSessionIdle = { [weak self] session in
-            self?.handleClaudeCodeSessionIdle(session)
-        }
-
-        monitor.onResponseComplete = { [weak self] event in
-            self?.handleClaudeCodeResponseComplete(event)
+        // Consume monitor notifications through a single AsyncStream Task so
+        // each signal has an unambiguous handler and a second future consumer
+        // (e.g. telemetry) can register its own stream without evicting ours.
+        claudeMonitorNotificationTask?.cancel()
+        let notifications = monitor.notifications()
+        claudeMonitorNotificationTask = Task { @MainActor [weak self] in
+            for await notification in notifications {
+                guard let self else { break }
+                switch notification {
+                case .event(let event):
+                    self.handleClaudeCodeMonitorEvent(event)
+                case .sessionIdle(let session):
+                    self.handleClaudeCodeSessionIdle(session)
+                case .responseComplete(let event):
+                    self.handleClaudeCodeResponseComplete(event)
+                }
+            }
         }
 
         // Start monitoring

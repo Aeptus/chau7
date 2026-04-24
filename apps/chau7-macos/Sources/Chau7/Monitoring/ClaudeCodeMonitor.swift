@@ -52,16 +52,57 @@ final class ClaudeCodeMonitor {
     private var idleTimer: DispatchSourceTimer?
     private let minimumIdleCheckInterval: TimeInterval = 1.0
 
-    // MARK: - Callbacks
+    // MARK: - Notifications
 
-    var onEvent: ((ClaudeCodeEvent) -> Void)?
-    var onSessionIdle: ((ClaudeSessionInfo) -> Void)?
-    var onResponseComplete: ((ClaudeCodeEvent) -> Void)?
+    /// Union of the three notification kinds this monitor emits, so a
+    /// single consumer Task can handle every signal without needing
+    /// three parallel subscriptions.
+    enum Notification {
+        case event(ClaudeCodeEvent)
+        case sessionIdle(ClaudeSessionInfo)
+        case responseComplete(ClaudeCodeEvent)
+    }
+
+    /// Registered AsyncStream continuations. Mutated only on the main
+    /// thread (both `notifications()` and `broadcast(_:)` dispatch to
+    /// main; `onTermination` re-dispatches to main before removing).
+    private var notificationContinuations: [UUID: AsyncStream<Notification>.Continuation] = [:]
 
     // MARK: - Init
 
     private init() {
         self.eventsFilePath = RuntimeIsolation.pathInHome(".chau7/claude-events.jsonl")
+    }
+
+    // MARK: - Notification Streams
+
+    /// Returns a new AsyncStream of monitor notifications for this
+    /// subscriber. Multiple concurrent subscribers are supported — each
+    /// stream gets every notification delivered after its registration.
+    /// The consumer's Task should cancel to stop receiving (cancellation
+    /// drains the continuation and drops it from the registry).
+    func notifications() -> AsyncStream<Notification> {
+        AsyncStream { continuation in
+            let id = UUID()
+            DispatchQueue.main.async { [weak self] in
+                self?.notificationContinuations[id] = continuation
+            }
+            continuation.onTermination = { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.notificationContinuations.removeValue(forKey: id)
+                }
+            }
+        }
+    }
+
+    /// Fan a single notification out to every registered subscriber.
+    /// Must be invoked on the main thread (all callers already are —
+    /// handleEvent dispatches to main before calling this, and the
+    /// idle-check timer runs on .main).
+    private func broadcast(_ notification: Notification) {
+        for continuation in notificationContinuations.values {
+            continuation.yield(notification)
+        }
     }
 
     // MARK: - Lifecycle
@@ -136,13 +177,13 @@ final class ClaudeCodeMonitor {
                 self.recentEvents.removeFirst(self.recentEvents.count - self.maxRecentEvents)
             }
 
-            // Fire callbacks
-            self.onEvent?(event)
+            // Fan out to AsyncStream subscribers
+            self.broadcast(.event(event))
 
             switch event.type {
             case .responseComplete:
-                self.onResponseComplete?(event)
-            // Notification is handled by AppModel.onEvent → unified pipeline
+                self.broadcast(.responseComplete(event))
+            // Notification is handled by the consumer → unified pipeline
             case .permissionRequest:
                 // Permission dedup is handled by the pipeline's rate limiter
                 break
@@ -262,8 +303,8 @@ final class ClaudeCodeMonitor {
                 var updated = session
                 updated.state = .idle
                 activeSessions[sessionId] = updated
-                onSessionIdle?(updated)
-                // Idle notification routed through AppModel.onSessionIdle → unified pipeline
+                broadcast(.sessionIdle(updated))
+                // Idle notification routed through consumer Task → unified pipeline
                 continue
             }
         }
