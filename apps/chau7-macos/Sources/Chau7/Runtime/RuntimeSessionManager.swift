@@ -787,20 +787,53 @@ final class RuntimeSessionManager {
     }
 
     static func resolveClaudeTabID(sessionID: String, cwd: String, tabs: [AITabSummary]) -> UUID? {
-        let matchingTabs = tabs.filter { $0.sessionID == sessionID }
-        guard !matchingTabs.isEmpty else { return nil }
+        // 1) Exact session-ID match against tabs that already have their
+        //    sessionID set. When any tab matches by sessionID, the result
+        //    is definitively among those tabs — we never fall back to
+        //    a *different* tab when session-match was ambiguous, because
+        //    that would silently steal a session from one of the matched
+        //    candidates.
+        let sessionMatches = tabs.filter { $0.sessionID == sessionID }
+        if !sessionMatches.isEmpty {
+            let preferred = sessionMatches.filter { $0.provider == "claude" }
+            let candidates = preferred.isEmpty ? sessionMatches : preferred
 
-        let preferredTabs = matchingTabs.filter { $0.provider == "claude" }
-        let candidateTabs = preferredTabs.isEmpty ? matchingTabs : preferredTabs
+            if candidates.count == 1 {
+                return candidates[0].tabID
+            }
 
-        if candidateTabs.count == 1 {
-            return candidateTabs[0].tabID
+            let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedCwd.isEmpty else { return nil }
+            let ranked = candidates.compactMap { summary -> (tabID: UUID, rank: Int)? in
+                guard let rank = DirectoryPathMatcher.bidirectionalPrefixRank(
+                    targetPath: trimmedCwd,
+                    candidatePath: summary.cwd
+                ) else {
+                    return nil
+                }
+                return (summary.tabID, rank)
+            }
+            guard !ranked.isEmpty else { return nil }
+            let bestRank = ranked.map(\.rank).min() ?? 0
+            let bestMatches = ranked.filter { $0.rank == bestRank }
+            guard bestMatches.count == 1 else { return nil }
+            return bestMatches[0].tabID
         }
 
+        // 2) Directory-only fallback: no tab has the real Claude session ID
+        //    yet. This is the common case on the FIRST hook event for a
+        //    freshly-attached Claude session — tabs hold synthetic or nil
+        //    session IDs until authoritative binding. If exactly ONE Claude
+        //    tab's cwd uniquely matches the event cwd, adopt it. The
+        //    `== 1` requirement is load-bearing: multiple Claude tabs in
+        //    the same directory ARE possible, and silently stealing a
+        //    session ID from a different live session is worse than not
+        //    adopting. Pre-W3.17 this fallback didn't exist and every
+        //    first-event routing failed with "no tab match".
         let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedCwd.isEmpty else { return nil }
-
-        let rankedTabs = candidateTabs.compactMap { summary -> (tabID: UUID, rank: Int)? in
+        let claudeTabs = tabs.filter { $0.provider == "claude" }
+        let directoryMatches = claudeTabs.compactMap { summary -> (tabID: UUID, rank: Int)? in
             guard let rank = DirectoryPathMatcher.bidirectionalPrefixRank(
                 targetPath: trimmedCwd,
                 candidatePath: summary.cwd
@@ -809,10 +842,9 @@ final class RuntimeSessionManager {
             }
             return (summary.tabID, rank)
         }
-
-        guard !rankedTabs.isEmpty else { return nil }
-        let bestRank = rankedTabs.map(\.rank).min() ?? 0
-        let bestMatches = rankedTabs.filter { $0.rank == bestRank }
+        guard !directoryMatches.isEmpty else { return nil }
+        let bestRank = directoryMatches.map(\.rank).min() ?? 0
+        let bestMatches = directoryMatches.filter { $0.rank == bestRank }
         guard bestMatches.count == 1 else { return nil }
         return bestMatches[0].tabID
     }

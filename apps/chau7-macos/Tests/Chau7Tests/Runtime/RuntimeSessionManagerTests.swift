@@ -259,6 +259,94 @@ final class RuntimeSessionManagerTests: XCTestCase {
         XCTAssertEqual(resolved, exactTabID)
     }
 
+    // MARK: - W3.17 directory-only fallback regression
+
+    func testResolveClaudeTabID_directoryFallback_adoptsUniqueClaudeTabAtCwd() {
+        // First-event scenario: no tab has the real Claude session ID yet
+        // (tab's sessionID is nil — newly opened Claude session). A unique
+        // Claude tab matches the event cwd, so the resolver adopts it.
+        // Pre-W3.17 this returned nil and logged "no tab match" chronically.
+        let incomingSessionID = "fresh-claude-session-xyz"
+        let uniqueClaudeTabID = UUID()
+
+        let resolved = RuntimeSessionManager.resolveClaudeTabID(
+            sessionID: incomingSessionID,
+            cwd: "/tmp/project-alpha",
+            tabs: [
+                RuntimeSessionManager.AITabSummary(
+                    tabID: uniqueClaudeTabID,
+                    cwd: "/tmp/project-alpha",
+                    provider: "claude",
+                    sessionID: nil
+                ),
+                RuntimeSessionManager.AITabSummary(
+                    tabID: UUID(),
+                    cwd: "/tmp/project-beta",
+                    provider: "claude",
+                    sessionID: "bound-session-in-other-dir"
+                )
+            ]
+        )
+        XCTAssertEqual(resolved, uniqueClaudeTabID)
+    }
+
+    func testResolveClaudeTabID_directoryFallback_returnsNilWhenMultipleClaudeTabsAtSameCwd() {
+        // Multiple Claude tabs in the same directory → directory fallback
+        // MUST refuse to adopt. The load-bearing `bestMatches.count == 1`
+        // check prevents a fresh Claude session from silently stealing
+        // ownership of a tab that might belong to a sibling session.
+        let incomingSessionID = "fresh-claude-session-xyz"
+        let cwd = "/tmp/shared-dir"
+
+        let resolved = RuntimeSessionManager.resolveClaudeTabID(
+            sessionID: incomingSessionID,
+            cwd: cwd,
+            tabs: [
+                RuntimeSessionManager.AITabSummary(
+                    tabID: UUID(),
+                    cwd: cwd,
+                    provider: "claude",
+                    sessionID: nil
+                ),
+                RuntimeSessionManager.AITabSummary(
+                    tabID: UUID(),
+                    cwd: cwd,
+                    provider: "claude",
+                    sessionID: nil
+                )
+            ]
+        )
+        XCTAssertNil(resolved, "ambiguous Claude-at-same-cwd must not silently bind to any one tab")
+    }
+
+    func testResolveClaudeTabID_directoryFallback_ignoresNonClaudeTabsAtSameCwd() {
+        // A Codex tab and a Claude tab share a cwd; the incoming Claude
+        // event must adopt the Claude one, not the Codex one.
+        let incomingSessionID = "fresh-claude-session-xyz"
+        let cwd = "/tmp/mixed-tools"
+        let claudeTabID = UUID()
+
+        let resolved = RuntimeSessionManager.resolveClaudeTabID(
+            sessionID: incomingSessionID,
+            cwd: cwd,
+            tabs: [
+                RuntimeSessionManager.AITabSummary(
+                    tabID: UUID(),
+                    cwd: cwd,
+                    provider: "codex",
+                    sessionID: nil
+                ),
+                RuntimeSessionManager.AITabSummary(
+                    tabID: claudeTabID,
+                    cwd: cwd,
+                    provider: "claude",
+                    sessionID: nil
+                )
+            ]
+        )
+        XCTAssertEqual(resolved, claudeTabID)
+    }
+
     func testResolveClaudeTabIDFallsBackToUniqueSessionWhenProviderMetadataMissing() {
         let sessionID = "claude-session-providerless"
         let providerlessTabID = UUID()
