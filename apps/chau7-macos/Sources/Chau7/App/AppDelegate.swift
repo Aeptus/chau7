@@ -43,6 +43,15 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var shownWindowNumbers: Set<Int> = []
     private var pendingSelectedTabRevealEventsByWindow: [Int: Set<TabSurfaceReactivationEvent>] = [:]
     private var pendingSelectedTabRevealWorkItemsByWindow: [Int: DispatchWorkItem] = [:]
+    /// Pending deferred render-lifecycle invalidations for windows that just
+    /// resigned key/main status. Coalesces the `didResignKey → didBecomeKey`
+    /// focus round-trip that fires during fullscreen / toolbar recreation,
+    /// preventing a transient demotion of the selected tab to .passiveVisible.
+    private var pendingLifecycleDemotionsByWindow: [Int: DispatchWorkItem] = [:]
+    /// Debounce window for the focus-loss → demote-lifecycle path. Long enough
+    /// to cover NSWindow's fullscreen/toolbar churn (typically 150-300ms),
+    /// short enough that a genuine focus switch still demotes promptly.
+    private let lifecycleDemotionDebounceSeconds: TimeInterval = 0.35
     private var selectedTabRevealCycleByWindow: [Int: Int] = [:]
     private var didFinishLaunching = false
     private var didPerformInitialSetup = false
@@ -1819,6 +1828,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         guard let window = notification.object as? NSWindow else { return }
         guard overlayHosts.contains(where: { $0.window == window }) else { return }
         clearSelectedTabRevealCycle(for: window.windowNumber)
+        pendingLifecycleDemotionsByWindow.removeValue(forKey: window.windowNumber)?.cancel()
         logOverlayWindowLifecycle(reason: "windowWillClose", window: window)
     }
 
@@ -2241,7 +2251,54 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     private func invalidateOverlayRenderLifecycle(for window: NSWindow, reason: String) {
-        guard let host = overlayHosts.first(where: { $0.window == window }) else { return }
+        guard let host = overlayHosts.first(where: { $0.window == window }) else {
+            return
+        }
+        let windowNumber = window.windowNumber
+        let isDemotion = reason == "didResignKey" || reason == "didResignMain"
+        let isPromotion = reason == "didBecomeKey" || reason == "didBecomeMain"
+
+        // Promotions always fire immediately — they switch the selected tab
+        // back to live presentation, which the user is waiting to see — and
+        // also cancel any pending demotion that was about to tear it down.
+        if isPromotion {
+            pendingLifecycleDemotionsByWindow.removeValue(forKey: windowNumber)?.cancel()
+            host.model.invalidateRenderLifecycle(reason: reason)
+            refreshLowLatencyActivity()
+            return
+        }
+
+        // Demotions (window lost key/main status) are debounced. NSWindow
+        // briefly resigns both during fullscreen transitions, toolbar
+        // recreation, and sheet presentation — a synchronous demotion to
+        // .passiveVisible during that transient stops Metal live presentation
+        // and shows as a frozen-then-burst update pattern.
+        if isDemotion {
+            pendingLifecycleDemotionsByWindow[windowNumber]?.cancel()
+            let workItem = DispatchWorkItem { [weak self, weak window] in
+                guard let self, let window else { return }
+                self.pendingLifecycleDemotionsByWindow.removeValue(forKey: windowNumber)
+                // Re-resolve the host — overlayHosts may have changed during
+                // the debounce window (tab drag across windows, window close).
+                guard let host = self.overlayHosts.first(where: { $0.window == window }) else { return }
+                // Only apply if the window is still not key/main — if it
+                // regained focus during the debounce window this is a no-op.
+                guard !window.isKeyWindow, !window.isMainWindow else {
+                    Log.trace("renderLifecycle: skipping deferred demotion — window regained focus [\(reason)]")
+                    return
+                }
+                host.model.invalidateRenderLifecycle(reason: "\(reason).debounced")
+                self.refreshLowLatencyActivity()
+            }
+            pendingLifecycleDemotionsByWindow[windowNumber] = workItem
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + lifecycleDemotionDebounceSeconds,
+                execute: workItem
+            )
+            return
+        }
+
+        // Any other reason (tab change, startup, etc.) fires immediately.
         host.model.invalidateRenderLifecycle(reason: reason)
         refreshLowLatencyActivity()
     }
