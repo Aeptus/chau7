@@ -28,4 +28,11 @@ enum RegexPatterns {
         #"(?:^|[\s"'`({\[])((?:[/.])?(?:[\w.-]+/)*[\w.-]+\.\w+)(?::(\d+))?(?::(\d+))?"#,
         name: "filePath"
     )
+
+    /// Eagerly touch every compiled regex so a bad pattern trips its
+    /// `fatalError` at app launch rather than on first use.
+    static func warmUp() {
+        _ = url
+        _ = filePath
+    }
 }

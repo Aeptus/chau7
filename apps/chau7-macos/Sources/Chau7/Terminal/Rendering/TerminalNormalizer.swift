@@ -24,6 +24,12 @@ enum TerminalNormalizer {
         }
     }()
 
+    /// Eagerly touch the compiled regex so a bad pattern trips its
+    /// `fatalError` at app launch rather than on first normalize() call.
+    static func warmUp() {
+        _ = ansiPattern
+    }
+
     /// Fully normalizes terminal text by applying backspaces, stripping ANSI codes, and removing control characters.
     /// - Parameter input: Raw terminal text
     /// - Returns: Clean text suitable for display or searching

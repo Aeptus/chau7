@@ -90,6 +90,13 @@ private final class OverlayBlurView: NSVisualEffectView {
         // but this catches any unprotected write paths (proxies, IPC, MCP bridges).
         signal(SIGPIPE, SIG_IGN)
 
+        // Eagerly compile every shared regex so a bad pattern crashes here
+        // at launch — in front of a developer — instead of on the first
+        // highlight / normalize / URL-detect call in an unlucky user session.
+        RegexPatterns.warmUp()
+        TerminalNormalizer.warmUp()
+        SyntaxHighlighter.warmUp()
+
         // Purge oversized PTY logs on startup to prevent disk bloat
         purgeLargePTYLogs()
         UsageMonitor.shared.start()

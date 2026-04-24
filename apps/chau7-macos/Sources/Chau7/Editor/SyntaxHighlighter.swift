@@ -110,6 +110,23 @@ final class SyntaxHighlighter {
 
     private init() {}
 
+    /// Eagerly touch every compiled regex so a bad pattern trips its
+    /// `fatalError` at app launch rather than on first highlight —
+    /// keeps the crash site deterministic and tied to code review
+    /// rather than a downstream feature usage.
+    static func warmUp() {
+        _ = urlPattern
+        _ = pathPattern
+        _ = errorPattern
+        _ = warningPattern
+        _ = successPattern
+        _ = numberPattern
+        _ = stringPattern
+        _ = jsonKeyPattern
+        _ = gitPattern
+        _ = promptPattern
+    }
+
     // MARK: - Highlighting
 
     /// Highlights a line of text and returns an attributed string.
