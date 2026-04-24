@@ -350,13 +350,35 @@ enum TabResolver {
             }
         }
 
-        // 3) Deterministic fallback: most recently active tab
+        // 3) Deterministic fallback: most recently active tab.
+        //
+        // Build a short reason trail so the fallback log carries enough
+        // signal to diagnose which disambiguation step failed — chronic
+        // `no tab match` noise is brutal without knowing which keys
+        // were tried.
+        var trail: [String] = []
+        if let sessionID = target.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines), !sessionID.isEmpty {
+            trail.append("sessionID=\(sessionID.prefix(8)) unmatched")
+        } else {
+            trail.append("sessionID unset")
+        }
+        if let dir = target.directory?.trimmingCharacters(in: .whitespacesAndNewlines), !dir.isEmpty {
+            trail.append("dir=\(URL(fileURLWithPath: dir).standardized.path.suffix(30)) matched>1 with equal activity")
+        } else {
+            trail.append("directory unset")
+        }
         let best = matches.max(by: { a, b in
             let aDate = tabLastActivityDate(a)
             let bDate = tabLastActivityDate(b)
             return aDate < bDate
         })
-        logAmbiguousFallback(target: target, matchesCount: matches.count)
+        logAmbiguousFallback(
+            target: target,
+            matchesCount: matches.count,
+            candidateTabIDPrefixes: matches.prefix(8).map { String($0.id.uuidString.prefix(8)) },
+            chosenTabIDPrefix: best.map { String($0.id.uuidString.prefix(8)) },
+            trail: trail
+        )
         return best
     }
 
@@ -380,12 +402,26 @@ enum TabResolver {
         return labels.compactMap { $0 }.contains { candidates.contains($0) }
     }
 
-    private static func logAmbiguousFallback(target: TabTarget, matchesCount: Int) {
+    private static func logAmbiguousFallback(
+        target: TabTarget,
+        matchesCount: Int,
+        candidateTabIDPrefixes: [String],
+        chosenTabIDPrefix: String?,
+        trail: [String]
+    ) {
         let tool = normalizedToolLabel(target.tool) ?? target.tool.lowercased()
         let directory = target.directory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "-"
         let sessionID = target.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "-"
         let key = "\(tool)|\(directory)|\(sessionID)|\(matchesCount)"
         let now = Date()
+
+        let diagnostics =
+            "tool=\(tool) " +
+            "dir=\(directory.suffix(40)) " +
+            "session=\(sessionID.prefix(8)) " +
+            "candidates=[\(candidateTabIDPrefixes.joined(separator: ","))] " +
+            "chosen=\(chosenTabIDPrefix ?? "-") " +
+            "trail=[\(trail.joined(separator: "; "))]"
 
         var logLine: String?
         ambiguityLogLock.lock()
@@ -396,11 +432,8 @@ enum TabResolver {
         } else {
             let suppressedCount = ambiguityLogState[key]?.suppressedCount ?? 0
             ambiguityLogState[key] = (lastLoggedAt: now, suppressedCount: 0)
-            if suppressedCount > 0 {
-                logLine = "TabResolver: \(matchesCount) ambiguous matches, using most recently active tab (suppressed \(suppressedCount) similar)"
-            } else {
-                logLine = "TabResolver: \(matchesCount) ambiguous matches, using most recently active tab"
-            }
+            let suffix = suppressedCount > 0 ? " (suppressed \(suppressedCount) similar)" : ""
+            logLine = "TabResolver: \(matchesCount) ambiguous matches, using most recently active tab\(suffix) — \(diagnostics)"
         }
         ambiguityLogLock.unlock()
 

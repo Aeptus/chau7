@@ -611,8 +611,20 @@ final class RuntimeSessionManager {
             tabID = resolveClaudeTabBySessionID(normalizedClaudeSessionID, cwd: event.cwd)
             if tabID == nil {
                 recordAdoptionFailure(cacheKey)
+                // Emit a compact snapshot of what tabs *were* present so
+                // chronic "no match" noise is diagnosable from the log
+                // alone: how many AI tabs total, how many had a sessionID
+                // at all, and a sample of current sessionID prefixes the
+                // incoming event did not match.
+                let aiTabs = listAITabs()
+                let withSession = aiTabs.filter { !($0.sessionID?.isEmpty ?? true) }
+                let samplePrefixes = withSession
+                    .prefix(6)
+                    .compactMap { $0.sessionID.map { String($0.prefix(8)) } }
+                    .joined(separator: ",")
                 Log.warn(
-                    "RuntimeSessionManager: no tab match for Claude session=\(normalizedClaudeSessionID) cwd=\(event.cwd)"
+                    "RuntimeSessionManager: no tab match for Claude session=\(normalizedClaudeSessionID) cwd=\(event.cwd) " +
+                        "aiTabs=\(aiTabs.count) withSessionID=\(withSession.count) knownSessionPrefixes=[\(samplePrefixes)]"
                 )
             }
         } else {
