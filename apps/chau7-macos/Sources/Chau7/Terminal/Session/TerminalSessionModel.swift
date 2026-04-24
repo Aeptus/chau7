@@ -127,6 +127,42 @@ final class TerminalSessionModel {
     /// Last rendered terminal snapshot used for snapshot-backed tab switching.
     @ObservationIgnored var lastRenderedSnapshot: NSImage?
 
+    // MARK: - Session state model
+    //
+    // The session exposes four *orthogonal* state axes. They are deliberately
+    // not collapsed into one enum because they answer different questions
+    // about the session at the same moment:
+    //
+    //   status: CommandStatus
+    //     Lifecycle of the *current command* (.idle / .running / .done /
+    //     .failed / ...). Transitions on OSC 133 C/D and exit-code parsing.
+    //
+    //   isShellLoading: Bool
+    //     True before the shell has *ever* reported a prompt (OSC 7 or
+    //     OSC 133 B). Cleared exactly once per session. Orthogonal to
+    //     `status`: a running shell can have status == .idle while still
+    //     loading.
+    //
+    //   isAtPrompt: Bool
+    //     Whether the shell is *currently* waiting for input. Flips on
+    //     OSC 133 B → C pairs. Distinct from status == .idle because
+    //     interactive foreground programs (less, vim) keep the shell
+    //     non-idle while still prompting.
+    //
+    //   restoreBootstrapPhase: RestoreBootstrapPhase
+    //     Replay of persisted scrollback (.inactive / .replaying / .settled).
+    //     Intersects with isShellLoading during cold-start restore but is
+    //     tracked separately so command-block plumbing can distinguish
+    //     replayed history from live output.
+    //
+    // Invariants at quiescence (may be transiently violated mid-OSC burst):
+    //   - !isShellLoading → OSC 7/133 B has been observed at least once.
+    //   - restoreBootstrapPhase == .settled → !isShellLoading.
+    //   - status == .running → !isAtPrompt.
+    //
+    // Do not gate write paths on these invariants — OSC events arrive
+    // out-of-order on startup and the guard would drop legitimate updates.
+
     /// Unique identifier for this terminal tab, used for task lifecycle tracking
     @ObservationIgnored let tabIdentifier: String = UUID().uuidString
 
