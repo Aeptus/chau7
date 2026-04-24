@@ -1303,7 +1303,7 @@ final class OverlayTabsModel {
         hoverCardDismissTimer = nil
     }
 
-    // MARK: - Tab State Persistence
+    // MARK: - Terminal Reveal Lifecycle
 
     func scheduleSelectedTerminalPresentationCommit(reason: String, delay: TimeInterval) {
         terminalReadyCommitWorkItem?.cancel()
@@ -1467,6 +1467,8 @@ final class OverlayTabsModel {
         return true
     }
 
+    // MARK: - Deferred Restore Queue
+
     func beginDeferredRestoreIfNeeded(reason: String) {
         guard !hasStartedDeferredRestore else { return }
         guard !deferredRestoreTabOrder.isEmpty else { return }
@@ -1531,6 +1533,8 @@ final class OverlayTabsModel {
         )
         notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
     }
+
+    // MARK: - Restore Preview Snapshot Helpers
 
     private static func snapshotSurface(for view: NSView) -> NSView {
         if let unified = view as? UnifiedTerminalContainerView {
@@ -1603,6 +1607,8 @@ final class OverlayTabsModel {
         guard let pngData else { return nil }
         return NSImage(data: pngData)
     }
+
+    // MARK: - Tab State Serialization
 
     /// Saves current tab state to disk backups. Does NOT write to UserDefaults —
     /// that is handled centrally by AppDelegate.saveAllWindowStates() to avoid
@@ -1899,6 +1905,8 @@ final class OverlayTabsModel {
 
         Log.info("Captured closed tab snapshot: \"\(tab.displayTitle)\" at index \(index) (stack size: \(closedTabStack.count))")
     }
+
+    // MARK: - AI Resume Metadata Resolution
 
     func resolveResumeMetadata(
         for session: TerminalSessionModel,
@@ -2546,6 +2554,8 @@ final class OverlayTabsModel {
     }
 
     // Session Finder Registry → OverlayTabsModel+SessionFinder.swift
+
+    // MARK: - Tab Selection
 
     func selectTab(id: UUID) {
         guard selectedTabID != id else { return }
