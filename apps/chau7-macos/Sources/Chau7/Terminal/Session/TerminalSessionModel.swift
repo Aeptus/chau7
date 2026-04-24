@@ -28,6 +28,18 @@ enum AISessionIdentitySource: String, Codable {
     case synthetic
 }
 
+/// Snapshot of a session's AI-agent identity — the trio that must move
+/// together. Exists so identity mutation is a single named operation
+/// rather than three independent `didSet`-chained writes, and so
+/// diagnostic code can reason about identity as a whole value.
+struct AgentIdentityRecord: Equatable {
+    var provider: String?
+    var sessionId: String?
+    var source: AISessionIdentitySource?
+
+    static let empty = AgentIdentityRecord(provider: nil, sessionId: nil, source: nil)
+}
+
 enum RestoreBootstrapPhase: String {
     case inactive
     case replaying
@@ -455,6 +467,25 @@ final class TerminalSessionModel {
     }
 
     var lastAISessionIdentitySource: AISessionIdentitySource?
+
+    /// Point-in-time snapshot of the identity trio. Mutate via
+    /// `applyAgentIdentity(_:)` so the three fields stay coherent.
+    var agentIdentity: AgentIdentityRecord {
+        AgentIdentityRecord(
+            provider: lastAIProvider,
+            sessionId: lastAISessionId,
+            source: lastAISessionIdentitySource
+        )
+    }
+
+    /// Write the identity trio atomically (within the @Observable
+    /// per-field fanout — consumers still see per-property notifications
+    /// but call sites read as a single named operation).
+    func applyAgentIdentity(_ record: AgentIdentityRecord) {
+        lastAIProvider = record.provider
+        lastAISessionId = record.sessionId
+        lastAISessionIdentitySource = record.source
+    }
     /// The last app name set by live detection (command or output).
     /// Unlike `activeAppName`, this is NOT cleared on process exit,
     /// so it survives across save/restore boundaries.
@@ -519,9 +550,11 @@ final class TerminalSessionModel {
         let previousAIRunning = isAIRunning
 
         updateLastDetectedApp(request.displayName)
-        lastAIProvider = request.providerKey
-        lastAISessionId = request.sessionId
-        lastAISessionIdentitySource = .observed
+        applyAgentIdentity(AgentIdentityRecord(
+            provider: request.providerKey,
+            sessionId: request.sessionId,
+            source: .observed
+        ))
 
         if previousSessionId != request.sessionId || agentStartedAt == nil {
             agentStartedAt = request.observedAt

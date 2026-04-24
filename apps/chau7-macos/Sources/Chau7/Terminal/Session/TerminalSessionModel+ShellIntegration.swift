@@ -1359,9 +1359,11 @@ extension TerminalSessionModel {
 
         if let metadata = AIResumeParser.extractMetadata(from: trimmed) {
             let previousSessionId = normalizedStoredAISessionId()
-            lastAIProvider = metadata.provider
-            lastAISessionId = metadata.sessionId
-            lastAISessionIdentitySource = .explicit
+            applyAgentIdentity(AgentIdentityRecord(
+                provider: metadata.provider,
+                sessionId: metadata.sessionId,
+                source: .explicit
+            ))
             if previousSessionId != metadata.sessionId {
                 agentStartedAt = nil
                 lastExitCode = nil
@@ -1375,9 +1377,11 @@ extension TerminalSessionModel {
         }
 
         if let detectedProvider = AIResumeParser.detectProvider(from: trimmed) {
-            lastAIProvider = detectedProvider
-            lastAISessionId = nil
-            lastAISessionIdentitySource = nil
+            applyAgentIdentity(AgentIdentityRecord(
+                provider: detectedProvider,
+                sessionId: nil,
+                source: nil
+            ))
         }
     }
 
