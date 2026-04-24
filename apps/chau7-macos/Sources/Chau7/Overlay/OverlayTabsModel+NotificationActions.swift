@@ -18,7 +18,9 @@ import SwiftUI
 ///      insert a snippet, or query whether the event's tab is the
 ///      selected one.
 extension OverlayTabsModel {
+
     // MARK: - Token Optimization (CTO) Per-Tab Control
+
 
     /// Toggles the token optimization override for a tab.
     /// Cycling depends on the global mode:

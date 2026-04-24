@@ -9,7 +9,9 @@ import Foundation
 /// multiple tabs), F16 (clipboard history panel), F17 (bookmarks panel),
 /// F21 (snippets panel).
 extension OverlayTabsModel {
+
     // MARK: - F05: Auto Tab Themes by AI Model
+
 
     func updateAutoColor(for tabID: UUID, command: String) {
         guard FeatureSettings.shared.isAutoTabThemeEnabled else { return }

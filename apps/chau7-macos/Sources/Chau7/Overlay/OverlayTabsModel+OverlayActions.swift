@@ -8,7 +8,9 @@ import Foundation
 /// multiple overlays or are small glue methods that don't belong in
 /// any single feature file.
 extension OverlayTabsModel {
+
     // MARK: - Overlay Dismissal
+
 
     func dismissOverlays() {
         dismissHoverCard()
