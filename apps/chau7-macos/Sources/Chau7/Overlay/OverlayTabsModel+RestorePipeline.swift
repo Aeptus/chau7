@@ -768,13 +768,243 @@ extension OverlayTabsModel {
         }
     }
 
+    /// Restore-blocks phase of `executeRestoreBody`. If the saved state
+    /// has command blocks, restore them for the tab; otherwise clear any
+    /// blocks left over from a previous tab with the same UUID.
+    ///
+    /// `MainActor.assumeIsolated` is required because
+    /// `CommandBlockManager.shared` is `@MainActor`-isolated. The caller
+    /// (`executeRestoreBody`) is dispatched on the main queue via
+    /// `asyncAfter` but Swift's type system doesn't know that — the
+    /// `assumeIsolated` is the runtime assertion that we are in fact on
+    /// the main actor. Removing it breaks the build.
+    static func restoreCommandBlocksForTab(state: SavedTabState, targetTabID: UUID) {
+        if let restoredBlocks = state.commandBlocks {
+            MainActor.assumeIsolated {
+                CommandBlockManager.shared.restoreBlocks(restoredBlocks, for: targetTabID.uuidString)
+            }
+        } else {
+            MainActor.assumeIsolated {
+                CommandBlockManager.shared.clearBlocks(tabID: targetTabID.uuidString)
+            }
+        }
+    }
+
+    /// Metadata-resolution phase of `executeRestoreBody`. For each pane in
+    /// `currentSessions`, resolves the AI resume metadata (provider +
+    /// session-id + source) from saved state plus optional legacy
+    /// fallback, applies it to the live `TerminalSessionModel` via
+    /// `restoreAIMetadata`, and returns a fresh `[paneID: SavedTerminalPaneState]`
+    /// map keyed by live pane IDs whose values reflect the resolved
+    /// metadata.
+    ///
+    /// Side effects (intentional, not hidden):
+    ///   - Per-pane: `session.restoreAIMetadata(...)` writes provider /
+    ///     sessionId / launchCommand / lastInputAt / lastOutputAt /
+    ///     lastStatus / lastExitCode / lastExitAt onto the live session.
+    ///   - Per-pane: `paneStatesToRestore[paneID]` is updated to the
+    ///     effective pane state (carries the resolved values forward in
+    ///     case downstream telemetry reads from it; the original
+    ///     pre-extraction code did the same).
+    ///
+    /// `shouldUseLegacyTabFallback` toggles top-level SavedTabState
+    /// fields as a fallback when the saved state has only one pane and
+    /// no pane-level metadata — kept for back-compat with older saves
+    /// that predate per-pane AI metadata.
+    static func resolveAndApplyPaneMetadata(
+        currentSessions: [(UUID, TerminalSessionModel)],
+        paneStatesByID: [UUID: SavedTerminalPaneState],
+        paneStatesToRestore: inout [UUID: SavedTerminalPaneState],
+        state: SavedTabState,
+        targetTabID: UUID
+    ) -> [UUID: SavedTerminalPaneState] {
+        var resolvedPaneStates: [UUID: SavedTerminalPaneState] = [:]
+        let paneMapKeys = Set(paneStatesToRestore.keys.map { String($0.uuidString.prefix(8)) })
+        for (paneID, session) in currentSessions {
+            let paneHit = paneStatesToRestore[paneID] != nil
+            let paneState = paneStatesToRestore[paneID] ?? SavedTerminalPaneState(
+                paneID: paneID.uuidString,
+                directory: session.currentDirectory,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                aiProvider: nil,
+                aiSessionId: nil,
+                aiSessionIdSource: nil,
+                lastOutputAt: nil,
+                lastInputAt: nil,
+                knownRepoRoot: nil,
+                knownGitBranch: nil,
+                lastStatus: nil,
+                agentLaunchCommand: nil,
+                agentStartedAt: nil,
+                lastExitCode: nil,
+                lastExitAt: nil
+            )
+            let shouldUseLegacyTabFallback = paneStatesByID.isEmpty && currentSessions.count == 1
+            let fallbackProvider = shouldUseLegacyTabFallback ? state.aiProvider : nil
+            let fallbackSessionId = shouldUseLegacyTabFallback ? state.aiSessionId : nil
+            let fallbackSessionSource = shouldUseLegacyTabFallback ? state.aiSessionIdSource : nil
+
+            let resolvedMetadata = OverlayTabsModel.resolveAIResumeMetadataFromSavedState(
+                paneState: paneState,
+                fallbackAIProvider: fallbackProvider,
+                fallbackAISessionId: fallbackSessionId,
+                fallbackAISessionIdSource: fallbackSessionSource
+            )
+            let resolvedCommand = OverlayTabsModel.buildAIResumeCommand(
+                provider: resolvedMetadata?.provider,
+                sessionId: resolvedMetadata?.sessionId,
+                sessionIdSource: resolvedMetadata?.sessionIdSource
+            )
+
+            Log.info(
+                """
+                restoreTabState: pane resolve tab=\(targetTabID) pane=\(paneID) \
+                hit=\(paneHit) mapKeys=[\(paneMapKeys.sorted().joined(separator: ","))] \
+                saved=(provider=\(paneState.aiProvider ?? "nil") session=\(paneState.aiSessionId?.prefix(8) ?? "nil") \
+                cmd=\(paneState.aiResumeCommand?.prefix(30) ?? "nil")) \
+                resolved=(provider=\(resolvedMetadata?.provider ?? "nil") session=\(resolvedMetadata?.sessionId.prefix(8) ?? "nil") \
+                cmd=\(resolvedCommand?.prefix(30) ?? "nil")) \
+                legacy=\(shouldUseLegacyTabFallback) fallbackProvider=\(fallbackProvider ?? "nil")
+                """
+            )
+
+            session.restoreAIMetadata(
+                provider: resolvedMetadata?.provider,
+                sessionId: resolvedMetadata?.sessionId,
+                sessionIdSource: resolvedMetadata?.sessionIdSource,
+                launchCommand: paneState.agentLaunchCommand,
+                startedAt: paneState.agentStartedAt,
+                lastInputAt: paneState.lastInputAt,
+                lastOutputAt: paneState.lastOutputAt,
+                lastStatus: paneState.lastStatus,
+                lastExitCode: paneState.lastExitCode,
+                lastExitAt: paneState.lastExitAt
+            )
+
+            let effectivePaneState = SavedTerminalPaneState(
+                paneID: paneState.paneID,
+                directory: paneState.directory,
+                scrollbackContent: paneState.scrollbackContent,
+                aiResumeCommand: resolvedCommand ?? OverlayTabsModel.normalizedResumeCommand(paneState.aiResumeCommand),
+                aiProvider: resolvedMetadata?.provider,
+                aiSessionId: resolvedMetadata?.sessionId,
+                aiSessionIdSource: resolvedMetadata?.sessionIdSource,
+                lastOutputAt: paneState.lastOutputAt,
+                lastInputAt: paneState.lastInputAt,
+                knownRepoRoot: paneState.knownRepoRoot,
+                knownGitBranch: paneState.knownGitBranch,
+                lastStatus: paneState.lastStatus,
+                agentLaunchCommand: paneState.agentLaunchCommand,
+                agentStartedAt: paneState.agentStartedAt,
+                lastExitCode: paneState.lastExitCode,
+                lastExitAt: paneState.lastExitAt
+            )
+            resolvedPaneStates[paneID] = effectivePaneState
+            paneStatesToRestore[paneID] = effectivePaneState
+        }
+        return resolvedPaneStates
+    }
+
+    /// Resume-prefill scheduling phase of `executeRestoreBody`. Builds
+    /// `ResumeRestoreIntent` per pane that has a resolvable resume
+    /// command, then dispatches each intent through one of two paths:
+    ///
+    ///   - `useResumeRetryScheduler == true` — legacy retry path. Uses
+    ///     `scheduleResumeCommand` which arms a delayed retry chain.
+    ///     Kept for back-compat and edge cases where the pending-prefill
+    ///     queue isn't appropriate.
+    ///
+    ///   - `useResumeRetryScheduler == false` — modern session-bound path.
+    ///     Uses `enqueueResumePrefill` to queue the prefill on the
+    ///     session's pending-prefill machinery. Avoids post-reveal retry
+    ///     storms because delivery is bound to session lifecycle, not a
+    ///     standalone timer.
+    ///
+    /// Both paths first record `outcome=.pending` via
+    /// `recordResumeRestoreDeliveryState` and stamp
+    /// `latestRestoreResumeTokenByPaneID[paneID]` with the per-restore
+    /// token so the delivery state machine can recognize stale callbacks.
+    ///
+    /// Side effects:
+    ///   - `resumeRestoreDeliveryStateByPaneID[paneID]` written via
+    ///     `recordResumeRestoreDeliveryState` (rule-gated, see
+    ///     `decideResumeRestoreDeliveryUpdate` in T4 tests).
+    ///   - `latestRestoreResumeTokenByPaneID[paneID]` written.
+    ///   - Calls into the resume-prefill delivery machinery
+    ///     (`scheduleResumeCommand` / `enqueueResumePrefill`).
+    private func scheduleResumePrefillsForRestore(
+        currentSessions: [(UUID, TerminalSessionModel)],
+        resolvedPaneStates: [UUID: SavedTerminalPaneState],
+        focusedTerminalPaneID: UUID,
+        targetTabID: UUID,
+        useResumeRetryScheduler: Bool
+    ) {
+        let resumeIntents = currentSessions.compactMap { paneID, _ -> ResumeRestoreIntent? in
+            guard let paneState = resolvedPaneStates[paneID],
+                  let command = Self.normalizedResumeCommand(paneState.aiResumeCommand) else {
+                return nil
+            }
+            return ResumeRestoreIntent(
+                paneID: paneID,
+                command: command,
+                expectedDirectory: paneState.directory,
+                expectedProvider: paneState.aiProvider,
+                expectedSessionID: paneState.aiSessionId,
+                expectedSessionIDSource: paneState.aiSessionIdSource,
+                isFocusedPane: paneID == focusedTerminalPaneID
+            )
+        }
+        if resumeIntents.isEmpty {
+            Log.info("restoreTabState: no resume command candidate found for tab=\(targetTabID)")
+        }
+
+        let restoreToken = UUID().uuidString
+        for (paneID, session) in currentSessions {
+            guard let resumeIntent = resumeIntents.first(where: { $0.paneID == paneID }) else { continue }
+
+            recordResumeRestoreDeliveryState(
+                paneID: paneID,
+                token: restoreToken,
+                outcome: .pending,
+                tabID: targetTabID,
+                reason: "scheduled"
+            )
+            Log.info(
+                """
+                restoreTabState: scheduling resume command for tab=\(targetTabID) pane=\(paneID) \
+                focused=\(resumeIntent.isFocusedPane) provider=\(resumeIntent.expectedProvider ?? "nil") \
+                session=\(resumeIntent.expectedSessionID?.prefix(8) ?? "nil")
+                """
+            )
+            latestRestoreResumeTokenByPaneID[paneID] = restoreToken
+            if useResumeRetryScheduler {
+                scheduleResumeCommand(
+                    intent: resumeIntent,
+                    targetTabID: targetTabID,
+                    restoreToken: restoreToken,
+                    remainingAttempts: Self.resumeCommandMaxAttempts,
+                    delay: Self.resumeCommandDelaySeconds
+                )
+            } else {
+                _ = enqueueResumePrefill(
+                    intent: resumeIntent,
+                    into: session,
+                    targetTabID: targetTabID,
+                    restoreToken: restoreToken,
+                    queuedReason: "selected_on_demand_queued",
+                    deliveredReason: "selected_on_demand_delivered"
+                )
+            }
+        }
+    }
+
     /// Async-dispatched body of `restoreTabState`. Originally an inline
     /// closure; extracted to a method so the outer scheduling logic and
     /// the executeRestore phase work can be reasoned about independently.
     /// All inputs are passed by value (paneStatesToRestore is `var` inside
     /// because the metadata phase mutates it for telemetry; the mutation
     /// doesn't need to escape the method).
-    // swiftlint:disable:next function_body_length
     private func executeRestoreBody(
         targetTabID: UUID,
         state: SavedTabState,
@@ -822,15 +1052,7 @@ extension OverlayTabsModel {
         }
 
         let phaseBlocksStart = CFAbsoluteTimeGetCurrent()
-        if let restoredBlocks = state.commandBlocks {
-            MainActor.assumeIsolated {
-                CommandBlockManager.shared.restoreBlocks(restoredBlocks, for: targetTabID.uuidString)
-            }
-        } else {
-            MainActor.assumeIsolated {
-                CommandBlockManager.shared.clearBlocks(tabID: targetTabID.uuidString)
-            }
-        }
+        Self.restoreCommandBlocksForTab(state: state, targetTabID: targetTabID)
         recordPhase("blocks", startedAt: phaseBlocksStart)
 
         let currentSessions = restoredTab.splitController.terminalSessions
@@ -852,172 +1074,23 @@ extension OverlayTabsModel {
         }
 
         let phaseMetadataStart = CFAbsoluteTimeGetCurrent()
-        var resolvedPaneStates: [UUID: SavedTerminalPaneState] = [:]
-        let paneMapKeys = Set(paneStatesToRestore.keys.map { String($0.uuidString.prefix(8)) })
-        for (paneID, session) in currentSessions {
-            let paneHit = paneStatesToRestore[paneID] != nil
-            let paneState = paneStatesToRestore[paneID] ?? SavedTerminalPaneState(
-                paneID: paneID.uuidString,
-                directory: session.currentDirectory,
-                scrollbackContent: nil,
-                aiResumeCommand: nil,
-                aiProvider: nil,
-                aiSessionId: nil,
-                aiSessionIdSource: nil,
-                lastOutputAt: nil,
-                lastInputAt: nil,
-                knownRepoRoot: nil,
-                knownGitBranch: nil,
-                lastStatus: nil,
-                agentLaunchCommand: nil,
-                agentStartedAt: nil,
-                lastExitCode: nil,
-                lastExitAt: nil
-            )
-            let shouldUseLegacyTabFallback = paneStatesByID.isEmpty && currentSessions.count == 1
-            let fallbackProvider = shouldUseLegacyTabFallback ? state.aiProvider : nil
-            let fallbackSessionId = shouldUseLegacyTabFallback ? state.aiSessionId : nil
-            let fallbackSessionSource = shouldUseLegacyTabFallback ? state.aiSessionIdSource : nil
-
-            let resolvedMetadata = Self.resolveAIResumeMetadataFromSavedState(
-                paneState: paneState,
-                fallbackAIProvider: fallbackProvider,
-                fallbackAISessionId: fallbackSessionId,
-                fallbackAISessionIdSource: fallbackSessionSource
-            )
-            let resolvedCommand = Self.buildAIResumeCommand(
-                provider: resolvedMetadata?.provider,
-                sessionId: resolvedMetadata?.sessionId,
-                sessionIdSource: resolvedMetadata?.sessionIdSource
-            )
-
-            Log.info(
-                """
-                restoreTabState: pane resolve tab=\(targetTabID) pane=\(paneID) \
-                hit=\(paneHit) mapKeys=[\(paneMapKeys.sorted().joined(separator: ","))] \
-                saved=(provider=\(paneState.aiProvider ?? "nil") session=\(paneState.aiSessionId?.prefix(8) ?? "nil") \
-                cmd=\(paneState.aiResumeCommand?.prefix(30) ?? "nil")) \
-                resolved=(provider=\(resolvedMetadata?.provider ?? "nil") session=\(resolvedMetadata?.sessionId.prefix(8) ?? "nil") \
-                cmd=\(resolvedCommand?.prefix(30) ?? "nil")) \
-                legacy=\(shouldUseLegacyTabFallback) fallbackProvider=\(fallbackProvider ?? "nil")
-                """
-            )
-
-            session.restoreAIMetadata(
-                provider: resolvedMetadata?.provider,
-                sessionId: resolvedMetadata?.sessionId,
-                sessionIdSource: resolvedMetadata?.sessionIdSource,
-                launchCommand: paneState.agentLaunchCommand,
-                startedAt: paneState.agentStartedAt,
-                lastInputAt: paneState.lastInputAt,
-                lastOutputAt: paneState.lastOutputAt,
-                lastStatus: paneState.lastStatus,
-                lastExitCode: paneState.lastExitCode,
-                lastExitAt: paneState.lastExitAt
-            )
-
-            let effectivePaneState = SavedTerminalPaneState(
-                paneID: paneState.paneID,
-                directory: paneState.directory,
-                scrollbackContent: paneState.scrollbackContent,
-                aiResumeCommand: resolvedCommand ?? Self.normalizedResumeCommand(paneState.aiResumeCommand),
-                aiProvider: resolvedMetadata?.provider,
-                aiSessionId: resolvedMetadata?.sessionId,
-                aiSessionIdSource: resolvedMetadata?.sessionIdSource,
-                lastOutputAt: paneState.lastOutputAt,
-                lastInputAt: paneState.lastInputAt,
-                knownRepoRoot: paneState.knownRepoRoot,
-                knownGitBranch: paneState.knownGitBranch,
-                lastStatus: paneState.lastStatus,
-                agentLaunchCommand: paneState.agentLaunchCommand,
-                agentStartedAt: paneState.agentStartedAt,
-                lastExitCode: paneState.lastExitCode,
-                lastExitAt: paneState.lastExitAt
-            )
-            resolvedPaneStates[paneID] = effectivePaneState
-            paneStatesToRestore[paneID] = effectivePaneState
-        }
+        let resolvedPaneStates = Self.resolveAndApplyPaneMetadata(
+            currentSessions: currentSessions,
+            paneStatesByID: paneStatesByID,
+            paneStatesToRestore: &paneStatesToRestore,
+            state: state,
+            targetTabID: targetTabID
+        )
         recordPhase("metadata", startedAt: phaseMetadataStart)
 
         let phaseResumeStart = CFAbsoluteTimeGetCurrent()
-        let resumeIntents = currentSessions.compactMap { paneID, _ -> ResumeRestoreIntent? in
-            guard let paneState = resolvedPaneStates[paneID],
-                  let command = Self.normalizedResumeCommand(paneState.aiResumeCommand) else {
-                return nil
-            }
-            return ResumeRestoreIntent(
-                paneID: paneID,
-                command: command,
-                expectedDirectory: paneState.directory,
-                expectedProvider: paneState.aiProvider,
-                expectedSessionID: paneState.aiSessionId,
-                expectedSessionIDSource: paneState.aiSessionIdSource,
-                isFocusedPane: paneID == focusedTerminalPaneID
-            )
-        }
-        if resumeIntents.isEmpty {
-            Log.info("restoreTabState: no resume command candidate found for tab=\(targetTabID)")
-        }
-
-        let restoreToken = UUID().uuidString
-        for (paneID, session) in currentSessions {
-            let effectivePaneState = resolvedPaneStates[paneID] ?? SavedTerminalPaneState(
-                paneID: paneID.uuidString,
-                directory: session.currentDirectory,
-                scrollbackContent: nil,
-                aiResumeCommand: nil,
-                aiProvider: nil,
-                aiSessionId: nil,
-                aiSessionIdSource: nil,
-                lastOutputAt: nil,
-                lastInputAt: nil,
-                knownRepoRoot: nil,
-                knownGitBranch: nil,
-                lastStatus: nil,
-                agentLaunchCommand: nil,
-                agentStartedAt: nil,
-                lastExitCode: nil,
-                lastExitAt: nil
-            )
-
-            if let resumeIntent = resumeIntents.first(where: { $0.paneID == paneID }) {
-                recordResumeRestoreDeliveryState(
-                    paneID: paneID,
-                    token: restoreToken,
-                    outcome: .pending,
-                    tabID: targetTabID,
-                    reason: "scheduled"
-                )
-                Log.info(
-                    """
-                    restoreTabState: scheduling resume command for tab=\(targetTabID) pane=\(paneID) \
-                    focused=\(resumeIntent.isFocusedPane) provider=\(resumeIntent.expectedProvider ?? "nil") \
-                    session=\(resumeIntent.expectedSessionID?.prefix(8) ?? "nil")
-                    """
-                )
-                if useResumeRetryScheduler {
-                    latestRestoreResumeTokenByPaneID[paneID] = restoreToken
-                    scheduleResumeCommand(
-                        intent: resumeIntent,
-                        targetTabID: targetTabID,
-                        restoreToken: restoreToken,
-                        remainingAttempts: Self.resumeCommandMaxAttempts,
-                        delay: Self.resumeCommandDelaySeconds
-                    )
-                } else {
-                    latestRestoreResumeTokenByPaneID[paneID] = restoreToken
-                    _ = enqueueResumePrefill(
-                        intent: resumeIntent,
-                        into: session,
-                        targetTabID: targetTabID,
-                        restoreToken: restoreToken,
-                        queuedReason: "selected_on_demand_queued",
-                        deliveredReason: "selected_on_demand_delivered"
-                    )
-                }
-            }
-        }
-
+        scheduleResumePrefillsForRestore(
+            currentSessions: currentSessions,
+            resolvedPaneStates: resolvedPaneStates,
+            focusedTerminalPaneID: focusedTerminalPaneID,
+            targetTabID: targetTabID,
+            useResumeRetryScheduler: useResumeRetryScheduler
+        )
         recordPhase("resume", startedAt: phaseResumeStart)
 
         if startupRestoreActive,
