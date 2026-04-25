@@ -149,7 +149,7 @@ At this point the failure should be debugged as an in-app restore path problem, 
   - `restoreAdditionalWindows()`
 - `apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel.swift`
   - `init(appModel:restoreState:restoringStates:)`
-- `apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+SessionFinder.swift`
+- `apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+RestorePipeline.swift` (renamed from `OverlayTabsModel+SessionFinder.swift` on 2026-04-25)
   - `restoreSavedTabs(appModel:)`
   - `decodeRestorableTabs(fromStates:appModel:)`
 

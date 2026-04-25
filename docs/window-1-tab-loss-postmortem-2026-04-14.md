@@ -29,7 +29,7 @@ The root cause was stale restore logic in the shipped app bundle. The code path 
 
 Affected implementation:
 
-- `apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+SessionFinder.swift`
+- `apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+RestorePipeline.swift` (renamed from `OverlayTabsModel+SessionFinder.swift` on 2026-04-25)
 
 Broken behavior:
 

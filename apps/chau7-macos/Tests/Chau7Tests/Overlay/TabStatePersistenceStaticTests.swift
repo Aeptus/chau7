@@ -19,10 +19,12 @@ final class TabStatePersistenceStaticTests: XCTestCase {
     /// enforcement.
     func testSanitizeDeduplicatesAISessionIDAcrossTopLevelTabs() throws {
         let shared = "shared-session-abc"
+        let firstID = UUID()
+        let secondID = UUID()
         let states = [
-            makeTopLevelState(tabID: UUID(), aiProvider: "codex", aiSessionId: shared,
+            makeTopLevelState(tabID: firstID, aiProvider: "codex", aiSessionId: shared,
                               aiResumeCommand: "codex resume \(shared)"),
-            makeTopLevelState(tabID: UUID(), aiProvider: "codex", aiSessionId: shared,
+            makeTopLevelState(tabID: secondID, aiProvider: "codex", aiSessionId: shared,
                               aiResumeCommand: "codex resume \(shared)")
         ]
 
@@ -31,6 +33,15 @@ final class TabStatePersistenceStaticTests: XCTestCase {
         XCTAssertEqual(sanitized[0].aiSessionId, shared, "First tab keeps the claimed session ID")
         XCTAssertNil(sanitized[1].aiSessionId, "Second tab loses the duplicated session ID")
         XCTAssertNil(sanitized[1].aiResumeCommand, "Second tab's resume command is dropped along with the ID")
+
+        // Non-AI fields must survive the dedup pass on BOTH tabs — a regression
+        // that nukes too much state during sanitization would still pass the
+        // assertions above, so anchor on identity + presentation fields too.
+        XCTAssertEqual(sanitized[0].tabID, firstID.uuidString)
+        XCTAssertEqual(sanitized[1].tabID, secondID.uuidString)
+        XCTAssertEqual(sanitized[1].customTitle, "Tab", "customTitle preserved on dedup-loser tab")
+        XCTAssertEqual(sanitized[1].directory, "/tmp", "directory preserved on dedup-loser tab")
+        XCTAssertEqual(sanitized[1].color, TabColor.blue.rawValue, "color preserved on dedup-loser tab")
     }
 
     /// Different session IDs must remain untouched even when they look similar.
