@@ -863,36 +863,30 @@ extension OverlayTabsModel {
         return SplitPaneController(appModel: appModel, root: root, focusedPaneID: focusedUUID)
     }
 
-    func restoreTabState(
-        for tab: OverlayTab,
-        state: SavedTabState,
-        scheduledDelayOverride: TimeInterval? = nil,
-        // Queue resume prefills directly on the session instead of retrying on
-        // timers. This keeps restore mutation bound to the session lifecycle
-        // and avoids post-reveal retry storms.
-        useResumeRetryScheduler: Bool = false,
-        executeSynchronouslyWhenPossible: Bool = false
-    ) {
-        let targetTabID = tab.id
-        let terminalSessions = tab.splitController.terminalSessions
-        Log.info("restoreTabState: scheduled for tab=\(targetTabID), panes=\(terminalSessions.count)")
-        guard !terminalSessions.isEmpty else { return }
-        let startupRestoreActive = StartupRestoreCoordinator.shared.isActive
-        if startupRestoreActive {
-            let previousHadPendingWork = hasPendingStartupRestoreWork
-            restoreBootstrapTabIDs.insert(targetTabID)
-            updateSuspensionState()
-            notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
-        }
-
-        // Keep the restored focus for the active terminal pane (or fallback to
-        // first terminal if an editor pane was serialized).
-        if let restoredFocus = state.focusedPaneID.flatMap(UUID.init),
-           tab.splitController.root.paneType(for: restoredFocus) == .terminal {
-            tab.splitController.setFocusedPane(restoredFocus)
-        }
-
-        let paneStatesByID = Self.paneStateMap(from: state.paneStates)
+    /// Two adapters that bring older `SavedTabState` payloads up to the
+    /// pane-native shape that `restoreTabState` expects:
+    ///
+    ///   1. **Legacy single-pane adapter** — when the payload has no
+    ///      `paneStates` array, fabricate one from the top-level
+    ///      `SavedTabState` fields (directory, scrollback, AI metadata,
+    ///      etc.) keyed by the first live terminal session's pane ID.
+    ///
+    ///   2. **Legacy top-level AI metadata adapter** — for single-pane
+    ///      tabs where the pane-state itself is missing AI metadata,
+    ///      backfill it from the top-level fields. Older saves serialized
+    ///      AI provider/session at the tab level only; without this
+    ///      adapter the resume prefill never fires for restored tabs.
+    ///
+    /// Pure transform: takes the parsed pane-state map + the saved tab
+    /// state + the live terminal sessions, returns the corrected map.
+    /// Extracted so the synchronous prep in `restoreTabState` reads as a
+    /// single line instead of 50 lines of struct copies, and so the
+    /// adapter rules can be unit-tested without standing up a model.
+    static func applyLegacyPaneStateAdapters(
+        paneStatesByID: [UUID: SavedTerminalPaneState],
+        terminalSessions: [(UUID, TerminalSessionModel)],
+        state: SavedTabState
+    ) -> [UUID: SavedTerminalPaneState] {
         var paneStatesToRestore = paneStatesByID
 
         // Legacy single-pane adapter. Remove once all persisted state uses paneStates.
@@ -942,6 +936,45 @@ extension OverlayTabsModel {
                 )
             }
         }
+
+        return paneStatesToRestore
+    }
+
+    func restoreTabState(
+        for tab: OverlayTab,
+        state: SavedTabState,
+        scheduledDelayOverride: TimeInterval? = nil,
+        // Queue resume prefills directly on the session instead of retrying on
+        // timers. This keeps restore mutation bound to the session lifecycle
+        // and avoids post-reveal retry storms.
+        useResumeRetryScheduler: Bool = false,
+        executeSynchronouslyWhenPossible: Bool = false
+    ) {
+        let targetTabID = tab.id
+        let terminalSessions = tab.splitController.terminalSessions
+        Log.info("restoreTabState: scheduled for tab=\(targetTabID), panes=\(terminalSessions.count)")
+        guard !terminalSessions.isEmpty else { return }
+        let startupRestoreActive = StartupRestoreCoordinator.shared.isActive
+        if startupRestoreActive {
+            let previousHadPendingWork = hasPendingStartupRestoreWork
+            restoreBootstrapTabIDs.insert(targetTabID)
+            updateSuspensionState()
+            notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
+        }
+
+        // Keep the restored focus for the active terminal pane (or fallback to
+        // first terminal if an editor pane was serialized).
+        if let restoredFocus = state.focusedPaneID.flatMap(UUID.init),
+           tab.splitController.root.paneType(for: restoredFocus) == .terminal {
+            tab.splitController.setFocusedPane(restoredFocus)
+        }
+
+        let paneStatesByID = Self.paneStateMap(from: state.paneStates)
+        let paneStatesToRestore = Self.applyLegacyPaneStateAdapters(
+            paneStatesByID: paneStatesByID,
+            terminalSessions: terminalSessions,
+            state: state
+        )
 
         for (paneID, session) in terminalSessions {
             session.onRestoreBootstrapPhaseChanged = { [weak self] phase in
