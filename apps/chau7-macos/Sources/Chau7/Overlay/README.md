@@ -7,7 +7,17 @@ Tab bar model, views, and hover card — the core UI for managing terminal tabs.
 | File | Purpose |
 |------|---------|
 | `OverlayTabsModel.swift` | Central model: tab lifecycle, selection, persistence, grouping, notifications |
-| `OverlayTabsModel+RestorePipeline.swift` | Session-finder registry, scrollback capture, tab-state restore/backup IO, resume-prefill delivery |
+| `OverlayTabsModel+SessionFinder.swift` | Provider session-finder registry, identity normalization, scrollback capture |
+| `OverlayTabsModel+RestorePipeline.swift` | Tab-state restore + backup IO + resume-prefill delivery |
+| `OverlayTabsModel+AIResumeMetadata.swift` | AI resume metadata resolution, repo identity helpers, sanitization |
+| `OverlayTabsModel+RevealLifecycle.swift` | Selected-tab reveal handoff (preview → live frame), startup live-frame reporting |
+| `OverlayTabsModel+DeferredRestore.swift` | Background-tab deferred restore queue management |
+| `OverlayTabsModel+RenderSuspension.swift` | Render lifecycle / phase decisions / suspension state |
+| `OverlayTabsModel+Refresh.swift` | Force-refresh selected tab, tab bar recovery |
+| `OverlayTabsModel+NotificationActions.swift` | CTO per-tab override, tab notification styling, MCP action handlers |
+| `OverlayTabsModel+OverlayActions.swift` | Overlay dismissal, split-pane operations, last-command tracking |
+| `OverlayTabsModel+RenameSearchClipboard.swift` | Rename dialog, search panel, clipboard/zoom pass-throughs |
+| `OverlayTabsModel+Features.swift` | F05/F13/F16/F17/F21 feature blocks |
 | `OverlayTabsModel+TabSwitchOptimization.swift` | Pre-warm on hover, snapshot capture, render state caching |
 | `Chau7OverlayView.swift` | Tab bar SwiftUI views: segments, buttons, brackets, drag/drop, hit testing |
 | `TabHoverCard.swift` | Hover card: AI session summary, conflicts, process info, notification state |
