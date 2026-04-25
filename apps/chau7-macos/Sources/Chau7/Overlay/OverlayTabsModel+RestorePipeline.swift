@@ -1437,17 +1437,43 @@ extension OverlayTabsModel {
         }
     }
 
-    func validateResumeRestoreIntent(
-        _ intent: ResumeRestoreIntent,
-        against session: TerminalSessionModel,
-        tabID: UUID
-    ) -> Bool {
-        let normalizedExpectedDirectory = intent.expectedDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedCurrentDirectory = session.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedExpectedProvider = AIResumeParser.normalizeProviderName(intent.expectedProvider ?? "")
-        let normalizedCurrentProvider = session.effectiveAIProvider
-        let normalizedExpectedSessionID = OverlayTabsModel.normalizeAISessionId(intent.expectedSessionID)
-        let normalizedCurrentSessionID = OverlayTabsModel.normalizeAISessionId(session.effectiveAISessionId)
+    /// Pure normalize+compare for resume-restore intent matching.
+    ///
+    /// Extracted from `validateResumeRestoreIntent` so the validation logic
+    /// can be unit-tested via `swift test` without constructing a live
+    /// `TerminalSessionModel`. The instance method is now a thin wrapper
+    /// that pulls fields off the session, calls this helper, and emits the
+    /// rejection log on mismatch.
+    ///
+    /// All inputs are raw (un-normalized); the helper applies the same
+    /// trimming and provider/session-id normalization the production path
+    /// has always used.
+    struct ResumeRestoreIntentMatch {
+        let directoryMatches: Bool
+        let providerMatches: Bool
+        let sessionMatches: Bool
+        let normalizedExpectedDirectory: String
+        let normalizedCurrentDirectory: String
+        let normalizedExpectedProvider: String?
+        let normalizedCurrentProvider: String?
+        let normalizedExpectedSessionID: String?
+        let normalizedCurrentSessionID: String?
+        var allMatch: Bool { directoryMatches && providerMatches && sessionMatches }
+    }
+
+    static func evaluateResumeRestoreIntent(
+        expectedDirectory: String,
+        currentDirectory: String,
+        expectedProvider: String?,
+        currentProvider: String?,
+        expectedSessionID: String?,
+        currentSessionID: String?
+    ) -> ResumeRestoreIntentMatch {
+        let normalizedExpectedDirectory = expectedDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedCurrentDirectory = currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedExpectedProvider = AIResumeParser.normalizeProviderName(expectedProvider ?? "")
+        let normalizedExpectedSessionID = OverlayTabsModel.normalizeAISessionId(expectedSessionID)
+        let normalizedCurrentSessionID = OverlayTabsModel.normalizeAISessionId(currentSessionID)
 
         // Directory ownership check. The previous `isEmpty ||` shortcut
         // treated "expected directory unknown" as "match anything" — which
@@ -1456,20 +1482,47 @@ extension OverlayTabsModel {
         // strings are equal (both empty is still fine — a genuinely
         // directory-less saved state matching a directory-less live session
         // is not a mismatch). Empty-expected + non-empty-current is now
-        // rejected with a warn that distinguishes it from a hard mismatch.
+        // rejected.
         let directoryMatches = normalizedExpectedDirectory == normalizedCurrentDirectory
-        let providerMatches = normalizedExpectedProvider == nil || normalizedExpectedProvider == normalizedCurrentProvider
+        let providerMatches = normalizedExpectedProvider == nil || normalizedExpectedProvider == currentProvider
         let sessionMatches = normalizedExpectedSessionID == nil || normalizedExpectedSessionID == normalizedCurrentSessionID
 
-        guard directoryMatches, providerMatches, sessionMatches else {
+        return ResumeRestoreIntentMatch(
+            directoryMatches: directoryMatches,
+            providerMatches: providerMatches,
+            sessionMatches: sessionMatches,
+            normalizedExpectedDirectory: normalizedExpectedDirectory,
+            normalizedCurrentDirectory: normalizedCurrentDirectory,
+            normalizedExpectedProvider: normalizedExpectedProvider,
+            normalizedCurrentProvider: currentProvider,
+            normalizedExpectedSessionID: normalizedExpectedSessionID,
+            normalizedCurrentSessionID: normalizedCurrentSessionID
+        )
+    }
+
+    func validateResumeRestoreIntent(
+        _ intent: ResumeRestoreIntent,
+        against session: TerminalSessionModel,
+        tabID: UUID
+    ) -> Bool {
+        let match = Self.evaluateResumeRestoreIntent(
+            expectedDirectory: intent.expectedDirectory,
+            currentDirectory: session.currentDirectory,
+            expectedProvider: intent.expectedProvider,
+            currentProvider: session.effectiveAIProvider,
+            expectedSessionID: intent.expectedSessionID,
+            currentSessionID: session.effectiveAISessionId
+        )
+
+        guard match.allMatch else {
             Log.warn(
                 """
                 restoreTabState: rejecting resume prefill for tab=\(tabID) pane=\(intent.paneID) \
                 command=\(intent.command.prefix(40)) \
-                expected=(dir=\(normalizedExpectedDirectory), provider=\(normalizedExpectedProvider ?? "nil"), \
-                session=\(normalizedExpectedSessionID?.prefix(8) ?? "nil")) \
-                actual=(dir=\(normalizedCurrentDirectory), provider=\(normalizedCurrentProvider ?? "nil"), \
-                session=\(normalizedCurrentSessionID?.prefix(8) ?? "nil"))
+                expected=(dir=\(match.normalizedExpectedDirectory), provider=\(match.normalizedExpectedProvider ?? "nil"), \
+                session=\(match.normalizedExpectedSessionID?.prefix(8) ?? "nil")) \
+                actual=(dir=\(match.normalizedCurrentDirectory), provider=\(match.normalizedCurrentProvider ?? "nil"), \
+                session=\(match.normalizedCurrentSessionID?.prefix(8) ?? "nil"))
                 """
             )
             return false
