@@ -135,13 +135,4 @@ public enum TabRenderLifecyclePolicy {
         }
         return isKeyWindow
     }
-
-    // `keepsLiveHierarchy(for:)` and the matching field on
-    // `TabRenderLifecycleDecision` were removed in W1.1.C. They had been
-    // returning `true` unconditionally since the W1.1 revert (commit
-    // 6a44d5a), and the only consumer — the `Color.clear` placeholder
-    // branch in `Chau7OverlayView.terminalStack` — was deleted in W1.1.B.
-    // The view now always renders `SplitPaneView` (with opacity gating
-    // for non-selected tabs); the `renderPhase` returned by `phase(for:)`
-    // is the one signal the view chain still consumes.
 }

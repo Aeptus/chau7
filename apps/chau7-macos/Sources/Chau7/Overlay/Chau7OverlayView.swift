@@ -1502,20 +1502,13 @@ struct Chau7OverlayView: View {
 
             // MARK: - Tab Switch Optimization: Lazy Tab Loading
 
-            // All tabs are kept in the SwiftUI hierarchy with opacity gating.
-            // Non-selected tabs render at opacity 0, with hit-testing and
-            // accessibility disabled, so they pay only SwiftUI layout cost
-            // (Metal/CPU rendering is suppressed via `renderPhase`). This
-            // is the post-W1.1-revert settled behaviour: the prior attempt
-            // (commit 6a44d5a) replaced non-selected tabs with `Color.clear`
-            // placeholders to skip layout entirely, but that path broke
-            // split-pane rendering on re-entry — `SplitContainerView`'s
-            // `@State liveRatio` reset to 0.5 produced wrong initial frames,
-            // and the Metal coordinator only reattached to the focused pane
-            // (the secondary pane stayed blank). The W1.1.B cleanup removes
-            // the unreachable `Color.clear` branch that the policy never
-            // returned `false` for; the W1.1.D fix closes the
-            // Metal-coordinator-only-for-focused-pane gap.
+            // All tabs stay in the SwiftUI hierarchy; non-selected ones get
+            // opacity 0 + hit-testing/accessibility disabled. They pay only
+            // SwiftUI layout cost — Metal/CPU rendering is suppressed via
+            // `renderPhase`. Replacing non-selected tabs with a placeholder
+            // view (instead of opacity-gating) is unsafe: remounting
+            // `SplitContainerView` resets its `@State liveRatio` to 0.5,
+            // producing wrong initial frames for split layouts.
             ForEach(Array(overlayModel.tabs.enumerated()), id: \.element.id) { _, tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
                 let renderPhase = overlayModel.renderPhase(for: tab)

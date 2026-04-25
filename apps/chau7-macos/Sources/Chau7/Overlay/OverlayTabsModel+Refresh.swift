@@ -65,6 +65,7 @@ extension OverlayTabsModel {
         if let selectedTab,
            let session = selectedPresentationSession(for: selectedTab) {
             performSelectedTabInPlaceRefresh(
+                tab: selectedTab,
                 session: session,
                 selectedDecision: renderLifecycleDecision(for: selectedTab)
             )
@@ -90,6 +91,7 @@ extension OverlayTabsModel {
         session.resetPresentationSurfaceToLive()
         resetSelectedTerminalRevealScheduling()
         performSelectedTabInPlaceRefresh(
+            tab: selectedTab,
             session: session,
             selectedDecision: selectedDecision
         )
@@ -100,36 +102,25 @@ extension OverlayTabsModel {
     }
 
     private func performSelectedTabInPlaceRefresh(
+        tab: OverlayTab,
         session focusedSession: TerminalSessionModel,
         selectedDecision: TabRenderLifecycleDecision
     ) {
-        // The W1.1 investigation found that this method previously only
-        // applied the render phase + visibility + sync trigger to the
-        // focused presentation session. For split-pane tabs, the secondary
-        // pane's RustTerminalView could stay stuck in its prior phase
+        // Apply the render phase + visibility + sync trigger to *every*
+        // pane in the tab, not just the focused one. A previous focused-only
+        // implementation left secondary panes stuck on their prior phase
         // (typically `.warm` from deselection) with `isHidden=true` after
-        // window-state transitions — the user would see one pane render
-        // and the other stay blank. Iterate every session in the tab so
-        // each pane's view picks up the new phase. Metal coordinator
-        // switching remains single-target (per-window) because Metal is
-        // shared and only one pane can be the active GPU renderer at a
-        // time; non-focused panes use the CPU path via pollAndSync's
-        // syncGridToRenderer.
-        let panesToRefresh: [(UUID, TerminalSessionModel)] = {
-            if let tab = selectedTab {
-                return tab.splitController.terminalSessions
-            }
-            // Fallback: if `selectedTab` is unexpectedly nil (rare; the
-            // caller always has a tab in normal flow), preserve the
-            // pre-W1.1.D single-session behaviour rather than skipping
-            // the refresh entirely.
-            return [(UUID(), focusedSession)]
-        }()
+        // window-state transitions — visible symptom was one pane rendering
+        // and the other staying blank.
+        //
+        // Metal coordinator switching stays single-target (focused pane
+        // only) because Metal is per-window-shared and only one pane can
+        // be the active GPU renderer at a time. Secondary panes drive
+        // their CPU path via `pollAndSync`'s `syncGridToRenderer`.
+        let panesToRefresh = tab.splitController.terminalSessions
 
-        // Observability: per-call breadcrumb. paneCount > 1 paths are the
-        // ones W1.1.D fixes; the per-pane logs below give the smoking
-        // gun if any pane fails to refresh. Grep `performSelectedTabInPlaceRefresh:`
-        // to trace a single refresh; grep `performSelectedTabInPlaceRefresh:pane`
+        // Per-call breadcrumb. Grep `performSelectedTabInPlaceRefresh:`
+        // for a single refresh summary; grep `performSelectedTabInPlaceRefresh:pane`
         // for the per-pane fan-out.
         Log.info(
             """
@@ -258,6 +249,7 @@ extension OverlayTabsModel {
         switch refreshAction {
         case .liveRepaintInPlace:
             performSelectedTabInPlaceRefresh(
+                tab: selectedTab,
                 session: session,
                 selectedDecision: selectedDecision
             )
@@ -608,16 +600,14 @@ extension OverlayTabsModel {
     /// tab-level isInteractive decision, returns the role label, the
     /// effective `isInteractive` value (only the focused pane claims input
     /// focus), and the reason string used by `applyRenderPhase` (for log
-    /// breadcrumbs).
-    ///
-    /// Extracted so the role/interactive contract is unit-testable via
-    /// `swift test` without standing up a model. W1.1.E pins the rules
-    /// in `PaneRefreshPlanTests.swift`.
+    /// breadcrumbs). Extracted so the contract is unit-testable without
+    /// standing up a model — see `PaneRefreshPlanTests`.
     struct PaneRefreshPlan: Equatable {
         enum Role: String, Equatable {
             case focused
             case secondary
         }
+
         let role: Role
         let isInteractive: Bool
         let applyRenderPhaseReason: String

@@ -38,16 +38,6 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         super.tearDown()
     }
 
-    // testLiveHierarchyKeepsOnlySelectedTabByDefault,
-    // testLiveHierarchyDropsPreviouslySelectedTabImmediately, and
-    // testLiveHierarchyDoesNotKeepDistantMCPBackgroundTabLive were
-    // removed in W1.1.B. See the matching note in OverlayTabsModelTests
-    // for context: the contract these tests asserted stopped being
-    // honoured by production after the W1.1 revert (commit 6a44d5a),
-    // and W1.1.B removed the underlying `shouldKeepTabInLiveHierarchy`
-    // method along with the unreachable Color.clear placeholder branch
-    // it gated.
-
     func testSelectingTabKeepsSelectedSurfaceLiveImmediately() {
         model.newTab(selectNewTab: false)
         let targetID = model.tabs[1].id

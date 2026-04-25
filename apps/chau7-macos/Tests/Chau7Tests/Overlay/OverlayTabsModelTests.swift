@@ -1004,19 +1004,6 @@ final class OverlayTabsModelTests: XCTestCase {
         )
     }
 
-    // testLiveHierarchyDoesNotKeepDistantMCPBackgroundTabLive,
-    // testLiveHierarchyDoesNotKeepDistantNonMCPBackgroundTab, and
-    // testLiveHierarchyDoesNotKeepDistantRestoredTabAttached were removed
-    // in W1.1.B. They asserted the pre-revert "lazy hierarchy" contract
-    // (XCTAssertFalse for non-selected/distant tabs) which the production
-    // policy stopped honouring after the W1.1 revert (commit 6a44d5a) —
-    // `TabRenderLifecyclePolicy.keepsLiveHierarchy(for:)` returns true
-    // unconditionally. The tests were #if !SWIFT_PACKAGE-guarded so they
-    // never ran in CI and were silently aspirational. Removing the
-    // unreachable Color.clear branch in Chau7OverlayView.terminalStack
-    // (W1.1.B) made `shouldKeepTabInLiveHierarchy` itself dead, so the
-    // tests have no contract left to assert.
-
     func testDeferredRestoreDefersConsumptionUntilExplicitStep() {
         let tabIDs = (0 ..< 3).map { _ in UUID() }
         let states = (0 ..< 3).map { index in
@@ -1579,15 +1566,21 @@ final class OverlayTabsModelTests: XCTestCase {
         )
         let deferredTab = try XCTUnwrap(restored.tabs.first(where: { $0.id == deferredTabID }))
         let deferredIndex = try XCTUnwrap(restored.tabs.firstIndex(where: { $0.id == deferredTabID }))
-        XCTAssertTrue(restored.deferredRestoreStatesByTabID[deferredTabID] != nil,
-                      "Precondition: deferred state is queued")
+        XCTAssertTrue(
+            restored.deferredRestoreStatesByTabID[deferredTabID] != nil,
+            "Precondition: deferred state is queued"
+        )
 
         restored.captureClosedTabSnapshot(tab: deferredTab, at: deferredIndex)
 
-        XCTAssertNil(restored.deferredRestoreStatesByTabID[deferredTabID],
-                     "Deferred state dict must be drained after capture")
-        XCTAssertFalse(restored.deferredRestoreTabOrder.contains(deferredTabID),
-                       "Deferred order queue must not contain the closed tab")
+        XCTAssertNil(
+            restored.deferredRestoreStatesByTabID[deferredTabID],
+            "Deferred state dict must be drained after capture"
+        )
+        XCTAssertFalse(
+            restored.deferredRestoreTabOrder.contains(deferredTabID),
+            "Deferred order queue must not contain the closed tab"
+        )
 
         let entry = try XCTUnwrap(restored.closedTabStack.last)
         XCTAssertEqual(entry.originalIndex, deferredIndex)
@@ -1641,13 +1634,18 @@ final class OverlayTabsModelTests: XCTestCase {
 
         let entry = try XCTUnwrap(model.closedTabStack.last)
         XCTAssertEqual(entry.originalIndex, 1)
-        XCTAssertEqual(entry.state.directory, directory,
-                       "Live-branch capture must preserve the tab's working directory")
+        XCTAssertEqual(
+            entry.state.directory,
+            directory,
+            "Live-branch capture must preserve the tab's working directory"
+        )
         // paneStates is the per-pane snapshot — exists even when scrollback
         // is empty/nil because the entry is constructed from
         // splitController.terminalSessions.
-        let paneStates = try XCTUnwrap(entry.state.paneStates,
-                                       "Live-branch capture must populate paneStates from splitController")
+        let paneStates = try XCTUnwrap(
+            entry.state.paneStates,
+            "Live-branch capture must populate paneStates from splitController"
+        )
         XCTAssertEqual(paneStates.count, tab.splitController.terminalSessions.count)
         XCTAssertEqual(paneStates.first?.directory, directory)
     }
@@ -1657,7 +1655,7 @@ final class OverlayTabsModelTests: XCTestCase {
     /// Directory mismatch must reject the intent — previously `isEmpty ||` let an
     /// unknown expected directory match anything, silently delivering resume commands
     /// to the wrong pane.
-    func testValidateResumeRestoreIntentRejectsDirectoryMismatch() throws {
+    func testValidateResumeRestoreIntentRejectsDirectoryMismatch() {
         let session = TerminalSessionModel(appModel: appModel)
         session.currentDirectory = "/actual/dir"
         session.lastDetectedAppName = "Codex"
@@ -1678,7 +1676,7 @@ final class OverlayTabsModelTests: XCTestCase {
     }
 
     /// Provider mismatch must reject (e.g. saved as claude, live session is codex).
-    func testValidateResumeRestoreIntentRejectsProviderMismatch() throws {
+    func testValidateResumeRestoreIntentRejectsProviderMismatch() {
         let session = TerminalSessionModel(appModel: appModel)
         session.currentDirectory = "/shared/dir"
         session.lastDetectedAppName = "Codex"
@@ -1700,7 +1698,7 @@ final class OverlayTabsModelTests: XCTestCase {
 
     /// Session-ID mismatch must reject even when directory + provider agree —
     /// the live pane has been reassigned to a different session.
-    func testValidateResumeRestoreIntentRejectsSessionIDMismatch() throws {
+    func testValidateResumeRestoreIntentRejectsSessionIDMismatch() {
         let session = TerminalSessionModel(appModel: appModel)
         session.currentDirectory = "/shared/dir"
         session.lastDetectedAppName = "Codex"
@@ -1721,7 +1719,7 @@ final class OverlayTabsModelTests: XCTestCase {
     }
 
     /// All three dimensions match → accept.
-    func testValidateResumeRestoreIntentAcceptsFullMatch() throws {
+    func testValidateResumeRestoreIntentAcceptsFullMatch() {
         let session = TerminalSessionModel(appModel: appModel)
         session.currentDirectory = "/shared/dir"
         session.lastDetectedAppName = "Codex"
@@ -3267,7 +3265,10 @@ final class OverlayTabsModelTests: XCTestCase {
             )
         )
     }
+}
 
+@MainActor
+extension OverlayTabsModelTests {
     func testQueuedResumePrefillRevalidatesOwnershipAtActualDelivery() {
         guard let tab = model.tabs.first,
               let (paneID, session) = tab.splitController.terminalSessions.first else {

@@ -130,14 +130,6 @@ extension OverlayTabsModel {
         }
     }
 
-    // shouldKeepTabInLiveHierarchy was removed in W1.1.B. The post-revert
-    // policy returns true unconditionally (TabRenderLifecyclePolicy.swift:142),
-    // making the Color.clear placeholder branch in Chau7OverlayView.terminalStack
-    // unreachable; the branch was deleted in the same commit. With no callers,
-    // the wrapper is dead. The renderPhase computed by `renderLifecycleDecision`
-    // is the only remaining lifecycle output the view consumes, via
-    // `renderPhase(for:)` and `isInteractive(for:)` below.
-
     func updateSuspensionState() {
         let previousSuspended = suspendedTabIDs
         let validIDs = Set(tabs.map { $0.id })
