@@ -3,12 +3,23 @@ import Foundation
 /// Resolves the displayed title for a tab's chrome (tab bar chip, status
 /// bar menu, accessibility label).
 ///
-/// Input priority when `customTitleOnly` is false:
-///   1. `customTitle` — user-renamed or MCP-set
-///   2. `<aiDisplayAppName> - <customTitle>` — composed when both present
-///   3. `aiDisplayAppName` — detected AI tool (Codex, Claude, …)
-///   4. `devServerName` — limited to Vite (case-insensitive)
-///   5. `shellFallback` — localized "Shell" by default
+/// Input priority:
+///   1. `customTitle` — user-renamed or MCP-set. **When set, it wins
+///      unconditionally.** The AI tool name is *never* prefixed onto a
+///      custom title; the tab chip's logo carries the tool identity
+///      visually, so prepending "Codex - " would be redundant chrome.
+///   2. `aiDisplayAppName` — detected AI tool (Codex, Claude, …) when no
+///      custom title is set.
+///   3. `devServerName` — limited to Vite (case-insensitive).
+///   4. `shellFallback` — localized "Shell" by default.
+///
+/// The `customTitleOnly` parameter is retained for back-compatibility
+/// with callers that pass it, but is no longer load-bearing for title
+/// resolution: a non-empty custom title now always returns just the
+/// custom title regardless of the setting. The `customTitleOnly` setting
+/// continues to control the **chip's** minimal-display mode (hiding
+/// icons / path / indicators) at the call sites that respect it; this
+/// formatter only resolves text.
 ///
 /// Notably absent: `TerminalSessionModel.title`, which is populated from
 /// the shell's OSC 0/1/2 escape sequence. That value is deliberately
@@ -22,40 +33,20 @@ public enum TabTitleFormatter {
         customTitle: String?,
         aiDisplayAppName: String?,
         devServerName: String?,
-        customTitleOnly: Bool,
+        customTitleOnly: Bool = false,
         shellFallback: String = "Shell"
     ) -> String {
-        let custom = trimmedNonEmpty(customTitle)
-        let aiName = trimmedNonEmpty(aiDisplayAppName)
+        // `customTitleOnly` is no longer load-bearing here (kept in the
+        // signature for back-compat with existing call sites that pass it).
+        // The chip's minimal-display mode is handled in the chip view, not
+        // in this text resolver.
+        _ = customTitleOnly
 
-        if let custom {
-            if customTitleOnly {
-                return custom
-            }
-            if let aiName {
-                // Skip the "<aiName> - " prefix if the custom title already
-                // contains aiName as a *word* (not just a substring). The
-                // previous `.range(of:)` substring check would incorrectly
-                // match e.g. aiName="Co" against custom="Command deploy",
-                // or aiName="codex" against custom="Codexport", etc. Use
-                // word-boundary regex matching so only whole-word
-                // occurrences count. Case-insensitive; diacritics are
-                // non-issue for real AI tool names (Codex/Claude/Gemini
-                // are all ASCII).
-                if containsAINameAsWord(in: custom, aiName: aiName) {
-                    return custom
-                }
-                // Localized "<aiName> - <custom>" format. Default is the
-                // ASCII " - " separator; locales may override (e.g. a
-                // Unicode dash or RTL-safe separator) via
-                // `tab.title.aiCustomFormat`.
-                let format = LCore("tab.title.aiCustomFormat", "%@ - %@")
-                return String(format: format, aiName, custom)
-            }
+        if let custom = trimmedNonEmpty(customTitle) {
             return custom
         }
 
-        if let aiName {
+        if let aiName = trimmedNonEmpty(aiDisplayAppName) {
             return aiName
         }
 
@@ -70,18 +61,5 @@ public enum TabTitleFormatter {
     private static func trimmedNonEmpty(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private static func containsAINameAsWord(in custom: String, aiName: String) -> Bool {
-        let escaped = NSRegularExpression.escapedPattern(for: aiName)
-        let pattern = "\\b\(escaped)\\b"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            // Fallback to case-insensitive substring if the regex can't
-            // compile for some reason. This is the pre-fix behavior, so
-            // worst-case we preserve it rather than misbehave.
-            return custom.range(of: aiName, options: [.caseInsensitive]) != nil
-        }
-        let range = NSRange(custom.startIndex..., in: custom)
-        return regex.firstMatch(in: custom, options: [], range: range) != nil
     }
 }
