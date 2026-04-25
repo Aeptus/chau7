@@ -2804,7 +2804,16 @@ final class RustTerminalView: NSView {
             let newCols = min(maxCols, rawCols)
             let newRows = min(maxRows, rawRows)
             if newCols != cols || newRows != rows {
-                Log.info("RustTerminalView[\(viewId)]: layout - Resizing from \(cols)x\(rows) to \(newCols)x\(newRows)")
+                // `bottomGap` is the empty pixel band below the last grid row
+                // (insetRect.height not divisible by cellHeight). Diagnostic for
+                // bug #92 ("input line clipped at bottom"): if bottomGap > cellHeight/2
+                // the visual bottom of the terminal looks like a half-row of
+                // empty space, which users misread as a clipped row.
+                let bottomGap = insetRect.height - CGFloat(newRows) * cellHeight
+                Log
+                    .info(
+                        "RustTerminalView[\(viewId)]: layout - Resizing from \(cols)x\(rows) to \(newCols)x\(newRows) bottomGap=\(String(format: "%.1f", bottomGap))px cellHeight=\(cellHeight)"
+                    )
                 cols = newCols
                 rows = newRows
                 rustTerminal?.resize(cols: UInt16(cols), rows: UInt16(rows))
