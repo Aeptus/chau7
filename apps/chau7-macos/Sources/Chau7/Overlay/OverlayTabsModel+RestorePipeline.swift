@@ -863,7 +863,6 @@ extension OverlayTabsModel {
         return SplitPaneController(appModel: appModel, root: root, focusedPaneID: focusedUUID)
     }
 
-    // swiftlint:disable:next function_body_length
     func restoreTabState(
         for tab: OverlayTab,
         state: SavedTabState,
@@ -1027,6 +1026,46 @@ extension OverlayTabsModel {
         let restoreScheduledAt = CFAbsoluteTimeGetCurrent()
         let executeRestore = { [weak self] in
             guard let self else { return }
+            self.executeRestoreBody(
+                targetTabID: targetTabID,
+                state: state,
+                paneStatesByID: paneStatesByID,
+                paneStatesToRestore: paneStatesToRestore,
+                terminalSessions: terminalSessions,
+                isSelectedRestore: isSelectedRestore,
+                scheduledDelay: scheduledDelay,
+                restoreScheduledAt: restoreScheduledAt,
+                useResumeRetryScheduler: useResumeRetryScheduler,
+                startupRestoreActive: startupRestoreActive
+            )
+        }
+        if executeSynchronouslyWhenPossible, scheduledDelay <= 0 {
+            executeRestore()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + scheduledDelay, execute: executeRestore)
+        }
+    }
+
+    /// Async-dispatched body of `restoreTabState`. Originally an inline
+    /// closure; extracted to a method so the outer scheduling logic and
+    /// the executeRestore phase work can be reasoned about independently.
+    /// All inputs are passed by value (paneStatesToRestore is `var` inside
+    /// because the metadata phase mutates it for telemetry; the mutation
+    /// doesn't need to escape the method).
+    // swiftlint:disable:next function_body_length
+    private func executeRestoreBody(
+        targetTabID: UUID,
+        state: SavedTabState,
+        paneStatesByID: [UUID: SavedTerminalPaneState],
+        paneStatesToRestore: [UUID: SavedTerminalPaneState],
+        terminalSessions: [(UUID, TerminalSessionModel)],
+        isSelectedRestore: Bool,
+        scheduledDelay: TimeInterval,
+        restoreScheduledAt: CFAbsoluteTime,
+        useResumeRetryScheduler: Bool,
+        startupRestoreActive: Bool
+    ) {
+        var paneStatesToRestore = paneStatesToRestore
             let restoreStartedAt = CFAbsoluteTimeGetCurrent()
             let waitedMs = Int((restoreStartedAt - restoreScheduledAt) * 1000)
             Log.info(
@@ -1266,12 +1305,6 @@ extension OverlayTabsModel {
                 updateSuspensionState()
                 notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
             }
-        }
-        if executeSynchronouslyWhenPossible, scheduledDelay <= 0 {
-            executeRestore()
-        } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + scheduledDelay, execute: executeRestore)
-        }
     }
 
     func scheduleResumeCommand(
