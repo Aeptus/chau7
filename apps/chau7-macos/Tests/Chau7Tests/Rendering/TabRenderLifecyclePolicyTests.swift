@@ -20,7 +20,6 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .active)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertTrue(decision.isInteractive)
     }
 
@@ -49,7 +48,6 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .active)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertFalse(
             decision.isInteractive,
             "Interactive still requires input-priority window — background-activity promotion only affects rendering, not input focus"
@@ -99,7 +97,6 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision.phase, .warm)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
         XCTAssertFalse(decision.isInteractive)
     }
 
@@ -148,7 +145,6 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         for input in inputs {
             let decision = TabRenderLifecyclePolicy.decide(input)
             XCTAssertEqual(decision.phase, .warm, "Expected .warm for non-selected: \(input)")
-            XCTAssertTrue(decision.keepsLiveHierarchy)
         }
     }
 
@@ -169,7 +165,6 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
         XCTAssertEqual(decision.phase, .warm)
-        XCTAssertTrue(decision.keepsLiveHierarchy)
     }
 
     func testOnlySelectedTabIsInteractive() {

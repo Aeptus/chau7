@@ -61,12 +61,10 @@ public struct TabRenderLifecycleInput: Equatable, Sendable {
 
 public struct TabRenderLifecycleDecision: Equatable, Sendable {
     public let phase: TabRenderPhase
-    public let keepsLiveHierarchy: Bool
     public let isInteractive: Bool
 
-    public init(phase: TabRenderPhase, keepsLiveHierarchy: Bool, isInteractive: Bool) {
+    public init(phase: TabRenderPhase, isInteractive: Bool) {
         self.phase = phase
-        self.keepsLiveHierarchy = keepsLiveHierarchy
         self.isInteractive = isInteractive
     }
 }
@@ -75,7 +73,6 @@ public enum TabRenderLifecyclePolicy {
     public static func decide(_ input: TabRenderLifecycleInput) -> TabRenderLifecycleDecision {
         TabRenderLifecycleDecision(
             phase: phase(for: input),
-            keepsLiveHierarchy: keepsLiveHierarchy(for: input),
             isInteractive: isInteractive(for: input)
         )
     }
@@ -139,7 +136,12 @@ public enum TabRenderLifecyclePolicy {
         return isKeyWindow
     }
 
-    public static func keepsLiveHierarchy(for input: TabRenderLifecycleInput) -> Bool {
-        true
-    }
+    // `keepsLiveHierarchy(for:)` and the matching field on
+    // `TabRenderLifecycleDecision` were removed in W1.1.C. They had been
+    // returning `true` unconditionally since the W1.1 revert (commit
+    // 6a44d5a), and the only consumer — the `Color.clear` placeholder
+    // branch in `Chau7OverlayView.terminalStack` — was deleted in W1.1.B.
+    // The view now always renders `SplitPaneView` (with opacity gating
+    // for non-selected tabs); the `renderPhase` returned by `phase(for:)`
+    // is the one signal the view chain still consumes.
 }
