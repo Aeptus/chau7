@@ -831,4 +831,51 @@ extension OverlayTabsModel {
         guard selectedTabID != id else { return }
         selectTab(id: id)
     }
+    // MARK: - Tab Switch Optimization: Snapshot Capture
+
+    /// Captures a screenshot of the current terminal view for instant display during tab switch
+    func captureCurrentTabSnapshot() {
+        guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else {
+            return
+        }
+
+        let currentTab = tabs[currentIndex]
+        let session = selectedPresentationSession(for: currentTab)
+
+        if let terminalView = session?.existingRustTerminalView,
+           let image = Self.captureSnapshotImage(from: terminalView) {
+            tabs[currentIndex].cachedSnapshot = image
+            session?.lastRenderedSnapshot = image
+        } else if let cached = session?.lastRenderedSnapshot {
+            tabs[currentIndex].cachedSnapshot = cached
+            Log.trace("snapshot: used session-cached frame for tab \(selectedTabID)")
+        } else if let preview = tabs[currentIndex].restorePreviewSnapshot {
+            tabs[currentIndex].cachedSnapshot = preview
+            Log.trace("snapshot: used restore preview for tab \(selectedTabID)")
+        } else {
+            logVisualState(reason: "snapshot: skipped (no terminal view, no cached frame)")
+            return
+        }
+
+        if let session {
+            tabs[currentIndex].lastPromptText = session.displayPath()
+            tabs[currentIndex].lastCursorPosition = CGPoint(x: 50, y: 20)
+        }
+
+        cleanupDistantSnapshots(currentIndex: currentIndex)
+    }
+
+    func cleanupDistantSnapshots(currentIndex: Int) {
+        for i in 0 ..< tabs.count {
+            if abs(i - currentIndex) > 2 {
+                tabs[i].cachedSnapshot = nil
+            }
+        }
+    }
+
+    func schedulePreviousLiveHierarchyRelease() {
+        previousLiveHierarchyReleaseWorkItem?.cancel()
+        previousLiveHierarchyReleaseWorkItem = nil
+    }
+
 }

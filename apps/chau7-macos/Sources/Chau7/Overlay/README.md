@@ -19,7 +19,8 @@ Tab bar model, views, and hover card — the core UI for managing terminal tabs.
 | `OverlayTabsModel+OverlayActions.swift` | Overlay dismissal, split-pane operations, last-command tracking |
 | `OverlayTabsModel+RenameSearchClipboard.swift` | Rename dialog, search panel, clipboard/zoom pass-throughs |
 | `OverlayTabsModel+Features.swift` | F05/F13/F16/F17/F21 feature blocks |
-| `OverlayTabsModel+TabSwitchOptimization.swift` | Pre-warm on hover, snapshot capture, render state caching |
+| `OverlayTabsModel+TabSwitchOptimization.swift` | Pre-warm on hover, snapshot capture, tab-switch optimization, render state caching |
+| `OverlayTabsModel+RestorePreviewSnapshot.swift` | NSView/bitmap helpers for restore-preview snapshot capture |
 | `Chau7OverlayView.swift` | Tab bar SwiftUI views: segments, buttons, brackets, drag/drop, hit testing |
 | `TabHoverCard.swift` | Hover card: AI session summary, conflicts, process info, notification state |
 
