@@ -1531,6 +1531,52 @@ extension OverlayTabsModel {
         return true
     }
 
+    /// Pure decision step for `recordResumeRestoreDeliveryState`. Decides
+    /// whether an incoming `(token, outcome)` should overwrite the existing
+    /// per-pane delivery state, preserve a newer-token state, or preserve a
+    /// terminal outcome already on file.
+    ///
+    /// Extracted as a static helper so the state-machine logic is unit-
+    /// testable via `swift test` without constructing a live model.
+    /// `recordResumeRestoreDeliveryState` calls this and applies the
+    /// decision (writing to `resumeRestoreDeliveryStateByPaneID` and
+    /// emitting the corresponding log line).
+    enum ResumeRestoreDeliveryDecision: Equatable {
+        /// Overwrite the existing entry (or insert if none) with the new
+        /// `ResumeRestoreDeliveryState`.
+        case write(ResumeRestoreDeliveryState)
+        /// Preserve the existing entry: a newer token has already been
+        /// recorded; the incoming outcome is stale.
+        case preserveNewerToken
+        /// Preserve the existing entry: it has reached a terminal outcome
+        /// (`delivered` / `rejected`) which `superseded` cannot override.
+        case preserveTerminalOutcome
+    }
+
+    static func decideResumeRestoreDeliveryUpdate(
+        existing: ResumeRestoreDeliveryState?,
+        newToken: String,
+        newOutcome: ResumeRestoreDeliveryState.Outcome
+    ) -> ResumeRestoreDeliveryDecision {
+        // The gates only apply when the incoming outcome is `superseded`.
+        // For any other outcome (pending / queued / delivered / rejected),
+        // the new entry always wins — restoreTabState always issues these
+        // with the latest token it has, and a delivered/rejected always
+        // supersedes a pending/queued for the same token.
+        if let existing, newOutcome == .superseded {
+            if existing.token != newToken {
+                return .preserveNewerToken
+            }
+            switch existing.outcome {
+            case .delivered, .rejected:
+                return .preserveTerminalOutcome
+            case .pending, .queued, .superseded:
+                break
+            }
+        }
+        return .write(ResumeRestoreDeliveryState(token: newToken, outcome: newOutcome))
+    }
+
     func recordResumeRestoreDeliveryState(
         paneID: UUID,
         token: String,
@@ -1538,31 +1584,28 @@ extension OverlayTabsModel {
         tabID: UUID,
         reason: String
     ) {
-        if let existing = resumeRestoreDeliveryStateByPaneID[paneID], outcome == .superseded {
-            if existing.token != token {
-                Log.trace(
-                    "restoreTabState: preserving newer resume outcome for tab=\(tabID) pane=\(paneID) existingToken=\(existing.token.prefix(8)) staleToken=\(token.prefix(8))"
-                )
-                return
-            }
-
-            switch existing.outcome {
-            case .delivered, .rejected:
-                Log.trace(
-                    "restoreTabState: preserving terminal resume outcome for tab=\(tabID) pane=\(paneID) token=\(token.prefix(8)) existing=\(existing.outcome.rawValue)"
-                )
-                return
-            case .pending, .queued, .superseded:
-                break
-            }
+        let decision = Self.decideResumeRestoreDeliveryUpdate(
+            existing: resumeRestoreDeliveryStateByPaneID[paneID],
+            newToken: token,
+            newOutcome: outcome
+        )
+        switch decision {
+        case .preserveNewerToken:
+            let existing = resumeRestoreDeliveryStateByPaneID[paneID]
+            Log.trace(
+                "restoreTabState: preserving newer resume outcome for tab=\(tabID) pane=\(paneID) existingToken=\(existing?.token.prefix(8) ?? "nil") staleToken=\(token.prefix(8))"
+            )
+        case .preserveTerminalOutcome:
+            let existing = resumeRestoreDeliveryStateByPaneID[paneID]
+            Log.trace(
+                "restoreTabState: preserving terminal resume outcome for tab=\(tabID) pane=\(paneID) token=\(token.prefix(8)) existing=\(existing?.outcome.rawValue ?? "nil")"
+            )
+        case .write(let newState):
+            resumeRestoreDeliveryStateByPaneID[paneID] = newState
+            Log.info(
+                "restoreTabState: resume outcome tab=\(tabID) pane=\(paneID) token=\(token.prefix(8)) outcome=\(outcome.rawValue) reason=\(reason)"
+            )
         }
-        resumeRestoreDeliveryStateByPaneID[paneID] = ResumeRestoreDeliveryState(
-            token: token,
-            outcome: outcome
-        )
-        Log.info(
-            "restoreTabState: resume outcome tab=\(tabID) pane=\(paneID) token=\(token.prefix(8)) outcome=\(outcome.rawValue) reason=\(reason)"
-        )
     }
 
     @discardableResult
