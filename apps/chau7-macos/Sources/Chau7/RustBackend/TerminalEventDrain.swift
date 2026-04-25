@@ -20,6 +20,21 @@ final class TerminalEventDrain {
     private var thread: Thread?
     private var cancelled = false
 
+    /// Coalesce gate: when output is heavy, `rust.poll(timeout:)` returns
+    /// immediately and the loop spins, producing 100+ `DispatchQueue.main.async`
+    /// calls per second. The main queue saturates with redundant
+    /// `handleEventDrainData` work and user input dispatches queue behind it,
+    /// causing the multi-second input latency observed in the Mockup-Claude
+    /// streaming-output diagnosis (P5).
+    ///
+    /// Cap concurrency at one in-flight handler. While the handler is on the
+    /// main queue, additional drain wakes drop their dispatch. The in-flight
+    /// handler's non-blocking `rust.poll(timeout: 0)` at the top of
+    /// `handleEventDrainData` picks up everything that arrived since the
+    /// drain's blocking poll returned, so no data is lost.
+    private let coalesceLock = NSLock()
+    private var hasInFlightHandler = false
+
     /// Start draining PTY events for the given terminal view.
     /// Stops any previous drain first.
     func start(for view: RustTerminalView) {
@@ -72,12 +87,33 @@ final class TerminalEventDrain {
             guard !cancelled else { return }
 
             if changed {
-                DispatchQueue.main.async { [weak view] in
-                    guard let view = view, !view.isBeingDeallocated else { return }
-                    view.handleEventDrainData()
-                }
+                dispatchHandlerIfNotInFlight(view: view)
             }
         }
         Log.trace("TerminalEventDrain[\(viewId)]: cancelled, exiting")
+    }
+
+    /// Dispatches `view.handleEventDrainData()` to the main queue if no
+    /// previous dispatch is still in flight; otherwise drops this wake.
+    /// Pure coalescence — see `coalesceLock` doc for the rationale.
+    private func dispatchHandlerIfNotInFlight(view: RustTerminalView) {
+        coalesceLock.lock()
+        let alreadyInFlight = hasInFlightHandler
+        if !alreadyInFlight {
+            hasInFlightHandler = true
+        }
+        coalesceLock.unlock()
+
+        guard !alreadyInFlight else { return }
+
+        DispatchQueue.main.async { [weak self, weak view] in
+            defer {
+                self?.coalesceLock.lock()
+                self?.hasInFlightHandler = false
+                self?.coalesceLock.unlock()
+            }
+            guard let view, !view.isBeingDeallocated else { return }
+            view.handleEventDrainData()
+        }
     }
 }
