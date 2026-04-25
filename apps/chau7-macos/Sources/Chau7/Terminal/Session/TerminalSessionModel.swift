@@ -809,6 +809,30 @@ final class TerminalSessionModel {
         return String(format: "%016llx", hash)
     }
 
+    /// Pure decision: should we force-clear `isShellLoading` because the
+    /// OSC 7 directory-report appears stuck?
+    ///
+    /// Threshold is conditional on whether app-wide startup-restore is
+    /// active. During multi-tab cold boot, many shells competing for
+    /// resources delay each other's OSC 7 emissions; the previous fixed
+    /// threshold of 6 retries (~8s cumulative back-off) still fired
+    /// regularly under that load. Bumping to 8 retries (~13s) during
+    /// startup gives shells substantially more headroom while leaving
+    /// the post-startup threshold intact.
+    ///
+    /// Cumulative timing: retry-N fires at ≈ Σ_{k=1..N}(min(0.3+0.3·k, 3.0))
+    /// after the first queued prefill — retry-6 ≈ 8.1s, retry-8 ≈ 13.2s,
+    /// retry-10 ≈ 19.2s.
+    static func shouldForceClearShellLoadingForOSC7Deadlock(
+        retries: Int,
+        isShellLoading: Bool,
+        isStartupRestoreActive: Bool
+    ) -> Bool {
+        guard isShellLoading else { return false }
+        let threshold = isStartupRestoreActive ? 8 : 6
+        return retries >= threshold
+    }
+
     static func resolveEffectiveStatus(
         historyState: HistorySessionState,
         fallback: CommandStatus
@@ -2358,19 +2382,20 @@ final class TerminalSessionModel {
         // isShellLoading to break the deadlock where the initial OSC 7 directory
         // matches the saved directory and handlePromptDetected is never called.
         //
-        // Hazard: retries are scheduled with cumulative back-off
-        // (`delay = min(0.3 + N * 0.3, 3.0)` per attempt), so retry-N fires
-        // at ≈ Σ_{k=1..N} (0.3 + 0.3·k) after the first queued prefill —
-        // retry-4 ≈ 4.2s, retry-6 ≈ 8.1s. Threshold was 4 but that fired
-        // regularly during many-tab restore on cold boot: many shells
-        // starting simultaneously delay each other's OSC 7 emissions past
-        // the deadline, and we'd force-clear into mid-boot output, leaving
-        // the user with a typed resume command but no rendered prompt.
-        // Bumped to 6 (~8s) to give shells substantially more headroom
-        // under simultaneous-spawn load. Still well under the overall
-        // 20-retry cap, so a genuinely hung shell still gets recovery.
-        // Log.warn the force-clear so it's greppable.
-        if pendingPrefillRetries >= 6, isShellLoading {
+        // Threshold is conditional on whether startup-restore is active:
+        // during a multi-tab cold boot, many shells competing for resources
+        // delay each other's OSC 7 emissions, and the previous fixed
+        // threshold of 6 (~8s) still fired regularly. While startup is
+        // active we wait for retry 8 (~13s) before force-clearing; once
+        // the coordinator has ended (post-startup) we go back to retry 6.
+        // The pure decision lives in
+        // OverlayTabsModel.shouldForceClearShellLoadingForOSC7Deadlock so
+        // it can be unit-tested without standing up a session model.
+        if Self.shouldForceClearShellLoadingForOSC7Deadlock(
+            retries: pendingPrefillRetries,
+            isShellLoading: isShellLoading,
+            isStartupRestoreActive: StartupRestoreCoordinator.shared.isActive
+        ) {
             Log.warn(
                 "Resume prefill: force-clearing isShellLoading after \(pendingPrefillRetries) retries to break OSC-7 deadlock (tab=\(tabIdentifier))"
             )
