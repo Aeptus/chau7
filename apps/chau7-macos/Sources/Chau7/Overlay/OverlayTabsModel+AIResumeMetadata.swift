@@ -1,0 +1,691 @@
+import Chau7Core
+import Foundation
+
+/// AI resume metadata resolution for `OverlayTabsModel`. Six concerns:
+///
+///   1. **Live-session resolution** — `resolveResumeMetadata` walks the
+///      registered session-finder registry and the Codex history fallback
+///      to determine `(provider, sessionId)` for a live `TerminalSessionModel`.
+///      Mutates the session's restore metadata when a better match is
+///      discovered (W3.27 will split this into pure-resolve + explicit-attach).
+///
+///   2. **Save-time persistence helpers** — `persistedAIResumeMetadata` and
+///      `persistedAISessionIdentity` produce the `(provider, sessionId,
+///      sessionIdSource)` tuple persisted into `SavedTerminalPaneState` /
+///      `SavedTabState` for cross-tab dedup via `claimedSessionIds`.
+///
+///   3. **Restore-time sanitization** —
+///      `sanitizeRestoredAIResumeOwnership(states:)` is the post-decode
+///      pass run by `OverlayTabsModel.init` that deduplicates session IDs
+///      across all restored tabs/panes (older saves predate the
+///      uniqueness invariant).
+///
+///   4. **Resume-command construction** — `buildAIResumeCommand` (4
+///      overloads) routes through `AIToolRegistry.allTools` to produce
+///      `claude --resume <id>` / `codex resume <id>` strings. Used by
+///      both the save and restore paths.
+///
+///   5. **Provider-candidate ordering** — `aiResumeProviderCandidates`
+///      and `resolveAIResumeMetadata` decide which provider to try
+///      first when the live session lacks an explicit one.
+///
+///   6. **Repo identity helpers** — `persistedRepoIdentity` overloads +
+///      `PersistedRepoIdentity` struct + `normalizedSavedRepoField`.
+///      Co-located here because the AI-resume capture path needs the
+///      repo identity per pane; not strictly AI-resume domain, but
+///      moving them separately would split a tightly coupled unit.
+///
+/// Most of the cluster is `static` and pure — the instance methods
+/// (`resolveResumeMetadata`, `persistedAIResumeMetadata`,
+/// `persistedAISessionIdentity`) are the only members that depend on
+/// model state (`appModel.codexHistoryEntries`,
+/// `codexResumeFallbackCache`). A future extraction (tracked as the
+/// "AIResumeMetadataResolver as standalone struct" follow-up) can
+/// promote those three to a real type independent of `OverlayTabsModel`.
+extension OverlayTabsModel {
+
+    func resolveResumeMetadata(
+        for session: TerminalSessionModel,
+        directory: String,
+        outputHint: String?,
+        claimedSessionIds: Set<String> = []
+    ) -> (provider: String, sessionId: String)? {
+        let referenceDate = Self.normalizedResumeReferenceDate(session.lastOutputDate)
+        let detectedApp = Self.detectAIAppName(fromOutput: outputHint)
+        let resumeAppName = session.aiDisplayAppName ?? detectedApp
+        let explicitProvider = Self.explicitResumeProvider(for: session)
+        let explicitSessionId = Self.explicitResumeSessionId(for: session)
+        let hasClaimedExplicitCodexSession = explicitProvider == "codex"
+            && explicitSessionId.map { claimedSessionIds.contains($0) } == true
+
+        if let resolved = Self.resolveAIResumeMetadata(
+            appName: resumeAppName,
+            directory: directory,
+            outputHint: outputHint,
+            explicitAIProvider: explicitProvider,
+            explicitAISessionId: explicitSessionId,
+            referenceDate: referenceDate,
+            claimedSessionIds: claimedSessionIds
+        ) {
+            if explicitProvider == "codex",
+               explicitSessionId != resolved.sessionId {
+                session.restoreAIMetadata(provider: resolved.provider, sessionId: resolved.sessionId)
+                Log.info(
+                    "saveTabState: replaced Codex resume metadata sessionId=\(explicitSessionId ?? "nil") with \(resolved.sessionId)"
+                )
+            }
+            return resolved
+        }
+
+        let inferredProvider = Self.normalizedAIProvider(from: resumeAppName)
+        guard inferredProvider == "codex" || explicitProvider == "codex" else {
+            return nil
+        }
+
+        let recentHistoryEntries = Array(appModel.codexHistoryEntries.suffix(64))
+        let fallbackSignature = CodexResumeFallbackSignature(
+            directory: directory,
+            explicitSessionId: explicitSessionId,
+            referenceTimestamp: referenceDate?.timeIntervalSince1970,
+            claimedSessionFingerprint: Self.sessionIDFingerprint(claimedSessionIds),
+            claimedSessionCount: claimedSessionIds.count,
+            historyFingerprint: Self.codexHistoryFingerprint(recentHistoryEntries)
+        )
+        let stableFallbackSignature = StableCodexResumeFallbackSignature(
+            directory: directory,
+            explicitSessionId: explicitSessionId,
+            referenceTimestamp: referenceDate?.timeIntervalSince1970,
+            claimedSessionFingerprint: fallbackSignature.claimedSessionFingerprint,
+            claimedSessionCount: fallbackSignature.claimedSessionCount
+        )
+        let cacheKey = ObjectIdentifier(session)
+        if let cached = codexResumeFallbackCache[cacheKey],
+           cached.signature == fallbackSignature {
+            return cached.metadata
+        }
+        if explicitProvider == "codex",
+           let explicitSessionId,
+           let cached = codexResumeFallbackCache[cacheKey],
+           cached.stableSignature == stableFallbackSignature,
+           cached.metadata?.provider == "codex",
+           cached.metadata?.sessionId == explicitSessionId {
+            return cached.metadata
+        }
+
+        let observedCandidates = recentHistoryEntries.compactMap { entry -> CodexSessionResolver.Candidate? in
+            let observedAt = Date(timeIntervalSince1970: entry.timestamp)
+            guard let metadata = CodexSessionResolver.metadata(
+                forSessionID: entry.sessionId,
+                referenceDate: observedAt
+            ) else {
+                return nil
+            }
+            return CodexSessionResolver.Candidate(
+                sessionId: metadata.sessionId,
+                cwd: metadata.cwd,
+                touchedAt: observedAt
+            )
+        }
+
+        let filteredCandidates = observedCandidates.filter { !claimedSessionIds.contains($0.sessionId) }
+
+        guard let sessionId = CodexSessionResolver.bestMatchingSessionID(
+            forDirectory: directory,
+            referenceDate: referenceDate,
+            candidates: filteredCandidates
+        ) else {
+            let logMessage =
+                """
+                saveTabState: unresolved Codex resume metadata \
+                dir=\(directory) explicitSession=\(session.effectiveAISessionId ?? "nil") \
+                observedCandidates=\(observedCandidates.count) filtered=\(filteredCandidates.count)
+                """
+            if filteredCandidates.isEmpty {
+                Log.trace(logMessage)
+            } else {
+                Log.info(logMessage)
+            }
+            if let explicitSessionId,
+               explicitProvider == "codex",
+               !claimedSessionIds.contains(explicitSessionId) {
+                let preservedExplicit = (provider: "codex", sessionId: explicitSessionId)
+                codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
+                    signature: fallbackSignature,
+                    stableSignature: stableFallbackSignature,
+                    metadata: preservedExplicit
+                )
+                Log.info(
+                    "saveTabState: preserving explicit Codex resume metadata sessionId=\(explicitSessionId) for dir=\(directory) despite unresolved replacement"
+                )
+                return preservedExplicit
+            }
+            if hasClaimedExplicitCodexSession {
+                let retainedExplicit = explicitSessionId.map { (provider: "codex", sessionId: $0) }
+                codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
+                    signature: fallbackSignature,
+                    stableSignature: stableFallbackSignature,
+                    metadata: retainedExplicit
+                )
+                Log.info(
+                    "saveTabState: retaining claimed Codex resume metadata sessionId=\(explicitSessionId ?? "nil") for dir=\(directory)"
+                )
+                return retainedExplicit
+            }
+            codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
+                signature: fallbackSignature,
+                stableSignature: stableFallbackSignature,
+                metadata: nil
+            )
+            return nil
+        }
+
+        if explicitSessionId != sessionId || explicitProvider != "codex" {
+            session.restoreAIMetadata(provider: "codex", sessionId: sessionId)
+        }
+        codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
+            signature: fallbackSignature,
+            stableSignature: stableFallbackSignature,
+            metadata: (provider: "codex", sessionId: sessionId)
+        )
+        Log.trace("saveTabState: recovered Codex resume metadata from observed history for dir=\(directory)")
+        return (provider: "codex", sessionId: sessionId)
+    }
+
+    private static func explicitResumeProvider(for session: TerminalSessionModel) -> String? {
+        normalizedAIProvider(from: session.lastAIProvider)
+    }
+
+    private static func explicitResumeSessionId(for session: TerminalSessionModel) -> String? {
+        normalizeAISessionId(session.lastAISessionId)
+    }
+
+    func persistedAIResumeMetadata(
+        from session: TerminalSessionModel,
+        resolvedResumeMetadata: (provider: String, sessionId: String)?,
+        claimedSessionIds: Set<String> = []
+    ) -> AIResumeOwnership.Metadata {
+        if let resolvedResumeMetadata {
+            return AIResumeOwnership.Metadata(
+                provider: resolvedResumeMetadata.provider,
+                sessionId: resolvedResumeMetadata.sessionId
+            )
+        }
+
+        let explicitProvider = Self.explicitResumeProvider(for: session)
+        let explicitSessionId = Self.explicitResumeSessionId(for: session)
+        let preserved = AIResumeOwnership.sanitizeForPersistence(
+            provider: explicitProvider,
+            sessionId: explicitSessionId,
+            claimedSessionIds: claimedSessionIds
+        )
+        if explicitSessionId != nil,
+           preserved.sessionId == nil,
+           explicitProvider == preserved.provider {
+            session.restoreAIMetadata(provider: preserved.provider, sessionId: nil)
+        }
+        return preserved
+    }
+
+    func persistedAISessionIdentity(
+        from session: TerminalSessionModel,
+        claimedSessionIds: Set<String> = []
+    ) -> (provider: String?, sessionId: String?, sessionIdSource: AISessionIdentitySource?) {
+        let effectiveProvider = Self.normalizedAIProvider(from: session.effectiveAIProvider ?? session.lastAIProvider)
+        let effectiveSessionId = Self.normalizePersistedAISessionId(
+            session.effectiveAISessionId,
+            source: session.effectiveAISessionIdentitySource
+        )
+        let sanitized = AIResumeOwnership.sanitizeForPersistence(
+            provider: effectiveProvider,
+            sessionId: effectiveSessionId,
+            claimedSessionIds: claimedSessionIds
+        )
+        let persistedSource: AISessionIdentitySource?
+        if sanitized.sessionId == nil {
+            persistedSource = nil
+        } else {
+            persistedSource = session.effectiveAISessionIdentitySource
+        }
+        return (
+            provider: sanitized.provider ?? effectiveProvider,
+            sessionId: sanitized.sessionId,
+            sessionIdSource: persistedSource
+        )
+    }
+
+    static func sanitizeRestoredAIResumeOwnership(states: [SavedTabState]) -> [SavedTabState] {
+        var claimedSessionIds = Set<String>()
+
+        return states.map { state in
+            let originalTopLevelCommand = normalizedResumeCommand(state.aiResumeCommand)
+            let sanitizedPaneStates = state.paneStates?.map { paneState -> SavedTerminalPaneState in
+                let commandMetadata = AIResumeParser.extractMetadata(
+                    from: paneState.aiResumeCommand ?? ""
+                )
+                let sanitizedPane = AIResumeOwnership.sanitizeForPersistence(
+                    provider: normalizedAIProvider(from: paneState.aiProvider) ?? commandMetadata?.provider,
+                    sessionId: normalizePersistedAISessionId(
+                        paneState.aiSessionId,
+                        source: paneState.aiSessionIdSource
+                    ) ?? commandMetadata?.sessionId,
+                    claimedSessionIds: claimedSessionIds
+                )
+                if let sessionId = sanitizedPane.sessionId {
+                    claimedSessionIds.insert(sessionId)
+                }
+
+                let sanitizedCommand = sanitizedResumeCommand(
+                    originalCommand: normalizedResumeCommand(paneState.aiResumeCommand),
+                    originalCommandMetadata: commandMetadata,
+                    sanitizedMetadata: sanitizedPane
+                )
+
+                return SavedTerminalPaneState(
+                    paneID: paneState.paneID,
+                    directory: paneState.directory,
+                    scrollbackContent: paneState.scrollbackContent,
+                    aiResumeCommand: sanitizedCommand,
+                    aiProvider: sanitizedPane.provider,
+                    aiSessionId: sanitizedPane.sessionId,
+                    aiSessionIdSource: sanitizedPane.sessionId == nil ? nil : paneState.aiSessionIdSource,
+                    lastOutputAt: paneState.lastOutputAt,
+                    lastInputAt: paneState.lastInputAt,
+                    knownRepoRoot: paneState.knownRepoRoot,
+                    knownGitBranch: paneState.knownGitBranch,
+                    lastStatus: paneState.lastStatus,
+                    agentLaunchCommand: paneState.agentLaunchCommand,
+                    agentStartedAt: paneState.agentStartedAt,
+                    lastExitCode: paneState.lastExitCode,
+                    lastExitAt: paneState.lastExitAt
+                )
+            }
+
+            let topLevelCommandMetadata = AIResumeParser.extractMetadata(
+                from: state.aiResumeCommand ?? ""
+            )
+            let sanitizedTopLevel = AIResumeOwnership.sanitizeForPersistence(
+                provider: normalizedAIProvider(from: state.aiProvider) ?? topLevelCommandMetadata?.provider,
+                sessionId: normalizePersistedAISessionId(
+                    state.aiSessionId,
+                    source: state.aiSessionIdSource
+                ) ?? topLevelCommandMetadata?.sessionId,
+                claimedSessionIds: claimedSessionIds
+            )
+            if let sessionId = sanitizedTopLevel.sessionId {
+                claimedSessionIds.insert(sessionId)
+            }
+            let sanitizedTopLevelCommand = sanitizedResumeCommand(
+                originalCommand: originalTopLevelCommand,
+                originalCommandMetadata: topLevelCommandMetadata,
+                sanitizedMetadata: sanitizedTopLevel
+            )
+
+            return SavedTabState(
+                tabID: state.tabID,
+                selectedTabID: state.selectedTabID,
+                customTitle: state.customTitle,
+                color: state.color,
+                directory: state.directory,
+                selectedIndex: state.selectedIndex,
+                tokenOptOverride: state.tokenOptOverride,
+                scrollbackContent: state.scrollbackContent,
+                aiResumeCommand: sanitizedTopLevelCommand,
+                aiProvider: sanitizedTopLevel.provider,
+                aiSessionId: sanitizedTopLevel.sessionId,
+                aiSessionIdSource: sanitizedTopLevel.sessionId == nil ? nil : state.aiSessionIdSource,
+                splitLayout: state.splitLayout,
+                focusedPaneID: state.focusedPaneID,
+                paneStates: sanitizedPaneStates,
+                createdAt: state.createdAt,
+                repoGroupID: state.repoGroupID,
+                knownRepoRoot: state.knownRepoRoot,
+                knownGitBranch: state.knownGitBranch,
+                lastInputAt: state.lastInputAt,
+                lastStatus: state.lastStatus,
+                agentLaunchCommand: state.agentLaunchCommand,
+                agentStartedAt: state.agentStartedAt,
+                lastExitCode: state.lastExitCode,
+                lastExitAt: state.lastExitAt,
+                commandBlocks: state.commandBlocks
+            )
+        }
+    }
+
+    struct PersistedRepoIdentity {
+        let rootPath: String
+        let branch: String?
+    }
+
+    static func persistedRepoIdentity(
+        for session: TerminalSessionModel,
+        directory: String,
+        fallbackRoot: String? = nil
+    ) -> PersistedRepoIdentity? {
+        let directRoot = normalizedSavedRepoField(session.gitRootPath) ?? normalizedSavedRepoField(fallbackRoot)
+        let storeIdentity = KnownRepoIdentityStore.shared.resolveIdentity(forPath: directory)
+            ?? directRoot.flatMap { KnownRepoIdentityStore.shared.identity(forRootPath: $0) }
+        guard let rootPath = directRoot ?? normalizedSavedRepoField(storeIdentity?.rootPath) else {
+            return nil
+        }
+        let branch = normalizedSavedRepoField(session.gitBranch) ?? normalizedSavedRepoField(storeIdentity?.lastKnownBranch)
+        return PersistedRepoIdentity(rootPath: rootPath, branch: branch)
+    }
+
+    static func persistedRepoIdentity(from paneState: SavedTerminalPaneState) -> PersistedRepoIdentity? {
+        guard let rootPath = normalizedSavedRepoField(paneState.knownRepoRoot) else {
+            return nil
+        }
+        return PersistedRepoIdentity(
+            rootPath: rootPath,
+            branch: normalizedSavedRepoField(paneState.knownGitBranch)
+        )
+    }
+
+    static func normalizedSavedRepoField(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private static func sanitizedResumeCommand(
+        originalCommand: String?,
+        originalCommandMetadata: AIResumeParser.ResumeMetadata?,
+        sanitizedMetadata: AIResumeOwnership.Metadata
+    ) -> String? {
+        if let rebuilt = buildAIResumeCommand(
+            provider: sanitizedMetadata.provider,
+            sessionId: sanitizedMetadata.sessionId
+        ) {
+            return rebuilt
+        }
+
+        guard let originalCommand else { return nil }
+
+        // Preserve legacy command-only metadata until restore-time resolution can
+        // consume it. If sanitization removed the session identity because it was
+        // already claimed elsewhere, drop the command too so duplicates still clear.
+        if let originalCommandMetadata {
+            if sanitizedMetadata.provider == originalCommandMetadata.provider,
+               sanitizedMetadata.sessionId == originalCommandMetadata.sessionId {
+                return originalCommand
+            }
+            return nil
+        }
+
+        return originalCommand
+    }
+
+    /// Build a resume command for an AI session running in the given directory.
+    /// Returns nil if no resumable session is found.
+    static func buildAIResumeCommand(appName: String?, directory: String, outputHint: String? = nil) -> String? {
+        guard let resolved = resolveAIResumeMetadata(
+            appName: appName,
+            directory: directory,
+            outputHint: outputHint
+        ) else {
+            return nil
+        }
+        return buildAIResumeCommand(provider: resolved.provider, sessionId: resolved.sessionId)
+    }
+
+    static func buildAIResumeCommand(
+        appName: String?,
+        directory: String,
+        outputHint: String? = nil,
+        aiProvider: String?,
+        aiSessionId: String?,
+        referenceDate: Date? = nil
+    ) -> String? {
+        guard let resolved = resolveAIResumeMetadata(
+            appName: appName,
+            directory: directory,
+            outputHint: outputHint,
+            explicitAIProvider: aiProvider,
+            explicitAISessionId: aiSessionId,
+            referenceDate: referenceDate
+        ) else {
+            return nil
+        }
+        return buildAIResumeCommand(provider: resolved.provider, sessionId: resolved.sessionId)
+    }
+
+    static func buildAIResumeCommand(provider: String?, sessionId: String?) -> String? {
+        buildAIResumeCommand(provider: provider, sessionId: sessionId, sessionIdSource: nil)
+    }
+
+    static func buildAIResumeCommand(
+        provider: String?,
+        sessionId: String?,
+        sessionIdSource: AISessionIdentitySource?
+    ) -> String? {
+        if sessionIdSource == .synthetic {
+            return nil
+        }
+        guard let provider = normalizedAIProvider(from: provider),
+              let sessionId = normalizeAISessionId(sessionId) else {
+            return nil
+        }
+
+        guard let tool = AIToolRegistry.allTools.first(where: { $0.resumeProviderKey == provider }) else {
+            // Provider normalized cleanly and we have a valid session ID,
+            // but the tool isn't in our registry at all. Log once per
+            // unique provider so users can see why their resume didn't
+            // fire on a CLI we haven't wired up.
+            Self.logResumeUnsupportedOnce(provider: provider, reason: "tool_not_in_registry")
+            return nil
+        }
+        guard let format = tool.resumeFormat else {
+            // Tool is known but has no resumeFormat configured — this
+            // matches providers where we intentionally haven't added a
+            // resume command format (e.g. some CLIs have no --resume
+            // equivalent). Surface it so adding a new provider without
+            // wiring resume is obvious.
+            Self.logResumeUnsupportedOnce(provider: provider, reason: "no_resume_format")
+            return nil
+        }
+        return format.buildCommand(sessionId: sessionId)
+    }
+
+    private static var loggedUnsupportedResumeProviders: Set<String> = []
+    private static let loggedUnsupportedResumeProvidersLock = NSLock()
+    private static func logResumeUnsupportedOnce(provider: String, reason: String) {
+        loggedUnsupportedResumeProvidersLock.lock()
+        let alreadyLogged = loggedUnsupportedResumeProviders.contains(provider)
+        if !alreadyLogged {
+            loggedUnsupportedResumeProviders.insert(provider)
+        }
+        loggedUnsupportedResumeProvidersLock.unlock()
+        if !alreadyLogged {
+            Log.info("buildAIResumeCommand: resume unsupported for provider=\(provider) reason=\(reason)")
+        }
+    }
+
+    static func resolveAIResumeMetadataFromSavedState(
+        paneState: SavedTerminalPaneState,
+        fallbackAIProvider: String?,
+        fallbackAISessionId: String?,
+        fallbackAISessionIdSource: AISessionIdentitySource? = nil
+    ) -> (provider: String, sessionId: String, sessionIdSource: AISessionIdentitySource?)? {
+        let commandMetadata = AIResumeParser.extractMetadata(
+            from: paneState.aiResumeCommand ?? ""
+        )
+        let resolvedProvider = normalizedAIProvider(from: paneState.aiProvider)
+            ?? commandMetadata?.provider
+            ?? normalizedAIProvider(from: fallbackAIProvider)
+        let resolvedSource = paneState.aiSessionIdSource
+            ?? (paneState.aiSessionId != nil ? .explicit : nil)
+            ?? fallbackAISessionIdSource
+        let resolvedSessionId = normalizePersistedAISessionId(
+            paneState.aiSessionId,
+            source: resolvedSource
+        ) ?? commandMetadata?.sessionId
+            ?? normalizePersistedAISessionId(
+                fallbackAISessionId,
+                source: fallbackAISessionIdSource
+            )
+
+        guard let resolvedProvider, let resolvedSessionId else {
+            return nil
+        }
+        return (provider: resolvedProvider, sessionId: resolvedSessionId, sessionIdSource: resolvedSource)
+    }
+
+    static func normalizedResumeReferenceDate(_ value: Date) -> Date? {
+        return value == .distantPast ? nil : value
+    }
+
+    static func normalizedResumeReferenceDate(_ value: Date?) -> Date? {
+        guard let value else { return nil }
+        return value == .distantPast ? nil : value
+    }
+
+    static func codexHistoryFingerprint(_ entries: [HistoryEntry]) -> Int {
+        var hasher = Hasher()
+        hasher.combine(entries.count)
+        if let first = entries.first {
+            hasher.combine(first.sessionId)
+            hasher.combine(first.timestamp.bitPattern)
+        }
+        if let last = entries.last {
+            hasher.combine(last.sessionId)
+            hasher.combine(last.timestamp.bitPattern)
+        }
+        for entry in entries.suffix(8) {
+            hasher.combine(entry.sessionId)
+            hasher.combine(entry.timestamp.bitPattern)
+        }
+        return hasher.finalize()
+    }
+
+    static func sessionIDFingerprint(_ sessionIds: Set<String>) -> Int {
+        var hasher = Hasher()
+        hasher.combine(sessionIds.count)
+        for sessionId in sessionIds.sorted() {
+            hasher.combine(sessionId)
+        }
+        return hasher.finalize()
+    }
+
+    static func resolveAIResumeMetadata(
+        appName: String?,
+        directory: String,
+        outputHint: String? = nil,
+        explicitAIProvider: String? = nil,
+        explicitAISessionId: String? = nil,
+        referenceDate: Date? = nil,
+        claimedSessionIds: Set<String> = []
+    ) -> (provider: String, sessionId: String)? {
+        let canonicalDirectory = normalizedSessionDirectory(directory)
+        let explicitProvider = normalizedAIProvider(from: explicitAIProvider)
+        let explicitSessionId = normalizeAISessionId(explicitAISessionId)
+        let liveProviderHint = aiResumeProviderCandidates(
+            appName: appName,
+            outputHint: outputHint,
+            explicitProvider: nil
+        ).first
+
+        if let explicitProvider {
+            if let resolved = resolvedAIResumeMetadata(
+                provider: explicitProvider,
+                sessionId: explicitSessionId,
+                directory: canonicalDirectory,
+                referenceDate: referenceDate,
+                claimedSessionIds: claimedSessionIds
+            ) {
+                return resolved
+            }
+
+            // If we already have an explicit provider for a pane but no matching session
+            // can be found in that provider/directory, avoid guessing another provider.
+            // This keeps restore metadata deterministic and prevents cross-tab bleed-through.
+            if explicitSessionId == nil {
+                if liveProviderHint == nil || liveProviderHint == explicitProvider {
+                    return nil
+                }
+            }
+        }
+
+        let inferredProviders = aiResumeProviderCandidates(
+            appName: appName,
+            outputHint: outputHint,
+            explicitProvider: explicitProvider
+        )
+        for candidateProvider in inferredProviders {
+            if let sessionId = findAIResumeSessionId(
+                for: candidateProvider,
+                directory: canonicalDirectory,
+                referenceDate: referenceDate,
+                claimedSessionIds: claimedSessionIds
+            ) {
+                return (provider: candidateProvider, sessionId: sessionId)
+            }
+        }
+
+        return nil
+    }
+
+    static func aiResumeProviderCandidates(
+        appName: String?,
+        outputHint: String?,
+        explicitProvider: String?
+    ) -> [String] {
+        var providers: [String] = []
+        var seenProviders = Set<String>()
+
+        func appendProvider(_ value: String?) {
+            guard let provider = value, !provider.isEmpty else { return }
+            guard seenProviders.insert(provider).inserted else { return }
+            providers.append(provider)
+        }
+
+        if let appNameProvider = appName?.trimmingCharacters(in: .whitespacesAndNewlines) {
+            appendProvider(normalizedAIProvider(from: appNameProvider))
+        }
+
+        if let hint = outputHint {
+            appendProvider(
+                CommandDetection.detectAppFromOutput(hint)
+                    .flatMap { normalizedAIProvider(from: $0) }
+                    .flatMap { outputProvider in
+                        if outputProvider == explicitProvider { return nil }
+                        return outputProvider
+                    }
+            )
+        }
+
+        appendProvider(explicitProvider)
+
+        return providers
+    }
+
+    static func resolvedAIResumeMetadata(
+        provider: String?,
+        sessionId: String?,
+        directory: String,
+        referenceDate: Date?,
+        claimedSessionIds: Set<String> = []
+    ) -> (provider: String, sessionId: String)? {
+        if let provider, let sessionId {
+            guard !claimedSessionIds.contains(sessionId) else {
+                Log.info("resolveAIResumeMetadata: explicit sessionId=\(sessionId) already claimed by another tab, skipping")
+                return nil
+            }
+            Log.trace("resolveAIResumeMetadata: using explicit session metadata provider=\(provider), sessionId=\(sessionId)")
+            return (provider: provider, sessionId: sessionId)
+        }
+
+        guard !directory.isEmpty,
+              let provider,
+              let foundSessionId = findAIResumeSessionId(
+                  for: provider,
+                  directory: directory,
+                  referenceDate: referenceDate,
+                  claimedSessionIds: claimedSessionIds
+              ) else {
+            return nil
+        }
+        return (provider: provider, sessionId: foundSessionId)
+    }
+}
