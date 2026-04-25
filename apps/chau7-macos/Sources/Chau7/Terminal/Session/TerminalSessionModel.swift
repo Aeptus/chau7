@@ -257,8 +257,17 @@ final class TerminalSessionModel {
 
     /// Effective app name for UI branding and diagnostics.
     /// Prefers the live process-tree signal. Falls back to `activeAppName` (set by
-    /// command/output detection) and finally to persisted provider metadata. Each
-    /// layer is a weaker guess — the live signal is always authoritative when present.
+    /// command/output detection), `lastDetectedAppName` (durable detection that
+    /// survives process exit — same field `effectiveAIProvider` reads first), and
+    /// finally to persisted provider metadata. Each layer is a weaker guess — the
+    /// live signal is always authoritative when present.
+    ///
+    /// The `lastDetectedAppName` fallback was added because the tab chip's icon
+    /// system reads `effectiveAIProvider` (which uses `lastDetectedAppName` first)
+    /// while the title used to ignore that field, producing a tab where the
+    /// AI logo was visible but the AI name was missing from the title prefix.
+    /// After the fix the title and the icon agree on whether an AI tool name
+    /// should be shown.
     var aiDisplayAppName: String? {
         if let live = liveAgentName?.trimmingCharacters(in: .whitespacesAndNewlines),
            !live.isEmpty {
@@ -267,6 +276,9 @@ final class TerminalSessionModel {
         if let active = activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
            !active.isEmpty {
             return active
+        }
+        if let detectedDisplay = Self.displayName(fromProvider: lastDetectedAppName) {
+            return detectedDisplay
         }
         return Self.displayName(fromProvider: lastAIProvider)
     }
