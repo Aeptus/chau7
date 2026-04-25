@@ -100,63 +100,108 @@ extension OverlayTabsModel {
     }
 
     private func performSelectedTabInPlaceRefresh(
-        session: TerminalSessionModel,
+        session focusedSession: TerminalSessionModel,
         selectedDecision: TabRenderLifecycleDecision
     ) {
-        guard let rustView = session.existingRustTerminalView else { return }
+        // The W1.1 investigation found that this method previously only
+        // applied the render phase + visibility + sync trigger to the
+        // focused presentation session. For split-pane tabs, the secondary
+        // pane's RustTerminalView could stay stuck in its prior phase
+        // (typically `.warm` from deselection) with `isHidden=true` after
+        // window-state transitions — the user would see one pane render
+        // and the other stay blank. Iterate every session in the tab so
+        // each pane's view picks up the new phase. Metal coordinator
+        // switching remains single-target (per-window) because Metal is
+        // shared and only one pane can be the active GPU renderer at a
+        // time; non-focused panes use the CPU path via pollAndSync's
+        // syncGridToRenderer.
+        let panesToRefresh: [(UUID, TerminalSessionModel)] = {
+            if let tab = selectedTab {
+                return tab.splitController.terminalSessions
+            }
+            // Fallback: if `selectedTab` is unexpectedly nil (rare; the
+            // caller always has a tab in normal flow), preserve the
+            // pre-W1.1.D single-session behaviour rather than skipping
+            // the refresh entirely.
+            return [(UUID(), focusedSession)]
+        }()
 
-        // Observability: structured breadcrumb per refresh. The "paneCount"
-        // field is the smoking-gun signal for the W1.1 investigation finding
-        // that this method only reattaches the Metal coordinator for ONE
-        // session (the focused presentation session), even when the tab has
-        // multiple panes. With paneCount > 1 logged here, the operator can
-        // cross-reference with which pane visually went blank after a
-        // window-state transition. W1.1.D will close the gap; this log is
-        // the ongoing canary.
-        let paneCount = selectedTab?.splitController.terminalSessions.count ?? 1
+        // Observability: per-call breadcrumb. paneCount > 1 paths are the
+        // ones W1.1.D fixes; the per-pane logs below give the smoking
+        // gun if any pane fails to refresh. Grep `performSelectedTabInPlaceRefresh:`
+        // to trace a single refresh; grep `performSelectedTabInPlaceRefresh:pane`
+        // for the per-pane fan-out.
         Log.info(
             """
             performSelectedTabInPlaceRefresh: tab=\(selectedTabID) \
-            focusedSession=\(session.tabIdentifier) paneCount=\(paneCount) \
+            focusedSession=\(focusedSession.tabIdentifier) paneCount=\(panesToRefresh.count) \
             phase=\(selectedDecision.phase.rawValue) interactive=\(selectedDecision.isInteractive) \
             metalRendererEnabled=\(FeatureSettings.shared.useMetalRenderer)
             """
         )
 
-        rustView.applyRenderPhase(
-            selectedDecision.phase,
-            isInteractive: selectedDecision.isInteractive,
-            reason: "selectedTabInPlaceRefresh"
-        )
-        rustView.needsDisplay = true
-
-        if let container = rustView.superview as? RustTerminalContainerView {
-            container.isHidden = !selectedDecision.phase.keepsVisibleSurface
-
-            // Shared Metal renderer: switch the window's single coordinator
-            // to render this tab's content. Creates the coordinator lazily
-            // on first use.
-            if FeatureSettings.shared.useMetalRenderer {
-                if let coordinator = sharedMetalCoordinator {
-                    coordinator.switchToView(rustView, container: container)
-                    coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
-                    session.windowMetalCoordinator = coordinator
-                } else if let coordinator = RustMetalDisplayCoordinator(
-                    terminalView: rustView,
-                    gridProvider: rustView.makeGridProvider() ?? { nil }
-                ) {
-                    sharedMetalCoordinator = coordinator
-                    coordinator.switchToView(rustView, container: container)
-                    coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
-                    session.windowMetalCoordinator = coordinator
-                    Log.info("OverlayTabsModel: shared Metal coordinator created")
-                }
+        // Per-pane fan-out: apply phase + visibility + (when live) sync.
+        // Only the focused pane is `isInteractive`; secondary panes match
+        // the phase but never claim input focus.
+        for (paneID, paneSession) in panesToRefresh {
+            let isFocused = paneSession === focusedSession
+            guard let paneRustView = paneSession.existingRustTerminalView else {
+                Log.info(
+                    """
+                    performSelectedTabInPlaceRefresh:pane: tab=\(selectedTabID) \
+                    pane=\(paneID) role=\(isFocused ? "focused" : "secondary") \
+                    skipped=true reason=no_rust_view_attached
+                    """
+                )
+                continue
+            }
+            Log.info(
+                """
+                performSelectedTabInPlaceRefresh:pane: tab=\(selectedTabID) \
+                pane=\(paneID) role=\(isFocused ? "focused" : "secondary") \
+                phase=\(selectedDecision.phase.rawValue) \
+                interactive=\(selectedDecision.isInteractive && isFocused) \
+                applyLivePresentation=\(selectedDecision.phase.allowsLivePresentation)
+                """
+            )
+            paneRustView.applyRenderPhase(
+                selectedDecision.phase,
+                isInteractive: selectedDecision.isInteractive && isFocused,
+                reason: isFocused
+                    ? "selectedTabInPlaceRefresh:focused"
+                    : "selectedTabInPlaceRefresh:secondary"
+            )
+            paneRustView.needsDisplay = true
+            if let paneContainer = paneRustView.superview as? RustTerminalContainerView {
+                paneContainer.isHidden = !selectedDecision.phase.keepsVisibleSurface
+            }
+            if selectedDecision.phase.allowsLivePresentation {
+                paneRustView.needsGridSync = true
+                paneRustView.pollAndSync()
             }
         }
 
-        if selectedDecision.phase.allowsLivePresentation {
-            rustView.needsGridSync = true
-            rustView.pollAndSync()
+        // Metal coordinator switch — focused pane only (Metal is per-window
+        // single). Lazy-creates the coordinator on first use.
+        guard let focusedRustView = focusedSession.existingRustTerminalView,
+              let focusedContainer = focusedRustView.superview as? RustTerminalContainerView,
+              FeatureSettings.shared.useMetalRenderer else {
+            return
+        }
+
+        if let coordinator = sharedMetalCoordinator {
+            coordinator.switchToView(focusedRustView, container: focusedContainer)
+            coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+            focusedSession.windowMetalCoordinator = coordinator
+        } else if let coordinator = RustMetalDisplayCoordinator(
+            terminalView: focusedRustView,
+            gridProvider: focusedRustView.makeGridProvider() ?? { nil }
+        ) {
+            sharedMetalCoordinator = coordinator
+            coordinator.switchToView(focusedRustView, container: focusedContainer)
+            coordinator.metalView.isHidden = !selectedDecision.phase.keepsVisibleSurface
+            focusedSession.windowMetalCoordinator = coordinator
+            Log.info("OverlayTabsModel: shared Metal coordinator created")
         }
     }
 
