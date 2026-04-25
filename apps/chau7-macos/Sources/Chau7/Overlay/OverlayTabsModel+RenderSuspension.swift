@@ -130,35 +130,13 @@ extension OverlayTabsModel {
         }
     }
 
-    /// Fresh MCP tabs need a real terminal view at least once so background
-    /// exec/input requests have a PTY to land on. Once a terminal view has
-    /// attached, the retained Rust view keeps the session alive even if the tab
-    /// later drops out of the visible hierarchy.
-    ///
-    /// Observability: `TabRenderLifecyclePolicy.keepsLiveHierarchy(for:)`
-    /// currently returns `true` unconditionally (verified in
-    /// `Sources/Chau7Core/TabRenderLifecycle.swift:142`). Any `false` return
-    /// here indicates either a policy change or an upstream feature flag we
-    /// don't know about, and would resurrect the dead `Color.clear`
-    /// placeholder branch in `Chau7OverlayView.terminalStack` — which the
-    /// W1.1 investigation flagged as broken for split panes. Emit a Log.warn
-    /// so a regression turns up in the log instead of in user-visible UI.
-    func shouldKeepTabInLiveHierarchy(tab: OverlayTab, index _: Int) -> Bool {
-        let decision = renderLifecycleDecision(for: tab)
-        let result = decision.keepsLiveHierarchy
-        if !result {
-            Log.warn(
-                """
-                renderLifecycle: keepsLiveHierarchy=false unexpected for \
-                tab=\(tab.id) phase=\(decision.phase.rawValue) \
-                isInteractive=\(decision.isInteractive) — current policy returns true unconditionally; \
-                a false here would re-enable the unreachable Color.clear branch in Chau7OverlayView \
-                that the W1.1 investigation identified as broken for split panes. Investigate.
-                """
-            )
-        }
-        return result
-    }
+    // shouldKeepTabInLiveHierarchy was removed in W1.1.B. The post-revert
+    // policy returns true unconditionally (TabRenderLifecyclePolicy.swift:142),
+    // making the Color.clear placeholder branch in Chau7OverlayView.terminalStack
+    // unreachable; the branch was deleted in the same commit. With no callers,
+    // the wrapper is dead. The renderPhase computed by `renderLifecycleDecision`
+    // is the only remaining lifecycle output the view consumes, via
+    // `renderPhase(for:)` and `isInteractive(for:)` below.
 
     func updateSuspensionState() {
         let previousSuspended = suspendedTabIDs

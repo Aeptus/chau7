@@ -1004,59 +1004,18 @@ final class OverlayTabsModelTests: XCTestCase {
         )
     }
 
-    func testLiveHierarchyDoesNotKeepDistantMCPBackgroundTabLive() {
-        model.newTab(selectNewTab: false)
-        model.newTab(selectNewTab: false)
-        model.newTab(selectNewTab: false)
-
-        let distantIndex = 3
-        model.tabs[distantIndex].isMCPControlled = true
-
-        XCTAssertFalse(
-            model.shouldKeepTabInLiveHierarchy(tab: model.tabs[distantIndex], index: distantIndex),
-            "Background MCP tabs should not stay attached until the user selects them"
-        )
-    }
-
-    func testLiveHierarchyDoesNotKeepDistantNonMCPBackgroundTab() {
-        model.newTab(selectNewTab: false)
-        model.newTab(selectNewTab: false)
-        model.newTab(selectNewTab: false)
-
-        let distantIndex = 3
-        XCTAssertFalse(
-            model.shouldKeepTabInLiveHierarchy(tab: model.tabs[distantIndex], index: distantIndex),
-            "Distant non-MCP tabs should continue using placeholder rendering"
-        )
-    }
-
-    func testLiveHierarchyDoesNotKeepDistantRestoredTabAttached() {
-        let tabIDs = (0 ..< 4).map { _ in UUID() }
-        let states = (0 ..< 4).map { index in
-            SavedTabState(
-                tabID: tabIDs[index].uuidString,
-                selectedTabID: index == 0 ? tabIDs[0].uuidString : nil,
-                customTitle: "Restored \(index)",
-                color: TabColor.allCases[index % TabColor.allCases.count].rawValue,
-                directory: "/tmp/restored-\(index)",
-                selectedIndex: index == 0 ? 0 : nil,
-                tokenOptOverride: nil,
-                scrollbackContent: nil,
-                aiResumeCommand: nil,
-                splitLayout: nil,
-                focusedPaneID: nil,
-                paneStates: nil
-            )
-        }
-
-        let restoredModel = OverlayTabsModel(appModel: AppModel(), restoreState: false, restoringStates: states)
-        let distantIndex = 3
-
-        XCTAssertFalse(
-            restoredModel.shouldKeepTabInLiveHierarchy(tab: restoredModel.tabs[distantIndex], index: distantIndex),
-            "Restored distant tabs should stay state-only until the user selects them"
-        )
-    }
+    // testLiveHierarchyDoesNotKeepDistantMCPBackgroundTabLive,
+    // testLiveHierarchyDoesNotKeepDistantNonMCPBackgroundTab, and
+    // testLiveHierarchyDoesNotKeepDistantRestoredTabAttached were removed
+    // in W1.1.B. They asserted the pre-revert "lazy hierarchy" contract
+    // (XCTAssertFalse for non-selected/distant tabs) which the production
+    // policy stopped honouring after the W1.1 revert (commit 6a44d5a) —
+    // `TabRenderLifecyclePolicy.keepsLiveHierarchy(for:)` returns true
+    // unconditionally. The tests were #if !SWIFT_PACKAGE-guarded so they
+    // never ran in CI and were silently aspirational. Removing the
+    // unreachable Color.clear branch in Chau7OverlayView.terminalStack
+    // (W1.1.B) made `shouldKeepTabInLiveHierarchy` itself dead, so the
+    // tests have no contract left to assert.
 
     func testDeferredRestoreDefersConsumptionUntilExplicitStep() {
         let tabIDs = (0 ..< 3).map { _ in UUID() }

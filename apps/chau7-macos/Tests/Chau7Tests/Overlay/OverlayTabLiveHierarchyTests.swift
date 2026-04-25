@@ -38,52 +38,15 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         super.tearDown()
     }
 
-    func testLiveHierarchyKeepsOnlySelectedTabByDefault() {
-        model.newTab(selectNewTab: false)
-        model.newTab(selectNewTab: false)
-        model.newTab(selectNewTab: false)
-
-        let selectedID = model.selectedTabID
-
-        for (index, tab) in model.tabs.enumerated() {
-            XCTAssertEqual(
-                model.shouldKeepTabInLiveHierarchy(tab: tab, index: index),
-                tab.id == selectedID,
-                "Only the selected tab should stay live by default"
-            )
-        }
-    }
-
-    func testLiveHierarchyDropsPreviouslySelectedTabImmediately() {
-        model.newTab()
-        model.newTab()
-
-        let originalSelectedID = model.tabs[2].id
-        XCTAssertEqual(model.selectedTabID, originalSelectedID)
-
-        model.selectTab(id: model.tabs[1].id)
-
-        XCTAssertNil(model.previousLiveHierarchyTabID)
-        XCTAssertFalse(
-            model.shouldKeepTabInLiveHierarchy(tab: model.tabs[2], index: 2),
-            "The previous tab should drop out of the live hierarchy as soon as selection changes"
-        )
-        XCTAssertNotEqual(model.selectedTabID, originalSelectedID)
-    }
-
-    func testLiveHierarchyDoesNotKeepDistantMCPBackgroundTabLive() {
-        model.newTab(selectNewTab: false)
-        model.newTab(selectNewTab: false)
-        model.newTab(selectNewTab: false)
-
-        let distantIndex = 3
-        model.tabs[distantIndex].isMCPControlled = true
-
-        XCTAssertFalse(
-            model.shouldKeepTabInLiveHierarchy(tab: model.tabs[distantIndex], index: distantIndex),
-            "Background tabs should not stay live just because they are MCP-controlled"
-        )
-    }
+    // testLiveHierarchyKeepsOnlySelectedTabByDefault,
+    // testLiveHierarchyDropsPreviouslySelectedTabImmediately, and
+    // testLiveHierarchyDoesNotKeepDistantMCPBackgroundTabLive were
+    // removed in W1.1.B. See the matching note in OverlayTabsModelTests
+    // for context: the contract these tests asserted stopped being
+    // honoured by production after the W1.1 revert (commit 6a44d5a),
+    // and W1.1.B removed the underlying `shouldKeepTabInLiveHierarchy`
+    // method along with the unreachable Color.clear placeholder branch
+    // it gated.
 
     func testSelectingTabKeepsSelectedSurfaceLiveImmediately() {
         model.newTab(selectNewTab: false)

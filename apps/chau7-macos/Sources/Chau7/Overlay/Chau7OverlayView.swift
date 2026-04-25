@@ -1502,30 +1502,30 @@ struct Chau7OverlayView: View {
 
             // MARK: - Tab Switch Optimization: Lazy Tab Loading
 
-            // Keep only the selected tab live by default. A just-unselected tab
-            // stays attached for one short handoff window so the renderer
-            // hierarchy does not churn during a rapid selection change.
-            // All other tabs use lightweight placeholders while their shell state
-            // continues via the retained Rust terminal view on the session model.
-            ForEach(Array(overlayModel.tabs.enumerated()), id: \.element.id) { index, tab in
+            // All tabs are kept in the SwiftUI hierarchy with opacity gating.
+            // Non-selected tabs render at opacity 0, with hit-testing and
+            // accessibility disabled, so they pay only SwiftUI layout cost
+            // (Metal/CPU rendering is suppressed via `renderPhase`). This
+            // is the post-W1.1-revert settled behaviour: the prior attempt
+            // (commit 6a44d5a) replaced non-selected tabs with `Color.clear`
+            // placeholders to skip layout entirely, but that path broke
+            // split-pane rendering on re-entry — `SplitContainerView`'s
+            // `@State liveRatio` reset to 0.5 produced wrong initial frames,
+            // and the Metal coordinator only reattached to the focused pane
+            // (the secondary pane stayed blank). The W1.1.B cleanup removes
+            // the unreachable `Color.clear` branch that the policy never
+            // returned `false` for; the W1.1.D fix closes the
+            // Metal-coordinator-only-for-focused-pane gap.
+            ForEach(Array(overlayModel.tabs.enumerated()), id: \.element.id) { _, tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
-                let keepLiveHierarchy = overlayModel.shouldKeepTabInLiveHierarchy(tab: tab, index: index)
                 let renderPhase = overlayModel.renderPhase(for: tab)
                 let isInteractive = overlayModel.isInteractive(tab: tab)
 
-                if keepLiveHierarchy {
-                    SplitPaneView(controller: tab.splitController, renderPhase: renderPhase, isInteractive: isInteractive)
-                        .opacity(isSelected ? 1 : 0)
-                        .allowsHitTesting(isSelected)
-                        .accessibilityHidden(!isSelected)
-                        .zIndex(isSelected ? 1 : 0)
-                } else {
-                    // Lightweight placeholder for distant tabs
-                    // The terminal process keeps running via retainedRustTerminalView
-                    Color.clear
-                        .frame(width: 0, height: 0)
-                        .accessibilityHidden(true)
-                }
+                SplitPaneView(controller: tab.splitController, renderPhase: renderPhase, isInteractive: isInteractive)
+                    .opacity(isSelected ? 1 : 0)
+                    .allowsHitTesting(isSelected)
+                    .accessibilityHidden(!isSelected)
+                    .zIndex(isSelected ? 1 : 0)
             }
 
             // Agent dashboard overlay — shown when a repo group tag is clicked
