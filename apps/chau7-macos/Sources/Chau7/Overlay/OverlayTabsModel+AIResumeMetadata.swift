@@ -44,11 +44,28 @@ import Foundation
 /// promote those three to a real type independent of `OverlayTabsModel`.
 extension OverlayTabsModel {
 
+    /// Resolves Codex/Claude resume metadata for a live `TerminalSessionModel`.
+    ///
+    /// **Side effects** — by default the function mutates two things:
+    ///   1. `session.restoreAIMetadata(...)` is called when the resolver
+    ///      discovers a sessionId that disagrees with the session's stored
+    ///      identity (self-correcting state for Codex sessions whose metadata
+    ///      drifted from the on-disk history).
+    ///   2. `self.codexResumeFallbackCache[ObjectIdentifier(session)]` is
+    ///      written/refreshed to memoize the fallback resolution path.
+    ///
+    /// Pass `applySessionMutations: false` to skip (1) — useful for callers
+    /// that want pure resolution without side-effecting the live session
+    /// (e.g. test verification, exploratory queries, MCP read-only paths).
+    /// The cache memoization in (2) is always applied because skipping it
+    /// would force every call to redo the Codex history scan, which is the
+    /// expensive part this method is designed to amortize.
     func resolveResumeMetadata(
         for session: TerminalSessionModel,
         directory: String,
         outputHint: String?,
-        claimedSessionIds: Set<String> = []
+        claimedSessionIds: Set<String> = [],
+        applySessionMutations: Bool = true
     ) -> (provider: String, sessionId: String)? {
         let referenceDate = Self.normalizedResumeReferenceDate(session.lastOutputDate)
         let detectedApp = Self.detectAIAppName(fromOutput: outputHint)
@@ -69,10 +86,16 @@ extension OverlayTabsModel {
         ) {
             if explicitProvider == "codex",
                explicitSessionId != resolved.sessionId {
-                session.restoreAIMetadata(provider: resolved.provider, sessionId: resolved.sessionId)
-                Log.info(
-                    "saveTabState: replaced Codex resume metadata sessionId=\(explicitSessionId ?? "nil") with \(resolved.sessionId)"
-                )
+                if applySessionMutations {
+                    session.restoreAIMetadata(provider: resolved.provider, sessionId: resolved.sessionId)
+                    Log.info(
+                        "saveTabState: replaced Codex resume metadata sessionId=\(explicitSessionId ?? "nil") with \(resolved.sessionId)"
+                    )
+                } else {
+                    Log.trace(
+                        "resolveResumeMetadata[pure]: would replace Codex sessionId=\(explicitSessionId ?? "nil") with \(resolved.sessionId) (mutation skipped)"
+                    )
+                }
             }
             return resolved
         }
@@ -180,7 +203,13 @@ extension OverlayTabsModel {
         }
 
         if explicitSessionId != sessionId || explicitProvider != "codex" {
-            session.restoreAIMetadata(provider: "codex", sessionId: sessionId)
+            if applySessionMutations {
+                session.restoreAIMetadata(provider: "codex", sessionId: sessionId)
+            } else {
+                Log.trace(
+                    "resolveResumeMetadata[pure]: would attach Codex sessionId=\(sessionId) (mutation skipped)"
+                )
+            }
         }
         codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
             signature: fallbackSignature,
@@ -199,10 +228,22 @@ extension OverlayTabsModel {
         normalizeAISessionId(session.lastAISessionId)
     }
 
+    /// Builds the `AIResumeOwnership.Metadata` for save-time persistence.
+    ///
+    /// **Side effect** — when the explicit session ID is sanitized away
+    /// (because it conflicts with `claimedSessionIds`), the function calls
+    /// `session.restoreAIMetadata(provider:, sessionId: nil)` to clear the
+    /// session's stored sessionId. This keeps the live session in sync with
+    /// what gets persisted.
+    ///
+    /// Pass `applySessionMutations: false` to skip the mutation — the
+    /// returned `Metadata` is unchanged, only the live-session sync is
+    /// suppressed. Useful for pure-query callers.
     func persistedAIResumeMetadata(
         from session: TerminalSessionModel,
         resolvedResumeMetadata: (provider: String, sessionId: String)?,
-        claimedSessionIds: Set<String> = []
+        claimedSessionIds: Set<String> = [],
+        applySessionMutations: Bool = true
     ) -> AIResumeOwnership.Metadata {
         if let resolvedResumeMetadata {
             return AIResumeOwnership.Metadata(
@@ -221,7 +262,13 @@ extension OverlayTabsModel {
         if explicitSessionId != nil,
            preserved.sessionId == nil,
            explicitProvider == preserved.provider {
-            session.restoreAIMetadata(provider: preserved.provider, sessionId: nil)
+            if applySessionMutations {
+                session.restoreAIMetadata(provider: preserved.provider, sessionId: nil)
+            } else {
+                Log.trace(
+                    "persistedAIResumeMetadata[pure]: would clear sessionId=\(explicitSessionId ?? "nil") (mutation skipped)"
+                )
+            }
         }
         return preserved
     }
