@@ -778,7 +778,12 @@ extension OverlayTabsModel {
     /// `asyncAfter` but Swift's type system doesn't know that — the
     /// `assumeIsolated` is the runtime assertion that we are in fact on
     /// the main actor. Removing it breaks the build.
-    static func restoreCommandBlocksForTab(state: SavedTabState, targetTabID: UUID) {
+    ///
+    /// `private` because no caller exists outside `executeRestoreBody`
+    /// in this module, and tightening the contract is the cheapest
+    /// defense against a future caller invoking this from a non-main
+    /// context (the runtime would trap inside `assumeIsolated`).
+    private static func restoreCommandBlocksForTab(state: SavedTabState, targetTabID: UUID) {
         if let restoredBlocks = state.commandBlocks {
             MainActor.assumeIsolated {
                 CommandBlockManager.shared.restoreBlocks(restoredBlocks, for: targetTabID.uuidString)
@@ -806,6 +811,14 @@ extension OverlayTabsModel {
     ///     effective pane state (carries the resolved values forward in
     ///     case downstream telemetry reads from it; the original
     ///     pre-extraction code did the same).
+    ///
+    /// `inout paneStatesToRestore` semantics: Swift's `inout` is
+    /// pass-by-value-result with copy-in/copy-out. The helper sees the
+    /// full pre-call dictionary, mutates a local copy, and on return the
+    /// caller's variable is fully overwritten with the final state. For
+    /// our single-call-no-aliasing usage this is observationally
+    /// identical to in-place mutation of a captured variable (which is
+    /// what the pre-extraction closure did).
     ///
     /// `shouldUseLegacyTabFallback` toggles top-level SavedTabState
     /// fields as a fallback when the saved state has only one pane and
@@ -845,13 +858,13 @@ extension OverlayTabsModel {
             let fallbackSessionId = shouldUseLegacyTabFallback ? state.aiSessionId : nil
             let fallbackSessionSource = shouldUseLegacyTabFallback ? state.aiSessionIdSource : nil
 
-            let resolvedMetadata = OverlayTabsModel.resolveAIResumeMetadataFromSavedState(
+            let resolvedMetadata = Self.resolveAIResumeMetadataFromSavedState(
                 paneState: paneState,
                 fallbackAIProvider: fallbackProvider,
                 fallbackAISessionId: fallbackSessionId,
                 fallbackAISessionIdSource: fallbackSessionSource
             )
-            let resolvedCommand = OverlayTabsModel.buildAIResumeCommand(
+            let resolvedCommand = Self.buildAIResumeCommand(
                 provider: resolvedMetadata?.provider,
                 sessionId: resolvedMetadata?.sessionId,
                 sessionIdSource: resolvedMetadata?.sessionIdSource
@@ -886,7 +899,7 @@ extension OverlayTabsModel {
                 paneID: paneState.paneID,
                 directory: paneState.directory,
                 scrollbackContent: paneState.scrollbackContent,
-                aiResumeCommand: resolvedCommand ?? OverlayTabsModel.normalizedResumeCommand(paneState.aiResumeCommand),
+                aiResumeCommand: resolvedCommand ?? Self.normalizedResumeCommand(paneState.aiResumeCommand),
                 aiProvider: resolvedMetadata?.provider,
                 aiSessionId: resolvedMetadata?.sessionId,
                 aiSessionIdSource: resolvedMetadata?.sessionIdSource,
@@ -930,7 +943,11 @@ extension OverlayTabsModel {
     ///   - `resumeRestoreDeliveryStateByPaneID[paneID]` written via
     ///     `recordResumeRestoreDeliveryState` (rule-gated, see
     ///     `decideResumeRestoreDeliveryUpdate` in T4 tests).
-    ///   - `latestRestoreResumeTokenByPaneID[paneID]` written.
+    ///   - `latestRestoreResumeTokenByPaneID[paneID]` written for
+    ///     **every pane that has a `resumeIntent`**, regardless of
+    ///     which dispatch branch (retry-scheduler vs session-bound)
+    ///     fires. Pre-W3.28.3 the assignment was duplicated inside
+    ///     each branch; the hoisted single statement is equivalent.
     ///   - Calls into the resume-prefill delivery machinery
     ///     (`scheduleResumeCommand` / `enqueueResumePrefill`).
     private func scheduleResumePrefillsForRestore(
@@ -977,6 +994,11 @@ extension OverlayTabsModel {
                 session=\(resumeIntent.expectedSessionID?.prefix(8) ?? "nil")
                 """
             )
+            // Hoisted from inside both branches of the original
+            // `if useResumeRetryScheduler` (pre-W3.28.3 the assignment
+            // was duplicated in each branch). Equivalent because both
+            // branches unconditionally executed it; collapsed here so a
+            // future third branch can't accidentally skip the stamp.
             latestRestoreResumeTokenByPaneID[paneID] = restoreToken
             if useResumeRetryScheduler {
                 scheduleResumeCommand(
