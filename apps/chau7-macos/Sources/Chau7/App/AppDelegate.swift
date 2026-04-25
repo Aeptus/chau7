@@ -279,32 +279,65 @@ private final class OverlayBlurView: NSVisualEffectView {
                 MainActor.assumeIsolated {
                     self.endLatencyCriticalScope(reason: "startup-restore")
                     StartupRestoreCoordinator.shared.end()
+                    // After end(), the coordinator's isActive flag is false and
+                    // any further `noteSelectedTabLiveFrame` calls become
+                    // no-ops. That means `completeStartupRestoreIfReady` —
+                    // which is what kicks the deferred-restore scheduler —
+                    // can no longer succeed. If a window's first selected-tab
+                    // live frame got missed during startup (e.g. rapid
+                    // didBecomeMain/didResignMain across multi-window launch),
+                    // background tabs would otherwise sit stuck until the
+                    // 30s watchdog. Kick the scheduler directly here as a
+                    // post-coordinator backstop; idempotent if already
+                    // draining.
+                    self.kickDeferredRestoreIfStuck(reason: "coordinator_ended")
                 }
             }
-            // Watchdog: if `completeStartupRestoreIfReady` never fires (e.g.
-            // the visible-frame callback is missed, or a new regression
-            // breaks the kickoff chain again), any background tabs queued
-            // into deferredRestoreStatesByTabID stay stuck forever. Arm a
-            // 30-second backstop that force-kicks the scheduler if state
-            // is still pending. Idempotent: if the proper kickoff already
-            // ran, the scheduler is already draining and this is a no-op.
+            // Watchdog: even with the post-coordinator kick above, a regression
+            // could leave the scheduler chain itself broken (not just the
+            // completion gate). Arm a 30-second backstop as final insurance.
+            // Idempotent: if either the natural kickoff or the
+            // coordinator-ended kick ran, the scheduler is already draining
+            // and this is a no-op.
             DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) { [weak self] in
                 guard let self else { return }
                 MainActor.assumeIsolated {
-                    self.kickDeferredRestoreIfStuck()
+                    self.kickDeferredRestoreIfStuck(reason: "30s_watchdog")
                 }
             }
         }
     }
 
-    private func kickDeferredRestoreIfStuck() {
+    private func kickDeferredRestoreIfStuck(reason: String = "30s_watchdog") {
         let stuck = overlayHosts.filter { $0.model.hasPendingDeferredRestore }
         guard !stuck.isEmpty else { return }
         let totalPending = stuck.reduce(0) { $0 + $1.model.deferredRestoreTabOrder.count }
+
+        // Enrich the diagnostic with per-window state. The most common
+        // reason the scheduler is stuck is that one window's first
+        // selected-tab live frame never reached the coordinator —
+        // `completeStartupRestoreIfReady` requires every window to have
+        // signalled `noteSelectedTabLiveFrame`, and a missed callback
+        // (e.g. rapid main-window swaps during multi-window startup)
+        // blocks the kickoff chain. Listing exactly which windows are
+        // missing the live-frame signal turns "watchdog fired, mystery"
+        // into "window N never reported its live frame, look there".
+        let windowDiagnostics = stuck.map { host -> String in
+            let windowNumber = host.window.windowNumber
+            let pending = host.model.deferredRestoreTabOrder.count
+            let hasLiveFrame = StartupRestoreCoordinator.shared
+                .hasSelectedTabLiveFrame(windowNumber: windowNumber)
+            return "win=\(windowNumber)(pending=\(pending),liveFrame=\(hasLiveFrame))"
+        }.joined(separator: " ")
+
         Log.warn(
-            "Deferred restore watchdog: \(totalPending) tab(s) across \(stuck.count) window(s) still pending 30s after finishLaunching — force-kicking scheduler"
+            """
+            Deferred restore force-kick [\(reason)]: \(totalPending) tab(s) \
+            across \(stuck.count) window(s) still pending — force-kicking scheduler. \
+            Per-window: \(windowDiagnostics)
+            """
         )
-        startDeferredRestoreSchedulingIfNeeded(reason: "watchdog")
+        startDeferredRestoreSchedulingIfNeeded(reason: reason)
     }
 
     private func completeStartupRestoreIfReady(reason: String) {
