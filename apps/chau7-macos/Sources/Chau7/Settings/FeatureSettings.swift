@@ -2599,24 +2599,41 @@ final class FeatureSettings {
         // The new default is green. We migrate ONLY users who are still on
         // the literal old default — anyone who customized to a different
         // color (including red on purpose) keeps their setting.
-        for triggerKey in ["claude_code.finished", "codex.finished"] {
-            guard var actions = normalizedBindings[triggerKey] else { continue }
-            for index in actions.indices where actions[index].actionType == .styleTab {
-                let cfg = actions[index].config
-                guard cfg["style"] == "custom",
-                      cfg["customColor"] == "red",
-                      cfg["borderWidth"] == "2",
-                      cfg["autoClearSeconds"] == "30" else { continue }
-                var migrated = cfg
-                migrated["customColor"] = "green"
-                actions[index] = NotificationActionConfig(
-                    actionType: .styleTab,
-                    enabled: actions[index].enabled,
-                    config: migrated
-                )
-                Log.info("FeatureSettings migration: \(triggerKey) styleTab color red → green (default flip)")
+        //
+        // Gated by a one-shot UserDefaults flag (same pattern as
+        // `cto.migrated.v1` above) so the detection loop runs at most
+        // once per install AND the migrated bindings are written back to
+        // UserDefaults eagerly (assigning `notificationSettings` inside
+        // `init` does not fire `didSet`, so the natural persistence path
+        // would never run for the migration alone).
+        let finishedColorMigrationKey = "notification.finished.greenDefault.v1"
+        if !defaults.bool(forKey: finishedColorMigrationKey) {
+            var migrated = false
+            for triggerKey in ["claude_code.finished", "codex.finished"] {
+                guard var actions = normalizedBindings[triggerKey] else { continue }
+                for index in actions.indices where actions[index].actionType == .styleTab {
+                    let cfg = actions[index].config
+                    guard cfg["style"] == "custom",
+                          cfg["customColor"] == "red",
+                          cfg["borderWidth"] == "2",
+                          cfg["autoClearSeconds"] == "30" else { continue }
+                    var migratedCfg = cfg
+                    migratedCfg["customColor"] = "green"
+                    actions[index] = NotificationActionConfig(
+                        actionType: .styleTab,
+                        enabled: actions[index].enabled,
+                        config: migratedCfg
+                    )
+                    migrated = true
+                    Log.info("FeatureSettings migration: \(triggerKey) styleTab color red → green (default flip)")
+                }
+                normalizedBindings[triggerKey] = actions
             }
-            normalizedBindings[triggerKey] = actions
+            if migrated,
+               let data = JSONOperations.encode(normalizedBindings, context: "triggerActionBindings.greenDefault.v1") {
+                defaults.set(data, forKey: Keys.triggerActionBindings)
+            }
+            defaults.set(true, forKey: finishedColorMigrationKey)
         }
 
         let loadedRateLimitConfig: NotificationRateLimiter.Config
