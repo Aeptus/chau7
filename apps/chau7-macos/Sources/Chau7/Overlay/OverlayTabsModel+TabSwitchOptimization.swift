@@ -764,4 +764,71 @@ extension OverlayTabsModel {
         selectTab(id: targetID)
     }
 
+    // MARK: - Tab Selection
+
+    func selectTab(id: UUID) {
+        guard selectedTabID != id else { return }
+        dismissHoverCard()
+        LogEnhanced.tab("Switching tab", tabId: id, tabCount: tabs.count)
+
+        let oldIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
+
+        resetSelectedTerminalRevealScheduling()
+
+        if isRenameVisible {
+            clearRenameState(shouldFocus: false)
+        }
+        previousTabIndex = oldIndex
+        previousLiveHierarchyTabID = nil
+        selectedTabID = id
+
+        // Clear notification style when switching to a tab (user acknowledged it),
+        // unless the style is persistent (e.g., permission requests stay until resolved).
+        if let index = tabs.firstIndex(where: { $0.id == id }),
+           let style = tabs[index].notificationStyle, !style.persistent {
+            tabs[index].notificationStyle = nil
+        }
+
+        cancelSuspension(for: id)
+        if suspendedTabIDs.remove(id) != nil {
+            logVisualState(reason: "selectTab: unsuspended selected tab")
+        }
+
+        // Reconcile render ownership immediately so the previously selected tab
+        // drops out of the live path before the new selection becomes visible.
+        updateSuspensionState()
+        restoreSelectedDeferredTabIfNeeded(
+            reason: "selection_changed",
+            executeSynchronouslyWhenPossible: true
+        )
+        _ = refreshSelectedTabInPlaceIfPossible(reason: "select_tab")
+        focusSelected()
+        updateSnippetContextForSelection()
+        if isSearchVisible {
+            refreshSearch()
+        }
+
+        // Defer non-critical work to after the tab switch completes.
+        // These iterate collections or hit the file system — not needed for the
+        // initial visual switch which should be as fast as possible.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            MainActor.assumeIsolated {
+                self.updateCurrentCandidate(from: ProxyIPCServer.shared.pendingCandidates)
+                self.updateCurrentTask(from: ProxyIPCServer.shared.activeTasks)
+                ConfigFileWatcher.shared.updateActiveDirectory(self.selectedTab?.session?.currentDirectory)
+            }
+        }
+        isTerminalReady = true
+    }
+
+    /// Handles a toolbar tab click. This dismisses the repo dashboard overlay
+    /// even when the clicked tab is already selected.
+    func handleTabBarSelection(id: UUID) {
+        if activeDashboardGroupID != nil {
+            activeDashboardGroupID = nil
+        }
+        guard selectedTabID != id else { return }
+        selectTab(id: id)
+    }
 }
