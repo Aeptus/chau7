@@ -788,245 +788,245 @@ extension OverlayTabsModel {
         startupRestoreActive: Bool
     ) {
         var paneStatesToRestore = paneStatesToRestore
-            let restoreStartedAt = CFAbsoluteTimeGetCurrent()
-            let waitedMs = Int((restoreStartedAt - restoreScheduledAt) * 1000)
-            Log.info(
-                "restoreTabState: executing for tab=\(targetTabID) selected=\(isSelectedRestore) waited=\(waitedMs)ms scheduledDelayMs=\(Int((scheduledDelay * 1000).rounded()))"
+        let restoreStartedAt = CFAbsoluteTimeGetCurrent()
+        let waitedMs = Int((restoreStartedAt - restoreScheduledAt) * 1000)
+        Log.info(
+            "restoreTabState: executing for tab=\(targetTabID) selected=\(isSelectedRestore) waited=\(waitedMs)ms scheduledDelayMs=\(Int((scheduledDelay * 1000).rounded()))"
+        )
+        // Sub-phase timing so profiling can identify which branch of
+        // `executeRestore` consumes the main-thread budget. Previously
+        // only the aggregate stall was logged; with 15-tab restores
+        // each 200ms, that's 3s of main-thread blocking with no signal
+        // which phase to target for batching.
+        var phaseTimings: [(name: String, ms: Int)] = []
+        func recordPhase(_ name: String, startedAt: CFAbsoluteTime) {
+            let elapsed = Int(((CFAbsoluteTimeGetCurrent() - startedAt) * 1000).rounded())
+            phaseTimings.append((name: name, ms: elapsed))
+        }
+        defer {
+            FeatureProfiler.shared.recordMainThreadStallIfNeeded(
+                operation: "OverlayTabsModel.restoreTabState",
+                startedAt: restoreStartedAt,
+                thresholdMs: 150,
+                metadata: "tab=\(targetTabID) panes=\(terminalSessions.count)"
             )
-            // Sub-phase timing so profiling can identify which branch of
-            // `executeRestore` consumes the main-thread budget. Previously
-            // only the aggregate stall was logged; with 15-tab restores
-            // each 200ms, that's 3s of main-thread blocking with no signal
-            // which phase to target for batching.
-            var phaseTimings: [(name: String, ms: Int)] = []
-            func recordPhase(_ name: String, startedAt: CFAbsoluteTime) {
-                let elapsed = Int(((CFAbsoluteTimeGetCurrent() - startedAt) * 1000).rounded())
-                phaseTimings.append((name: name, ms: elapsed))
+            let totalMs = Int(((CFAbsoluteTimeGetCurrent() - restoreStartedAt) * 1000).rounded())
+            if totalMs >= 50 {
+                let breakdown = phaseTimings.map { "\($0.name)=\($0.ms)ms" }.joined(separator: " ")
+                Log.trace("restoreTabState: phase breakdown tab=\(targetTabID) total=\(totalMs)ms \(breakdown)")
             }
-            defer {
-                FeatureProfiler.shared.recordMainThreadStallIfNeeded(
-                    operation: "OverlayTabsModel.restoreTabState",
-                    startedAt: restoreStartedAt,
-                    thresholdMs: 150,
-                    metadata: "tab=\(targetTabID) panes=\(terminalSessions.count)"
+        }
+        guard let restoredTab = tabs.first(where: { $0.id == targetTabID }) else {
+            Log.warn("restoreTabState: tab no longer exists for id=\(targetTabID)")
+            return
+        }
+
+        let phaseBlocksStart = CFAbsoluteTimeGetCurrent()
+        if let restoredBlocks = state.commandBlocks {
+            MainActor.assumeIsolated {
+                CommandBlockManager.shared.restoreBlocks(restoredBlocks, for: targetTabID.uuidString)
+            }
+        } else {
+            MainActor.assumeIsolated {
+                CommandBlockManager.shared.clearBlocks(tabID: targetTabID.uuidString)
+            }
+        }
+        recordPhase("blocks", startedAt: phaseBlocksStart)
+
+        let currentSessions = restoredTab.splitController.terminalSessions
+        guard !currentSessions.isEmpty else {
+            Log.warn("restoreTabState: tab \(targetTabID) has no terminal sessions")
+            return
+        }
+
+        let restoredFocus = state.focusedPaneID.flatMap(UUID.init)
+        let focusedTerminalPaneID: UUID = if let restoredFocus,
+                                             restoredTab.splitController.root.paneType(for: restoredFocus) == .terminal {
+            restoredFocus
+        } else {
+            restoredTab.splitController.focusedTerminalSessionID() ?? currentSessions[0].0
+        }
+
+        if restoredTab.splitController.root.paneType(for: focusedTerminalPaneID) == .terminal {
+            restoredTab.splitController.setFocusedPane(focusedTerminalPaneID)
+        }
+
+        let phaseMetadataStart = CFAbsoluteTimeGetCurrent()
+        var resolvedPaneStates: [UUID: SavedTerminalPaneState] = [:]
+        let paneMapKeys = Set(paneStatesToRestore.keys.map { String($0.uuidString.prefix(8)) })
+        for (paneID, session) in currentSessions {
+            let paneHit = paneStatesToRestore[paneID] != nil
+            let paneState = paneStatesToRestore[paneID] ?? SavedTerminalPaneState(
+                paneID: paneID.uuidString,
+                directory: session.currentDirectory,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                aiProvider: nil,
+                aiSessionId: nil,
+                aiSessionIdSource: nil,
+                lastOutputAt: nil,
+                lastInputAt: nil,
+                knownRepoRoot: nil,
+                knownGitBranch: nil,
+                lastStatus: nil,
+                agentLaunchCommand: nil,
+                agentStartedAt: nil,
+                lastExitCode: nil,
+                lastExitAt: nil
+            )
+            let shouldUseLegacyTabFallback = paneStatesByID.isEmpty && currentSessions.count == 1
+            let fallbackProvider = shouldUseLegacyTabFallback ? state.aiProvider : nil
+            let fallbackSessionId = shouldUseLegacyTabFallback ? state.aiSessionId : nil
+            let fallbackSessionSource = shouldUseLegacyTabFallback ? state.aiSessionIdSource : nil
+
+            let resolvedMetadata = Self.resolveAIResumeMetadataFromSavedState(
+                paneState: paneState,
+                fallbackAIProvider: fallbackProvider,
+                fallbackAISessionId: fallbackSessionId,
+                fallbackAISessionIdSource: fallbackSessionSource
+            )
+            let resolvedCommand = Self.buildAIResumeCommand(
+                provider: resolvedMetadata?.provider,
+                sessionId: resolvedMetadata?.sessionId,
+                sessionIdSource: resolvedMetadata?.sessionIdSource
+            )
+
+            Log.info(
+                """
+                restoreTabState: pane resolve tab=\(targetTabID) pane=\(paneID) \
+                hit=\(paneHit) mapKeys=[\(paneMapKeys.sorted().joined(separator: ","))] \
+                saved=(provider=\(paneState.aiProvider ?? "nil") session=\(paneState.aiSessionId?.prefix(8) ?? "nil") \
+                cmd=\(paneState.aiResumeCommand?.prefix(30) ?? "nil")) \
+                resolved=(provider=\(resolvedMetadata?.provider ?? "nil") session=\(resolvedMetadata?.sessionId.prefix(8) ?? "nil") \
+                cmd=\(resolvedCommand?.prefix(30) ?? "nil")) \
+                legacy=\(shouldUseLegacyTabFallback) fallbackProvider=\(fallbackProvider ?? "nil")
+                """
+            )
+
+            session.restoreAIMetadata(
+                provider: resolvedMetadata?.provider,
+                sessionId: resolvedMetadata?.sessionId,
+                sessionIdSource: resolvedMetadata?.sessionIdSource,
+                launchCommand: paneState.agentLaunchCommand,
+                startedAt: paneState.agentStartedAt,
+                lastInputAt: paneState.lastInputAt,
+                lastOutputAt: paneState.lastOutputAt,
+                lastStatus: paneState.lastStatus,
+                lastExitCode: paneState.lastExitCode,
+                lastExitAt: paneState.lastExitAt
+            )
+
+            let effectivePaneState = SavedTerminalPaneState(
+                paneID: paneState.paneID,
+                directory: paneState.directory,
+                scrollbackContent: paneState.scrollbackContent,
+                aiResumeCommand: resolvedCommand ?? Self.normalizedResumeCommand(paneState.aiResumeCommand),
+                aiProvider: resolvedMetadata?.provider,
+                aiSessionId: resolvedMetadata?.sessionId,
+                aiSessionIdSource: resolvedMetadata?.sessionIdSource,
+                lastOutputAt: paneState.lastOutputAt,
+                lastInputAt: paneState.lastInputAt,
+                knownRepoRoot: paneState.knownRepoRoot,
+                knownGitBranch: paneState.knownGitBranch,
+                lastStatus: paneState.lastStatus,
+                agentLaunchCommand: paneState.agentLaunchCommand,
+                agentStartedAt: paneState.agentStartedAt,
+                lastExitCode: paneState.lastExitCode,
+                lastExitAt: paneState.lastExitAt
+            )
+            resolvedPaneStates[paneID] = effectivePaneState
+            paneStatesToRestore[paneID] = effectivePaneState
+        }
+        recordPhase("metadata", startedAt: phaseMetadataStart)
+
+        let phaseResumeStart = CFAbsoluteTimeGetCurrent()
+        let resumeIntents = currentSessions.compactMap { paneID, _ -> ResumeRestoreIntent? in
+            guard let paneState = resolvedPaneStates[paneID],
+                  let command = Self.normalizedResumeCommand(paneState.aiResumeCommand) else {
+                return nil
+            }
+            return ResumeRestoreIntent(
+                paneID: paneID,
+                command: command,
+                expectedDirectory: paneState.directory,
+                expectedProvider: paneState.aiProvider,
+                expectedSessionID: paneState.aiSessionId,
+                expectedSessionIDSource: paneState.aiSessionIdSource,
+                isFocusedPane: paneID == focusedTerminalPaneID
+            )
+        }
+        if resumeIntents.isEmpty {
+            Log.info("restoreTabState: no resume command candidate found for tab=\(targetTabID)")
+        }
+
+        let restoreToken = UUID().uuidString
+        for (paneID, session) in currentSessions {
+            let effectivePaneState = resolvedPaneStates[paneID] ?? SavedTerminalPaneState(
+                paneID: paneID.uuidString,
+                directory: session.currentDirectory,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                aiProvider: nil,
+                aiSessionId: nil,
+                aiSessionIdSource: nil,
+                lastOutputAt: nil,
+                lastInputAt: nil,
+                knownRepoRoot: nil,
+                knownGitBranch: nil,
+                lastStatus: nil,
+                agentLaunchCommand: nil,
+                agentStartedAt: nil,
+                lastExitCode: nil,
+                lastExitAt: nil
+            )
+
+            if let resumeIntent = resumeIntents.first(where: { $0.paneID == paneID }) {
+                recordResumeRestoreDeliveryState(
+                    paneID: paneID,
+                    token: restoreToken,
+                    outcome: .pending,
+                    tabID: targetTabID,
+                    reason: "scheduled"
                 )
-                let totalMs = Int(((CFAbsoluteTimeGetCurrent() - restoreStartedAt) * 1000).rounded())
-                if totalMs >= 50 {
-                    let breakdown = phaseTimings.map { "\($0.name)=\($0.ms)ms" }.joined(separator: " ")
-                    Log.trace("restoreTabState: phase breakdown tab=\(targetTabID) total=\(totalMs)ms \(breakdown)")
-                }
-            }
-            guard let restoredTab = tabs.first(where: { $0.id == targetTabID }) else {
-                Log.warn("restoreTabState: tab no longer exists for id=\(targetTabID)")
-                return
-            }
-
-            let phaseBlocksStart = CFAbsoluteTimeGetCurrent()
-            if let restoredBlocks = state.commandBlocks {
-                MainActor.assumeIsolated {
-                    CommandBlockManager.shared.restoreBlocks(restoredBlocks, for: targetTabID.uuidString)
-                }
-            } else {
-                MainActor.assumeIsolated {
-                    CommandBlockManager.shared.clearBlocks(tabID: targetTabID.uuidString)
-                }
-            }
-            recordPhase("blocks", startedAt: phaseBlocksStart)
-
-            let currentSessions = restoredTab.splitController.terminalSessions
-            guard !currentSessions.isEmpty else {
-                Log.warn("restoreTabState: tab \(targetTabID) has no terminal sessions")
-                return
-            }
-
-            let restoredFocus = state.focusedPaneID.flatMap(UUID.init)
-            let focusedTerminalPaneID: UUID = if let restoredFocus,
-                                                 restoredTab.splitController.root.paneType(for: restoredFocus) == .terminal {
-                restoredFocus
-            } else {
-                restoredTab.splitController.focusedTerminalSessionID() ?? currentSessions[0].0
-            }
-
-            if restoredTab.splitController.root.paneType(for: focusedTerminalPaneID) == .terminal {
-                restoredTab.splitController.setFocusedPane(focusedTerminalPaneID)
-            }
-
-            let phaseMetadataStart = CFAbsoluteTimeGetCurrent()
-            var resolvedPaneStates: [UUID: SavedTerminalPaneState] = [:]
-            let paneMapKeys = Set(paneStatesToRestore.keys.map { String($0.uuidString.prefix(8)) })
-            for (paneID, session) in currentSessions {
-                let paneHit = paneStatesToRestore[paneID] != nil
-                let paneState = paneStatesToRestore[paneID] ?? SavedTerminalPaneState(
-                    paneID: paneID.uuidString,
-                    directory: session.currentDirectory,
-                    scrollbackContent: nil,
-                    aiResumeCommand: nil,
-                    aiProvider: nil,
-                    aiSessionId: nil,
-                    aiSessionIdSource: nil,
-                    lastOutputAt: nil,
-                    lastInputAt: nil,
-                    knownRepoRoot: nil,
-                    knownGitBranch: nil,
-                    lastStatus: nil,
-                    agentLaunchCommand: nil,
-                    agentStartedAt: nil,
-                    lastExitCode: nil,
-                    lastExitAt: nil
-                )
-                let shouldUseLegacyTabFallback = paneStatesByID.isEmpty && currentSessions.count == 1
-                let fallbackProvider = shouldUseLegacyTabFallback ? state.aiProvider : nil
-                let fallbackSessionId = shouldUseLegacyTabFallback ? state.aiSessionId : nil
-                let fallbackSessionSource = shouldUseLegacyTabFallback ? state.aiSessionIdSource : nil
-
-                let resolvedMetadata = Self.resolveAIResumeMetadataFromSavedState(
-                    paneState: paneState,
-                    fallbackAIProvider: fallbackProvider,
-                    fallbackAISessionId: fallbackSessionId,
-                    fallbackAISessionIdSource: fallbackSessionSource
-                )
-                let resolvedCommand = Self.buildAIResumeCommand(
-                    provider: resolvedMetadata?.provider,
-                    sessionId: resolvedMetadata?.sessionId,
-                    sessionIdSource: resolvedMetadata?.sessionIdSource
-                )
-
                 Log.info(
                     """
-                    restoreTabState: pane resolve tab=\(targetTabID) pane=\(paneID) \
-                    hit=\(paneHit) mapKeys=[\(paneMapKeys.sorted().joined(separator: ","))] \
-                    saved=(provider=\(paneState.aiProvider ?? "nil") session=\(paneState.aiSessionId?.prefix(8) ?? "nil") \
-                    cmd=\(paneState.aiResumeCommand?.prefix(30) ?? "nil")) \
-                    resolved=(provider=\(resolvedMetadata?.provider ?? "nil") session=\(resolvedMetadata?.sessionId.prefix(8) ?? "nil") \
-                    cmd=\(resolvedCommand?.prefix(30) ?? "nil")) \
-                    legacy=\(shouldUseLegacyTabFallback) fallbackProvider=\(fallbackProvider ?? "nil")
+                    restoreTabState: scheduling resume command for tab=\(targetTabID) pane=\(paneID) \
+                    focused=\(resumeIntent.isFocusedPane) provider=\(resumeIntent.expectedProvider ?? "nil") \
+                    session=\(resumeIntent.expectedSessionID?.prefix(8) ?? "nil")
                     """
                 )
-
-                session.restoreAIMetadata(
-                    provider: resolvedMetadata?.provider,
-                    sessionId: resolvedMetadata?.sessionId,
-                    sessionIdSource: resolvedMetadata?.sessionIdSource,
-                    launchCommand: paneState.agentLaunchCommand,
-                    startedAt: paneState.agentStartedAt,
-                    lastInputAt: paneState.lastInputAt,
-                    lastOutputAt: paneState.lastOutputAt,
-                    lastStatus: paneState.lastStatus,
-                    lastExitCode: paneState.lastExitCode,
-                    lastExitAt: paneState.lastExitAt
-                )
-
-                let effectivePaneState = SavedTerminalPaneState(
-                    paneID: paneState.paneID,
-                    directory: paneState.directory,
-                    scrollbackContent: paneState.scrollbackContent,
-                    aiResumeCommand: resolvedCommand ?? Self.normalizedResumeCommand(paneState.aiResumeCommand),
-                    aiProvider: resolvedMetadata?.provider,
-                    aiSessionId: resolvedMetadata?.sessionId,
-                    aiSessionIdSource: resolvedMetadata?.sessionIdSource,
-                    lastOutputAt: paneState.lastOutputAt,
-                    lastInputAt: paneState.lastInputAt,
-                    knownRepoRoot: paneState.knownRepoRoot,
-                    knownGitBranch: paneState.knownGitBranch,
-                    lastStatus: paneState.lastStatus,
-                    agentLaunchCommand: paneState.agentLaunchCommand,
-                    agentStartedAt: paneState.agentStartedAt,
-                    lastExitCode: paneState.lastExitCode,
-                    lastExitAt: paneState.lastExitAt
-                )
-                resolvedPaneStates[paneID] = effectivePaneState
-                paneStatesToRestore[paneID] = effectivePaneState
-            }
-            recordPhase("metadata", startedAt: phaseMetadataStart)
-
-            let phaseResumeStart = CFAbsoluteTimeGetCurrent()
-            let resumeIntents = currentSessions.compactMap { paneID, _ -> ResumeRestoreIntent? in
-                guard let paneState = resolvedPaneStates[paneID],
-                      let command = Self.normalizedResumeCommand(paneState.aiResumeCommand) else {
-                    return nil
-                }
-                return ResumeRestoreIntent(
-                    paneID: paneID,
-                    command: command,
-                    expectedDirectory: paneState.directory,
-                    expectedProvider: paneState.aiProvider,
-                    expectedSessionID: paneState.aiSessionId,
-                    expectedSessionIDSource: paneState.aiSessionIdSource,
-                    isFocusedPane: paneID == focusedTerminalPaneID
-                )
-            }
-            if resumeIntents.isEmpty {
-                Log.info("restoreTabState: no resume command candidate found for tab=\(targetTabID)")
-            }
-
-            let restoreToken = UUID().uuidString
-            for (paneID, session) in currentSessions {
-                let effectivePaneState = resolvedPaneStates[paneID] ?? SavedTerminalPaneState(
-                    paneID: paneID.uuidString,
-                    directory: session.currentDirectory,
-                    scrollbackContent: nil,
-                    aiResumeCommand: nil,
-                    aiProvider: nil,
-                    aiSessionId: nil,
-                    aiSessionIdSource: nil,
-                    lastOutputAt: nil,
-                    lastInputAt: nil,
-                    knownRepoRoot: nil,
-                    knownGitBranch: nil,
-                    lastStatus: nil,
-                    agentLaunchCommand: nil,
-                    agentStartedAt: nil,
-                    lastExitCode: nil,
-                    lastExitAt: nil
-                )
-
-                if let resumeIntent = resumeIntents.first(where: { $0.paneID == paneID }) {
-                    recordResumeRestoreDeliveryState(
-                        paneID: paneID,
-                        token: restoreToken,
-                        outcome: .pending,
-                        tabID: targetTabID,
-                        reason: "scheduled"
+                if useResumeRetryScheduler {
+                    latestRestoreResumeTokenByPaneID[paneID] = restoreToken
+                    scheduleResumeCommand(
+                        intent: resumeIntent,
+                        targetTabID: targetTabID,
+                        restoreToken: restoreToken,
+                        remainingAttempts: Self.resumeCommandMaxAttempts,
+                        delay: Self.resumeCommandDelaySeconds
                     )
-                    Log.info(
-                        """
-                        restoreTabState: scheduling resume command for tab=\(targetTabID) pane=\(paneID) \
-                        focused=\(resumeIntent.isFocusedPane) provider=\(resumeIntent.expectedProvider ?? "nil") \
-                        session=\(resumeIntent.expectedSessionID?.prefix(8) ?? "nil")
-                        """
+                } else {
+                    latestRestoreResumeTokenByPaneID[paneID] = restoreToken
+                    _ = enqueueResumePrefill(
+                        intent: resumeIntent,
+                        into: session,
+                        targetTabID: targetTabID,
+                        restoreToken: restoreToken,
+                        queuedReason: "selected_on_demand_queued",
+                        deliveredReason: "selected_on_demand_delivered"
                     )
-                    if useResumeRetryScheduler {
-                        latestRestoreResumeTokenByPaneID[paneID] = restoreToken
-                        scheduleResumeCommand(
-                            intent: resumeIntent,
-                            targetTabID: targetTabID,
-                            restoreToken: restoreToken,
-                            remainingAttempts: Self.resumeCommandMaxAttempts,
-                            delay: Self.resumeCommandDelaySeconds
-                        )
-                    } else {
-                        latestRestoreResumeTokenByPaneID[paneID] = restoreToken
-                        _ = enqueueResumePrefill(
-                            intent: resumeIntent,
-                            into: session,
-                            targetTabID: targetTabID,
-                            restoreToken: restoreToken,
-                            queuedReason: "selected_on_demand_queued",
-                            deliveredReason: "selected_on_demand_delivered"
-                        )
-                    }
                 }
             }
+        }
 
-            recordPhase("resume", startedAt: phaseResumeStart)
+        recordPhase("resume", startedAt: phaseResumeStart)
 
-            if startupRestoreActive,
-               currentSessions.allSatisfy({ !$0.1.isRestoreBootstrapPending }) {
-                let previousHadPendingWork = hasPendingStartupRestoreWork
-                restoreBootstrapTabIDs.remove(targetTabID)
-                updateSuspensionState()
-                notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
-            }
+        if startupRestoreActive,
+           currentSessions.allSatisfy({ !$0.1.isRestoreBootstrapPending }) {
+            let previousHadPendingWork = hasPendingStartupRestoreWork
+            restoreBootstrapTabIDs.remove(targetTabID)
+            updateSuspensionState()
+            notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
+        }
     }
 
 
