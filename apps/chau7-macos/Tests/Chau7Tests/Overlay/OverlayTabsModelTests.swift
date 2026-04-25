@@ -1658,6 +1658,41 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(entry.originalIndex, 1)
     }
 
+    /// T2 — Live-session branch must capture the tab's live session state in
+    /// the resulting `SavedTabState`. Specifically: the tab's directory and
+    /// the per-pane state (paneStates) must be populated. We can't easily
+    /// inject scrollback into the Rust terminal under SPM, but verifying the
+    /// other live-session fields confirms the buildPaneStates helper (Pass F)
+    /// is wired into the live branch correctly. Pre-existing gap flagged in
+    /// the Pass F reviewer report.
+    func testCaptureClosedTabSnapshotLiveBranchPreservesPaneAndDirectory() throws {
+        FeatureSettings.shared.warnOnCloseWithRunningProcess = false
+        FeatureSettings.shared.alwaysWarnOnTabClose = false
+
+        let directory = "/tmp/chau7-t2-live-capture-\(UUID().uuidString)"
+        model.newTab(at: directory)
+        XCTAssertEqual(model.tabs.count, 2)
+        let tab = model.tabs[1]
+        // Sanity: a fresh live tab should have at least one terminal session
+        // attached via splitController (the live-session branch only kicks in
+        // when there's something to capture).
+        XCTAssertFalse(tab.splitController.terminalSessions.isEmpty)
+
+        model.captureClosedTabSnapshot(tab: tab, at: 1)
+
+        let entry = try XCTUnwrap(model.closedTabStack.last)
+        XCTAssertEqual(entry.originalIndex, 1)
+        XCTAssertEqual(entry.state.directory, directory,
+                       "Live-branch capture must preserve the tab's working directory")
+        // paneStates is the per-pane snapshot — exists even when scrollback
+        // is empty/nil because the entry is constructed from
+        // splitController.terminalSessions.
+        let paneStates = try XCTUnwrap(entry.state.paneStates,
+                                       "Live-branch capture must populate paneStates from splitController")
+        XCTAssertEqual(paneStates.count, tab.splitController.terminalSessions.count)
+        XCTAssertEqual(paneStates.first?.directory, directory)
+    }
+
     // MARK: - validateResumeRestoreIntent
 
     /// Directory mismatch must reject the intent — previously `isEmpty ||` let an
