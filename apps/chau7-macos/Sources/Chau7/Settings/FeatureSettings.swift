@@ -308,7 +308,7 @@ private extension FeatureSettings {
             NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "custom",
-                "customColor": "red",
+                "customColor": "green",
                 "borderWidth": "2",
                 "autoClearSeconds": "30"
             ])
@@ -2591,6 +2591,32 @@ final class FeatureSettings {
         }
         if normalizedBindings["codex.idle"] == nil {
             normalizedBindings["codex.idle"] = []
+        }
+
+        // One-time migration: the previous default for *.finished triggers
+        // painted a *red* border on completion, which conflicted with
+        // convention (red == error) and confused users who never set it.
+        // The new default is green. We migrate ONLY users who are still on
+        // the literal old default — anyone who customized to a different
+        // color (including red on purpose) keeps their setting.
+        for triggerKey in ["claude_code.finished", "codex.finished"] {
+            guard var actions = normalizedBindings[triggerKey] else { continue }
+            for index in actions.indices where actions[index].actionType == .styleTab {
+                let cfg = actions[index].config
+                guard cfg["style"] == "custom",
+                      cfg["customColor"] == "red",
+                      cfg["borderWidth"] == "2",
+                      cfg["autoClearSeconds"] == "30" else { continue }
+                var migrated = cfg
+                migrated["customColor"] = "green"
+                actions[index] = NotificationActionConfig(
+                    actionType: .styleTab,
+                    enabled: actions[index].enabled,
+                    config: migrated
+                )
+                Log.info("FeatureSettings migration: \(triggerKey) styleTab color red → green (default flip)")
+            }
+            normalizedBindings[triggerKey] = actions
         }
 
         let loadedRateLimitConfig: NotificationRateLimiter.Config
