@@ -1583,6 +1583,170 @@ final class OverlayTabsModelTests: XCTestCase {
         )
     }
 
+    // MARK: - captureClosedTabSnapshot
+
+    /// Regression guard for the deferred-state fast path. When a tab is closed
+    /// before its deferred restore state has been replayed, captureClosedTabSnapshot
+    /// must pull the full saved state out of deferredRestoreStatesByTabID (not the
+    /// eager-seeded live session) so Cmd+Shift+T restores the AI identity + scrollback,
+    /// and it must drain both the dict and the ordering queue.
+    func testCaptureClosedTabSnapshotConsumesDeferredStateAndRestoresAIIdentity() throws {
+        let deferredTabID = UUID()
+        let deferredPaneID = UUID()
+        let selectedTabID = UUID()
+        let selectedPaneID = UUID()
+        let selectedState = makeSavedTabState(
+            tabID: selectedTabID,
+            paneID: selectedPaneID,
+            title: "Selected",
+            directory: "/tmp/selected",
+            aiProvider: "codex",
+            aiSessionId: "selected-session",
+            aiResumeCommand: "codex resume selected-session"
+        )
+        let deferredState = makeSavedTabState(
+            tabID: deferredTabID,
+            paneID: deferredPaneID,
+            title: "Deferred",
+            directory: "/tmp/deferred",
+            aiProvider: "codex",
+            aiSessionId: "deferred-session",
+            aiResumeCommand: "codex resume deferred-session"
+        )
+        let restored = OverlayTabsModel(
+            appModel: AppModel(),
+            restoreState: false,
+            restoringStates: [selectedState, deferredState]
+        )
+        let deferredTab = try XCTUnwrap(restored.tabs.first(where: { $0.id == deferredTabID }))
+        let deferredIndex = try XCTUnwrap(restored.tabs.firstIndex(where: { $0.id == deferredTabID }))
+        XCTAssertTrue(restored.deferredRestoreStatesByTabID[deferredTabID] != nil,
+                      "Precondition: deferred state is queued")
+
+        restored.captureClosedTabSnapshot(tab: deferredTab, at: deferredIndex)
+
+        XCTAssertNil(restored.deferredRestoreStatesByTabID[deferredTabID],
+                     "Deferred state dict must be drained after capture")
+        XCTAssertFalse(restored.deferredRestoreTabOrder.contains(deferredTabID),
+                       "Deferred order queue must not contain the closed tab")
+
+        let entry = try XCTUnwrap(restored.closedTabStack.last)
+        XCTAssertEqual(entry.originalIndex, deferredIndex)
+        XCTAssertEqual(entry.state.customTitle, "Deferred")
+        XCTAssertEqual(entry.state.aiProvider, "codex")
+        XCTAssertEqual(entry.state.aiSessionId, "deferred-session")
+        XCTAssertEqual(entry.state.aiResumeCommand, "codex resume deferred-session")
+    }
+
+    /// Regression guard for the live-session branch. With no deferred state queued,
+    /// capture must build a ClosedTabEntry from the live tab's session + splitController
+    /// and leave the deferred maps empty.
+    func testCaptureClosedTabSnapshotLiveBranchPopulatesClosedStack() throws {
+        FeatureSettings.shared.warnOnCloseWithRunningProcess = false
+        FeatureSettings.shared.alwaysWarnOnTabClose = false
+
+        model.newTab()
+        XCTAssertEqual(model.tabs.count, 2)
+        let tab = model.tabs[1]
+        XCTAssertNil(model.deferredRestoreStatesByTabID[tab.id])
+
+        model.captureClosedTabSnapshot(tab: tab, at: 1)
+
+        XCTAssertTrue(model.deferredRestoreStatesByTabID.isEmpty)
+        XCTAssertTrue(model.deferredRestoreTabOrder.isEmpty)
+        let entry = try XCTUnwrap(model.closedTabStack.last)
+        XCTAssertEqual(entry.originalIndex, 1)
+    }
+
+    // MARK: - validateResumeRestoreIntent
+
+    /// Directory mismatch must reject the intent — previously `isEmpty ||` let an
+    /// unknown expected directory match anything, silently delivering resume commands
+    /// to the wrong pane.
+    func testValidateResumeRestoreIntentRejectsDirectoryMismatch() throws {
+        let session = TerminalSessionModel(appModel: appModel)
+        session.currentDirectory = "/actual/dir"
+        session.lastDetectedAppName = "Codex"
+        session.lastAIProvider = "codex"
+        session.lastAISessionId = "abc-123"
+        session.lastAISessionIdentitySource = .explicit
+
+        let intent = OverlayTabsModel.ResumeRestoreIntent(
+            paneID: UUID(),
+            command: "codex resume abc-123",
+            expectedDirectory: "/expected/elsewhere",
+            expectedProvider: "codex",
+            expectedSessionID: "abc-123",
+            expectedSessionIDSource: .explicit,
+            isFocusedPane: true
+        )
+        XCTAssertFalse(model.validateResumeRestoreIntent(intent, against: session, tabID: UUID()))
+    }
+
+    /// Provider mismatch must reject (e.g. saved as claude, live session is codex).
+    func testValidateResumeRestoreIntentRejectsProviderMismatch() throws {
+        let session = TerminalSessionModel(appModel: appModel)
+        session.currentDirectory = "/shared/dir"
+        session.lastDetectedAppName = "Codex"
+        session.lastAIProvider = "codex"
+        session.lastAISessionId = "abc-123"
+        session.lastAISessionIdentitySource = .explicit
+
+        let intent = OverlayTabsModel.ResumeRestoreIntent(
+            paneID: UUID(),
+            command: "claude --resume abc-123",
+            expectedDirectory: "/shared/dir",
+            expectedProvider: "claude",
+            expectedSessionID: "abc-123",
+            expectedSessionIDSource: .explicit,
+            isFocusedPane: true
+        )
+        XCTAssertFalse(model.validateResumeRestoreIntent(intent, against: session, tabID: UUID()))
+    }
+
+    /// Session-ID mismatch must reject even when directory + provider agree —
+    /// the live pane has been reassigned to a different session.
+    func testValidateResumeRestoreIntentRejectsSessionIDMismatch() throws {
+        let session = TerminalSessionModel(appModel: appModel)
+        session.currentDirectory = "/shared/dir"
+        session.lastDetectedAppName = "Codex"
+        session.lastAIProvider = "codex"
+        session.lastAISessionId = "live-xyz"
+        session.lastAISessionIdentitySource = .explicit
+
+        let intent = OverlayTabsModel.ResumeRestoreIntent(
+            paneID: UUID(),
+            command: "codex resume saved-abc",
+            expectedDirectory: "/shared/dir",
+            expectedProvider: "codex",
+            expectedSessionID: "saved-abc",
+            expectedSessionIDSource: .explicit,
+            isFocusedPane: true
+        )
+        XCTAssertFalse(model.validateResumeRestoreIntent(intent, against: session, tabID: UUID()))
+    }
+
+    /// All three dimensions match → accept.
+    func testValidateResumeRestoreIntentAcceptsFullMatch() throws {
+        let session = TerminalSessionModel(appModel: appModel)
+        session.currentDirectory = "/shared/dir"
+        session.lastDetectedAppName = "Codex"
+        session.lastAIProvider = "codex"
+        session.lastAISessionId = "abc-123"
+        session.lastAISessionIdentitySource = .explicit
+
+        let intent = OverlayTabsModel.ResumeRestoreIntent(
+            paneID: UUID(),
+            command: "codex resume abc-123",
+            expectedDirectory: "/shared/dir",
+            expectedProvider: "codex",
+            expectedSessionID: "abc-123",
+            expectedSessionIDSource: .explicit,
+            isFocusedPane: true
+        )
+        XCTAssertTrue(model.validateResumeRestoreIntent(intent, against: session, tabID: UUID()))
+    }
+
     // MARK: - Broadcast Mode
 
     func testBroadcastModeToggle() {
