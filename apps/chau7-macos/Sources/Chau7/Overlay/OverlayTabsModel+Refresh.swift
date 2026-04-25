@@ -145,11 +145,15 @@ extension OverlayTabsModel {
         // the phase but never claim input focus.
         for (paneID, paneSession) in panesToRefresh {
             let isFocused = paneSession === focusedSession
+            let plan = Self.paneRefreshPlan(
+                isFocused: isFocused,
+                decisionIsInteractive: selectedDecision.isInteractive
+            )
             guard let paneRustView = paneSession.existingRustTerminalView else {
                 Log.info(
                     """
                     performSelectedTabInPlaceRefresh:pane: tab=\(selectedTabID) \
-                    pane=\(paneID) role=\(isFocused ? "focused" : "secondary") \
+                    pane=\(paneID) role=\(plan.role.rawValue) \
                     skipped=true reason=no_rust_view_attached
                     """
                 )
@@ -158,18 +162,16 @@ extension OverlayTabsModel {
             Log.info(
                 """
                 performSelectedTabInPlaceRefresh:pane: tab=\(selectedTabID) \
-                pane=\(paneID) role=\(isFocused ? "focused" : "secondary") \
+                pane=\(paneID) role=\(plan.role.rawValue) \
                 phase=\(selectedDecision.phase.rawValue) \
-                interactive=\(selectedDecision.isInteractive && isFocused) \
+                interactive=\(plan.isInteractive) \
                 applyLivePresentation=\(selectedDecision.phase.allowsLivePresentation)
                 """
             )
             paneRustView.applyRenderPhase(
                 selectedDecision.phase,
-                isInteractive: selectedDecision.isInteractive && isFocused,
-                reason: isFocused
-                    ? "selectedTabInPlaceRefresh:focused"
-                    : "selectedTabInPlaceRefresh:secondary"
+                isInteractive: plan.isInteractive,
+                reason: plan.applyRenderPhaseReason
             )
             paneRustView.needsDisplay = true
             if let paneContainer = paneRustView.superview as? RustTerminalContainerView {
@@ -599,6 +601,44 @@ extension OverlayTabsModel {
             }
         }
         return true
+    }
+
+    /// Decides per-pane refresh attributes for `performSelectedTabInPlaceRefresh`.
+    /// Pure transform: given whether the pane is the focused one and the
+    /// tab-level isInteractive decision, returns the role label, the
+    /// effective `isInteractive` value (only the focused pane claims input
+    /// focus), and the reason string used by `applyRenderPhase` (for log
+    /// breadcrumbs).
+    ///
+    /// Extracted so the role/interactive contract is unit-testable via
+    /// `swift test` without standing up a model. W1.1.E pins the rules
+    /// in `PaneRefreshPlanTests.swift`.
+    struct PaneRefreshPlan: Equatable {
+        enum Role: String, Equatable {
+            case focused
+            case secondary
+        }
+        let role: Role
+        let isInteractive: Bool
+        let applyRenderPhaseReason: String
+    }
+
+    static func paneRefreshPlan(
+        isFocused: Bool,
+        decisionIsInteractive: Bool
+    ) -> PaneRefreshPlan {
+        if isFocused {
+            return PaneRefreshPlan(
+                role: .focused,
+                isInteractive: decisionIsInteractive,
+                applyRenderPhaseReason: "selectedTabInPlaceRefresh:focused"
+            )
+        }
+        return PaneRefreshPlan(
+            role: .secondary,
+            isInteractive: false,
+            applyRenderPhaseReason: "selectedTabInPlaceRefresh:secondary"
+        )
     }
 
 }
