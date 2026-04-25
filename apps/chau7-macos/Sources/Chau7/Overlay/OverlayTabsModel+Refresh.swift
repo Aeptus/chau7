@@ -105,6 +105,24 @@ extension OverlayTabsModel {
     ) {
         guard let rustView = session.existingRustTerminalView else { return }
 
+        // Observability: structured breadcrumb per refresh. The "paneCount"
+        // field is the smoking-gun signal for the W1.1 investigation finding
+        // that this method only reattaches the Metal coordinator for ONE
+        // session (the focused presentation session), even when the tab has
+        // multiple panes. With paneCount > 1 logged here, the operator can
+        // cross-reference with which pane visually went blank after a
+        // window-state transition. W1.1.D will close the gap; this log is
+        // the ongoing canary.
+        let paneCount = selectedTab?.splitController.terminalSessions.count ?? 1
+        Log.info(
+            """
+            performSelectedTabInPlaceRefresh: tab=\(selectedTabID) \
+            focusedSession=\(session.tabIdentifier) paneCount=\(paneCount) \
+            phase=\(selectedDecision.phase.rawValue) interactive=\(selectedDecision.isInteractive) \
+            metalRendererEnabled=\(FeatureSettings.shared.useMetalRenderer)
+            """
+        )
+
         rustView.applyRenderPhase(
             selectedDecision.phase,
             isInteractive: selectedDecision.isInteractive,
