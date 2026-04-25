@@ -1457,6 +1457,95 @@ final class OverlayTabsModel {
         Log.trace("Saved \(states.count) tab state(s) to disk backup [\(reason.rawValue)]")
     }
 
+    /// Builds `[SavedTerminalPaneState]` from a tab's live sessions.
+    ///
+    /// Shared by `exportTabStates` (multi-tab save path) and the live-session
+    /// branch of `captureClosedTabSnapshot` (single-tab undo capture). The two
+    /// previously had a near-duplicate per-pane loop; the only behavioural
+    /// distinction is whether a fallback `SavedTabState` is consulted when the
+    /// live session lacks AI metadata.
+    ///
+    /// - Parameters:
+    ///   - tab: tab whose `splitController.terminalSessions` are serialized
+    ///   - maxLines: scrollback line cap (per `FeatureSettings.restoredScrollbackLines`)
+    ///   - fallbackTabState: previously persisted state for the tab, used only
+    ///     by the multi-tab save path to recover AI identity when the live
+    ///     session has been wiped (e.g. shell exited but resume metadata is
+    ///     still useful). Pass `nil` from single-tab capture call sites.
+    ///   - claimedSessionIds: cross-pane dedup set; mutated in place. Pass an
+    ///     empty (and discardable) set when called from a single-tab path.
+    private func buildPaneStates(
+        for tab: OverlayTab,
+        maxLines: Int,
+        fallbackTabState: SavedTabState?,
+        claimedSessionIds: inout Set<String>
+    ) -> [SavedTerminalPaneState] {
+        let terminalSessions = tab.splitController.terminalSessions
+        let fallbackPaneStatesByID = Self.paneStateMap(from: fallbackTabState?.paneStates)
+
+        var paneStates: [SavedTerminalPaneState] = []
+        for (paneID, session) in terminalSessions {
+            let dir = session.currentDirectory
+            let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
+            let knownRepoIdentity = Self.persistedRepoIdentity(
+                for: session,
+                directory: dir,
+                fallbackRoot: tab.repoGroupID
+            )
+            let persistedIdentity = persistedAISessionIdentity(
+                from: session,
+                claimedSessionIds: claimedSessionIds
+            )
+            let fallbackPaneState = fallbackPaneStatesByID[paneID]
+            let fallbackMetadata = fallbackPaneState.flatMap {
+                Self.resolveAIResumeMetadataFromSavedState(
+                    paneState: $0,
+                    fallbackAIProvider: fallbackTabState?.aiProvider,
+                    fallbackAISessionId: fallbackTabState?.aiSessionId,
+                    fallbackAISessionIdSource: fallbackTabState?.aiSessionIdSource
+                )
+            }
+            let fallbackSanitized = AIResumeOwnership.sanitizeForPersistence(
+                provider: fallbackMetadata?.provider,
+                sessionId: fallbackMetadata?.sessionId,
+                claimedSessionIds: claimedSessionIds
+            )
+            let effectiveProvider = persistedIdentity.provider ?? fallbackSanitized.provider
+            let effectiveSessionID = persistedIdentity.sessionId ?? fallbackSanitized.sessionId
+            let effectiveSessionIDSource: AISessionIdentitySource? = if effectiveSessionID == nil {
+                nil
+            } else {
+                persistedIdentity.sessionIdSource ?? fallbackMetadata?.sessionIdSource
+            }
+            let resumeCommand = Self.buildAIResumeCommand(
+                provider: effectiveProvider,
+                sessionId: effectiveSessionID,
+                sessionIdSource: effectiveSessionIDSource
+            ) ?? Self.normalizedResumeCommand(fallbackPaneState?.aiResumeCommand)
+            if let sessionId = effectiveSessionID { claimedSessionIds.insert(sessionId) }
+
+            paneStates.append(SavedTerminalPaneState(
+                paneID: paneID.uuidString,
+                directory: dir,
+                scrollbackContent: scrollback,
+                aiResumeCommand: resumeCommand,
+                aiProvider: effectiveProvider,
+                aiSessionId: effectiveSessionID,
+                aiSessionIdSource: effectiveSessionIDSource,
+                lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate),
+                lastInputAt: session.lastInputDate,
+                knownRepoRoot: knownRepoIdentity?.rootPath,
+                knownGitBranch: knownRepoIdentity?.branch,
+                lastStatus: session.effectiveStatus,
+                agentLaunchCommand: session.lastAgentLaunchCommand,
+                agentStartedAt: session.agentStartedAt,
+                lastExitCode: session.lastExitCode,
+                lastExitAt: session.lastExitAt
+            ))
+        }
+        return paneStates
+    }
+
     /// Exports current tab states without persisting to disk.
     /// Used by AppDelegate to collect all windows' states for multi-window save.
     func exportTabStates() -> [SavedTabState] {
@@ -1469,69 +1558,13 @@ final class OverlayTabsModel {
             let terminalSessions = tab.splitController.terminalSessions
             let isSelected = tab.id == selectedID
             let overrideRaw: String? = tab.tokenOptOverride == .default ? nil : tab.tokenOptOverride.rawValue
-            let fallbackTabState = persistedRestoreFallbackStatesByTabID[tab.id]
-            let fallbackPaneStatesByID = Self.paneStateMap(from: fallbackTabState?.paneStates)
 
-            var paneStates: [SavedTerminalPaneState] = []
-            for (paneID, session) in terminalSessions {
-                let dir = session.currentDirectory
-                let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
-                let knownRepoIdentity = Self.persistedRepoIdentity(
-                    for: session,
-                    directory: dir,
-                    fallbackRoot: tab.repoGroupID
-                )
-                let persistedIdentity = persistedAISessionIdentity(
-                    from: session,
-                    claimedSessionIds: claimedSessionIds
-                )
-                let fallbackPaneState = fallbackPaneStatesByID[paneID]
-                let fallbackMetadata = fallbackPaneState.flatMap {
-                    Self.resolveAIResumeMetadataFromSavedState(
-                        paneState: $0,
-                        fallbackAIProvider: fallbackTabState?.aiProvider,
-                        fallbackAISessionId: fallbackTabState?.aiSessionId,
-                        fallbackAISessionIdSource: fallbackTabState?.aiSessionIdSource
-                    )
-                }
-                let fallbackSanitized = AIResumeOwnership.sanitizeForPersistence(
-                    provider: fallbackMetadata?.provider,
-                    sessionId: fallbackMetadata?.sessionId,
-                    claimedSessionIds: claimedSessionIds
-                )
-                let effectiveProvider = persistedIdentity.provider ?? fallbackSanitized.provider
-                let effectiveSessionID = persistedIdentity.sessionId ?? fallbackSanitized.sessionId
-                let effectiveSessionIDSource: AISessionIdentitySource? = if effectiveSessionID == nil {
-                    nil
-                } else {
-                    persistedIdentity.sessionIdSource ?? fallbackMetadata?.sessionIdSource
-                }
-                let resumeCommand = Self.buildAIResumeCommand(
-                    provider: effectiveProvider,
-                    sessionId: effectiveSessionID,
-                    sessionIdSource: effectiveSessionIDSource
-                ) ?? Self.normalizedResumeCommand(fallbackPaneState?.aiResumeCommand)
-                if let sessionId = effectiveSessionID { claimedSessionIds.insert(sessionId) }
-
-                paneStates.append(SavedTerminalPaneState(
-                    paneID: paneID.uuidString,
-                    directory: dir,
-                    scrollbackContent: scrollback,
-                    aiResumeCommand: resumeCommand,
-                    aiProvider: effectiveProvider,
-                    aiSessionId: effectiveSessionID,
-                    aiSessionIdSource: effectiveSessionIDSource,
-                    lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate),
-                    lastInputAt: session.lastInputDate,
-                    knownRepoRoot: knownRepoIdentity?.rootPath,
-                    knownGitBranch: knownRepoIdentity?.branch,
-                    lastStatus: session.effectiveStatus,
-                    agentLaunchCommand: session.lastAgentLaunchCommand,
-                    agentStartedAt: session.agentStartedAt,
-                    lastExitCode: session.lastExitCode,
-                    lastExitAt: session.lastExitAt
-                ))
-            }
+            let paneStates = buildPaneStates(
+                for: tab,
+                maxLines: maxLines,
+                fallbackTabState: persistedRestoreFallbackStatesByTabID[tab.id],
+                claimedSessionIds: &claimedSessionIds
+            )
 
             let primaryDirectory = terminalSessions.first?.1.currentDirectory
                 ?? tab.session?.currentDirectory
@@ -1639,43 +1672,18 @@ final class OverlayTabsModel {
         let maxLines = FeatureSettings.shared.restoredScrollbackLines
         let terminalSessions = tab.splitController.terminalSessions
 
-        var paneStates: [SavedTerminalPaneState] = []
-        for (paneID, session) in terminalSessions {
-            let dir = session.currentDirectory
-            let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
-            let knownRepoIdentity = Self.persistedRepoIdentity(
-                for: session,
-                directory: dir,
-                fallbackRoot: tab.repoGroupID
-            )
-            let persistedIdentity = persistedAISessionIdentity(
-                from: session
-            )
-            let resumeCommand = Self.buildAIResumeCommand(
-                provider: persistedIdentity.provider,
-                sessionId: persistedIdentity.sessionId,
-                sessionIdSource: persistedIdentity.sessionIdSource
-            )
-
-            paneStates.append(SavedTerminalPaneState(
-                paneID: paneID.uuidString,
-                directory: dir,
-                scrollbackContent: scrollback,
-                aiResumeCommand: resumeCommand,
-                aiProvider: persistedIdentity.provider,
-                aiSessionId: persistedIdentity.sessionId,
-                aiSessionIdSource: persistedIdentity.sessionIdSource,
-                lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate),
-                lastInputAt: session.lastInputDate,
-                knownRepoRoot: knownRepoIdentity?.rootPath,
-                knownGitBranch: knownRepoIdentity?.branch,
-                lastStatus: session.effectiveStatus,
-                agentLaunchCommand: session.lastAgentLaunchCommand,
-                agentStartedAt: session.agentStartedAt,
-                lastExitCode: session.lastExitCode,
-                lastExitAt: session.lastExitAt
-            ))
-        }
+        // Single-tab capture has no cross-tab dedup concern — pass an
+        // empty claimed set and discard. fallbackTabState is nil because
+        // the closed-tab snapshot is built entirely from live session
+        // state (the deferred-state branch above already handled the
+        // case where the tab was closed before its restore ran).
+        var localClaimedSessionIds = Set<String>()
+        let paneStates = buildPaneStates(
+            for: tab,
+            maxLines: maxLines,
+            fallbackTabState: nil,
+            claimedSessionIds: &localClaimedSessionIds
+        )
 
         let primaryDirectory = terminalSessions.first?.1.currentDirectory
             ?? tab.session?.currentDirectory
