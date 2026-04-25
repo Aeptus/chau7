@@ -253,8 +253,39 @@ struct OverlayTab: Identifiable, Equatable {
         }
     }
 
+    /// Equatable conformance is what SwiftUI's diffing engine uses to
+    /// decide whether a tab-chip view needs to re-render. Any field
+    /// rendered into `displayTitle` / `effectiveColor` / the F20 badge
+    /// must therefore be compared here, otherwise mutations to that
+    /// field will silently be diffed-equal and the on-screen tab will
+    /// stay stale.
+    ///
+    /// Symptom that motivated this list: renaming a tab via
+    /// `OverlayTabsModel.commitRename` writes `tabs[index].customTitle`,
+    /// but if `customTitle` is missing from `==` SwiftUI thinks the tab
+    /// is unchanged and skips updating the chip — the user types a new
+    /// name, presses Save, and the chip keeps the old name.
+    ///
+    /// Fields covered:
+    ///   - id / isMCPControlled / tokenOptOverride / notificationStyle /
+    ///     repoGroupID / hasInheritedRepoGroup — original list
+    ///   - customTitle — rename + MCP renameTab
+    ///   - color / autoColor / isManualColorOverride — color picker +
+    ///     F05 auto-color
+    ///   - lastCommand — F20 badge
+    ///
+    /// Fields deliberately NOT compared:
+    ///   - splitController — class reference; identity-stable across
+    ///     mutations to the tab struct
+    ///   - bookmarks — F17 list; not rendered on the tab chip itself
+    ///   - createdAt — immutable
     static func == (lhs: OverlayTab, rhs: OverlayTab) -> Bool {
         lhs.id == rhs.id
+            && lhs.customTitle == rhs.customTitle
+            && lhs.color == rhs.color
+            && lhs.autoColor == rhs.autoColor
+            && lhs.isManualColorOverride == rhs.isManualColorOverride
+            && lhs.lastCommand == rhs.lastCommand
             && lhs.isMCPControlled == rhs.isMCPControlled
             && lhs.tokenOptOverride == rhs.tokenOptOverride
             && lhs.notificationStyle == rhs.notificationStyle
