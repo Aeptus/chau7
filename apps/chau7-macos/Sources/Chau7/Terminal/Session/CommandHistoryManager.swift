@@ -127,6 +127,7 @@ final class CommandHistoryManager {
     // MARK: - Per-Tab Navigation
 
     func previousInTab(_ tabID: String) -> String? {
+        bootstrapTabIfNeeded(tabID)
         guard let history = tabHistory[tabID], !history.isEmpty else { return nil }
         let cursor = tabCursors[tabID] ?? -1
         let next = cursor + 1
@@ -151,6 +152,7 @@ final class CommandHistoryManager {
     // MARK: - Global Navigation
 
     func previousGlobal() -> String? {
+        bootstrapGlobalIfNeeded()
         guard !globalHistory.isEmpty else { return nil }
         let next = globalCursor + 1
         guard next < globalHistory.count else { return nil }
@@ -167,6 +169,65 @@ final class CommandHistoryManager {
         let newCursor = globalCursor - 1
         globalCursor = newCursor
         return globalHistory[globalHistory.count - 1 - newCursor]
+    }
+
+    // MARK: - Bootstrap from PersistentHistoryStore
+
+    /// Tabs we've already attempted to bootstrap from disk this launch.
+    /// Tracks the attempt rather than the outcome — a tab with a genuinely
+    /// empty persisted history (zero rows) shouldn't re-query the DB on
+    /// every Up arrow press.
+    private var bootstrappedTabs: Set<String> = []
+    private var bootstrappedGlobal = false
+
+    private func bootstrapTabIfNeeded(_ tabID: String) {
+        guard let store = persistentStore, persistentHistoryEnabled() else { return }
+        guard !bootstrappedTabs.contains(tabID) else { return }
+        bootstrappedTabs.insert(tabID)
+
+        // Only seed when the in-memory cache is empty for this tab. Once
+        // recordCommand has populated the cache during the current launch,
+        // we've already filtered for sensitivity and dedup — replacing it
+        // with a raw DB read would be a regression.
+        guard tabHistory[tabID]?.isEmpty ?? true else { return }
+
+        let rows = store.recentForTab(tabID, limit: maxPerTab)
+        guard !rows.isEmpty else { return }
+
+        // recentForTab returns newest-first; the in-memory cache is
+        // oldest-first, so reverse before assignment. Filter inline secrets
+        // defensively in case the persistence guard ever drifted from the
+        // recordCommand guard.
+        let commands = rows.reversed().compactMap { record -> String? in
+            let trimmed = record.command.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty,
+                  !SensitiveInputGuard.containsInlineSecrets(trimmed) else { return nil }
+            return trimmed
+        }
+        guard !commands.isEmpty else { return }
+        tabHistory[tabID] = commands
+        Log.info("CommandHistoryManager: bootstrapped tab \(tabID) with \(commands.count) entries from persistent store")
+    }
+
+    private func bootstrapGlobalIfNeeded() {
+        guard let store = persistentStore, persistentHistoryEnabled() else { return }
+        guard !bootstrappedGlobal else { return }
+        bootstrappedGlobal = true
+
+        guard globalHistory.isEmpty else { return }
+
+        let rows = store.recent(limit: maxGlobal)
+        guard !rows.isEmpty else { return }
+
+        let commands = rows.reversed().compactMap { record -> String? in
+            let trimmed = record.command.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty,
+                  !SensitiveInputGuard.containsInlineSecrets(trimmed) else { return nil }
+            return trimmed
+        }
+        guard !commands.isEmpty else { return }
+        globalHistory = commands
+        Log.info("CommandHistoryManager: bootstrapped global history with \(commands.count) entries from persistent store")
     }
 
     // MARK: - Cursor Reset
@@ -187,5 +248,9 @@ final class CommandHistoryManager {
     func removeTab(_ tabID: String) {
         tabHistory.removeValue(forKey: tabID)
         tabCursors.removeValue(forKey: tabID)
+        // Allow a re-opened tab with the same OverlayTab.id (e.g., reopen-
+        // closed-tab) to re-bootstrap from the persistent store next time
+        // arrow-key navigation is invoked.
+        bootstrappedTabs.remove(tabID)
     }
 }

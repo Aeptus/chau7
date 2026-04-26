@@ -248,6 +248,33 @@ final class PersistentHistoryStore {
         }
     }
 
+    /// Most recent entries for a specific tab. Used by CommandHistoryManager
+    /// to bootstrap arrow-key navigation history on first access after launch
+    /// (so per-tab Up arrow returns commands recorded in previous sessions).
+    func recentForTab(_ tabID: String, limit: Int = 500) -> [HistoryRecord] {
+        dbQueue.sync { [self] in
+            var results: [HistoryRecord] = []
+            guard let db = db else { return results }
+
+            let sql = """
+                SELECT id, command, directory, exit_code, shell, tab_id, session_id, timestamp, duration
+                FROM history WHERE tab_id = ? ORDER BY timestamp DESC LIMIT ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
+            defer { sqlite3_finalize(stmt) }
+
+            sqlite3_bind_text(stmt, 1, (tabID as NSString).utf8String, -1, nil)
+            sqlite3_bind_int(stmt, 2, Int32(limit))
+
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                results.append(readRecord(stmt))
+            }
+
+            return results
+        }
+    }
+
     func recentForDirectory(_ directory: String, limit: Int = 50) -> [HistoryRecord] {
         dbQueue.sync { [self] in
             var results: [HistoryRecord] = []
