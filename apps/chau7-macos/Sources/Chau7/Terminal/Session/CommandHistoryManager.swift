@@ -5,13 +5,19 @@ import Chau7Core
 /// - Arrow ↑/↓: per-tab history
 /// - Option+Arrow ↑/↓: global (cross-tab) history
 ///
+/// In-memory caches drive the navigation cursor. When a `PersistentHistoryStore`
+/// is wired in (the production singleton wires `PersistentHistoryStore.shared`),
+/// recordCommand also writes through to disk so history survives app restart.
+///
 /// Security: Commands entered during password prompts (echo disabled) are
 /// never recorded. Commands containing inline secrets are also filtered.
+/// Sensitive commands are dropped at the start of recordCommand and never
+/// reach the persistent store.
 ///
 /// All access must be on the main queue (callers are UI event handlers
 /// and terminal session callbacks which both run on main).
 final class CommandHistoryManager {
-    static let shared = CommandHistoryManager()
+    static let shared = CommandHistoryManager(persistentStore: PersistentHistoryStore.shared)
 
     private let maxPerTab = 500
     private let maxGlobal = 2000
@@ -25,17 +31,39 @@ final class CommandHistoryManager {
     private var tabCursors: [String: Int] = [:]
     private var globalCursor: Int = -1
 
-    private init() {}
+    /// Optional persistent backing store. When non-nil and the
+    /// `feature.persistentHistory` user default is enabled, recordCommand
+    /// writes through to it. Tests inject `nil` (or an in-memory store via
+    /// `PersistentHistoryStore(path: ":memory:")`) for isolation from the
+    /// shared on-disk database.
+    private let persistentStore: PersistentHistoryStore?
+
+    init(persistentStore: PersistentHistoryStore?) {
+        self.persistentStore = persistentStore
+    }
 
     // MARK: - Recording
 
     /// Records a command in history.
     /// - Parameters:
     ///   - command: The command text
-    ///   - tabID: Tab identifier for per-tab history
+    ///   - tabID: Tab identifier for per-tab history (preferably the
+    ///     persistent OverlayTab.id so entries survive restoration)
     ///   - isSensitive: If true, the command was entered during a password prompt
-    ///     or other echo-disabled context and should NOT be recorded.
-    func recordCommand(_ command: String, tabID: String, isSensitive: Bool = false) {
+    ///     or other echo-disabled context and is dropped from BOTH the in-
+    ///     memory caches and the persistent store.
+    ///   - directory: Working directory at the time of execution; persisted
+    ///     to the store for repo-scoped queries. Optional — pure in-memory
+    ///     callers (tests, edge cases) can omit it.
+    ///   - shell: Shell that ran the command (e.g. "zsh", "bash"). Same
+    ///     optionality semantics as `directory`.
+    func recordCommand(
+        _ command: String,
+        tabID: String,
+        isSensitive: Bool = false,
+        directory: String? = nil,
+        shell: String? = nil
+    ) {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -75,6 +103,25 @@ final class CommandHistoryManager {
         // Reset cursors on new command
         tabCursors[tabID] = -1
         globalCursor = -1
+
+        // Persistent write-through. Gated by the `feature.persistentHistory`
+        // user default (default true; the Settings UI exposes this toggle as
+        // "Enable Persistent History"). Sensitive + secret commands are
+        // already filtered above and never reach this point.
+        if let store = persistentStore, persistentHistoryEnabled() {
+            store.insert(HistoryRecord(
+                command: trimmed,
+                directory: directory,
+                shell: shell,
+                tabID: tabID
+            ))
+        }
+    }
+
+    private func persistentHistoryEnabled() -> Bool {
+        // UserDefaults stores `nil` when the user hasn't toggled the setting;
+        // treat that as enabled (matches HistorySettingsView's default).
+        UserDefaults.standard.object(forKey: "feature.persistentHistory") as? Bool ?? true
     }
 
     // MARK: - Per-Tab Navigation

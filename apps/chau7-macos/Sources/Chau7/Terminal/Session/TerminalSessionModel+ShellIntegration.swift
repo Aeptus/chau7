@@ -1184,7 +1184,13 @@ extension TerminalSessionModel {
             // when ownerTabID hasn't been stamped yet (rare; happens before
             // OverlayTabsModel.stampOwnerTabID runs).
             let historyKey = ownerTabID?.uuidString ?? tabIdentifier
-            CommandHistoryManager.shared.recordCommand(trimmed, tabID: historyKey, isSensitive: echoDisabled)
+            CommandHistoryManager.shared.recordCommand(
+                trimmed,
+                tabID: historyKey,
+                isSensitive: echoDisabled,
+                directory: currentDirectory,
+                shell: defaultShell()
+            )
         }
         guard !echoDisabled else {
             Log.trace("Skipping echo-disabled input from persistence and shell event tracking")
