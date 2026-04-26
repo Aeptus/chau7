@@ -51,8 +51,11 @@ final class CommandHistoryManagerTests: XCTestCase {
 
         store.waitForPendingWrites()
         let rows = store.recentForTab("tab-A", limit: 10)
-        XCTAssertEqual(rows.count, 2,
-                       "Both non-sensitive commands must reach the persistent store")
+        XCTAssertEqual(
+            rows.count,
+            2,
+            "Both non-sensitive commands must reach the persistent store"
+        )
         XCTAssertEqual(Set(rows.map(\.command)), Set(["ls -la", "git status"]))
     }
 
@@ -84,8 +87,11 @@ final class CommandHistoryManagerTests: XCTestCase {
         let manager = CommandHistoryManager(persistentStore: store)
 
         let mostRecent = manager.previousInTab("tab-A")
-        XCTAssertEqual(mostRecent, "cmd-2",
-                       "First Up arrow must return the most recent persisted command")
+        XCTAssertEqual(
+            mostRecent,
+            "cmd-2",
+            "First Up arrow must return the most recent persisted command"
+        )
 
         let secondMostRecent = manager.previousInTab("tab-A")
         XCTAssertEqual(secondMostRecent, "cmd-1")
@@ -93,8 +99,10 @@ final class CommandHistoryManagerTests: XCTestCase {
         let oldest = manager.previousInTab("tab-A")
         XCTAssertEqual(oldest, "cmd-0")
 
-        XCTAssertNil(manager.previousInTab("tab-A"),
-                     "Beyond the oldest entry there's nothing to return")
+        XCTAssertNil(
+            manager.previousInTab("tab-A"),
+            "Beyond the oldest entry there's nothing to return"
+        )
     }
 
     func testBootstrapsGlobalHistoryOnFirstAccess() {
@@ -103,8 +111,11 @@ final class CommandHistoryManagerTests: XCTestCase {
         store.waitForPendingWrites()
 
         let manager = CommandHistoryManager(persistentStore: store)
-        XCTAssertEqual(manager.previousGlobal(), "beta",
-                       "Global history must include rows from any tab, newest-first")
+        XCTAssertEqual(
+            manager.previousGlobal(),
+            "beta",
+            "Global history must include rows from any tab, newest-first"
+        )
         XCTAssertEqual(manager.previousGlobal(), "alpha")
     }
 
@@ -113,8 +124,10 @@ final class CommandHistoryManagerTests: XCTestCase {
         store.waitForPendingWrites()
 
         let manager = CommandHistoryManager(persistentStore: store)
-        XCTAssertNil(manager.previousInTab("tab-B"),
-                     "Tab B must not see Tab A's persisted entries")
+        XCTAssertNil(
+            manager.previousInTab("tab-B"),
+            "Tab B must not see Tab A's persisted entries"
+        )
         XCTAssertEqual(manager.previousInTab("tab-A"), "tab-a-only")
     }
 
@@ -128,8 +141,11 @@ final class CommandHistoryManagerTests: XCTestCase {
         let manager = CommandHistoryManager(persistentStore: store)
         manager.recordCommand("just-recorded", tabID: "tab-A")
 
-        XCTAssertEqual(manager.previousInTab("tab-A"), "just-recorded",
-                       "Bootstrap must skip when the in-memory cache is already populated")
+        XCTAssertEqual(
+            manager.previousInTab("tab-A"),
+            "just-recorded",
+            "Bootstrap must skip when the in-memory cache is already populated"
+        )
     }
 
     // MARK: - Feature flag gating
@@ -140,8 +156,11 @@ final class CommandHistoryManagerTests: XCTestCase {
         manager.recordCommand("should-not-persist", tabID: "tab-A")
 
         store.waitForPendingWrites()
-        XCTAssertEqual(store.recentForTab("tab-A", limit: 10).count, 0,
-                       "With the feature flag off, write-through must not happen")
+        XCTAssertEqual(
+            store.recentForTab("tab-A", limit: 10).count,
+            0,
+            "With the feature flag off, write-through must not happen"
+        )
     }
 
     func testFeatureFlagDisabledSkipsBootstrap() {
@@ -151,8 +170,10 @@ final class CommandHistoryManagerTests: XCTestCase {
         UserDefaults.standard.set(false, forKey: Self.flagKey)
         let manager = CommandHistoryManager(persistentStore: store)
 
-        XCTAssertNil(manager.previousInTab("tab-A"),
-                     "With the feature flag off, bootstrap must not pull rows from the store")
+        XCTAssertNil(
+            manager.previousInTab("tab-A"),
+            "With the feature flag off, bootstrap must not pull rows from the store"
+        )
     }
 
     // MARK: - Security
@@ -162,15 +183,20 @@ final class CommandHistoryManagerTests: XCTestCase {
         manager.recordCommand("sudo apt update", tabID: "tab-A", isSensitive: true)
 
         store.waitForPendingWrites()
-        XCTAssertEqual(store.recentForTab("tab-A", limit: 10).count, 0,
-                       "Sensitive commands must not reach the persistent store")
+        XCTAssertEqual(
+            store.recentForTab("tab-A", limit: 10).count,
+            0,
+            "Sensitive commands must not reach the persistent store"
+        )
     }
 
     func testSensitiveCommandIsNotKeptInMemoryEither() {
         let manager = CommandHistoryManager(persistentStore: store)
         manager.recordCommand("password123", tabID: "tab-A", isSensitive: true)
-        XCTAssertNil(manager.previousInTab("tab-A"),
-                     "Sensitive commands must not enter the in-memory cache either")
+        XCTAssertNil(
+            manager.previousInTab("tab-A"),
+            "Sensitive commands must not enter the in-memory cache either"
+        )
     }
 
     // MARK: - removeTab clears bootstrap flag
@@ -188,8 +214,11 @@ final class CommandHistoryManagerTests: XCTestCase {
         store.insert(HistoryRecord(command: "second", tabID: "tab-A", timestamp: Date(timeIntervalSinceReferenceDate: 300)))
         store.waitForPendingWrites()
 
-        XCTAssertEqual(manager.previousInTab("tab-A"), "second",
-                       "After removeTab, the next previousInTab call must re-bootstrap from the store")
+        XCTAssertEqual(
+            manager.previousInTab("tab-A"),
+            "second",
+            "After removeTab, the next previousInTab call must re-bootstrap from the store"
+        )
     }
 
     // MARK: - Nil store (pure in-memory mode)
@@ -231,14 +260,25 @@ final class CommandHistoryManagerTests: XCTestCase {
         let manager = CommandHistoryManager(persistentStore: store)
 
         // Up arrow walk: most-recent first, expecting deduped sequence.
-        XCTAssertEqual(manager.previousInTab("tab-A"), "git status",
-                       "First Up returns the most recent unique command")
-        XCTAssertEqual(manager.previousInTab("tab-A"), "pwd",
-                       "Second Up skips the duplicate 'git status'")
-        XCTAssertEqual(manager.previousInTab("tab-A"), "ls",
-                       "Third Up returns 'ls' once, not three times")
-        XCTAssertNil(manager.previousInTab("tab-A"),
-                     "Fourth Up exhausts the deduped history")
+        XCTAssertEqual(
+            manager.previousInTab("tab-A"),
+            "git status",
+            "First Up returns the most recent unique command"
+        )
+        XCTAssertEqual(
+            manager.previousInTab("tab-A"),
+            "pwd",
+            "Second Up skips the duplicate 'git status'"
+        )
+        XCTAssertEqual(
+            manager.previousInTab("tab-A"),
+            "ls",
+            "Third Up returns 'ls' once, not three times"
+        )
+        XCTAssertNil(
+            manager.previousInTab("tab-A"),
+            "Fourth Up exhausts the deduped history"
+        )
     }
 
     func testNormalizeForArrowNavigationFiltersAndDedups() {
@@ -255,7 +295,10 @@ final class CommandHistoryManagerTests: XCTestCase {
             HistoryRecord(command: "ls", timestamp: now)
         ]
         let normalized = CommandHistoryManager.normalizeForArrowNavigation(rows)
-        XCTAssertEqual(normalized, ["ls", "pwd", "git status"],
-                       "Empty/whitespace dropped, consecutive duplicates collapsed, oldest-first")
+        XCTAssertEqual(
+            normalized,
+            ["ls", "pwd", "git status"],
+            "Empty/whitespace dropped, consecutive duplicates collapsed, oldest-first"
+        )
     }
 }
