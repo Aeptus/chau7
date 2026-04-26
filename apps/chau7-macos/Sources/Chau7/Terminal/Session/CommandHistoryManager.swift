@@ -194,16 +194,7 @@ final class CommandHistoryManager {
         let rows = store.recentForTab(tabID, limit: maxPerTab)
         guard !rows.isEmpty else { return }
 
-        // recentForTab returns newest-first; the in-memory cache is
-        // oldest-first, so reverse before assignment. Filter inline secrets
-        // defensively in case the persistence guard ever drifted from the
-        // recordCommand guard.
-        let commands = rows.reversed().compactMap { record -> String? in
-            let trimmed = record.command.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty,
-                  !SensitiveInputGuard.containsInlineSecrets(trimmed) else { return nil }
-            return trimmed
-        }
+        let commands = Self.normalizeForArrowNavigation(rows)
         guard !commands.isEmpty else { return }
         tabHistory[tabID] = commands
         Log.info("CommandHistoryManager: bootstrapped tab \(tabID) with \(commands.count) entries from persistent store")
@@ -219,15 +210,37 @@ final class CommandHistoryManager {
         let rows = store.recent(limit: maxGlobal)
         guard !rows.isEmpty else { return }
 
-        let commands = rows.reversed().compactMap { record -> String? in
-            let trimmed = record.command.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty,
-                  !SensitiveInputGuard.containsInlineSecrets(trimmed) else { return nil }
-            return trimmed
-        }
+        let commands = Self.normalizeForArrowNavigation(rows)
         guard !commands.isEmpty else { return }
         globalHistory = commands
         Log.info("CommandHistoryManager: bootstrapped global history with \(commands.count) entries from persistent store")
+    }
+
+    /// Convert newest-first persisted rows into the oldest-first, dedup'd
+    /// shape the in-memory arrow-key cache expects.
+    ///
+    /// The persistent store keeps every recorded command (audit trail +
+    /// frequency analytics expect it), but recordCommand's in-memory cache
+    /// drops consecutive duplicates so Up arrow doesn't yield "ls, ls, ls"
+    /// when the user ran the same command three times. Bootstrap must
+    /// apply the same dedup; otherwise after restart the user would see
+    /// every duplicate the live session would have hidden.
+    ///
+    /// Also defensively re-filters inline secrets in case the persistence
+    /// guard ever drifts from the recordCommand guard.
+    static func normalizeForArrowNavigation(_ rows: [HistoryRecord]) -> [String] {
+        // rows are newest-first; reverse to oldest-first so the dedup walk
+        // matches the order recordCommand would have appended them.
+        var result: [String] = []
+        for record in rows.reversed() {
+            let trimmed = record.command.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty,
+                  !SensitiveInputGuard.containsInlineSecrets(trimmed) else { continue }
+            // Drop consecutive duplicates — same rule as the in-memory path.
+            if result.last == trimmed { continue }
+            result.append(trimmed)
+        }
+        return result
     }
 
     // MARK: - Cursor Reset

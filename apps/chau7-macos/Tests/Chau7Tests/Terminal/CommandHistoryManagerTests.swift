@@ -202,4 +202,60 @@ final class CommandHistoryManagerTests: XCTestCase {
         XCTAssertEqual(manager.previousInTab("tab-A"), "pwd")
         XCTAssertEqual(manager.previousInTab("tab-A"), "ls")
     }
+
+    // MARK: - Bootstrap dedup parity with in-memory recordCommand
+
+    /// recordCommand drops consecutive duplicates from the in-memory cache
+    /// but writes every row to the persistent store (audit trail +
+    /// frequency analytics need every row). Bootstrap must collapse the
+    /// duplicates back to the in-memory shape so Up arrow doesn't yield
+    /// "ls, ls, ls" after restart for a user who ran `ls` three times in
+    /// the previous session.
+    func testBootstrapDedupsConsecutiveDuplicates() {
+        let now = Date()
+        // 3× "ls" then "pwd" then 2× "git status", inserted oldest-first.
+        let sequence: [(String, TimeInterval)] = [
+            ("ls", 0), ("ls", 1), ("ls", 2),
+            ("pwd", 3),
+            ("git status", 4), ("git status", 5)
+        ]
+        for (cmd, offset) in sequence {
+            store.insert(HistoryRecord(
+                command: cmd,
+                tabID: "tab-A",
+                timestamp: now.addingTimeInterval(offset)
+            ))
+        }
+        store.waitForPendingWrites()
+
+        let manager = CommandHistoryManager(persistentStore: store)
+
+        // Up arrow walk: most-recent first, expecting deduped sequence.
+        XCTAssertEqual(manager.previousInTab("tab-A"), "git status",
+                       "First Up returns the most recent unique command")
+        XCTAssertEqual(manager.previousInTab("tab-A"), "pwd",
+                       "Second Up skips the duplicate 'git status'")
+        XCTAssertEqual(manager.previousInTab("tab-A"), "ls",
+                       "Third Up returns 'ls' once, not three times")
+        XCTAssertNil(manager.previousInTab("tab-A"),
+                     "Fourth Up exhausts the deduped history")
+    }
+
+    func testNormalizeForArrowNavigationFiltersAndDedups() {
+        // Pure-function level test for the bootstrap normalizer — same
+        // contract, separately exercisable so future regressions to the
+        // dedup logic show up in one targeted assertion.
+        let now = Date()
+        let rows = [
+            HistoryRecord(command: "git status", timestamp: now.addingTimeInterval(5)),
+            HistoryRecord(command: "git status", timestamp: now.addingTimeInterval(4)),
+            HistoryRecord(command: "  ", timestamp: now.addingTimeInterval(3)),
+            HistoryRecord(command: "pwd", timestamp: now.addingTimeInterval(2)),
+            HistoryRecord(command: "ls", timestamp: now.addingTimeInterval(1)),
+            HistoryRecord(command: "ls", timestamp: now)
+        ]
+        let normalized = CommandHistoryManager.normalizeForArrowNavigation(rows)
+        XCTAssertEqual(normalized, ["ls", "pwd", "git status"],
+                       "Empty/whitespace dropped, consecutive duplicates collapsed, oldest-first")
+    }
 }
