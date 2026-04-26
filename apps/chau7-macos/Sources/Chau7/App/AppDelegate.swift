@@ -164,6 +164,16 @@ private final class OverlayBlurView: NSVisualEffectView {
             }
         }
 
+        // Re-clamp overlay windows on display configuration change so a
+        // window valid on a larger display doesn't end up with its bottom
+        // under the dock on a smaller one (bug #92).
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(didChangeScreenParameters(_:)),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+
         // Show splash: welcome on first launch, spinner on subsequent
         splashController = SplashWindowController()
         if !SplashWindowController.hasShownWelcome {
@@ -2034,6 +2044,55 @@ private final class OverlayBlurView: NSVisualEffectView {
                 TabBarToolbarDelegate.shared.recreateToolbar(for: window)
             }
         }
+    }
+
+    // MARK: - Visible-frame clamping (bug #92)
+
+    /// Cap the proposed resize size so the window cannot exceed the screen's
+    /// usable area. Pairs with `windowDidMove` for origin clamping; together
+    /// they keep the window inside `visibleFrame` so macOS doesn't clip the
+    /// bottom of the terminal grid against the dock or screen edge.
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        guard overlayHosts.contains(where: { $0.window == sender }) else { return frameSize }
+        if let overlay = sender as? OverlayWindow, overlay.isInFullscreen { return frameSize }
+        guard let screen = sender.screen ?? NSScreen.main else { return frameSize }
+        var size = frameSize
+        size.width = min(size.width, screen.visibleFrame.width)
+        size.height = min(size.height, screen.visibleFrame.height)
+        return size
+    }
+
+    /// Snap the window back inside `visibleFrame` if a drag carried it past
+    /// any edge (most commonly: bottom edge below the dock).
+    func windowDidMove(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        guard overlayHosts.contains(where: { $0.window == window }) else { return }
+        clampOverlayWindowToVisibleFrame(window)
+    }
+
+    /// Re-clamp every overlay window when display configuration changes
+    /// (resolution, dock auto-hide, monitor connect/disconnect). Without this,
+    /// a window that was on-screen on a 4K display can end up with its
+    /// bottom under the dock after switching to a 1080p screen.
+    @objc private func didChangeScreenParameters(_: Notification) {
+        Log.info("didChangeScreenParameters: re-clamping \(overlayHosts.count) overlay window(s)")
+        for host in overlayHosts {
+            clampOverlayWindowToVisibleFrame(host.window)
+        }
+    }
+
+    private func clampOverlayWindowToVisibleFrame(_ window: NSWindow) {
+        if let overlay = window as? OverlayWindow, overlay.isInFullscreen { return }
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        let clamped = OverlayWindowFraming.clampedFrame(
+            proposed: window.frame,
+            in: screen.visibleFrame
+        )
+        guard clamped != window.frame else { return }
+        Log.info(
+            "clampOverlayWindowToVisibleFrame[\(window.windowNumber)]: \(window.frame) -> \(clamped) visibleFrame=\(screen.visibleFrame)"
+        )
+        window.setFrame(clamped, display: true, animate: false)
     }
 
     func windowWillEnterFullScreen(_ notification: Notification) {
