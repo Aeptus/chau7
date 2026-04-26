@@ -2102,6 +2102,11 @@ final class RustTerminalView: NSView {
 
     /// Command history navigation
     var tabIdentifier = ""
+    /// Stable owner-tab identifier (OverlayTab.id.uuidString), preserved
+    /// across restoration. Falls back to `tabIdentifier` when nil. Used by
+    /// the arrow-key history handler and the recordCommand path so per-tab
+    /// history survives app restart.
+    var persistentTabID: String?
     var isAtPrompt: (() -> Bool)?
 
     /// Current MCP-facing ownership for observability exports.

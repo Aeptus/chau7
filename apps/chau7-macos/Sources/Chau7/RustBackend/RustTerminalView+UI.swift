@@ -596,6 +596,11 @@ extension RustTerminalView {
         let hasCmdCtrlShift = modifiers.contains(.command) || modifiers.contains(.control) || modifiers.contains(.shift)
         if hasCmdCtrlShift { return false }
 
+        // Prefer the persistent owner-tab id (OverlayTab.id, preserved across
+        // restore) so per-tab arrow-key history survives selectTab + app
+        // restart. `tabIdentifier` is regenerated per session and would
+        // re-key history on every view re-mount.
+        let historyKey = persistentTabID ?? tabIdentifier
         let command: String?
         if hasOption {
             // Option+Arrow: Global (cross-tab) history
@@ -605,8 +610,8 @@ extension RustTerminalView {
         } else {
             // Arrow only: Per-tab history
             command = isUp
-                ? CommandHistoryManager.shared.previousInTab(tabIdentifier)
-                : CommandHistoryManager.shared.nextInTab(tabIdentifier)
+                ? CommandHistoryManager.shared.previousInTab(historyKey)
+                : CommandHistoryManager.shared.nextInTab(historyKey)
         }
 
         guard let cmd = command else {

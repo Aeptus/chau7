@@ -336,11 +336,15 @@ extension OverlayTabsModel {
                 NotificationActionExecutor.shared.cancelPendingStyleWork(tabID: id, sessionID: aiSessionID)
             }
 
-            // Clean up per-tab state before replacing
-            if let sessionID = tabs[idx].session?.tabIdentifier {
-                CommandHistoryManager.shared.removeTab(sessionID)
-                CTOFlagManager.removeFlag(sessionID: sessionID)
-                CTORuntimeMonitor.shared.untrackSession(sessionID)
+            // Clean up per-tab state before replacing.
+            // CommandHistoryManager keys on ownerTabID (OverlayTab.id) so the
+            // in-memory entry survives selectTab and restore. CTO keys remain
+            // on the per-session tabIdentifier (in-process telemetry only).
+            if let session = tabs[idx].session {
+                let historyKey = session.ownerTabID?.uuidString ?? session.tabIdentifier
+                CommandHistoryManager.shared.removeTab(historyKey)
+                CTOFlagManager.removeFlag(sessionID: session.tabIdentifier)
+                CTORuntimeMonitor.shared.untrackSession(session.tabIdentifier)
             }
 
             let dir = inheritedStartDirectory()
@@ -401,13 +405,16 @@ extension OverlayTabsModel {
             NotificationActionExecutor.shared.cancelPendingStyleWork(tabID: id, sessionID: aiSessionID)
         }
 
-        // Clean up per-tab command history
-        if let sessionID = tabs[index].session?.tabIdentifier {
-            CommandHistoryManager.shared.removeTab(sessionID)
+        // Clean up per-tab command history (keyed on ownerTabID so it survives
+        // selectTab and restore) and CTO state (keyed on per-session
+        // tabIdentifier — in-process telemetry only).
+        if let session = tabs[index].session {
+            let historyKey = session.ownerTabID?.uuidString ?? session.tabIdentifier
+            CommandHistoryManager.shared.removeTab(historyKey)
+            let sessionID = session.tabIdentifier
             // CTO: remove flag file for closed tab
             let hadCTOFlag = CTOFlagManager.removeFlag(sessionID: sessionID)
-            if hadCTOFlag,
-               let session = tabs[index].session {
+            if hadCTOFlag {
                 let isAI = session.activeAppName != nil
                 CTORuntimeMonitor.shared.recordDecision(
                     sessionID: sessionID,

@@ -1179,7 +1179,12 @@ extension TerminalSessionModel {
         let echoDisabled = activeTerminalView?.isPtyEchoDisabled ?? false
         if !trimmed.isEmpty, !isSystemRestoreInput {
             recordUserInputLineIfNeeded(isSystemRestoreInput: false)
-            CommandHistoryManager.shared.recordCommand(trimmed, tabID: tabIdentifier, isSensitive: echoDisabled)
+            // Prefer the persistent owner-tab id so per-tab arrow-key history
+            // survives restoration. Falls back to the in-process session id
+            // when ownerTabID hasn't been stamped yet (rare; happens before
+            // OverlayTabsModel.stampOwnerTabID runs).
+            let historyKey = ownerTabID?.uuidString ?? tabIdentifier
+            CommandHistoryManager.shared.recordCommand(trimmed, tabID: historyKey, isSensitive: echoDisabled)
         }
         guard !echoDisabled else {
             Log.trace("Skipping echo-disabled input from persistence and shell event tracking")

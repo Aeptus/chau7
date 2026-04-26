@@ -259,6 +259,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
                 model?.scheduleHighlightAfterScroll()
             }
             existingView.tabIdentifier = model.tabIdentifier
+            existingView.persistentTabID = model.ownerTabID?.uuidString
             existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
             existingView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
             existingView.installHistoryKeyMonitor()
@@ -295,6 +296,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 
         view.font = terminalFont()
         view.tabIdentifier = model.tabIdentifier
+        view.persistentTabID = model.ownerTabID?.uuidString
         view.applyColorScheme(settings.currentColorScheme)
         view.applyCursorStyle(style: settings.cursorStyle, blink: settings.cursorBlink)
         view.applyBellSettings(enabled: settings.bellEnabled, sound: settings.bellSound)
