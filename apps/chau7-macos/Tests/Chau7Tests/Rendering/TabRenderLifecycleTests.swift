@@ -37,13 +37,18 @@ final class TabRenderLifecycleTests: XCTestCase {
         XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: input), .active)
     }
 
-    func testSelectedTabInVisibleBackgroundWindowIsPassiveVisible() {
+    func testSelectedTabInVisibleBackgroundWindowStaysActive() {
+        // Selected tab on visible window renders live regardless of focus.
+        // Previous policy returned `.passiveVisible` here, which froze the
+        // surface for users with multi-monitor setups (window visible on
+        // one screen, focus on another) whenever no AI background activity
+        // was present.
         let input = makeInput(
             isSelectedTab: true,
             isInputPriorityWindow: false,
             isWindowVisibleForRendering: true
         )
-        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: input), .passiveVisible)
+        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: input), .active)
     }
 
     func testSelectedTabInInvisibleWindowIsWarm() {

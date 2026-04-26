@@ -93,23 +93,20 @@ public enum TabRenderLifecyclePolicy {
             guard input.isWindowVisibleForRendering else {
                 return .warm
             }
-            if input.isInputPriorityWindow {
-                return .active
-            }
-            // Promote to `.active` when the session is actively producing
-            // output even though the window isn't the input-priority
-            // (key/main) window. AI-agent observation is a primary use
-            // case of Chau7: users expect to see streaming output continue
-            // when they glance at another app. The PTY always drains into
-            // the Rust grid; what `.passiveVisible` was pausing is just
-            // Metal presentation. When there's genuine activity to present,
-            // keep presenting. Pre-W3.18 this was `.passiveVisible` and the
-            // user-visible symptom was "tab content freezes, then catches
-            // up in a burst when I come back."
-            if input.hasBackgroundActivity {
-                return .active
-            }
-            return .passiveVisible
+            // Selected tab on a visible window always renders live, whether
+            // or not the window is currently key/main. The previous policy
+            // (W3.18) only promoted to `.active` when `hasBackgroundActivity`
+            // was true — a gate that requires an AI tool session in
+            // `running` / `waiting` / `approval` state. That left a real
+            // gap on dual-monitor setups: a Chau7 window visible on one
+            // screen while the user works on another would freeze at the
+            // last frame whenever the gate was false (plain shell output,
+            // long compiles, finished AI sessions still showing the result).
+            // The PTY drains regardless of phase, so by the time the user
+            // glanced over, the visual surface was stale relative to the
+            // Rust grid. Visibility-on-screen is the right signal for
+            // "render live"; key/main is the signal for "accept input."
+            return .active
         }
         // Non-selected tabs: warm (not hidden) so views stay unhidden in the
         // hierarchy but don't drive active rendering. The shared background

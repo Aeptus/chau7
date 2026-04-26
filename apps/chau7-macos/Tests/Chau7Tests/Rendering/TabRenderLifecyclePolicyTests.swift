@@ -54,11 +54,16 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
     }
 
-    func testSelectedVisibleBackgroundWindowWithoutActivityFallsToPassiveVisible() {
-        // Mirror of the above: without background activity, a selected
-        // tab in a non-key visible window drops to `.passiveVisible` as
-        // before. This is the "save GPU when nothing's happening"
-        // branch that W3.18 did NOT touch.
+    func testSelectedVisibleBackgroundWindowWithoutActivityStaysActive() {
+        // A selected tab on a visible-but-not-key window renders live
+        // even without background activity. The previous policy dropped
+        // to `.passiveVisible` here, intending to save GPU "when
+        // nothing's happening," but in practice this froze the surface
+        // at a stale frame whenever a non-AI-agent process produced
+        // output (plain shell, long compiles, finished AI sessions),
+        // because the PTY drains regardless of phase but presentation
+        // was paused. Visibility is the right gate for "render live";
+        // key/main is the gate for "accept input."
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: true,
@@ -75,8 +80,10 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .passiveVisible)
-        XCTAssertFalse(decision.isInteractive)
+        XCTAssertEqual(decision.phase, .active,
+                       "Selected tab on visible window must render live regardless of focus or activity")
+        XCTAssertFalse(decision.isInteractive,
+                       "Interactive still requires input-priority window")
     }
 
     func testNonSelectedTabIsWarmAndLiveButNotInteractive() {
@@ -217,7 +224,8 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertTrue(selected.isInteractive)
         XCTAssertFalse(notSelected.isInteractive)
         XCTAssertFalse(selectedNoWindow.isInteractive)
-        XCTAssertEqual(selectedNoWindow.phase, .passiveVisible)
+        XCTAssertEqual(selectedNoWindow.phase, .active,
+                       "Selected tab on a visible window must render live regardless of focus")
     }
 
     func testActivePhaseProperties() {
