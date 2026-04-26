@@ -31,6 +31,19 @@ struct PtyEntry {
     /// on macOS latches POLLHUP and pegs one core per zombie fd, starving
     /// every other terminal that shares the pool.
     closed: AtomicBool,
+    /// Bytes that were read from this fd but couldn't be delivered yet
+    /// because the consumer's bounded channel was full. While this is
+    /// non-empty, the pool stops including this fd in its `poll()` set —
+    /// the kernel's PTY buffer fills up, and the shell-side writer
+    /// backpressures via a blocked `write()`. No bytes are lost.
+    ///
+    /// This replaces the previous `try_send` + drop-on-full behaviour.
+    /// Dropping was correct for cumulative state (a stale grid catches
+    /// up on the next sync) but wrong for cursor-positioning escape
+    /// sequences, which are byte-for-byte relative: drop a `ESC[3A`
+    /// chunk and every subsequent redraw lands on the wrong row, leaving
+    /// stale UI elements stranded mid-scrollback.
+    retained: Vec<u8>,
 }
 
 /// Shared state protected by a mutex.
@@ -92,6 +105,7 @@ impl SharedPtyReaderPool {
             sender,
             running,
             closed: AtomicBool::new(false),
+            retained: Vec::new(),
         });
         debug!(
             "SharedPtyReaderPool: queued registration for terminal {} (fd={})",
@@ -185,11 +199,37 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
             // is edge-latched and re-fires every iteration, spinning the
             // single pool thread at 100% CPU and starving every other
             // terminal.
+            //
+            // Also exclude fds with non-empty `retained` buffers (consumer
+            // is behind). For each such fd we first try to drain the
+            // retained bytes via `try_send`; if that succeeds the fd is
+            // re-included in the poll set, otherwise it stays excluded so
+            // the kernel PTY buffer fills up and the shell backpressures.
             pollfds.clear();
             fd_list.clear();
-            for (&fd, entry) in &s.entries {
+            for (&fd, entry) in s.entries.iter_mut() {
                 if entry.closed.load(Ordering::Acquire) {
                     continue;
+                }
+                if !entry.retained.is_empty() {
+                    let data = std::mem::take(&mut entry.retained);
+                    match entry.sender.try_send(PtyMessage::Data(data)) {
+                        Ok(()) => {
+                            // Drained — fall through and re-include this
+                            // fd in the poll set.
+                            trace!(
+                                "SharedPtyReaderPool: drained retained buffer for terminal {}",
+                                entry.terminal_id
+                            );
+                        }
+                        Err(crossbeam_channel::TrySendError::Full(PtyMessage::Data(buf))) => {
+                            // Still full — put the bytes back and skip.
+                            entry.retained = buf;
+                            continue;
+                        }
+                        Err(crossbeam_channel::TrySendError::Full(_)) => continue,
+                        Err(crossbeam_channel::TrySendError::Disconnected(_)) => continue,
+                    }
                 }
                 pollfds.push(libc::pollfd {
                     fd,
@@ -225,14 +265,14 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
         }
 
         // Read from fds that have data
-        let s = state.lock();
+        let mut s = state.lock();
         for (i, pfd) in pollfds.iter().enumerate() {
             if pfd.revents == 0 {
                 continue;
             }
 
             let fd = fd_list[i];
-            let entry = match s.entries.get(&fd) {
+            let entry = match s.entries.get_mut(&fd) {
                 Some(e) => e,
                 None => continue,
             };
@@ -251,17 +291,38 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                         "SharedPtyReaderPool: terminal {} read {} bytes",
                         entry.terminal_id, bytes_read
                     );
-                    // Use try_send to avoid blocking the pool thread when a
-                    // terminal's channel is full (consumer not draining — e.g.,
-                    // background tab with stopped event drain). A blocking send
-                    // here would starve ALL terminals since the pool is single-
-                    // threaded. Dropped data is acceptable — the terminal will
-                    // catch up on the next read when the consumer resumes.
-                    if entry.sender.try_send(PtyMessage::Data(data)).is_err() {
-                        warn!(
-                            "SharedPtyReaderPool: channel full/closed for terminal {}",
-                            entry.terminal_id
-                        );
+                    // try_send keeps the pool thread non-blocking — a
+                    // blocking send would starve every other terminal
+                    // sharing this single pool thread. On Full, we retain
+                    // the bytes on the entry and stop including the fd in
+                    // the next pollfd rebuild; the kernel PTY buffer fills
+                    // up and the shell backpressures via blocked write().
+                    // Bytes are never dropped: cursor-positioning escape
+                    // sequences are byte-for-byte relative, and dropping
+                    // any chunk corrupts every subsequent redraw (stale
+                    // UI elements stranded in scrollback).
+                    match entry.sender.try_send(PtyMessage::Data(data)) {
+                        Ok(()) => {}
+                        Err(crossbeam_channel::TrySendError::Full(PtyMessage::Data(buf))) => {
+                            warn!(
+                                "SharedPtyReaderPool: backpressuring terminal {} — channel full, retaining {} bytes (next read paused until consumer drains)",
+                                entry.terminal_id,
+                                buf.len()
+                            );
+                            entry.retained = buf;
+                        }
+                        Err(crossbeam_channel::TrySendError::Full(_)) => {
+                            warn!(
+                                "SharedPtyReaderPool: unexpected non-Data Full for terminal {}",
+                                entry.terminal_id
+                            );
+                        }
+                        Err(crossbeam_channel::TrySendError::Disconnected(_)) => {
+                            debug!(
+                                "SharedPtyReaderPool: channel disconnected for terminal {}",
+                                entry.terminal_id
+                            );
+                        }
                     }
                 } else if bytes_read == 0 {
                     // EOF — mark closed so the next pollfd rebuild excludes
