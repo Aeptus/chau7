@@ -2116,9 +2116,17 @@ private final class OverlayBlurView: NSVisualEffectView {
         // The NSHostingView's CALayer can become stale after this re-parenting, leaving
         // SwiftUI reporting valid layout but nothing composited on screen.
         // Force a toolbar recreation to get a fresh hosting view in the new window.
+        // Also force-relayout the content view so the SwiftUI hierarchy picks up the
+        // post-fullscreen `contentLayoutRect`. Without this nudge the terminal grid
+        // can stay sized for the transient mid-animation contentLayoutRect (which
+        // briefly equals the full window bounds because the toolbar isn't yet
+        // re-anchored), producing 2 extra rows that render below the visible
+        // content area — the user-visible "bottom input row half-clipped" symptom.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             Log.info("windowDidEnterFullScreen: recreating toolbar for fullscreen compositing fix")
             TabBarToolbarDelegate.shared.recreateToolbar(for: window)
+            window.contentView?.needsLayout = true
+            window.contentView?.layoutSubtreeIfNeeded()
         }
     }
 
@@ -2130,11 +2138,15 @@ private final class OverlayBlurView: NSVisualEffectView {
         TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
         TitlebarBackgroundInstaller.install(for: window)
 
-        // Same compositing fix as didEnterFullScreen — toolbar moves back from
-        // NSToolbarFullScreenWindow to the regular window.
+        // Same compositing + relayout fix as didEnterFullScreen. The exit
+        // direction has the same propagation gap: contentLayoutRect changes
+        // when the toolbar re-anchors, but nothing tells SwiftUI to relayout
+        // unless we explicitly force it.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             Log.info("windowDidExitFullScreen: recreating toolbar for compositing fix")
             TabBarToolbarDelegate.shared.recreateToolbar(for: window)
+            window.contentView?.needsLayout = true
+            window.contentView?.layoutSubtreeIfNeeded()
         }
     }
 
