@@ -127,7 +127,15 @@ enum PathClickHandler {
     }
 
     static func openURL(_ urlString: String) {
-        guard let url = URL(string: urlString) else { return }
+        // Bare URLs like `github.com/foo` or `localhost:3000` come in
+        // without a scheme — `URL(string:)` accepts them as relative URLs
+        // but `NSWorkspace.open` then no-ops. Prepend `https://` for any
+        // input that doesn't already declare a scheme via `://`.
+        let normalized = Self.normalizedURLString(urlString)
+        guard let url = URL(string: normalized) else {
+            Log.warn("PathClickHandler.openURL: URL(string:) rejected '\(normalized)'")
+            return
+        }
         let handler = FeatureSettings.shared.urlHandler
         guard let bundleID = handler.bundleIdentifier else {
             NSWorkspace.shared.open(url)
@@ -139,6 +147,15 @@ enum PathClickHandler {
         } else {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    /// Pure helper for `openURL` — returns `urlString` unchanged when it
+    /// already contains a `://` scheme, else prepends `https://`. Exposed
+    /// for unit testing the scheme-prepend behaviour without standing up
+    /// `NSWorkspace`.
+    static func normalizedURLString(_ urlString: String) -> String {
+        if urlString.contains("://") { return urlString }
+        return "https://" + urlString
     }
 
     private static func findExecutable(_ name: String) -> String? {

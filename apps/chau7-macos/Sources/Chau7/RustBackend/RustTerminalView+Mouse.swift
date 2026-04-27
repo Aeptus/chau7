@@ -678,8 +678,19 @@ extension RustTerminalView {
         }
 
         if !urlMatches.isEmpty || !pathMatches.isEmpty {
+            // Surface enough context to debug index/range mismatches without
+            // dumping the full line text (could contain secrets).
+            let urlSummary = urlMatches
+                .map { "\"\($0.url.prefix(40))\"@[\($0.range.location)..\($0.range.location + $0.range.length))" }
+                .joined(separator: ", ")
             Log.debug(
-                "RustTerminalView[\(viewId)]: Cmd+click - no clickable target under cursor despite matches on logical line"
+                """
+                RustTerminalView[\(viewId)]: Cmd+click - no clickable target under cursor \
+                despite matches on logical line: \
+                clickedIndex=\(lineHit.clickedUTF16Index) \
+                lineLen=\((lineHit.text as NSString).length) \
+                urls=[\(urlSummary)] paths=\(pathMatches.count)
+                """
             )
         }
         return false
@@ -791,7 +802,26 @@ extension RustTerminalView {
         let range = NSRange(location: 0, length: nsText.length)
         RegexPatterns.url.enumerateMatches(in: text, options: [], range: range) { match, _, _ in
             guard let match = match else { return }
-            urls.append(URLMatch(url: nsText.substring(with: match.range), range: match.range))
+            // Strip trailing prose punctuation. The regex's char class
+            // doesn't reject `.,;:!?` because those are valid inside URLs
+            // (e.g., `https://example.com/foo.json`), but they're commonly
+            // appended by sentence punctuation (`Click https://example.com.`)
+            // and shouldn't be carried into the click target.
+            let original = nsText.substring(with: match.range)
+            var trimmedLength = match.range.length
+            let trailingProse: Set<Character> = [".", ",", ";", ":", "!", "?"]
+            while trimmedLength > 0 {
+                let lastIdx = original.index(original.startIndex, offsetBy: trimmedLength - 1)
+                if trailingProse.contains(original[lastIdx]) {
+                    trimmedLength -= 1
+                } else {
+                    break
+                }
+            }
+            guard trimmedLength > 0 else { return }
+            let trimmedRange = NSRange(location: match.range.location, length: trimmedLength)
+            let trimmedURL = nsText.substring(with: trimmedRange)
+            urls.append(URLMatch(url: trimmedURL, range: trimmedRange))
         }
         return urls
     }
