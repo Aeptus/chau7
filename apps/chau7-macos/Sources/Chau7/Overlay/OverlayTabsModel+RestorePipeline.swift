@@ -737,6 +737,18 @@ extension OverlayTabsModel {
                 )
                 session.beginRestoreBootstrap(expectsResumePrefill: expectsResumePrefill)
             }
+
+            // Queue saved scrollback for replay on first selection. The
+            // bytes were captured from the live grid at save time
+            // (`captureScrollback` returns ANSI-styled text); the Rust
+            // terminal's `replayBuffer` re-feeds them through the parser
+            // so the grid rebuilds verbatim. Empty/nil scrollback is a
+            // no-op — the field stays nil and nothing replays.
+            if let scrollbackString = paneState?.scrollbackContent,
+               !scrollbackString.isEmpty,
+               let data = scrollbackString.data(using: .utf8) {
+                session.pendingRestoreScrollback = data
+            }
         }
 
         let isSelectedRestore = targetTabID == selectedTabID

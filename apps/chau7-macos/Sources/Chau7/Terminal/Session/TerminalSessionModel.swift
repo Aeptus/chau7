@@ -167,6 +167,19 @@ final class TerminalSessionModel {
     /// Unique identifier for this terminal tab, used for task lifecycle tracking
     @ObservationIgnored let tabIdentifier: String = UUID().uuidString
 
+    /// Saved scrollback bytes that should be replayed into this session's
+    /// terminal grid the next time the tab is opened. Populated during
+    /// `restoreTabState` from `SavedTerminalPaneState.scrollbackContent`,
+    /// consumed by `consumePendingRestoreScrollbackIfReady()` once the
+    /// Rust terminal view is attached and the tab is being rendered.
+    ///
+    /// Lazy by design: with `autoSubmitRestorePrefill` defaulting off,
+    /// restored AI tabs come back with empty grids. Replaying scrollback
+    /// only when the user actually visits the tab keeps launch cheap
+    /// (no replay for tabs the user never opens) while preserving the
+    /// "tabs come back with their content" feel for the ones they do open.
+    @ObservationIgnored var pendingRestoreScrollback: Data?
+
     /// Callback invoked when session state changes, for non-SwiftUI observers
     /// (e.g. RemoteControlManager). Replaces the old objectWillChange.sink pattern.
     @ObservationIgnored var onSessionStateChanged: (() -> Void)?
@@ -1427,6 +1440,31 @@ final class TerminalSessionModel {
         restoreBootstrapExpectsResumePrefill = false
         restoreBootstrapPhase = .settled
         Log.trace("restoreBootstrap: settled for \(title) via \(source)")
+    }
+
+    /// If saved scrollback is queued for this session (set during
+    /// `restoreTabState`) and the Rust terminal view has attached, replay
+    /// the bytes into the grid via the FFI's `replayBuffer` and clear the
+    /// pending field. Idempotent — second call after a successful replay
+    /// is a no-op.
+    ///
+    /// Caller pre-condition: should be invoked when the tab containing
+    /// this session is being made visible/active. Replaying into a hidden
+    /// surface still works (the Rust grid is the source of truth) but
+    /// burns cycles for nothing if the user never visits the tab.
+    @discardableResult
+    func consumePendingRestoreScrollbackIfReady() -> Bool {
+        guard let data = pendingRestoreScrollback,
+              let view = existingRustTerminalView,
+              let rust = view.rustTerminal else {
+            return false
+        }
+        pendingRestoreScrollback = nil
+        rust.replayBuffer(data)
+        Log.info(
+            "restoreScrollback: replayed \(data.count)B for tab=\(ownerTabID?.uuidString ?? tabIdentifier) pane=\(tabIdentifier)"
+        )
+        return true
     }
 
     func focusTerminal(in window: NSWindow?, retryCount: Int = 0) {
