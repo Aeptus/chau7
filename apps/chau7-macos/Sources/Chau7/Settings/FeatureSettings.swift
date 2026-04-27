@@ -1081,8 +1081,12 @@ final class FeatureSettings {
     /// When true, restore prefills (e.g. `claude --resume <id>`) are auto-submitted
     /// after insertion when it is safe to do so: the shell is at a prompt, no user
     /// input arrived after the prefill, and the process tree confirms no AI tool is
-    /// already running. Defaults to true — the original "insert and wait for Enter"
-    /// behavior left tabs in a half-restored state if the user tabbed away.
+    /// already running. Defaults to false — auto-submitting at startup for every
+    /// restored AI tab triggered N simultaneous Claude/Codex CLI cold-starts (each
+    /// loading its full Node/Python/Rust runtime), which on memory-pressured
+    /// systems felt like a system-wide freeze. Off-by-default leaves the resume
+    /// command in the input field for the user to press Enter when they actually
+    /// want that tab's AI tool running.
     var autoSubmitRestorePrefill: Bool {
         didSet { UserDefaults.standard.set(autoSubmitRestorePrefill, forKey: Keys.autoSubmitRestorePrefill) }
     }
@@ -2547,7 +2551,7 @@ final class FeatureSettings {
         }
         self.customShortcuts = Self.migratedShortcutsIfNeeded(loadedShortcuts)
         self.isShortcutHelperHintEnabled = defaults.object(forKey: Keys.shortcutHelperHint) as? Bool ?? true
-        self.autoSubmitRestorePrefill = defaults.object(forKey: Keys.autoSubmitRestorePrefill) as? Bool ?? true
+        self.autoSubmitRestorePrefill = defaults.object(forKey: Keys.autoSubmitRestorePrefill) as? Bool ?? false
 
         // Local Echo / Immediate Display Flush (default: disabled)
         // Initialize early to ensure all properties are set before any are accessed
