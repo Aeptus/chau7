@@ -20,7 +20,13 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
         )
     }
 
-    func testVisibleNonInteractiveTabUsesBackgroundDrain() {
+    func testVisibleNonInteractiveTabAlsoUsesEventDrain() {
+        // A selected tab on a visible-but-not-key window (the dual-monitor
+        // case where the user is working on screen A while Chau7 streams
+        // on screen B) gets event-driven polling. Pre-fix, this dropped
+        // to backgroundDrain (1 Hz) and updates appeared frozen. The
+        // lifecycle phase is already `.active` for visible windows
+        // (allowsLivePresentation == true here); polling must match.
         XCTAssertEqual(
             VisibleTerminalPollingPolicy.mode(
                 for: VisibleTerminalPollingContext(
@@ -34,7 +40,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     isInteractive: false
                 )
             ),
-            .backgroundDrain
+            .eventDrain
         )
     }
 

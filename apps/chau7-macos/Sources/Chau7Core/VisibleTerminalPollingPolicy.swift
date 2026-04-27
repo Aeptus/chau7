@@ -49,13 +49,28 @@ public enum VisibleTerminalPollingPolicy {
         guard context.allowsLivePresentation,
               !context.isHidden,
               context.hasVisibleWindow,
-              !context.isWindowMiniaturized,
-              context.isInteractive else {
+              !context.isWindowMiniaturized else {
             return .backgroundDrain
         }
-        // Only the input-priority selected tab gets event-driven polling.
-        // Visible background windows use the shared drain path to avoid
-        // multiplying full-grid sync work across windows.
+        // Any visible window's selected tab (allowsLivePresentation == true)
+        // gets event-driven polling. Pre-fix, this was gated on
+        // `isInteractive`, which is only true for the key/main window — so
+        // a window on a second screen would drop to the shared 1-second
+        // background drain when the user clicked away, even though its
+        // `phase` was `.active` and the user was watching streaming output
+        // on it.
+        //
+        // The original concern ("avoid multiplying full-grid sync work
+        // across windows") is moot for eventDrain: the drain thread blocks
+        // in `rust.poll(timeout:)` and burns near-zero CPU when the PTY is
+        // idle. It only wakes when there's actually something to render —
+        // exactly when the user wants live updates. Multiple visible
+        // windows running eventDrain is cheaper than the periodic 1 Hz
+        // backgroundDrain timer they'd otherwise share.
+        //
+        // Non-selected tabs still hit `allowsLivePresentation == false`
+        // (their phase is `.warm`) and stay on backgroundDrain, so the
+        // fan-out is bounded by the number of visible windows, not tabs.
         return .eventDrain
     }
 }
