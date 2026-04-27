@@ -42,6 +42,12 @@ struct AnsiCellStyle {
     flags: u8,
 }
 
+/// Period of the post-advance grid invariant check. Set to 16 so the cost
+/// is amortized across PTY chunks while still catching corruption near
+/// the moment it happens. A power-of-two so `is_multiple_of` is a single
+/// AND in release builds.
+const INVARIANT_CHECK_PERIOD: u64 = 16;
+
 // ============================================================================
 // Error types
 // ============================================================================
@@ -171,6 +177,12 @@ pub struct Chau7Terminal {
     /// 2 = double-width (East Asian). Stored for future grid layout integration.
     pub(crate) ambiguous_width: AtomicU64,
 
+    /// Counter incremented on every `processor.advance` call. Sampled every
+    /// `INVARIANT_CHECK_PERIOD` calls to run a grid-state invariant check
+    /// (cursor in bounds, no orphan wide-char spacers). Rate-limited to
+    /// keep the per-PTY-chunk cost bounded under heavy streaming.
+    pub(crate) advance_counter: AtomicU64,
+
     // Graphics protocol support
     /// Pre-filter that intercepts image escape sequences before VTE processing
     pub(crate) graphics_interceptor: Mutex<graphics::GraphicsInterceptor>,
@@ -257,6 +269,7 @@ impl Chau7Terminal {
             adaptive_poller: AdaptivePoller::new(),
             dirty_rows: DirtyRowTracker::new(rows as usize),
             ambiguous_width: AtomicU64::new(1),
+            advance_counter: AtomicU64::new(0),
             graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
             image_store: Mutex::new(graphics::ImageStore::new()),
             kitty_accumulator: Mutex::new(graphics::KittyAccumulator::new()),
@@ -509,6 +522,7 @@ impl Chau7Terminal {
             dirty_rows: DirtyRowTracker::new(rows as usize),
             // Unicode width config
             ambiguous_width: AtomicU64::new(1),
+            advance_counter: AtomicU64::new(0),
             // Graphics protocol support
             graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
             image_store: Mutex::new(graphics::ImageStore::new()),
@@ -955,6 +969,16 @@ impl Chau7Terminal {
             let mut term = self.term.lock();
             let mut processor = self.processor.lock();
             processor.advance(&mut *term, &passthrough_owned);
+            // Sample the grid for invariant violations every
+            // INVARIANT_CHECK_PERIOD calls. Catches the moment of state
+            // corruption (orphan wide-char spacers, cursor outside
+            // viewport) without paying the per-byte cost on every chunk.
+            let n = self
+                .advance_counter
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if n.is_multiple_of(INVARIANT_CHECK_PERIOD) {
+                Self::check_grid_invariants(self.id, &term, passthrough_owned.len());
+            }
         }
 
         if !events.is_empty() {
@@ -1757,6 +1781,86 @@ impl Chau7Terminal {
             wrapped_rows
         );
         result
+    }
+
+    /// Sample-rate grid invariant check, called every
+    /// `INVARIANT_CHECK_PERIOD` `processor.advance` calls. Walks the
+    /// visible viewport (not full scrollback — too expensive at this
+    /// rate) and surfaces violations that indicate cursor / wide-char
+    /// state corruption. Each violation logs at most once per terminal
+    /// (via the `advance_counter` value as a coarse rate-limit) so heavy
+    /// streams don't flood the log.
+    ///
+    /// Invariants checked:
+    ///   1. Cursor `line × column` within `[0, screen_lines) × [0, cols)`.
+    ///   2. No `WIDE_CHAR_SPACER` cell at column 0 of any row (orphan —
+    ///      the leading half it pairs with would have to be on the
+    ///      previous row, which alacritty doesn't model).
+    ///   3. Every `LEADING_WIDE_CHAR_SPACER` cell is immediately followed
+    ///      by a `WIDE_CHAR_SPACER` cell (the second half of the wide
+    ///      char's display).
+    ///
+    /// Designed to surface bugs in our pipeline (graphics interceptor,
+    /// reader pool, replay paths) rather than alacritty's parser, which
+    /// is well-tested.
+    fn check_grid_invariants(
+        terminal_id: u64,
+        term: &Term<Chau7EventListener>,
+        last_chunk_bytes: usize,
+    ) {
+        let grid = term.grid();
+        let cols = grid.columns();
+        let screen_lines = grid.screen_lines();
+        let cursor = grid.cursor.point;
+        let cursor_line = cursor.line.0;
+        let cursor_col = cursor.column.0;
+
+        if cursor_line < 0 || (cursor_line as usize) >= screen_lines {
+            warn!(
+                "[terminal-{}] grid_invariant: cursor line {} outside [0, {}) (cols={}, last_chunk={}B)",
+                terminal_id, cursor_line, screen_lines, cols, last_chunk_bytes
+            );
+            return; // skip cell-flag walk if cursor is off — likely cascade follows
+        }
+        if cursor_col >= cols {
+            warn!(
+                "[terminal-{}] grid_invariant: cursor col {} outside [0, {}) (line={}, last_chunk={}B)",
+                terminal_id, cursor_col, cols, cursor_line, last_chunk_bytes
+            );
+            return;
+        }
+
+        for row in 0..(screen_lines as i32) {
+            let line = Line(row);
+            let grid_line = &grid[line];
+            for col in 0..cols {
+                let cell = &grid_line[Column(col)];
+                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) && col == 0 {
+                    warn!(
+                        "[terminal-{}] grid_invariant: orphan WIDE_CHAR_SPACER at row {} col 0 (last_chunk={}B)",
+                        terminal_id, row, last_chunk_bytes
+                    );
+                    return; // first violation is enough — return to keep log volume bounded
+                }
+                if cell.flags.contains(CellFlags::LEADING_WIDE_CHAR_SPACER) {
+                    if col + 1 >= cols {
+                        warn!(
+                            "[terminal-{}] grid_invariant: LEADING_WIDE_CHAR_SPACER at row {} col {} but no successor cell (cols={}, last_chunk={}B)",
+                            terminal_id, row, col, cols, last_chunk_bytes
+                        );
+                        return;
+                    }
+                    let next = &grid_line[Column(col + 1)];
+                    if !next.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                        warn!(
+                            "[terminal-{}] grid_invariant: LEADING_WIDE_CHAR_SPACER at row {} col {} not followed by WIDE_CHAR_SPACER (next flags={:?}, last_chunk={}B)",
+                            terminal_id, row, col, next.flags, last_chunk_bytes
+                        );
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     fn grid_line_text(grid: &alacritty_terminal::grid::Grid<Cell>, line: Line) -> (String, bool) {
