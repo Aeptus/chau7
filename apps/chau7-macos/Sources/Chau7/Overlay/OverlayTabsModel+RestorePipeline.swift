@@ -141,6 +141,7 @@ extension OverlayTabsModel {
             }
             tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
             tab.stampOwnerTabID()
+            controller.restoreAttachedSessionNoteIfNeeded()
             if let preview = Self.restorePreviewImage(from: state.previewSnapshotPNGData) {
                 tab.restorePreviewSnapshot = preview
                 Log.info("Restore preview hydrated for tab=\(restoredTabID)")

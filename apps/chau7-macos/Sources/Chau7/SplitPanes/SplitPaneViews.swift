@@ -338,7 +338,7 @@ struct TextEditorPaneView: View {
                 Button {
                     if editor.filePath != nil {
                         editor.save()
-                    } else {
+                    } else if !editor.saveUntitledIfPossible() {
                         saveAs()
                     }
                 } label: {
@@ -498,6 +498,8 @@ struct TextEditorPaneView: View {
                 // Save
                 if editor.filePath != nil {
                     editor.save()
+                    onClose()
+                } else if editor.saveUntitledIfPossible() {
                     onClose()
                 } else {
                     // Need to save as first

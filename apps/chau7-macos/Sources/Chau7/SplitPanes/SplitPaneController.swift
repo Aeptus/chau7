@@ -168,6 +168,17 @@ indirect enum SplitNode: Identifiable {
         }
     }
 
+    var allEditors: [TextEditorModel] {
+        switch self {
+        case .terminal, .filePreview, .diffViewer, .repositoryPane, .dashboard:
+            return []
+        case .textEditor(_, let editor):
+            return [editor]
+        case .split(_, _, let first, let second, _):
+            return first.allEditors + second.allEditors
+        }
+    }
+
     /// Returns a persistence-safe snapshot of this node.
     var savedRepresentation: SavedSplitNode {
         switch self {
@@ -574,6 +585,8 @@ final class TextEditorModel: Identifiable {
     private var pendingRunbookPollWorkItems: [RunbookCodeBlockKey: DispatchWorkItem] = [:]
     @ObservationIgnored
     private var runbookExecutionGenerations: [RunbookCodeBlockKey: Int] = [:]
+    @ObservationIgnored
+    var untitledSaveHandler: ((TextEditorModel) -> Bool)?
 
     /// The file name for display
     var fileName: String {
@@ -652,6 +665,11 @@ final class TextEditorModel: Identifiable {
             return false
         }
         return saveAs(to: path)
+    }
+
+    @discardableResult
+    func saveUntitledIfPossible() -> Bool {
+        untitledSaveHandler?(self) ?? false
     }
 
     /// Save content to a specific path
@@ -921,6 +939,9 @@ final class TextEditorModel: Identifiable {
             return true
         }
         if normalized.contains("/.chau7/sessions/"), normalized.hasSuffix("/plan.md") {
+            return true
+        }
+        if SessionNoteAttachmentLocator.isSessionNotePath(normalized) {
             return true
         }
         return false
@@ -1402,6 +1423,12 @@ final class SplitPaneController {
         terminalSessionConfigurator?(session)
     }
 
+    private func configureTextEditor(_ editor: TextEditorModel) {
+        editor.untitledSaveHandler = { [weak self] model in
+            self?.saveUntitledEditorToAttachedSessionNote(model) ?? false
+        }
+    }
+
     init(appModel: AppModel) {
         self.appModel = appModel
         let session = TerminalSessionModel(appModel: appModel)
@@ -1437,6 +1464,12 @@ final class SplitPaneController {
             focusedPaneID: self.focusedPaneID,
             previousPresentationTerminalPaneID: nil
         )
+        for (_, session) in terminalSessions {
+            configureTerminalSession(session)
+        }
+        for editor in root.allEditors {
+            configureTextEditor(editor)
+        }
     }
 
     /// Returns all terminal sessions with their pane IDs.
@@ -1502,6 +1535,73 @@ final class SplitPaneController {
         )
     }
 
+    var attachedSessionNotePath: String? {
+        guard let repoRoot = currentRepoRootForSessionNote(),
+              let ownerTabID else {
+            return nil
+        }
+        return SessionNoteAttachmentLocator.filePath(repoRoot: repoRoot, tabID: ownerTabID)
+    }
+
+    private var existingAttachedSessionNotePath: String? {
+        guard let path = attachedSessionNotePath,
+              FileManager.default.fileExists(atPath: path) else {
+            return nil
+        }
+        return path
+    }
+
+    private func currentRepoRootForSessionNote() -> String? {
+        let candidateSessions: [TerminalSessionModel?] = [
+            focusedSession,
+            presentationSession,
+            primarySession
+        ]
+        for session in candidateSessions.compactMap({ $0 }) {
+            if let root = session.displayGitRootPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !root.isEmpty {
+                return URL(fileURLWithPath: root).standardized.path
+            }
+        }
+        return nil
+    }
+
+    private func ensureSessionNoteFileExists(at path: String) {
+        let url = URL(fileURLWithPath: path)
+        FileOperations.createDirectory(at: url.deletingLastPathComponent())
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        _ = FileOperations.writeString("", to: url.path)
+    }
+
+    private func resolvedTextEditorFilePath(_ filePath: String?) -> String? {
+        guard let filePath else {
+            return existingAttachedSessionNotePath
+        }
+        return filePath
+    }
+
+    @discardableResult
+    private func saveUntitledEditorToAttachedSessionNote(_ editor: TextEditorModel) -> Bool {
+        guard let repoRoot = currentRepoRootForSessionNote(),
+              let ownerTabID else {
+            return false
+        }
+
+        let path = SessionNoteAttachmentLocator.filePath(repoRoot: repoRoot, tabID: ownerTabID)
+        ensureSessionNoteFileExists(at: path)
+        return editor.saveAs(to: path)
+    }
+
+    func restoreAttachedSessionNoteIfNeeded() {
+        guard root.firstPaneID(ofType: .textEditor) == nil,
+              let notePath = existingAttachedSessionNotePath else {
+            return
+        }
+        let preservedFocus = focusedPaneID
+        splitWithTextEditor(direction: .horizontal, filePath: notePath)
+        setFocusedPane(preservedFocus)
+    }
+
     // MARK: - Split Operations
 
     /// Splits the focused pane with a new terminal
@@ -1522,7 +1622,8 @@ final class SplitPaneController {
     /// Note: This always works regardless of isSplitPanesEnabled since it's an explicit user action
     func splitWithTextEditor(direction: SplitDirection, filePath: String? = nil, scrollToLine: Int? = nil) {
         let editor = TextEditorModel()
-        if let path = filePath {
+        configureTextEditor(editor)
+        if let path = resolvedTextEditorFilePath(filePath) {
             editor.loadFile(at: path, scrollToLine: scrollToLine)
         }
         let newID = UUID()
