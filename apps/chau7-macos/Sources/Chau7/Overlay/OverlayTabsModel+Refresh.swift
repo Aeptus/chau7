@@ -172,12 +172,6 @@ extension OverlayTabsModel {
                 paneRustView.needsGridSync = true
                 paneRustView.pollAndSync()
             }
-            // Lazy scrollback replay on first time this pane is rendered as
-            // part of the selected tab. The session's `pendingRestoreScrollback`
-            // was queued during restoreTabState; replay only happens here so
-            // tabs the user never visits never pay the replay cost. Idempotent
-            // — once consumed the field is nil and subsequent calls no-op.
-            paneSession.consumePendingRestoreScrollbackIfReady()
         }
 
         // Metal coordinator switch — focused pane only (Metal is per-window
