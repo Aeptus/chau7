@@ -875,6 +875,48 @@ private final class OverlayBlurView: NSVisualEffectView {
         Log.info("Sent Ctrl+L to shell for clear screen.")
     }
 
+    /// Captures a forensic snapshot of the active terminal's grid + recent
+    /// PTY bytes to a timestamped file under `~/Library/Logs/Chau7/`. Use
+    /// when an erratic rendering bug appears on screen — the file pairs
+    /// the grid state with the bytes that produced it so the bug can be
+    /// replayed locally and diffed against another terminal.
+    func dumpTerminalDiagnostics() {
+        guard let window = NSApp.keyWindow,
+              let rustView = activeTerminalView(in: window) as? RustTerminalView else {
+            Log.warn("dumpTerminalDiagnostics: no active terminal in key window.")
+            return
+        }
+
+        // Resolve tab metadata via the model rather than the view so we
+        // capture the OverlayTab.id (persisted across restore) and the AI
+        // session identity, not the in-process tabIdentifier.
+        let owner: (overlayTab: OverlayTab, model: OverlayTabsModel)? = {
+            for host in overlayHosts where host.window === window {
+                if let tab = host.model.selectedTab {
+                    return (tab, host.model)
+                }
+            }
+            return nil
+        }()
+        let session = owner?.overlayTab.session
+
+        let outputURL = TerminalDiagnostics.dump(
+            view: rustView,
+            tabTitle: owner?.overlayTab.customTitle ?? owner?.overlayTab.session?.title,
+            ownerTabID: owner?.overlayTab.id,
+            currentDirectory: session?.currentDirectory ?? rustView.currentDirectory,
+            aiProvider: session?.lastAIProvider,
+            aiSessionId: session?.lastAISessionId
+        )
+
+        if let outputURL {
+            // Reveal the file in Finder so the user can grab it without
+            // hunting through ~/Library.
+            NSWorkspace.shared.activateFileViewerSelecting([outputURL])
+            Log.info("dumpTerminalDiagnostics: revealed \(outputURL.path)")
+        }
+    }
+
     // MARK: - App Menu Actions
 
     func showAbout() {

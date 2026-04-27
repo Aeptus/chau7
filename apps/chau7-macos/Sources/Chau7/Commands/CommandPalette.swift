@@ -505,6 +505,14 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.clearScrollback", "Clear Scrollback"), shortcut: "⇧⌘K", category: .terminal, icon: "clear.fill") {
                 delegate.clearScrollback()
             },
+            PaletteCommand(
+                title: L("commandPalette.command.dumpTerminalDiagnostics", "Dump Terminal Diagnostics…"),
+                shortcut: nil,
+                category: .terminal,
+                icon: "ladybug"
+            ) {
+                delegate.dumpTerminalDiagnostics()
+            },
             PaletteCommand(title: L("commandPalette.command.scrollToTop", "Scroll to Top"), shortcut: nil, category: .terminal, icon: "arrow.up.to.line") {
                 delegate.scrollToTop()
             },
