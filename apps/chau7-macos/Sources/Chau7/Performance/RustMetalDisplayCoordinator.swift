@@ -50,6 +50,23 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// Time of last keyboard/PTY activity (used to pause cursor blink during typing)
     private var lastActivityTime = Date()
 
+    // MARK: - Scroll-Storm Throttling
+
+    /// AI TUIs that stream log-style output (Codex, Claude Code, build watchers)
+    /// dirty every row of the visible grid every frame, so the dirty-tracking
+    /// optimisation degenerates to full-buffer uploads. At 30+ fps on a fullscreen
+    /// viewport that's ~50 MB/s of GPU sync per visible tab — enough to saturate
+    /// the Metal command queue and stall the main thread (multi-second input lag
+    /// observed in 2026-04-30 freeze trace). Cap to ~15 fps once we've seen a
+    /// short run of full-grid redraws; perceptually equivalent for scrolling
+    /// content, halves the cost.
+    private var consecutiveFullDirtyFrames = 0
+    private var inScrollStorm = false
+    private var lastSyncRequestAt: CFAbsoluteTime = 0
+    private var pendingDeferredSync = false
+    private static let scrollStormFrameThreshold = 3
+    private static let scrollStormMinIntervalSec: CFAbsoluteTime = 0.066
+
     // MARK: - Init
 
     /// Creates a coordinator for the given Rust terminal view.
@@ -135,13 +152,59 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// Called when Rust terminal's buffer changes. Marks that a sync + render is needed.
     /// Uses `needsDisplay` for vsync-coalesced rendering — multiple calls within one
     /// frame period produce exactly one `draw(in:)` at the next display refresh.
+    ///
+    /// Inside a detected scroll storm, requests under the min-interval are dropped
+    /// from the immediate path and replaced with a single deferred fire — that way
+    /// no data is lost when a chunk ends mid-throttle, but back-to-back PTY pumps
+    /// don't queue 30+ Metal frames per second.
     func setNeedsSync() {
+        if inScrollStorm {
+            let now = CFAbsoluteTimeGetCurrent()
+            let elapsed = now - lastSyncRequestAt
+            if elapsed < Self.scrollStormMinIntervalSec {
+                scheduleDeferredSync(after: Self.scrollStormMinIntervalSec - elapsed)
+                return
+            }
+            lastSyncRequestAt = now
+        }
         needsSync = true
         needsPresent = true
         // Record activity — this pauses cursor blink for 1 second after typing
         lastActivityTime = Date()
         renderer.cursorBlinkPhase = true // Show cursor immediately on activity
         scheduleDisplay()
+    }
+
+    /// Coalesce throttled `setNeedsSync` calls into one deferred fire so the
+    /// final frame of a streaming chunk still gets rendered when no further
+    /// data arrives.
+    private func scheduleDeferredSync(after delay: CFAbsoluteTime) {
+        guard !pendingDeferredSync else { return }
+        pendingDeferredSync = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            pendingDeferredSync = false
+            setNeedsSync()
+        }
+    }
+
+    /// Update the scroll-storm classifier based on what the just-rendered frame
+    /// actually looked like. Called from `draw(in:)` after a successful commit.
+    private func updateScrollStormState(dirtyCells: Int, frameCells: Int) {
+        let isFullDirty = frameCells > 0 && dirtyCells >= frameCells
+        if isFullDirty {
+            consecutiveFullDirtyFrames += 1
+            if consecutiveFullDirtyFrames >= Self.scrollStormFrameThreshold {
+                inScrollStorm = true
+            }
+        } else {
+            consecutiveFullDirtyFrames = 0
+            // Exit decisively when dirty drops well below half the viewport,
+            // not on the first borderline frame — avoids state chattering.
+            if dirtyCells * 2 < frameCells {
+                inScrollStorm = false
+            }
+        }
     }
 
     func forceAuthoritativeRefresh(reason: String) {
@@ -617,6 +680,11 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         // 7. Advance triple buffer only when we consumed fresh synced terminal state.
         if shouldSync {
             tripleBuffer.presentFrame()
+            // Track how dirty this frame was. AI-tab log streams routinely
+            // dirty every row, defeating dirty-tracking; the storm classifier
+            // notices and the next setNeedsSync caps to ~15 fps.
+            let dirtyCellCount = fullRefresh ? cellCount : dirtyRows.count * cols
+            updateScrollStormState(dirtyCells: dirtyCellCount, frameCells: cellCount)
         }
 
         // Clear the flags only now that the frame has committed. Any
