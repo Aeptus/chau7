@@ -429,6 +429,16 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
 
     func draw(in view: MTKView) {
         Self.drawCallCount += 1
+        // A `metalView.needsDisplay = true` set before the bound view flipped
+        // to drain-only (typical during a tab switch — `applyRenderPhase(.warm)`
+        // sets `notifyUpdateChanges = false` synchronously, but a CADisplayLink
+        // tick may already be queued) would otherwise render and upload the
+        // outgoing tab's grid to the GPU. During rapid switching with a chatty
+        // AI tab on the previous slot, that adds tens of MB of wasted GPU sync
+        // per second to an already-saturated command queue. Bail early.
+        if let view = terminalView, !view.notifyUpdateChanges {
+            return
+        }
         let shouldSync = needsSync
         let shouldPresent = needsPresent || shouldSync
         guard shouldPresent else { return }
