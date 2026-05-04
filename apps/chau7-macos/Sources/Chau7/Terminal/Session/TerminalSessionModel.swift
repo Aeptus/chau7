@@ -1563,9 +1563,14 @@ final class TerminalSessionModel {
         if command -v add-zsh-hook >/dev/null 2>&1; then
           add-zsh-hook precmd chau7_emit_exit_status
           add-zsh-hook precmd smartoverlay_precmd
+          # Also fire on chpwd so chained commands like `cd X && tui-app` still
+          # update the cwd. precmd only runs before the next prompt is rendered,
+          # which a TUI app seizing the PTY skips entirely.
+          add-zsh-hook chpwd smartoverlay_precmd
         else
           precmd_functions+=chau7_emit_exit_status
           precmd_functions+=smartoverlay_precmd
+          chpwd_functions+=smartoverlay_precmd
         fi
         smartoverlay_precmd
         # Chau7 CLI header injection for Claude Code
@@ -1649,8 +1654,11 @@ final class TerminalSessionModel {
         if test -n "$CHAU7_STARTUP_CMD"
           eval "$CHAU7_STARTUP_CMD"
         end
-        # Chau7 shell integration
-        function smartoverlay_precmd --on-event fish_prompt
+        # Chau7 shell integration. Listening to both fish_prompt and PWD changes
+        # so chained commands like `cd X && tui-app` still update the cwd —
+        # fish_prompt only fires before the next prompt is rendered, which a
+        # TUI app seizing the PTY skips entirely.
+        function smartoverlay_precmd --on-event fish_prompt --on-variable PWD
           set -l code $status
           printf '\\e]9;chau7;exit=%s\\a' $code
           printf '\\e]7;file://%s%s\\a' (hostname) (pwd)
