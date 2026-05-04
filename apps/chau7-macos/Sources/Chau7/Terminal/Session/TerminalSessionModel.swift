@@ -244,6 +244,10 @@ final class TerminalSessionModel {
         didSet {
             guard liveAgentName != oldValue else { return }
             recalculateCTOFlag()
+            // Propagate the live TUI signal to the view so its render-phase
+            // handler can short-circuit ScrollbackMemoryManager's flush/reload
+            // paths, which corrupt active TUI surfaces (see manager docs).
+            activeRustTerminalView?.hostsAIToolForScrollback = liveAgentName != nil
             onSessionStateChanged?()
             postRuntimeReadinessChange(source: "live_agent")
             NotificationCenter.default.post(

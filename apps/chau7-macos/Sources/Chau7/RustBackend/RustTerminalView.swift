@@ -2138,6 +2138,13 @@ final class RustTerminalView: NSView {
     /// Whether to enable mouse reporting to the PTY
     var allowMouseReporting = false
 
+    /// Set when the live process-tree resolver sees a known TUI agent (Claude
+    /// Code, Codex, Aider, …) running under this view's shell. Read by
+    /// `applyRenderPhase` to short-circuit `ScrollbackMemoryManager`'s
+    /// flush/reload paths — those flatten the live TUI surface to plain text
+    /// and re-pour it on reveal, destroying the application's UI invariants.
+    var hostsAIToolForScrollback = false
+
     /// Whether to notify of update changes (for suspended state)
     var notifyUpdateChanges = true {
         didSet {
@@ -3009,7 +3016,8 @@ final class RustTerminalView: NSView {
                 tabID: resolvedTabID,
                 rustFFI: rustTerminal,
                 from: previousPhase,
-                to: phase
+                to: phase,
+                hostsTUIApp: hostsAIToolForScrollback
             )
             TabGraphicsMemoryManager.shared.handlePhaseTransition(
                 tabID: resolvedTabID,

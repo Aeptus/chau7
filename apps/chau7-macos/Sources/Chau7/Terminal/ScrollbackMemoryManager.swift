@@ -91,12 +91,23 @@ final class ScrollbackMemoryManager {
     /// Entry point called from RustTerminalView.applyRenderPhase.
     /// Schedules flush/reload/cap-change on a per-tab serial queue so
     /// transitions for the same tab never overlap.
+    ///
+    /// `hostsTUIApp` short-circuits the destructive flush/reload paths.
+    /// `flush()` captures the grid via `full_buffer_text` which only emits
+    /// row-text — no SGR, no cursor positioning, no preserved TUI state. For a
+    /// shell tab that's fine; for a tab running Claude/Codex/Aider/etc. it
+    /// flattens the live TUI surface to plain text, and on reload `replayBuffer`
+    /// then issues `ESC[2J ESC[H` + replays the flattened text, which destroys
+    /// the running TUI's invariants (boxes/spinners/menus). Skip both for TUI
+    /// tabs: ring still gets resized so memory still tracks, but we never
+    /// flatten or repour the TUI surface from a stale snapshot.
     func handlePhaseTransition(
         viewId: String,
         tabID: UUID?,
         rustFFI: (any ScrollbackMemoryRustFFI)?,
         from oldPhase: TabRenderPhase,
-        to newPhase: TabRenderPhase
+        to newPhase: TabRenderPhase,
+        hostsTUIApp: Bool = false
     ) {
         guard oldPhase != newPhase else { return }
         guard let rustFFI, let tabID else { return }
@@ -107,6 +118,11 @@ final class ScrollbackMemoryManager {
         queue.async { [weak self] in
             guard let self else { return }
             if ScrollbackRetentionPolicy.shouldFlushToDisk(from: oldPhase, to: newPhase) {
+                if hostsTUIApp {
+                    rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
+                    Log.info("ScrollbackMemoryManager[\(viewId)]: skipping flush for TUI tab \(oldPhase) -> \(newPhase)")
+                    return
+                }
                 if flush(tabID: tabID, viewId: viewId, rustFFI: rustFFI) {
                     // Free the ring buffer only after the buffer has either
                     // been persisted and verified, or proven empty.
@@ -115,6 +131,11 @@ final class ScrollbackMemoryManager {
                     Log.warn("ScrollbackMemoryManager[\(viewId)]: preserving in-memory scrollback because hidden flush did not complete")
                 }
             } else if ScrollbackRetentionPolicy.shouldReloadFromDisk(from: oldPhase, to: newPhase) {
+                if hostsTUIApp {
+                    rustFFI.setScrollbackSize(UInt32(max(newCap, Self.viewportFloor)))
+                    Log.info("ScrollbackMemoryManager[\(viewId)]: skipping reload-replay for TUI tab \(oldPhase) -> \(newPhase)")
+                    return
+                }
                 reload(tabID: tabID, viewId: viewId, rustFFI: rustFFI, newCap: newCap)
             } else {
                 rustFFI.setScrollbackSize(UInt32(newCap))
