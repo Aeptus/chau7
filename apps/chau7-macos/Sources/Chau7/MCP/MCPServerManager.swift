@@ -253,12 +253,33 @@ final class MCPServerManager {
         }
     }
 
+    /// Idempotently rewrites the `[mcp_servers.chau7]` section so `command`
+    /// matches the bundle's bridge path and `args` is empty. Both fields are
+    /// overwritten on every launch, not just inserted when missing — stale
+    /// values from old Chau7 builds or hand-edits (e.g. `args = ["-c", ...]`
+    /// from an early-development bridge that took flags) would otherwise
+    /// silently break the AI tool's bridge launch. Only inline `command =`
+    /// and `args =` assignments are recognised; multi-line array literals
+    /// for `args` are not currently rewritten.
     private func upsertCodexMCPSection(in content: String, command: String) -> String {
         if content.contains("[mcp_servers.chau7]") {
             let lines = content.components(separatedBy: "\n")
             var updated: [String] = []
             var inChau7Section = false
             var commandUpdated = false
+            var argsUpdated = false
+
+            func flushMissingFields() {
+                if !commandUpdated {
+                    updated.append("command = \"\(command)\"")
+                    commandUpdated = true
+                }
+                if !argsUpdated {
+                    updated.append("args = []")
+                    argsUpdated = true
+                }
+            }
+
             for line in lines {
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 if trimmed == "[mcp_servers.chau7]" {
@@ -267,20 +288,21 @@ final class MCPServerManager {
                 } else if inChau7Section, trimmed.hasPrefix("command ") || trimmed.hasPrefix("command=") {
                     updated.append("command = \"\(command)\"")
                     commandUpdated = true
+                } else if inChau7Section, trimmed.hasPrefix("args ") || trimmed.hasPrefix("args=") {
+                    updated.append("args = []")
+                    argsUpdated = true
+                } else if inChau7Section, trimmed.hasPrefix("[") {
+                    // Hit the next TOML section header — flush any missing
+                    // chau7 fields just before it.
+                    flushMissingFields()
                     inChau7Section = false
+                    updated.append(line)
                 } else {
-                    if inChau7Section, trimmed.hasPrefix("[") {
-                        if !commandUpdated {
-                            updated.append("command = \"\(command)\"")
-                            commandUpdated = true
-                        }
-                        inChau7Section = false
-                    }
                     updated.append(line)
                 }
             }
-            if inChau7Section, !commandUpdated {
-                updated.append("command = \"\(command)\"")
+            if inChau7Section {
+                flushMissingFields()
             }
             return updated.joined(separator: "\n")
         }
