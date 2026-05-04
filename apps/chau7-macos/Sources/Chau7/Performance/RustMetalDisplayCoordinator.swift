@@ -204,15 +204,21 @@ final class RustMetalDisplayCoordinator: NSObject {
             >= frameCells * Self.scrollStormDirtyThresholdNumerator
         if isFullDirty {
             consecutiveFullDirtyFrames += 1
-            if consecutiveFullDirtyFrames >= Self.scrollStormFrameThreshold {
+            if consecutiveFullDirtyFrames >= Self.scrollStormFrameThreshold, !inScrollStorm {
                 inScrollStorm = true
+                Log.info(
+                    "RustMetalDisplayCoordinator: entering scroll storm (dirty=\(dirtyCells)/\(frameCells), throttling sync to ~15 fps)"
+                )
             }
         } else {
             consecutiveFullDirtyFrames = 0
             // Exit decisively when dirty drops well below half the viewport,
             // not on the first borderline frame — avoids state chattering.
-            if dirtyCells * 2 < frameCells {
+            if dirtyCells * 2 < frameCells, inScrollStorm {
                 inScrollStorm = false
+                Log.info(
+                    "RustMetalDisplayCoordinator: exiting scroll storm (dirty=\(dirtyCells)/\(frameCells))"
+                )
             }
         }
     }
