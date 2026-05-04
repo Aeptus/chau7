@@ -53,19 +53,27 @@ final class RustMetalDisplayCoordinator: NSObject {
     // MARK: - Scroll-Storm Throttling
 
     /// AI TUIs that stream log-style output (Codex, Claude Code, build watchers)
-    /// dirty every row of the visible grid every frame, so the dirty-tracking
+    /// dirty nearly every row of the visible grid every frame, so the dirty-tracking
     /// optimisation degenerates to full-buffer uploads. At 30+ fps on a fullscreen
     /// viewport that's ~50 MB/s of GPU sync per visible tab — enough to saturate
     /// the Metal command queue and stall the main thread (multi-second input lag
     /// observed in 2026-04-30 freeze trace). Cap to ~15 fps once we've seen a
-    /// short run of full-grid redraws; perceptually equivalent for scrolling
+    /// short run of nearly-full-grid redraws; perceptually equivalent for scrolling
     /// content, halves the cost.
+    ///
+    /// The "nearly" matters: a Claude session that pressured the app to ~1.2 GB
+    /// resident on 2026-05-04 was rendering 21294/21567 ≈ 98.7 % of cells dirty
+    /// per frame — the prompt/status row stays stable while everything above it
+    /// scrolls. An exact `dirtyCells == frameCells` check would miss this entire
+    /// class of workload, which is why we threshold at 95 %.
     private var consecutiveFullDirtyFrames = 0
     private var inScrollStorm = false
     private var lastSyncRequestAt: CFAbsoluteTime = 0
     private var pendingDeferredSync = false
     private static let scrollStormFrameThreshold = 3
     private static let scrollStormMinIntervalSec: CFAbsoluteTime = 0.066
+    private static let scrollStormDirtyThresholdNumerator = 95
+    private static let scrollStormDirtyThresholdDenominator = 100
 
     // MARK: - Init
 
@@ -191,7 +199,9 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// Update the scroll-storm classifier based on what the just-rendered frame
     /// actually looked like. Called from `draw(in:)` after a successful commit.
     private func updateScrollStormState(dirtyCells: Int, frameCells: Int) {
-        let isFullDirty = frameCells > 0 && dirtyCells >= frameCells
+        guard frameCells > 0 else { return }
+        let isFullDirty = dirtyCells * Self.scrollStormDirtyThresholdDenominator
+            >= frameCells * Self.scrollStormDirtyThresholdNumerator
         if isFullDirty {
             consecutiveFullDirtyFrames += 1
             if consecutiveFullDirtyFrames >= Self.scrollStormFrameThreshold {
