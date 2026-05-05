@@ -67,6 +67,7 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// scrolls. An exact `dirtyCells == frameCells` check would miss this entire
     /// class of workload, which is why we threshold at 95 %.
     private var consecutiveFullDirtyFrames = 0
+    private var consecutiveLowDirtyFrames = 0
     private var inScrollStorm = false
     private var lastSyncRequestAt: CFAbsoluteTime = 0
     private var pendingDeferredSync = false
@@ -74,6 +75,14 @@ final class RustMetalDisplayCoordinator: NSObject {
     private static let scrollStormMinIntervalSec: CFAbsoluteTime = 0.066
     private static let scrollStormDirtyThresholdNumerator = 95
     private static let scrollStormDirtyThresholdDenominator = 100
+    /// Exit threshold: dirty ratio (50 %) AND a run of consecutive low-dirty
+    /// frames. The throttle's deferred re-fires (`scheduleDeferredSync`)
+    /// produce ~0-dirty frames when no new PTY data arrived in the 66 ms gap;
+    /// without a multi-frame exit run, a single such frame would flip the
+    /// storm off and the next AI burst would flip it back on, creating the
+    /// 800+ enter/exit-per-2h flapping observed on 2026-05-05 (effective
+    /// throttle of ~30 fps instead of the intended 15 fps).
+    private static let scrollStormExitFrameThreshold = 3
 
     // MARK: - Init
 
@@ -202,8 +211,10 @@ final class RustMetalDisplayCoordinator: NSObject {
         guard frameCells > 0 else { return }
         let isFullDirty = dirtyCells * Self.scrollStormDirtyThresholdDenominator
             >= frameCells * Self.scrollStormDirtyThresholdNumerator
+        let isLowDirty = dirtyCells * 2 < frameCells
         if isFullDirty {
             consecutiveFullDirtyFrames += 1
+            consecutiveLowDirtyFrames = 0
             if consecutiveFullDirtyFrames >= Self.scrollStormFrameThreshold, !inScrollStorm {
                 inScrollStorm = true
                 Log.info(
@@ -212,13 +223,20 @@ final class RustMetalDisplayCoordinator: NSObject {
             }
         } else {
             consecutiveFullDirtyFrames = 0
-            // Exit decisively when dirty drops well below half the viewport,
-            // not on the first borderline frame — avoids state chattering.
-            if dirtyCells * 2 < frameCells, inScrollStorm {
-                inScrollStorm = false
-                Log.info(
-                    "RustMetalDisplayCoordinator: exiting scroll storm (dirty=\(dirtyCells)/\(frameCells))"
-                )
+            // Exit only after a run of low-dirty frames. A single deferred
+            // re-fire from the throttle itself would otherwise flip the storm
+            // off and force the next AI burst to re-enter, producing flapping
+            // and a much higher effective frame rate than the throttle target.
+            if isLowDirty {
+                consecutiveLowDirtyFrames += 1
+                if consecutiveLowDirtyFrames >= Self.scrollStormExitFrameThreshold, inScrollStorm {
+                    inScrollStorm = false
+                    Log.info(
+                        "RustMetalDisplayCoordinator: exiting scroll storm (dirty=\(dirtyCells)/\(frameCells))"
+                    )
+                }
+            } else {
+                consecutiveLowDirtyFrames = 0
             }
         }
     }
