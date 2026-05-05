@@ -2139,11 +2139,17 @@ final class RustTerminalView: NSView {
     var allowMouseReporting = false
 
     /// Set when the live process-tree resolver sees a known TUI agent (Claude
-    /// Code, Codex, Aider, …) running under this view's shell. Read by
-    /// `applyRenderPhase` to short-circuit `ScrollbackMemoryManager`'s
-    /// flush/reload paths — those flatten the live TUI surface to plain text
-    /// and re-pour it on reveal, destroying the application's UI invariants.
-    var hostsAIToolForScrollback = false
+    /// Code, Codex, Aider, …) running under this view's shell. Used to
+    /// short-circuit terminal heuristics that assume a shell-style PTY:
+    ///   - `ScrollbackMemoryManager` flush/reload: flattening the TUI surface
+    ///     to plain text and re-pouring it on reveal destroys the application's
+    ///     UI invariants (see `applyRenderPhase`).
+    ///   - Local-echo prediction (`applyLocalEcho`): TUI apps don't echo typed
+    ///     bytes back as plain ASCII — they redraw their own input box at a
+    ///     cursor-positioned location, which the prediction layer can't match,
+    ///     leaving phantom characters at stale positions and producing
+    ///     "input appears twice" / "input remains after Enter" symptoms.
+    var hostsAITUI = false
 
     /// Whether to notify of update changes (for suspended state)
     var notifyUpdateChanges = true {
@@ -3017,7 +3023,7 @@ final class RustTerminalView: NSView {
                 rustFFI: rustTerminal,
                 from: previousPhase,
                 to: phase,
-                hostsTUIApp: hostsAIToolForScrollback
+                hostsTUIApp: hostsAITUI
             )
             TabGraphicsMemoryManager.shared.handlePhaseTransition(
                 tabID: resolvedTabID,

@@ -159,6 +159,21 @@ extension RustTerminalView {
             return
         }
 
+        // TUI apps (Claude Code, Codex, etc.) don't echo typed bytes back as
+        // plain ASCII — they redraw their own input box at a cursor-positioned
+        // location, which the prediction layer can't match. The result is
+        // overlay characters stranded at stale positions ("input appears
+        // twice" / "input remains after Enter"). The TUI already redraws
+        // typed input within ~one frame, so local-echo's latency win is
+        // marginal; skip it cleanly.
+        guard !hostsAITUI else {
+            if !pendingLocalEcho.isEmpty || pendingLocalEchoOffset > 0 || pendingLocalBackspaces > 0 {
+                clearLocalEchoState()
+                clearLocalEchoOverlay()
+            }
+            return
+        }
+
         // Check if PTY echo is likely enabled (not in password mode, etc.)
         guard isPtyEchoLikelyEnabled else {
             if !pendingLocalEcho.isEmpty || pendingLocalEchoOffset > 0 || pendingLocalBackspaces > 0 {
