@@ -774,8 +774,8 @@ extension RustTerminalView {
             needsGridSync = true
         }
 
-        rustTerminal?.sendText(text)
         onInput?(text)
+        rustTerminal?.sendText(text)
     }
 
     /// Inject output directly into the terminal (no PTY write).

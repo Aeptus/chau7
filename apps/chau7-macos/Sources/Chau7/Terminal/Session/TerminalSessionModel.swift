@@ -166,6 +166,8 @@ final class TerminalSessionModel {
 
     /// Unique identifier for this terminal tab, used for task lifecycle tracking
     @ObservationIgnored let tabIdentifier: String = UUID().uuidString
+    /// Stable correlation ID shared with the local proxy for this shell launch.
+    @ObservationIgnored private(set) var proxyCorrelationSessionID: String = UUID().uuidString
 
     /// Callback invoked when session state changes, for non-SwiftUI observers
     /// (e.g. RemoteControlManager). Replaces the old objectWillChange.sink pattern.
@@ -2666,6 +2668,13 @@ final class TerminalSessionModel {
         return basePath
     }
 
+    @discardableResult
+    func prepareProxyCorrelationSessionForShellLaunch() -> String {
+        let next = UUID().uuidString
+        proxyCorrelationSessionID = next
+        return next
+    }
+
     func buildEnvironment() -> [String] {
         var dict: [String: String] = [:]
         dict["TERM"] = "xterm-256color"
@@ -2702,9 +2711,9 @@ final class TerminalSessionModel {
         // CLI tools that check TERM_PROGRAM for theming will still work fine.
         dict["TERM_PROGRAM"] = "Chau7"
         dict["TERM_PROGRAM_VERSION"] = "1.0"
-        dict["TERM_SESSION_ID"] = UUID().uuidString
+        dict["TERM_SESSION_ID"] = proxyCorrelationSessionID
         dict["SHELL"] = defaultShell()
-        dict["CHAU7_SESSION_ID"] = dict["TERM_SESSION_ID"] ?? UUID().uuidString
+        dict["CHAU7_SESSION_ID"] = proxyCorrelationSessionID
         dict["CHAU7_TAB_ID"] = ownerTabID?.uuidString ?? tabIdentifier
         dict["CHAU7_PROJECT"] = currentDirectory
         dict["CHAU7_AI_EVENTS_LOG"] = sharedEventsLogPathForEnvironment()

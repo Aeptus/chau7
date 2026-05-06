@@ -1,4 +1,5 @@
 import SwiftUI
+import Chau7Core
 
 /// Settings view for per-repository prompt injection rules.
 struct PromptInjectionSettingsView: View {
@@ -6,6 +7,7 @@ struct PromptInjectionSettingsView: View {
 
     @State private var globalContent = ""
     @State private var globalPosition: InjectionRuleStore.Rule.Position = .prepend
+    @State private var globalTriggers: Set<PromptInjectionTrigger> = PromptInjectionTrigger.defaultSet
     @State private var globalEnabled = false
 
     @State private var editingRule: InjectionRuleStore.Rule?
@@ -20,7 +22,7 @@ struct PromptInjectionSettingsView: View {
 
             Text(L(
                 "settings.injection.global.help",
-                "Content injected into every AI request regardless of repository. Repo-specific rules take precedence."
+                "Content injected into matching AI requests for every repository. Repo-specific rules still take precedence."
             ))
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -31,7 +33,11 @@ struct PromptInjectionSettingsView: View {
             .toggleStyle(.switch)
             .onChange(of: globalEnabled) { _, enabled in
                 if enabled {
-                    store.setGlobalRule(content: globalContent, position: globalPosition)
+                    store.setGlobalRule(
+                        content: globalContent,
+                        position: globalPosition,
+                        triggers: globalTriggers
+                    )
                 } else {
                     store.removeGlobalRule()
                 }
@@ -49,7 +55,22 @@ struct PromptInjectionSettingsView: View {
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 400)
                 .onChange(of: globalPosition) { _, newPos in
-                    store.setGlobalRule(content: globalContent, position: newPos)
+                    store.setGlobalRule(
+                        content: globalContent,
+                        position: newPos,
+                        triggers: globalTriggers
+                    )
+                }
+
+                triggerEditor(
+                    selected: $globalTriggers,
+                    title: L("settings.injection.triggers", "When to inject")
+                ) { updated in
+                    store.setGlobalRule(
+                        content: globalContent,
+                        position: globalPosition,
+                        triggers: updated
+                    )
                 }
 
                 TextEditor(text: $globalContent)
@@ -64,7 +85,11 @@ struct PromptInjectionSettingsView: View {
                             .stroke(Color.secondary.opacity(0.2))
                     )
                     .onChange(of: globalContent) { _, newContent in
-                        store.setGlobalRule(content: newContent, position: globalPosition)
+                        store.setGlobalRule(
+                            content: newContent,
+                            position: globalPosition,
+                            triggers: globalTriggers
+                        )
                     }
             }
 
@@ -80,7 +105,7 @@ struct PromptInjectionSettingsView: View {
 
             Text(L(
                 "settings.injection.perRepo.help",
-                "Rules targeting specific repositories. Matched by name — portable across machines."
+                "Rules targeting specific repositories, with their own injection timing. Matched by name for portability across machines."
             ))
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -98,12 +123,13 @@ struct PromptInjectionSettingsView: View {
                         }
                     }
 
+                    let lastRepoRoot = store.localRules.keys.max()
                     ForEach(
                         store.localRules.sorted(by: { $0.key < $1.key }),
                         id: \.key
                     ) { repoRoot, rule in
                         localRuleRow(rule, repoRoot: repoRoot)
-                        if repoRoot != store.localRules.keys.sorted().last {
+                        if repoRoot != lastRepoRoot {
                             Divider()
                         }
                     }
@@ -164,7 +190,12 @@ struct PromptInjectionSettingsView: View {
         }
         .sheet(isPresented: $showingAddSheet) {
             RuleEditorSheet(
-                rule: InjectionRuleStore.Rule(repository: "", content: "", position: .prepend),
+                rule: InjectionRuleStore.Rule(
+                    repository: "",
+                    content: "",
+                    position: .prepend,
+                    triggers: PromptInjectionTrigger.defaultSet
+                ),
                 isNew: true
             ) { newRule in
                 store.addRepoRule(newRule)
@@ -193,6 +224,9 @@ struct PromptInjectionSettingsView: View {
                         .background(Color.secondary.opacity(0.15))
                         .clipShape(Capsule())
                 }
+                Text(rule.triggerSummary)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
                 Text(rule.content.prefix(120) + (rule.content.count > 120 ? "..." : ""))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -244,6 +278,9 @@ struct PromptInjectionSettingsView: View {
                         .background(Color.orange.opacity(0.1))
                         .clipShape(Capsule())
                 }
+                Text(rule.triggerSummary)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
                 Text(rule.content.prefix(120) + (rule.content.count > 120 ? "..." : ""))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -286,10 +323,52 @@ struct PromptInjectionSettingsView: View {
             globalEnabled = true
             globalContent = rule.content
             globalPosition = rule.position
+            globalTriggers = rule.triggers
         } else {
             globalEnabled = false
             globalContent = ""
             globalPosition = .prepend
+            globalTriggers = PromptInjectionTrigger.defaultSet
+        }
+    }
+
+    private func triggerEditor(
+        selected: Binding<Set<PromptInjectionTrigger>>,
+        title: String,
+        onChange: @escaping (Set<PromptInjectionTrigger>) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(PromptInjectionTrigger.allCases) { trigger in
+                    Toggle(
+                        isOn: Binding(
+                            get: { selected.wrappedValue.contains(trigger) },
+                            set: { isOn in
+                                var updated = selected.wrappedValue
+                                if isOn {
+                                    updated.insert(trigger)
+                                } else if updated.count > 1 {
+                                    updated.remove(trigger)
+                                }
+                                selected.wrappedValue = PromptInjectionTrigger.normalized(updated)
+                                onChange(selected.wrappedValue)
+                            }
+                        )
+                    ) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(trigger.label)
+                            Text(trigger.help)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                }
+            }
         }
     }
 }
@@ -363,6 +442,36 @@ private struct RuleEditorSheet: View {
                 .labelsHidden()
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L("settings.injection.editor.triggers", "When to inject"))
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                ForEach(PromptInjectionTrigger.allCases) { trigger in
+                    Toggle(
+                        isOn: Binding(
+                            get: { rule.triggers.contains(trigger) },
+                            set: { isOn in
+                                if isOn {
+                                    rule.triggers.insert(trigger)
+                                } else if rule.triggers.count > 1 {
+                                    rule.triggers.remove(trigger)
+                                }
+                                rule.triggers = PromptInjectionTrigger.normalized(rule.triggers)
+                            }
+                        )
+                    ) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(trigger.label)
+                            Text(trigger.help)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                }
+            }
+
             // Content
             VStack(alignment: .leading, spacing: 4) {
                 Text(L("settings.injection.editor.content", "Content"))
@@ -395,10 +504,10 @@ private struct RuleEditorSheet: View {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(rule.repository.isEmpty || rule.content.isEmpty)
+                .disabled(rule.repository.isEmpty || rule.content.isEmpty || rule.triggers.isEmpty)
             }
         }
         .padding(24)
-        .frame(width: 480)
+        .frame(width: 520)
     }
 }

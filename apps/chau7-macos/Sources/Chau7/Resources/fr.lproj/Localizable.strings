@@ -2615,6 +2615,18 @@
 "injection.position.append" = "Ajouter après le prompt";
 "injection.position.prepend" = "Ajouter avant le prompt";
 "injection.position.system" = "Prompt système";
+"injection.trigger.afterClear" = "After /clear";
+"injection.trigger.afterClear.help" = "Inject on the next matching AI request after /clear.";
+"injection.trigger.afterClear.short" = "after /clear";
+"injection.trigger.afterCompact" = "After /compact";
+"injection.trigger.afterCompact.help" = "Inject on the next matching AI request after /compact.";
+"injection.trigger.afterCompact.short" = "after /compact";
+"injection.trigger.everyPrompt" = "Every prompt";
+"injection.trigger.everyPrompt.help" = "Inject on every matching AI request.";
+"injection.trigger.everyPrompt.short" = "every prompt";
+"injection.trigger.firstSessionPrompt" = "First session prompt";
+"injection.trigger.firstSessionPrompt.help" = "Inject only on the first matching AI request in the shell session.";
+"injection.trigger.firstSessionPrompt.short" = "first prompt";
 "settings.injection.add" = "Ajouter une règle";
 "settings.injection.editor.addTitle" = "Ajouter une règle";
 "settings.injection.editor.content" = "Contenu";
@@ -2623,6 +2635,7 @@
 "settings.injection.editor.position" = "Position";
 "settings.injection.editor.repo" = "Dépôt";
 "settings.injection.editor.repoPlaceholder" = "ex. my-api";
+"settings.injection.editor.triggers" = "When to inject";
 "settings.injection.global" = "Tous les dépôts";
 "settings.injection.global.enable" = "Activer l'injection globale";
 "settings.injection.global.help" = "Contenu injecté dans chaque requête IA quel que soit le dépôt. Les règles spécifiques priment.";
@@ -2638,6 +2651,7 @@
 "settings.injection.priority.global" = "Règle globale (tous les dépôts)";
 "settings.injection.priority.local" = "Fichier local (.chau7/injection.json)";
 "settings.injection.priority.specific" = "Règle spécifique depuis Réglages";
+"settings.injection.triggers" = "When to inject";
 "settings.promptInjection" = "Injection de prompt";
 "settings.promptInjection.description" = "Injecter du contexte dans les requêtes IA par dépôt";
 "settings.search.promptInjection.description" = "Injecter du contexte personnalisé dans les requêtes IA par dépôt";

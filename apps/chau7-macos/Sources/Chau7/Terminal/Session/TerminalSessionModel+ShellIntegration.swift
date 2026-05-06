@@ -1151,9 +1151,37 @@ extension TerminalSessionModel {
         return needsSeparator ? "\(prefix) \(line)" : "\(prefix)\(line)"
     }
 
+    private func notifyPromptInjectionSessionEventIfNeeded(for line: String) {
+        guard let event = PromptInjectionSessionEvent.detect(in: line) else { return }
+        guard promptInjectionEventHasActiveAITool() else { return }
+
+        let tabID = ownerTabID?.uuidString ?? tabIdentifier
+        let sessionID = proxyCorrelationSessionID
+        MainActor.assumeIsolated {
+            _ = ProxyManager.shared.recordPromptInjectionSessionEvent(
+                event,
+                sessionID: sessionID,
+                tabID: tabID
+            )
+        }
+    }
+
+    private func promptInjectionEventHasActiveAITool() -> Bool {
+        if effectiveAIProvider != nil || aiDisplayAppName != nil || activeAppName != nil {
+            return true
+        }
+        return processGroup?.children.contains(where: { child in
+            let name = child.name.lowercased()
+            return name.contains("claude") || name.contains("codex") || name.contains("gemini")
+        }) == true
+    }
+
     func handleInputLine(_ line: String) {
         // Sanitize input to remove escape sequences that contaminate history/logs
         let sanitized = EscapeSequenceSanitizer.sanitize(line)
+        let rawTrimmed = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+        notifyPromptInjectionSessionEventIfNeeded(for: rawTrimmed)
+
         let transformed = applyCTOPrefixIfNeeded(to: sanitized)
         let trimmed = transformed.trimmingCharacters(in: .whitespacesAndNewlines)
         let isSystemRestoreInput = pendingSystemRestoreInputLine == trimmed

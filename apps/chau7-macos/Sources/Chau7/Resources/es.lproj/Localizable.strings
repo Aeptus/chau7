@@ -2661,6 +2661,18 @@
 "injection.position.append" = "Añadir después del prompt";
 "injection.position.prepend" = "Añadir antes del prompt";
 "injection.position.system" = "Prompt del sistema";
+"injection.trigger.afterClear" = "After /clear";
+"injection.trigger.afterClear.help" = "Inject on the next matching AI request after /clear.";
+"injection.trigger.afterClear.short" = "after /clear";
+"injection.trigger.afterCompact" = "After /compact";
+"injection.trigger.afterCompact.help" = "Inject on the next matching AI request after /compact.";
+"injection.trigger.afterCompact.short" = "after /compact";
+"injection.trigger.everyPrompt" = "Every prompt";
+"injection.trigger.everyPrompt.help" = "Inject on every matching AI request.";
+"injection.trigger.everyPrompt.short" = "every prompt";
+"injection.trigger.firstSessionPrompt" = "First session prompt";
+"injection.trigger.firstSessionPrompt.help" = "Inject only on the first matching AI request in the shell session.";
+"injection.trigger.firstSessionPrompt.short" = "first prompt";
 "settings.injection.add" = "Añadir regla de repositorio";
 "settings.injection.editor.addTitle" = "Añadir regla de repositorio";
 "settings.injection.editor.content" = "Contenido";
@@ -2669,6 +2681,7 @@
 "settings.injection.editor.position" = "Posición";
 "settings.injection.editor.repo" = "Repositorio";
 "settings.injection.editor.repoPlaceholder" = "ej. my-api";
+"settings.injection.editor.triggers" = "When to inject";
 "settings.injection.global" = "Todos los repositorios";
 "settings.injection.global.enable" = "Activar inyección global";
 "settings.injection.global.help" = "Contenido inyectado en cada solicitud de IA sin importar el repositorio. Las reglas específicas tienen prioridad.";
@@ -2684,6 +2697,7 @@
 "settings.injection.priority.global" = "Regla global (todos los repositorios)";
 "settings.injection.priority.local" = "Archivo local (.chau7/injection.json)";
 "settings.injection.priority.specific" = "Regla específica desde Ajustes";
+"settings.injection.triggers" = "When to inject";
 "settings.promptInjection" = "Inyección de prompt";
 "settings.promptInjection.description" = "Inyectar contexto en solicitudes de IA por repositorio";
 "settings.search.promptInjection.description" = "Inyectar contexto personalizado en solicitudes de IA por repositorio";

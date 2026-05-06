@@ -75,7 +75,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// This must happen before prompt preview extraction so that the preview
 	// reflects the injected content and before the upstream request is built.
 	if p.injector != nil && headers.Project != "" {
-		bodyBytes = p.injector.InjectContent(DetectProvider(r), bodyBytes, headers.Project)
+		bodyBytes = p.injector.InjectContent(DetectProvider(r), bodyBytes, headers.Project, headers)
 	}
 
 	// Extract prompt preview for task naming (first 500 chars)

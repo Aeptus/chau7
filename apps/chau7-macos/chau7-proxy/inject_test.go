@@ -112,7 +112,7 @@ func TestInjectContent_RepoLocalRule(t *testing.T) {
 	})
 
 	// Repo-local rule should win over global wildcard
-	result := inj.InjectContent(ProviderOpenAI, body, repoDir)
+	result := inj.InjectContent(ProviderOpenAI, body, repoDir, nil)
 	var parsed map[string]interface{}
 	mustUnmarshal(t, result, &parsed)
 
@@ -137,7 +137,7 @@ func TestInjectContent_RepoLocalFallsBackToGlobal(t *testing.T) {
 		"input": "Hello",
 	})
 
-	result := inj.InjectContent(ProviderOpenAI, body, repoDir)
+	result := inj.InjectContent(ProviderOpenAI, body, repoDir, nil)
 	var parsed map[string]interface{}
 	mustUnmarshal(t, result, &parsed)
 
@@ -569,7 +569,7 @@ func TestInjectContent_EndToEnd(t *testing.T) {
 		},
 	})
 
-	result := inj.InjectContent(ProviderAnthropic, body, "/my/repo")
+	result := inj.InjectContent(ProviderAnthropic, body, "/my/repo", nil)
 
 	var parsed map[string]interface{}
 	mustUnmarshal(t, result, &parsed)
@@ -594,7 +594,7 @@ func TestInjectContent_NoMatch(t *testing.T) {
 		"input": "Hello",
 	})
 
-	result := inj.InjectContent(ProviderOpenAI, body, "/other/repo")
+	result := inj.InjectContent(ProviderOpenAI, body, "/other/repo", nil)
 
 	if string(result) != string(body) {
 		t.Error("body should be unchanged when no rule matches")
@@ -615,7 +615,7 @@ func TestInjectContent_RepoName(t *testing.T) {
 	})
 
 	// Should match by repo name regardless of base path
-	result := inj.InjectContent(ProviderOpenAI, body, "/Users/alice/code/my-api")
+	result := inj.InjectContent(ProviderOpenAI, body, "/Users/alice/code/my-api", nil)
 	var parsed map[string]interface{}
 	mustUnmarshal(t, result, &parsed)
 	if parsed["input"] != "INJECTED\n\nHello" {
@@ -623,7 +623,7 @@ func TestInjectContent_RepoName(t *testing.T) {
 	}
 
 	// Same repo name, different machine path
-	result2 := inj.InjectContent(ProviderOpenAI, body, "/home/bob/projects/my-api")
+	result2 := inj.InjectContent(ProviderOpenAI, body, "/home/bob/projects/my-api", nil)
 	var parsed2 map[string]interface{}
 	mustUnmarshal(t, result2, &parsed2)
 	if parsed2["input"] != "INJECTED\n\nHello" {
@@ -647,7 +647,7 @@ func TestInjectContent_NoMessages(t *testing.T) {
 	})
 
 	// This should work (input is a string, so it gets injected)
-	result := inj.InjectContent(ProviderOpenAI, body, "/x/my-api")
+	result := inj.InjectContent(ProviderOpenAI, body, "/x/my-api", nil)
 	var parsed map[string]interface{}
 	mustUnmarshal(t, result, &parsed)
 	if parsed["input"] != "INJECTED\n\nHello world" {
@@ -656,13 +656,13 @@ func TestInjectContent_NoMessages(t *testing.T) {
 
 	// Body with no recognizable message structure at all
 	rawBody := []byte(`{"model":"gpt-4o","prompt":"legacy completion"}`)
-	result2 := inj.InjectContent(ProviderOpenAI, rawBody, "/x/my-api")
+	result2 := inj.InjectContent(ProviderOpenAI, rawBody, "/x/my-api", nil)
 	if string(result2) != string(rawBody) {
 		t.Error("body should pass through unchanged when no applicable field found")
 	}
 
 	// Empty body should not panic
-	result3 := inj.InjectContent(ProviderOpenAI, []byte{}, "/x/my-api")
+	result3 := inj.InjectContent(ProviderOpenAI, []byte{}, "/x/my-api", nil)
 	if len(result3) != 0 {
 		t.Error("empty body should return empty")
 	}
@@ -677,10 +677,219 @@ func TestInjectContent_EmptyProject(t *testing.T) {
 	inj := NewInjector(path)
 	body := []byte(`{"model":"gpt-4o","input":"Hi"}`)
 
-	result := inj.InjectContent(ProviderOpenAI, body, "")
+	result := inj.InjectContent(ProviderOpenAI, body, "", nil)
 
 	if string(result) != string(body) {
 		t.Error("body should be unchanged when project is empty")
+	}
+}
+
+func TestInjector_DefaultTriggerIsEveryPrompt(t *testing.T) {
+	dir := t.TempDir()
+	path := writeRulesFile(t, dir, []InjectionRule{
+		{Repository: "/my/repo", Content: "INJECTED"},
+	})
+
+	inj := NewInjector(path)
+	rule := inj.MatchProject("/my/repo")
+	if rule == nil {
+		t.Fatal("expected matching rule")
+	}
+	if len(rule.Triggers) != 1 || rule.Triggers[0] != TriggerEveryPrompt {
+		t.Fatalf("expected default every_prompt trigger, got %v", rule.Triggers)
+	}
+}
+
+func TestInjectContent_FirstSessionPromptOnlyInjectsOnce(t *testing.T) {
+	dir := t.TempDir()
+	path := writeRulesFile(t, dir, []InjectionRule{
+		{
+			Repository: "/my/repo",
+			Content:    "FIRST",
+			Triggers:   []InjectionTrigger{TriggerFirstSessionPrompt},
+		},
+	})
+
+	inj := NewInjector(path)
+	body := mustJSON(t, map[string]interface{}{
+		"model": "gpt-4o",
+		"input": "Hello",
+	})
+	headers := &CorrelationHeaders{SessionID: "session-1", TabID: "tab-1"}
+
+	first := inj.InjectContent(ProviderOpenAI, body, "/my/repo", headers)
+	var parsedFirst map[string]interface{}
+	mustUnmarshal(t, first, &parsedFirst)
+	if parsedFirst["input"] != "FIRST\n\nHello" {
+		t.Fatalf("expected first request to inject, got %q", parsedFirst["input"])
+	}
+
+	second := inj.InjectContent(ProviderOpenAI, body, "/my/repo", headers)
+	if string(second) != string(body) {
+		t.Fatal("expected second request in same session to skip injection")
+	}
+
+	otherSession := inj.InjectContent(
+		ProviderOpenAI,
+		body,
+		"/my/repo",
+		&CorrelationHeaders{SessionID: "session-2", TabID: "tab-1"},
+	)
+	var parsedOther map[string]interface{}
+	mustUnmarshal(t, otherSession, &parsedOther)
+	if parsedOther["input"] != "FIRST\n\nHello" {
+		t.Fatalf("expected different session to inject, got %q", parsedOther["input"])
+	}
+}
+
+func TestInjectContent_FirstSessionPromptWaitsForMatchingRule(t *testing.T) {
+	dir := t.TempDir()
+	path := writeRulesFile(t, dir, []InjectionRule{
+		{
+			Repository: "/repo/with-first",
+			Content:    "FIRST",
+			Triggers:   []InjectionTrigger{TriggerFirstSessionPrompt},
+		},
+	})
+
+	inj := NewInjector(path)
+	body := mustJSON(t, map[string]interface{}{
+		"model": "gpt-4o",
+		"input": "Hello",
+	})
+	headers := &CorrelationHeaders{SessionID: "session-1", TabID: "tab-1"}
+
+	unmatched := inj.InjectContent(ProviderOpenAI, body, "/repo/without-rule", headers)
+	if string(unmatched) != string(body) {
+		t.Fatal("expected unrelated repo request to stay unchanged")
+	}
+
+	firstMatch := inj.InjectContent(ProviderOpenAI, body, "/repo/with-first", headers)
+	var parsed map[string]interface{}
+	mustUnmarshal(t, firstMatch, &parsed)
+	if parsed["input"] != "FIRST\n\nHello" {
+		t.Fatalf("expected first matching repo request to inject, got %q", parsed["input"])
+	}
+
+	secondMatch := inj.InjectContent(ProviderOpenAI, body, "/repo/with-first", headers)
+	if string(secondMatch) != string(body) {
+		t.Fatal("expected first-session trigger to be consumed after the first matching request")
+	}
+}
+
+func TestInjectContent_FirstSessionPromptIgnoresNonInjectableRequests(t *testing.T) {
+	dir := t.TempDir()
+	path := writeRulesFile(t, dir, []InjectionRule{
+		{
+			Repository: "/repo/with-first",
+			Content:    "FIRST",
+			Triggers:   []InjectionTrigger{TriggerFirstSessionPrompt},
+		},
+	})
+
+	inj := NewInjector(path)
+	headers := &CorrelationHeaders{SessionID: "session-1", TabID: "tab-1"}
+	nonInjectable := []byte(`{"model":"gpt-4o","prompt":"legacy completion"}`)
+	if result := inj.InjectContent(ProviderOpenAI, nonInjectable, "/repo/with-first", headers); string(result) != string(nonInjectable) {
+		t.Fatal("expected non-injectable request to pass through unchanged")
+	}
+
+	body := mustJSON(t, map[string]interface{}{
+		"model": "gpt-4o",
+		"input": "Hello",
+	})
+	firstPrompt := inj.InjectContent(ProviderOpenAI, body, "/repo/with-first", headers)
+	var parsed map[string]interface{}
+	mustUnmarshal(t, firstPrompt, &parsed)
+	if parsed["input"] != "FIRST\n\nHello" {
+		t.Fatalf("expected first injectable prompt to inject after pass-through request, got %q", parsed["input"])
+	}
+}
+
+func TestInjectContent_AfterCompactAndClearAreOneShot(t *testing.T) {
+	dir := t.TempDir()
+	path := writeRulesFile(t, dir, []InjectionRule{
+		{
+			Repository: "/my/repo",
+			Content:    "RESET",
+			Triggers:   []InjectionTrigger{TriggerAfterCompact, TriggerAfterClear},
+		},
+	})
+
+	inj := NewInjector(path)
+	body := mustJSON(t, map[string]interface{}{
+		"model": "gpt-4o",
+		"input": "Hello",
+	})
+	headers := &CorrelationHeaders{SessionID: "session-compact", TabID: "tab-1"}
+
+	if injected := inj.InjectContent(ProviderOpenAI, body, "/my/repo", headers); string(injected) != string(body) {
+		t.Fatal("expected no injection before a session event is recorded")
+	}
+
+	if !inj.RecordSessionEvent(SessionEventAfterCompact, headers) {
+		t.Fatal("expected /compact session event to record")
+	}
+	afterCompact := inj.InjectContent(ProviderOpenAI, body, "/my/repo", headers)
+	var parsedCompact map[string]interface{}
+	mustUnmarshal(t, afterCompact, &parsedCompact)
+	if parsedCompact["input"] != "RESET\n\nHello" {
+		t.Fatalf("expected injection after /compact, got %q", parsedCompact["input"])
+	}
+	if injected := inj.InjectContent(ProviderOpenAI, body, "/my/repo", headers); string(injected) != string(body) {
+		t.Fatal("expected /compact trigger to be consumed after one prompt")
+	}
+
+	if !inj.RecordSessionEvent(SessionEventAfterClear, headers) {
+		t.Fatal("expected /clear session event to record")
+	}
+	afterClear := inj.InjectContent(ProviderOpenAI, body, "/my/repo", headers)
+	var parsedClear map[string]interface{}
+	mustUnmarshal(t, afterClear, &parsedClear)
+	if parsedClear["input"] != "RESET\n\nHello" {
+		t.Fatalf("expected injection after /clear, got %q", parsedClear["input"])
+	}
+	if injected := inj.InjectContent(ProviderOpenAI, body, "/my/repo", headers); string(injected) != string(body) {
+		t.Fatal("expected /clear trigger to be consumed after one prompt")
+	}
+}
+
+func TestInjectContent_PendingSessionEventWaitsForMatchingRule(t *testing.T) {
+	dir := t.TempDir()
+	path := writeRulesFile(t, dir, []InjectionRule{
+		{
+			Repository: "/repo/with-trigger",
+			Content:    "RESET",
+			Triggers:   []InjectionTrigger{TriggerAfterClear},
+		},
+	})
+
+	inj := NewInjector(path)
+	body := mustJSON(t, map[string]interface{}{
+		"model": "gpt-4o",
+		"input": "Hello",
+	})
+	headers := &CorrelationHeaders{SessionID: "session-clear", TabID: "tab-1"}
+
+	if !inj.RecordSessionEvent(SessionEventAfterClear, headers) {
+		t.Fatal("expected /clear session event to record")
+	}
+
+	noRule := inj.InjectContent(ProviderOpenAI, body, "/repo/without-trigger", headers)
+	if string(noRule) != string(body) {
+		t.Fatal("expected no injection when no rule matches")
+	}
+
+	waiting := inj.InjectContent(ProviderOpenAI, body, "/repo/with-trigger", headers)
+	var parsed map[string]interface{}
+	mustUnmarshal(t, waiting, &parsed)
+	if parsed["input"] != "RESET\n\nHello" {
+		t.Fatalf("expected pending /clear trigger to wait for the next matching request, got %q", parsed["input"])
+	}
+
+	consumed := inj.InjectContent(ProviderOpenAI, body, "/repo/with-trigger", headers)
+	if string(consumed) != string(body) {
+		t.Fatal("expected /clear trigger to be consumed after the matching request")
 	}
 }
 

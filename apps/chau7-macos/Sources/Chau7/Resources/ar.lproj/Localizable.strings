@@ -2581,6 +2581,18 @@
 "injection.position.append" = "إضافة بعد الطلب";
 "injection.position.prepend" = "إضافة قبل الطلب";
 "injection.position.system" = "طلب النظام";
+"injection.trigger.afterClear" = "After /clear";
+"injection.trigger.afterClear.help" = "Inject on the next matching AI request after /clear.";
+"injection.trigger.afterClear.short" = "after /clear";
+"injection.trigger.afterCompact" = "After /compact";
+"injection.trigger.afterCompact.help" = "Inject on the next matching AI request after /compact.";
+"injection.trigger.afterCompact.short" = "after /compact";
+"injection.trigger.everyPrompt" = "Every prompt";
+"injection.trigger.everyPrompt.help" = "Inject on every matching AI request.";
+"injection.trigger.everyPrompt.short" = "every prompt";
+"injection.trigger.firstSessionPrompt" = "First session prompt";
+"injection.trigger.firstSessionPrompt.help" = "Inject only on the first matching AI request in the shell session.";
+"injection.trigger.firstSessionPrompt.short" = "first prompt";
 "settings.injection.add" = "إضافة قاعدة مستودع";
 "settings.injection.editor.addTitle" = "إضافة قاعدة مستودع";
 "settings.injection.editor.content" = "المحتوى";
@@ -2589,6 +2601,7 @@
 "settings.injection.editor.position" = "الموضع";
 "settings.injection.editor.repo" = "المستودع";
 "settings.injection.editor.repoPlaceholder" = "مثال: my-api";
+"settings.injection.editor.triggers" = "When to inject";
 "settings.injection.global" = "جميع المستودعات";
 "settings.injection.global.enable" = "تفعيل الحقن الشامل";
 "settings.injection.global.help" = "محتوى يُحقن في كل طلب ذكاء اصطناعي بغض النظر عن المستودع. القواعد الخاصة لها الأولوية.";
@@ -2604,6 +2617,7 @@
 "settings.injection.priority.global" = "قاعدة شاملة (جميع المستودعات)";
 "settings.injection.priority.local" = "ملف محلي (.chau7/injection.json)";
 "settings.injection.priority.specific" = "قاعدة خاصة من الإعدادات";
+"settings.injection.triggers" = "When to inject";
 "settings.promptInjection" = "حقن الطلبات";
 "settings.promptInjection.description" = "حقن سياق في طلبات الذكاء الاصطناعي حسب المستودع";
 "settings.search.promptInjection.description" = "حقن سياق مخصص في طلبات الذكاء الاصطناعي حسب المستودع";

@@ -84,6 +84,7 @@ func main() {
 
 	// Create task endpoints handler
 	taskEndpoints := NewTaskEndpoints(taskManager, db)
+	injectionEndpoints := NewInjectionEndpoints(injector)
 
 	// Create HTTP server mux
 	mux := http.NewServeMux()
@@ -101,6 +102,7 @@ func main() {
 	mux.HandleFunc("/task/assess", taskEndpoints.HandleAssessTask)
 	mux.HandleFunc("/task/current", taskEndpoints.HandleGetCurrentTask)
 	mux.HandleFunc("/task/name", taskEndpoints.HandleUpdateTaskName)
+	mux.HandleFunc("/injection/session-event", injectionEndpoints.HandleSessionEvent)
 
 	// Events endpoint
 	mux.HandleFunc("/events", taskEndpoints.HandleGetEvents)

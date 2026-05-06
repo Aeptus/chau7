@@ -279,6 +279,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let view = RustTerminalView(frame: .zero)
 
         // Configure shell and environment before terminal starts (must be before first layout)
+        model.prepareProxyCorrelationSessionForShellLaunch()
         let shell = model.defaultShell()
         let environmentArray = model.buildEnvironment()
         // Convert [String] ("KEY=VALUE") to [String: String] for Rust FFI

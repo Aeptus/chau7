@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"log"
 	"os"
@@ -19,11 +20,30 @@ const (
 	PositionSystem  InjectionPosition = "system"  // Into the system prompt / instructions
 )
 
+type InjectionTrigger string
+
+const (
+	TriggerEveryPrompt        InjectionTrigger = "every_prompt"
+	TriggerFirstSessionPrompt InjectionTrigger = "first_session_prompt"
+	TriggerAfterCompact       InjectionTrigger = "after_compact"
+	TriggerAfterClear         InjectionTrigger = "after_clear"
+)
+
+type InjectionSessionEvent string
+
+const (
+	SessionEventAfterCompact InjectionSessionEvent = "after_compact"
+	SessionEventAfterClear   InjectionSessionEvent = "after_clear"
+)
+
+var defaultInjectionTriggers = []InjectionTrigger{TriggerEveryPrompt}
+
 // InjectionRule defines a per-project content injection rule.
 type InjectionRule struct {
-	Repository string            `json:"repository"`         // Repository name (e.g. "my-api") or absolute path
-	Content    string            `json:"content"`            // Content to inject
-	Position   InjectionPosition `json:"position,omitempty"` // Where to inject (default: prepend)
+	Repository string             `json:"repository"`         // Repository name (e.g. "my-api") or absolute path
+	Content    string             `json:"content"`            // Content to inject
+	Position   InjectionPosition  `json:"position,omitempty"` // Where to inject (default: prepend)
+	Triggers   []InjectionTrigger `json:"triggers,omitempty"` // When to inject (default: every_prompt)
 }
 
 // InjectionConfig is the top-level structure of prompt-rules.json.
@@ -37,18 +57,33 @@ type repoRuleEntry struct {
 	loadedAt time.Time
 }
 
+type injectionSessionState struct {
+	firstPromptSeen map[string]struct{}
+	afterCompact    bool
+	afterClear      bool
+	lastSeen        time.Time
+}
+
+type injectionSessionSnapshot struct {
+	isFirstPrompt bool
+	afterCompact  bool
+	afterClear    bool
+}
+
 // Injector manages content injection rules from two sources:
 //  1. Global rules file (~/.chau7/prompt-rules.json) — configurable, shared across repos
 //  2. Per-repo rules ({project}/.chau7/injection.json) — highest priority, repo-local
 //
 // Both sources are cached in memory and refreshed periodically.
 type Injector struct {
-	mu         sync.RWMutex
-	rules      []InjectionRule
-	repoCache  map[string]repoRuleEntry
-	configPath string
-	lastLoad   time.Time
-	cacheTTL   time.Duration
+	mu              sync.RWMutex
+	rules           []InjectionRule
+	repoCache       map[string]repoRuleEntry
+	sessionStates   map[string]injectionSessionState
+	configPath      string
+	lastLoad        time.Time
+	cacheTTL        time.Duration
+	sessionStateTTL time.Duration
 }
 
 // NewInjector creates an Injector that loads rules from configPath.
@@ -59,9 +94,11 @@ func NewInjector(configPath string) *Injector {
 		configPath = filepath.Join(home, ".chau7", "prompt-rules.json")
 	}
 	inj := &Injector{
-		configPath: configPath,
-		repoCache:  make(map[string]repoRuleEntry),
-		cacheTTL:   30 * time.Second,
+		configPath:      configPath,
+		repoCache:       make(map[string]repoRuleEntry),
+		sessionStates:   make(map[string]injectionSessionState),
+		cacheTTL:        30 * time.Second,
+		sessionStateTTL: 24 * time.Hour,
 	}
 	inj.loadRules()
 	return inj
@@ -91,9 +128,7 @@ func (inj *Injector) loadRules() {
 	}
 
 	for i := range config.Rules {
-		if config.Rules[i].Position == "" {
-			config.Rules[i].Position = PositionPrepend
-		}
+		config.Rules[i] = normalizeInjectionRule(config.Rules[i])
 		if config.Rules[i].Repository == "" {
 			log.Printf("[WARN] inject: rule %d has empty repository, skipping", i)
 		}
@@ -136,6 +171,117 @@ func (inj *Injector) MatchProject(project string) *InjectionRule {
 		}
 	}
 	return nil
+}
+
+func (inj *Injector) RecordSessionEvent(event InjectionSessionEvent, headers *CorrelationHeaders) bool {
+	key := correlationSessionKey(headers)
+	if key == "" {
+		return false
+	}
+
+	now := time.Now()
+	inj.mu.Lock()
+	defer inj.mu.Unlock()
+
+	inj.pruneExpiredSessionStatesLocked(now)
+	state := inj.sessionStates[key]
+	switch event {
+	case SessionEventAfterCompact:
+		state.afterCompact = true
+	case SessionEventAfterClear:
+		state.afterClear = true
+	default:
+		return false
+	}
+	state.lastSeen = now
+	inj.sessionStates[key] = state
+	return true
+}
+
+func (inj *Injector) snapshotForRule(headers *CorrelationHeaders, ruleKey string) injectionSessionSnapshot {
+	key := correlationSessionKey(headers)
+	if key == "" || strings.TrimSpace(ruleKey) == "" {
+		return injectionSessionSnapshot{}
+	}
+
+	now := time.Now()
+	inj.mu.Lock()
+	defer inj.mu.Unlock()
+
+	inj.pruneExpiredSessionStatesLocked(now)
+	state := inj.sessionStates[key]
+	snapshot := injectionSessionSnapshot{
+		isFirstPrompt: !state.hasSeenFirstPrompt(ruleKey),
+		afterCompact:  state.afterCompact,
+		afterClear:    state.afterClear,
+	}
+	state.lastSeen = now
+	inj.sessionStates[key] = state
+	return snapshot
+}
+
+func (inj *Injector) commitRuleInjection(
+	headers *CorrelationHeaders,
+	ruleKey string,
+	rule *InjectionRule,
+	snapshot injectionSessionSnapshot,
+) {
+	key := correlationSessionKey(headers)
+	if key == "" || strings.TrimSpace(ruleKey) == "" || rule == nil {
+		return
+	}
+
+	now := time.Now()
+	inj.mu.Lock()
+	defer inj.mu.Unlock()
+
+	inj.pruneExpiredSessionStatesLocked(now)
+	state := inj.sessionStates[key]
+	triggers := normalizeInjectionTriggers(rule.Triggers)
+
+	if snapshot.isFirstPrompt && hasInjectionTrigger(triggers, TriggerFirstSessionPrompt) {
+		if state.firstPromptSeen == nil {
+			state.firstPromptSeen = make(map[string]struct{})
+		}
+		state.firstPromptSeen[ruleKey] = struct{}{}
+	}
+	if snapshot.afterCompact && hasInjectionTrigger(triggers, TriggerAfterCompact) {
+		state.afterCompact = false
+	}
+	if snapshot.afterClear && hasInjectionTrigger(triggers, TriggerAfterClear) {
+		state.afterClear = false
+	}
+	state.lastSeen = now
+	inj.sessionStates[key] = state
+}
+
+func (inj *Injector) pruneExpiredSessionStatesLocked(now time.Time) {
+	for key, state := range inj.sessionStates {
+		if now.Sub(state.lastSeen) > inj.sessionStateTTL {
+			delete(inj.sessionStates, key)
+		}
+	}
+}
+
+func correlationSessionKey(headers *CorrelationHeaders) string {
+	if headers == nil {
+		return ""
+	}
+	if value := normalizeCorrelationValue(headers.SessionID, "unknown"); value != "" {
+		return "session:" + value
+	}
+	if value := normalizeCorrelationValue(headers.TabID, "default"); value != "" {
+		return "tab:" + value
+	}
+	return ""
+}
+
+func normalizeCorrelationValue(value, placeholder string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed == placeholder {
+		return ""
+	}
+	return trimmed
 }
 
 // matchRepository checks whether the project path matches a rule's repository
@@ -214,6 +360,7 @@ func (inj *Injector) loadRepoRule(project string) *InjectionRule {
 	if rule.Position == "" {
 		rule.Position = PositionPrepend
 	}
+	rule = normalizeInjectionRule(rule)
 
 	log.Printf("[INFO] inject: loaded repo-local rule from %s", path)
 	inj.mu.Lock()
@@ -229,7 +376,7 @@ func (inj *Injector) loadRepoRule(project string) *InjectionRule {
 //  3. Global wildcard rule (repository: "*")
 //
 // Returns the original body unchanged if no rule matches or if mutation fails.
-func (inj *Injector) InjectContent(provider Provider, body []byte, project string) []byte {
+func (inj *Injector) InjectContent(provider Provider, body []byte, project string, headers *CorrelationHeaders) []byte {
 	// Priority 1: repo-local injection file
 	rule := inj.loadRepoRule(project)
 
@@ -243,12 +390,18 @@ func (inj *Injector) InjectContent(provider Provider, body []byte, project strin
 		return body
 	}
 
+	ruleKey := injectionRuleStateKey(rule, project)
+	sessionSnapshot := inj.snapshotForRule(headers, ruleKey)
+	if !shouldInjectForRule(rule, sessionSnapshot) {
+		return body
+	}
+
 	source := rule.Repository
 	if source == "" {
 		source = "repo-local"
 	}
-	log.Printf("[INFO] inject: matched %q → %s for project %s",
-		source, rule.Position, project)
+	log.Printf("[INFO] inject: matched %q → %s for project %s (triggers=%v)",
+		source, rule.Position, project, normalizeInjectionTriggers(rule.Triggers))
 
 	var result []byte
 	switch rule.Position {
@@ -261,7 +414,111 @@ func (inj *Injector) InjectContent(provider Provider, body []byte, project strin
 	default:
 		return body
 	}
+
+	if bytes.Equal(result, body) {
+		return body
+	}
+	inj.commitRuleInjection(headers, ruleKey, rule, sessionSnapshot)
 	return result
+}
+
+func normalizeInjectionRule(rule InjectionRule) InjectionRule {
+	if rule.Position == "" {
+		rule.Position = PositionPrepend
+	}
+	rule.Triggers = normalizeInjectionTriggers(rule.Triggers)
+	return rule
+}
+
+func normalizeInjectionTriggers(triggers []InjectionTrigger) []InjectionTrigger {
+	if len(triggers) == 0 {
+		return append([]InjectionTrigger(nil), defaultInjectionTriggers...)
+	}
+	seen := make(map[InjectionTrigger]struct{}, len(triggers))
+	normalized := make([]InjectionTrigger, 0, len(triggers))
+	for _, trigger := range triggers {
+		if trigger == "" {
+			continue
+		}
+		if _, ok := seen[trigger]; ok {
+			continue
+		}
+		seen[trigger] = struct{}{}
+		normalized = append(normalized, trigger)
+	}
+	if len(normalized) == 0 {
+		return append([]InjectionTrigger(nil), defaultInjectionTriggers...)
+	}
+	return normalized
+}
+
+func shouldInjectForRule(rule *InjectionRule, snapshot injectionSessionSnapshot) bool {
+	for _, trigger := range normalizeInjectionTriggers(rule.Triggers) {
+		switch trigger {
+		case TriggerEveryPrompt:
+			return true
+		case TriggerFirstSessionPrompt:
+			if snapshot.isFirstPrompt {
+				return true
+			}
+		case TriggerAfterCompact:
+			if snapshot.afterCompact {
+				return true
+			}
+		case TriggerAfterClear:
+			if snapshot.afterClear {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (state injectionSessionState) hasSeenFirstPrompt(ruleKey string) bool {
+	if len(state.firstPromptSeen) == 0 {
+		return false
+	}
+	_, ok := state.firstPromptSeen[ruleKey]
+	return ok
+}
+
+func hasInjectionTrigger(triggers []InjectionTrigger, needle InjectionTrigger) bool {
+	for _, trigger := range normalizeInjectionTriggers(triggers) {
+		if trigger == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func injectionRuleStateKey(rule *InjectionRule, project string) string {
+	if rule == nil {
+		return ""
+	}
+	normalized := normalizeInjectionRule(*rule)
+	scope := strings.TrimSpace(normalized.Repository)
+	if scope == "" {
+		scope = "repo-local:" + project
+	} else {
+		scope = "rule:" + scope
+	}
+
+	var builder strings.Builder
+	builder.WriteString(scope)
+	builder.WriteString("|")
+	builder.WriteString(string(normalized.Position))
+	for _, trigger := range []InjectionTrigger{
+		TriggerEveryPrompt,
+		TriggerFirstSessionPrompt,
+		TriggerAfterCompact,
+		TriggerAfterClear,
+	} {
+		if hasInjectionTrigger(normalized.Triggers, trigger) {
+			builder.WriteString("|")
+			builder.WriteString(string(trigger))
+		}
+	}
+	return builder.String()
 }
 
 // ---------------------------------------------------------------------------
@@ -505,4 +762,3 @@ func mustMarshal(payload map[string]interface{}, fallback []byte) []byte {
 	}
 	return result
 }
-

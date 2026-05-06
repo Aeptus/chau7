@@ -21,6 +21,8 @@ final class InjectionRuleStore {
         var content: String
         /// Where to inject relative to the user message.
         var position: Position
+        /// When to inject for matching requests.
+        var triggers: Set<PromptInjectionTrigger>
 
         enum Position: String, Codable, CaseIterable, Identifiable {
             case prepend
@@ -42,14 +44,21 @@ final class InjectionRuleStore {
 
         /// Custom coding — id is transient, not stored in the JSON file.
         enum CodingKeys: String, CodingKey {
-            case repository, content, position
+            case repository, content, position, triggers
         }
 
-        init(id: UUID = UUID(), repository: String, content: String, position: Position = .prepend) {
+        init(
+            id: UUID = UUID(),
+            repository: String,
+            content: String,
+            position: Position = .prepend,
+            triggers: Set<PromptInjectionTrigger> = PromptInjectionTrigger.defaultSet
+        ) {
             self.id = id
             self.repository = repository
             self.content = content
             self.position = position
+            self.triggers = PromptInjectionTrigger.normalized(triggers)
         }
 
         init(from decoder: Decoder) throws {
@@ -57,7 +66,10 @@ final class InjectionRuleStore {
             self.id = UUID()
             self.repository = try container.decode(String.self, forKey: .repository)
             self.content = try container.decode(String.self, forKey: .content)
-            self.position = try container.decodeIfPresent(Position.self, forKey: .position) ?? .prepend
+            self.position = try (container.decodeIfPresent(Position.self, forKey: .position) ?? .prepend)
+            self.triggers = try PromptInjectionTrigger.normalized(
+                container.decodeIfPresent(Set<PromptInjectionTrigger>.self, forKey: .triggers) ?? []
+            )
         }
 
         func encode(to encoder: Encoder) throws {
@@ -65,6 +77,19 @@ final class InjectionRuleStore {
             try container.encode(repository, forKey: .repository)
             try container.encode(content, forKey: .content)
             try container.encode(position, forKey: .position)
+            try container.encode(Array(triggers).sorted(by: { $0.rawValue < $1.rawValue }), forKey: .triggers)
+        }
+
+        var sortedTriggers: [PromptInjectionTrigger] {
+            triggers.sorted(by: { lhs, rhs in
+                let lhsIndex = PromptInjectionTrigger.allCases.firstIndex(of: lhs) ?? 0
+                let rhsIndex = PromptInjectionTrigger.allCases.firstIndex(of: rhs) ?? 0
+                return lhsIndex < rhsIndex
+            })
+        }
+
+        var triggerSummary: String {
+            sortedTriggers.map(\.badgeLabel).joined(separator: ", ")
         }
     }
 
@@ -148,14 +173,26 @@ final class InjectionRuleStore {
 
     // MARK: - Mutations (must be called on main thread)
 
-    func setGlobalRule(content: String, position: Rule.Position) {
+    func setGlobalRule(
+        content: String,
+        position: Rule.Position,
+        triggers: Set<PromptInjectionTrigger>
+    ) {
         dispatchPrecondition(condition: .onQueue(.main))
         if let idx = rules.firstIndex(where: { $0.repository == "*" }) {
             rules[idx].content = content
             rules[idx].position = position
+            rules[idx].triggers = PromptInjectionTrigger.normalized(triggers)
         } else {
             // Insert wildcard at the end so specific rules take precedence.
-            rules.append(Rule(repository: "*", content: content, position: position))
+            rules.append(
+                Rule(
+                    repository: "*",
+                    content: content,
+                    position: position,
+                    triggers: triggers
+                )
+            )
         }
         save()
     }
@@ -245,6 +282,63 @@ final class InjectionRuleStore {
 
         queue.async {
             try? FileManager.default.removeItem(at: url)
+        }
+    }
+}
+
+extension PromptInjectionTrigger: Identifiable {
+    public var id: String {
+        rawValue
+    }
+
+    var label: String {
+        switch self {
+        case .everyPrompt:
+            return L("injection.trigger.everyPrompt", "Every prompt")
+        case .firstSessionPrompt:
+            return L("injection.trigger.firstSessionPrompt", "First session prompt")
+        case .afterCompact:
+            return L("injection.trigger.afterCompact", "After /compact")
+        case .afterClear:
+            return L("injection.trigger.afterClear", "After /clear")
+        }
+    }
+
+    var badgeLabel: String {
+        switch self {
+        case .everyPrompt:
+            return L("injection.trigger.everyPrompt.short", "every prompt")
+        case .firstSessionPrompt:
+            return L("injection.trigger.firstSessionPrompt.short", "first prompt")
+        case .afterCompact:
+            return L("injection.trigger.afterCompact.short", "after /compact")
+        case .afterClear:
+            return L("injection.trigger.afterClear.short", "after /clear")
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .everyPrompt:
+            return L(
+                "injection.trigger.everyPrompt.help",
+                "Inject on every matching AI request."
+            )
+        case .firstSessionPrompt:
+            return L(
+                "injection.trigger.firstSessionPrompt.help",
+                "Inject only on the first matching AI request in the shell session."
+            )
+        case .afterCompact:
+            return L(
+                "injection.trigger.afterCompact.help",
+                "Inject on the next matching AI request after /compact."
+            )
+        case .afterClear:
+            return L(
+                "injection.trigger.afterClear.help",
+                "Inject on the next matching AI request after /clear."
+            )
         }
     }
 }

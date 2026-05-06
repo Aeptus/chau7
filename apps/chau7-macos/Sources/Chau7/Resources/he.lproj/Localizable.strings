@@ -2581,6 +2581,18 @@
 "injection.position.append" = "הוספה אחרי הפרומפט";
 "injection.position.prepend" = "הוספה לפני הפרומפט";
 "injection.position.system" = "פרומפט מערכת";
+"injection.trigger.afterClear" = "After /clear";
+"injection.trigger.afterClear.help" = "Inject on the next matching AI request after /clear.";
+"injection.trigger.afterClear.short" = "after /clear";
+"injection.trigger.afterCompact" = "After /compact";
+"injection.trigger.afterCompact.help" = "Inject on the next matching AI request after /compact.";
+"injection.trigger.afterCompact.short" = "after /compact";
+"injection.trigger.everyPrompt" = "Every prompt";
+"injection.trigger.everyPrompt.help" = "Inject on every matching AI request.";
+"injection.trigger.everyPrompt.short" = "every prompt";
+"injection.trigger.firstSessionPrompt" = "First session prompt";
+"injection.trigger.firstSessionPrompt.help" = "Inject only on the first matching AI request in the shell session.";
+"injection.trigger.firstSessionPrompt.short" = "first prompt";
 "settings.injection.add" = "הוספת כלל למאגר";
 "settings.injection.editor.addTitle" = "הוספת כלל למאגר";
 "settings.injection.editor.content" = "תוכן";
@@ -2589,6 +2601,7 @@
 "settings.injection.editor.position" = "מיקום";
 "settings.injection.editor.repo" = "מאגר";
 "settings.injection.editor.repoPlaceholder" = "לדוגמה: my-api";
+"settings.injection.editor.triggers" = "When to inject";
 "settings.injection.global" = "כל המאגרים";
 "settings.injection.global.enable" = "הפעלת הזרקה גלובלית";
 "settings.injection.global.help" = "תוכן שמוזרק לכל בקשת AI ללא קשר למאגר. כללים ספציפיים מקבלים עדיפות.";
@@ -2604,6 +2617,7 @@
 "settings.injection.priority.global" = "כלל גלובלי (כל המאגרים)";
 "settings.injection.priority.local" = "קובץ מקומי (.chau7/injection.json)";
 "settings.injection.priority.specific" = "כלל ספציפי מההגדרות";
+"settings.injection.triggers" = "When to inject";
 "settings.promptInjection" = "הזרקת פרומפט";
 "settings.promptInjection.description" = "הזרקת הקשר לבקשות AI לפי מאגר";
 "settings.search.promptInjection.description" = "הזרקת הקשר מותאם אישית לבקשות AI לפי מאגר";

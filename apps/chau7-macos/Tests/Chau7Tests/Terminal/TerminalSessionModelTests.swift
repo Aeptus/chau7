@@ -1625,6 +1625,39 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(environment["CHAU7_TAB_ID"], ownerTabID.uuidString)
     }
 
+    func testBuildEnvironmentUsesStableProxyCorrelationSessionID() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let environment = Dictionary(
+            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry in
+                let parts = entry.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { return nil }
+                return (parts[0], parts[1])
+            }
+        )
+
+        XCTAssertEqual(environment["TERM_SESSION_ID"], environment["CHAU7_SESSION_ID"])
+        XCTAssertEqual(environment["CHAU7_SESSION_ID"], session.proxyCorrelationSessionID)
+    }
+
+    func testPrepareProxyCorrelationSessionForShellLaunchRotatesSessionID() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let first = session.proxyCorrelationSessionID
+        let second = session.prepareProxyCorrelationSessionForShellLaunch()
+        let environment = Dictionary(
+            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry in
+                let parts = entry.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { return nil }
+                return (parts[0], parts[1])
+            }
+        )
+
+        XCTAssertNotEqual(first, second)
+        XCTAssertEqual(environment["TERM_SESSION_ID"], second)
+        XCTAssertEqual(environment["CHAU7_SESSION_ID"], second)
+    }
+
     func testPreInitializeZshWrapperUsesRuntimeShellEnvironment() throws {
         TerminalSessionModel.preInitialize()
         guard let integrationDir = TerminalSessionModel.getShellIntegrationDir() else {

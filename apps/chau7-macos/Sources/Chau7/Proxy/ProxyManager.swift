@@ -780,6 +780,74 @@ final class ProxyManager {
         }
     }
 
+    func recordPromptInjectionSessionEvent(
+        _ event: PromptInjectionSessionEvent,
+        sessionID: String,
+        tabID: String
+    ) -> Bool {
+        guard isRunning else { return false }
+        guard !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+
+        guard let url = apiURL(path: "/injection/session-event") else {
+            logger.error("Invalid proxy URL for prompt injection session event")
+            return false
+        }
+
+        struct SessionEventRequest: Encodable {
+            let event: String
+            let sessionID: String
+            let tabID: String
+
+            enum CodingKeys: String, CodingKey {
+                case event
+                case sessionID = "session_id"
+                case tabID = "tab_id"
+            }
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 0.5
+
+        do {
+            request.httpBody = try JSONEncoder().encode(
+                SessionEventRequest(
+                    event: event.rawValue,
+                    sessionID: sessionID,
+                    tabID: tabID
+                )
+            )
+
+            let semaphore = DispatchSemaphore(value: 0)
+            var success = false
+            var requestError: Error?
+
+            let task = URLSession.shared.dataTask(with: request) { _, response, error in
+                requestError = error
+                if let httpResponse = response as? HTTPURLResponse {
+                    success = (200 ..< 300).contains(httpResponse.statusCode)
+                }
+                semaphore.signal()
+            }
+            task.resume()
+
+            if semaphore.wait(timeout: .now() + 0.75) == .timedOut {
+                task.cancel()
+                logger.warning("Timed out recording prompt injection session event")
+                return false
+            }
+            if let requestError {
+                logger.warning("Failed to record prompt injection session event: \(requestError.localizedDescription)")
+                return false
+            }
+            return success
+        } catch {
+            logger.warning("Failed to record prompt injection session event: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     // MARK: - Private Methods
 
     @objc private func settingsChanged() {
