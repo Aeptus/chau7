@@ -80,10 +80,15 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .active,
-                       "Selected tab on visible window must render live regardless of focus or activity")
-        XCTAssertFalse(decision.isInteractive,
-                       "Interactive still requires input-priority window")
+        XCTAssertEqual(
+            decision.phase,
+            .active,
+            "Selected tab on visible window must render live regardless of focus or activity"
+        )
+        XCTAssertFalse(
+            decision.isInteractive,
+            "Interactive still requires input-priority window"
+        )
     }
 
     func testNonSelectedTabIsWarmAndLiveButNotInteractive() {
@@ -224,8 +229,11 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertTrue(selected.isInteractive)
         XCTAssertFalse(notSelected.isInteractive)
         XCTAssertFalse(selectedNoWindow.isInteractive)
-        XCTAssertEqual(selectedNoWindow.phase, .active,
-                       "Selected tab on a visible window must render live regardless of focus")
+        XCTAssertEqual(
+            selectedNoWindow.phase,
+            .active,
+            "Selected tab on a visible window must render live regardless of focus"
+        )
     }
 
     func testActivePhaseProperties() {

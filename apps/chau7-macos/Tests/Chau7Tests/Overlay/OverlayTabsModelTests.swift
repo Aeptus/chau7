@@ -956,6 +956,30 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(tab.notificationStyle, .waiting)
     }
 
+    func testSelectingTabClearsNonPersistentNotificationStyle() {
+        let targetTabID = model.tabs[0].id
+        model.newTab()
+        XCTAssertNotEqual(model.selectedTabID, targetTabID, "Target tab must be backgrounded for selection clear")
+
+        _ = model.setNotificationStyle(.waiting, for: targetTabID)
+        model.selectTab(id: targetTabID)
+
+        XCTAssertNil(model.tabs[0].notificationStyle)
+    }
+
+    func testSelectingTabPreservesPersistentNotificationStyle() {
+        let targetTabID = model.tabs[0].id
+        model.newTab()
+        XCTAssertNotEqual(model.selectedTabID, targetTabID, "Target tab must be backgrounded for selection clear")
+
+        var style = TabNotificationStyle.attention
+        style.persistent = true
+        _ = model.setNotificationStyle(style, for: targetTabID)
+        model.selectTab(id: targetTabID)
+
+        XCTAssertEqual(model.tabs[0].notificationStyle, style)
+    }
+
     // MARK: - Render Suspension
 
     func testRenderSuspensionKeepsBackgroundAITabLive() {

@@ -97,6 +97,23 @@ final class FeatureSettingsTests: XCTestCase {
         )
     }
 
+    func testPermissionNotificationsDefaultToPersistentStyle() {
+        let triggerKeys = [
+            "claude_code.permission",
+            "claude_code.waiting_input",
+            "claude_code.attention_required",
+            "codex.permission",
+            "codex.waiting_input",
+            "codex.attention_required"
+        ]
+
+        let bindings = FeatureSettings.defaultTriggerActionBindings()
+        for triggerKey in triggerKeys {
+            let styleAction = bindings[triggerKey]?.first(where: { $0.actionType == .styleTab })
+            XCTAssertEqual(styleAction?.config["persistent"], "true", "Expected persistent style for \(triggerKey)")
+        }
+    }
+
     // MARK: - Color Scheme Defaults
 
     func testDefaultColorSchemeName() {

@@ -234,13 +234,13 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(all.count, 3, "LagKind should have 3 cases")
         XCTAssertTrue(all.contains(.input))
         XCTAssertTrue(all.contains(.output))
-        XCTAssertTrue(all.contains(.highlight))
+        XCTAssertTrue(all.contains(.scan))
     }
 
     func testLagKindRawValues() {
         XCTAssertEqual(TerminalSessionModel.LagKind.input.rawValue, "input")
         XCTAssertEqual(TerminalSessionModel.LagKind.output.rawValue, "output")
-        XCTAssertEqual(TerminalSessionModel.LagKind.highlight.rawValue, "highlight")
+        XCTAssertEqual(TerminalSessionModel.LagKind.scan.rawValue, "scan")
     }
 
     // MARK: - LagEvent
@@ -1345,8 +1345,8 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertNil(session.inputLatencyAverageMs, "Initial inputLatencyAverageMs should be nil")
         XCTAssertNil(session.outputLatencyMs, "Initial outputLatencyMs should be nil")
         XCTAssertNil(session.outputLatencyAverageMs, "Initial outputLatencyAverageMs should be nil")
-        XCTAssertNil(session.dangerousHighlightDelayMs, "Initial dangerousHighlightDelayMs should be nil")
-        XCTAssertNil(session.dangerousHighlightAverageMs, "Initial dangerousHighlightAverageMs should be nil")
+        XCTAssertNil(session.scanLagDelayMs, "Initial scanLagDelayMs should be nil")
+        XCTAssertNil(session.scanLagAverageMs, "Initial scanLagAverageMs should be nil")
     }
 
     // MARK: - Terminal View Accessors

@@ -11,7 +11,6 @@ extension OverlayTabsModel {
 
     // MARK: - Overlay Dismissal
 
-
     func dismissOverlays() {
         dismissHoverCard()
         if isRenameVisible {

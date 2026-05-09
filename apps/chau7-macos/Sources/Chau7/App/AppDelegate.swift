@@ -2430,10 +2430,10 @@ private final class OverlayBlurView: NSVisualEffectView {
             pendingLifecycleDemotionsByWindow[windowNumber]?.cancel()
             let workItem = DispatchWorkItem { [weak self, weak window] in
                 guard let self, let window else { return }
-                self.pendingLifecycleDemotionsByWindow.removeValue(forKey: windowNumber)
+                pendingLifecycleDemotionsByWindow.removeValue(forKey: windowNumber)
                 // Re-resolve the host — overlayHosts may have changed during
                 // the debounce window (tab drag across windows, window close).
-                guard let host = self.overlayHosts.first(where: { $0.window == window }) else { return }
+                guard let host = overlayHosts.first(where: { $0.window == window }) else { return }
                 // Only apply if the window is still not key/main — if it
                 // regained focus during the debounce window this is a no-op.
                 guard !window.isKeyWindow, !window.isMainWindow else {
@@ -2441,7 +2441,7 @@ private final class OverlayBlurView: NSVisualEffectView {
                     return
                 }
                 host.model.invalidateRenderLifecycle(reason: "\(reason).debounced")
-                self.refreshLowLatencyActivity()
+                refreshLowLatencyActivity()
             }
             pendingLifecycleDemotionsByWindow[windowNumber] = workItem
             DispatchQueue.main.asyncAfter(

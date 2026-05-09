@@ -978,14 +978,13 @@ final class TerminalControlService {
         request: HistorySessionAdoptionRequest
     ) -> TerminalSessionModel? {
         let displaySession = tab.displaySession
-        let ranked = tab.splitController.terminalSessions.compactMap {
-            _, session -> (
-                session: TerminalSessionModel,
-                exactRank: Int,
-                directoryRank: Int,
-                focusRank: Int,
-                activity: Date
-            )? in
+        let ranked: [(
+            session: TerminalSessionModel,
+            exactRank: Int,
+            directoryRank: Int,
+            focusRank: Int,
+            activity: Date
+        )] = tab.splitController.terminalSessions.compactMap { _, session in
             let storedSessionId = session.normalizedStoredAISessionId()
             let directoryRank = historyAdoptionDirectoryRank(session: session, directory: request.directory)
             guard canAdoptHistorySession(
@@ -1006,7 +1005,7 @@ final class TerminalControlService {
             )
         }
 
-        return ranked.sorted { lhs, rhs in
+        return ranked.min { lhs, rhs in
             if lhs.exactRank != rhs.exactRank {
                 return lhs.exactRank < rhs.exactRank
             }
@@ -1017,8 +1016,7 @@ final class TerminalControlService {
                 return lhs.focusRank < rhs.focusRank
             }
             return lhs.activity > rhs.activity
-        }
-        .first?.session
+        }?.session
     }
 
     private func canAdoptHistorySession(

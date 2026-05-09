@@ -431,6 +431,43 @@ struct SavedTerminalPaneState: Codable {
     }
 }
 
+extension SavedTerminalPaneState {
+    /// Directory the restored shell should land in.
+    ///
+    /// For Codex tabs, the saved `directory` is the **shell** cwd at save
+    /// time — i.e. wherever the user typed `codex resume <id>` from. Codex
+    /// itself records a different cwd in its rollout file (the directory
+    /// the session was started in), and that's the one the user mentally
+    /// associates with the tab. When both are available and codex's value
+    /// still exists on disk, prefer it.
+    ///
+    /// Falls back to `directory` for non-codex tabs, missing/invalid codex
+    /// metadata, or codex paths that no longer exist.
+    var preferredRestoreDirectory: String {
+        guard let normalizedProvider = AIResumeParser.normalizeProviderName(aiProvider ?? ""),
+              normalizedProvider == "codex",
+              let sessionId = aiSessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sessionId.isEmpty,
+              let metadata = CodexSessionResolver.metadata(forSessionID: sessionId),
+              !metadata.cwd.isEmpty
+        else {
+            return directory
+        }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: metadata.cwd, isDirectory: &isDir),
+              isDir.boolValue
+        else {
+            return directory
+        }
+        if metadata.cwd != directory {
+            Log.info(
+                "SavedTerminalPaneState: codex session=\(sessionId.prefix(8)) override directory \"\(directory)\" → \"\(metadata.cwd)\""
+            )
+        }
+        return metadata.cwd
+    }
+}
+
 private enum SavedAIResumePayload {
     struct Fields {
         let command: String?

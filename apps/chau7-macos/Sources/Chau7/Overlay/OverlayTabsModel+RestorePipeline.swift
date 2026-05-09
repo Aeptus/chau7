@@ -2,7 +2,6 @@ import Foundation
 import AppKit
 import Chau7Core
 
-
 extension OverlayTabsModel {
 
     static let restoreDelaySeconds: TimeInterval = 0.2
@@ -749,7 +748,7 @@ extension OverlayTabsModel {
         let restoreScheduledAt = CFAbsoluteTimeGetCurrent()
         let executeRestore = { [weak self] in
             guard let self else { return }
-            self.executeRestoreBody(
+            executeRestoreBody(
                 targetTabID: targetTabID,
                 state: state,
                 paneStatesByID: paneStatesByID,
@@ -966,7 +965,11 @@ extension OverlayTabsModel {
             return ResumeRestoreIntent(
                 paneID: paneID,
                 command: command,
-                expectedDirectory: paneState.directory,
+                // Use the same effective directory as the launch path
+                // (`SplitPaneController.fromSavedNode` → `preferredRestoreDirectory`)
+                // so the directoryMatches gate doesn't reject delivery when
+                // codex's session cwd differs from the shell-cwd we saved.
+                expectedDirectory: paneState.preferredRestoreDirectory,
                 expectedProvider: paneState.aiProvider,
                 expectedSessionID: paneState.aiSessionId,
                 expectedSessionIDSource: paneState.aiSessionIdSource,
@@ -1124,7 +1127,6 @@ extension OverlayTabsModel {
             notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
         }
     }
-
 
     var selectedTab: OverlayTab? {
         tabs.first { $0.id == selectedTabID }

@@ -31,10 +31,16 @@ final class OverlayWindowFramingTests: XCTestCase {
         // Expect origin.y to be clamped to 80; size unchanged.
         let frame = NSRect(x: 100, y: 20, width: 800, height: 600)
         let clamped = OverlayWindowFraming.clampedFrame(proposed: frame, in: visibleFrame)
-        XCTAssertEqual(clamped.origin.y, visibleFrame.minY,
-                       "Bottom edge must be at visibleFrame.minY when proposed is below")
-        XCTAssertEqual(clamped.size, frame.size,
-                       "Size must not be reduced just to lift the bottom edge")
+        XCTAssertEqual(
+            clamped.origin.y,
+            visibleFrame.minY,
+            "Bottom edge must be at visibleFrame.minY when proposed is below"
+        )
+        XCTAssertEqual(
+            clamped.size,
+            frame.size,
+            "Size must not be reduced just to lift the bottom edge"
+        )
     }
 
     // MARK: - Top clip
@@ -52,10 +58,16 @@ final class OverlayWindowFramingTests: XCTestCase {
     func testHeightLargerThanVisibleFrameIsCapped() {
         let frame = NSRect(x: 100, y: 80, width: 800, height: 2000)
         let clamped = OverlayWindowFraming.clampedFrame(proposed: frame, in: visibleFrame)
-        XCTAssertEqual(clamped.size.height, visibleFrame.height,
-                       "Height must be capped at visibleFrame.height when proposed exceeds it")
-        XCTAssertEqual(clamped.origin.y, visibleFrame.minY,
-                       "After height cap, window must sit at visibleFrame.minY")
+        XCTAssertEqual(
+            clamped.size.height,
+            visibleFrame.height,
+            "Height must be capped at visibleFrame.height when proposed exceeds it"
+        )
+        XCTAssertEqual(
+            clamped.origin.y,
+            visibleFrame.minY,
+            "After height cap, window must sit at visibleFrame.minY"
+        )
     }
 
     func testWidthLargerThanVisibleFrameIsCapped() {
@@ -85,8 +97,11 @@ final class OverlayWindowFramingTests: XCTestCase {
         let frame = NSRect(x: -50, y: -100, width: 2000, height: 2000)
         let once = OverlayWindowFraming.clampedFrame(proposed: frame, in: visibleFrame)
         let twice = OverlayWindowFraming.clampedFrame(proposed: once, in: visibleFrame)
-        XCTAssertEqual(once, twice,
-                       "Clamping a clamped frame must produce no further change")
+        XCTAssertEqual(
+            once,
+            twice,
+            "Clamping a clamped frame must produce no further change"
+        )
     }
 
     // MARK: - Multi-monitor: secondary screen with non-zero origin

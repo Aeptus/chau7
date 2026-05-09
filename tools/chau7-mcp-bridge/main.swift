@@ -195,6 +195,13 @@ mainLoop: while true {
         // already received the original initialize result; forwarding the new
         // one would duplicate it and confuse the client's request bookkeeping.
         let _ = recv(newFD, &buffer, buffer.count, 0)
+        // Replay the `notifications/initialized` step the AI tool sent only
+        // to the OLD server. Without it, the new MCPSession stays in
+        // `.awaitingInitializedNotification` forever and every subsequent
+        // tools/call returns -32002. The notification has no params per
+        // MCP spec, so synthesizing it locally is safe.
+        let initializedNotification = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
+        sendBytes(newFD, Data(initializedNotification.utf8))
     }
 
     for data in queued {

@@ -16,7 +16,7 @@ final class OSC7DeadlockDecisionTests: XCTestCase {
     /// (Other code paths handle non-loading state; this gate would be
     /// redundant noise in the log.)
     func testNotLoadingNeverForceClears() {
-        for retries in 0...20 {
+        for retries in 0 ... 20 {
             for isStartupActive in [true, false] {
                 XCTAssertFalse(
                     TerminalSessionModel.shouldForceClearShellLoadingForOSC7Deadlock(
@@ -57,7 +57,7 @@ final class OSC7DeadlockDecisionTests: XCTestCase {
 
     /// Post-startup, retries above the steady-state threshold force-clear.
     func testPostStartupAboveThresholdForceClears() {
-        for retries in 7...12 {
+        for retries in 7 ... 12 {
             XCTAssertTrue(
                 TerminalSessionModel.shouldForceClearShellLoadingForOSC7Deadlock(
                     retries: retries,
@@ -108,7 +108,7 @@ final class OSC7DeadlockDecisionTests: XCTestCase {
 
     /// Startup-active, retries above the startup threshold force-clear.
     func testStartupActiveAboveThresholdForceClears() {
-        for retries in 9...15 {
+        for retries in 9 ... 15 {
             XCTAssertTrue(
                 TerminalSessionModel.shouldForceClearShellLoadingForOSC7Deadlock(
                     retries: retries,

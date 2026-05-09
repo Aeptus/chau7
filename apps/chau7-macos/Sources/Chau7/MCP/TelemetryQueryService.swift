@@ -217,7 +217,7 @@ final class TelemetryQueryService {
         return grouped.keys.sorted().compactMap { sessionID -> [String: Any]? in
             guard let pairs = grouped[sessionID] else { return nil }
             let runs = pairs.map(\.1)
-            let latestRun = runs.sorted(by: TelemetryQueryProjection.runSortDescending).first
+            let latestRun = runs.min(by: TelemetryQueryProjection.runSortDescending)
             return [
                 "session_id": sessionID,
                 "provider": latestRun?.provider as Any,

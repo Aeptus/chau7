@@ -87,9 +87,9 @@ final class ClaudeCodeMonitor {
             DispatchQueue.main.async { [weak self] in
                 self?.notificationContinuations[id] = continuation
             }
-            continuation.onTermination = { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.notificationContinuations.removeValue(forKey: id)
+            continuation.onTermination = { _ in
+                Task { @MainActor in
+                    ClaudeCodeMonitor.shared.notificationContinuations.removeValue(forKey: id)
                 }
             }
         }

@@ -16,6 +16,9 @@ final class MemoryPressureResponder {
 
     private var source: DispatchSourceMemoryPressure?
     private let queue = DispatchQueue(label: "com.chau7.memory-pressure", qos: .utility)
+    private let stateLock = NSLock()
+    private var lastCriticalAt: Date?
+    private let criticalSuppressionWindow: TimeInterval = 30
 
     private init() {}
 
@@ -38,12 +41,26 @@ final class MemoryPressureResponder {
         source = nil
     }
 
+    /// The OS pressure API does not emit a "back to normal" event. Treat a
+    /// recent critical signal as a short-lived hint to skip best-effort work
+    /// rather than latching the app into a permanent degraded mode.
+    func shouldShedBestEffortOutputWork(now: Date = Date()) -> Bool {
+        stateLock.lock()
+        let lastCriticalAt = lastCriticalAt
+        stateLock.unlock()
+        guard let lastCriticalAt else { return false }
+        return now.timeIntervalSince(lastCriticalAt) < criticalSuppressionWindow
+    }
+
     private func handleEvent(_ data: DispatchSource.MemoryPressureEvent) {
         let physicalBytes = UInt64(ProcessInfo.processInfo.physicalMemory)
         let usedBytes = reportedResidentBytes()
         let ratioPercent = physicalBytes > 0 ? Int((Double(usedBytes) / Double(physicalBytes)) * 100) : -1
 
         if data.contains(.critical) {
+            stateLock.lock()
+            lastCriticalAt = Date()
+            stateLock.unlock()
             Log.warn(
                 "MemoryPressureResponder: CRITICAL pressure " +
                     "(process rss=\(usedBytes / (1024 * 1024))MB, \(ratioPercent)% of \(physicalBytes / (1024 * 1024))MB physical)"

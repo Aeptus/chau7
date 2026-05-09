@@ -187,7 +187,9 @@ final class InteractivePromptDetectorTests: XCTestCase {
         // silently widen it (would spike CPU) or narrow it (would lose
         // real prompts buried under long installer output).
         var visible: [String] = []
-        for index in 0 ..< 70 { visible.append("recent output \(index)") }
+        for index in 0 ..< 70 {
+            visible.append("recent output \(index)")
+        }
         visible.append("Do you want to continue?")
         visible.append("  1. Yes")
         visible.append("  2. No")
@@ -200,7 +202,9 @@ final class InteractivePromptDetectorTests: XCTestCase {
         hidden.append("Do you want to continue?")
         hidden.append("  1. Yes")
         hidden.append("  2. No")
-        for index in 0 ..< 100 { hidden.append("noise \(index)") }
+        for index in 0 ..< 100 {
+            hidden.append("noise \(index)")
+        }
         XCTAssertNil(
             InteractivePromptDetector.detect(in: hidden.joined(separator: "\n"), toolName: "claude"),
             "prompt beyond the 80-line window should be invisible to detect"

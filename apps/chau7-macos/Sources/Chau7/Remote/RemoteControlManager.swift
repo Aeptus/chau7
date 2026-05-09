@@ -83,11 +83,13 @@ final class RemoteControlManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            if FeatureSettings.shared.isRemoteEnabled {
-                startAgent()
-            } else {
-                stopAgent()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if FeatureSettings.shared.isRemoteEnabled {
+                    startAgent()
+                } else {
+                    stopAgent()
+                }
             }
         }
 
@@ -96,7 +98,9 @@ final class RemoteControlManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.restartAgentIfRunning()
+            Task { @MainActor [weak self] in
+                self?.restartAgentIfRunning()
+            }
         }
 
         overlayModel.onTabsChanged = { [weak self] in

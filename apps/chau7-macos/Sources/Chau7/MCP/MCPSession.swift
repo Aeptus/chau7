@@ -214,7 +214,7 @@ final class MCPSession {
             if lifecycleState == .awaitingInitializedNotification {
                 lifecycleState = .ready
             } else {
-                Log.warn("MCPSession: received notifications/initialized before initialize")
+                Log.warn("MCPSession: received notifications/initialized in unexpected state \(lifecycleState)")
             }
             return nil
 
@@ -438,7 +438,11 @@ final class MCPSession {
             ],
             [
                 "name": "chau7_subscribe",
-                "description": "Open a long-lived Chau7 state subscription on this MCP connection. Returns an initial aggregated snapshot, effective topic scope, subscription health metadata, and optional replayed changes since a cursor. Subsequent state deltas and heartbeat keepalives are emitted as JSON-RPC notifications.",
+                "description": [
+                    "Open a long-lived Chau7 state subscription on this MCP connection.",
+                    "Returns an initial aggregated snapshot, effective topic scope, subscription health metadata, and optional replayed changes since a cursor.",
+                    "Subsequent state deltas and heartbeat keepalives are emitted as JSON-RPC notifications."
+                ].joined(separator: " "),
                 "inputSchema": [
                     "type": "object",
                     "properties": [
@@ -484,7 +488,11 @@ final class MCPSession {
             ],
             [
                 "name": "tab_exec",
-                "description": "Execute a shell command in a tab. If the shell is still bootstrapping or the live view is not yet attached, Chau7 accepts the command and queues it automatically. Use tab_status.can_accept_exec or tab_wait_ready to gate deterministic launch submission, and ready_for_exec when you need immediate prompt-ready execution without queueing.",
+                "description": [
+                    "Execute a shell command in a tab.",
+                    "If the shell is still bootstrapping or the live view is not yet attached, Chau7 accepts the command and queues it automatically.",
+                    "Use tab_status.can_accept_exec or tab_wait_ready to gate deterministic launch submission, and ready_for_exec when you need immediate prompt-ready execution without queueing."
+                ].joined(separator: " "),
                 "inputSchema": [
                     "type": "object",
                     "properties": [
@@ -496,7 +504,11 @@ final class MCPSession {
             ],
             [
                 "name": "tab_status",
-                "description": "Get detailed live status of a tab: process state, working directory, active app, AI provider/session metadata, exec-acceptance fields (`can_accept_exec` / `exec_acceptance_mode`), prompt-ready fields (`ready_for_exec` / `readiness_reason`), child processes, and active telemetry run.",
+                "description": [
+                    "Get detailed live status of a tab: process state, working directory, active app, AI provider/session metadata,",
+                    "exec-acceptance fields (`can_accept_exec` / `exec_acceptance_mode`), prompt-ready fields (`ready_for_exec` / `readiness_reason`),",
+                    "child processes, and active telemetry run."
+                ].joined(separator: " "),
                 "inputSchema": [
                     "type": "object",
                     "properties": [

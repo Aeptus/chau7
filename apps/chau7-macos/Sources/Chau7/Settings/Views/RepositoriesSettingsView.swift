@@ -1,209 +1,338 @@
+import AppKit
 import SwiftUI
 
-/// Settings tab for managing per-repo metadata: descriptions, labels, and favorite files.
+/// Settings tab for managing per-repo metadata: descriptions, labels, and
+/// favorite files. Stored at `{repo}/.chau7/metadata.json` (see `RepoMetadata`).
 struct RepositoriesSettingsView: View {
     @State private var repos: [RepoEntry] = []
-    @State private var selectedRepo: String?
-    @State private var editDescription = ""
-    @State private var editLabels = ""
-    @State private var editFavorites = ""
+    @State private var searchText = ""
+    @State private var editingRepo: RepoEntry?
+
+    private var filteredRepos: [RepoEntry] {
+        let needle = searchText.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return repos }
+        return repos.filter { repo in
+            repo.name.lowercased().contains(needle)
+                || (repo.metadata.description?.lowercased().contains(needle) ?? false)
+                || repo.metadata.labels.contains { $0.lowercased().contains(needle) }
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SettingsSectionHeader(L("settings.repositories.recent", "Recent Repositories"), icon: "folder.badge.gearshape")
-                .padding(.bottom, 8)
+        VStack(alignment: .leading, spacing: 16) {
+            SettingsSectionHeader(
+                L("settings.repositories.title", "Repositories"),
+                icon: "folder.badge.gearshape"
+            )
+
+            Text(L(
+                "settings.repositories.help",
+                "Add a description, labels, and favorite files to repositories you've opened in Chau7. Stored at .chau7/metadata.json inside each repo."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
             if repos.isEmpty {
-                VStack {
-                    Spacer()
-                    Text(L("repos.noRepos", "No repositories discovered yet"))
-                        .foregroundStyle(.secondary)
-                    Text(L("repos.noRepos.help", "Open a terminal in a git repository to get started"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, minHeight: 200)
+                emptyState
             } else {
-                HSplitView {
-                    // Repo list
-                    List(repos, selection: $selectedRepo) { repo in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Image(systemName: "folder.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.blue)
-                                Text(repo.name)
-                                    .font(.system(size: 12, weight: .medium))
-                            }
-                            if let desc = repo.metadata.description, !desc.isEmpty {
-                                Text(desc)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            if !repo.metadata.labels.isEmpty {
-                                HStack(spacing: 4) {
-                                    ForEach(repo.metadata.labels, id: \.self) { label in
-                                        Text(label)
-                                            .font(.system(size: 9, weight: .medium))
-                                            .padding(.horizontal, 4)
-                                            .padding(.vertical, 1)
-                                            .background(Color.blue.opacity(0.15))
-                                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                                            .foregroundStyle(.blue)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.vertical, 2)
-                        .tag(repo.path)
-                    }
-                    .listStyle(.plain)
-                    .frame(minWidth: 200)
-
-                    // Edit panel
-                    if let path = selectedRepo, let repo = repos.first(where: { $0.path == path }) {
-                        editPanel(repo: repo)
-                            .frame(minWidth: 300)
-                    } else {
-                        VStack {
-                            Spacer()
-                            Text(L("repos.selectToEdit", "Select a repository to edit"))
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .frame(minWidth: 300)
-                    }
+                if repos.count > 5 {
+                    searchField
                 }
-                .frame(minHeight: 300)
+
+                if filteredRepos.isEmpty {
+                    Text(L("settings.repositories.noMatches", "No repositories match your search."))
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                } else {
+                    repoList
+                }
             }
         }
         .onAppear { reload() }
-        .onChange(of: selectedRepo) {
-            guard let path = selectedRepo,
-                  let repo = repos.first(where: { $0.path == path }) else { return }
-            editDescription = repo.metadata.description ?? ""
-            editLabels = repo.metadata.labels.joined(separator: ", ")
-            editFavorites = repo.metadata.favoriteFiles.joined(separator: "\n")
+        .sheet(item: $editingRepo) { repo in
+            RepositoryEditorSheet(repo: repo) { updated in
+                save(updated)
+                reload()
+            }
         }
     }
 
-    private func editPanel(repo: RepoEntry) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // Header
-                HStack {
-                    Image(systemName: "folder.fill")
-                        .foregroundStyle(.blue)
-                    Text(repo.name)
-                        .font(.system(size: 14, weight: .semibold))
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField(
+                L("settings.repositories.search", "Search by name, description, or label"),
+                text: $searchText
+            )
+            .textFieldStyle(.plain)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
                 }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color(nsColor: .textBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.secondary.opacity(0.2))
+        )
+    }
 
-                Text(repo.path)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
+    private var emptyState: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "folder.badge.questionmark")
+                .font(.title)
+                .foregroundStyle(.secondary)
+            Text(L("settings.repositories.empty.title", "No repositories tracked yet"))
+                .font(.body)
+                .foregroundStyle(.secondary)
+            Text(L(
+                "settings.repositories.empty.help",
+                "Open a terminal in a git repository to start tracking it."
+            ))
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+    }
 
-                Divider()
-
-                // Description
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L("repos.description", "Description"))
-                        .font(.system(size: 12, weight: .medium))
-                    TextField(L("placeholder.repoDescription", "What is this repo for?"), text: $editDescription)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { saveMetadata(for: repo.path) }
-                }
-
-                // Labels
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L("repos.labels", "Labels"))
-                        .font(.system(size: 12, weight: .medium))
-                    TextField(L("placeholder.repoLabels", "backend, rust, api (comma-separated)"), text: $editLabels)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { saveMetadata(for: repo.path) }
-                }
-
-                // Favorite files
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L("repos.favoriteFiles", "Favorite Files"))
-                        .font(.system(size: 12, weight: .medium))
-                    Text(L("repos.favoriteFiles.help", "Relative paths, one per line"))
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                    TextEditor(text: $editFavorites)
-                        .font(.system(size: 11, design: .monospaced))
-                        .frame(minHeight: 80)
-                        .border(Color.gray.opacity(0.3), width: 1)
-                }
-
-                // Save button
-                HStack {
-                    Spacer()
-                    Button(L("action.save", "Save")) {
-                        saveMetadata(for: repo.path)
-                    }
-                    .keyboardShortcut(.return, modifiers: .command)
+    private var repoList: some View {
+        VStack(spacing: 0) {
+            ForEach(filteredRepos) { repo in
+                repoRow(repo)
+                if repo.id != filteredRepos.last?.id {
+                    Divider()
                 }
             }
-            .padding()
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.secondary.opacity(0.2))
+        )
+    }
+
+    private func repoRow(_ repo: RepoEntry) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "folder.fill")
+                .foregroundStyle(.blue)
+                .frame(width: 18)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(repo.name)
+                    .font(.body)
+                    .fontWeight(.medium)
+
+                Text((repo.path as NSString).abbreviatingWithTildeInPath)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                if let desc = repo.metadata.description, !desc.isEmpty {
+                    Text(desc)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                if !repo.metadata.labels.isEmpty || !repo.metadata.favoriteFiles.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(repo.metadata.labels, id: \.self) { label in
+                            Text(label)
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(Color.accentColor.opacity(0.15))
+                                .foregroundStyle(Color.accentColor)
+                                .clipShape(Capsule())
+                        }
+                        if !repo.metadata.favoriteFiles.isEmpty {
+                            HStack(spacing: 3) {
+                                Image(systemName: "star.fill")
+                                Text("\(repo.metadata.favoriteFiles.count)")
+                            }
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                        }
+                    }
+                }
+            }
+
+            Spacer()
+
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: repo.path)])
+            } label: {
+                Image(systemName: "arrow.up.forward.square")
+            }
+            .buttonStyle(.borderless)
+            .help(L("settings.repositories.openFinder", "Reveal in Finder"))
+
+            Button {
+                editingRepo = repo
+            } label: {
+                Image(systemName: "pencil")
+            }
+            .buttonStyle(.borderless)
+            .help(L("settings.repositories.edit", "Edit metadata"))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            editingRepo = repo
         }
     }
 
-    private func saveMetadata(for path: String) {
-        let labels = editLabels
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        let favorites = editFavorites
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        let metadata = RepoMetadata(
-            description: editDescription.isEmpty ? nil : editDescription,
-            labels: labels,
-            favoriteFiles: favorites,
-            updatedAt: Date()
-        )
-
-        // Update live model if cached
-        if let model = RepositoryCache.shared.cachedModel(forRoot: path) {
-            model.updateMetadata(metadata)
+    private func save(_ repo: RepoEntry) {
+        if let model = RepositoryCache.shared.cachedModel(forRoot: repo.path) {
+            model.updateMetadata(repo.metadata)
         } else {
-            RepoMetadataStore.save(metadata, repoRoot: path)
+            RepoMetadataStore.save(repo.metadata, repoRoot: repo.path)
         }
-
-        reload()
     }
 
     private func reload() {
-        repos = KnownRepoIdentityStore.shared.allRoots().map { path in
-            let metadata = RepositoryCache.shared.cachedModel(forRoot: path)?.metadata
-                ?? RepoMetadataStore.load(repoRoot: path)
-            return RepoEntry(
-                path: path,
-                name: URL(fileURLWithPath: path).lastPathComponent,
-                metadata: metadata
-            )
-        }
+        repos = KnownRepoIdentityStore.shared.allRoots()
+            .map { path in
+                let metadata = RepositoryCache.shared.cachedModel(forRoot: path)?.metadata
+                    ?? RepoMetadataStore.load(repoRoot: path)
+                return RepoEntry(
+                    path: path,
+                    name: URL(fileURLWithPath: path).lastPathComponent,
+                    metadata: metadata
+                )
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }
 
-private struct RepoEntry: Identifiable, Hashable {
+// MARK: - Editor Sheet
+
+private struct RepositoryEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let repo: RepoEntry
+    let onSave: (RepoEntry) -> Void
+
+    @State private var descriptionText = ""
+    @State private var labelsText = ""
+    @State private var favoritesText = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill")
+                    .foregroundStyle(.blue)
+                Text(repo.name)
+                    .font(.headline)
+            }
+
+            Text((repo.path as NSString).abbreviatingWithTildeInPath)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L("repos.description", "Description"))
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                TextField(
+                    L("placeholder.repoDescription", "What is this repo for?"),
+                    text: $descriptionText
+                )
+                .textFieldStyle(.roundedBorder)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L("repos.labels", "Labels"))
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                TextField(
+                    L("placeholder.repoLabels", "backend, rust, api (comma-separated)"),
+                    text: $labelsText
+                )
+                .textFieldStyle(.roundedBorder)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L("repos.favoriteFiles", "Favorite Files"))
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text(L("repos.favoriteFiles.help", "Relative paths, one per line."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $favoritesText)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 100, maxHeight: 200)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .background(Color(nsColor: .textBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.secondary.opacity(0.2))
+                    )
+            }
+
+            HStack {
+                Spacer()
+                Button(L("Cancel", "Cancel")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(L("Save", "Save")) {
+                    var updated = repo
+                    updated.metadata = RepoMetadata(
+                        description: descriptionText.isEmpty ? nil : descriptionText,
+                        labels: parseList(labelsText, separator: ","),
+                        favoriteFiles: parseList(favoritesText, separator: "\n"),
+                        updatedAt: Date()
+                    )
+                    onSave(updated)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 520)
+        .onAppear {
+            descriptionText = repo.metadata.description ?? ""
+            labelsText = repo.metadata.labels.joined(separator: ", ")
+            favoritesText = repo.metadata.favoriteFiles.joined(separator: "\n")
+        }
+    }
+
+    private func parseList(_ raw: String, separator: Character) -> [String] {
+        raw.split(separator: separator)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+}
+
+// MARK: - Model
+
+private struct RepoEntry: Identifiable {
     let path: String
+    let name: String
+    var metadata: RepoMetadata
+
     var id: String {
         path
-    }
-
-    let name: String
-    let metadata: RepoMetadata
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(path)
-    }
-
-    static func == (lhs: RepoEntry, rhs: RepoEntry) -> Bool {
-        lhs.path == rhs.path
     }
 }

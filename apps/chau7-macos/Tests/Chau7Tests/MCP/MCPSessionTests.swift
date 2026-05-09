@@ -394,9 +394,8 @@ final class MCPSessionTests: XCTestCase {
 
         let scrubbed = scrubSnapshotContract(snapshot)
         let encoded = try canonicalJSONString(scrubbed)
-        XCTAssertEqual(encoded, """
-        {"approvals":[],"generated_at_millis":"<generated_at_millis>","latest_seq":"<latest_seq>","observer_contract":{"default_heartbeat_interval_ms":15000,"default_replay_limit":200,"delivery_mode":"serial","heartbeat_event_type":"heartbeat","max_heartbeat_interval_ms":60000,"max_replay_limit":500,"min_heartbeat_interval_ms":1000,"notification_method":"notifications\\/chau7.event","snapshot_tool":"chau7_state_snapshot","subscribe_tool":"chau7_subscribe","supported_topics":["approval-state","repo-events","runtime-events","session-state","tab-state","telemetry-runs","timer-inventory"],"unsubscribe_tool":"chau7_unsubscribe","version":1},"observer_contract_version":1,"repo_events":[],"runtime_info":{"app_version":"<app_version>","build_channel":"<build_channel>","build_number":"<build_number>","build_sha":"<build_sha>","build_timestamp":"<build_timestamp>","bundle_id":"<bundle_id>","launch_time":"<launch_time>","mcp_protocol_version":"2025-11-25","observability_schema_version":1,"process_id":"<process_id>","session_started_at":"<session_started_at>"},"schema_version":1,"tabs":[],"telemetry":{"active_runs":[],"active_sessions":[]},"timers":[]}
-        """)
+        let expected = try canonicalJSONString(expectedSnapshotGoldenContract())
+        XCTAssertEqual(encoded, expected)
     }
 
     func testSubscriptionNotificationGoldenContractShape() throws {
@@ -421,9 +420,8 @@ final class MCPSessionTests: XCTestCase {
 
         let scrubbed = try scrubNotificationContract(XCTUnwrap(paramsPayload))
         let encoded = try canonicalJSONString(scrubbed)
-        XCTAssertEqual(encoded, """
-        {"delivery_seq":"<delivery_seq>","observer_contract_version":1,"payload":{"detail":{"window_id":1},"id":"<event_id>","seq":"<event_seq>","subsystem":"tabs","timestamp_millis":"<event_timestamp_millis>","type":"tab_created"},"seq":"<event_seq>","subscription_health":{"buffer_depth":0,"created_at_millis":"<created_at_millis>","delivery_mode":"serial","dropped_notification_count":0,"heartbeat_interval_ms":1000,"lag_state":"healthy","last_notification_at_millis":"<last_notification_at_millis>","notifications_emitted_count":1},"subscription_id":"<subscription_id>","subsystem":"tabs","timestamp_millis":"<event_timestamp_millis>","topics":["runtime-events","tab-state"],"type":"tab_created"}
-        """)
+        let expected = try canonicalJSONString(expectedNotificationGoldenContract())
+        XCTAssertEqual(encoded, expected)
     }
 
     private func initializedSession() -> MCPSession {
@@ -495,6 +493,90 @@ final class MCPSessionTests: XCTestCase {
             notification["subscription_health"] = health
         }
         return notification
+    }
+
+    private func expectedSnapshotGoldenContract() -> [String: Any] {
+        [
+            "approvals": [] as [Any],
+            "generated_at_millis": "<generated_at_millis>",
+            "latest_seq": "<latest_seq>",
+            "observer_contract": [
+                "default_heartbeat_interval_ms": 15000,
+                "default_replay_limit": 200,
+                "delivery_mode": "serial",
+                "heartbeat_event_type": "heartbeat",
+                "max_heartbeat_interval_ms": 60000,
+                "max_replay_limit": 500,
+                "min_heartbeat_interval_ms": 1000,
+                "notification_method": "notifications/chau7.event",
+                "snapshot_tool": "chau7_state_snapshot",
+                "subscribe_tool": "chau7_subscribe",
+                "supported_topics": [
+                    "approval-state",
+                    "repo-events",
+                    "runtime-events",
+                    "session-state",
+                    "tab-state",
+                    "telemetry-runs",
+                    "timer-inventory"
+                ],
+                "unsubscribe_tool": "chau7_unsubscribe",
+                "version": 1
+            ],
+            "observer_contract_version": 1,
+            "repo_events": [] as [Any],
+            "runtime_info": [
+                "app_version": "<app_version>",
+                "build_channel": "<build_channel>",
+                "build_number": "<build_number>",
+                "build_sha": "<build_sha>",
+                "build_timestamp": "<build_timestamp>",
+                "bundle_id": "<bundle_id>",
+                "launch_time": "<launch_time>",
+                "mcp_protocol_version": "2025-11-25",
+                "observability_schema_version": 1,
+                "process_id": "<process_id>",
+                "session_started_at": "<session_started_at>"
+            ],
+            "schema_version": 1,
+            "tabs": [] as [Any],
+            "telemetry": [
+                "active_runs": [] as [Any],
+                "active_sessions": [] as [Any]
+            ],
+            "timers": [] as [Any]
+        ]
+    }
+
+    private func expectedNotificationGoldenContract() -> [String: Any] {
+        [
+            "delivery_seq": "<delivery_seq>",
+            "observer_contract_version": 1,
+            "payload": [
+                "detail": ["window_id": 1],
+                "id": "<event_id>",
+                "seq": "<event_seq>",
+                "subsystem": "tabs",
+                "timestamp_millis": "<event_timestamp_millis>",
+                "type": "tab_created"
+            ],
+            "seq": "<event_seq>",
+            "subscription_health": [
+                "buffer_depth": 0,
+                "created_at_millis": "<created_at_millis>",
+                "delivery_mode": "serial",
+                "dropped_notification_count": 0,
+                "heartbeat_interval_ms": 1000,
+                "lag_state": "healthy",
+                "last_notification_at_millis": "<last_notification_at_millis>",
+                "notifications_emitted_count": 1
+            ],
+            "subscription_id": "<subscription_id>",
+            "subsystem": "tabs",
+            "timestamp_millis": "<event_timestamp_millis>",
+            "topics": ["runtime-events", "tab-state"],
+            "type": "tab_created"
+        ]
     }
 
     private func canonicalJSONString(_ object: [String: Any]) throws -> String {

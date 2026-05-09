@@ -77,6 +77,29 @@ final class TerminalOutputCapture {
         }
     }
 
+    /// Records a non-data marker line into the capture log so an anomaly
+    /// detector elsewhere (e.g. render-side diagnostic) can flag a position
+    /// in the PTY byte stream worth re-reading. Search the log for `ANOMALY`
+    /// to land on these. No-op when `isEnabled` is false (so this stays free
+    /// of cost when the user hasn't opted into capture).
+    func recordMarker(_ message: String) {
+        guard isEnabled else { return }
+        let timestamp = formatter.string(from: Date())
+
+        queue.async { [weak self] in
+            guard let self else { return }
+            if self.handle == nil {
+                openHandle()
+            }
+            guard let handle = handle else { return }
+            let line = "\(timestamp) | ANOMALY | \(message)\n"
+            if let payload = line.data(using: .utf8) {
+                handle.write(payload)
+            }
+            writeCount += 1
+        }
+    }
+
     private func openHandle() {
         let url = URL(fileURLWithPath: logPath)
         let dir = url.deletingLastPathComponent()

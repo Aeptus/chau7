@@ -581,11 +581,11 @@
 "debug.level.error" = "Erreur";
 "debug.inputLag" = "Latence d'entrée";
 "debug.outputLag" = "Latence de sortie";
-"debug.highlightLag" = "Latence de surbrillance";
+"debug.scanLag" = "Latence de scan";
 "debug.performanceSummary" = "Résumé des performances";
 "debug.inputP50P95" = "Entrée p50/p95";
 "debug.outputP50P95" = "Sortie p50/p95";
-"debug.highlightP50P95" = "Surbrillance p50/p95";
+"debug.scanP50P95" = "Scan p50/p95";
 "debug.performance" = "Performances";
 "debug.highlightLowPower" = "Surbrillance éco";
 "debug.highlightIdleDelay" = "Délai d'inactivité de surbrillance (ms)";

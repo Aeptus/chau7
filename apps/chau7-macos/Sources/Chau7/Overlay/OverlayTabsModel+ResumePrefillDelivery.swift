@@ -222,7 +222,9 @@ extension OverlayTabsModel {
         let normalizedCurrentProvider: String?
         let normalizedExpectedSessionID: String?
         let normalizedCurrentSessionID: String?
-        var allMatch: Bool { directoryMatches && providerMatches && sessionMatches }
+        var allMatch: Bool {
+            directoryMatches && providerMatches && sessionMatches
+        }
     }
 
     static func evaluateResumeRestoreIntent(

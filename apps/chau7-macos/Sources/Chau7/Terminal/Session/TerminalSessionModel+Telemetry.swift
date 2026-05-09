@@ -24,9 +24,9 @@ extension TerminalSessionModel {
         return "\(last)ms"
     }
 
-    var dangerousHighlightLatencySummary: String {
-        guard let last = dangerousHighlightDelayMs else { return "n/a" }
-        if let avg = dangerousHighlightAverageMs {
+    var scanLagSummary: String {
+        guard let last = scanLagDelayMs else { return "n/a" }
+        if let avg = scanLagAverageMs {
             return "\(last)ms (avg \(avg)ms)"
         }
         return "\(last)ms"
@@ -40,8 +40,8 @@ extension TerminalSessionModel {
         latencyPercentilesSummary(for: outputLatencySamples)
     }
 
-    var dangerousHighlightPercentilesSummary: String {
-        latencyPercentilesSummary(for: dangerousHighlightSamples)
+    var scanLagPercentilesSummary: String {
+        latencyPercentilesSummary(for: scanLagSamples)
     }
 
     private func latencyPercentilesSummary(for buffer: LatencySampleBuffer) -> String {

@@ -579,11 +579,11 @@
 "debug.level.error" = "خطأ";
 "debug.inputLag" = "تأخر الإدخال";
 "debug.outputLag" = "تأخر الإخراج";
-"debug.highlightLag" = "تأخر التمييز";
+"debug.scanLag" = "تأخر الفحص";
 "debug.performanceSummary" = "ملخص الأداء";
 "debug.inputP50P95" = "الإدخال p50/p95";
 "debug.outputP50P95" = "الإخراج p50/p95";
-"debug.highlightP50P95" = "التمييز p50/p95";
+"debug.scanP50P95" = "الفحص p50/p95";
 "debug.performance" = "الأداء";
 "debug.highlightLowPower" = "تمييز وضع الطاقة المنخفضة";
 "debug.highlightIdleDelay" = "تأخير خمول التمييز (مللي ثانية)";

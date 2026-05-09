@@ -344,23 +344,40 @@ final class RustMetalDisplayCoordinator: NSObject {
     ) {
         let oldView = terminalView
 
-        // Skip if already rendering this view — avoids redundant reparenting
-        // and the brief isMetalRenderingActive=false flash during the thundering
-        // herd of terminalDidStart notifications at startup (27 tabs × 2 windows).
-        guard newView !== oldView else {
-            // Still force a sync in case grid content changed
-            if newView.isMetalRenderingActive {
-                setNeedsSync()
-            }
+        // Skip when this view is already fully wired — avoids redundant
+        // reparenting and the brief `isMetalRenderingActive=false` flash
+        // during the thundering herd of terminalDidStart notifications at
+        // startup (27 tabs × 2 windows).
+        //
+        // The `isMetalRenderingActive` check is load-bearing. The
+        // immediate post-init case (`coordinator.switchToView(focusedView, ...)`
+        // right after `RustMetalDisplayCoordinator(terminalView: focusedView, ...)`)
+        // also has `newView === oldView` because init pre-sets
+        // `self.terminalView = newView`. But at that moment the view has
+        // NOT yet had `onDisplaySyncNeeded` / `isMetalRenderingActive` /
+        // `container.metalCoordinator` wired by this function. Skipping
+        // here would leave the coordinator un-wired and silently never
+        // draw — surfaced as polls > 0, changed > 0, draws = 0 across the
+        // entire session and visible as "tab content frozen / duplicated"
+        // because the CG fallback path inside `RustTerminalView` ends up
+        // painting instead.
+        if newView === oldView, newView.isMetalRenderingActive {
+            setNeedsSync()
             return
         }
 
-        // 1. Disconnect old view/container
-        oldView?.onDisplaySyncNeeded = nil
-        oldView?.applyRenderPhase(.warm, isInteractive: false, reason: "metalCoordinatorSwitch")
-        oldView?.isMetalRenderingActive = false
-        if let oldContainer = oldView?.superview as? RustTerminalContainerView {
-            oldContainer.metalCoordinator = nil
+        // 1. Disconnect old view/container — only when actually switching
+        // from a different view. Same-view first-attach must skip this
+        // block; otherwise we'd flip `isMetalRenderingActive` back to
+        // false a few lines before setting it to true at the bottom of
+        // this function.
+        if let oldView, oldView !== newView {
+            oldView.onDisplaySyncNeeded = nil
+            oldView.applyRenderPhase(.warm, isInteractive: false, reason: "metalCoordinatorSwitch")
+            oldView.isMetalRenderingActive = false
+            if let oldContainer = oldView.superview as? RustTerminalContainerView {
+                oldContainer.metalCoordinator = nil
+            }
         }
 
         // 2. Swap grid provider + view reference
@@ -368,9 +385,8 @@ final class RustMetalDisplayCoordinator: NSObject {
         terminalView = newView
 
         // 3. Reparent Metal view into the new container
-        let inset = RustTerminalView.terminalInset
         metalView.removeFromSuperview()
-        metalView.frame = container.bounds.insetBy(dx: inset, dy: inset)
+        metalView.frame = newView.renderSurfaceFrame
         container.addSubview(metalView, positioned: .above, relativeTo: newView)
         container.metalCoordinator = self
         metalView.alphaValue = 1
@@ -597,6 +613,15 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             // 3. Convert grid pointer to typed pointer and sync to triple buffer.
             let gridPtr = snapshot.grid.assumingMemoryBound(to: RustGridSnapshot.self)
             let renderViewID = terminalView?.viewId ?? 0
+            if let cursorCells = gridPtr.pointee.cells {
+                terminalView?.logCursorInputRowDiagnosticIfNeeded(
+                    cells: UnsafePointer(cursorCells),
+                    cols: Int(gridPtr.pointee.cols),
+                    rows: Int(gridPtr.pointee.rows),
+                    cursor: snapshot.cursor,
+                    source: "metal-grid"
+                )
+            }
             if bridge.syncToTripleBuffer(tripleBuffer, grid: gridPtr, viewID: renderViewID) == nil {
                 let gs = gridPtr.pointee
                 let newRows = Int(gs.rows)

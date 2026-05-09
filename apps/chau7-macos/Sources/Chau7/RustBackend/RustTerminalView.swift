@@ -2459,8 +2459,7 @@ final class RustTerminalView: NSView {
     /// Note: NSView uses bottom-left origin, but terminals use top-left (row 0 = top).
     /// We flip the Y coordinate so row 0 is at the top of the view.
     var caretFrame: CGRect {
-        // Use bounds.height consistently (same as RustGridView.drawCursor)
-        let renderHeight = bounds.height
+        let renderHeight = gridView?.bounds.height ?? renderSurfaceFrame.height
         guard let rust = rustTerminal else {
             return CGRect(x: 0, y: renderHeight - cellHeight, width: cellWidth, height: cellHeight)
         }
@@ -2501,6 +2500,17 @@ final class RustTerminalView: NSView {
     /// Updated every sync cycle in syncGridToRenderer() — lightweight access
     /// without fetching a full grid snapshot just for history size.
     var cachedScrollbackRows = 0
+
+    /// Dedupe key for temporary input-row glyph diagnostics. Kept on the view so
+    /// CPU and Metal raw-grid snapshots don't spam identical rows every frame.
+    var lastInputRowDiagnosticKey: String?
+
+    /// Last absRow seen by the metal-grid diagnostic call site. Used to detect
+    /// suspicious cursor-row jumps (delta > anomalyAbsRowDeltaThreshold) and
+    /// flag them in the PTY capture log so the raw byte stream around the
+    /// jump can be re-read offline. Single-thread access from the Metal
+    /// coordinator queue.
+    var lastMetalGridAbsRow: Int?
 
     // MARK: - Static Check
 
@@ -2777,12 +2787,37 @@ final class RustTerminalView: NSView {
 
     static let terminalInset: CGFloat = 4
 
+    static func alignedRenderSurfaceFrame(
+        insetRect: CGRect,
+        rows: Int,
+        cellHeight: CGFloat
+    ) -> CGRect {
+        let width = max(0, insetRect.width)
+        let height = max(0, insetRect.height)
+        guard rows > 0, cellHeight > 0, height > 0 else {
+            return CGRect(x: insetRect.minX, y: insetRect.minY, width: width, height: 0)
+        }
+
+        // Keep leftover pixels above the visible grid instead of under the
+        // prompt row, where they read like a clipped or ghost glyph.
+        let visibleHeight = min(height, CGFloat(rows) * cellHeight)
+        return CGRect(x: insetRect.minX, y: insetRect.minY, width: width, height: visibleHeight)
+    }
+
+    var renderSurfaceFrame: CGRect {
+        let inset = Self.terminalInset
+        let insetRect = bounds.insetBy(dx: inset, dy: inset)
+        return Self.alignedRenderSurfaceFrame(
+            insetRect: insetRect,
+            rows: rows,
+            cellHeight: cellHeight
+        )
+    }
+
     override func layout() {
         super.layout()
         let inset = Self.terminalInset
         let insetRect = bounds.insetBy(dx: inset, dy: inset)
-        gridView?.frame = insetRect
-        overlayContainer?.frame = insetRect
 
         // DEBUG: Log layout dimensions
         if let window = window {
@@ -2794,6 +2829,16 @@ final class RustTerminalView: NSView {
         updateCellDimensions()
         let rawCols = Int(insetRect.width / cellWidth)
         let rawRows = Int(insetRect.height / cellHeight)
+        let maxCols = 2000
+        let maxRows = 500
+        let visibleRenderRows = max(0, min(maxRows, rawRows))
+        let renderSurfaceFrame = Self.alignedRenderSurfaceFrame(
+            insetRect: insetRect,
+            rows: visibleRenderRows,
+            cellHeight: cellHeight
+        )
+        gridView?.frame = renderSurfaceFrame
+        overlayContainer?.frame = renderSurfaceFrame
         // Hard clamp against insane layout inputs. During cross-window tab
         // reparenting we've observed layout() firing before bounds settle,
         // producing cols/rows in the thousands. Feeding those into Rust's
@@ -2802,8 +2847,6 @@ final class RustTerminalView: NSView {
         // 10k scrollback that's already several GB per view, and with a few
         // views open it spirals into tens of GB and a main-thread freeze in
         // memmove. 2000 cols / 500 rows is well above any real window layout.
-        let maxCols = 2000
-        let maxRows = 500
         if rawCols > maxCols || rawRows > maxRows {
             Log.warn(
                 "RustTerminalView[\(viewId)]: layout - clamped absurd resize target rawCols=\(rawCols) rawRows=\(rawRows) bounds=\(bounds) insetRect=\(insetRect) cellWidth=\(cellWidth) cellHeight=\(cellHeight)"
@@ -3223,10 +3266,18 @@ final class RustTerminalView: NSView {
     /// - Returns: (column, row) in visible coordinates (row 0 is top of visible area)
     /// - Note: Use this for mouse reporting to TUI apps (vim, tmux, etc.)
     func pointToCell(_ point: NSPoint) -> (col: Int32, row: Int32) {
-        // Standard macOS coordinates: y=0 at bottom
-        // High y = top of view = row 0
-        let col = Int32(max(0, min(point.x / cellWidth, CGFloat(cols - 1))))
-        let row = Int32(max(0, min((bounds.height - point.y) / cellHeight, CGFloat(rows - 1))))
+        // Convert in the renderer's coordinate system, not raw bounds:
+        // the Metal renderer draws the grid inside `renderSurfaceFrame`,
+        // which is `bounds` reduced by `terminalInset` on every side AND
+        // with leftover sub-cell pixels parked above the grid. Computing
+        // rows against `bounds.height` skips that top padding and snaps to
+        // the row *below* the click — visible as selection landing one row
+        // off from the cursor.
+        let surface = renderSurfaceFrame
+        let surfaceLeftX = surface.minX
+        let surfaceTopY = surface.maxY
+        let col = Int32(max(0, min((point.x - surfaceLeftX) / cellWidth, CGFloat(cols - 1))))
+        let row = Int32(max(0, min((surfaceTopY - point.y) / cellHeight, CGFloat(rows - 1))))
         return (col, row)
     }
 

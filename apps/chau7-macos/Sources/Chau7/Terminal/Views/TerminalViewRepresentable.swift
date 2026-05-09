@@ -55,11 +55,10 @@ final class RustTerminalContainerView: NSView {
         // the container can have zero bounds momentarily, causing renderRows/
         // renderCols to return 1. A 1x1 resize corrupts the triple buffer.
         if let coordinator = metalCoordinator {
-            let inset = RustTerminalView.terminalInset
             let rows = terminalView.renderRows
             let cols = terminalView.renderCols
             if rows > 1, cols > 1 {
-                coordinator.metalView.frame = bounds.insetBy(dx: inset, dy: inset)
+                coordinator.metalView.frame = terminalView.renderSurfaceFrame
                 coordinator.resize(rows: rows, cols: cols)
             }
         }

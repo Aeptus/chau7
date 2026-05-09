@@ -1009,14 +1009,11 @@ private struct ToolbarTabBarView: View {
                     }
                 }
 
-                if let session = selected?.displaySession ?? selected?.session {
+                if let selected {
                     Spacer(minLength: 8)
-                    HStack(spacing: 8) {
-                        DevServerBadge(session: session)
-                        GitBranchBadge(session: session)
-                    }
-                    .fixedSize()
-                    .layoutPriority(1)
+                    SelectedTabStatusBadges(splitController: selected.splitController)
+                        .fixedSize()
+                        .layoutPriority(1)
                 }
             }
             .frame(height: OverlayLayout.tabBarHeight, alignment: .center)
@@ -1327,6 +1324,21 @@ private struct BranchIndicator: View {
     }
 }
 
+/// Observes the split controller directly so selected-tab badges refresh when
+/// the active presentation session changes inside a split tab.
+private struct SelectedTabStatusBadges: View {
+    let splitController: SplitPaneController
+
+    var body: some View {
+        if let session = splitController.presentationSession {
+            HStack(spacing: 8) {
+                DevServerBadge(session: session)
+                GitBranchBadge(session: session)
+            }
+        }
+    }
+}
+
 /// Separate view to properly observe session's git status changes
 private struct GitBranchBadge: View {
     var session: TerminalSessionModel
@@ -1345,6 +1357,23 @@ private struct GitBranchBadge: View {
             .background(Color.black.opacity(0.20))
             .clipShape(Capsule())
             .accessibilityLabel(String(format: L("accessibility.gitBranch", "Git branch: %@"), branchName))
+        }
+    }
+}
+
+/// Observes the split controller directly so the branch marker follows the
+/// active terminal when a tab contains multiple agent panes.
+private struct PresentationBranchIndicator: View {
+    let splitController: SplitPaneController
+
+    private var isOnMain: Bool {
+        guard let branch = splitController.presentationSession?.displayGitBranch else { return true }
+        return branch == "main" || branch == "master"
+    }
+
+    var body: some View {
+        if splitController.presentationSession?.hasRepositoryIdentity == true {
+            BranchIndicator(isOnMain: isOnMain)
         }
     }
 }
@@ -2061,11 +2090,8 @@ struct UnifiedTabButton: View {
                 }
 
                 // Git branch indicator — three-headed arrow: center = main branch, laterals = feature branches
-                if FeatureSettings.shared.showTabGitIndicator, tab.displaySession?.hasRepositoryIdentity ?? false {
-                    BranchIndicator(isOnMain: {
-                        guard let branch = tab.displaySession?.displayGitBranch else { return true }
-                        return branch == "main" || branch == "master"
-                    }())
+                if FeatureSettings.shared.showTabGitIndicator {
+                    PresentationBranchIndicator(splitController: tab.splitController)
                 }
             }
 

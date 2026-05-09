@@ -61,16 +61,16 @@ final class RemoteTerminalGridSnapshotTests: XCTestCase {
         var bytes = Data(capacity: RemoteTerminalGridSnapshotLayout.headerSize + 1)
         bytes.append(RemoteTerminalGridSnapshotLayout.magic)
         bytes.append(RemoteTerminalGridSnapshotLayout.version)
-        bytes.appendUInt16LE(4)       // cols
-        bytes.appendUInt16LE(2)       // rows
-        bytes.appendUInt16LE(0)       // cursorCol
-        bytes.appendUInt16LE(0)       // cursorRow
-        bytes.append(1)               // cursorVisible
+        bytes.appendUInt16LE(4) // cols
+        bytes.appendUInt16LE(2) // rows
+        bytes.appendUInt16LE(0) // cursorCol
+        bytes.appendUInt16LE(0) // cursorRow
+        bytes.append(1) // cursorVisible
         bytes.append(contentsOf: [0, 0, 0])
-        bytes.appendUInt32LE(0)       // scrollbackRows
-        bytes.appendUInt32LE(0)       // displayOffset
-        bytes.appendUInt32LE(128)     // claims 128 bytes of cell data
-        bytes.append(0xFF)            // only 1 byte of payload actually present
+        bytes.appendUInt32LE(0) // scrollbackRows
+        bytes.appendUInt32LE(0) // displayOffset
+        bytes.appendUInt32LE(128) // claims 128 bytes of cell data
+        bytes.append(0xFF) // only 1 byte of payload actually present
 
         XCTAssertThrowsError(try RemoteTerminalGridSnapshot.decode(from: bytes))
     }

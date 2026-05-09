@@ -629,6 +629,24 @@ final class SplitPaneControllerTests: XCTestCase {
         XCTAssertEqual(controller.focusedTerminalSessionID(), secondaryPaneID)
     }
 
+    func testPresentationSessionBranchTracksFocusedTerminal() {
+        let primaryPaneID = controller.focusedPaneID
+        controller.primarySession?.isGitRepo = true
+        controller.primarySession?.gitRootPath = "/tmp/chau7-repo"
+        controller.primarySession?.gitBranch = "main"
+
+        controller.splitWithTerminal(direction: .horizontal)
+        controller.focusedSession?.isGitRepo = true
+        controller.focusedSession?.gitRootPath = "/tmp/chau7-repo"
+        controller.focusedSession?.gitBranch = "feature/agent-b"
+
+        XCTAssertEqual(controller.presentationSession?.displayGitBranch, "feature/agent-b")
+
+        controller.setFocusedPane(primaryPaneID)
+
+        XCTAssertEqual(controller.presentationSession?.displayGitBranch, "main")
+    }
+
     func testPresentationSessionFallsBackWhenRememberedTerminalCloses() {
         let primaryPaneID = controller.focusedPaneID
         let primarySession = controller.primarySession

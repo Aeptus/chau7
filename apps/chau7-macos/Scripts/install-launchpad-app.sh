@@ -8,6 +8,12 @@ OPEN_AFTER_INSTALL="${OPEN_AFTER_INSTALL:-0}"
 SRC_APP="$ROOT_DIR/build/$APP_NAME.app"
 DST_APP="/Applications/$APP_NAME.app"
 
+# Snapshot CHAU7_* env vars from the caller's shell before this script
+# sets its own (CHAU7_LOG_ROOT / CHAU7_LOG_NAME below) so we can forward
+# only the caller-provided ones to the launched app via `open --env`.
+CHAU7_OPEN_ENV=()
+for _v in "${!CHAU7_@}"; do CHAU7_OPEN_ENV+=(--env "$_v=${!_v}"); done
+
 export CHAU7_LOG_ROOT="$ROOT_DIR"
 CHAU7_LOG_NAME="install-launchpad-app"
 export CHAU7_LOG_NAME
@@ -46,7 +52,11 @@ run_cmd /usr/bin/ditto "$SRC_APP" "$DST_APP"
 run_cmd codesign -d -vvv "$DST_APP"
 
 if [[ "$OPEN_AFTER_INSTALL" == "1" ]]; then
-  run_cmd open "$DST_APP"
+  if [[ ${#CHAU7_OPEN_ENV[@]} -gt 0 ]]; then
+    run_cmd open "${CHAU7_OPEN_ENV[@]}" "$DST_APP"
+  else
+    run_cmd open "$DST_APP"
+  fi
 else
   log_info "Skipping app launch (OPEN_AFTER_INSTALL=$OPEN_AFTER_INSTALL)"
 fi

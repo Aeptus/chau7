@@ -335,7 +335,8 @@ private extension FeatureSettings {
                 "customColor": "orange",
                 "borderWidth": "2",
                 "pulse": "true",
-                "autoClearSeconds": "0"
+                "autoClearSeconds": "0",
+                "persistent": "true"
             ])
         ]
 
@@ -2638,6 +2639,54 @@ final class FeatureSettings {
                 defaults.set(data, forKey: Keys.triggerActionBindings)
             }
             defaults.set(true, forKey: finishedColorMigrationKey)
+        }
+
+        // One-time migration: permission / waiting-input / attention trigger
+        // defaults were originally non-persistent at the per-trigger layer,
+        // even though the newer group defaults intentionally keep them visible
+        // until the prompt is resolved. Because NotificationPipeline prefers
+        // per-trigger bindings over group bindings, users who never customized
+        // these triggers could still get "disappears on select" behavior.
+        // Migrate only the literal old default shape so intentional custom
+        // configurations remain untouched.
+        let permissionPersistenceMigrationKey = "notification.permission.persistentDefault.v1"
+        if !defaults.bool(forKey: permissionPersistenceMigrationKey) {
+            var migrated = false
+            let permissionTriggerKeys = [
+                "claude_code.permission",
+                "claude_code.waiting_input",
+                "claude_code.attention_required",
+                "codex.permission",
+                "codex.waiting_input",
+                "codex.attention_required"
+            ]
+            for triggerKey in permissionTriggerKeys {
+                guard var actions = normalizedBindings[triggerKey] else { continue }
+                for index in actions.indices where actions[index].actionType == .styleTab {
+                    let cfg = actions[index].config
+                    guard cfg["style"] == "attention",
+                          cfg["customColor"] == "orange",
+                          cfg["borderWidth"] == "2",
+                          cfg["pulse"] == "true",
+                          cfg["autoClearSeconds"] == "0",
+                          cfg["persistent"] == nil else { continue }
+                    var migratedCfg = cfg
+                    migratedCfg["persistent"] = "true"
+                    actions[index] = NotificationActionConfig(
+                        actionType: .styleTab,
+                        enabled: actions[index].enabled,
+                        config: migratedCfg
+                    )
+                    migrated = true
+                    Log.info("FeatureSettings migration: \(triggerKey) styleTab now persistent by default")
+                }
+                normalizedBindings[triggerKey] = actions
+            }
+            if migrated,
+               let data = JSONOperations.encode(normalizedBindings, context: "triggerActionBindings.permissionPersistent.v1") {
+                defaults.set(data, forKey: Keys.triggerActionBindings)
+            }
+            defaults.set(true, forKey: permissionPersistenceMigrationKey)
         }
 
         let loadedRateLimitConfig: NotificationRateLimiter.Config

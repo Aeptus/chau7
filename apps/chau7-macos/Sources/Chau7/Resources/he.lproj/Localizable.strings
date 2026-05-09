@@ -579,11 +579,11 @@
 "debug.level.error" = "שגיאה";
 "debug.inputLag" = "השהיית קלט";
 "debug.outputLag" = "השהיית פלט";
-"debug.highlightLag" = "השהיית הדגשה";
+"debug.scanLag" = "השהיית סריקה";
 "debug.performanceSummary" = "סיכום ביצועים";
 "debug.inputP50P95" = "קלט p50/p95";
 "debug.outputP50P95" = "פלט p50/p95";
-"debug.highlightP50P95" = "הדגשה p50/p95";
+"debug.scanP50P95" = "סריקה p50/p95";
 "debug.performance" = "ביצועים";
 "debug.highlightLowPower" = "הדגשה חסכונית";
 "debug.highlightIdleDelay" = "השהיית דממה בהדגשה (מ״ש)";

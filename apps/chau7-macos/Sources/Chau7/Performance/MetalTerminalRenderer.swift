@@ -139,6 +139,7 @@ final class MetalTerminalRenderer: NSObject {
 
     /// Diagnostic frame counter for throttled logging
     private var diagFrameCounter = 0
+    private var lastCursorRowDiagnosticKey: String?
 
     // MARK: - Font
 
@@ -986,6 +987,16 @@ final class MetalTerminalRenderer: NSObject {
 
         applyCursor(to: instances, count: count, cols: cols, cursorState: currentCursorState)
         lastCursorRenderState = currentCursorState
+        if let cursorState = currentCursorState {
+            logCursorRowMappingIfNeeded(
+                cells: cells,
+                instances: instances,
+                count: count,
+                cols: cols,
+                row: cursorState.row,
+                cursorCol: cursorState.col
+            )
+        }
 
         let frameGlyphLookups = glyphLookupCount - startingGlyphLookups
         let frameGlyphMisses = glyphCacheMisses - startingGlyphMisses
@@ -1035,6 +1046,133 @@ final class MetalTerminalRenderer: NSObject {
         }
         instances[cursorIndex].flags = flags
         instances[cursorIndex].foreground = cursorState.color
+    }
+
+    private func logCursorRowMappingIfNeeded(
+        cells: UnsafeBufferPointer<TerminalCell>,
+        instances: UnsafeMutablePointer<CellInstance>,
+        count: Int,
+        cols: Int,
+        row: Int,
+        cursorCol: Int
+    ) {
+        guard EnvVars.isEnabled(EnvVars.inputDiagnostics) else { return }
+        guard cols > 0, row >= 0 else { return }
+        let rowStart = row * cols
+        guard rowStart < count else { return }
+
+        let rowEndExclusive = min(rowStart + cols, count)
+        let rowSlice = UnsafeBufferPointer(
+            start: cells.baseAddress?.advanced(by: rowStart),
+            count: rowEndExclusive - rowStart
+        )
+        guard !rowSlice.isEmpty else { return }
+
+        let window = Self.diagnosticWindow(for: rowSlice, cursorCol: cursorCol)
+        guard !window.isEmpty else { return }
+
+        var hasher = Hasher()
+        hasher.combine(row)
+        hasher.combine(cursorCol)
+        hasher.combine(window.lowerBound)
+        hasher.combine(window.upperBound)
+        for col in window {
+            let cell = rowSlice[col]
+            let instance = instances[rowStart + col]
+            hasher.combine(cell.character)
+            hasher.combine(cell.flags)
+            hasher.combine(instance.texCoord.x.bitPattern)
+            hasher.combine(instance.texCoord.y.bitPattern)
+            hasher.combine(instance.texCoord.z.bitPattern)
+            hasher.combine(instance.texCoord.w.bitPattern)
+        }
+        let diagnosticKey = "cursor-row:\(hasher.finalize())"
+        guard diagnosticKey != lastCursorRowDiagnosticKey else { return }
+        lastCursorRowDiagnosticKey = diagnosticKey
+
+        let textPreview = window.map { Self.diagnosticPreview(for: rowSlice[$0].character) }.joined()
+        let mappingSummary = window.map { col in
+            let cell = rowSlice[col]
+            let instance = instances[rowStart + col]
+            let tex = instance.texCoord
+            let mapping = tex.z > 0 && tex.w > 0
+                ? String(format: "uv=(%.3f,%.3f,%.3f,%.3f)", tex.x, tex.y, tex.z, tex.w)
+                : "uv=missing"
+            return "\(col):U+\(Self.diagnosticHex(cell.character))/\(Self.diagnosticScalarLabel(for: cell.character)) \(mapping) f=\(String(format: "%02X", cell.flags))"
+        }.joined(separator: " ")
+
+        let hasMissingGlyph = window.contains { col in
+            let cell = rowSlice[col]
+            let tex = instances[rowStart + col].texCoord
+            return cell.character != 0 && cell.character != 0x20 && (tex.z == 0 || tex.w == 0)
+        }
+
+        let message =
+            "MetalRenderer: input-row glyph map viewportRow=\(row) cursorCol=\(cursorCol) cols=\(window.lowerBound)-\(window.upperBound) text=\(textPreview.debugDescription) cells=[\(mappingSummary)]"
+        if hasMissingGlyph {
+            Log.warn(message)
+        } else {
+            Log.debug(message)
+        }
+    }
+
+    private static func diagnosticWindow(
+        for rowCells: UnsafeBufferPointer<TerminalCell>,
+        cursorCol: Int,
+        maxWidth: Int = 48
+    ) -> ClosedRange<Int> {
+        guard !rowCells.isEmpty else { return 0 ... 0 }
+        let cursor = min(max(cursorCol, 0), rowCells.count - 1)
+        let interestingCols = rowCells.indices.filter { col in
+            let cell = rowCells[col]
+            return col == cursor || cell.character != 0 && cell.character != 0x20 || cell.flags != 0
+        }
+
+        let rawStart = interestingCols.min() ?? cursor
+        let rawEnd = interestingCols.max() ?? cursor
+        var start = max(0, rawStart - 2)
+        var end = min(rowCells.count - 1, rawEnd + 2)
+
+        if end - start + 1 > maxWidth {
+            start = max(0, cursor - (maxWidth / 2))
+            end = min(rowCells.count - 1, start + maxWidth - 1)
+            start = max(0, end - maxWidth + 1)
+        }
+
+        return start ... end
+    }
+
+    private static func diagnosticPreview(for codePoint: UInt32) -> String {
+        if codePoint == 0 || codePoint == 0x20 {
+            return " "
+        }
+        if codePoint < 0x20 || codePoint == 0x7F {
+            return "·"
+        }
+        guard let scalar = UnicodeScalar(codePoint) else {
+            return "�"
+        }
+        return String(Character(scalar))
+    }
+
+    private static func diagnosticScalarLabel(for codePoint: UInt32) -> String {
+        if codePoint == 0 {
+            return "NUL"
+        }
+        if codePoint == 0x20 {
+            return "SP"
+        }
+        if codePoint < 0x20 || codePoint == 0x7F {
+            return "CTRL"
+        }
+        guard let scalar = UnicodeScalar(codePoint) else {
+            return "INVALID"
+        }
+        return String(Character(scalar)).debugDescription
+    }
+
+    private static func diagnosticHex(_ codePoint: UInt32) -> String {
+        String(format: "%04X", codePoint)
     }
 
     private func updateUniforms(viewportSize: CGSize) {

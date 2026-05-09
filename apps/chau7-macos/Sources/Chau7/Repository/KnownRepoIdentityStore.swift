@@ -16,6 +16,10 @@ final class KnownRepoIdentityStore {
     }
 
     private let queue = DispatchQueue(label: "com.chau7.known-repo-identities", qos: .utility)
+    private let persistQueue = DispatchQueue(label: "com.chau7.known-repo-identities.persist", qos: .utility)
+    private let persistDebounceLock = NSLock()
+    private var persistDebounceWork: DispatchWorkItem?
+    private static let persistDebounceMs = 500
     private let defaults: UserDefaults
     private var identities: [KnownRepoIdentity]
 
@@ -53,8 +57,8 @@ final class KnownRepoIdentityStore {
             if identities.count > Self.maxIdentities {
                 identities.removeLast(identities.count - Self.maxIdentities)
             }
-            persist()
         }
+        schedulePersist()
     }
 
     func allRoots() -> [String] {
@@ -95,8 +99,8 @@ final class KnownRepoIdentityStore {
             if identities.count > Self.maxIdentities {
                 identities = Array(identities.prefix(Self.maxIdentities))
             }
-            persist()
         }
+        schedulePersist()
     }
 
     /// Reorders identities to match the supplied recent roots while preserving any
@@ -121,8 +125,8 @@ final class KnownRepoIdentityStore {
                 merged.removeLast(merged.count - Self.maxIdentities)
             }
             identities = merged
-            persist()
         }
+        schedulePersist()
     }
 
     func restore(_ restoredIdentities: [KnownRepoIdentity]) {
@@ -135,8 +139,8 @@ final class KnownRepoIdentityStore {
         }
         queue.sync {
             identities = Array(Self.deduplicated(normalized).prefix(Self.maxIdentities))
-            persist()
         }
+        schedulePersist()
     }
 
     func resolveRoot(forPath path: String) -> String? {
@@ -166,6 +170,36 @@ final class KnownRepoIdentityStore {
         }
     }
 
+    /// Coalesces persistence requests so a burst of `record`/`replaceAll`/etc.
+    /// calls only triggers one `UserDefaults.set` per debounce window. Critical
+    /// for avoiding the queue-saturation hang we observed on 2026-05-07: when
+    /// many MCP sessions hit `RepositoryCache.resolveDetailed` concurrently,
+    /// each call funnels through `record`, and a synchronous `persist()` inside
+    /// `queue.sync` held the lock through `cfprefsd`'s rate-limited write,
+    /// blocking the main thread until the backlog drained.
+    private func schedulePersist() {
+        persistDebounceLock.lock()
+        persistDebounceWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.performPersist()
+        }
+        persistDebounceWork = work
+        persistDebounceLock.unlock()
+        persistQueue.asyncAfter(deadline: .now() + .milliseconds(Self.persistDebounceMs), execute: work)
+    }
+
+    private func performPersist() {
+        // Briefly hold `queue` to snapshot identities, then write UserDefaults
+        // OUTSIDE the lock so cfprefsd contention can't block other readers.
+        let snapshot: [KnownRepoIdentity] = queue.sync { identities }
+        guard let data = Persist.encodeLogged(snapshot, context: "knownRepoIdentities") else {
+            return
+        }
+        defaults.set(data, forKey: Keys.identities)
+    }
+
+    /// Synchronous persist used at init and in `reset()`. Rare-path callers
+    /// where contention isn't a concern; not used on the hot path.
     private func persist() {
         guard let data = Persist.encodeLogged(identities, context: "knownRepoIdentities") else {
             return

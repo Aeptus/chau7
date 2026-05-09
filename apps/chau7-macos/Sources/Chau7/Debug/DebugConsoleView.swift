@@ -248,7 +248,7 @@ struct DebugConsoleView: View {
                         stateRow(L("debug.directory", "Directory"), value: tab.session?.currentDirectory ?? "")
                         stateRow(L("debug.inputLag", "Input Lag"), value: tab.session?.inputLatencySummary ?? L("status.notAvailable", "n/a"))
                         stateRow(L("debug.outputLag", "Output Lag"), value: tab.session?.outputLatencySummary ?? L("status.notAvailable", "n/a"))
-                        stateRow(L("debug.highlightLag", "Highlight Lag"), value: tab.session?.dangerousHighlightLatencySummary ?? L("status.notAvailable", "n/a"))
+                        stateRow(L("debug.scanLag", "Scan Lag"), value: tab.session?.scanLagSummary ?? L("status.notAvailable", "n/a"))
                         if tab.session?.isGitRepo == true {
                             stateRow(L("debug.gitBranch", "Git Branch"), value: tab.session?.gitBranch ?? L("status.unknown", "unknown"))
                         }
@@ -270,7 +270,7 @@ struct DebugConsoleView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     stateRow(L("debug.inputP50P95", "Input p50/p95"), value: session.inputLatencyPercentilesSummary)
                     stateRow(L("debug.outputP50P95", "Output p50/p95"), value: session.outputLatencyPercentilesSummary)
-                    stateRow(L("debug.highlightP50P95", "Highlight p50/p95"), value: session.dangerousHighlightPercentilesSummary)
+                    stateRow(L("debug.scanP50P95", "Scan p50/p95"), value: session.scanLagPercentilesSummary)
                 }
                 .padding(.vertical, 2)
             } else {
@@ -1267,7 +1267,7 @@ struct DebugConsoleView: View {
         switch kind {
         case .input: return .blue
         case .output: return .purple
-        case .highlight: return .orange
+        case .scan: return .orange
         }
     }
 

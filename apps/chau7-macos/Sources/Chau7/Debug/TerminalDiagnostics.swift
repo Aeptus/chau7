@@ -168,8 +168,14 @@ private extension ISO8601DateFormatter {
     /// Filename-safe ISO timestamp (no colons; second precision).
     static let dumpFilename: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withYear, .withMonth, .withDay, .withDashSeparatorInDate,
-                                   .withTime, .withColonSeparatorInTime]
+        formatter.formatOptions = [
+            .withYear,
+            .withMonth,
+            .withDay,
+            .withDashSeparatorInDate,
+            .withTime,
+            .withColonSeparatorInTime
+        ]
         return formatter
     }()
 }

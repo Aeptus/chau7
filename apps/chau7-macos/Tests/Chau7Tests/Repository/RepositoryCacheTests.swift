@@ -63,6 +63,31 @@ final class RepositoryCacheTests: XCTestCase {
         XCTAssertEqual(store.allRoots(), ["/repos/Chau7", "/repos/NewRepo", "/repos/Website"])
     }
 
+    @MainActor
+    func testRepositoryModelNotifiesAllBranchObservers() {
+        let model = RepositoryModel(
+            rootPath: "/repos/Chau7",
+            branch: "main",
+            accessLevel: .cached
+        )
+        var firstObserverBranches: [String?] = []
+        var secondObserverBranches: [String?] = []
+
+        let firstID = model.addBranchObserver { firstObserverBranches.append($0) }
+        _ = model.addBranchObserver { secondObserverBranches.append($0) }
+
+        model.branch = "feature/one"
+
+        XCTAssertEqual(firstObserverBranches, ["feature/one"])
+        XCTAssertEqual(secondObserverBranches, ["feature/one"])
+
+        model.removeBranchObserver(firstID)
+        model.branch = "feature/two"
+
+        XCTAssertEqual(firstObserverBranches, ["feature/one"])
+        XCTAssertEqual(secondObserverBranches, ["feature/one", "feature/two"])
+    }
+
     func testResolveDetailedReturnsCachedIdentityWhenProtectedPathCannotProbeLive() {
         let settings = FeatureSettings.shared
         let previousAllowProtectedFolderAccess = settings.allowProtectedFolderAccess

@@ -14,7 +14,6 @@ extension OverlayTabsModel {
 
     // MARK: - Color / Clipboard / Zoom (session pass-throughs)
 
-
     func showTabColorPicker() {
         // Open rename dialog which includes color picker
         beginRenameSelected()

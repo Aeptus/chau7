@@ -17,15 +17,23 @@ final class TabStatePersistenceStaticTests: XCTestCase {
     /// occurrence keeps it; the second has it cleared. This protects against the
     /// "double-claim" scenario where an old save predates session-ID uniqueness
     /// enforcement.
-    func testSanitizeDeduplicatesAISessionIDAcrossTopLevelTabs() throws {
+    func testSanitizeDeduplicatesAISessionIDAcrossTopLevelTabs() {
         let shared = "shared-session-abc"
         let firstID = UUID()
         let secondID = UUID()
         let states = [
-            makeTopLevelState(tabID: firstID, aiProvider: "codex", aiSessionId: shared,
-                              aiResumeCommand: "codex resume \(shared)"),
-            makeTopLevelState(tabID: secondID, aiProvider: "codex", aiSessionId: shared,
-                              aiResumeCommand: "codex resume \(shared)")
+            makeTopLevelState(
+                tabID: firstID,
+                aiProvider: "codex",
+                aiSessionId: shared,
+                aiResumeCommand: "codex resume \(shared)"
+            ),
+            makeTopLevelState(
+                tabID: secondID,
+                aiProvider: "codex",
+                aiSessionId: shared,
+                aiResumeCommand: "codex resume \(shared)"
+            )
         ]
 
         let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(states: states)
@@ -47,10 +55,18 @@ final class TabStatePersistenceStaticTests: XCTestCase {
     /// Different session IDs must remain untouched even when they look similar.
     func testSanitizePreservesDistinctSessionIDs() {
         let states = [
-            makeTopLevelState(tabID: UUID(), aiProvider: "codex", aiSessionId: "session-1",
-                              aiResumeCommand: "codex resume session-1"),
-            makeTopLevelState(tabID: UUID(), aiProvider: "codex", aiSessionId: "session-2",
-                              aiResumeCommand: "codex resume session-2")
+            makeTopLevelState(
+                tabID: UUID(),
+                aiProvider: "codex",
+                aiSessionId: "session-1",
+                aiResumeCommand: "codex resume session-1"
+            ),
+            makeTopLevelState(
+                tabID: UUID(),
+                aiProvider: "codex",
+                aiSessionId: "session-2",
+                aiResumeCommand: "codex resume session-2"
+            )
         ]
 
         let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(states: states)
@@ -128,8 +144,10 @@ final class TabStatePersistenceStaticTests: XCTestCase {
     func testDecodeBackupWindowStatesAcceptsMultiWindowEnvelope() throws {
         let windows = [
             [makeTopLevelState(tabID: UUID(), aiProvider: nil, aiSessionId: nil, aiResumeCommand: nil)],
-            [makeTopLevelState(tabID: UUID(), aiProvider: nil, aiSessionId: nil, aiResumeCommand: nil),
-             makeTopLevelState(tabID: UUID(), aiProvider: nil, aiSessionId: nil, aiResumeCommand: nil)]
+            [
+                makeTopLevelState(tabID: UUID(), aiProvider: nil, aiSessionId: nil, aiResumeCommand: nil),
+                makeTopLevelState(tabID: UUID(), aiProvider: nil, aiSessionId: nil, aiResumeCommand: nil)
+            ]
         ]
         let envelope = SavedMultiWindowState(windows: windows)
         let data = try XCTUnwrap(try? JSONEncoder().encode(envelope))

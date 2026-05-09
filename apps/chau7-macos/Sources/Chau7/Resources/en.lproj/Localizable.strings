@@ -581,11 +581,11 @@
 "debug.level.error" = "Error";
 "debug.inputLag" = "Input Lag";
 "debug.outputLag" = "Output Lag";
-"debug.highlightLag" = "Highlight Lag";
+"debug.scanLag" = "Scan Lag";
 "debug.performanceSummary" = "Performance Summary";
 "debug.inputP50P95" = "Input p50/p95";
 "debug.outputP50P95" = "Output p50/p95";
-"debug.highlightP50P95" = "Highlight p50/p95";
+"debug.scanP50P95" = "Scan p50/p95";
 "debug.performance" = "Performance";
 "debug.highlightLowPower" = "Low-Power Highlighting";
 "debug.highlightIdleDelay" = "Highlight Idle Delay (ms)";

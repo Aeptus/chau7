@@ -273,9 +273,14 @@ final class DangerousCommandGuard {
         )
         alert.alertStyle = .warning
         alert.accessoryView = Self.makeCommandAccessoryView(command: command)
-        alert.addButton(withTitle: L("dangerousGuard.alert.execute", "Execute"))
+        let executeButton = alert.addButton(withTitle: L("dangerousGuard.alert.execute", "Execute"))
         alert.addButton(withTitle: L("dangerousGuard.alert.cancel", "Cancel"))
         alert.addButton(withTitle: L("dangerousGuard.alert.alwaysAllow", "Always Allow"))
+
+        // The accessoryView's selectable NSTextView would otherwise grab first
+        // responder on open and swallow the Return key, defeating the default
+        // button's "\r" key equivalent. Force focus onto Execute instead.
+        alert.window.initialFirstResponder = executeButton
 
         let response = alert.runModal()
         switch response {

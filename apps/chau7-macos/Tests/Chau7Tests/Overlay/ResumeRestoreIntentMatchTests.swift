@@ -40,8 +40,10 @@ final class ResumeRestoreIntentMatchTests: XCTestCase {
             expectedSessionID: "abc-123",
             currentSessionID: "abc-123"
         )
-        XCTAssertFalse(match.directoryMatches,
-                       "Empty expected directory must NOT match a non-empty current directory")
+        XCTAssertFalse(
+            match.directoryMatches,
+            "Empty expected directory must NOT match a non-empty current directory"
+        )
     }
 
     func testDirectoryBothEmptyMatches() {
@@ -53,8 +55,10 @@ final class ResumeRestoreIntentMatchTests: XCTestCase {
             expectedSessionID: nil,
             currentSessionID: nil
         )
-        XCTAssertTrue(match.directoryMatches,
-                      "Both directories empty is a legitimate match — directory-less saved state vs directory-less live session")
+        XCTAssertTrue(
+            match.directoryMatches,
+            "Both directories empty is a legitimate match — directory-less saved state vs directory-less live session"
+        )
         XCTAssertTrue(match.allMatch)
     }
 
@@ -114,8 +118,10 @@ final class ResumeRestoreIntentMatchTests: XCTestCase {
             currentSessionID: nil
         )
         XCTAssertTrue(match.providerMatches)
-        XCTAssertNil(match.normalizedExpectedProvider,
-                     "Empty expected provider must normalize to nil before comparison")
+        XCTAssertNil(
+            match.normalizedExpectedProvider,
+            "Empty expected provider must normalize to nil before comparison"
+        )
     }
 
     // MARK: - Session ID check

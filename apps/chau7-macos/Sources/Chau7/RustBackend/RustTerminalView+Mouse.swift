@@ -719,9 +719,12 @@ extension RustTerminalView {
         guard bounds.height > 0, bounds.width > 0 else { return false }
         guard cols > 0, rows > 0 else { return false }
 
-        // Standard macOS coordinates: y=0 at bottom, row 0 at top of terminal
-        let clickedRow = max(0, min(Int((bounds.height - point.y) / cellHeight), rows - 1))
-        let clickedCol = max(0, min(Int(point.x / cellWidth), cols - 1))
+        // Use renderSurfaceFrame, not raw bounds, to match the Metal grid
+        // origin (terminalInset + leftover pixels above row 0). See
+        // `pointToCell` for details.
+        let cell = pointToCell(point)
+        let clickedRow = Int(cell.row)
+        let clickedCol = Int(cell.col)
         let cursor = rust.cursorPosition
         let rowDiff = clickedRow - Int(cursor.row)
         let colDiff = clickedCol - Int(cursor.col)
@@ -750,9 +753,12 @@ extension RustTerminalView {
         guard bounds.height > 0, bounds.width > 0 else { return false }
         guard cols > 0, rows > 0 else { return false }
 
-        // Standard macOS coordinates: y=0 at bottom, row 0 at top of terminal
-        let clickedRow = Int((bounds.height - point.y) / cellHeight)
-        let clickedCol = Int(point.x / cellWidth)
+        // Use renderSurfaceFrame, not raw bounds, to match the Metal grid
+        // origin (terminalInset + leftover pixels above row 0). See
+        // `pointToCell` for details.
+        let cell = pointToCell(point)
+        let clickedRow = Int(cell.row)
+        let clickedCol = Int(cell.col)
         let cursor = rust.cursorPosition
         let rowDiff = clickedRow - Int(cursor.row)
         let colDiff = clickedCol - Int(cursor.col)

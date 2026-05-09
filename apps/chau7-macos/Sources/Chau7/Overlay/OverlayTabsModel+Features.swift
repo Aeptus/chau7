@@ -12,7 +12,6 @@ extension OverlayTabsModel {
 
     // MARK: - F05: Auto Tab Themes by AI Model
 
-
     func updateAutoColor(for tabID: UUID, command: String) {
         guard FeatureSettings.shared.isAutoTabThemeEnabled else { return }
         guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }

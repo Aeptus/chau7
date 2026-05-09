@@ -289,8 +289,9 @@ extension SplitNode {
                         branch: OverlayTabsModel.normalizedSavedRepoField(state.knownGitBranch)
                     )
                 }
-                if !state.directory.isEmpty {
-                    session.updateCurrentDirectory(state.directory)
+                let restoreDirectory = state.preferredRestoreDirectory
+                if !restoreDirectory.isEmpty {
+                    session.updateCurrentDirectory(restoreDirectory)
                 }
                 // Eagerly seed the AI provider so the tab title shows
                 // "Codex"/"Claude"/etc. on first render — without this, the

@@ -99,7 +99,7 @@ final class TerminalSessionModel {
     enum LagKind: String, CaseIterable {
         case input
         case output
-        case highlight
+        case scan
     }
 
     struct LagEvent: Identifiable, Equatable {
@@ -194,6 +194,7 @@ final class TerminalSessionModel {
 
     var isGitRepo = false
     var gitBranch: String?
+    @ObservationIgnored private var repositoryBranchObserverID: UUID?
     var repositoryAccessSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
         root: nil,
         isProtectedPath: false,
@@ -256,6 +257,11 @@ final class TerminalSessionModel {
                 name: .terminalSessionRenderSuspensionStateChanged,
                 object: self
             )
+            if oldValue == nil, liveAgentName != nil {
+                MainActor.assumeIsolated {
+                    PromptInjectionInjector.onAIToolDetected(session: self)
+                }
+            }
         }
     }
 
@@ -613,7 +619,7 @@ final class TerminalSessionModel {
         }
 
         if request.state == .active {
-            aiDetection.handleCommand(appName: request.displayName)
+            applyAIDetectionCommand(appName: request.displayName)
             activeAppName = request.displayName
         }
 
@@ -656,7 +662,7 @@ final class TerminalSessionModel {
             return false
         }
 
-        let detectionChanged = aiDetection.handleExit()
+        let detectionChanged = applyAIDetectionExit()
         let hadActiveApp = activeAppName != nil
         guard detectionChanged || hadActiveApp else {
             return false
@@ -890,8 +896,8 @@ final class TerminalSessionModel {
     @ObservationIgnored var inputLatencyAverageMs: Int?
     @ObservationIgnored var outputLatencyMs: Int?
     @ObservationIgnored var outputLatencyAverageMs: Int?
-    @ObservationIgnored var dangerousHighlightDelayMs: Int?
-    @ObservationIgnored var dangerousHighlightAverageMs: Int?
+    @ObservationIgnored var scanLagDelayMs: Int?
+    @ObservationIgnored var scanLagAverageMs: Int?
     var lagTimeline: [LagEvent] = []
 
     @ObservationIgnored weak var appModel: AppModel?
@@ -974,17 +980,17 @@ final class TerminalSessionModel {
     @ObservationIgnored var outputLatencyTotalMs: Double = 0
     @ObservationIgnored let inputLagLogThresholdMs: Double = 60
     @ObservationIgnored let outputLagLogThresholdMs: Double = 120
-    @ObservationIgnored let highlightLagLogThresholdMs: Double = 120
+    @ObservationIgnored let scanLagLogThresholdMs: Double = 120
     @ObservationIgnored let maxAcceptedLatencyMs: Double = 10000
     @ObservationIgnored let latencyLogCooldownSeconds: TimeInterval = 15
     @ObservationIgnored var lastInputLagLogAt: Date?
     @ObservationIgnored var lastOutputLagLogAt: Date?
-    @ObservationIgnored var lastHighlightLagLogAt: Date?
+    @ObservationIgnored var lastScanLagLogAt: Date?
     @ObservationIgnored let lagTimelineCapacity = 120
     @ObservationIgnored private let latencySampleCapacity = 120
     @ObservationIgnored var inputLatencySamples: LatencySampleBuffer
     @ObservationIgnored var outputLatencySamples: LatencySampleBuffer
-    @ObservationIgnored var dangerousHighlightSamples: LatencySampleBuffer
+    @ObservationIgnored var scanLagSamples: LatencySampleBuffer
     @ObservationIgnored var outputBurstStartAt = Date.distantPast
     @ObservationIgnored var outputBurstBytes = 0
     @ObservationIgnored var outputBurstChunks = 0
@@ -993,8 +999,8 @@ final class TerminalSessionModel {
     @ObservationIgnored let outputBurstIdleThreshold: TimeInterval = 0.35
     @ObservationIgnored let outputBurstBytesThreshold = 64 * 1024
     @ObservationIgnored let outputBurstChunksThreshold = 24
-    @ObservationIgnored var dangerousHighlightSampleCount = 0
-    @ObservationIgnored var dangerousHighlightTotalMs: Double = 0
+    @ObservationIgnored var scanLagSampleCount = 0
+    @ObservationIgnored var scanLagTotalMs: Double = 0
     @ObservationIgnored var outputRiskCacheVersion = 0
     @ObservationIgnored var outputRiskCache: [Int: (version: Int, isRisk: Bool)] = [:]
     @ObservationIgnored let outputRiskCacheMaxEntries = 800
@@ -1025,6 +1031,7 @@ final class TerminalSessionModel {
     // AI detection state machine — handles sliding buffer, cooldown, re-detection
     // locking, and phase transitions. See AIDetectionState.swift for details.
     @ObservationIgnored var aiDetection = AIDetectionState()
+    @ObservationIgnored var aiDetectionGeneration: UInt64 = 0
     @ObservationIgnored var pendingCommandLine: String?
     @ObservationIgnored var promptSeenForPendingCommand = false
     @ObservationIgnored var commandFinishedNotified = false
@@ -1039,6 +1046,7 @@ final class TerminalSessionModel {
     @ObservationIgnored private var sigintSentAt: Date?
     @ObservationIgnored private var sigtermSentAt: Date?
     @ObservationIgnored private var forcedTerminationWorkItem: DispatchWorkItem?
+    @ObservationIgnored var lastBestEffortOutputSheddingLogAt: Date?
     @ObservationIgnored let dangerousCommandTracker = DangerousCommandLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
     @ObservationIgnored let userInputTracker = UserInputTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
     @ObservationIgnored var currentCommandBlockID: UUID?
@@ -1129,7 +1137,7 @@ final class TerminalSessionModel {
         self.appModel = appModel
         self.inputLatencySamples = LatencySampleBuffer(capacity: latencySampleCapacity)
         self.outputLatencySamples = LatencySampleBuffer(capacity: latencySampleCapacity)
-        self.dangerousHighlightSamples = LatencySampleBuffer(capacity: latencySampleCapacity)
+        self.scanLagSamples = LatencySampleBuffer(capacity: latencySampleCapacity)
         applyDefaultFontSize()
         installSettingsObservers()
         refreshGitStatus(path: currentDirectory)
@@ -1157,7 +1165,7 @@ final class TerminalSessionModel {
             NotificationCenter.default.removeObserver(observer)
         }
         stopIdleTimer()
-        repositoryModel?.onBranchChange = nil
+        detachRepositoryBranchObserver()
         aiLogSession?.close()
         devServerMonitor.stop()
         processResourceMonitor.stop()
@@ -1759,7 +1767,7 @@ final class TerminalSessionModel {
 
         // Stop all background work
         stopIdleTimer()
-        repositoryModel?.onBranchChange = nil
+        detachRepositoryBranchObserver()
         searchUpdateWorkItem?.cancel()
 
         // Capture telemetry buffer before sending exit — the view may detach
@@ -2160,6 +2168,29 @@ final class TerminalSessionModel {
         sendRawInput(text)
     }
 
+    /// Pastes prompt-injection content into the active AI TUI's input box
+    /// without submitting. Uses `AIAutomationStrategy.inputPlan` so Codex
+    /// receives bracketed paste while other tools receive raw text.
+    /// `position` is preserved for parity with the proxy injector but has no
+    /// TUI semantics: prepend/append both insert at the cursor (the input
+    /// box is expected to be empty at this point); `.system` falls back to
+    /// prepend with a warning since there's no system slot in the TUI path.
+    func injectPromptContent(_ content: String, position: InjectionRuleStore.Rule.Position) {
+        guard !content.isEmpty else { return }
+        if position == .system {
+            Log.warn("injectPromptContent: rule has .system position; falling back to prepend (no system slot in TUI path)")
+        }
+        let provider = aiDisplayAppName ?? activeAppName ?? effectiveAIProvider
+        let plan = AIAutomationStrategy.inputPlan(for: content, provider: provider)
+        guard !plan.insertText.isEmpty else { return }
+        switch plan.insertMode {
+        case .rawText:
+            sendRawInput(plan.insertText)
+        case .pasteText:
+            sendPastedInput(plan.insertText)
+        }
+    }
+
     private func sendRawInput(_ text: String) {
         guard !text.isEmpty else { return }
         // If this input contains a newline (command submission), suppress output-based
@@ -2545,11 +2576,11 @@ final class TerminalSessionModel {
             self?.dangerousOutputHighlightWorkItem = nil
             self?.dangerousOutputHighlightLastRun = .distantPast
             self?.dangerousOutputCacheLastRefreshAt = .distantPast
-            self?.dangerousHighlightSampleCount = 0
-            self?.dangerousHighlightTotalMs = 0
-            self?.dangerousHighlightDelayMs = nil
-            self?.dangerousHighlightAverageMs = nil
-            self?.dangerousHighlightSamples.reset()
+            self?.scanLagSampleCount = 0
+            self?.scanLagTotalMs = 0
+            self?.scanLagDelayMs = nil
+            self?.scanLagAverageMs = nil
+            self?.scanLagSamples.reset()
             self?.highlightView?.scheduleDisplay()
         })
     }
@@ -2948,11 +2979,11 @@ final class TerminalSessionModel {
         dangerousOutputHighlightWorkItem = nil
         dangerousOutputHighlightLastRun = .distantPast
         dangerousOutputCacheLastRefreshAt = .distantPast
-        dangerousHighlightSampleCount = 0
-        dangerousHighlightTotalMs = 0
-        dangerousHighlightDelayMs = nil
-        dangerousHighlightAverageMs = nil
-        dangerousHighlightSamples.reset()
+        scanLagSampleCount = 0
+        scanLagTotalMs = 0
+        scanLagDelayMs = nil
+        scanLagAverageMs = nil
+        scanLagSamples.reset()
         highlightView?.scheduleDisplay()
     }
 
@@ -3125,19 +3156,11 @@ final class TerminalSessionModel {
             gitRootPath = resolved.gitRootPath
             gitBranch = model?.branch ?? resolved.gitBranch
 
-            // Subscribe to branch changes from the shared model via didSet callback
+            // Subscribe to branch changes from the shared model so every session
+            // bound to this repo keeps its local branch cache fresh.
             if model !== oldModel {
-                oldModel?.onBranchChange = nil
-                model?.onBranchChange = { [weak self] newBranch in
-                    DispatchQueue.main.async {
-                        guard let self, self.gitBranch != newBranch else { return }
-                        self.gitBranch = newBranch
-                        if let rootPath = self.gitRootPath {
-                            KnownRepoIdentityStore.shared.record(rootPath: rootPath, branch: newBranch)
-                        }
-                        self.shellEventDetector.gitBranchChanged(to: newBranch)
-                    }
-                }
+                detachRepositoryBranchObserver(from: oldModel)
+                attachRepositoryBranchObserver(to: model)
             }
 
             // Notify shell event detector of branch change
@@ -3219,21 +3242,35 @@ final class TerminalSessionModel {
                 accessLevel: .cached
             )
             repositoryModel = model
-            model.onBranchChange = { [weak self] newBranch in
-                DispatchQueue.main.async {
-                    guard let self, self.gitBranch != newBranch else { return }
-                    self.gitBranch = newBranch
-                    if let rootPath = self.gitRootPath {
-                        KnownRepoIdentityStore.shared.record(rootPath: rootPath, branch: newBranch)
-                    }
-                    self.shellEventDetector.gitBranchChanged(to: newBranch)
-                }
-            }
+            attachRepositoryBranchObserver(to: model)
         }
 
         if changed {
             onGitRootPathChanged?(normalized)
         }
+    }
+
+    private func attachRepositoryBranchObserver(to model: RepositoryModel?) {
+        guard let model else {
+            repositoryBranchObserverID = nil
+            return
+        }
+        repositoryBranchObserverID = model.addBranchObserver { [weak self] newBranch in
+            DispatchQueue.main.async {
+                guard let self, self.gitBranch != newBranch else { return }
+                self.gitBranch = newBranch
+                if let rootPath = self.gitRootPath {
+                    KnownRepoIdentityStore.shared.record(rootPath: rootPath, branch: newBranch)
+                }
+                self.shellEventDetector.gitBranchChanged(to: newBranch)
+            }
+        }
+    }
+
+    private func detachRepositoryBranchObserver(from model: RepositoryModel? = nil) {
+        let targetModel = model ?? repositoryModel
+        targetModel?.removeBranchObserver(repositoryBranchObserverID)
+        repositoryBranchObserverID = nil
     }
 
     /// Called when the terminal received an OSC 9 desktop-notification sequence

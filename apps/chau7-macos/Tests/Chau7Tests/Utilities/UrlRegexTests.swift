@@ -15,59 +15,79 @@ final class UrlRegexTests: XCTestCase {
     // MARK: - Schemed URLs (canonical case, must keep working)
 
     func testSchemedHttpsMatches() {
-        XCTAssertEqual(matches(in: "https://github.com/Aeptus/chau7/pull/123"),
-                       ["https://github.com/Aeptus/chau7/pull/123"])
+        XCTAssertEqual(
+            matches(in: "https://github.com/Aeptus/chau7/pull/123"),
+            ["https://github.com/Aeptus/chau7/pull/123"]
+        )
     }
 
     func testSchemedHttpMatches() {
-        XCTAssertEqual(matches(in: "http://localhost:3000"),
-                       ["http://localhost:3000"])
+        XCTAssertEqual(
+            matches(in: "http://localhost:3000"),
+            ["http://localhost:3000"]
+        )
     }
 
     func testFileUrlMatches() {
-        XCTAssertEqual(matches(in: "file:///etc/hosts"),
-                       ["file:///etc/hosts"])
+        XCTAssertEqual(
+            matches(in: "file:///etc/hosts"),
+            ["file:///etc/hosts"]
+        )
     }
 
     // MARK: - Bare domain + path (the user's regression)
 
     func testBareDomainWithPathMatches() {
-        XCTAssertEqual(matches(in: "github.com/Aeptus/chau7"),
-                       ["github.com/Aeptus/chau7"])
+        XCTAssertEqual(
+            matches(in: "github.com/Aeptus/chau7"),
+            ["github.com/Aeptus/chau7"]
+        )
     }
 
     func testBareDomainDeepPathMatches() {
-        XCTAssertEqual(matches(in: "github.com/Aeptus/chau7/pull/123"),
-                       ["github.com/Aeptus/chau7/pull/123"])
+        XCTAssertEqual(
+            matches(in: "github.com/Aeptus/chau7/pull/123"),
+            ["github.com/Aeptus/chau7/pull/123"]
+        )
     }
 
     func testBareDomainEmbeddedInProseMatches() {
-        XCTAssertEqual(matches(in: "Visit github.com/foo to see"),
-                       ["github.com/foo"])
+        XCTAssertEqual(
+            matches(in: "Visit github.com/foo to see"),
+            ["github.com/foo"]
+        )
     }
 
     // MARK: - localhost (with optional port + path)
 
     func testLocalhostBareMatches() {
-        XCTAssertEqual(matches(in: "localhost:3000"),
-                       ["localhost:3000"])
+        XCTAssertEqual(
+            matches(in: "localhost:3000"),
+            ["localhost:3000"]
+        )
     }
 
     func testLocalhostWithPathMatches() {
-        XCTAssertEqual(matches(in: "localhost:3000/api/users"),
-                       ["localhost:3000/api/users"])
+        XCTAssertEqual(
+            matches(in: "localhost:3000/api/users"),
+            ["localhost:3000/api/users"]
+        )
     }
 
     // MARK: - www-prefixed
 
     func testWwwBareMatches() {
-        XCTAssertEqual(matches(in: "www.example.com"),
-                       ["www.example.com"])
+        XCTAssertEqual(
+            matches(in: "www.example.com"),
+            ["www.example.com"]
+        )
     }
 
     func testWwwWithPathMatches() {
-        XCTAssertEqual(matches(in: "www.example.com/foo/bar"),
-                       ["www.example.com/foo/bar"])
+        XCTAssertEqual(
+            matches(in: "www.example.com/foo/bar"),
+            ["www.example.com/foo/bar"]
+        )
     }
 
     // MARK: - False-positive corpus (must NOT match)
@@ -120,31 +140,41 @@ final class UrlRegexTests: XCTestCase {
 final class PathClickHandlerNormalizedURLTests: XCTestCase {
 
     func testSchemedURLPassesThroughUnchanged() {
-        XCTAssertEqual(PathClickHandler.normalizedURLString("https://example.com"),
-                       "https://example.com")
+        XCTAssertEqual(
+            PathClickHandler.normalizedURLString("https://example.com"),
+            "https://example.com"
+        )
     }
 
     func testFileURLPassesThroughUnchanged() {
-        XCTAssertEqual(PathClickHandler.normalizedURLString("file:///etc/hosts"),
-                       "file:///etc/hosts")
+        XCTAssertEqual(
+            PathClickHandler.normalizedURLString("file:///etc/hosts"),
+            "file:///etc/hosts"
+        )
     }
 
     func testBareDomainGetsHttpsScheme() {
-        XCTAssertEqual(PathClickHandler.normalizedURLString("github.com/foo"),
-                       "https://github.com/foo")
+        XCTAssertEqual(
+            PathClickHandler.normalizedURLString("github.com/foo"),
+            "https://github.com/foo"
+        )
     }
 
     func testWwwGetsHttpsScheme() {
-        XCTAssertEqual(PathClickHandler.normalizedURLString("www.example.com/path"),
-                       "https://www.example.com/path")
+        XCTAssertEqual(
+            PathClickHandler.normalizedURLString("www.example.com/path"),
+            "https://www.example.com/path"
+        )
     }
 
     func testLocalhostHostPortGetsHttpsScheme() {
         // Crucial: `localhost:3000` contains a colon, but no `://`. We must
         // NOT treat `localhost:` as an existing scheme — the colon is the
         // host:port separator.
-        XCTAssertEqual(PathClickHandler.normalizedURLString("localhost:3000"),
-                       "https://localhost:3000")
+        XCTAssertEqual(
+            PathClickHandler.normalizedURLString("localhost:3000"),
+            "https://localhost:3000"
+        )
     }
 
     func testNormalizationProducesValidURL() {
@@ -152,8 +182,10 @@ final class PathClickHandlerNormalizedURLTests: XCTestCase {
         // normalized form. Confirm for every scheme-less shape.
         for input in ["github.com/foo", "www.example.com/path", "localhost:3000"] {
             let normalized = PathClickHandler.normalizedURLString(input)
-            XCTAssertNotNil(URL(string: normalized),
-                            "URL(string:) must accept normalized form of '\(input)' (got '\(normalized)')")
+            XCTAssertNotNil(
+                URL(string: normalized),
+                "URL(string:) must accept normalized form of '\(input)' (got '\(normalized)')"
+            )
         }
     }
 }

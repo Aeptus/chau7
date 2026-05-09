@@ -139,6 +139,7 @@ final class NotificationManager {
                 .rawValue) tabID=\(adapted.tabID?.uuidString ?? "nil") sessionID=\(adapted.sessionID ?? "nil")
             """
         )
+        clearStalePermissionStyleIfNeeded(event: adapted, semanticKind: canonical.kind)
         history.begin(
             event: adapted,
             semanticKind: canonical.kind.rawValue,
@@ -146,6 +147,39 @@ final class NotificationManager {
             notificationType: canonical.notificationType
         )
         enqueueEvent(adapted)
+    }
+
+    /// Clears a tab's persistent permission-style highlight when the AI tool
+    /// announces a state that supersedes the permission prompt (idle, waiting
+    /// input, finished, running, etc).
+    ///
+    /// Why this lives in `ingestAcceptedEvent` rather than later: events get
+    /// dropped/coalesced/dedup'd between ingress and the action pipeline. The
+    /// stuck `bell.fill` we observed on the emdash-upstream tab on
+    /// 2026-05-09 was caused exactly by this — the user answered the
+    /// permission inside Claude Code's TUI, Claude emitted authoritative
+    /// `idle`/`waiting_input` follow-up events, and those got dropped at
+    /// the `Trigger claude_code.idle disabled` step in `processEvent`.
+    /// Calling the clearer at ingress runs before all those filters, so
+    /// the resolution side-effect happens regardless of whether the user
+    /// is configured to be notified about idle/waiting transitions.
+    ///
+    /// Why this is needed even though `clearPersistentNotificationStyleAcrossWindows`
+    /// is already wired in three other call sites:
+    /// `RuntimeControlService.respondToApproval` only fires when the user
+    /// resolves through Chau7's runtime API; `session.onPermissionResolved`
+    /// only fires when shell-event detection sees a resolution; both miss
+    /// the common case where the user types `y` directly into the AI tool's
+    /// TUI without Chau7 mediating the resolution. The AI tool's own
+    /// state-change notification is the signal that closes that gap.
+    private func clearStalePermissionStyleIfNeeded(
+        event: AIEvent,
+        semanticKind: NotificationSemanticKind
+    ) {
+        guard semanticKind != .permissionRequired else { return }
+        guard event.reliability == .authoritative else { return }
+        guard let tabID = event.tabID else { return }
+        _ = TerminalControlService.shared.clearPersistentNotificationStyleAcrossWindows(tabID: tabID)
     }
 
     private func enqueueEvent(_ event: AIEvent) {

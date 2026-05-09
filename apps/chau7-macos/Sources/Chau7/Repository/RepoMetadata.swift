@@ -82,13 +82,15 @@ enum RepoMetadataStore {
             try data.write(to: tmp, options: .atomic)
             _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
         } catch {
+            let replaceError: any Error = error
             try? FileManager.default.removeItem(at: tmp)
             // Fallback: direct write, log if it also fails
             do {
                 try data.write(to: url, options: .atomic)
-            } catch let fallbackError {
+            } catch {
+                let fallbackError: any Error = error
                 Log.error(
-                    "repoMetadata save failed (both replace and direct write) repo=\(repoRoot) replaceError=\(error) writeError=\(fallbackError)"
+                    "repoMetadata save failed (both replace and direct write) repo=\(repoRoot) replaceError=\(replaceError) writeError=\(fallbackError)"
                 )
             }
         }

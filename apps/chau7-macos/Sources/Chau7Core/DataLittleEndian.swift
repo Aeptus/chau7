@@ -12,6 +12,7 @@ import Foundation
 /// is too short, matching the historical contract of
 /// `RemoteFrame.swift`'s decoders.
 extension Data {
+
     // MARK: - Append (little-endian)
 
     mutating func appendUInt16LE(_ value: UInt16) {

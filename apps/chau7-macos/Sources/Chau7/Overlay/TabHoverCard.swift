@@ -16,11 +16,27 @@ struct TabHoverCard: View {
     }
 
     var body: some View {
-        if let tab, let session = tab.displaySession {
+        if let tab {
+            PresentationSessionHoverCard(
+                tab: tab,
+                overlayModel: overlayModel,
+                anchorX: anchorX
+            )
+            .transition(.opacity.animation(.easeInOut(duration: 0.12)))
+        }
+    }
+}
+
+private struct PresentationSessionHoverCard: View {
+    let tab: OverlayTab
+    let overlayModel: OverlayTabsModel
+    let anchorX: CGFloat
+
+    var body: some View {
+        if let session = tab.splitController.presentationSession {
             GeometryReader { geo in
                 let cardWidth: CGFloat = 280
                 let padding: CGFloat = 12
-                // Edge-clamp: keep the card within the window bounds
                 let minX = padding
                 let maxX = geo.size.width - cardWidth - padding
                 let idealX = anchorX - cardWidth / 2
@@ -46,7 +62,6 @@ struct TabHoverCard: View {
                 .offset(x: clampedX, y: 8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .transition(.opacity.animation(.easeInOut(duration: 0.12)))
         }
     }
 }

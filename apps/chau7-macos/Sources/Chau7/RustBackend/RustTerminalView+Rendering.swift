@@ -371,6 +371,14 @@ extension RustTerminalView {
         let cursor = rust.cursorPosition
         let cursorVisible = snapshot.cursor_visible != 0
 
+        logCursorInputRowDiagnosticIfNeeded(
+            cells: cells,
+            cols: gridCols,
+            rows: gridRows,
+            cursor: cursor,
+            source: "cpu-grid"
+        )
+
         // Cache scrollback size for renderTopVisibleRow (lightweight access)
         cachedScrollbackRows = Int(snapshot.scrollback_rows)
 
@@ -463,6 +471,141 @@ extension RustTerminalView {
         }
 
         updateInlineImagePositions()
+    }
+
+    func logCursorInputRowDiagnosticIfNeeded(
+        cells: UnsafePointer<RustCellData>,
+        cols: Int,
+        rows: Int,
+        cursor: (col: UInt16, row: UInt16),
+        source: String
+    ) {
+        guard EnvVars.isEnabled(EnvVars.inputDiagnostics) else { return }
+        guard cols > 0, rows > 0 else { return }
+        let cursorRow = Int(cursor.row)
+        let cursorCol = Int(cursor.col)
+        guard cursorRow >= 0, cursorRow < rows else { return }
+
+        let rowCells = UnsafeBufferPointer(
+            start: cells.advanced(by: cursorRow * cols),
+            count: cols
+        )
+        let window = Self.diagnosticWindow(for: rowCells, cursorCol: cursorCol)
+        guard !window.isEmpty else { return }
+
+        var hasher = Hasher()
+        hasher.combine(source)
+        hasher.combine(renderTopVisibleRow + cursorRow)
+        hasher.combine(cursorCol)
+        hasher.combine(window.lowerBound)
+        hasher.combine(window.upperBound)
+        for col in window {
+            let cell = rowCells[col]
+            hasher.combine(cell.character)
+            hasher.combine(cell.flags)
+            hasher.combine(cell._pad)
+        }
+        let diagnosticKey = "\(source):\(hasher.finalize())"
+        guard diagnosticKey != lastInputRowDiagnosticKey else { return }
+        lastInputRowDiagnosticKey = diagnosticKey
+
+        let textPreview = window.map { Self.diagnosticPreview(for: rowCells[$0].character) }.joined()
+        let cellSummary = window.map { col in
+            let cell = rowCells[col]
+            return "\(col):U+\(Self.diagnosticHex(cell.character))/\(Self.diagnosticScalarLabel(for: cell.character)) f=\(String(format: "%02X", cell.flags)) u=\(cell._pad & 0x07)"
+        }.joined(separator: " ")
+
+        let absRow = renderTopVisibleRow + cursorRow
+
+        Log.debug(
+            "RustTerminalView[\(viewId)]: input-row diag source=\(source) absRow=\(absRow) viewportRow=\(cursorRow) cursorCol=\(cursorCol) cols=\(window.lowerBound)-\(window.upperBound) text=\(textPreview.debugDescription) cells=[\(cellSummary)]"
+        )
+
+        // Anomaly detection — only on the Metal-render path, since cpu-grid
+        // gets its absRow recomputed via fresh `cachedScrollbackRows` and
+        // legitimately moves with scrollback growth. The Metal path reads
+        // `cachedScrollbackRows` (last value written by the cpu path) and
+        // `cursor.row` together; large absRow jumps between consecutive
+        // metal-grid calls indicate either a real scroll storm OR the
+        // grid/cursor desync producing the visible "output overflowing
+        // input field, mixed glyphs" symptom. Flag for offline inspection.
+        if source == "metal-grid" {
+            if let previous = lastMetalGridAbsRow {
+                let delta = absRow - previous
+                if abs(delta) > Self.metalGridAnomalyDeltaThreshold {
+                    TerminalOutputCapture.shared.recordMarker(
+                        "view=\(viewId) source=metal-grid absRow_jump previous=\(previous) current=\(absRow) delta=\(delta) viewportRow=\(cursorRow) cursorCol=\(cursorCol) renderTopVisibleRow=\(renderTopVisibleRow) cachedScrollbackRows=\(cachedScrollbackRows)"
+                    )
+                }
+            }
+            lastMetalGridAbsRow = absRow
+        }
+    }
+
+    /// Threshold used by the metal-grid anomaly detector. A normal newline
+    /// produces +1 absRow; small scrolls produce a few rows. Jumps larger
+    /// than this are suspicious enough to warrant marking the PTY log.
+    /// Tuned to skip routine page-up/page-down (~viewport rows) but catch
+    /// the desync pattern observed on Redb (cells shifting many rows).
+    private static let metalGridAnomalyDeltaThreshold = 5
+
+    private static func diagnosticWindow(
+        for rowCells: UnsafeBufferPointer<RustCellData>,
+        cursorCol: Int,
+        maxWidth: Int = 48
+    ) -> ClosedRange<Int> {
+        guard !rowCells.isEmpty else { return 0 ... 0 }
+        let cursor = min(max(cursorCol, 0), rowCells.count - 1)
+        let interestingCols = rowCells.indices.filter { col in
+            let cell = rowCells[col]
+            return col == cursor || cell.character != 0 && cell.character != 0x20 || cell.flags != 0 || cell._pad != 0
+        }
+
+        let rawStart = interestingCols.min() ?? cursor
+        let rawEnd = interestingCols.max() ?? cursor
+        var start = max(0, rawStart - 2)
+        var end = min(rowCells.count - 1, rawEnd + 2)
+
+        if end - start + 1 > maxWidth {
+            start = max(0, cursor - (maxWidth / 2))
+            end = min(rowCells.count - 1, start + maxWidth - 1)
+            start = max(0, end - maxWidth + 1)
+        }
+
+        return start ... end
+    }
+
+    private static func diagnosticPreview(for codePoint: UInt32) -> String {
+        if codePoint == 0 || codePoint == 0x20 {
+            return " "
+        }
+        if codePoint < 0x20 || codePoint == 0x7F {
+            return "·"
+        }
+        guard let scalar = UnicodeScalar(codePoint) else {
+            return "�"
+        }
+        return String(Character(scalar))
+    }
+
+    private static func diagnosticScalarLabel(for codePoint: UInt32) -> String {
+        if codePoint == 0 {
+            return "NUL"
+        }
+        if codePoint == 0x20 {
+            return "SP"
+        }
+        if codePoint < 0x20 || codePoint == 0x7F {
+            return "CTRL"
+        }
+        guard let scalar = UnicodeScalar(codePoint) else {
+            return "INVALID"
+        }
+        return String(Character(scalar)).debugDescription
+    }
+
+    private static func diagnosticHex(_ codePoint: UInt32) -> String {
+        String(format: "%04X", codePoint)
     }
 
     /// Updates the grid view's row tints from the danger tints provider.
@@ -821,7 +964,15 @@ extension RustTerminalView {
                         // Extract the URL string
                         let urlBytes = Array(bytes[start ..< end])
                         if let urlString = String(bytes: urlBytes, encoding: .utf8) {
+                            // Diagnostic: log every detected OSC 7 sequence at INFO,
+                            // independent of whether `processOSC7URL` updates the cwd.
+                            // This lets us see hooks firing with the same path (e.g.
+                            // initial precmd matching restored cwd) and rule out the
+                            // "did the bytes arrive at all?" question.
+                            Log.info("RustTerminalView[\(viewId)]: OSC 7 sequence: \(urlString)")
                             processOSC7URL(urlString)
+                        } else {
+                            Log.warn("RustTerminalView[\(viewId)]: OSC 7 sequence with non-UTF8 payload (\(urlBytes.count) bytes)")
                         }
                     }
                 }
@@ -974,12 +1125,18 @@ extension RustTerminalView {
         // Parse the file:// URL
         if let url = URL(string: urlString) {
             let path = url.path
-            if !path.isEmpty, path != currentDirectory {
-                Log.info("RustTerminalView[\(viewId)]: OSC 7 directory update: \(path)")
-                currentDirectory = path
-                DispatchQueue.main.async { [weak self] in
-                    self?.onDirectoryChanged?(path)
-                }
+            if path.isEmpty {
+                Log.warn("RustTerminalView[\(viewId)]: OSC 7 URL parsed but path empty: \(urlString)")
+                return
+            }
+            if path == currentDirectory {
+                Log.info("RustTerminalView[\(viewId)]: OSC 7 same-cwd: \(path)")
+                return
+            }
+            Log.info("RustTerminalView[\(viewId)]: OSC 7 directory update: \(path)")
+            currentDirectory = path
+            DispatchQueue.main.async { [weak self] in
+                self?.onDirectoryChanged?(path)
             }
         } else if urlString.hasPrefix("file://") {
             // Fallback: manual parsing for malformed URLs
@@ -991,13 +1148,21 @@ extension RustTerminalView {
             }
             // URL decode
             path = path.removingPercentEncoding ?? path
-            if !path.isEmpty, path != currentDirectory {
-                Log.info("RustTerminalView[\(viewId)]: OSC 7 directory update (fallback): \(path)")
-                currentDirectory = path
-                DispatchQueue.main.async { [weak self] in
-                    self?.onDirectoryChanged?(path)
-                }
+            if path.isEmpty {
+                Log.warn("RustTerminalView[\(viewId)]: OSC 7 fallback parse produced empty path: \(urlString)")
+                return
             }
+            if path == currentDirectory {
+                Log.info("RustTerminalView[\(viewId)]: OSC 7 same-cwd (fallback): \(path)")
+                return
+            }
+            Log.info("RustTerminalView[\(viewId)]: OSC 7 directory update (fallback): \(path)")
+            currentDirectory = path
+            DispatchQueue.main.async { [weak self] in
+                self?.onDirectoryChanged?(path)
+            }
+        } else {
+            Log.warn("RustTerminalView[\(viewId)]: OSC 7 URL unrecognized scheme: \(urlString)")
         }
     }
 

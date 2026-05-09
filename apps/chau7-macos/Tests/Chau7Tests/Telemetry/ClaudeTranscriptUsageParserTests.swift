@@ -92,12 +92,14 @@ private final class MalformedLineLogCapture: @unchecked Sendable {
     private var messages: [String] = []
 
     func append(_ message: String) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         messages.append(message)
     }
 
     func snapshot() -> [String] {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         return messages
     }
 }

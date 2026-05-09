@@ -581,11 +581,11 @@
 "debug.level.error" = "Error";
 "debug.inputLag" = "Latencia de entrada";
 "debug.outputLag" = "Latencia de salida";
-"debug.highlightLag" = "Latencia de resaltado";
+"debug.scanLag" = "Latencia de escaneo";
 "debug.performanceSummary" = "Resumen de rendimiento";
 "debug.inputP50P95" = "Entrada p50/p95";
 "debug.outputP50P95" = "Salida p50/p95";
-"debug.highlightP50P95" = "Resaltado p50/p95";
+"debug.scanP50P95" = "Escaneo p50/p95";
 "debug.performance" = "Rendimiento";
 "debug.highlightLowPower" = "Resaltado de bajo consumo";
 "debug.highlightIdleDelay" = "Retraso de inactividad del resaltado (ms)";

@@ -23,6 +23,20 @@ extension TerminalSessionModel {
         }
     }
 
+    private struct PreparedOutputPatternScan {
+        let haystack: String
+        let authoritativeAppName: String?
+        let generation: UInt64
+        let patterns: [OutputPatternMatcher.Candidate]
+        let chunkBytes: Int
+    }
+
+    private struct CompletedOutputPatternScan {
+        let generation: UInt64
+        let authoritativeAppName: String?
+        let matched: OutputPatternMatcher.Candidate?
+    }
+
     /// Schedules shell integration script to run after shell is ready.
     /// Instead of an arbitrary delay, we wait for initial output (prompt).
     func scheduleShellIntegration(for view: any TerminalViewLike) {
@@ -147,6 +161,13 @@ extension TerminalSessionModel {
 
             // Convert to text once for reuse
             let outputText = String(data: data, encoding: .utf8)
+            let shouldShedBestEffortOutputWork = MemoryPressureResponder.shared.shouldShedBestEffortOutputWork()
+            let sanitizedOutputText: String?
+            if let outputText, !shouldShedBestEffortOutputWork {
+                sanitizedOutputText = Self.sanitizedRemoteOutputTranscript(outputText)
+            } else {
+                sanitizedOutputText = nil
+            }
 
             // Shell event detection
             if let outputText {
@@ -185,8 +206,8 @@ extension TerminalSessionModel {
                 let mainToken = FeatureProfiler.shared.begin(.outputMainThread, bytes: data.count)
                 FeatureProfiler.shared.end(outputToken)
 
-                if let outputText {
-                    cacheRemoteOutputTranscript(outputText)
+                if let sanitizedOutputText {
+                    appendRemoteOutputTranscript(sanitizedOutputText)
                 }
 
                 if let exitCode = aiExitCode {
@@ -204,7 +225,9 @@ extension TerminalSessionModel {
                 // AI app detection — skip while a command is pending detection
                 // (handleInputLine hasn't run yet), so command-based detection
                 // gets priority over output pattern matching.
-                if !sawPromptUpdate, !commandPendingDetection {
+                if shouldShedBestEffortOutputWork {
+                    logBestEffortOutputSheddingIfNeeded()
+                } else if !sawPromptUpdate, !commandPendingDetection {
                     maybeDetectAppFromOutput(data)
                 }
 
@@ -226,9 +249,14 @@ extension TerminalSessionModel {
         }
     }
 
-    private func cacheRemoteOutputTranscript(_ rawText: String) {
-        guard !rawText.isEmpty else { return }
+    private static func sanitizedRemoteOutputTranscript(_ rawText: String) -> String? {
+        guard !rawText.isEmpty else { return nil }
         let sanitized = EscapeSequenceSanitizer.sanitize(rawText)
+        guard !sanitized.isEmpty else { return nil }
+        return sanitized
+    }
+
+    private func appendRemoteOutputTranscript(_ sanitized: String) {
         guard !sanitized.isEmpty else { return }
         cachedRemoteOutputText = RemoteOutputTuning.trimRetainedText(cachedRemoteOutputText + sanitized)
     }
@@ -604,7 +632,7 @@ extension TerminalSessionModel {
     }
 
     func clearActiveAppAfterPrompt() {
-        guard aiDetection.handlePromptReturn() else { return }
+        guard applyAIDetectionPromptReturn() else { return }
         Log.trace("Clearing active app after OSC 7 prompt update.")
         activeAppName = aiDetection.currentApp // nil after prompt return
         // finishAILogging is idempotent and has internal synchronization
@@ -952,8 +980,24 @@ extension TerminalSessionModel {
     /// re-detection locking (same tool only), and retry window exhaustion.
     /// This method only does pattern matching and fires side effects on state change.
     private func maybeDetectAppFromOutput(_ data: Data) {
-        // State machine handles phase checks, sliding buffer, and retry window.
-        // Returns nil when scanning should be skipped (already detected, window exhausted, etc.)
+        guard let prepared = prepareOutputPatternScan(data) else { return }
+
+        outputProcessingQueue.async { [weak self] in
+            guard let self else { return }
+            let token = FeatureProfiler.shared.begin(.aiDetect, bytes: prepared.chunkBytes, metadata: "output-patterns")
+            let completed = CompletedOutputPatternScan(
+                generation: prepared.generation,
+                authoritativeAppName: prepared.authoritativeAppName,
+                matched: OutputPatternMatcher.firstMatch(in: prepared.haystack, patterns: prepared.patterns)
+            )
+            FeatureProfiler.shared.end(token)
+            DispatchQueue.main.async { [weak self] in
+                self?.applyOutputPatternScanResult(completed)
+            }
+        }
+    }
+
+    private func prepareOutputPatternScan(_ data: Data) -> PreparedOutputPatternScan? {
         let failuresBefore = aiDetection.utf8DecodeFailures
         guard let haystack = aiDetection.prepareHaystack(chunk: data) else {
             if aiDetection.utf8DecodeFailures > failuresBefore {
@@ -963,38 +1007,7 @@ extension TerminalSessionModel {
                     Log.trace("UTF-8 decode failure in AI detection sliding buffer (total: \(aiDetection.utf8DecodeFailures))")
                 }
             }
-            return
-        }
-
-        let token = FeatureProfiler.shared.begin(.aiDetect, bytes: data.count, metadata: "output-patterns")
-        defer { FeatureProfiler.shared.end(token) }
-
-        let patterns = outputDetectionPatterns()
-        let patternStrings = patterns.map { $0.pattern }
-
-        // Find a match — state machine will decide whether to accept it
-        var matchedApp: String?
-        var matchedPattern: String?
-
-        // Fast path: Rust Aho-Corasick on the lowercased haystack. `index`
-        // is guaranteed >= 0; the upper-bound check protects against a
-        // pattern-list shape drift between the matcher's handle and the
-        // caller's local `patterns` array.
-        if let index = RustPatternMatcher.outputPatterns.firstMatchIndex(haystack: haystack, patterns: patternStrings),
-           index < patterns.count {
-            matchedApp = patterns[index].appName
-            matchedPattern = patterns[index].pattern
-        }
-
-        // Fallback: linear scan (patterns already lowercased, haystack already lowercased)
-        if matchedApp == nil {
-            for (pattern, appName) in patterns {
-                if haystack.contains(pattern) {
-                    matchedApp = appName
-                    matchedPattern = pattern
-                    break
-                }
-            }
+            return nil
         }
 
         let authoritativeAppName =
@@ -1002,18 +1015,23 @@ extension TerminalSessionModel {
                 ?? lastDetectedAppName
                 ?? Self.displayName(fromProvider: lastAIProvider)
 
-        // State machine filters: redetecting rejects different tools, and output
-        // matches must agree with any authoritative name to avoid pattern hijacking
-        // (e.g. the string "openai codex" in Claude output must not flip the tab).
-        // Cross-provider flips are owned by command detection and the live
-        // process-tree signal, never output patterns.
-        guard aiDetection.handleOutputMatch(
-            appName: matchedApp,
-            authoritativeAppName: authoritativeAppName
+        return PreparedOutputPatternScan(
+            haystack: haystack,
+            authoritativeAppName: authoritativeAppName,
+            generation: aiDetectionGeneration,
+            patterns: outputDetectionPatterns(),
+            chunkBytes: data.count
+        )
+    }
+
+    private func applyOutputPatternScanResult(_ result: CompletedOutputPatternScan) {
+        guard result.generation == aiDetectionGeneration else { return }
+        guard applyAIDetectionOutputMatch(
+            appName: result.matched?.appName,
+            authoritativeAppName: result.authoritativeAppName
         ),
             let app = aiDetection.currentApp else { return }
 
-        // State changed → sync @Published property and fire side effects
         activeAppName = app
         updateLastDetectedApp(app)
         startAILoggingIfNeeded(toolName: app, commandLine: nil)
@@ -1042,18 +1060,21 @@ extension TerminalSessionModel {
             metadata: taskMetadata
         )
 
-        Log.info("AI detected from output pattern: \(app) (matched: \(matchedPattern ?? "unknown"))")
+        Log.info("AI detected from output pattern: \(app) (matched: \(result.matched?.pattern ?? "unknown"))")
     }
 
-    private func outputDetectionPatterns() -> [(pattern: String, appName: String)] {
-        let custom = FeatureSettings.shared.customAIDetectionRules.compactMap { rule -> (String, String)? in
+    private func outputDetectionPatterns() -> [OutputPatternMatcher.Candidate] {
+        let custom = FeatureSettings.shared.customAIDetectionRules.compactMap { rule -> OutputPatternMatcher.Candidate? in
             let trimmedPattern = rule.pattern.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedName = rule.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedPattern.isEmpty else { return nil }
             let name = trimmedName.isEmpty ? "Custom AI" : trimmedName
-            return (trimmedPattern, name)
+            return OutputPatternMatcher.Candidate(pattern: trimmedPattern, appName: name)
         }
-        return CommandDetection.outputDetectionPatterns + custom
+        let builtIn = CommandDetection.outputDetectionPatterns.map {
+            OutputPatternMatcher.Candidate(pattern: $0.pattern, appName: $0.appName)
+        }
+        return builtIn + custom
     }
 
     private func markRunning() {
@@ -1163,6 +1184,7 @@ extension TerminalSessionModel {
                 sessionID: sessionID,
                 tabID: tabID
             )
+            PromptInjectionInjector.onSessionEvent(event, session: self)
         }
     }
 
@@ -1355,7 +1377,7 @@ extension TerminalSessionModel {
             currentDirectory: currentDirectory,
             searchPath: launchPATHValue()
         ) {
-            aiDetection.handleCommand(appName: match)
+            applyAIDetectionCommand(appName: match)
             activeAppName = match
             updateLastDetectedApp(match)
             Log.info("AI detected: \(match) from command '\(loggedCommand.prefix(50))'")
@@ -1377,7 +1399,7 @@ extension TerminalSessionModel {
             if lowercasedLine.contains(pattern) {
                 let name = rule.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
                 let displayName = name.isEmpty ? "Custom AI" : name
-                aiDetection.handleCommand(appName: displayName)
+                applyAIDetectionCommand(appName: displayName)
                 activeAppName = displayName
                 updateLastDetectedApp(displayName)
                 startAILoggingIfNeeded(toolName: displayName, commandLine: persistedCommand)
@@ -1389,7 +1411,7 @@ extension TerminalSessionModel {
             // Keep lastAIProvider/lastAISessionId so tab restore can resume the
             // most recent session for this pane even after shell-level exits.
             Log.trace("Clearing active app due to exit command input.")
-            aiDetection.handleExit()
+            applyAIDetectionExit()
             activeAppName = nil
         }
     }
@@ -1446,7 +1468,7 @@ extension TerminalSessionModel {
         )
         let restoredDisplayName = Self.displayName(fromProvider: normalizedProvider)
         if let name = restoredDisplayName {
-            aiDetection.handleRestore(appName: name)
+            applyAIDetectionRestore(appName: name)
         }
         activeAppName = restoredDisplayName
         lastAIProvider = normalizedProvider
@@ -1677,19 +1699,19 @@ extension TerminalSessionModel {
             guard let self else { return }
             let startedAt = CFAbsoluteTimeGetCurrent()
             let congestionMs = max(0, (CFAbsoluteTimeGetCurrent() - expectedFireAt) * 1000.0)
-            dangerousHighlightSamples.append(Int(congestionMs.rounded()))
-            dangerousHighlightSampleCount += 1
-            dangerousHighlightTotalMs += congestionMs
-            dangerousHighlightDelayMs = Int(congestionMs.rounded())
-            dangerousHighlightAverageMs = dangerousHighlightSamples.recentAverage()
+            scanLagSamples.append(Int(congestionMs.rounded()))
+            scanLagSampleCount += 1
+            scanLagTotalMs += congestionMs
+            scanLagDelayMs = Int(congestionMs.rounded())
+            scanLagAverageMs = scanLagSamples.recentAverage()
             dangerousOutputHighlightLastRun = Date()
             maybeLogLatencySpike(
-                kind: "highlight",
+                kind: "scan",
                 elapsedMs: congestionMs,
-                averageMs: dangerousHighlightAverageMs,
-                samples: dangerousHighlightSamples,
-                thresholdMs: highlightLagLogThresholdMs,
-                lastLoggedAt: &lastHighlightLagLogAt
+                averageMs: scanLagAverageMs,
+                samples: scanLagSamples,
+                thresholdMs: scanLagLogThresholdMs,
+                lastLoggedAt: &lastScanLagLogAt
             )
             let now = Date()
             let shouldRefreshCache = shouldRefreshDangerousOutputCache(now: now)
@@ -1967,6 +1989,67 @@ extension TerminalSessionModel {
             }
         }
         return tints
+    }
+
+    @discardableResult
+    func applyAIDetectionCommand(appName: String?) -> Bool {
+        let changed = aiDetection.handleCommand(appName: appName)
+        if changed {
+            aiDetectionGeneration &+= 1
+        }
+        return changed
+    }
+
+    @discardableResult
+    func applyAIDetectionExit() -> Bool {
+        let changed = aiDetection.handleExit()
+        if changed {
+            aiDetectionGeneration &+= 1
+        }
+        return changed
+    }
+
+    @discardableResult
+    func applyAIDetectionPromptReturn() -> Bool {
+        let changed = aiDetection.handlePromptReturn()
+        if changed {
+            aiDetectionGeneration &+= 1
+        }
+        return changed
+    }
+
+    @discardableResult
+    func applyAIDetectionRestore(appName: String) -> Bool {
+        let changed = aiDetection.handleRestore(appName: appName)
+        if changed {
+            aiDetectionGeneration &+= 1
+        }
+        return changed
+    }
+
+    @discardableResult
+    func applyAIDetectionOutputMatch(
+        appName: String?,
+        authoritativeAppName: String?
+    ) -> Bool {
+        let changed = aiDetection.handleOutputMatch(
+            appName: appName,
+            authoritativeAppName: authoritativeAppName
+        )
+        if changed {
+            aiDetectionGeneration &+= 1
+        }
+        return changed
+    }
+
+    private func logBestEffortOutputSheddingIfNeeded() {
+        let now = Date()
+        if let lastBestEffortOutputSheddingLogAt,
+           now.timeIntervalSince(lastBestEffortOutputSheddingLogAt) < 15 {
+            return
+        }
+        lastBestEffortOutputSheddingLogAt = now
+        Log.warn("Heavy output best-effort work suspended after recent critical memory pressure tab=\(notificationTabName)")
     }
 
 }

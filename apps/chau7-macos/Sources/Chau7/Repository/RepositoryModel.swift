@@ -24,7 +24,7 @@ final class RepositoryModel: Identifiable {
     var branch: String? {
         didSet {
             if branch != oldValue {
-                onBranchChange?(branch)
+                notifyBranchObservers(branch)
             }
         }
     }
@@ -36,9 +36,10 @@ final class RepositoryModel: Identifiable {
     var metadata: RepoMetadata = .empty
     var stats: RepoStats?
 
-    /// Callback invoked on main thread when `branch` changes.
-    /// TerminalSessionModel sets this to receive branch updates without Combine.
-    @ObservationIgnored var onBranchChange: ((String?) -> Void)?
+    /// Branch-change listeners registered by sessions sharing this repo model.
+    /// Kept out of observation so callback fanout does not become part of SwiftUI
+    /// dependency tracking.
+    @ObservationIgnored private var branchObservers: [UUID: (String?) -> Void] = [:]
 
     /// Display name derived from root path (e.g. "Chau7")
     var repoName: String {
@@ -192,5 +193,40 @@ final class RepositoryModel: Identifiable {
         }
         saveWorkItem = work
         Self.metadataQueue.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    /// Registers a branch observer and returns a token that can later be used
+    /// to remove it. Calls are funneled through the main queue so session
+    /// wiring remains safe even if teardown happens off-main.
+    @discardableResult
+    func addBranchObserver(_ observer: @escaping (String?) -> Void) -> UUID {
+        let register = { () -> UUID in
+            let id = UUID()
+            self.branchObservers[id] = observer
+            return id
+        }
+        if Thread.isMainThread {
+            return register()
+        }
+        return DispatchQueue.main.sync(execute: register)
+    }
+
+    func removeBranchObserver(_ id: UUID?) {
+        guard let id else { return }
+        let remove: () -> Void = {
+            _ = self.branchObservers.removeValue(forKey: id)
+        }
+        if Thread.isMainThread {
+            remove()
+        } else {
+            DispatchQueue.main.sync(execute: remove)
+        }
+    }
+
+    private func notifyBranchObservers(_ branch: String?) {
+        let observers = Array(branchObservers.values)
+        for observer in observers {
+            observer(branch)
+        }
     }
 }

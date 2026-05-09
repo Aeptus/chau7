@@ -330,9 +330,15 @@ final class RenderPipelineProfiler {
         }
         let syncMiB = Double(snapshot.syncBytes) / 1_048_576
         let commitMiB = Double(snapshot.commitBytes) / 1_048_576
+        let summaryFormat =
+            "Render pipeline (30s): liveViews=%d ids=%@ polls=%d changed=%d draws=%d " +
+            "syncCalls=%d sync=%.1fMiB mismatches=%d commits=%d commit=%.1fMiB " +
+            "fullRefresh=%d maxDirtyRows=%d maxDirtyCells=%d maxFrameCells=%d " +
+            "maxInstanceBuffer=%.1fMiB saturatedFrames=%d glyphCache=%d ligatureCache=%d " +
+            "glyphLookups=%d missRate=%.1f%%"
         Log.info(
             String(
-                format: "Render pipeline (30s): liveViews=%d ids=%@ polls=%d changed=%d draws=%d syncCalls=%d sync=%.1fMiB mismatches=%d commits=%d commit=%.1fMiB fullRefresh=%d maxDirtyRows=%d maxDirtyCells=%d maxFrameCells=%d maxInstanceBuffer=%.1fMiB saturatedFrames=%d glyphCache=%d ligatureCache=%d glyphLookups=%d missRate=%.1f%%",
+                format: summaryFormat,
                 snapshot.activeLiveViewIDs.count,
                 snapshot.activeLiveViewIDs.map(String.init).joined(separator: ","),
                 snapshot.livePollCount,

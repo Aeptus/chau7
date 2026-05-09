@@ -21,7 +21,6 @@ extension OverlayTabsModel {
 
     // MARK: - Token Optimization (CTO) Per-Tab Control
 
-
     /// Toggles the token optimization override for a tab.
     /// Cycling depends on the global mode:
     /// - `allTabs`: default (on) -> forceOff -> default (on)

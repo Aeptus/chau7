@@ -794,6 +794,7 @@ extension OverlayTabsModel {
         if let index = tabs.firstIndex(where: { $0.id == id }),
            let style = tabs[index].notificationStyle, !style.persistent {
             tabs[index].notificationStyle = nil
+            Log.info("Tab notification style cleared for tab \(id) (selected)")
         }
 
         cancelSuspension(for: id)
@@ -838,6 +839,7 @@ extension OverlayTabsModel {
         guard selectedTabID != id else { return }
         selectTab(id: id)
     }
+
     // MARK: - Tab Switch Optimization: Snapshot Capture
 
     /// Captures a screenshot of the current terminal view for instant display during tab switch
