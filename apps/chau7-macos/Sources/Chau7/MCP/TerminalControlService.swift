@@ -147,6 +147,39 @@ final class TerminalControlService {
         return false
     }
 
+    /// Updates a tab's session-tracked cwd across all windows.
+    ///
+    /// Used when an upstream signal (e.g., a Claude Code hook event with the
+    /// session's working directory) is more authoritative about the tab's
+    /// current directory than what `OSC 7` from the host shell has reported.
+    /// This is necessary for tabs hosting AI-tool TUIs (Claude Code, Codex):
+    /// once the TUI takes over the alt screen, the host shell's `chpwd` hook
+    /// no longer fires for `cd`s the user types into the TUI, so Chau7's
+    /// tracked `currentDirectory` stays stuck at the pre-TUI value. The AI
+    /// tool itself does know its working directory and emits it on every
+    /// session event — feeding that back here keeps tab-pwd-derived UI
+    /// (snippet context, repo grouping, telemetry) in sync.
+    ///
+    /// Returns true when an actual session was updated (vs. tab existing
+    /// but having no live session yet — common during background-window
+    /// lazy load).
+    @discardableResult
+    func updateSessionDirectoryAcrossWindows(tabID: UUID, directory: String) -> Bool {
+        let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return onMain {
+            for (_, model) in self.allModels {
+                guard let tab = model.tabs.first(where: { $0.id == tabID }),
+                      let session = tab.session
+                else { continue }
+                guard session.currentDirectory != trimmed else { return true }
+                session.updateCurrentDirectory(trimmed)
+                return true
+            }
+            return false
+        }
+    }
+
     @discardableResult
     func clearPersistentNotificationStyleAcrossWindows(tabID: UUID) -> Bool {
         for (_, model) in allModels {

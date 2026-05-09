@@ -1082,6 +1082,20 @@ final class AppModel {
 
         let directory = event.cwd.isEmpty ? nil : event.cwd
         let runtimeTabID = resolveAuthoritativeClaudeTabID(sessionID: event.sessionId, directory: directory)
+
+        // Claude Code emits the session's authoritative cwd on every hook
+        // event. Push it onto the bound tab's session so the tab's tracked
+        // `currentDirectory` stays in sync even when the host shell's
+        // `chpwd` hook can't fire — typical when the user types `cd` inside
+        // Claude's TUI rather than at the shell prompt, since the TUI seizes
+        // the alt screen and no `chpwd → OSC 7` round-trip happens.
+        if let runtimeTabID, let directory {
+            TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+                tabID: runtimeTabID,
+                directory: directory
+            )
+        }
+
         let aiEvent = AIEvent(
             source: .claudeCode,
             type: event.type.rawValue,
@@ -1116,6 +1130,18 @@ final class AppModel {
         cancelPendingClaudeWaitingInputFallback(sessionID: session.id)
         syncClaudeCodeSessions()
         let directory = session.cwd.isEmpty ? nil : session.cwd
+        let resolvedTabID = resolveAuthoritativeClaudeTabID(sessionID: session.id, directory: directory)
+
+        // See note in `handleClaudeCodeMonitorEvent`: keep the bound tab's
+        // `currentDirectory` in sync with Claude's session cwd, since the
+        // host shell's chpwd hook can't fire for cd's typed inside the TUI.
+        if let resolvedTabID, let directory {
+            TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+                tabID: resolvedTabID,
+                directory: directory
+            )
+        }
+
         let event = AIEvent(
             source: .claudeCode,
             type: "idle",
@@ -1123,7 +1149,7 @@ final class AppModel {
             message: "Waiting for input in \(session.projectName)",
             ts: DateFormatters.nowISO8601(),
             directory: directory,
-            tabID: resolveAuthoritativeClaudeTabID(sessionID: session.id, directory: directory),
+            tabID: resolvedTabID,
             sessionID: session.id,
             producer: "claude_code_idle",
             reliability: .authoritative
