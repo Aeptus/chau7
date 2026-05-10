@@ -316,24 +316,38 @@ extension RustTerminalView {
                         "hasFocus=\(hasFocus)"
                 )
             }
-            if let text = String(bytes: sequence, encoding: .utf8),
-               !(shouldAcceptUserText?(text) ?? true) {
-                Log.info("RustTerminalView[\(viewId)]: keyDown - Suppressed user input by command guard")
-                return
-            }
-            if sequence == [0x7F] || sequence == [0x08], let text = String(bytes: sequence, encoding: .utf8) {
-                applyLocalEchoForText(text)
-            }
-            if let text = String(bytes: sequence, encoding: .utf8) {
-                onInput?(text)
-            }
-            rust.sendBytes(sequence)
+            _ = dispatchTerminalSequence(sequence, rust: rust, logContext: "keyDown")
             return
         }
 
         // Route regular text input through NSTextInputContext so that
         // Password AutoFill and IME can deliver text via insertText.
         _ = routeTextInputThroughInputContext(event, logContext: "keyDown", keyCode: keyCode)
+    }
+
+    /// Run the post-generation forwarding chain for a terminal escape
+    /// sequence: command-guard check, backspace local-echo, `onInput`
+    /// callback, then `rust.sendBytes`. Returns `true` when the sequence
+    /// was forwarded, `false` when the command guard suppressed it. Both
+    /// `keyDown` and `handleTerminalKeyEvent` route through here; the
+    /// only per-caller difference is the `logContext` string used in the
+    /// suppress log.
+    private func dispatchTerminalSequence(
+        _ sequence: [UInt8], rust: RustTerminalFFI, logContext: String
+    ) -> Bool {
+        if let text = String(bytes: sequence, encoding: .utf8),
+           !(shouldAcceptUserText?(text) ?? true) {
+            Log.info("RustTerminalView[\(viewId)]: \(logContext) - Suppressed user input by command guard")
+            return false
+        }
+        if sequence == [0x7F] || sequence == [0x08], let text = String(bytes: sequence, encoding: .utf8) {
+            applyLocalEchoForText(text)
+        }
+        if let text = String(bytes: sequence, encoding: .utf8) {
+            onInput?(text)
+        }
+        rust.sendBytes(sequence)
+        return true
     }
 
     /// Handle key event from event monitor - routes to Rust terminal
@@ -369,18 +383,7 @@ extension RustTerminalView {
                         "hasFocus=\(hasFocus)"
                 )
             }
-            if let text = String(bytes: sequence, encoding: .utf8),
-               !(shouldAcceptUserText?(text) ?? true) {
-                Log.info("RustTerminalView[\(viewId)]: handleTerminalKeyEvent - Suppressed user input by command guard")
-                return true
-            }
-            if sequence == [0x7F] || sequence == [0x08], let text = String(bytes: sequence, encoding: .utf8) {
-                applyLocalEchoForText(text)
-            }
-            if let text = String(bytes: sequence, encoding: .utf8) {
-                onInput?(text)
-            }
-            rust.sendBytes(sequence)
+            _ = dispatchTerminalSequence(sequence, rust: rust, logContext: "handleTerminalKeyEvent")
             return true
         }
 
