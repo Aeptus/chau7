@@ -33,7 +33,6 @@ enum RegexPatterns {
     /// the matched substring before opening — see `findURLs(in:)` in
     /// `RustTerminalView+Mouse.swift`.
     static let url: NSRegularExpression = makeRegex(
-        // swiftlint:disable:next line_length
         #"(?:https?|file|ssh|ftp|sftp)://[^\s<>\[\]{}|\\^`"']+|www\.[^\s<>\[\]{}|\\^`"']+|localhost(?::\d+)?(?:/[^\s<>\[\]{}|\\^`"']*)?|\b[a-zA-Z][a-zA-Z0-9-]*(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,24}/[^\s<>\[\]{}|\\^`"']*"#,
         options: [.caseInsensitive],
         name: "url"
