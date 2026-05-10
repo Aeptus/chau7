@@ -85,25 +85,6 @@ public struct UsageEvidence: Codable, Equatable, Identifiable, Sendable {
         self.metadata = metadata
     }
 
-    public var tokenUsage: TokenUsage {
-        TokenUsage(
-            inputTokens: inputTokens ?? 0,
-            cacheCreationInputTokens: cacheCreationInputTokens ?? 0,
-            cacheReadInputTokens: cacheReadInputTokens ?? 0,
-            cachedInputTokens: (cacheCreationInputTokens ?? 0) + (cacheReadInputTokens ?? 0),
-            outputTokens: outputTokens ?? 0,
-            reasoningOutputTokens: reasoningOutputTokens ?? 0
-        )
-    }
-
-    public var hasAnyTokens: Bool {
-        inputTokens != nil ||
-            cacheCreationInputTokens != nil ||
-            cacheReadInputTokens != nil ||
-            outputTokens != nil ||
-            reasoningOutputTokens != nil
-    }
-
     // swiftlint:disable:next function_parameter_count
     public static func proxyEvent(
         provider: String,
@@ -335,8 +316,22 @@ public struct UsageEvidenceAggregate: Codable, Equatable, Sendable {
     public let sourceRefs: [String]
     public let observedAt: Date
     public let evidenceIDs: [String]
+}
 
-    public var tokenUsage: TokenUsage {
+/// Shared token-related computed properties for any usage record that
+/// carries the canonical optional token fields. `UsageEvidence` and
+/// `UsageEvidenceAggregate` both conform; the protocol extension is the
+/// single source of truth for `tokenUsage` and `hasAnyTokens`.
+public protocol UsageEvidenceTokenFields {
+    var inputTokens: Int? { get }
+    var cacheCreationInputTokens: Int? { get }
+    var cacheReadInputTokens: Int? { get }
+    var outputTokens: Int? { get }
+    var reasoningOutputTokens: Int? { get }
+}
+
+public extension UsageEvidenceTokenFields {
+    var tokenUsage: TokenUsage {
         TokenUsage(
             inputTokens: inputTokens ?? 0,
             cacheCreationInputTokens: cacheCreationInputTokens ?? 0,
@@ -347,7 +342,7 @@ public struct UsageEvidenceAggregate: Codable, Equatable, Sendable {
         )
     }
 
-    public var hasAnyTokens: Bool {
+    var hasAnyTokens: Bool {
         inputTokens != nil ||
             cacheCreationInputTokens != nil ||
             cacheReadInputTokens != nil ||
@@ -355,6 +350,9 @@ public struct UsageEvidenceAggregate: Codable, Equatable, Sendable {
             reasoningOutputTokens != nil
     }
 }
+
+extension UsageEvidence: UsageEvidenceTokenFields {}
+extension UsageEvidenceAggregate: UsageEvidenceTokenFields {}
 
 public enum UsageReconciliationConfidence: String, Codable, CaseIterable, Sendable {
     case observed
