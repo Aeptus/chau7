@@ -78,6 +78,7 @@ public struct RuntimeSessionStateMachine: Sendable {
         case (.starting, .tabClosed): return .stopped
         // ready
         case (.ready, .turnSubmitted): return .busy
+        case (.ready, .processCrashed): return .failed
         case (.ready, .tabClosed): return .stopped
         // busy
         case (.busy, .turnCompleted): return .ready

@@ -65,6 +65,13 @@ final class RuntimeSessionStateTests: XCTestCase {
         XCTAssertEqual(sm.state, .stopped)
     }
 
+    func testReadyToFailed_processCrashed() {
+        var sm = makeReady()
+        XCTAssertTrue(sm.handle(.processCrashed("approval_timeout_stuck")))
+        XCTAssertEqual(sm.state, .failed)
+        XCTAssertTrue(sm.isTerminal)
+    }
+
     func testReadyRejectsInvalidTriggers() {
         var sm = makeReady()
         XCTAssertFalse(sm.handle(.turnCompleted))
