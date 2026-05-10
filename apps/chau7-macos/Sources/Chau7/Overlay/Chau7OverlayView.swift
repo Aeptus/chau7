@@ -206,8 +206,19 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         let height: CGFloat
         if let window = model?.overlayWindow {
             maxWidth = max(window.contentLayoutRect.width, minWidth)
-            let titlebarHeight = window.frame.height - window.contentLayoutRect.height
-            height = max(OverlayLayout.tabBarHeight, titlebarHeight)
+            // In window mode, the toolbar replaces the titlebar visually, so we
+            // grow the bar to match the native titlebar height (~28pt) so the
+            // tabs sit aligned with the traffic-light buttons. In fullscreen
+            // there is no titlebar — `frame.height - contentLayoutRect.height`
+            // becomes the menu-bar / display-cutout safe-area inset (up to
+            // ~60pt on a notch MacBook), which would visibly double the
+            // tabbar's height. Clamp to `tabBarHeight` in fullscreen.
+            if window.styleMask.contains(.fullScreen) {
+                height = OverlayLayout.tabBarHeight
+            } else {
+                let titlebarHeight = window.frame.height - window.contentLayoutRect.height
+                height = max(OverlayLayout.tabBarHeight, titlebarHeight)
+            }
         } else {
             maxWidth = max(800, minWidth)
             height = OverlayLayout.tabBarHeight
