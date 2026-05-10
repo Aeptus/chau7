@@ -109,14 +109,7 @@ final class ScriptingAPI {
                 return
             }
 
-            var addr = sockaddr_un()
-            addr.sun_family = sa_family_t(AF_UNIX)
-            let maxLen = MemoryLayout.size(ofValue: addr.sun_path) - 1
-            withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
-                let buf = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: CChar.self)
-                _ = path.withCString { strncpy(buf, $0, maxLen) }
-            }
-
+            var addr = makeUnixSockaddr(path: path)
             let bindResult = withUnsafePointer(to: &addr) { addrPtr in
                 addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
                     bind(socketFD, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
@@ -578,6 +571,18 @@ final class ScriptingAPI {
         }
         defer { close(fd) }
 
+        var addr = makeUnixSockaddr(path: path)
+        return withUnsafePointer(to: &addr) { addrPtr in
+            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+            }
+        }
+    }
+
+    /// Build an `sockaddr_un` for an `AF_UNIX` socket targeting `path`.
+    /// Truncates to `sun_path`'s capacity (`PATH_MAX` is larger than
+    /// `sun_path`, so callers responsible for ≤108-byte socket paths).
+    private func makeUnixSockaddr(path: String) -> sockaddr_un {
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let maxLen = MemoryLayout.size(ofValue: addr.sun_path) - 1
@@ -585,12 +590,7 @@ final class ScriptingAPI {
             let buf = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: CChar.self)
             _ = path.withCString { strncpy(buf, $0, maxLen) }
         }
-
-        return withUnsafePointer(to: &addr) { addrPtr in
-            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
-            }
-        }
+        return addr
     }
 
     private func shouldRetryStart(after error: Int32) -> Bool {
