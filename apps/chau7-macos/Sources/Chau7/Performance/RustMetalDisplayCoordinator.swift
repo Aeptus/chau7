@@ -26,6 +26,12 @@ typealias RustGridProvider = () -> (
 /// Attach to a RustTerminalContainerView to enable GPU rendering.
 final class RustMetalDisplayCoordinator: NSObject {
 
+    private struct FontConfigurationSignature: Equatable {
+        let fontName: String
+        let pointSize: CGFloat
+        let scaleFactor: CGFloat
+    }
+
     // MARK: - Components
 
     private let bridge: RustTermBridge
@@ -42,6 +48,7 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var rows: Int
     private var cols: Int
     private var fontConfigured = false
+    private var lastFontConfigurationSignature: FontConfigurationSignature?
     private var lastTripleBufferRebuildSignature = ""
     private var lastTripleBufferRebuildAt: CFAbsoluteTime = 0
 
@@ -145,10 +152,20 @@ final class RustMetalDisplayCoordinator: NSObject {
     // MARK: - Font
 
     /// Reads font and scale factor from the terminal view and configures the renderer.
-    private func configureFont() {
-        guard let view = terminalView else { return }
+    @discardableResult
+    private func configureFont(force: Bool = false) -> Bool {
+        guard let view = terminalView else { return false }
         let font = view.font
         let scaleFactor = view.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+        let signature = FontConfigurationSignature(
+            fontName: font.fontName,
+            pointSize: font.pointSize,
+            scaleFactor: scaleFactor
+        )
+
+        if !force, fontConfigured, signature == lastFontConfigurationSignature {
+            return false
+        }
 
         renderer.setFont(
             nsFont: font,
@@ -161,6 +178,8 @@ final class RustMetalDisplayCoordinator: NSObject {
         }
 
         fontConfigured = true
+        lastFontConfigurationSignature = signature
+        return true
     }
 
     // MARK: - Lifecycle
@@ -327,7 +346,7 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// Doing resize() here would use stale bounds (layout hasn't run yet) and cause a
     /// double-resize with potentially divergent row/col counts.
     func fontChanged() {
-        configureFont()
+        configureFont(force: true)
         tripleBuffer.markFullRefresh()
         needsSync = true
         needsPresent = true
