@@ -8,22 +8,6 @@ private let overlayPanelBackground = Color(red: 0.10, green: 0.10, blue: 0.10)
 private let overlayRowBackground = Color(red: 0.16, green: 0.16, blue: 0.16)
 private let overlayChipBackground = Color(red: 0.22, green: 0.22, blue: 0.22)
 
-// MARK: - Toolbar Background
-
-private struct ToolbarBackgroundView: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .hudWindow
-        view.blendingMode = .withinWindow
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.state = .active
-    }
-}
-
 // MARK: - Overlay Layout Constants
 
 enum OverlayLayout {
@@ -149,13 +133,11 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         newToolbar.displayMode = .iconOnly
         newToolbar.sizeMode = .small
         newToolbar.delegate = self
-        window.toolbar = newToolbar
         if #available(macOS 11.0, *) {
             window.toolbarStyle = .unifiedCompact
             window.titlebarSeparatorStyle = .none
         }
-        TitlebarBackgroundInstaller.install(for: window)
-
+        window.toolbar = newToolbar
         Log.info("TabBarToolbarDelegate: toolbar recreated for \(toolbarID)")
         DispatchQueue.main.async { [weak self] in
             self?.updateToolbarItemSizing(for: window)
@@ -1087,7 +1069,6 @@ private struct ToolbarTabBarView: View {
         .frame(minWidth: 180)
         .localizedLayout()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .background(ToolbarBackgroundView())
         // Report actual rendered size for visibility-based recovery
         .background(
             GeometryReader { geo in

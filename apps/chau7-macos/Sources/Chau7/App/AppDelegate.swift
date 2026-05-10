@@ -2143,7 +2143,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Keep the toolbar visible during fullscreen to avoid slide-down layout shifts.
         logOverlayWindowLifecycle(reason: "willEnterFullScreen", window: window)
         window.toolbar?.isVisible = true
-        TitlebarBackgroundInstaller.install(for: window)
     }
 
     func windowDidEnterFullScreen(_ notification: Notification) {
@@ -2152,7 +2151,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         logOverlayWindowLifecycle(reason: "didEnterFullScreen", window: window)
         window.toolbar?.isVisible = true
         TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
-        TitlebarBackgroundInstaller.install(for: window)
 
         // macOS moves the toolbar into an NSToolbarFullScreenWindow during fullscreen.
         // The NSHostingView's CALayer can become stale after this re-parenting, leaving
@@ -2178,7 +2176,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         logOverlayWindowLifecycle(reason: "didExitFullScreen", window: window)
         window.toolbar?.isVisible = true
         TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
-        TitlebarBackgroundInstaller.install(for: window)
 
         // Same compositing + relayout fix as didEnterFullScreen. The exit
         // direction has the same propagation gap: contentLayoutRect changes
@@ -2269,12 +2266,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         toolbar.displayMode = .iconOnly
         toolbar.sizeMode = .small
         toolbar.delegate = TabBarToolbarDelegate.shared
-        window.toolbar = toolbar
         if #available(macOS 11.0, *) {
             window.toolbarStyle = .unifiedCompact
             window.titlebarSeparatorStyle = .none
         }
-        TitlebarBackgroundInstaller.install(for: window)
+        window.toolbar = toolbar
 
         window.isOpaque = false
         window.backgroundColor = FeatureSettings.shared.currentColorScheme.nsColor(
