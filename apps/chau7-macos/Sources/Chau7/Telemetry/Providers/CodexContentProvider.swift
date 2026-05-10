@@ -79,7 +79,15 @@ final class CodexContentProvider: RunContentProvider {
 
     // MARK: - SQLite Fallback
 
-    private func extractFromSQLite(runID: String, sessionID: String, startedAt: Date, endedAt: Date?) -> ExtractedRunContent? {
+    /// Open `~/.codex/state_5.sqlite` read-only, prepare `sql`, bind
+    /// `sessionID` as the single parameter, and pass the row-positioned
+    /// statement to `body`. Returns nil if the database is missing, the
+    /// statement fails to prepare, or no row matches. Both
+    /// `extractFromSQLite` and `lookupRolloutPathInSQLite` route through
+    /// here to share the open/prepare/bind/step ladder.
+    private func queryCodexThreads<T>(
+        sql: String, sessionID: String, body: (OpaquePointer?) -> T?
+    ) -> T? {
         let dbPath = RuntimeIsolation.pathInHome(".codex/state_5.sqlite")
         guard FileManager.default.fileExists(atPath: dbPath) else { return nil }
 
@@ -87,13 +95,20 @@ final class CodexContentProvider: RunContentProvider {
         guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_close(db) }
 
-        let sql = "SELECT * FROM threads WHERE id = ? LIMIT 1"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_finalize(stmt) }
 
         sqlite3_bind_text(stmt, 1, (sessionID as NSString).utf8String, -1, nil)
         guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        return body(stmt)
+    }
+
+    private func extractFromSQLite(runID: String, sessionID: String, startedAt: Date, endedAt: Date?) -> ExtractedRunContent? {
+        queryCodexThreads(
+            sql: "SELECT * FROM threads WHERE id = ? LIMIT 1",
+            sessionID: sessionID
+        ) { stmt -> ExtractedRunContent? in
 
         // Extract all needed data while stmt is valid
         let tokensIdx = colIndex(stmt, "tokens_used")
@@ -138,6 +153,7 @@ final class CodexContentProvider: RunContentProvider {
             costState: estimatedCost != nil ? .estimated : .missing,
             rawTranscriptRef: rolloutPath
         )
+        }
     }
 
     // MARK: - File Resolution
@@ -213,24 +229,13 @@ final class CodexContentProvider: RunContentProvider {
     }
 
     private func lookupRolloutPathInSQLite(sessionID: String) -> String? {
-        let dbPath = RuntimeIsolation.pathInHome(".codex/state_5.sqlite")
-        guard FileManager.default.fileExists(atPath: dbPath) else { return nil }
-
-        var db: OpaquePointer?
-        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return nil }
-        defer { sqlite3_close(db) }
-
-        let sql = "SELECT rollout_path FROM threads WHERE id = ? LIMIT 1"
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-        defer { sqlite3_finalize(stmt) }
-
-        sqlite3_bind_text(stmt, 1, (sessionID as NSString).utf8String, -1, nil)
-        guard sqlite3_step(stmt) == SQLITE_ROW,
-              let ptr = sqlite3_column_text(stmt, 0) else {
-            return nil
+        queryCodexThreads(
+            sql: "SELECT rollout_path FROM threads WHERE id = ? LIMIT 1",
+            sessionID: sessionID
+        ) { stmt -> String? in
+            guard let ptr = sqlite3_column_text(stmt, 0) else { return nil }
+            return String(cString: ptr)
         }
-        return String(cString: ptr)
     }
 
     private func buildRolloutFileIndex(root: URL) -> [String: URL] {
