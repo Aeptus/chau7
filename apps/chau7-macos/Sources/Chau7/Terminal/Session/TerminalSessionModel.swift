@@ -1044,6 +1044,7 @@ final class TerminalSessionModel {
     @ObservationIgnored private var closeSessionRequested = false
     @ObservationIgnored private var closeSessionRequestedAt: Date?
     @ObservationIgnored private var sigintSentAt: Date?
+    @ObservationIgnored private var secondSigintSentAt: Date?
     @ObservationIgnored private var sigtermSentAt: Date?
     @ObservationIgnored private var forcedTerminationWorkItem: DispatchWorkItem?
     @ObservationIgnored var lastBestEffortOutputSheddingLogAt: Date?
@@ -1760,6 +1761,7 @@ final class TerminalSessionModel {
             closeSessionRequested = true
             closeSessionRequestedAt = Date()
             sigintSentAt = nil
+            secondSigintSentAt = nil
             sigtermSentAt = nil
         }
 
@@ -1787,6 +1789,7 @@ final class TerminalSessionModel {
             closeSessionRequestedAt = Date()
             didHandleProcessTermination = true
             sigintSentAt = nil
+            secondSigintSentAt = nil
             sigtermSentAt = nil
         }
 
@@ -1911,14 +1914,44 @@ final class TerminalSessionModel {
         Log.warn("Force-terminating shell process group for session '\(title)' (pid=\(currentPID))")
         sendTerminationSignal(SIGINT, toShellPID: currentPID)
 
-        // Stage 2: SIGTERM after 2s — standard termination request
+        // Stage 1b (AI sessions only): re-send SIGINT after 0.6s. Modern AI
+        // TUIs (Codex, Claude Code) implement a "Press Ctrl+C again to exit"
+        // confirmation — one signal puts them in the quit prompt, the second
+        // actually exits them. Without this, codex never quits on a single
+        // SIGINT and the SIGTERM at t=2s bypasses its WebSocket / PTY-child
+        // cleanup, forcing the SIGKILL stage to run. Plain shells exit on
+        // the first SIGINT, so don't bother for them.
         let isAISession = activeAppName != nil
+        if isAISession {
+            let secondSigint = DispatchWorkItem { [weak self] in
+                self?.repeatSIGINTForAITUIIfNeeded(expectedPID: expectedPID)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: secondSigint)
+        }
+
+        // Stage 2: SIGTERM after 2s — standard termination request
         let sigtermDelay: TimeInterval = isAISession ? 2.0 : 0.5
         let sigterm = DispatchWorkItem { [weak self] in
             self?.escalateToSIGTERM(expectedPID: expectedPID)
         }
         forcedTerminationWorkItem = sigterm
         DispatchQueue.main.asyncAfter(deadline: .now() + sigtermDelay, execute: sigterm)
+    }
+
+    private func repeatSIGINTForAITUIIfNeeded(expectedPID: pid_t) {
+        var shouldForce = false
+        terminationStateQueue.sync {
+            shouldForce = closeSessionRequested && !didHandleProcessTermination
+        }
+        guard shouldForce else { return }
+
+        let currentPID = existingRustTerminalView?.shellPid ?? 0
+        guard currentPID == expectedPID, currentPID > 0 else { return }
+
+        terminationStateQueue.sync {
+            secondSigintSentAt = Date()
+        }
+        sendTerminationSignal(SIGINT, toShellPID: currentPID)
     }
 
     private func escalateToSIGTERM(expectedPID: pid_t) {
@@ -1979,12 +2012,14 @@ final class TerminalSessionModel {
             (
                 closeRequestedAt: closeSessionRequestedAt,
                 sigintSentAt: sigintSentAt,
+                secondSigintSentAt: secondSigintSentAt,
                 sigtermSentAt: sigtermSentAt
             )
         }
 
         let closeMs = timing.closeRequestedAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
         let sigintMs = timing.sigintSentAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
+        let secondSigintMs = timing.secondSigintSentAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
         let sigtermMs = timing.sigtermSentAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
         let descendants = preCapturedDescendants ?? captureDescendantPIDs(of: shellPID)
         let processTree = formatProcessTreeSummary(shellPID: shellPID, descendants: descendants)
@@ -1994,7 +2029,8 @@ final class TerminalSessionModel {
         ].joined(separator: ",")
 
         return "diagnostics={stage=\(stage) title='\(title)' pid=\(shellPID) " +
-            "close_requested_ms=\(closeMs) sigint_ms=\(sigintMs) sigterm_ms=\(sigtermMs) " +
+            "close_requested_ms=\(closeMs) sigint_ms=\(sigintMs) " +
+            "second_sigint_ms=\(secondSigintMs) sigterm_ms=\(sigtermMs) " +
             "pty={\(ptyState)} process_tree=\(processTree)}"
     }
 
