@@ -232,8 +232,15 @@ final class RenderPipelineProfiler {
     func snapshot() -> Snapshot {
         lock.lock()
         defer { lock.unlock() }
-        return Snapshot(
-            asOf: Date(),
+        return buildSnapshot(asOf: Date())
+    }
+
+    /// Build a `Snapshot` from the current `totals` / `liveViews`. Caller
+    /// must hold `lock`. Used by both `snapshot()` and the deferred-flush
+    /// path in `recordMutation`.
+    private func buildSnapshot(asOf date: Date) -> Snapshot {
+        Snapshot(
+            asOf: date,
             activeLiveViewIDs: liveViews.compactMap { viewID, state in
                 state.isActive ? viewID : nil
             }.sorted(),
@@ -274,31 +281,7 @@ final class RenderPipelineProfiler {
         lock.lock()
         mutation(now)
         if now.timeIntervalSince(lastFlushAt) >= flushInterval {
-            snapshot = Snapshot(
-                asOf: now,
-                activeLiveViewIDs: liveViews.compactMap { viewID, state in
-                    state.isActive ? viewID : nil
-                }.sorted(),
-                liveViews: liveViewSnapshots(),
-                livePollCount: totals.livePollCount,
-                changedPollCount: totals.changedPollCount,
-                drawCount: totals.drawCount,
-                syncCallCount: totals.syncCallCount,
-                syncBytes: totals.syncBytes,
-                mismatchedSyncCount: totals.mismatchedSyncCount,
-                commitCount: totals.commitCount,
-                commitBytes: totals.commitBytes,
-                fullRefreshCommits: totals.fullRefreshCommits,
-                maxDirtyRows: totals.maxDirtyRows,
-                maxDirtyCells: totals.maxDirtyCells,
-                maxFrameCells: totals.maxFrameCells,
-                maxInstanceBufferBytes: totals.maxInstanceBufferBytes,
-                saturatedInstanceFrames: totals.saturatedInstanceFrames,
-                glyphLookups: totals.glyphLookups,
-                glyphMisses: totals.glyphMisses,
-                maxGlyphCacheSize: totals.maxGlyphCacheSize,
-                maxLigatureCacheSize: totals.maxLigatureCacheSize
-            )
+            snapshot = buildSnapshot(asOf: now)
             totals = Totals()
             liveViews = liveViews.reduce(into: [:]) { result, entry in
                 let (viewID, state) = entry
