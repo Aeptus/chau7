@@ -80,11 +80,13 @@ final class OptimalMetalView: MTKView {
     private func configureForLowLatency() {
         guard let metalLayer = layer as? CAMetalLayer else { return }
 
-        // Use the Metal device
-        if let device = MTLCreateSystemDefaultDevice() {
-            self.device = device
-            metalLayer.device = device
+        // Keep the device passed to `init(frame:device:)` so the view's
+        // CAMetalLayer matches the renderer command queue. Coder-based init
+        // has no explicit device, so fall back only there.
+        if device == nil {
+            device = MTLCreateSystemDefaultDevice()
         }
+        metalLayer.device = device
 
         // === Critical Latency Settings ===
 
