@@ -334,16 +334,8 @@ public enum ProviderLatencyAnalytics {
         by bucketKind: ProviderLatencyBucketKind,
         calendar: Calendar = .current
     ) -> [ProviderLatencyBucketPoint] {
-        let grouped = Dictionary(grouping: samples) { sample in
-            bucketKey(for: sample.timestamp, bucketKind: bucketKind, calendar: calendar)
-        }
-
-        let metadata = grouped.keys.compactMap { key -> (String, String, Int)? in
-            bucketMetadata(for: key, bucketKind: bucketKind, calendar: calendar)
-        }
-
-        return metadata.sorted { $0.2 < $1.2 }.compactMap { key, label, _ in
-            guard let group = grouped[key], let aggregate = aggregate(samples: group) else { return nil }
+        bucketSamples(samples, by: bucketKind, calendar: calendar, timestamp: \.timestamp) { key, label, group in
+            guard let aggregate = aggregate(samples: group) else { return nil }
             return ProviderLatencyBucketPoint(id: key, label: label, aggregate: aggregate)
         }
     }
@@ -353,8 +345,24 @@ public enum ProviderLatencyAnalytics {
         by bucketKind: ProviderLatencyBucketKind,
         calendar: Calendar = .current
     ) -> [ProviderActivityBucketPoint] {
+        bucketSamples(samples, by: bucketKind, calendar: calendar, timestamp: \.timestamp) { key, label, group in
+            ProviderActivityBucketPoint(id: key, label: label, count: group.count)
+        }
+    }
+
+    /// Group `samples` by `bucketKey(for:timestamp:)`, sort by the
+    /// `bucketMetadata` ordering value, and call `pointFromGroup` for
+    /// each non-empty bucket. The two public bucket methods share this
+    /// shape; only the per-group point construction differs.
+    private static func bucketSamples<Sample, Point>(
+        _ samples: [Sample],
+        by bucketKind: ProviderLatencyBucketKind,
+        calendar: Calendar,
+        timestamp: (Sample) -> Date,
+        pointFromGroup: (_ key: String, _ label: String, _ group: [Sample]) -> Point?
+    ) -> [Point] {
         let grouped = Dictionary(grouping: samples) { sample in
-            bucketKey(for: sample.timestamp, bucketKind: bucketKind, calendar: calendar)
+            bucketKey(for: timestamp(sample), bucketKind: bucketKind, calendar: calendar)
         }
 
         let metadata = grouped.keys.compactMap { key -> (String, String, Int)? in
@@ -362,8 +370,8 @@ public enum ProviderLatencyAnalytics {
         }
 
         return metadata.sorted { $0.2 < $1.2 }.compactMap { key, label, _ in
-            guard let count = grouped[key]?.count else { return nil }
-            return ProviderActivityBucketPoint(id: key, label: label, count: count)
+            guard let group = grouped[key] else { return nil }
+            return pointFromGroup(key, label, group)
         }
     }
 
