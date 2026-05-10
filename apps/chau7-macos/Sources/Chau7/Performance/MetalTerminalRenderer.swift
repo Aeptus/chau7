@@ -110,7 +110,7 @@ final class MetalTerminalRenderer: NSObject {
     private var instanceBuffer: MTLBuffer!
     private var uniformBuffer: MTLBuffer!
     private var vertexBuffer: MTLBuffer!
-    private let maxCells = 50000
+    private var instanceCapacity = 50000
 
     // MARK: - Glyph Atlas (Dynamic)
 
@@ -268,7 +268,7 @@ final class MetalTerminalRenderer: NSObject {
     }
 
     private func setupBuffers() throws {
-        let instanceSize = MemoryLayout<CellInstance>.stride * maxCells
+        let instanceSize = MemoryLayout<CellInstance>.stride * instanceCapacity
         guard let instBuffer = device.makeBuffer(length: instanceSize, options: .storageModeShared) else {
             throw MetalError.bufferAllocationFailed
         }
@@ -798,7 +798,9 @@ final class MetalTerminalRenderer: NSObject {
         let renderStartedAt = CFAbsoluteTimeGetCurrent()
         guard let commandBuffer = commandQueue.makeCommandBuffer() else { return false }
 
-        let cellCount = min(cells.count, maxCells)
+        let requestedCellCount = min(cells.count, max(0, rows * cols))
+        let grewInstanceBuffer = growInstanceBufferIfNeeded(for: requestedCellCount)
+        let cellCount = min(requestedCellCount, instanceCapacity)
 
         // Update instance buffer (may trigger on-demand glyph rasterization).
         // If glyph rasterization resets the atlas mid-update, previously written
@@ -806,7 +808,7 @@ final class MetalTerminalRenderer: NSObject {
         // are produced against one atlas generation.
         let instanceStartedAt = CFAbsoluteTimeGetCurrent()
         var updateDirtyRows = dirtyRows
-        var updateFullRefresh = fullRefresh
+        var updateFullRefresh = fullRefresh || grewInstanceBuffer
         let maxAtlasRetryCount = 3
         for attempt in 0 ..< maxAtlasRetryCount {
             let generationBeforeUpdate = atlasGeneration
@@ -1035,12 +1037,34 @@ final class MetalTerminalRenderer: NSObject {
         RenderPipelineProfiler.shared.recordInstanceBuffer(
             cells: updatedCellCount,
             bufferBytes: updatedCellCount * MemoryLayout<CellInstance>.stride,
-            saturated: cells.count > maxCells,
+            saturated: count == instanceCapacity && cells.count > count,
             glyphLookups: frameGlyphLookups,
             glyphMisses: frameGlyphMisses,
             glyphCacheSize: glyphCache.count,
             ligatureCacheSize: ligatureCache.count
         )
+    }
+
+    @discardableResult
+    private func growInstanceBufferIfNeeded(for requiredCells: Int) -> Bool {
+        guard requiredCells > instanceCapacity else { return false }
+
+        let newCapacity = max(requiredCells, instanceCapacity * 2)
+        let newSize = MemoryLayout<CellInstance>.stride * newCapacity
+        guard let newBuffer = device.makeBuffer(length: newSize, options: .storageModeShared) else {
+            Log.error(
+                "MetalRenderer: Failed to grow instance buffer to \(newCapacity) cells; rendering capped at \(instanceCapacity)"
+            )
+            return false
+        }
+
+        instanceBuffer = newBuffer
+        instanceCapacity = newCapacity
+        rowHasBlinkingCells.removeAll(keepingCapacity: false)
+        blinkingRowCount = 0
+        lastCursorRenderState = nil
+        Log.info("MetalRenderer: Grew instance buffer to \(newCapacity) cells")
+        return true
     }
 
     private func currentCursorRenderState(count: Int, cols: Int) -> CursorRenderState? {
