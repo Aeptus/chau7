@@ -132,6 +132,8 @@ final class MetalTerminalRenderer: NSObject {
 
     /// Whether the atlas texture needs re-upload after new glyphs were rasterized
     private var atlasDirty = false
+    /// Incremented whenever atlas coordinates are invalidated.
+    private var atlasGeneration: UInt64 = 0
 
     /// Cache miss count for profiling
     private(set) var glyphCacheMisses = 0
@@ -384,6 +386,7 @@ final class MetalTerminalRenderer: NSObject {
 
     /// Clears glyph atlas and cache, resetting the packing cursor.
     private func resetAtlas() {
+        atlasGeneration &+= 1
         glyphCache.removeAll()
         ligatureCache.removeAll()
         ligatureCacheInsertionOrder.removeAll(keepingCapacity: false)
@@ -795,16 +798,34 @@ final class MetalTerminalRenderer: NSObject {
 
         let cellCount = min(cells.count, maxCells)
 
-        // Update instance buffer (may trigger on-demand glyph rasterization)
+        // Update instance buffer (may trigger on-demand glyph rasterization).
+        // If glyph rasterization resets the atlas mid-update, previously written
+        // UVs point into the old atlas. Retry as a full refresh until all UVs
+        // are produced against one atlas generation.
         let instanceStartedAt = CFAbsoluteTimeGetCurrent()
-        updateInstanceBuffer(
-            cells: cells,
-            count: cellCount,
-            rows: rows,
-            cols: cols,
-            dirtyRows: dirtyRows,
-            fullRefresh: fullRefresh
-        )
+        var updateDirtyRows = dirtyRows
+        var updateFullRefresh = fullRefresh
+        let maxAtlasRetryCount = 3
+        for attempt in 0 ..< maxAtlasRetryCount {
+            let generationBeforeUpdate = atlasGeneration
+            updateInstanceBuffer(
+                cells: cells,
+                count: cellCount,
+                rows: rows,
+                cols: cols,
+                dirtyRows: updateDirtyRows,
+                fullRefresh: updateFullRefresh
+            )
+            guard atlasGeneration != generationBeforeUpdate else { break }
+
+            updateDirtyRows = IndexSet(integersIn: 0 ..< rows)
+            updateFullRefresh = true
+            if attempt == maxAtlasRetryCount - 1 {
+                Log.error("MetalRenderer: Atlas reset repeatedly during one frame; presenting best-effort full refresh")
+            } else {
+                Log.warn("MetalRenderer: Atlas reset during instance update; retrying full refresh")
+            }
+        }
         let instanceDurationMs = (CFAbsoluteTimeGetCurrent() - instanceStartedAt) * 1000.0
         FeatureProfiler.shared.record(feature: .metalInstanceBuffer, durationMs: instanceDurationMs)
 

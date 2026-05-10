@@ -508,7 +508,9 @@ final class RustMetalDisplayCoordinator: NSObject {
         if prior == .empty {
             Log.info("RustMetalDisplayCoordinator: atlas reclaimed by OS — rebuilding on next draw")
             renderer.clearGlyphCache()
+            tripleBuffer.markFullRefresh()
             needsSync = true
+            needsPresent = true
             scheduleDisplay()
         }
     }
