@@ -2267,6 +2267,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         let toolbar = NSToolbar(identifier: toolbarIdentifier)
         toolbar.displayMode = .iconOnly
+        toolbar.sizeMode = .small
         toolbar.delegate = TabBarToolbarDelegate.shared
         window.toolbar = toolbar
         if #available(macOS 11.0, *) {

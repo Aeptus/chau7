@@ -165,6 +165,7 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         // 2. Create a fresh toolbar - macOS will call our delegate to make a new NSHostingView
         let newToolbar = NSToolbar(identifier: toolbarID)
         newToolbar.displayMode = .iconOnly
+        newToolbar.sizeMode = .small
         newToolbar.delegate = self
         window.toolbar = newToolbar
         if #available(macOS 11.0, *) {
