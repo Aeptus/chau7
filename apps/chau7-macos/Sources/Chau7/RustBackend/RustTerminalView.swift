@@ -2798,10 +2798,11 @@ final class RustTerminalView: NSView {
             return CGRect(x: insetRect.minX, y: insetRect.minY, width: width, height: 0)
         }
 
-        // Keep leftover pixels above the visible grid instead of under the
-        // prompt row, where they read like a clipped or ghost glyph.
+        // Keep the first visible row pinned directly under the chrome. Any
+        // sub-cell remainder belongs below the final row, not as a blank band
+        // between the toolbar and terminal content.
         let visibleHeight = min(height, CGFloat(rows) * cellHeight)
-        return CGRect(x: insetRect.minX, y: insetRect.minY, width: width, height: visibleHeight)
+        return CGRect(x: insetRect.minX, y: insetRect.maxY - visibleHeight, width: width, height: visibleHeight)
     }
 
     var renderSurfaceFrame: CGRect {
@@ -3268,11 +3269,9 @@ final class RustTerminalView: NSView {
     func pointToCell(_ point: NSPoint) -> (col: Int32, row: Int32) {
         // Convert in the renderer's coordinate system, not raw bounds:
         // the Metal renderer draws the grid inside `renderSurfaceFrame`,
-        // which is `bounds` reduced by `terminalInset` on every side AND
-        // with leftover sub-cell pixels parked above the grid. Computing
-        // rows against `bounds.height` skips that top padding and snaps to
-        // the row *below* the click — visible as selection landing one row
-        // off from the cursor.
+        // which is `bounds` reduced by `terminalInset` on every side and
+        // clipped to whole rows. Computing rows against raw `bounds.height`
+        // skips the surface origin and snaps to the wrong row near edges.
         let surface = renderSurfaceFrame
         let surfaceLeftX = surface.minX
         let surfaceTopY = surface.maxY
