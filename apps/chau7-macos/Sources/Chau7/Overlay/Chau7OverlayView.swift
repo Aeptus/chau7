@@ -207,18 +207,13 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         let height: CGFloat
         if let window = model?.overlayWindow {
             maxWidth = max(window.contentLayoutRect.width, minWidth)
-            // In window mode, the toolbar replaces the titlebar visually, so we
-            // grow the bar to match the native titlebar height (~28pt) so the
-            // tabs sit aligned with the traffic-light buttons. In fullscreen
-            // there is no titlebar — `frame.height - contentLayoutRect.height`
-            // becomes the menu-bar / display-cutout safe-area inset (up to
-            // ~60pt on a notch MacBook), which would visibly double the
-            // tabbar's height. Clamp to `tabBarHeight` in fullscreen.
             if window.styleMask.contains(.fullScreen) {
                 height = OverlayLayout.tabBarHeight
             } else {
-                let titlebarHeight = window.frame.height - window.contentLayoutRect.height
-                height = max(OverlayLayout.tabBarHeight, titlebarHeight)
+                let chromeHeight = window.frame.height - window.contentLayoutRect.height
+                height = chromeHeight.isFinite && chromeHeight > 0
+                    ? max(OverlayLayout.tabBarHeight, chromeHeight)
+                    : OverlayLayout.tabBarHeight
             }
         } else {
             maxWidth = max(800, minWidth)
@@ -251,6 +246,10 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
             minConstraint.constant = minWidth
             maxConstraint.constant = maxWidth
             heightConstraint.constant = height
+            logAndScheduleSizingDiagnostic(
+                window: model?.overlayWindow, view: view,
+                minWidth: minWidth, maxWidth: maxWidth, height: height
+            )
             return
         }
 
@@ -261,6 +260,77 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         view.maxWidthConstraint = maxConstraint
         view.heightConstraint = heightConstraint
         NSLayoutConstraint.activate([minConstraint, maxConstraint, heightConstraint])
+
+        logAndScheduleSizingDiagnostic(
+            window: model?.overlayWindow, view: view,
+            minWidth: minWidth, maxWidth: maxWidth, height: height
+        )
+    }
+
+    private func logAndScheduleSizingDiagnostic(
+        window: NSWindow?, view: TabBarHostingView,
+        minWidth: CGFloat, maxWidth: CGFloat, height: CGFloat
+    ) {
+        logSizingDiagnostic(
+            window: window, view: view,
+            minWidth: minWidth, maxWidth: maxWidth, height: height,
+            phase: "sync"
+        )
+        // Re-sample after AppKit has had a chance to lay out the toolbar.
+        // The synchronous log above captures the pre-layout state (viewFrame
+        // is whatever AppKit had before our constraint changes settled);
+        // this delayed sample shows what the hosting view actually became.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak view, weak window] in
+            guard let view else { return }
+            self.logSizingDiagnostic(
+                window: window, view: view,
+                minWidth: minWidth, maxWidth: maxWidth, height: height,
+                phase: "settled"
+            )
+        }
+    }
+
+    /// Diagnostic: dumps every input AppKit could be using to size the toolbar
+    /// item view (style-mask bits, window frame, contentLayoutRect, the
+    /// hosting view's pre-layout frame and intrinsicContentSize). Fired from
+    /// every applySizing pass so we can correlate fullscreen-entry / tab-switch
+    /// timing against the doubled-bar symptom and distinguish native toolbar
+    /// chrome from terminal render-surface gaps.
+    private func logSizingDiagnostic(
+        window: NSWindow?, view: TabBarHostingView,
+        minWidth: CGFloat, maxWidth: CGFloat, height: CGFloat,
+        phase: String
+    ) {
+        let styleRaw = window?.styleMask.rawValue ?? 0
+        let isFullScreen = window?.styleMask.contains(.fullScreen) == true
+        let frame = window?.frame ?? .zero
+        let content = window?.contentLayoutRect ?? .zero
+        let contentViewBounds = window?.contentView?.bounds ?? .zero
+        let viewFrame = view.frame
+        let superviewFrame = view.superview?.frame ?? .zero
+        let hostTopPadding = viewFrame.minY - superviewFrame.minY
+        let hostBottomPadding = superviewFrame.maxY - viewFrame.maxY
+        let toolbar = window?.toolbar
+        let toolbarSizeMode = toolbar.map { String(describing: $0.sizeMode) } ?? "nil"
+        let toolbarDisplayMode = toolbar.map { String(describing: $0.displayMode) } ?? "nil"
+        let toolbarVisible = toolbar?.isVisible == true
+        let intrinsic = view.intrinsicContentSize
+        let fitting = view.fittingSize
+        Log.info(
+            "TabBarToolbarDelegate.applySizing[\(phase)]: " +
+                "isFullScreen=\(isFullScreen) styleMask=0x\(String(styleRaw, radix: 16)) " +
+                "winFrame=(x:\(Int(frame.origin.x)) y:\(Int(frame.origin.y)) \(Int(frame.width))x\(Int(frame.height))) " +
+                "content=(x:\(Int(content.origin.x)) y:\(Int(content.origin.y)) \(Int(content.width))x\(Int(content.height))) " +
+                "contentViewBounds=(x:\(Int(contentViewBounds.origin.x)) y:\(Int(contentViewBounds.origin.y)) \(Int(contentViewBounds.width))x\(Int(contentViewBounds.height))) " +
+                "applied minWxH=(\(Int(minWidth))x\(Int(height))) maxWxH=(\(Int(maxWidth))x\(Int(height))) " +
+                "viewFrame=(x:\(Int(viewFrame.origin.x)) y:\(Int(viewFrame.origin.y)) \(Int(viewFrame.width))x\(Int(viewFrame.height))) " +
+                "superviewFrame=(x:\(Int(superviewFrame.origin.x)) y:\(Int(superviewFrame.origin.y)) \(Int(superviewFrame.width))x\(Int(superviewFrame.height))) " +
+                "hostPadding=(top:\(Int(hostTopPadding)) bottom:\(Int(hostBottomPadding))) " +
+                "tabMetrics=(rowH:\(Int(OverlayLayout.tabBarHeight)) chipH:\(Int(OverlayLayout.tabChipHeight)) innerTopBottom:\(Int((OverlayLayout.tabBarHeight - OverlayLayout.tabChipHeight) / 2))) " +
+                "toolbar=(visible:\(toolbarVisible) sizeMode:\(toolbarSizeMode) displayMode:\(toolbarDisplayMode)) " +
+                "intrinsic=(\(Int(intrinsic.width))x\(Int(intrinsic.height))) " +
+                "fitting=(\(Int(fitting.width))x\(Int(fitting.height)))"
+        )
     }
 }
 
