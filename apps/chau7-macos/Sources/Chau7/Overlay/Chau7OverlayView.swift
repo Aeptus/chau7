@@ -44,6 +44,8 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
     private static let tabBarItemIdentifier = NSToolbarItem.Identifier("TabBarItem")
     private var tabsModels: [NSToolbar.Identifier: OverlayTabsModel] = [:]
     private var toolbarItems: [NSToolbar.Identifier: NSToolbarItem] = [:]
+    private var lastSizingDiagnosticLogAtByPhase: [String: CFAbsoluteTime] = [:]
+    private var lastSizingDiagnosticScheduleAt: CFAbsoluteTime = 0
 
     /// Cached hosting views to prevent recreation on toolbar reload.
     /// This is critical for stability - macOS may request toolbar items multiple times.
@@ -240,6 +242,9 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
             minWidth: minWidth, maxWidth: maxWidth, height: height,
             phase: "sync"
         )
+        let now = CFAbsoluteTimeGetCurrent()
+        guard now - lastSizingDiagnosticScheduleAt >= 0.5 else { return }
+        lastSizingDiagnosticScheduleAt = now
         // Re-sample after AppKit has had a chance to lay out the toolbar.
         // The synchronous log above captures the pre-layout state (viewFrame
         // is whatever AppKit had before our constraint changes settled);
@@ -280,6 +285,9 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         let toolbarVisible = toolbar?.isVisible == true
         let intrinsic = view.intrinsicContentSize
         let fitting = view.fittingSize
+        let now = CFAbsoluteTimeGetCurrent()
+        guard now - (lastSizingDiagnosticLogAtByPhase[phase] ?? 0) >= 0.5 else { return }
+        lastSizingDiagnosticLogAtByPhase[phase] = now
         Log.info(
             "TabBarToolbarDelegate.applySizing[\(phase)]: " +
                 "isFullScreen=\(isFullScreen) styleMask=0x\(String(styleRaw, radix: 16)) " +
