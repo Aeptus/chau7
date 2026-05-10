@@ -639,48 +639,24 @@ final class CTOManager {
 
     /// Fetches token savings with daily breakdown from `chau7-optim gain --daily --format json`.
     func fetchDailyGainStats() async -> DailyGainResponse? {
-        guard isOptimizerInstalled else { return nil }
-
-        let optimPath = optimizerPath
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
-                let process = Process()
-                process.executableURL = optimPath
-                process.arguments = ["gain", "--daily", "--format", "json"]
-
-                let pipe = Pipe()
-                process.standardOutput = pipe
-                process.standardError = FileHandle.nullDevice
-
-                do {
-                    try process.run()
-                } catch {
-                    Log.error("CTOManager: failed to run chau7-optim gain: \(error)")
-                    continuation.resume(returning: nil)
-                    return
-                }
-
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-
-                guard process.terminationStatus == 0, !data.isEmpty else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-
-                do {
-                    let response = try JSONDecoder().decode(DailyGainResponse.self, from: data)
-                    continuation.resume(returning: response)
-                } catch {
-                    Log.error("CTOManager: failed to decode chau7-optim gain output: \(error)")
-                    continuation.resume(returning: nil)
-                }
-            }
-        }
+        await runOptimGain(arguments: ["gain", "--daily", "--format", "json"], context: "gain")
     }
 
     /// Fetches token savings for a specific CTO session (tab) via `chau7-optim gain --session-id`.
     func fetchGainStatsForSession(_ sessionID: String) async -> CTOGainStats? {
+        let response: DailyGainResponse? = await runOptimGain(
+            arguments: ["gain", "--session-id", sessionID, "--format", "json"],
+            context: "gain --session-id"
+        )
+        return response?.summary
+    }
+
+    /// Run `chau7-optim` with the given arguments, capture stdout, and decode
+    /// it as `T`. Returns nil when the optimizer isn't installed, the process
+    /// fails to launch, exits non-zero, returns empty stdout, or the JSON
+    /// fails to decode. Errors are logged with `context` so the source method
+    /// is identifiable in the log stream.
+    private func runOptimGain<T: Decodable>(arguments: [String], context: String) async -> T? {
         guard isOptimizerInstalled else { return nil }
 
         let optimPath = optimizerPath
@@ -688,7 +664,7 @@ final class CTOManager {
             DispatchQueue.global(qos: .utility).async {
                 let process = Process()
                 process.executableURL = optimPath
-                process.arguments = ["gain", "--session-id", sessionID, "--format", "json"]
+                process.arguments = arguments
 
                 let pipe = Pipe()
                 process.standardOutput = pipe
@@ -697,7 +673,7 @@ final class CTOManager {
                 do {
                     try process.run()
                 } catch {
-                    Log.error("CTOManager: failed to run chau7-optim gain --session-id: \(error)")
+                    Log.error("CTOManager: failed to run chau7-optim \(context): \(error)")
                     continuation.resume(returning: nil)
                     return
                 }
@@ -711,10 +687,10 @@ final class CTOManager {
                 }
 
                 do {
-                    let response = try JSONDecoder().decode(DailyGainResponse.self, from: data)
-                    continuation.resume(returning: response.summary)
+                    let response = try JSONDecoder().decode(T.self, from: data)
+                    continuation.resume(returning: response)
                 } catch {
-                    Log.error("CTOManager: failed to decode session gain output: \(error)")
+                    Log.error("CTOManager: failed to decode chau7-optim \(context) output: \(error)")
                     continuation.resume(returning: nil)
                 }
             }
