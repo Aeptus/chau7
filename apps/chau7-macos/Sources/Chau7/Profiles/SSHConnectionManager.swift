@@ -531,7 +531,7 @@ private struct ConnectionRow: View {
         HStack(spacing: 10) {
             Image(systemName: "server.rack")
                 .font(.system(size: 16))
-                .foregroundColor(colorForTag(connection.colorTag))
+                .foregroundColor(sshConnectionTagColor(connection.colorTag))
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -560,17 +560,20 @@ private struct ConnectionRow: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    private func colorForTag(_ tag: String) -> Color {
-        switch tag {
-        case "red": return .red
-        case "orange": return .orange
-        case "yellow": return .yellow
-        case "green": return .green
-        case "blue": return .blue
-        case "purple": return .purple
-        case "pink": return .pink
-        default: return .blue
-        }
+}
+
+/// Map a stored color tag to its SwiftUI `Color`. Falls back to blue for
+/// unknown tags so a renamed/removed tag doesn't render as transparent.
+private func sshConnectionTagColor(_ tag: String) -> Color {
+    switch tag {
+    case "red": return .red
+    case "orange": return .orange
+    case "yellow": return .yellow
+    case "green": return .green
+    case "blue": return .blue
+    case "purple": return .purple
+    case "pink": return .pink
+    default: return .blue
     }
 }
 
@@ -749,7 +752,7 @@ private struct ConnectionEditorView: View {
                         ForEach(colorOptions, id: \.self) { color in
                             HStack {
                                 Circle()
-                                    .fill(colorForTag(color))
+                                    .fill(sshConnectionTagColor(color))
                                     .frame(width: 12, height: 12)
                                 Text(localizedColorName(color))
                             }
@@ -781,19 +784,6 @@ private struct ConnectionEditorView: View {
             .padding()
         }
         .frame(width: 450, height: 500)
-    }
-
-    private func colorForTag(_ tag: String) -> Color {
-        switch tag {
-        case "red": return .red
-        case "orange": return .orange
-        case "yellow": return .yellow
-        case "green": return .green
-        case "blue": return .blue
-        case "purple": return .purple
-        case "pink": return .pink
-        default: return .blue
-        }
     }
 
     private func validationMessage(for issue: ShellEscaping.SSHValidationIssue?) -> String {
