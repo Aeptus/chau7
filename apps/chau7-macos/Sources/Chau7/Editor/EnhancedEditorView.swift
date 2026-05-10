@@ -242,26 +242,31 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
 
     // MARK: - Bracket Matching
 
-    private func highlightMatchingBracket(_ textView: NSTextView) {
-        let brackets: [Character: Character] = ["(": ")", "[": "]", "{": "}", "<": ">"]
-        let closingBrackets: [Character: Character] = [")": "(", "]": "[", "}": "{", ">": "<"]
+    private static let openBracketPairs: [Character: Character] = ["(": ")", "[": "]", "{": "}", "<": ">"]
+    private static let closeBracketPairs: [Character: Character] = [")": "(", "]": "[", "}": "{", ">": "<"]
 
+    private func highlightMatchingBracket(_ textView: NSTextView) {
+        if let matchPos = matchingBracketPosition(in: textView) {
+            textView.showFindIndicator(for: NSRange(location: matchPos, length: 1))
+        }
+    }
+
+    /// Resolve the matching-bracket position for the character under the
+    /// caret in `textView`, scanning forward for openers and backward for
+    /// closers. Returns nil if the caret isn't on a bracket character or
+    /// no balanced match exists.
+    private func matchingBracketPosition(in textView: NSTextView) -> Int? {
         let text = textView.string
         let pos = textView.selectedRange().location
-        guard pos < text.count else { return }
-
-        let index = text.index(text.startIndex, offsetBy: pos)
-        let char = text[index]
-
-        if let closing = brackets[char] {
-            if let matchPos = findMatchingBracketForward(in: text, from: pos, open: char, close: closing) {
-                textView.showFindIndicator(for: NSRange(location: matchPos, length: 1))
-            }
-        } else if let opening = closingBrackets[char] {
-            if let matchPos = findMatchingBracketBackward(in: text, from: pos, open: opening, close: char) {
-                textView.showFindIndicator(for: NSRange(location: matchPos, length: 1))
-            }
+        guard pos < text.count else { return nil }
+        let char = text[text.index(text.startIndex, offsetBy: pos)]
+        if let closing = Self.openBracketPairs[char] {
+            return findMatchingBracketForward(in: text, from: pos, open: char, close: closing)
         }
+        if let opening = Self.closeBracketPairs[char] {
+            return findMatchingBracketBackward(in: text, from: pos, open: opening, close: char)
+        }
+        return nil
     }
 
     /// Search forward from the given position to find the matching closing bracket.
@@ -290,26 +295,8 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
 
     /// Jump the cursor to the matching bracket at the current position.
     func jumpToMatchingBracket(_ textView: NSTextView) {
-        let brackets: [Character: Character] = ["(": ")", "[": "]", "{": "}", "<": ">"]
-        let closingBrackets: [Character: Character] = [")": "(", "]": "[", "}": "{", ">": "<"]
-
-        let text = textView.string
-        let pos = textView.selectedRange().location
-        guard pos < text.count else { return }
-
-        let index = text.index(text.startIndex, offsetBy: pos)
-        let char = text[index]
-
-        var matchPos: Int?
-        if let closing = brackets[char] {
-            matchPos = findMatchingBracketForward(in: text, from: pos, open: char, close: closing)
-        } else if let opening = closingBrackets[char] {
-            matchPos = findMatchingBracketBackward(in: text, from: pos, open: opening, close: char)
-        }
-
-        if let target = matchPos {
-            textView.setSelectedRange(NSRange(location: target, length: 0))
-            textView.scrollRangeToVisible(NSRange(location: target, length: 1))
-        }
+        guard let target = matchingBracketPosition(in: textView) else { return }
+        textView.setSelectedRange(NSRange(location: target, length: 0))
+        textView.scrollRangeToVisible(NSRange(location: target, length: 1))
     }
 }
