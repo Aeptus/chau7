@@ -324,14 +324,10 @@ final class NotificationManager {
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
 
         case .fireDefault(let triggerId):
-            let baseRateLimitKey = triggerId ?? "unmatched.\(preparedEvent.source.rawValue).\(preparedEvent.tool.lowercased())"
-            let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: preparedEvent)
-            guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
-                Log.info("Rate limited: \(rateLimitKey) for tool=\(preparedEvent.tool)")
-                history.markRateLimited(eventID: preparedEvent.id, triggerId: baseRateLimitKey)
-                routingRetryCounts.removeValue(forKey: preparedEvent.id)
+            guard let keys = consumeRateLimitOrDropEvent(triggerId: triggerId, event: preparedEvent) else {
                 return
             }
+            let baseRateLimitKey = keys.base
             let didDispatchBanner = showDefaultNotification(for: preparedEvent)
             // Safe to call without re-checking isToolTabActive: processEvent runs
             // entirely on @MainActor, so no tab switch can interleave between the
@@ -355,14 +351,10 @@ final class NotificationManager {
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
 
         case .fireStyleOnly(let triggerId, let actions):
-            let baseRateLimitKey = triggerId ?? "unmatched.\(preparedEvent.source.rawValue).\(preparedEvent.tool.lowercased())"
-            let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: preparedEvent)
-            guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
-                Log.info("Rate limited: \(rateLimitKey) for tool=\(preparedEvent.tool)")
-                history.markRateLimited(eventID: preparedEvent.id, triggerId: baseRateLimitKey)
-                routingRetryCounts.removeValue(forKey: preparedEvent.id)
+            guard let keys = consumeRateLimitOrDropEvent(triggerId: triggerId, event: preparedEvent) else {
                 return
             }
+            let baseRateLimitKey = keys.base
             guard preparedEvent.tabID != nil else {
                 let reason = "Style-only notification delivery requires explicit tabID"
                 Log.warn("\(reason) id=\(preparedEvent.id.uuidString) type=\(preparedEvent.type) tool=\(preparedEvent.tool)")
@@ -460,6 +452,25 @@ final class NotificationManager {
             registerRepeatSuppressionIfNeeded(preparedEvent)
             routingRetryCounts.removeValue(forKey: preparedEvent.id)
         }
+    }
+
+    /// Resolve the rate-limit key pair for a delivery decision and consume
+    /// one slot. Returns the (rate-limit, base) key pair on pass; on rate
+    /// limit, logs the suppression, marks the event as rate-limited, drops
+    /// the routing-retry counter, and returns nil — caller should `return`.
+    /// Both `.fireDefault` and `.fireStyleOnly` branches share this preamble.
+    private func consumeRateLimitOrDropEvent(
+        triggerId: String?, event: AIEvent
+    ) -> (rateLimit: String, base: String)? {
+        let baseRateLimitKey = triggerId ?? "unmatched.\(event.source.rawValue).\(event.tool.lowercased())"
+        let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: baseRateLimitKey, event: event)
+        guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
+            Log.info("Rate limited: \(rateLimitKey) for tool=\(event.tool)")
+            history.markRateLimited(eventID: event.id, triggerId: baseRateLimitKey)
+            routingRetryCounts.removeValue(forKey: event.id)
+            return nil
+        }
+        return (rateLimitKey, baseRateLimitKey)
     }
 
     private func scheduleRoutingRetryIfNeeded(for event: AIEvent) -> Bool {
