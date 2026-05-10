@@ -274,64 +274,44 @@ struct DebugUsageTabView: View {
     }
 
     private func latencyBucketsChart(_ title: String, buckets: [ProviderLatencyBucketPoint]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-
-            if buckets.isEmpty {
-                Text("No data")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            } else {
-                GeometryReader { geo in
-                    let maxValue = max(buckets.map(chartValue(for:)).max() ?? 1, 1)
-                    let barArea = geo.size.height - 28
-                    let barWidth: CGFloat = 20
-                    let spacing: CGFloat = 8
-                    let contentWidth = max(
-                        geo.size.width,
-                        CGFloat(buckets.count) * barWidth + CGFloat(max(buckets.count - 1, 0)) * spacing
-                    )
-
-                    ScrollView(.horizontal, showsIndicators: buckets.count > 12) {
-                        HStack(alignment: .bottom, spacing: spacing) {
-                            ForEach(buckets) { bucket in
-                                VStack(spacing: 2) {
-                                    Text(latencyLabel(chartValue(for: bucket)))
-                                        .font(.system(size: 8, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-
-                                    RoundedRectangle(cornerRadius: 3)
-                                        .fill(Color.accentColor.opacity(0.65))
-                                        .frame(
-                                            width: barWidth,
-                                            height: max(2, barArea * CGFloat(chartValue(for: bucket)) / CGFloat(maxValue))
-                                        )
-
-                                    Text(bucket.label)
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(.tertiary)
-                                        .lineLimit(1)
-                                }
-                                .frame(width: barWidth + 6)
-                                .help(
-                                    "\(bucket.aggregate.count) samples, avg \(latencyLabel(bucket.aggregate.averageLatencyMs)), p50 \(bucket.aggregate.p50LatencyMs.map { "\($0)ms" } ?? "n/a"), p95 \(bucket.aggregate.p95LatencyMs.map { "\($0)ms" } ?? "n/a")"
-                                )
-                            }
-                        }
-                        .frame(width: contentWidth, alignment: .leading)
-                    }
-                }
-                .frame(height: 120)
+        bucketBarChart(
+            title: title,
+            buckets: buckets,
+            barColor: .accentColor,
+            barValue: chartValue(for:),
+            topLabel: { latencyLabel(chartValue(for: $0)) },
+            bottomLabel: \.label,
+            helpText: { bucket in
+                "\(bucket.aggregate.count) samples, avg \(latencyLabel(bucket.aggregate.averageLatencyMs)), p50 \(bucket.aggregate.p50LatencyMs.map { "\($0)ms" } ?? "n/a"), p95 \(bucket.aggregate.p95LatencyMs.map { "\($0)ms" } ?? "n/a")"
             }
-        }
-        .padding(10)
-        .background(Color.secondary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        )
     }
 
     private func activityBucketsChart(_ title: String, buckets: [ProviderActivityBucketPoint]) -> some View {
+        bucketBarChart(
+            title: title,
+            buckets: buckets,
+            barColor: .green,
+            barValue: { Double($0.count) },
+            topLabel: { "\($0.count)" },
+            bottomLabel: \.label,
+            helpText: { "\($0.count) captured interaction(s)" }
+        )
+    }
+
+    /// Shared chart shell for the two bucket variants in this view.
+    /// Layout: title + empty-state-or-scrollable-bars + capsule background.
+    /// Height of each bar is `barValue(bucket) / max(barValue)` of the chart
+    /// area (28pt reserved for header, frame fixed at 120pt).
+    private func bucketBarChart<Bucket: Identifiable>(
+        title: String,
+        buckets: [Bucket],
+        barColor: Color,
+        barValue: @escaping (Bucket) -> Double,
+        topLabel: @escaping (Bucket) -> String,
+        bottomLabel: @escaping (Bucket) -> String,
+        helpText: @escaping (Bucket) -> String
+    ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
@@ -342,7 +322,7 @@ struct DebugUsageTabView: View {
                     .foregroundStyle(.secondary)
             } else {
                 GeometryReader { geo in
-                    let maxValue = max(buckets.map(\.count).max() ?? 1, 1)
+                    let maxValue = max(buckets.map(barValue).max() ?? 1, 1)
                     let barArea = geo.size.height - 28
                     let barWidth: CGFloat = 20
                     let spacing: CGFloat = 8
@@ -355,25 +335,25 @@ struct DebugUsageTabView: View {
                         HStack(alignment: .bottom, spacing: spacing) {
                             ForEach(buckets) { bucket in
                                 VStack(spacing: 2) {
-                                    Text("\(bucket.count)")
+                                    Text(topLabel(bucket))
                                         .font(.system(size: 8, design: .monospaced))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
 
                                     RoundedRectangle(cornerRadius: 3)
-                                        .fill(Color.green.opacity(0.65))
+                                        .fill(barColor.opacity(0.65))
                                         .frame(
                                             width: barWidth,
-                                            height: max(2, barArea * CGFloat(bucket.count) / CGFloat(maxValue))
+                                            height: max(2, barArea * CGFloat(barValue(bucket)) / CGFloat(maxValue))
                                         )
 
-                                    Text(bucket.label)
+                                    Text(bottomLabel(bucket))
                                         .font(.system(size: 8))
                                         .foregroundStyle(.tertiary)
                                         .lineLimit(1)
                                 }
                                 .frame(width: barWidth + 6)
-                                .help("\(bucket.count) captured interaction(s)")
+                                .help(helpText(bucket))
                             }
                         }
                         .frame(width: contentWidth, alignment: .leading)
