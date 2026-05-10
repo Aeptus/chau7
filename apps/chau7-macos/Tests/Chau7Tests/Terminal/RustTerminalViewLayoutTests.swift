@@ -3,7 +3,7 @@ import AppKit
 @testable import Chau7
 
 final class RustTerminalViewLayoutTests: XCTestCase {
-    func testAlignedRenderSurfaceFramePinsVisibleGridToTop() {
+    func testAlignedRenderSurfaceFrameFillsAvailableInsetRect() {
         let insetRect = NSRect(x: 4, y: 4, width: 800, height: 79 * 13 + 7)
 
         let frame = RustTerminalView.alignedRenderSurfaceFrame(
@@ -13,8 +13,8 @@ final class RustTerminalViewLayoutTests: XCTestCase {
         )
 
         XCTAssertEqual(frame.maxY, insetRect.maxY, accuracy: 0.001)
-        XCTAssertEqual(frame.height, 79 * 13, accuracy: 0.001)
-        XCTAssertEqual(frame.minY - insetRect.minY, 7, accuracy: 0.001)
+        XCTAssertEqual(frame.minY, insetRect.minY, accuracy: 0.001)
+        XCTAssertEqual(frame.height, insetRect.height, accuracy: 0.001)
     }
 
     func testAlignedRenderSurfaceFrameCollapsesWhenNoRowsFit() {

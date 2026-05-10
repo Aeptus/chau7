@@ -2798,11 +2798,11 @@ final class RustTerminalView: NSView {
             return CGRect(x: insetRect.minX, y: insetRect.minY, width: width, height: 0)
         }
 
-        // Keep the first visible row pinned directly under the chrome. Any
-        // sub-cell remainder belongs below the final row, not as a blank band
-        // between the toolbar and terminal content.
-        let visibleHeight = min(height, CGFloat(rows) * cellHeight)
-        return CGRect(x: insetRect.minX, y: insetRect.maxY - visibleHeight, width: width, height: visibleHeight)
+        // The surface itself must fill the available terminal area. The grid
+        // rows are top-aligned inside that surface by both renderers, leaving
+        // any sub-row remainder as terminal background instead of exposing the
+        // window/blur behind it.
+        return CGRect(x: insetRect.minX, y: insetRect.minY, width: width, height: height)
     }
 
     var renderSurfaceFrame: CGRect {
