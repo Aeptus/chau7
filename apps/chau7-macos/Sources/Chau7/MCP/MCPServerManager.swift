@@ -186,39 +186,28 @@ final class MCPServerManager {
 
     /// Cursor global config (~/.cursor/mcp.json) — same JSON shape as Claude Code.
     private func registerCursorGlobal(home: String, command: String) {
-        let dir = home + "/.cursor"
-        let path = dir + "/mcp.json"
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: dir) {
-            // Don't create ~/.cursor/ if Cursor isn't installed
-            return
-        }
-        let entry: [String: Any] = ["command": command, "args": [] as [String]]
-        mergeJSONMCPEntry(atPath: path, serverName: "chau7", entry: entry, mcpKey: "mcpServers")
+        // Don't create ~/.cursor/ if Cursor isn't installed.
+        registerJSONMCPClient(directory: home + "/.cursor", filename: "mcp.json", command: command)
     }
 
     /// Windsurf config (~/.codeium/windsurf/mcp_config.json) — JSON with mcpServers key.
     private func registerWindsurf(home: String, command: String) {
-        let dir = home + "/.codeium/windsurf"
-        let path = dir + "/mcp_config.json"
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: dir) {
-            return
-        }
-        let entry: [String: Any] = ["command": command, "args": [] as [String]]
-        mergeJSONMCPEntry(atPath: path, serverName: "chau7", entry: entry, mcpKey: "mcpServers")
+        registerJSONMCPClient(directory: home + "/.codeium/windsurf", filename: "mcp_config.json", command: command)
     }
 
     /// Gemini CLI config (~/.gemini/settings.json) — same JSON shape as Cursor.
     private func registerGeminiCLI(home: String, command: String) {
-        let dir = home + "/.gemini"
-        let path = dir + "/settings.json"
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: dir) {
-            return
-        }
+        registerJSONMCPClient(directory: home + "/.gemini", filename: "settings.json", command: command)
+    }
+
+    /// Shared helper for clients that store MCP config as JSON with a top-level
+    /// `mcpServers` map: skip when the client's home directory doesn't exist
+    /// (we don't create directories for un-installed clients), then merge the
+    /// chau7 entry into `<directory>/<filename>`.
+    private func registerJSONMCPClient(directory: String, filename: String, command: String) {
+        guard FileManager.default.fileExists(atPath: directory) else { return }
         let entry: [String: Any] = ["command": command, "args": [] as [String]]
-        mergeJSONMCPEntry(atPath: path, serverName: "chau7", entry: entry, mcpKey: "mcpServers")
+        mergeJSONMCPEntry(atPath: directory + "/" + filename, serverName: "chau7", entry: entry, mcpKey: "mcpServers")
     }
 
     /// Codex config (~/.codex/config.toml) — TOML with [mcp_servers.chau7] section
