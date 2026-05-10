@@ -725,18 +725,24 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         // (cw = cellSize.width / scaleFactor), so the orthographic projection
         // must map point-space coordinates. The Metal viewport itself targets
         // the full pixel-space drawable automatically.
-        renderer.render(
+        let presentedView = terminalView
+        let didCommit = renderer.render(
             cells: cellsPtr,
             rows: rows,
             cols: cols,
             dirtyRows: dirtyRows,
             fullRefresh: fullRefresh,
             to: drawable,
-            viewportSize: view.bounds.size
+            viewportSize: view.bounds.size,
+            onCompleted: { [weak presentedView] in
+                presentedView?.onDisplayFramePresented?()
+                presentedView?.onFramePresented?()
+            }
         )
-
-        terminalView?.onDisplayFramePresented?()
-        terminalView?.onFramePresented?()
+        guard didCommit else {
+            FeatureProfiler.shared.end(token)
+            return
+        }
 
         // 7. Advance triple buffer only when we consumed fresh synced terminal state.
         if shouldSync {

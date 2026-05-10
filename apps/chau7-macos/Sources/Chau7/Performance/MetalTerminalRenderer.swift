@@ -791,10 +791,11 @@ final class MetalTerminalRenderer: NSObject {
         dirtyRows: IndexSet,
         fullRefresh: Bool,
         to drawable: CAMetalDrawable,
-        viewportSize: CGSize
-    ) {
+        viewportSize: CGSize,
+        onCompleted: (() -> Void)? = nil
+    ) -> Bool {
         let renderStartedAt = CFAbsoluteTimeGetCurrent()
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return }
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return false }
 
         let cellCount = min(cells.count, maxCells)
 
@@ -840,7 +841,7 @@ final class MetalTerminalRenderer: NSObject {
         passDescriptor.colorAttachments[0].storeAction = .store
         passDescriptor.colorAttachments[0].clearColor = backgroundClearColor
 
-        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else { return }
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else { return false }
 
         // Pass 1: Backgrounds
         encoder.setRenderPipelineState(backgroundPipelineState)
@@ -857,10 +858,18 @@ final class MetalTerminalRenderer: NSObject {
 
         encoder.endEncoding()
 
+        if let onCompleted {
+            commandBuffer.addCompletedHandler { _ in
+                DispatchQueue.main.async {
+                    onCompleted()
+                }
+            }
+        }
         commandBuffer.present(drawable)
         commandBuffer.commit()
         let renderDurationMs = (CFAbsoluteTimeGetCurrent() - renderStartedAt) * 1000.0
         FeatureProfiler.shared.record(feature: .metalDrawStage, durationMs: renderDurationMs)
+        return true
     }
 
     private func updateInstanceBuffer(

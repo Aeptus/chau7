@@ -141,76 +141,28 @@ struct SplitContainerView: View {
             let totalSize = direction == .horizontal ? geometry.size.width : geometry.size.height
             let dividerSize: CGFloat = 5
             let effectiveRatio = liveRatio
+            let primaryDim = (totalSize - dividerSize) * effectiveRatio
+            let divider = SplitDivider(
+                isVertical: direction == .horizontal,
+                liveRatio: $liveRatio,
+                baseRatio: modelRatio,
+                totalSize: totalSize,
+                onDragEnd: { newRatio in
+                    onUpdateRatio(splitID, newRatio)
+                }
+            )
 
             if direction == .horizontal {
                 HStack(spacing: 0) {
-                    SplitNodeView(
-                        node: first,
-                        focusedID: focusedID,
-                        renderPhase: renderPhase,
-                        isInteractive: isInteractive,
-                        onFocus: onFocus,
-                        onUpdateRatio: onUpdateRatio,
-                        onClosePane: onClosePane,
-                        onFilePathClicked: onFilePathClicked,
-                        onRunCommand: onRunCommand
-                    )
-                    .frame(width: (totalSize - dividerSize) * effectiveRatio)
-                    SplitDivider(
-                        isVertical: true,
-                        liveRatio: $liveRatio,
-                        baseRatio: modelRatio,
-                        totalSize: totalSize,
-                        onDragEnd: { newRatio in
-                            onUpdateRatio(splitID, newRatio)
-                        }
-                    )
-                    SplitNodeView(
-                        node: second,
-                        focusedID: focusedID,
-                        renderPhase: renderPhase,
-                        isInteractive: isInteractive,
-                        onFocus: onFocus,
-                        onUpdateRatio: onUpdateRatio,
-                        onClosePane: onClosePane,
-                        onFilePathClicked: onFilePathClicked,
-                        onRunCommand: onRunCommand
-                    )
+                    nodeView(for: first).frame(width: primaryDim)
+                    divider
+                    nodeView(for: second)
                 }
             } else {
                 VStack(spacing: 0) {
-                    SplitNodeView(
-                        node: first,
-                        focusedID: focusedID,
-                        renderPhase: renderPhase,
-                        isInteractive: isInteractive,
-                        onFocus: onFocus,
-                        onUpdateRatio: onUpdateRatio,
-                        onClosePane: onClosePane,
-                        onFilePathClicked: onFilePathClicked,
-                        onRunCommand: onRunCommand
-                    )
-                    .frame(height: (totalSize - dividerSize) * effectiveRatio)
-                    SplitDivider(
-                        isVertical: false,
-                        liveRatio: $liveRatio,
-                        baseRatio: modelRatio,
-                        totalSize: totalSize,
-                        onDragEnd: { newRatio in
-                            onUpdateRatio(splitID, newRatio)
-                        }
-                    )
-                    SplitNodeView(
-                        node: second,
-                        focusedID: focusedID,
-                        renderPhase: renderPhase,
-                        isInteractive: isInteractive,
-                        onFocus: onFocus,
-                        onUpdateRatio: onUpdateRatio,
-                        onClosePane: onClosePane,
-                        onFilePathClicked: onFilePathClicked,
-                        onRunCommand: onRunCommand
-                    )
+                    nodeView(for: first).frame(height: primaryDim)
+                    divider
+                    nodeView(for: second)
                 }
             }
         }
@@ -220,6 +172,20 @@ struct SplitContainerView: View {
         .onChange(of: modelRatio) {
             liveRatio = modelRatio
         }
+    }
+
+    private func nodeView(for node: SplitNode) -> SplitNodeView {
+        SplitNodeView(
+            node: node,
+            focusedID: focusedID,
+            renderPhase: renderPhase,
+            isInteractive: isInteractive,
+            onFocus: onFocus,
+            onUpdateRatio: onUpdateRatio,
+            onClosePane: onClosePane,
+            onFilePathClicked: onFilePathClicked,
+            onRunCommand: onRunCommand
+        )
     }
 }
 
