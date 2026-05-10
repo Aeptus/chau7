@@ -513,7 +513,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
                     menu.addItem(groupWindowMenuItem)
                 }
             }
-            if tab.repoGroupID == nil, tab.session?.gitRootPath != nil {
+            if tab.repoGroupID == nil, (tab.displaySession ?? tab.session)?.gitRootPath != nil {
                 let groupItem = NSMenuItem(title: L("context.addToGroup", "Add to Repo Group"), action: #selector(contextAddToGroup(_:)), keyEquivalent: "")
                 groupItem.target = self
                 groupItem.representedObject = tab.id

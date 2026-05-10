@@ -150,7 +150,7 @@ extension OverlayTabsModel {
     /// Manual mode actions
     func addTabToRepoGroup(tabID: UUID) {
         guard let idx = tabs.firstIndex(where: { $0.id == tabID }),
-              let root = tabs[idx].session?.gitRootPath else { return }
+              let root = (tabs[idx].displaySession ?? tabs[idx].session)?.gitRootPath else { return }
         tabs[idx].repoGroupID = root
         tabs[idx].hasInheritedRepoGroup = false
         coalesceGroup(repoGroupID: root)
@@ -175,9 +175,9 @@ extension OverlayTabsModel {
 
     func groupAllSameRepo(asTab tabID: UUID) {
         guard let idx = tabs.firstIndex(where: { $0.id == tabID }),
-              let root = tabs[idx].session?.gitRootPath else { return }
+              let root = (tabs[idx].displaySession ?? tabs[idx].session)?.gitRootPath else { return }
         for i in tabs.indices {
-            if tabs[i].session?.gitRootPath == root {
+            if (tabs[i].displaySession ?? tabs[i].session)?.gitRootPath == root {
                 tabs[i].repoGroupID = root
                 tabs[i].hasInheritedRepoGroup = false
             }
