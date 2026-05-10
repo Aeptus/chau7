@@ -109,50 +109,49 @@ final class CodexContentProvider: RunContentProvider {
             sql: "SELECT * FROM threads WHERE id = ? LIMIT 1",
             sessionID: sessionID
         ) { stmt -> ExtractedRunContent? in
+            // Extract all needed data while stmt is valid
+            let tokensIdx = colIndex(stmt, "tokens_used")
+            let tokensUsed = tokensIdx >= 0 ? Int(sqlite3_column_int(stmt, tokensIdx)) : 0
+            let firstMessage = colString(stmt, "first_user_message")
+            let rolloutPath = colString(stmt, "rollout_path")
 
-        // Extract all needed data while stmt is valid
-        let tokensIdx = colIndex(stmt, "tokens_used")
-        let tokensUsed = tokensIdx >= 0 ? Int(sqlite3_column_int(stmt, tokensIdx)) : 0
-        let firstMessage = colString(stmt, "first_user_message")
-        let rolloutPath = colString(stmt, "rollout_path")
-
-        // If rollout file exists, prefer JSONL extraction (richer data).
-        // We've already extracted what we need from stmt, so defer cleanup is safe.
-        if let rolloutPath,
-           FileManager.default.fileExists(atPath: rolloutPath) {
-            if let result = extractFromJSONL(
-                file: URL(fileURLWithPath: rolloutPath),
-                runID: runID,
-                startedAt: startedAt,
-                endedAt: endedAt
-            ) {
-                return result
+            // If rollout file exists, prefer JSONL extraction (richer data).
+            // We've already extracted what we need from stmt, so defer cleanup is safe.
+            if let rolloutPath,
+               FileManager.default.fileExists(atPath: rolloutPath) {
+                if let result = extractFromJSONL(
+                    file: URL(fileURLWithPath: rolloutPath),
+                    runID: runID,
+                    startedAt: startedAt,
+                    endedAt: endedAt
+                ) {
+                    return result
+                }
             }
-        }
 
-        // Build a minimal turn from the first user message
-        var turns: [TelemetryTurn] = []
-        if let msg = firstMessage, !msg.isEmpty {
-            turns.append(TelemetryTurn(
-                id: "\(runID)-t0",
-                runID: runID, turnIndex: 0, role: .human,
-                content: msg
-            ))
-        }
+            // Build a minimal turn from the first user message
+            var turns: [TelemetryTurn] = []
+            if let msg = firstMessage, !msg.isEmpty {
+                turns.append(TelemetryTurn(
+                    id: "\(runID)-t0",
+                    runID: runID, turnIndex: 0, role: .human,
+                    content: msg
+                ))
+            }
 
-        let usage = TokenUsage(inputTokens: tokensUsed)
-        let estimatedCost = ModelPricingTable.estimatedCostUSD(for: usage, modelID: nil, providerHint: providerName)
+            let usage = TokenUsage(inputTokens: tokensUsed)
+            let estimatedCost = ModelPricingTable.estimatedCostUSD(for: usage, modelID: nil, providerHint: providerName)
 
-        return ExtractedRunContent(
-            turns: turns,
-            totalInputTokens: tokensUsed > 0 ? tokensUsed : nil,
-            costUSD: estimatedCost,
-            tokenUsageSource: tokensUsed > 0 ? .transcriptSnapshot : nil,
-            tokenUsageState: tokensUsed > 0 ? .estimated : .missing,
-            costSource: estimatedCost != nil ? .estimated : .unavailable,
-            costState: estimatedCost != nil ? .estimated : .missing,
-            rawTranscriptRef: rolloutPath
-        )
+            return ExtractedRunContent(
+                turns: turns,
+                totalInputTokens: tokensUsed > 0 ? tokensUsed : nil,
+                costUSD: estimatedCost,
+                tokenUsageSource: tokensUsed > 0 ? .transcriptSnapshot : nil,
+                tokenUsageState: tokensUsed > 0 ? .estimated : .missing,
+                costSource: estimatedCost != nil ? .estimated : .unavailable,
+                costState: estimatedCost != nil ? .estimated : .missing,
+                rawTranscriptRef: rolloutPath
+            )
         }
     }
 

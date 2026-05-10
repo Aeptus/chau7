@@ -65,8 +65,8 @@ public enum NotificationProviderAdapterRegistry {
     /// adapter, and translate the adapter's three-way result back into a
     /// registry `Decision`. Used by all dedicated adapter dispatchers in
     /// this file.
-    private static func runProviderAdapter<Adapter: NotificationProviderAdapter>(
-        _ adapter: Adapter, on event: AIEvent
+    private static func runProviderAdapter(
+        _ adapter: some NotificationProviderAdapter, on event: AIEvent
     ) -> Decision {
         let providerEvent = NotificationProviderEvent(event: event)
         switch adapter.adapt(providerEvent) {
