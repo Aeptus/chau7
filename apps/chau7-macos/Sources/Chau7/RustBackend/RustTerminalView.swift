@@ -2497,7 +2497,7 @@ final class RustTerminalView: NSView {
     }
 
     /// Cached scrollback row count from the last grid snapshot.
-    /// Updated every sync cycle in syncGridToRenderer() — lightweight access
+    /// Updated by both CPU and Metal grid sync paths — lightweight access
     /// without fetching a full grid snapshot just for history size.
     var cachedScrollbackRows = 0
 

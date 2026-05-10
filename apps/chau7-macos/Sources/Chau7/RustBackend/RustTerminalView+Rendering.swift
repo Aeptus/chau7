@@ -317,12 +317,13 @@ extension RustTerminalView {
             return nil
         }
 
-        return { [weak rust] in
+        return { [weak self, weak rust] in
             guard let rust = rust else { return nil }
             guard let (grid, freeGrid) = rust.getGrid() else { return nil }
 
             let cursor = rust.cursorPosition
             let cursorVisible = grid.pointee.cursor_visible != 0
+            self?.cachedScrollbackRows = Int(grid.pointee.scrollback_rows)
             // grid is UnsafeMutablePointer<RustGridSnapshot>, cast to raw for the generic provider
             let rawPtr = UnsafeMutableRawPointer(grid)
             return (grid: rawPtr, cursor: cursor, cursorVisible: cursorVisible, free: freeGrid)
