@@ -193,4 +193,34 @@ extension OverlayTabsModel {
         noteStartupSelectedTabLiveFrameIfNeeded(reason: reason)
         return true
     }
+
+    /// Catch the case where the selected session's first frame already
+    /// presented before the per-window `terminalSessionVisibleFrameReady`
+    /// observer was registered. Multi-window startup deterministically
+    /// trips this: the SwiftUI terminal view's first paint fires the
+    /// notification synchronously, but `OverlayTabsModel.init` for the
+    /// second window runs after that paint (the notification has nowhere
+    /// to land), and the 5 s coordinator fallback then synthesizes one.
+    ///
+    /// Called from `showOverlayWindow` immediately after `noteWindowVisible`
+    /// arms the fallback timer, so the catch-up runs *before* the timer
+    /// would otherwise fire. Idempotent — `noteStartupSelectedTabLiveFrame`
+    /// dedups on the coordinator side.
+    @discardableResult
+    func replaySelectedTabLiveFrameIfAlreadyPresented(reason: String) -> Bool {
+        guard StartupRestoreCoordinator.shared.isActive,
+              let selectedTab,
+              let selectedSession = selectedPresentationSession(for: selectedTab),
+              selectedSession.presentationSurfaceState.firstFramePresentedAt != nil
+        else {
+            return false
+        }
+        let alreadyRecorded = overlayWindow.map {
+            StartupRestoreCoordinator.shared.hasSelectedTabLiveFrame(windowNumber: $0.windowNumber)
+        } ?? false
+        guard !alreadyRecorded else { return false }
+
+        noteStartupSelectedTabLiveFrameIfNeeded(reason: reason)
+        return true
+    }
 }

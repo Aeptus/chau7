@@ -2313,6 +2313,17 @@ private final class OverlayBlurView: NSVisualEffectView {
             windowNumber: host.window.windowNumber,
             selectedTabID: host.model.selectedTabID
         )
+        // Multi-window startup race: if the selected session's first frame
+        // presented BEFORE the per-window `terminalSessionVisibleFrameReady`
+        // observer was registered (typical for the second window — its
+        // OverlayTabsModel.init runs after the SwiftUI view's first paint
+        // posted the notification), the natural callback into
+        // StartupRestoreCoordinator never lands and the 5 s fallback fires
+        // for every launch. Replay the call now that we know the window
+        // is visible and the model + selected session are wired up.
+        host.model.replaySelectedTabLiveFrameIfAlreadyPresented(
+            reason: "window_visible_replay"
+        )
         // Startup can leave the selected tab attached but visually cold if it
         // was configured before the window became visible. Force one explicit
         // revival now that the overlay window is on-screen.
