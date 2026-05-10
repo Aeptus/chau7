@@ -249,16 +249,7 @@ enum TabResolver {
         if let dir = target.directory?.trimmingCharacters(in: .whitespacesAndNewlines),
            !dir.isEmpty {
             let normalized = URL(fileURLWithPath: dir).standardized.path
-            let rankedByDirectory = bestMatches.compactMap { tab -> (tab: OverlayTab, rank: Int)? in
-                let ranks = tab.splitController.terminalSessions.compactMap { _, session in
-                    DirectoryPathMatcher.bidirectionalPrefixRank(
-                        targetPath: normalized,
-                        candidatePath: session.currentDirectory
-                    )
-                }
-                guard let rank = ranks.min() else { return nil }
-                return (tab: tab, rank: rank)
-            }
+            let rankedByDirectory = rankTabsByDirectoryMatch(bestMatches, normalizedTargetPath: normalized)
 
             if let bestDirectoryRank = rankedByDirectory.map(\.rank).min() {
                 let directoryMatches = rankedByDirectory
@@ -316,16 +307,7 @@ enum TabResolver {
         if let dir = target.directory?.trimmingCharacters(in: .whitespacesAndNewlines),
            !dir.isEmpty {
             let normalized = URL(fileURLWithPath: dir).standardized.path
-            let rankedMatches = matches.compactMap { tab -> (tab: OverlayTab, rank: Int)? in
-                let ranks = tab.splitController.terminalSessions.compactMap { _, session in
-                    DirectoryPathMatcher.bidirectionalPrefixRank(
-                        targetPath: normalized,
-                        candidatePath: session.currentDirectory
-                    )
-                }
-                guard let rank = ranks.min() else { return nil }
-                return (tab: tab, rank: rank)
-            }
+            let rankedMatches = rankTabsByDirectoryMatch(matches, normalizedTargetPath: normalized)
 
             if let bestRank = rankedMatches.map(\.rank).min() {
                 let dirMatches = rankedMatches
@@ -380,6 +362,24 @@ enum TabResolver {
             trail: trail
         )
         return best
+    }
+
+    /// Score each tab by the best `DirectoryPathMatcher.bidirectionalPrefixRank`
+    /// across its sessions' `currentDirectory` values. Drops tabs whose
+    /// sessions all return `nil` (no path relationship to the target).
+    private static func rankTabsByDirectoryMatch(
+        _ tabs: [OverlayTab], normalizedTargetPath: String
+    ) -> [(tab: OverlayTab, rank: Int)] {
+        tabs.compactMap { tab -> (tab: OverlayTab, rank: Int)? in
+            let ranks = tab.splitController.terminalSessions.compactMap { _, session in
+                DirectoryPathMatcher.bidirectionalPrefixRank(
+                    targetPath: normalizedTargetPath,
+                    candidatePath: session.currentDirectory
+                )
+            }
+            guard let rank = ranks.min() else { return nil }
+            return (tab: tab, rank: rank)
+        }
     }
 
     private static func tabLastActivityDate(_ tab: OverlayTab) -> Date {
