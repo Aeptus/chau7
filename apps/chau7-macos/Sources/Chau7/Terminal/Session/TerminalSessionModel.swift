@@ -1551,11 +1551,12 @@ final class TerminalSessionModel {
         if [ -n "$CHAU7_START_DIR" ] && [ -d "$CHAU7_START_DIR" ]; then
           cd "$CHAU7_START_DIR"
         fi
-        # Chau7 startup command
-        if [ -n "$CHAU7_STARTUP_CMD" ]; then
-          eval "$CHAU7_STARTUP_CMD"
-        fi
-        # Chau7 shell integration (runs at startup, not in history)
+        # Chau7 shell integration (runs at startup, not in history). Defined and
+        # invoked *before* CHAU7_STARTUP_CMD so the initial OSC 7 cwd report
+        # lands even when the startup command is a TUI (Claude, Codex) that
+        # seizes the PTY indefinitely — without this, restored AI tabs spend
+        # ~13s pinned in `isShellLoading=true` until the resume-prefill
+        # watchdog force-clears it.
         chau7_emit_exit_status() {
           local code=$?
           print -Pn "\\e]9;chau7;exit=${code}\\a"
@@ -1594,6 +1595,12 @@ final class TerminalSessionModel {
         if command -v add-zsh-hook >/dev/null 2>&1; then
           add-zsh-hook chpwd chau7_update_project
         fi
+        # Chau7 startup command — runs LAST so a TUI startup command (Claude,
+        # Codex, …) can seize the PTY without leaving the integration / OSC 7
+        # emission unrun.
+        if [ -n "$CHAU7_STARTUP_CMD" ]; then
+          eval "$CHAU7_STARTUP_CMD"
+        fi
         """
 
         // Create .bashrc for bash
@@ -1606,11 +1613,9 @@ final class TerminalSessionModel {
         if [ -n "$CHAU7_START_DIR" ] && [ -d "$CHAU7_START_DIR" ]; then
           cd "$CHAU7_START_DIR"
         fi
-        # Chau7 startup command
-        if [ -n "$CHAU7_STARTUP_CMD" ]; then
-          eval "$CHAU7_STARTUP_CMD"
-        fi
-        # Chau7 shell integration
+        # Chau7 shell integration. Defined and run BEFORE CHAU7_STARTUP_CMD so
+        # the initial OSC 7 cwd report lands even when the startup command is
+        # a TUI (Claude, Codex) that seizes the PTY indefinitely.
         smartoverlay_precmd() {
           printf '\\e]7;file://%s%s\\a' "$HOSTNAME" "$PWD"
           local __g
@@ -1637,6 +1642,15 @@ final class TerminalSessionModel {
         # Update on directory change via PROMPT_COMMAND
         PROMPT_COMMAND="chau7_update_project${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
         PROMPT_COMMAND="chau7_emit_exit_status${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+        # Emit the initial OSC 7 / repo-root / branch report immediately —
+        # PROMPT_COMMAND only fires before the next prompt is rendered, which
+        # a TUI startup command skips entirely.
+        smartoverlay_precmd
+        # Chau7 startup command — runs LAST so a TUI startup command can seize
+        # the PTY without leaving integration / OSC 7 emission unrun.
+        if [ -n "$CHAU7_STARTUP_CMD" ]; then
+          eval "$CHAU7_STARTUP_CMD"
+        fi
         """
 
         // Create config.fish for fish
@@ -1661,14 +1675,13 @@ final class TerminalSessionModel {
         if test -n "$CHAU7_START_DIR"; and test -d "$CHAU7_START_DIR"
           cd "$CHAU7_START_DIR"
         end
-        # Chau7 startup command
-        if test -n "$CHAU7_STARTUP_CMD"
-          eval "$CHAU7_STARTUP_CMD"
-        end
         # Chau7 shell integration. Listening to both fish_prompt and PWD changes
         # so chained commands like `cd X && tui-app` still update the cwd —
         # fish_prompt only fires before the next prompt is rendered, which a
-        # TUI app seizing the PTY skips entirely.
+        # TUI app seizing the PTY skips entirely. Defined and emitted BEFORE
+        # CHAU7_STARTUP_CMD so the initial OSC 7 cwd report lands even when
+        # the startup command is a TUI (Claude, Codex) that seizes the PTY
+        # indefinitely.
         function smartoverlay_precmd --on-event fish_prompt --on-variable PWD
           set -l code $status
           printf '\\e]9;chau7;exit=%s\\a' $code
@@ -1699,6 +1712,15 @@ final class TerminalSessionModel {
         end
         # Initialize on startup
         chau7_update_project
+        # Emit the initial OSC 7 / repo-root / branch report immediately —
+        # fish_prompt only fires before the next prompt is rendered, which
+        # a TUI startup command skips entirely.
+        smartoverlay_precmd
+        # Chau7 startup command — runs LAST so a TUI startup command can seize
+        # the PTY without leaving integration / OSC 7 emission unrun.
+        if test -n "$CHAU7_STARTUP_CMD"
+          eval "$CHAU7_STARTUP_CMD"
+        end
         """
 
         // Write all integration files
