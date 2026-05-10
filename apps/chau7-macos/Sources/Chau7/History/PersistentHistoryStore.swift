@@ -122,32 +122,37 @@ final class PersistentHistoryStore {
 
     // MARK: - Insert
 
+    private static let insertSQL = """
+        INSERT INTO history (command, directory, exit_code, shell, tab_id, session_id, timestamp, duration)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """
+
+    private func bindInsertParameters(_ record: HistoryRecord, into stmt: OpaquePointer?) {
+        sqlite3_bind_text(stmt, 1, (record.command as NSString).utf8String, -1, nil)
+        bindOptionalText(stmt, 2, record.directory)
+        bindOptionalInt(stmt, 3, record.exitCode)
+        bindOptionalText(stmt, 4, record.shell)
+        bindOptionalText(stmt, 5, record.tabID)
+        bindOptionalText(stmt, 6, record.sessionID ?? sessionID)
+        sqlite3_bind_double(stmt, 7, record.timestamp.timeIntervalSince1970)
+        if let duration = record.duration {
+            sqlite3_bind_double(stmt, 8, duration)
+        } else {
+            sqlite3_bind_null(stmt, 8)
+        }
+    }
+
     func insert(_ record: HistoryRecord) {
         dbQueue.async { [weak self] in
             guard let self = self, let db = db else { return }
-            let sql = """
-                INSERT INTO history (command, directory, exit_code, shell, tab_id, session_id, timestamp, duration)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """
             var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            guard sqlite3_prepare_v2(db, Self.insertSQL, -1, &stmt, nil) == SQLITE_OK else {
                 Log.error("PersistentHistoryStore: prepare insert failed")
                 return
             }
             defer { sqlite3_finalize(stmt) }
 
-            sqlite3_bind_text(stmt, 1, (record.command as NSString).utf8String, -1, nil)
-            bindOptionalText(stmt, 2, record.directory)
-            bindOptionalInt(stmt, 3, record.exitCode)
-            bindOptionalText(stmt, 4, record.shell)
-            bindOptionalText(stmt, 5, record.tabID)
-            bindOptionalText(stmt, 6, record.sessionID ?? sessionID)
-            sqlite3_bind_double(stmt, 7, record.timestamp.timeIntervalSince1970)
-            if let d = record.duration {
-                sqlite3_bind_double(stmt, 8, d)
-            } else {
-                sqlite3_bind_null(stmt, 8)
-            }
+            bindInsertParameters(record, into: stmt)
 
             if sqlite3_step(stmt) != SQLITE_DONE {
                 Log.error("PersistentHistoryStore: insert failed: \(String(cString: sqlite3_errmsg(db)))")
@@ -163,29 +168,14 @@ final class PersistentHistoryStore {
     /// Synchronous insert used by tests and import operations.
     func insertSync(_ record: HistoryRecord) {
         guard let db = db else { return }
-        let sql = """
-            INSERT INTO history (command, directory, exit_code, shell, tab_id, session_id, timestamp, duration)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+        guard sqlite3_prepare_v2(db, Self.insertSQL, -1, &stmt, nil) == SQLITE_OK else {
             Log.error("PersistentHistoryStore: prepare insert failed")
             return
         }
         defer { sqlite3_finalize(stmt) }
 
-        sqlite3_bind_text(stmt, 1, (record.command as NSString).utf8String, -1, nil)
-        bindOptionalText(stmt, 2, record.directory)
-        bindOptionalInt(stmt, 3, record.exitCode)
-        bindOptionalText(stmt, 4, record.shell)
-        bindOptionalText(stmt, 5, record.tabID)
-        bindOptionalText(stmt, 6, record.sessionID ?? sessionID)
-        sqlite3_bind_double(stmt, 7, record.timestamp.timeIntervalSince1970)
-        if let d = record.duration {
-            sqlite3_bind_double(stmt, 8, d)
-        } else {
-            sqlite3_bind_null(stmt, 8)
-        }
+        bindInsertParameters(record, into: stmt)
 
         if sqlite3_step(stmt) != SQLITE_DONE {
             Log.error("PersistentHistoryStore: insert failed: \(String(cString: sqlite3_errmsg(db)))")
