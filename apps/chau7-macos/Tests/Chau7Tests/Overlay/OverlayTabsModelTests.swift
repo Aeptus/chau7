@@ -3,23 +3,23 @@ import AppKit
 #if !SWIFT_PACKAGE
 @testable import Chau7
 
+private func drainMainQueue() {
+    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+}
+
+private func storeSavedTabStates(_ states: [SavedTabState]) {
+    guard let data = try? JSONEncoder().encode(states) else {
+        XCTFail("Failed to encode saved tab states")
+        return
+    }
+    UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
+}
+
 @MainActor
 final class OverlayTabsModelTests: XCTestCase {
 
     private var model: OverlayTabsModel!
     private var appModel: AppModel!
-
-    private func drainMainQueue() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-    }
-
-    private func storeSavedTabStates(_ states: [SavedTabState]) {
-        guard let data = try? JSONEncoder().encode(states) else {
-            XCTFail("Failed to encode saved tab states")
-            return
-        }
-        UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
-    }
 
     private func tabStateBackupRootURL() -> URL {
         OverlayTabsModel.tabStateBackupRootURL()
@@ -3411,6 +3411,10 @@ extension OverlayTabsModelTests {
         wait(for: [expectationDone], timeout: 1.0)
     }
 
+}
+
+@MainActor
+final class OverlayTabsModelUtilityTests: XCTestCase {
     func testReadFirstLineFromDataSupportsVeryLongLine() {
         let longLine = String(repeating: "a", count: 12000) + "\n" + String(repeating: "b", count: 20)
         guard let data = longLine.data(using: .utf8) else {
