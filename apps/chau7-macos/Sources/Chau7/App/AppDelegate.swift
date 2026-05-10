@@ -33,7 +33,6 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var keyMonitor: Any?
     private var opacityObserver: Any?
     private var appThemeObserver: Any?
-    private var fullscreenToolbarObserver: Any?
     private var splashController: SplashWindowController?
     private var settingsWindow: NSWindow?
     private var isClosingTab = false // Flag to prevent windowShouldClose from hiding window during tab close
@@ -162,16 +161,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.applyAppTheme()
-            }
-        }
-
-        fullscreenToolbarObserver = NotificationCenter.default.addObserver(
-            forName: .fullscreenToolbarSettingChanged,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.applyFullscreenToolbarVisibilitySetting()
             }
         }
 
@@ -535,10 +524,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         if let appThemeObserver {
             NotificationCenter.default.removeObserver(appThemeObserver)
             self.appThemeObserver = nil
-        }
-        if let fullscreenToolbarObserver {
-            NotificationCenter.default.removeObserver(fullscreenToolbarObserver)
-            self.fullscreenToolbarObserver = nil
         }
         // Cleanup status bar controller
         StatusBarController.shared.cleanup()
@@ -2210,22 +2195,10 @@ private final class OverlayBlurView: NSVisualEffectView {
         guard overlayHosts.contains(where: { $0.window == window }) else {
             return proposedOptions
         }
-        // .autoHideMenuBar: menu bar hides but appears on top-edge hover.
-        // .autoHideToolbar is controlled by the user-facing fullscreen toolbar setting.
-        var options: NSApplication.PresentationOptions = [.autoHideMenuBar, .fullScreen]
-        if !FeatureSettings.shared.alwaysShowToolbarInFullscreen {
-            options.insert(.autoHideToolbar)
-        }
-        return options
-    }
-
-    private func applyFullscreenToolbarVisibilitySetting() {
-        for host in overlayHosts where host.window.styleMask.contains(.fullScreen) {
-            // Keep the toolbar enabled; AppKit's fullscreen presentation option
-            // decides whether it auto-hides on the next fullscreen negotiation.
-            host.window.toolbar?.isVisible = true
-            TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: host.window)
-        }
+        // .autoHideMenuBar: menu bar hides but appears on top-edge hover
+        // .fullScreen: standard fullscreen mode
+        // Note: We don't use .autoHideToolbar since the tabbar is the toolbar.
+        return [.autoHideMenuBar, .fullScreen]
     }
 
     /// Returns the active overlay model, creating a new overlay window if none exists.
