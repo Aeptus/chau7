@@ -27,19 +27,17 @@ final class TabBarLayoutTests: XCTestCase {
         )
     }
 
-    func testDisplayItemsSplitSameRepoAcrossDifferentProviders() {
+    func testDisplayItemsKeepsSameRepoTogetherAcrossDifferentProviders() {
         let codexTab = UUID()
         let claudeTab = UUID()
         let tabs = [
             TabBarLayoutTab(
                 id: codexTab,
-                repoGroupID: "/tmp/repo-a",
-                groupIdentity: "/tmp/repo-a::codex"
+                repoGroupID: "/tmp/repo-a"
             ),
             TabBarLayoutTab(
                 id: claudeTab,
-                repoGroupID: "/tmp/repo-a",
-                groupIdentity: "/tmp/repo-a::claude"
+                repoGroupID: "/tmp/repo-a"
             )
         ]
 
@@ -48,7 +46,6 @@ final class TabBarLayoutTests: XCTestCase {
             [
                 .repoGroupTag(repoGroupID: "/tmp/repo-a", firstTabID: codexTab),
                 .tab(codexTab),
-                .repoGroupTag(repoGroupID: "/tmp/repo-a", firstTabID: claudeTab),
                 .tab(claudeTab),
                 .newTabButton
             ]
@@ -99,26 +96,24 @@ final class TabBarLayoutTests: XCTestCase {
         )
     }
 
-    func testFallbackHitTestSeparatesSameRepoWhenProviderIdentityDiffers() {
+    func testFallbackHitTestKeepsSameRepoTogetherWhenProviderIdentityDiffers() {
         let codexTab = UUID()
         let claudeTab = UUID()
         let tabs = [
             TabBarLayoutTab(
                 id: codexTab,
-                repoGroupID: "/tmp/repo-a",
-                groupIdentity: "/tmp/repo-a::codex"
+                repoGroupID: "/tmp/repo-a"
             ),
             TabBarLayoutTab(
                 id: claudeTab,
-                repoGroupID: "/tmp/repo-a",
-                groupIdentity: "/tmp/repo-a::claude"
+                repoGroupID: "/tmp/repo-a"
             )
         ]
 
         XCTAssertEqual(
             TabBarLayout.fallbackHitTestTabID(
                 atX: 125,
-                totalWidth: 500,
+                totalWidth: 400,
                 tabs: tabs,
                 idleTabIDs: []
             ),
@@ -126,8 +121,8 @@ final class TabBarLayoutTests: XCTestCase {
         )
         XCTAssertEqual(
             TabBarLayout.fallbackHitTestTabID(
-                atX: 325,
-                totalWidth: 500,
+                atX: 275,
+                totalWidth: 400,
                 tabs: tabs,
                 idleTabIDs: []
             ),

@@ -50,24 +50,6 @@ enum OverlayLayout {
     static let tabChipHeight: CGFloat = 22
 }
 
-private func tabProviderIdentity(for tab: OverlayTab) -> String {
-    guard let session = tab.displaySession ?? tab.session else { return "shell" }
-    if let provider = session.effectiveAIProvider?.trimmingCharacters(in: .whitespacesAndNewlines),
-       !provider.isEmpty {
-        return provider.lowercased()
-    }
-    if let appName = session.aiDisplayAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
-       !appName.isEmpty {
-        return appName.lowercased()
-    }
-    return "shell"
-}
-
-private func repoProviderGroupIdentity(for tab: OverlayTab) -> String? {
-    guard let repoGroupID = tab.repoGroupID else { return nil }
-    return "\(repoGroupID)::\(tabProviderIdentity(for: tab))"
-}
-
 // MARK: - Safari-style Unified Toolbar Delegate
 
 /// Toolbar delegate that provides a tab bar as the main toolbar item.
@@ -649,8 +631,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         let layoutTabs = model.tabs.map {
             TabBarLayoutTab(
                 id: $0.id,
-                repoGroupID: $0.repoGroupID,
-                groupIdentity: repoProviderGroupIdentity(for: $0)
+                repoGroupID: $0.repoGroupID
             )
         }
         let idleTabIDs = fallbackIdleTabIDs(in: model)
