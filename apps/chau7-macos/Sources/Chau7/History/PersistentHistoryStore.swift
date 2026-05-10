@@ -304,14 +304,21 @@ final class PersistentHistoryStore {
 
             sqlite3_bind_int(stmt, 1, Int32(limit))
 
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                let command = String(cString: sqlite3_column_text(stmt, 0))
-                let count = Int(sqlite3_column_int(stmt, 1))
-                let ts = sqlite3_column_double(stmt, 2)
-                results.append(FrequentCommand(command: command, count: count, lastUsed: Date(timeIntervalSince1970: ts)))
-            }
+            appendFrequentCommandRows(from: stmt, into: &results)
 
             return results
+        }
+    }
+
+    /// Read `(command, COUNT(*), MAX(timestamp))` rows from a prepared
+    /// statement and append a `FrequentCommand` for each. Caller binds
+    /// query parameters and provides the result accumulator.
+    private func appendFrequentCommandRows(from stmt: OpaquePointer?, into results: inout [FrequentCommand]) {
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let command = String(cString: sqlite3_column_text(stmt, 0))
+            let count = Int(sqlite3_column_int(stmt, 1))
+            let ts = sqlite3_column_double(stmt, 2)
+            results.append(FrequentCommand(command: command, count: count, lastUsed: Date(timeIntervalSince1970: ts)))
         }
     }
 
@@ -335,12 +342,7 @@ final class PersistentHistoryStore {
             sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
             sqlite3_bind_int(stmt, 3, Int32(limit))
 
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                let command = String(cString: sqlite3_column_text(stmt, 0))
-                let count = Int(sqlite3_column_int(stmt, 1))
-                let ts = sqlite3_column_double(stmt, 2)
-                results.append(FrequentCommand(command: command, count: count, lastUsed: Date(timeIntervalSince1970: ts)))
-            }
+            appendFrequentCommandRows(from: stmt, into: &results)
 
             return results.sorted { $0.frecencyScore > $1.frecencyScore }
         }
