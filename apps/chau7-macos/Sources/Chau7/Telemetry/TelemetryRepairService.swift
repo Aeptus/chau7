@@ -51,28 +51,18 @@ final class TelemetryRepairService {
     }
 
     func rebuildTranscriptDerivedRuns(limit: Int = 500) -> TelemetryRepairReport {
-        let runs = store.listRuns(filter: TelemetryRunFilter(limit: limit, needsTranscriptRepair: true))
-            .sorted(by: Self.repairPriority(lhs:rhs:))
-
-        var report = TelemetryRepairReport()
-
-        for var run in runs {
-            report.inspectedRuns += 1
-
-            switch rebuildRun(&run, invalidateOnFailure: true) {
-            case .rebuilt:
-                report.rebuiltRuns += 1
-            case .invalidated:
-                report.invalidatedRuns += 1
-            case .skipped:
-                report.skippedRuns += 1
-            }
-        }
-
-        return report
+        rebuildRunsBatch(limit: limit, invalidateOnFailure: true)
     }
 
     func rebuildRecentIncompleteRuns(limit: Int = 200) -> TelemetryRepairReport {
+        rebuildRunsBatch(limit: limit, invalidateOnFailure: false)
+    }
+
+    /// Walk the prioritized repair queue (capped at `limit`), feeding each
+    /// run through `rebuildRun(_:invalidateOnFailure:)` and tallying the
+    /// per-outcome counts. Both public entry points are thin wrappers that
+    /// pick a `limit` and the failure policy.
+    private func rebuildRunsBatch(limit: Int, invalidateOnFailure: Bool) -> TelemetryRepairReport {
         let runs = store.listRuns(filter: TelemetryRunFilter(limit: limit, needsTranscriptRepair: true))
             .sorted(by: Self.repairPriority(lhs:rhs:))
 
@@ -81,7 +71,7 @@ final class TelemetryRepairService {
         for var run in runs {
             report.inspectedRuns += 1
 
-            switch rebuildRun(&run, invalidateOnFailure: false) {
+            switch rebuildRun(&run, invalidateOnFailure: invalidateOnFailure) {
             case .rebuilt:
                 report.rebuiltRuns += 1
             case .invalidated:
