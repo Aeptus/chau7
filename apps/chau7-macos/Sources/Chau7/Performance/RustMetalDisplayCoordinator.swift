@@ -51,10 +51,13 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var lastFontConfigurationSignature: FontConfigurationSignature?
     private var lastTripleBufferRebuildSignature = ""
     private var lastTripleBufferRebuildAt: CFAbsoluteTime = 0
+    private var lastLigaturesEnabled: Bool?
+    private var lastCursorBlinkEnabled: Bool?
 
     // MARK: - Blink Timer
 
     private var blinkTimer: Timer?
+    private var blinkTimerInterval: TimeInterval?
     /// Time of last keyboard/PTY activity (used to pause cursor blink during typing)
     private var lastActivityTime = Date()
 
@@ -135,6 +138,7 @@ final class RustMetalDisplayCoordinator: NSObject {
 
         // Initialize bridge with current color scheme
         bridge.colorSchemeChanged()
+        syncRendererFeatureSettings()
 
         syncClearColor()
 
@@ -180,6 +184,44 @@ final class RustMetalDisplayCoordinator: NSObject {
         fontConfigured = true
         lastFontConfigurationSignature = signature
         return true
+    }
+
+    /// Keeps renderer feature flags aligned with user settings. Ligature changes
+    /// alter instance UVs, so they require a full refresh once the initial value
+    /// has been observed.
+    @discardableResult
+    private func syncRendererFeatureSettings() -> Bool {
+        var needsRedraw = false
+        let settings = FeatureSettings.shared
+        let ligaturesEnabled = settings.enableLigatures
+        if renderer.ligaturesEnabled != ligaturesEnabled {
+            renderer.ligaturesEnabled = ligaturesEnabled
+            if lastLigaturesEnabled != nil {
+                tripleBuffer.markFullRefresh()
+                needsSync = true
+                needsPresent = true
+                needsRedraw = true
+            }
+        }
+        lastLigaturesEnabled = ligaturesEnabled
+
+        let cursorBlinkEnabled = settings.cursorBlink
+        if lastCursorBlinkEnabled != nil, lastCursorBlinkEnabled != cursorBlinkEnabled {
+            needsPresent = true
+            needsRedraw = true
+        }
+        lastCursorBlinkEnabled = cursorBlinkEnabled
+
+        renderer.cursorBlinkEnabled = cursorBlinkEnabled
+        if !cursorBlinkEnabled {
+            renderer.cursorBlinkPhase = true
+        }
+        return needsRedraw
+    }
+
+    private func currentBlinkInterval() -> TimeInterval {
+        let rate = FeatureSettings.shared.cursorBlinkRate
+        return max(0.3, min(rate, 2.0))
     }
 
     // MARK: - Lifecycle
@@ -461,18 +503,22 @@ final class RustMetalDisplayCoordinator: NSObject {
     func pauseBlinkTimer() {
         blinkTimer?.invalidate()
         blinkTimer = nil
+        blinkTimerInterval = nil
     }
 
     /// Resume the blink timer when the tab is unsuspended.
     func resumeBlinkTimer() {
-        guard blinkTimer == nil else { return }
+        let desiredInterval = currentBlinkInterval()
+        if blinkTimer != nil, blinkTimerInterval == desiredInterval { return }
         startBlinkTimer()
     }
 
-    /// Starts the blink timer (cursor and text blink on 500ms cycle).
+    /// Starts the blink timer using the user-configured cursor blink interval.
     private func startBlinkTimer() {
         blinkTimer?.invalidate()
-        blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        let interval = currentBlinkInterval()
+        blinkTimerInterval = interval
+        blinkTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             handleBlinkTick()
         }
@@ -487,9 +533,16 @@ final class RustMetalDisplayCoordinator: NSObject {
             return
         }
 
+        let featureSettingsNeedRedraw = syncRendererFeatureSettings()
+        let desiredInterval = currentBlinkInterval()
+        if blinkTimerInterval != desiredInterval {
+            startBlinkTimer()
+            return
+        }
+
         // Cursor blink: pause for 1 second after keyboard activity
         let timeSinceActivity = Date().timeIntervalSince(lastActivityTime)
-        if timeSinceActivity < 1.0 {
+        if !renderer.cursorBlinkEnabled || timeSinceActivity < 1.0 {
             renderer.cursorBlinkPhase = true
         } else {
             renderer.cursorBlinkPhase.toggle()
@@ -499,7 +552,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         renderer.textBlinkPhase.toggle()
 
         // Only trigger a redraw if cursor or blinking cells need update
-        let needsRedraw = renderer.cursorBlinkEnabled || renderer.hasBlinkingCells
+        let needsRedraw = featureSettingsNeedRedraw || renderer.cursorBlinkEnabled || renderer.hasBlinkingCells
         if needsRedraw {
             needsPresent = true
             scheduleDisplay()
@@ -577,6 +630,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         if let view = terminalView, !view.notifyUpdateChanges {
             return
         }
+        syncRendererFeatureSettings()
         let shouldSync = needsSync
         let shouldPresent = needsPresent || shouldSync
         guard shouldPresent else { return }
