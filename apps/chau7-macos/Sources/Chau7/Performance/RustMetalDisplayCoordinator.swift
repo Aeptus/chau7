@@ -10,6 +10,7 @@
 
 import Foundation
 import MetalKit
+import Chau7Core
 
 /// Grid snapshot provider: reads the Rust grid and returns (snapshot pointer, free closure).
 /// The coordinator calls this each frame to get current grid state + cursor position.
@@ -58,14 +59,14 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// viewport that's ~50 MB/s of GPU sync per visible tab — enough to saturate
     /// the Metal command queue and stall the main thread (multi-second input lag
     /// observed in 2026-04-30 freeze trace). Cap to ~15 fps once we've seen a
-    /// short run of nearly-full-grid redraws; perceptually equivalent for scrolling
-    /// content, halves the cost.
+    /// short run of mostly-full-grid redraws; perceptually equivalent for scrolling
+    /// content, materially lowers the cost.
     ///
     /// The "nearly" matters: a Claude session that pressured the app to ~1.2 GB
     /// resident on 2026-05-04 was rendering 21294/21567 ≈ 98.7 % of cells dirty
-    /// per frame — the prompt/status row stays stable while everything above it
-    /// scrolls. An exact `dirtyCells == frameCells` check would miss this entire
-    /// class of workload, which is why we threshold at 95 %.
+    /// per frame. Later logs showed active AI output around 91 %, so thresholding
+    /// at 95 % missed real workloads. Keep the classifier at 85 % and require
+    /// consecutive frames so ordinary partial redraws do not enter the throttle.
     private var consecutiveFullDirtyFrames = 0
     private var consecutiveLowDirtyFrames = 0
     private var inScrollStorm = false
@@ -73,8 +74,6 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var pendingDeferredSync = false
     private static let scrollStormFrameThreshold = 3
     private static let scrollStormMinIntervalSec: CFAbsoluteTime = 0.066
-    private static let scrollStormDirtyThresholdNumerator = 95
-    private static let scrollStormDirtyThresholdDenominator = 100
     /// Exit threshold: dirty ratio (50 %) AND a run of consecutive low-dirty
     /// frames. The throttle's deferred re-fires (`scheduleDeferredSync`)
     /// produce ~0-dirty frames when no new PTY data arrived in the 66 ms gap;
@@ -209,9 +208,14 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// actually looked like. Called from `draw(in:)` after a successful commit.
     private func updateScrollStormState(dirtyCells: Int, frameCells: Int) {
         guard frameCells > 0 else { return }
-        let isFullDirty = dirtyCells * Self.scrollStormDirtyThresholdDenominator
-            >= frameCells * Self.scrollStormDirtyThresholdNumerator
-        let isLowDirty = dirtyCells * 2 < frameCells
+        let isFullDirty = ScrollStormThrottlePolicy.shouldEnterScrollStorm(
+            dirtyCells: dirtyCells,
+            frameCells: frameCells
+        )
+        let isLowDirty = ScrollStormThrottlePolicy.shouldCountAsLowDirtyFrame(
+            dirtyCells: dirtyCells,
+            frameCells: frameCells
+        )
         if isFullDirty {
             consecutiveFullDirtyFrames += 1
             consecutiveLowDirtyFrames = 0

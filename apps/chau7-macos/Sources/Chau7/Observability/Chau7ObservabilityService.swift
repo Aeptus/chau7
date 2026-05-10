@@ -264,31 +264,23 @@ final class Chau7ObservabilityService {
     }
 
     func setTimerActive(_ id: String, active: Bool) {
-        let changeSeq = queue.sync { () -> Int64? in
-            guard var record = self.timers[id] else { return nil }
-            record.active = active
-            self.timers[id] = record
-            let seq = allocateSequenceLocked()
-            appendChangeLocked(
-                seq: seq,
-                timestampMillis: Int64(Date().timeIntervalSince1970 * 1000),
-                topics: ["timer-inventory"],
-                type: "timer_updated",
-                subsystem: record.subsystem,
-                payload: timerDictionary(record)
-            )
-            return seq
-        }
-        if let changeSeq {
-            dispatchChangeIfNeeded(seq: changeSeq)
-        }
+        mutateTimer(id) { $0.active = active }
     }
 
     func updateTimerScope(_ id: String, tabID: String?, sessionID: String?) {
-        let changeSeq = queue.sync { () -> Int64? in
-            guard var record = self.timers[id] else { return nil }
+        mutateTimer(id) { record in
             record.tabID = tabID
             record.sessionID = sessionID
+        }
+    }
+
+    /// Apply `mutation` to a timer record under `queue`, append a
+    /// `timer_updated` change record, and dispatch outside the queue.
+    /// No-op when the timer id is unknown.
+    private func mutateTimer(_ id: String, applying mutation: (inout TimerRecord) -> Void) {
+        let changeSeq = queue.sync { () -> Int64? in
+            guard var record = self.timers[id] else { return nil }
+            mutation(&record)
             self.timers[id] = record
             let seq = allocateSequenceLocked()
             appendChangeLocked(
