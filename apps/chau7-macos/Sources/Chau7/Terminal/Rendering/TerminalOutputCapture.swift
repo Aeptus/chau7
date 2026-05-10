@@ -70,10 +70,10 @@ final class TerminalOutputCapture {
             guard let self, !self.isCaptureSuspended else { return }
             let line = "\(timestamp) | PTY | \(source) | bytes=\(data.count) | \(escaped)\n"
             guard let payload = line.data(using: .utf8) else { return }
-            self.appendOrDisable(payload)
-            self.writeCount += 1
-            if !self.isCaptureSuspended, self.writeCount.isMultiple(of: 200) {
-                self.trimLogIfNeeded()
+            appendOrDisable(payload)
+            writeCount += 1
+            if !isCaptureSuspended, writeCount.isMultiple(of: 200) {
+                trimLogIfNeeded()
             }
         }
     }
@@ -91,8 +91,8 @@ final class TerminalOutputCapture {
             guard let self, !self.isCaptureSuspended else { return }
             let line = "\(timestamp) | ANOMALY | \(message)\n"
             guard let payload = line.data(using: .utf8) else { return }
-            self.appendOrDisable(payload)
-            self.writeCount += 1
+            appendOrDisable(payload)
+            writeCount += 1
         }
     }
 
