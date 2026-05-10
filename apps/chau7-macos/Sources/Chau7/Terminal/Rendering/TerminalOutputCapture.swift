@@ -26,6 +26,12 @@ final class TerminalOutputCapture {
     private var handle: FileHandle?
     private let formatter = ISO8601DateFormatter()
     private var writeCount = 0
+    /// Set to `true` after a write error fails non-recoverably (typically
+    /// ENOSPC). All further writes for this session short-circuit. Reset only
+    /// by an app relaunch — debug capture isn't worth retrying forever on a
+    /// full disk and definitely isn't worth crashing the app over.
+    /// Read/written only on `queue`, so no synchronization needed.
+    private var isCaptureSuspended = false
     private let maxBytes: Int = {
         if let raw = EnvVars.get(EnvVars.ptyDumpMaxBytes),
            let value = Int(raw), value > 0 {
@@ -61,18 +67,13 @@ final class TerminalOutputCapture {
         let timestamp = formatter.string(from: Date())
 
         queue.async { [weak self] in
-            guard let self else { return }
-            if self.handle == nil {
-                openHandle()
-            }
-            guard let handle = handle else { return }
+            guard let self, !self.isCaptureSuspended else { return }
             let line = "\(timestamp) | PTY | \(source) | bytes=\(data.count) | \(escaped)\n"
-            if let payload = line.data(using: .utf8) {
-                handle.write(payload)
-            }
-            writeCount += 1
-            if writeCount.isMultiple(of: 200) {
-                trimLogIfNeeded()
+            guard let payload = line.data(using: .utf8) else { return }
+            self.appendOrDisable(payload)
+            self.writeCount += 1
+            if !self.isCaptureSuspended, self.writeCount.isMultiple(of: 200) {
+                self.trimLogIfNeeded()
             }
         }
     }
@@ -87,16 +88,43 @@ final class TerminalOutputCapture {
         let timestamp = formatter.string(from: Date())
 
         queue.async { [weak self] in
-            guard let self else { return }
-            if self.handle == nil {
-                openHandle()
-            }
-            guard let handle = handle else { return }
+            guard let self, !self.isCaptureSuspended else { return }
             let line = "\(timestamp) | ANOMALY | \(message)\n"
-            if let payload = line.data(using: .utf8) {
-                handle.write(payload)
-            }
-            writeCount += 1
+            guard let payload = line.data(using: .utf8) else { return }
+            self.appendOrDisable(payload)
+            self.writeCount += 1
+        }
+    }
+
+    /// Append `payload` to the capture log via the throwing `write(contentsOf:)`
+    /// API. Must be called on `queue`. Returning `Bool` is intentionally avoided
+    /// — failures are non-recoverable for this debug-only path:
+    ///
+    ///   - `write(contentsOf:)` throws Swift errors (catchable), unlike the
+    ///     legacy `write(_: Data)` overload that bridges to
+    ///     `-[NSFileHandle writeData:]` and raises `NSFileHandleOperationException`
+    ///     on ENOSPC / EIO / EBADF / EPIPE. Swift cannot catch ObjC exceptions,
+    ///     so the legacy overload aborts the process — exactly the crash we
+    ///     hit on 2026-05-10 at TerminalOutputCapture.swift:71 (disk 97 % full,
+    ///     writeData: raised, app abort()ed in Thread 10 / com.chau7.ptycapture).
+    ///   - On error we drop the line, close the handle, and disable capture
+    ///     for the rest of the session. Reopening would just reproduce the
+    ///     same disk-full error on the next write; the user has already opted
+    ///     into capture being a debug-only feature, so failing closed beats
+    ///     either crashing the app or quietly retrying forever.
+    private func appendOrDisable(_ payload: Data) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        if handle == nil {
+            openHandle()
+        }
+        guard let handle else { return }
+        do {
+            try handle.write(contentsOf: payload)
+        } catch {
+            Log.warn("PTY capture write failed: \(error). Disabling capture for the rest of this session.")
+            try? handle.close()
+            self.handle = nil
+            isCaptureSuspended = true
         }
     }
 
