@@ -57,8 +57,18 @@ public enum NotificationProviderAdapterRegistry {
     }
 
     private static func adaptClaudeCodeEvent(_ event: AIEvent) -> Decision {
+        runProviderAdapter(ClaudeCodeNotificationAdapter(), on: event)
+    }
+
+    /// Wrap a `NotificationProviderAdapter` invocation: build a
+    /// `NotificationProviderEvent` from the AIEvent, dispatch through the
+    /// adapter, and translate the adapter's three-way result back into a
+    /// registry `Decision`. Used by all dedicated adapter dispatchers in
+    /// this file.
+    private static func runProviderAdapter<Adapter: NotificationProviderAdapter>(
+        _ adapter: Adapter, on event: AIEvent
+    ) -> Decision {
         let providerEvent = NotificationProviderEvent(event: event)
-        let adapter = ClaudeCodeNotificationAdapter()
         switch adapter.adapt(providerEvent) {
         case .emit(let canonical):
             return .emit(canonical.asAIEvent(source: event.source, producer: event.producer), canonical: canonical)
@@ -88,19 +98,7 @@ public enum NotificationProviderAdapterRegistry {
     }
 
     private static func adaptCodexEvent(_ event: AIEvent) -> Decision {
-        let providerEvent = NotificationProviderEvent(event: event)
-        let adapter = CodexNotificationAdapter()
-        switch adapter.adapt(providerEvent) {
-        case .emit(let canonical):
-            return .emit(
-                canonical.asAIEvent(source: event.source, producer: event.producer),
-                canonical: canonical
-            )
-        case .drop(let reason):
-            return .drop(reason: reason)
-        case .deferToFallback(let reason):
-            return .drop(reason: reason)
-        }
+        runProviderAdapter(CodexNotificationAdapter(), on: event)
     }
 
     private static func adaptTerminalSessionEvent(_ event: AIEvent) -> Decision {
