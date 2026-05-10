@@ -44,6 +44,7 @@ final class MetalTerminalRenderer: NSObject {
         var texCoord: SIMD4<Float> // Glyph UV coords (u, v, width, height)
         var foreground: SIMD4<Float> // Foreground color (RGBA)
         var background: SIMD4<Float> // Background color (RGBA)
+        var cursorColor: SIMD4<Float> // Cursor fill/decorator color (RGBA)
         var flags: UInt32 // Bold=1, italic=2, underline=4, strikethrough=8, blink=16
         var padding: UInt32 = 0 // Alignment padding
     }
@@ -992,6 +993,7 @@ final class MetalTerminalRenderer: NSObject {
                     texCoord: texCoord,
                     foreground: cell.foregroundColor,
                     background: cell.backgroundColor,
+                    cursorColor: SIMD4(0, 0, 0, 0),
                     flags: cell.flags
                 )
             }
@@ -1075,7 +1077,7 @@ final class MetalTerminalRenderer: NSObject {
             break
         }
         instances[cursorIndex].flags = flags
-        instances[cursorIndex].foreground = cursorState.color
+        instances[cursorIndex].cursorColor = cursorState.color
     }
 
     private func logCursorRowMappingIfNeeded(
@@ -1300,6 +1302,7 @@ extension MetalTerminalRenderer {
         float4 texCoord;  // u, v, width, height
         float4 foreground;
         float4 background;
+        float4 cursorColor;
         uint flags;
         uint padding;
     };
@@ -1321,6 +1324,7 @@ extension MetalTerminalRenderer {
         float2 cellLocalPos;  // 0..1 within the cell (for decorations)
         float4 foreground;
         float4 background;
+        float4 cursorColor;
         uint flags;
     };
 
@@ -1342,17 +1346,17 @@ extension MetalTerminalRenderer {
         out.cellLocalPos = vertexPos;
         out.foreground = instance.foreground;
         out.background = instance.background;
+        out.cursorColor = instance.cursorColor;
         out.flags = instance.flags;
         return out;
     }
 
     fragment float4 backgroundFragmentShader(VertexOut in [[stage_in]]) {
-        // Cursor: block style fills the entire cell with foreground color
+        // Cursor: block style fills the entire cell with cursor color
         bool hasCursor = (in.flags & (1u << 5)) != 0;
         uint cursorStyle = (in.flags >> 6) & 3u;
         if (hasCursor && cursorStyle == 0) {
-            // Block cursor: fill cell with cursor/foreground color
-            return in.foreground;
+            return in.cursorColor;
         }
         return in.background;
     }
@@ -1376,6 +1380,7 @@ extension MetalTerminalRenderer {
         out.cellLocalPos = vertexPos;
         out.foreground = instance.foreground;
         out.background = instance.background;
+        out.cursorColor = instance.cursorColor;
         out.flags = instance.flags;
         return out;
     }
@@ -1407,12 +1412,12 @@ extension MetalTerminalRenderer {
             } else if (cursorStyle == 1) {
                 // Underline cursor: draw a line at the bottom
                 if (in.cellLocalPos.y > 0.9) {
-                    return in.foreground;
+                    return in.cursorColor;
                 }
             } else if (cursorStyle == 2) {
                 // Bar cursor: draw a thin line on the left
                 if (in.cellLocalPos.x < 0.08) {
-                    return in.foreground;
+                    return in.cursorColor;
                 }
             }
         }
