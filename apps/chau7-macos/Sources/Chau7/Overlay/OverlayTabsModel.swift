@@ -980,8 +980,8 @@ final class OverlayTabsModel {
     @ObservationIgnored var tabHitTestFrames: [(tabID: UUID, minX: CGFloat, maxX: CGFloat)] = []
 
     /// Group bracket hit-test ranges for right-click and drag (populated by SwiftUI preferences).
-    /// Each entry maps a repoGroupID to its global x-range.
-    @ObservationIgnored var groupBracketHitTestFrames: [(repoGroupID: String, minX: CGFloat, maxX: CGFloat)] = []
+    /// Segment identity keeps duplicate same-repo visual runs from overwriting each other.
+    @ObservationIgnored var groupBracketHitTestFrames: [(segmentID: String, repoGroupID: String, firstTabID: UUID, minX: CGFloat, maxX: CGFloat)] = []
 
     /// Token to force SwiftUI to re-render the tab bar when incremented
     var tabBarRefreshToken = 0

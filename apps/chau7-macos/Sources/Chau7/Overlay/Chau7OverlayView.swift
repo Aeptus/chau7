@@ -407,7 +407,8 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         // Check bracket frames first — clicking on the group header targets the group
         for frame in model.groupBracketHitTestFrames {
             if globalX >= frame.minX, globalX <= frame.maxX {
-                if let firstTab = model.tabs.first(where: { $0.repoGroupID == frame.repoGroupID }) {
+                if let firstTab = model.tabs.first(where: { $0.id == frame.firstTabID })
+                    ?? model.tabs.first(where: { $0.repoGroupID == frame.repoGroupID }) {
                     return .groupBracket(repoGroupID: frame.repoGroupID, firstTab: firstTab)
                 }
             }
@@ -708,9 +709,15 @@ private struct RenderedTabCountKey: PreferenceKey {
 }
 
 /// Preference key for tracking group bracket frames (for hit-testing and drag)
+private struct BracketFramePreferenceValue: Equatable {
+    let repoGroupID: String
+    let firstTabID: UUID
+    let frame: CGRect
+}
+
 private struct BracketFramePreferenceKey: PreferenceKey {
-    static var defaultValue: [String: CGRect] = [:]
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+    static var defaultValue: [String: BracketFramePreferenceValue] = [:]
+    static func reduce(value: inout [String: BracketFramePreferenceValue], nextValue: () -> [String: BracketFramePreferenceValue]) {
         value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
@@ -771,13 +778,13 @@ private struct ToolbarTabBarView: View {
     /// A segment in the tab bar: either a single ungrouped tab or a group of tabs sharing a repo.
     private enum TabBarSegment: Identifiable {
         case single(OverlayTab)
-        /// segmentIndex disambiguates when the same repo appears in multiple non-contiguous runs.
-        case group(repoID: String, groupIdentity: String, segmentIndex: Int, displayName: String, tabs: [OverlayTab])
+        /// segmentID disambiguates when the same repo appears in multiple non-contiguous runs.
+        case group(repoID: String, segmentID: String, segmentIndex: Int, displayName: String, tabs: [OverlayTab])
 
         var id: String {
             switch self {
             case .single(let tab): return tab.id.uuidString
-            case .group(_, let groupIdentity, let idx, _, _): return "group-\(idx)-\(groupIdentity)"
+            case .group(_, let segmentID, _, _, _): return segmentID
             }
         }
     }
@@ -795,35 +802,47 @@ private struct ToolbarTabBarView: View {
 
     // MARK: - Group Bracket Drag
 
-    private func handleGroupDrag(groupID: String, translation: CGSize) {
+    private func resetGroupDragState() {
+        draggingGroupSegmentID = nil
+        groupDragOffset = 0
+        groupDragHomeRange = 0 ..< 0
+        groupDragCurrentSlot = 0
+    }
+
+    private func handleGroupDrag(groupID: String, segmentID: String, firstTabID: UUID, translation: CGSize) {
         overlayModel.dismissHoverCard()
         // Prevent dual drag: single-tab drag takes priority
         guard draggingTabID == nil else { return }
+        // Hidden idle tabs break the one-to-one mapping between visual group
+        // ranges and model ranges. Avoid moving the wrong tabs.
+        guard idleTabs.isEmpty else { return }
         let snapshot = overlayModel.tabs
 
-        if draggingGroupID == nil {
-            // Find contiguous range of tabs belonging to this group
-            guard let first = snapshot.firstIndex(where: { $0.repoGroupID == groupID }) else { return }
+        if draggingGroupSegmentID == nil {
+            // Find the contiguous run for the specific visual segment, not
+            // merely the first run with the same repoGroupID.
+            guard let first = snapshot.firstIndex(where: { $0.id == firstTabID }) else { return }
+            var start = first
+            while start > 0, snapshot[start - 1].repoGroupID == groupID {
+                start -= 1
+            }
             var end = first
             while end + 1 < snapshot.count, snapshot[end + 1].repoGroupID == groupID {
                 end += 1
             }
-            draggingGroupID = groupID
-            groupDragHomeRange = first ..< (end + 1)
-            groupDragCurrentSlot = first
+            draggingGroupSegmentID = segmentID
+            groupDragHomeRange = start ..< (end + 1)
+            groupDragCurrentSlot = start
             groupDragOffset = 0
-            Log.info("Group drag started: \(URL(fileURLWithPath: groupID).lastPathComponent) range=\(first)..<\(end + 1)")
+            Log.info("Group drag started: \(URL(fileURLWithPath: groupID).lastPathComponent) range=\(start)..<\(end + 1)")
         }
 
-        guard draggingGroupID == groupID else { return }
+        guard draggingGroupSegmentID == segmentID else { return }
 
         // Abort if tabs were added/removed and the range is now invalid
         guard groupDragHomeRange.upperBound <= snapshot.count else {
             Log.warn("Group drag aborted: tab count shrank under range \(groupDragHomeRange)")
-            draggingGroupID = nil
-            groupDragOffset = 0
-            groupDragHomeRange = 0 ..< 0
-            groupDragCurrentSlot = 0
+            resetGroupDragState()
             return
         }
 
@@ -850,9 +869,9 @@ private struct ToolbarTabBarView: View {
         )
     }
 
-    private func handleGroupDragEnd(groupID: String, dropScreenPoint: CGPoint) {
-        guard draggingGroupID == groupID else {
-            Log.trace("Group drag end ignored: draggingGroupID mismatch")
+    private func handleGroupDragEnd(groupID: String, segmentID: String, dropScreenPoint: CGPoint) {
+        guard draggingGroupSegmentID == segmentID else {
+            Log.trace("Group drag end ignored: draggingGroupSegmentID mismatch")
             return
         }
         let from = groupDragHomeRange
@@ -865,10 +884,7 @@ private struct ToolbarTabBarView: View {
         ) ?? false
 
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-            draggingGroupID = nil
-            groupDragOffset = 0
-            groupDragHomeRange = 0 ..< 0
-            groupDragCurrentSlot = 0
+            resetGroupDragState()
             if !movedAcrossWindows, to != from.lowerBound {
                 overlayModel.moveGroup(fromRange: from, toIndex: to)
             }
@@ -889,11 +905,12 @@ private struct ToolbarTabBarView: View {
 
         func flushGroup() {
             guard let groupID = currentGroupID, !currentGroupTabs.isEmpty else { return }
+            guard let firstTabID = currentGroupTabs.first?.id else { return }
             let name = URL(fileURLWithPath: groupID).lastPathComponent
             segments.append(
                 .group(
                     repoID: groupID,
-                    groupIdentity: groupID,
+                    segmentID: "group-\(groupSegmentIndex)-\(groupID)-\(firstTabID.uuidString)",
                     segmentIndex: groupSegmentIndex,
                     displayName: name,
                     tabs: currentGroupTabs
@@ -924,8 +941,8 @@ private struct ToolbarTabBarView: View {
 
     // Gesture-based drag state for tab reordering (Chrome/Safari style deferred reorder)
     @State private var dragOffset: CGFloat = 0
-    @State private var dragHomeIndex = 0 // Original index when drag started
-    @State private var dragCurrentSlot = 0 // Visual slot the dragged tab occupies
+    @State private var dragHomeIndex = 0 // Original visible index when drag started
+    @State private var dragCurrentSlot = 0 // Visible slot the dragged tab occupies
     // dragStartScreenPoint removed — NSEvent.mouseLocation used at drag end instead
     /// Must match HStack spacing in the tab bar ForEach.
     private let tabSpacing: CGFloat = 8
@@ -934,7 +951,7 @@ private struct ToolbarTabBarView: View {
     @State private var tabMidXPositions: [UUID: CGFloat] = [:]
 
     /// Group bracket drag state
-    @State private var draggingGroupID: String?
+    @State private var draggingGroupSegmentID: String?
     @State private var groupDragOffset: CGFloat = 0
     @State private var groupDragHomeRange: Range<Int> = 0 ..< 0
     @State private var groupDragCurrentSlot = 0
@@ -959,7 +976,7 @@ private struct ToolbarTabBarView: View {
                                     tabView(for: tab)
                                         .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
                                         .fixedSize(horizontal: false, vertical: true)
-                                case .group(let groupID, _, _, let name, let groupTabs):
+                                case .group(let groupID, let segmentID, _, let name, let groupTabs):
                                     let groupColor = RepoTagChip.color(for: groupID)
                                     RepoGroupBracket(
                                         name: name,
@@ -977,21 +994,36 @@ private struct ToolbarTabBarView: View {
                                             Color.clear
                                                 .preference(
                                                     key: BracketFramePreferenceKey.self,
-                                                    value: [groupID: proxy.frame(in: .global)]
+                                                    value: [
+                                                        segmentID: BracketFramePreferenceValue(
+                                                            repoGroupID: groupID,
+                                                            firstTabID: groupTabs[0].id,
+                                                            frame: proxy.frame(in: .global)
+                                                        )
+                                                    ]
                                                 )
                                         }
                                     )
                                     .gesture(
                                         DragGesture(minimumDistance: 10)
                                             .onChanged { value in
-                                                handleGroupDrag(groupID: groupID, translation: value.translation)
+                                                handleGroupDrag(
+                                                    groupID: groupID,
+                                                    segmentID: segmentID,
+                                                    firstTabID: groupTabs[0].id,
+                                                    translation: value.translation
+                                                )
                                             }
                                             .onEnded { _ in
-                                                handleGroupDragEnd(groupID: groupID, dropScreenPoint: NSEvent.mouseLocation)
+                                                handleGroupDragEnd(
+                                                    groupID: groupID,
+                                                    segmentID: segmentID,
+                                                    dropScreenPoint: NSEvent.mouseLocation
+                                                )
                                             }
                                     )
-                                    .opacity(draggingGroupID == groupID ? 0.5 : 1.0)
-                                    .offset(x: draggingGroupID == groupID ? groupDragOffset : 0)
+                                    .opacity(draggingGroupSegmentID == segmentID ? 0.5 : 1.0)
+                                    .offset(x: draggingGroupSegmentID == segmentID ? groupDragOffset : 0)
 
                                     ForEach(Array(groupTabs.enumerated()), id: \.element.id) { idx, tab in
                                         let isFirst = idx == 0
@@ -999,7 +1031,7 @@ private struct ToolbarTabBarView: View {
                                         tabView(for: tab, hideRepoPath: true)
                                             .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
                                             .fixedSize(horizontal: false, vertical: true)
-                                            .opacity(draggingGroupID == groupID ? 0.5 : 1.0)
+                                            .opacity(isTabInDraggedGroupRange(tab) ? 0.5 : 1.0)
                                             .overlay(alignment: .top) {
                                                 // Use a stroked path (not filled rect) to match
                                                 // the bracket's stroke rendering exactly.
@@ -1043,8 +1075,14 @@ private struct ToolbarTabBarView: View {
                             rebuildHitTestFrames(widths: tabWidths, positions: positions)
                         }
                         .onPreferenceChange(BracketFramePreferenceKey.self) { frames in
-                            overlayModel.groupBracketHitTestFrames = frames.map { groupID, rect in
-                                (repoGroupID: groupID, minX: rect.minX, maxX: rect.maxX)
+                            overlayModel.groupBracketHitTestFrames = frames.map { segmentID, value in
+                                (
+                                    segmentID: segmentID,
+                                    repoGroupID: value.repoGroupID,
+                                    firstTabID: value.firstTabID,
+                                    minX: value.frame.minX,
+                                    maxX: value.frame.maxX
+                                )
                             }.sorted(by: { $0.minX < $1.minX })
                         }
                         .padding(.horizontal, 8)
@@ -1159,6 +1197,16 @@ private struct ToolbarTabBarView: View {
         return "\(seconds / 3600)h \((seconds % 3600) / 60)m"
     }
 
+    private func isTabInDraggedGroupRange(_ tab: OverlayTab) -> Bool {
+        guard draggingGroupSegmentID != nil,
+              !groupDragHomeRange.isEmpty,
+              groupDragHomeRange.upperBound <= overlayModel.tabs.count,
+              let index = overlayModel.tabs.firstIndex(where: { $0.id == tab.id }) else {
+            return false
+        }
+        return groupDragHomeRange.contains(index)
+    }
+
     @ViewBuilder
     private func tabView(for tab: OverlayTab, hideRepoPath: Bool = false) -> some View {
         let isSelected = tab.id == overlayModel.selectedTabID
@@ -1201,7 +1249,7 @@ private struct ToolbarTabBarView: View {
         .offset(x: tabDragOffset(for: tab) + groupTabDragOffset(for: tab))
         .animation(draggingTabID == tab.id ? nil : .spring(response: 0.25, dampingFraction: 0.85), value: dragCurrentSlot)
         .animation(
-            (draggingGroupID != nil && tab.repoGroupID == draggingGroupID)
+            isTabInDraggedGroupRange(tab)
                 ? nil : .spring(response: 0.25, dampingFraction: 0.85),
             value: groupDragCurrentSlot
         )
@@ -1230,8 +1278,8 @@ private struct ToolbarTabBarView: View {
         // The dragged tab itself tracks the cursor directly
         if tab.id == dragID { return dragOffset }
 
-        // Find this tab's original index (model is unchanged during drag)
-        guard let i = overlayModel.tabs.firstIndex(where: { $0.id == tab.id }) else { return 0 }
+        // Find this tab's visible index (idle tabs may be hidden from the row).
+        guard let i = visibleTabs.firstIndex(where: { $0.id == tab.id }) else { return 0 }
 
         let draggedWidth = tabWidths[dragID] ?? 100
         let shift = draggedWidth + tabSpacing
@@ -1255,7 +1303,7 @@ private struct ToolbarTabBarView: View {
     /// - Tabs displaced by the group: shift by the group's total width
     /// - All others: no offset
     private func groupTabDragOffset(for tab: OverlayTab) -> CGFloat {
-        guard draggingGroupID != nil, !groupDragHomeRange.isEmpty,
+        guard draggingGroupSegmentID != nil, !groupDragHomeRange.isEmpty,
               groupDragHomeRange.upperBound <= overlayModel.tabs.count else { return 0 }
 
         guard let i = overlayModel.tabs.firstIndex(where: { $0.id == tab.id }) else { return 0 }
@@ -1290,7 +1338,7 @@ private struct ToolbarTabBarView: View {
 
     private func handleTabDrag(tab: OverlayTab, translation: CGSize) {
         overlayModel.dismissHoverCard()
-        let snapshot = overlayModel.tabs
+        let snapshot = visibleTabs
 
         // Initialize drag state on first call
         if draggingTabID == nil {
@@ -1313,8 +1361,7 @@ private struct ToolbarTabBarView: View {
         }
 
         // A background tab may have been closed/added during drag, shifting
-        // indices.  Re-sync dragHomeIndex so slot calculation and moveTab
-        // use a valid starting point.
+        // visible indices. Re-sync dragHomeIndex so slot calculation stays valid.
         if liveIndex != dragHomeIndex {
             let delta = liveIndex - dragHomeIndex
             dragHomeIndex = liveIndex
@@ -1331,6 +1378,30 @@ private struct ToolbarTabBarView: View {
             tabWidths: widths,
             spacing: tabSpacing
         )
+    }
+
+    private func modelInsertionIndex(
+        forVisibleSlot slot: Int,
+        draggedTabID: UUID,
+        modelSnapshot: [OverlayTab],
+        visibleSnapshot: [OverlayTab]
+    ) -> Int {
+        let visibleWithoutDragged = visibleSnapshot.filter { $0.id != draggedTabID }
+        guard !visibleWithoutDragged.isEmpty else { return modelSnapshot.count }
+
+        if slot <= 0 {
+            return modelSnapshot.firstIndex(where: { $0.id == visibleWithoutDragged[0].id }) ?? 0
+        }
+
+        if slot >= visibleWithoutDragged.count {
+            if let lastVisibleIndex = modelSnapshot.firstIndex(where: { $0.id == visibleWithoutDragged.last?.id }) {
+                return lastVisibleIndex + 1
+            }
+            return modelSnapshot.count
+        }
+
+        let targetID = visibleWithoutDragged[slot].id
+        return modelSnapshot.firstIndex(where: { $0.id == targetID }) ?? modelSnapshot.count
     }
 
     private func handleTabDragEnd(tab: OverlayTab, dropScreenPoint: CGPoint) {
@@ -1354,7 +1425,13 @@ private struct ToolbarTabBarView: View {
             draggingTabID = nil
             dragOffset = 0
             if !movedAcrossWindows, from != to {
-                overlayModel.moveTab(fromIndex: from, toIndex: to)
+                let insertionIndex = modelInsertionIndex(
+                    forVisibleSlot: to,
+                    draggedTabID: tab.id,
+                    modelSnapshot: overlayModel.tabs,
+                    visibleSnapshot: visibleTabs
+                )
+                overlayModel.moveTab(id: tab.id, toIndex: insertionIndex)
             }
         }
 
@@ -2101,51 +2178,66 @@ struct UnifiedTabButton: View {
 
     private var tabChip: some View {
         HStack(spacing: 8) {
-            // Session-dependent content (icon, title, path, git) in an observing
-            // subview so the Path A/B switch tracks `splitController` changes
-            // (presentationSession flipping nil → non-nil at restore completion).
-            TabLabelContent(
-                splitController: tab.splitController,
-                tab: tab,
-                isMinimalDisplay: isMinimalDisplay,
-                hideRepoPath: hideRepoPath,
-                notificationStyle: notificationStyle,
-                titleFont: titleFont,
-                titleColor: titleColor
-            )
+            HStack(spacing: 8) {
+                // Session-dependent content (icon, title, path, git) in an observing
+                // subview so the Path A/B switch tracks `splitController` changes
+                // (presentationSession flipping nil → non-nil at restore completion).
+                TabLabelContent(
+                    splitController: tab.splitController,
+                    tab: tab,
+                    isMinimalDisplay: isMinimalDisplay,
+                    hideRepoPath: hideRepoPath,
+                    notificationStyle: notificationStyle,
+                    titleFont: titleFont,
+                    titleColor: titleColor
+                )
 
-            if !isMinimalDisplay {
-                // MCP indicator
-                if tab.isMCPControlled, FeatureSettings.shared.mcpShowTabIndicator {
-                    Image(systemName: "face.dashed")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.purple)
-                        .help(L("overlay.mcpControlled.help", "MCP-controlled tab"))
-                }
+                if !isMinimalDisplay {
+                    // MCP indicator
+                    if tab.isMCPControlled, FeatureSettings.shared.mcpShowTabIndicator {
+                        Image(systemName: "face.dashed")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.purple)
+                            .help(L("overlay.mcpControlled.help", "MCP-controlled tab"))
+                    }
 
-                // F20: Command badge
-                if let badge = tab.commandBadge {
-                    Text(badge)
-                        .font(.custom("Avenir Next", size: 10).weight(.medium))
-                        .foregroundStyle(badge.contains("✗") ? .red : .green)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(Color.black.opacity(0.2))
-                        .clipShape(Capsule())
-                }
+                    // F20: Command badge
+                    if let badge = tab.commandBadge {
+                        Text(badge)
+                            .font(.custom("Avenir Next", size: 10).weight(.medium))
+                            .foregroundStyle(badge.contains("✗") ? .red : .green)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.black.opacity(0.2))
+                            .clipShape(Capsule())
+                    }
 
-                // F13: Broadcast indicator
-                if FeatureSettings.shared.showTabBroadcastIndicator, isBroadcastIncluded {
-                    Image(systemName: "dot.radiowaves.left.and.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.orange)
-                }
+                    // F13: Broadcast indicator
+                    if FeatureSettings.shared.showTabBroadcastIndicator, isBroadcastIncluded {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.orange)
+                    }
 
-                // Git branch indicator — three-headed arrow: center = main branch, laterals = feature branches
-                if FeatureSettings.shared.showTabGitIndicator {
-                    PresentationBranchIndicator(splitController: tab.splitController)
+                    // Git branch indicator — three-headed arrow: center = main branch, laterals = feature branches
+                    if FeatureSettings.shared.showTabGitIndicator {
+                        PresentationBranchIndicator(splitController: tab.splitController)
+                    }
                 }
             }
+            .contentShape(Rectangle())
+            // Use simultaneousGesture for taps so they don't block drag recognition.
+            // Keep this off the close button so close does not also select.
+            .simultaneousGesture(
+                TapGesture(count: 2).onEnded {
+                    onRename()
+                }
+            )
+            .simultaneousGesture(
+                TapGesture(count: 1).onEnded {
+                    onSelect()
+                }
+            )
 
             Button(action: onClose) {
                 Image(systemName: "xmark")
@@ -2175,18 +2267,6 @@ struct UnifiedTabButton: View {
                 : L("accessibility.tabRename", "Double-tap to select, then double-tap to rename")
         )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        // Use simultaneousGesture for taps so they don't block drag recognition
-        // Double-tap has higher count so it naturally takes precedence over single-tap
-        .simultaneousGesture(
-            TapGesture(count: 2).onEnded {
-                onRename()
-            }
-        )
-        .simultaneousGesture(
-            TapGesture(count: 1).onEnded {
-                onSelect()
-            }
-        )
         // onHover, contextMenu, pulse animation, and onChange are in body
     }
 }
