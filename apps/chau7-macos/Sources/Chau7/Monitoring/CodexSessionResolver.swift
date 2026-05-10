@@ -254,7 +254,11 @@ enum CodexSessionResolver {
         return String(decoding: buffer, as: UTF8.self)
     }
 
-    private static func parseSessionMeta(_ line: String) -> (cwd: String, sessionId: String)? {
+    /// Parse the first line of a Codex session file (`session_meta` JSON
+    /// envelope) into the (cwd, session-id) pair. Internal so
+    /// `OverlayTabsModel+SessionFinder` can share the same parser instead
+    /// of carrying a verbatim copy.
+    static func parseSessionMeta(_ line: String) -> (cwd: String, sessionId: String)? {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = json["type"] as? String, type == "session_meta",

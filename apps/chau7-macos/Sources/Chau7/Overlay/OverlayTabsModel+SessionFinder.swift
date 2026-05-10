@@ -277,23 +277,13 @@ extension OverlayTabsModel {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// Parse the first line of a Codex session file (session_meta JSON)
-    /// to extract the cwd and session ID.
+    /// Parse the first line of a Codex session file (`session_meta` JSON)
+    /// to extract the cwd and session ID. Thin alias over
+    /// `CodexSessionResolver.parseSessionMeta` so this file's call sites
+    /// keep the local naming while the parser itself lives in one place.
     static func parseCodexSessionMeta(_ line: String) -> (cwd: String, id: String)? {
-        guard let data = line.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = json["type"] as? String, type == "session_meta",
-              let payload = json["payload"] as? [String: Any],
-              let cwd = payload["cwd"] as? String,
-              let id = payload["id"] as? String else {
-            return nil
-        }
-        let normalizedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedId = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedCwd.isEmpty, AIResumeParser.isValidSessionId(normalizedId) else {
-            return nil
-        }
-        return (normalizedCwd, normalizedId)
+        guard let parsed = CodexSessionResolver.parseSessionMeta(line) else { return nil }
+        return (parsed.cwd, parsed.sessionId)
     }
 
     static func captureScrollback(from session: TerminalSessionModel?, maxLines: Int) -> String? {
