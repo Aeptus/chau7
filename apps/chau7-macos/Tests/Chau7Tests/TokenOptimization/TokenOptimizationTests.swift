@@ -248,9 +248,9 @@ final class TokenOptimizationCoreTests: XCTestCase {
         XCTAssertTrue(snapshot.assessment.issues.contains(.lowDeferredFlushRate))
     }
 
-    // Helper — build a snapshot with the minimum fields needed for these
-    // assertions, defaulting everything else to zero/empty so the test
-    // doesn't have to track unrelated metric churn.
+    /// Helper — build a snapshot with the minimum fields needed for these
+    /// assertions, defaulting everything else to zero/empty so the test
+    /// doesn't have to track unrelated metric churn.
     private func makeSnapshot(
         deferredSetCount: Int,
         deferredFlushCount: Int,
