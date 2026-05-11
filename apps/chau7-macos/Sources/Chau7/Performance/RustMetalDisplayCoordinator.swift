@@ -52,6 +52,7 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var lastTripleBufferRebuildAt: CFAbsoluteTime = 0
     private var lastLigaturesEnabled: Bool?
     private var lastCursorBlinkEnabled: Bool?
+    private var pendingRetryDisplay = false
 
     // MARK: - Blink Timer
 
@@ -331,6 +332,21 @@ final class RustMetalDisplayCoordinator: NSObject {
             DispatchQueue.main.async { [weak self] in
                 self?.metalView.needsDisplay = true
             }
+        }
+    }
+
+    /// Re-arms paused/setNeedsDisplay-driven MTKView rendering after transient
+    /// bails such as zero bounds, missing drawables, or a temporarily missing
+    /// provider. Without this, the request remains pending but no future draw
+    /// is guaranteed.
+    private func scheduleRetryDisplay(after delay: TimeInterval = 0.05) {
+        guard !pendingRetryDisplay else { return }
+        pendingRetryDisplay = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            pendingRetryDisplay = false
+            guard renderRequests.drawRequest() != nil else { return }
+            scheduleDisplay()
         }
     }
 
@@ -648,6 +664,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                 Log.debug("RustMetalDisplayCoordinator: draw skipped — font not configured")
                 Self.lastWarningLogTime = now
             }
+            scheduleRetryDisplay()
             return
         }
 
@@ -662,6 +679,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                     Self.lastWarningLogTime = now
                 }
                 FeatureProfiler.shared.end(token)
+                scheduleRetryDisplay()
                 return
             }
             defer { snapshot.free() }
@@ -756,6 +774,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         // 5. Get drawable (skip silently when window has zero bounds — minimized/hidden)
         guard view.bounds.width > 0, view.bounds.height > 0 else {
             FeatureProfiler.shared.end(token)
+            scheduleRetryDisplay()
             return
         }
         guard let drawable = (view.layer as? CAMetalLayer)?.nextDrawable() else {
@@ -765,6 +784,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                 Self.lastNoDrawableWarningLogTime = now
             }
             FeatureProfiler.shared.end(token)
+            scheduleRetryDisplay()
             return
         }
 
@@ -780,6 +800,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                 Self.lastWarningLogTime = now
             }
             FeatureProfiler.shared.end(token)
+            scheduleRetryDisplay()
             return
         }
 
@@ -819,6 +840,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         )
         guard didCommit else {
             FeatureProfiler.shared.end(token)
+            scheduleRetryDisplay()
             return
         }
 
