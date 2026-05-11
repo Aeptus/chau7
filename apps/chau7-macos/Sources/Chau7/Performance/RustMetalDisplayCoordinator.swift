@@ -43,8 +43,7 @@ final class RustMetalDisplayCoordinator: NSObject {
 
     private weak var terminalView: RustTerminalView?
     private var gridProvider: RustGridProvider?
-    private var needsSync = true
-    private var needsPresent = true
+    private var renderRequests = TerminalRenderRequestCoalescer()
     private var rows: Int
     private var cols: Int
     private var fontConfigured = false
@@ -198,8 +197,7 @@ final class RustMetalDisplayCoordinator: NSObject {
             renderer.ligaturesEnabled = ligaturesEnabled
             if lastLigaturesEnabled != nil {
                 tripleBuffer.markFullRefresh()
-                needsSync = true
-                needsPresent = true
+                requestSyncRender()
                 needsRedraw = true
             }
         }
@@ -207,7 +205,7 @@ final class RustMetalDisplayCoordinator: NSObject {
 
         let cursorBlinkEnabled = settings.cursorBlink
         if lastCursorBlinkEnabled != nil, lastCursorBlinkEnabled != cursorBlinkEnabled {
-            needsPresent = true
+            requestPresentRender()
             needsRedraw = true
         }
         lastCursorBlinkEnabled = cursorBlinkEnabled
@@ -244,12 +242,19 @@ final class RustMetalDisplayCoordinator: NSObject {
             }
             lastSyncRequestAt = now
         }
-        needsSync = true
-        needsPresent = true
+        requestSyncRender()
         // Record activity — this pauses cursor blink for 1 second after typing
         lastActivityTime = Date()
         renderer.cursorBlinkPhase = true // Show cursor immediately on activity
         scheduleDisplay()
+    }
+
+    private func requestSyncRender() {
+        renderRequests.requestSync()
+    }
+
+    private func requestPresentRender() {
+        renderRequests.requestPresent()
     }
 
     /// Coalesce throttled `setNeedsSync` calls into one deferred fire so the
@@ -308,8 +313,7 @@ final class RustMetalDisplayCoordinator: NSObject {
 
     func forceAuthoritativeRefresh(reason: String) {
         tripleBuffer.markFullRefresh()
-        needsSync = true
-        needsPresent = true
+        requestSyncRender()
         lastActivityTime = Date()
         renderer.cursorBlinkPhase = true
         Log.trace("RustMetalDisplayCoordinator: forceAuthoritativeRefresh[\(reason)]")
@@ -349,8 +353,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         self.cols = cols
         tripleBuffer = TripleBufferedTerminal(rows: rows, cols: cols)
         tripleBuffer.markFullRefresh()
-        needsSync = true
-        needsPresent = true
+        requestSyncRender()
         Log.info("RustMetalDisplayCoordinator: Resized to \(cols)x\(rows)")
         scheduleDisplay()
     }
@@ -360,8 +363,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         bridge.colorSchemeChanged()
         syncClearColor()
         tripleBuffer.markFullRefresh()
-        needsSync = true
-        needsPresent = true
+        requestSyncRender()
         scheduleDisplay()
     }
 
@@ -390,8 +392,7 @@ final class RustMetalDisplayCoordinator: NSObject {
     func fontChanged() {
         configureFont(force: true)
         tripleBuffer.markFullRefresh()
-        needsSync = true
-        needsPresent = true
+        requestSyncRender()
         scheduleDisplay()
     }
 
@@ -555,7 +556,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         // Only trigger a redraw if cursor or blinking cells need update
         let needsRedraw = featureSettingsNeedRedraw || renderer.cursorBlinkEnabled || renderer.hasBlinkingCells
         if needsRedraw {
-            needsPresent = true
+            requestPresentRender()
             scheduleDisplay()
         }
     }
@@ -586,8 +587,7 @@ final class RustMetalDisplayCoordinator: NSObject {
             Log.info("RustMetalDisplayCoordinator: atlas reclaimed by OS — rebuilding on next draw")
             renderer.clearGlyphCache()
             tripleBuffer.markFullRefresh()
-            needsSync = true
-            needsPresent = true
+            requestSyncRender()
             scheduleDisplay()
         }
     }
@@ -632,14 +632,13 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             return
         }
         syncRendererFeatureSettings()
-        let shouldSync = needsSync
-        let shouldPresent = needsPresent || shouldSync
-        guard shouldPresent else { return }
-        // Do NOT clear needsSync/needsPresent here — any of the early-return
+        guard let renderRequest = renderRequests.drawRequest() else { return }
+        let shouldSync = renderRequest.shouldSync
+        // Do NOT clear render requests here — any of the early-return
         // guards below (font / gridProvider / bounds / drawable / cellCount)
         // would otherwise eat the request and strand the view on a stale
-        // frame. Flags are cleared only at the end of draw() once we've
-        // committed to rendering past every bail path.
+        // frame. Requests are completed only after a frame commits, and only
+        // for the generation this draw actually consumed.
 
         // Ensure font is configured (may not be ready at init if window isn't available yet)
         if !fontConfigured { configureFont() }
@@ -833,13 +832,13 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             updateScrollStormState(dirtyCells: dirtyCellCount, frameCells: cellCount)
         }
 
-        // Clear the flags only now that the frame has committed. Any
-        // earlier `return` leaves them set so the next draw() tick retries —
-        // MTKView keeps ticking at the display rate, so a transient bail
-        // (window.bounds zero during fullscreen toggle, drawable vending nil
-        // for a frame, etc.) self-heals instead of stranding the view.
-        needsSync = false
-        needsPresent = false
+        // Complete only the request generation consumed by this draw. If PTY
+        // output, blink, theme, or resize requested another frame while this
+        // one was being prepared/committed, keep it pending and re-arm the
+        // coalesced display path.
+        if renderRequests.completeCommittedDraw(renderRequest) {
+            scheduleDisplay()
+        }
 
         FeatureProfiler.shared.end(token)
     }
