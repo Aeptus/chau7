@@ -198,6 +198,99 @@ final class TokenOptimizationCoreTests: XCTestCase {
         )
     }
 
+    // MARK: - Deferred-flush Rate Denominator
+
+    func testDeferredFlushRateUsesEligibleDenominator() {
+        // 6 deferred-sets, 1 actual flush, 5 sessions cancelled before
+        // their first prompt (session close / mode flip). Pre-fix this
+        // reported 1/6 = 16.7% and tripped `.lowDeferredFlushRate`;
+        // post-fix the cancels are subtracted from the denominator and
+        // the rate is 1/(6-5) = 100%.
+        let snapshot = makeSnapshot(
+            deferredSetCount: 6,
+            deferredFlushCount: 1,
+            deferredSkipCount: 0,
+            deferredCancelCount: 5
+        )
+        XCTAssertEqual(snapshot.deferredEligibleCount, 1)
+        XCTAssertEqual(snapshot.deferredFlushRatePercent, 100, accuracy: 0.01)
+        XCTAssertFalse(snapshot.assessment.issues.contains(.lowDeferredFlushRate))
+    }
+
+    func testDeferredFlushRateZeroWhenAllCancelled() {
+        // All deferred-sets cancelled before flush → eligible denominator
+        // is zero → percentage reports 0 (rather than a divide-by-zero
+        // or misleading 100%) and the rate is suppressed from health
+        // checks because the sample threshold isn't met.
+        let snapshot = makeSnapshot(
+            deferredSetCount: 4,
+            deferredFlushCount: 0,
+            deferredSkipCount: 0,
+            deferredCancelCount: 4
+        )
+        XCTAssertEqual(snapshot.deferredEligibleCount, 0)
+        XCTAssertEqual(snapshot.deferredFlushRatePercent, 0)
+        XCTAssertFalse(snapshot.assessment.issues.contains(.lowDeferredFlushRate))
+    }
+
+    func testDeferredFlushRateHealthFiresOnlyAboveEligibleThreshold() {
+        // 5 eligible deferred-sets with 1 flush = 20% flush rate; this
+        // should still fire `.lowDeferredFlushRate` because the eligible
+        // sample size crosses the threshold and the rate is below 80%.
+        let snapshot = makeSnapshot(
+            deferredSetCount: 6,
+            deferredFlushCount: 1,
+            deferredSkipCount: 4,
+            deferredCancelCount: 1
+        )
+        XCTAssertEqual(snapshot.deferredEligibleCount, 5)
+        XCTAssertEqual(snapshot.deferredFlushRatePercent, 20, accuracy: 0.01)
+        XCTAssertTrue(snapshot.assessment.issues.contains(.lowDeferredFlushRate))
+    }
+
+    // Helper — build a snapshot with the minimum fields needed for these
+    // assertions, defaulting everything else to zero/empty so the test
+    // doesn't have to track unrelated metric churn.
+    private func makeSnapshot(
+        deferredSetCount: Int,
+        deferredFlushCount: Int,
+        deferredSkipCount: Int,
+        deferredCancelCount: Int,
+        recalcCount: Int = 0,
+        unchangedCount: Int = 0
+    ) -> CTORuntimeSnapshot {
+        CTORuntimeSnapshot(
+            mode: TokenOptimizationMode.allTabs.rawValue,
+            recalcCount: recalcCount,
+            createdCount: 0,
+            removedCount: 0,
+            unchangedCount: unchangedCount,
+            deferredSetCount: deferredSetCount,
+            deferredFlushCount: deferredFlushCount,
+            deferredSkipCount: deferredSkipCount,
+            deferredCancelCount: deferredCancelCount,
+            setupCount: 1,
+            teardownCount: 0,
+            modeChangeCount: 0,
+            lastModeChangeAt: nil,
+            lastDecisionAt: nil,
+            lastDecision: nil,
+            activeSessionCount: 0,
+            trackedSessions: 0,
+            pendingDeferredSessions: 0,
+            reasonBreakdown: [:],
+            deferredFlushDelayCount: 0,
+            deferredFlushDelayMinMs: nil,
+            deferredFlushDelayMaxMs: nil,
+            deferredFlushDelayAverageMs: nil,
+            deferredFlushDelayLastMs: nil,
+            recentDecisions: [],
+            firstSeenAt: Date(),
+            uptimeSeconds: 120,
+            decisionsPerMinute: 0
+        )
+    }
+
     // MARK: - TabTokenOptOverride Properties
 
     func testTabTokenOptOverrideAllCases() {

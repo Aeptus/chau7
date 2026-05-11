@@ -198,6 +198,12 @@ public struct CTORuntimeSnapshot: Codable, Equatable, Sendable {
     public let deferredSetCount: Int
     public let deferredFlushCount: Int
     public let deferredSkipCount: Int
+    /// Count of `deferredSet` calls that were *cancelled* before reaching
+    /// the first prompt (session closed, mode flipped to `.off`, …).
+    /// Subtracted from `deferredSetCount` when computing
+    /// `deferredFlushRatePercent` so the rate reflects only sessions that
+    /// had a real chance to flush.
+    public let deferredCancelCount: Int
     public let setupCount: Int
     public let teardownCount: Int
     public let modeChangeCount: Int
@@ -227,6 +233,7 @@ public struct CTORuntimeSnapshot: Codable, Equatable, Sendable {
         deferredSetCount: Int,
         deferredFlushCount: Int,
         deferredSkipCount: Int,
+        deferredCancelCount: Int = 0,
         setupCount: Int,
         teardownCount: Int,
         modeChangeCount: Int,
@@ -255,6 +262,7 @@ public struct CTORuntimeSnapshot: Codable, Equatable, Sendable {
         self.deferredSetCount = deferredSetCount
         self.deferredFlushCount = deferredFlushCount
         self.deferredSkipCount = deferredSkipCount
+        self.deferredCancelCount = deferredCancelCount
         self.setupCount = setupCount
         self.teardownCount = teardownCount
         self.modeChangeCount = modeChangeCount
@@ -292,15 +300,22 @@ public extension CTORuntimeSnapshot {
         return (Double(changedCount) / Double(recalcCount)) * 100
     }
 
+    /// Denominator for the deferred-flush / skip rate metrics: total
+    /// deferred-sets that had a chance to flush, i.e. excluding cancels
+    /// (session closed before first prompt, mode flipped to .off, …).
+    var deferredEligibleCount: Int {
+        max(0, deferredSetCount - deferredCancelCount)
+    }
+
     var deferredSkipRatePercent: Double {
-        guard deferredSetCount > 0 else { return 0 }
-        let ratio = Double(deferredSkipCount) / Double(deferredSetCount)
+        guard deferredEligibleCount > 0 else { return 0 }
+        let ratio = Double(deferredSkipCount) / Double(deferredEligibleCount)
         return min(max(ratio, 0), 1) * 100
     }
 
     var deferredFlushRatePercent: Double {
-        guard deferredSetCount > 0 else { return 0 }
-        let ratio = Double(deferredFlushCount) / Double(deferredSetCount)
+        guard deferredEligibleCount > 0 else { return 0 }
+        let ratio = Double(deferredFlushCount) / Double(deferredEligibleCount)
         return min(max(ratio, 0), 1) * 100
     }
 
@@ -346,13 +361,15 @@ public extension CTORuntimeSnapshot {
             issues.append(.lowChangeRate)
         }
 
-        // Need enough samples before percentages are meaningful (>= 5 deferred).
-        if deferredSetCount >= 5 && deferredSkipRatePercent > 35.0 {
+        // Need enough samples before percentages are meaningful (>= 5
+        // *eligible* deferred sets — sessions that closed before reaching
+        // their first prompt are subtracted from the denominator).
+        if deferredEligibleCount >= 5 && deferredSkipRatePercent > 35.0 {
             score -= 30
             issues.append(.highDeferredSkips)
         }
 
-        if deferredSetCount >= 5 && deferredFlushRatePercent < 80.0 {
+        if deferredEligibleCount >= 5 && deferredFlushRatePercent < 80.0 {
             score -= 20
             issues.append(.lowDeferredFlushRate)
         }

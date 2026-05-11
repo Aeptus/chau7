@@ -101,7 +101,14 @@ extension OverlayTabsModel {
             guard let sessionID = tab.session?.tabIdentifier else { continue }
             guard let session = tab.session, !session.ctoFlagDeferred else {
                 if let session = tab.session {
-                    CTORuntimeMonitor.shared.recordDeferredSkip(
+                    // Mode flip while the session was still deferred:
+                    // the pending defer-flush will never resolve, so
+                    // record it as a cancel (denominator-reducing) rather
+                    // than a skip (denominator-preserving). A skip is for
+                    // "a non-deferred decision interleaved while a defer
+                    // was still pending"; this path is the defer itself
+                    // being abandoned.
+                    CTORuntimeMonitor.shared.recordDeferredCancel(
                         sessionID: session.tabIdentifier,
                         reason: "mode-change-before-first-prompt",
                         mode: mode,

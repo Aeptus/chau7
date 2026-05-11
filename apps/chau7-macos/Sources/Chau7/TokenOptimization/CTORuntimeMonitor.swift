@@ -15,6 +15,7 @@ final class CTORuntimeMonitor {
     private var deferredSetCount = 0
     private var deferredFlushCount = 0
     private var deferredSkipCount = 0
+    private var deferredCancelCount = 0
     private var setupCount = 0
     private var teardownCount = 0
     private var modeChangeCount = 0
@@ -57,6 +58,7 @@ final class CTORuntimeMonitor {
                 deferredSetCount: deferredSetCount,
                 deferredFlushCount: deferredFlushCount,
                 deferredSkipCount: deferredSkipCount,
+                deferredCancelCount: deferredCancelCount,
                 setupCount: setupCount,
                 teardownCount: teardownCount,
                 modeChangeCount: modeChangeCount,
@@ -95,6 +97,7 @@ final class CTORuntimeMonitor {
             deferredSetCount = 0
             deferredFlushCount = 0
             deferredSkipCount = 0
+            deferredCancelCount = 0
             setupCount = 0
             teardownCount = 0
             modeChangeCount = 0
@@ -308,6 +311,52 @@ final class CTORuntimeMonitor {
                 "mode": mode.rawValue,
                 "reason": "skippedDueToDeferred",
                 "skipReason": reason
+            ]
+        )
+    }
+
+    /// Record that a pending deferred-flush was *cancelled* — the session
+    /// closed (or its mode flipped to off) before reaching the first
+    /// prompt. Distinct from `recordDeferredSkip`, which captures
+    /// "a non-deferred decision suppressed a flag flip while a deferral
+    /// was still pending". Cancellations are subtracted from the
+    /// denominator of `deferredFlushRatePercent` so the flush-rate health
+    /// metric reflects only sessions that actually had a chance to flush.
+    func recordDeferredCancel(
+        sessionID: String,
+        reason: String,
+        mode: TokenOptimizationMode,
+        override: TabTokenOptOverride,
+        isAIActive: Bool
+    ) {
+        var event: CTODecisionEvent?
+        withLock {
+            deferredCancelCount += 1
+            deferredSessionIDs.remove(sessionID)
+            event = CTODecisionEvent(
+                sessionID: sessionID,
+                mode: mode,
+                override: override,
+                isAIActive: isAIActive,
+                previousState: false,
+                nextState: false,
+                reason: .skippedDueToDeferred,
+                deferred: true,
+                changed: false,
+                debugNote: "cancelled:\(reason)"
+            )
+            appendRecentDecision(event)
+        }
+        if let event {
+            logDecisionEvent(event)
+        }
+        LogEnhanced.trace(
+            .cto,
+            "CTO deferred cancel",
+            metadata: [
+                "session": sessionID,
+                "mode": mode.rawValue,
+                "cancelReason": reason
             ]
         )
     }

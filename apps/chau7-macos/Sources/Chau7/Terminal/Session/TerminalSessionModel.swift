@@ -3065,13 +3065,14 @@ final class TerminalSessionModel {
         ctoRecalcWorkItem?.cancel()
         ctoRecalcWorkItem = nil
         // `markCTOFlagDeferred` increments deferredSetCount; if we never
-        // reached `createDeferredCTOFlag`, record an explicit skip so the
-        // deferred-flush rate isn't biased downward by sessions that died
-        // before their first prompt.
+        // reached `createDeferredCTOFlag`, record an explicit *cancel* so
+        // the deferred-flush rate's denominator drops by one — these
+        // sessions never had a chance to flush, so counting them as misses
+        // would be misleading.
         if ctoFlagDeferred {
             ctoFlagDeferred = false
             ctoFlagDeferredAt = nil
-            CTORuntimeMonitor.shared.recordDeferredSkip(
+            CTORuntimeMonitor.shared.recordDeferredCancel(
                 sessionID: tabIdentifier,
                 reason: "session_closed_before_flush",
                 mode: FeatureSettings.shared.tokenOptimizationMode,
