@@ -16,6 +16,7 @@ private enum RemoteProcessedFrameResult: Sendable {
 }
 
 private enum RemoteFrameProcessor {
+    nonisolated
     static func process(_ data: Data, crypto: RemoteCryptoSession?) -> RemoteProcessedFrameResult {
         guard let frame = try? RemoteFrame.decode(from: data) else {
             return .decodeFailed(data.count)

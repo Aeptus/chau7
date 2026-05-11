@@ -47,6 +47,8 @@ struct Chau7RemoteWidget: Widget {
 
     private func backgroundTint(for status: RemoteActivityStatus) -> Color {
         switch status {
+        case .approvalRequired:
+            return .orange.opacity(0.22)
         case .waitingInput:
             return .orange.opacity(0.18)
         case .failed:
@@ -60,6 +62,8 @@ struct Chau7RemoteWidget: Widget {
 
     private func tint(for status: RemoteActivityStatus) -> Color {
         switch status {
+        case .approvalRequired:
+            return .orange
         case .waitingInput:
             return .orange
         case .failed:
@@ -73,6 +77,8 @@ struct Chau7RemoteWidget: Widget {
 
     private func iconName(for status: RemoteActivityStatus) -> String {
         switch status {
+        case .approvalRequired:
+            return "lock.shield.fill"
         case .waitingInput:
             return "exclamationmark.bubble.fill"
         case .failed:
@@ -88,6 +94,8 @@ struct Chau7RemoteWidget: Widget {
 
     private func shortStatusLabel(for status: RemoteActivityStatus) -> String {
         switch status {
+        case .approvalRequired:
+            return "Lock"
         case .waitingInput:
             return "Ask"
         case .failed:

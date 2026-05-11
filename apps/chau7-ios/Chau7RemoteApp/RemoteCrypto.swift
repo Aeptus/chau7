@@ -11,6 +11,7 @@ struct RemoteCryptoSession: Sendable {
     let key: SymmetricKey
     let noncePrefix: Data
 
+    nonisolated
     static func create(sharedSecret: SharedSecret, nonceMac: Data, nonceIOS: Data) -> RemoteCryptoSession? {
         let salt = nonceMac + nonceIOS
         let sessionKey = sharedSecret.hkdfDerivedSymmetricKey(
@@ -29,6 +30,7 @@ struct RemoteCryptoSession: Sendable {
         return RemoteCryptoSession(key: sessionKey, noncePrefix: prefix)
     }
 
+    nonisolated
     func encrypt(frame: RemoteFrame) throws -> RemoteFrame {
         let nonce = try makeNonce(seq: frame.seq)
         // Build header with encrypted flag set and ciphertext+tag length
@@ -58,6 +60,7 @@ struct RemoteCryptoSession: Sendable {
         )
     }
 
+    nonisolated
     func decrypt(frame: RemoteFrame) throws -> Data {
         guard frame.payload.count >= 16 else {
             throw RemoteCryptoError.invalidCiphertext
@@ -71,6 +74,7 @@ struct RemoteCryptoSession: Sendable {
         return try ChaChaPoly.open(sealedBox, using: key, authenticating: header)
     }
 
+    nonisolated
     private func makeNonce(seq: UInt64) throws -> ChaChaPoly.Nonce {
         var data = Data(count: 12)
         data.replaceSubrange(0..<4, with: noncePrefix)

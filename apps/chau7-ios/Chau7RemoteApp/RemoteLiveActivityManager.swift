@@ -64,7 +64,7 @@ final class RemoteLiveActivityManager {
             await end(activity: activity, after: 8)
         case .failed:
             await end(activity: activity, after: 20)
-        case .idle, .running, .waitingInput:
+        case .idle, .running, .approvalRequired, .waitingInput:
             return
         }
     }
