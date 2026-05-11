@@ -221,15 +221,21 @@ final class TerminalSessionModel {
 
     var activeAppName: String? {
         didSet {
-            recalculateCTOFlag()
-            onSessionStateChanged?()
+            // Process-tree polls re-assign `activeAppName` to the same value
+            // many times per second. Skip the recalc unless the value
+            // actually changed, mirroring the `liveAgentName.didSet` guard.
+            // Without this guard, `CTORuntimeMonitor.recalcCount` is
+            // dominated by no-op recalcs and `decisionsChangeRatePercent`
+            // floors out — the metric tripping `.lowChangeRate` today.
             if activeAppName != oldValue {
+                recalculateCTOFlag()
                 postRuntimeReadinessChange(source: "active_app")
                 NotificationCenter.default.post(
                     name: .terminalSessionRenderSuspensionStateChanged,
                     object: self
                 )
             }
+            onSessionStateChanged?()
         }
     }
 
@@ -2982,10 +2988,39 @@ final class TerminalSessionModel {
         }
     }
 
+    /// Debounce window for `recalculateCTOFlag`. Process-tree snapshots and
+    /// shell-integration events can flip `activeAppName` / `liveAgentName`
+    /// several times within a few tens of milliseconds when a TUI spawns
+    /// and rejoins a child process; coalescing those bursts into one recalc
+    /// removes the no-op decision storm that the change-rate health metric
+    /// otherwise sees as low signal.
+    @ObservationIgnored private var ctoRecalcWorkItem: DispatchWorkItem?
+    private static let ctoRecalcDebounce: TimeInterval = 0.05
+
     /// Recalculates the CTO flag file for this session based on the current
     /// global mode, per-tab override, and AI detection state.
     /// Called automatically when `activeAppName` changes.
-    func recalculateCTOFlag() {
+    ///
+    /// The actual recalculation is debounced 50ms — callers can fire this
+    /// freely without worrying about how often the underlying decision /
+    /// flag-file work runs. Pass `flushImmediately: true` when the caller
+    /// needs the new state visible synchronously (e.g. tests).
+    func recalculateCTOFlag(flushImmediately: Bool = false) {
+        ctoRecalcWorkItem?.cancel()
+        if flushImmediately {
+            ctoRecalcWorkItem = nil
+            applyCTOFlagRecalculation()
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            self?.ctoRecalcWorkItem = nil
+            self?.applyCTOFlagRecalculation()
+        }
+        ctoRecalcWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.ctoRecalcDebounce, execute: work)
+    }
+
+    private func applyCTOFlagRecalculation() {
         let mode = FeatureSettings.shared.tokenOptimizationMode
         guard mode != .off else { return }
         guard !ctoFlagDeferred else { return }
@@ -3025,6 +3060,10 @@ final class TerminalSessionModel {
     /// session that already had its flag removed is a no-op — `removeFlag`
     /// returns false and the monitor's `untrackSession` is idempotent.
     private func releaseCTOFlagOnClose() {
+        // Cancel any pending debounced recalc — a fired-after-close decision
+        // would otherwise record telemetry against an untracked session.
+        ctoRecalcWorkItem?.cancel()
+        ctoRecalcWorkItem = nil
         // `markCTOFlagDeferred` increments deferredSetCount; if we never
         // reached `createDeferredCTOFlag`, record an explicit skip so the
         // deferred-flush rate isn't biased downward by sessions that died

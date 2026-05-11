@@ -1673,5 +1673,56 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertTrue(contents.contains("export ZDOTDIR=\"$CHAU7_USER_ZDOTDIR\""))
         XCTAssertFalse(contents.contains("isolation-home/.zshrc"))
     }
+
+    // MARK: - CTO Recalculation Debounce
+
+    /// Burst of `recalculateCTOFlag` calls within the debounce window should
+    /// collapse into a single underlying decision record. Process-tree
+    /// snapshots and shell-integration events can flip `activeAppName`
+    /// several times in tens of milliseconds; without debouncing, each
+    /// flip becomes its own (mostly-no-op) recalc and inflates the
+    /// `recalcCount` denominator in `decisionsChangeRatePercent`.
+    func testRecalculateCTOFlagDebouncesBurstsIntoOneDecision() async {
+        FeatureSettings.shared.tokenOptimizationMode = .allTabs
+        defer { FeatureSettings.shared.tokenOptimizationMode = .off }
+        CTORuntimeMonitor.shared.reset()
+
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        // Fire five times in immediate succession — should coalesce.
+        for _ in 0 ..< 5 {
+            session.recalculateCTOFlag()
+        }
+
+        // Before the debounce window elapses, no decision has been recorded.
+        XCTAssertEqual(CTORuntimeMonitor.shared.snapshot().recalcCount, 0)
+
+        // Wait past the 50ms debounce + a generous main-queue settling margin.
+        try? await Task.sleep(nanoseconds: 150_000_000)
+
+        let snapshot = CTORuntimeMonitor.shared.snapshot()
+        XCTAssertEqual(snapshot.recalcCount, 1, "5 burst calls should yield 1 recorded decision")
+    }
+
+    func testRecalculateCTOFlagFlushImmediatelyBypassesDebounce() {
+        FeatureSettings.shared.tokenOptimizationMode = .allTabs
+        defer { FeatureSettings.shared.tokenOptimizationMode = .off }
+        CTORuntimeMonitor.shared.reset()
+
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.recalculateCTOFlag(flushImmediately: true)
+
+        XCTAssertEqual(
+            CTORuntimeMonitor.shared.snapshot().recalcCount,
+            1,
+            "flushImmediately should record the decision synchronously"
+        )
+
+        // Clean up the flag file we just created.
+        CTOFlagManager.removeFlag(sessionID: session.tabIdentifier)
+    }
 }
 #endif
