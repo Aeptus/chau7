@@ -1798,6 +1798,13 @@ final class TerminalSessionModel {
         // before handleProcessTermination fires, losing the buffer snapshot.
         finishAILogging(exitCode: nil)
 
+        // Remove the CTO flag here so paths that don't go through
+        // `OverlayTabsModel.closeTab` — most notably split-pane close via
+        // `SplitPaneController.removeNode` — still clean up. `closeTab`
+        // already removes the flag for primary-pane closes; calling
+        // `removeFlag` again on an already-gone flag is a no-op.
+        releaseCTOFlagOnClose()
+
         // Send exit to the shell (works with both backends)
         activeTerminalView?.send(txt: "exit\n")
         scheduleForcedTerminationIfNeeded()
@@ -1826,6 +1833,10 @@ final class TerminalSessionModel {
         activeRustTerminalView?.onProcessTerminated = nil
         stopIdleTimer()
         finishAILogging(exitCode: nil, mode: .appTermination)
+
+        // Same flag-leak defense as `closeSession`. App termination races
+        // the regular tab-close path and shouldn't trust it ran.
+        releaseCTOFlagOnClose()
 
         guard shellPID > 0 else { return }
 
@@ -3004,6 +3015,33 @@ final class TerminalSessionModel {
         // Notify tab bar to re-render bolt icon state (the OverlayTab struct
         // is a value type and doesn't observe session changes directly).
         NotificationCenter.default.post(name: .ctoFlagRecalculated, object: nil)
+    }
+
+    /// Defensive cleanup invoked on every session-close code path. Guarantees
+    /// the CTO flag file is removed and the session is untracked even when
+    /// the caller didn't go through `OverlayTabsModel.closeTab` (e.g.
+    /// `SplitPaneController.removeNode` for split panes, or
+    /// `closeSessionForTermination` during app quit). Calling this on a
+    /// session that already had its flag removed is a no-op — `removeFlag`
+    /// returns false and the monitor's `untrackSession` is idempotent.
+    private func releaseCTOFlagOnClose() {
+        // `markCTOFlagDeferred` increments deferredSetCount; if we never
+        // reached `createDeferredCTOFlag`, record an explicit skip so the
+        // deferred-flush rate isn't biased downward by sessions that died
+        // before their first prompt.
+        if ctoFlagDeferred {
+            ctoFlagDeferred = false
+            ctoFlagDeferredAt = nil
+            CTORuntimeMonitor.shared.recordDeferredSkip(
+                sessionID: tabIdentifier,
+                reason: "session_closed_before_flush",
+                mode: FeatureSettings.shared.tokenOptimizationMode,
+                override: tokenOptOverride,
+                isAIActive: activeAppName != nil
+            )
+        }
+        _ = CTOFlagManager.removeFlag(sessionID: tabIdentifier)
+        CTORuntimeMonitor.shared.untrackSession(tabIdentifier)
     }
 
     /// Marks this session as deferred for the first prompt in the current shell
