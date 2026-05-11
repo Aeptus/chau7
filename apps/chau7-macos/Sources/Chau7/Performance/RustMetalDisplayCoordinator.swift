@@ -451,7 +451,8 @@ final class RustMetalDisplayCoordinator: NSObject {
 
         // 3. Reparent Metal view into the new container
         metalView.removeFromSuperview()
-        metalView.frame = newView.renderSurfaceFrame
+        let newGeometry = newView.currentRenderGeometry
+        metalView.frame = newGeometry.surfaceFrame
         container.addSubview(metalView, positioned: .above, relativeTo: newView)
         container.metalCoordinator = self
         metalView.alphaValue = 1
@@ -476,9 +477,9 @@ final class RustMetalDisplayCoordinator: NSObject {
         configureFont()
 
         // 7. Resize triple buffer if grid dimensions changed
-        let newRows = newView.renderRows
-        let newCols = newView.renderCols
-        if newRows != rows || newCols != cols {
+        let newRows = newGeometry.canResizePTY ? newGeometry.rows : newView.renderRows
+        let newCols = newGeometry.canResizePTY ? newGeometry.cols : newView.renderCols
+        if newRows > 1, newCols > 1, newRows != rows || newCols != cols {
             resize(rows: newRows, cols: newCols)
         }
 

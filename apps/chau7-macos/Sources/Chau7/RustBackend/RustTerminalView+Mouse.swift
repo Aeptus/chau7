@@ -719,9 +719,8 @@ extension RustTerminalView {
         guard bounds.height > 0, bounds.width > 0 else { return false }
         guard cols > 0, rows > 0 else { return false }
 
-        // Use renderSurfaceFrame, not raw bounds, to match the Metal grid
-        // origin after terminal inset and whole-row clipping. See
-        // `pointToCell` for details.
+        // Use the shared render geometry, not raw bounds, so terminal inset
+        // and fractional row/column remainders match the renderer.
         let cell = pointToCell(point)
         let clickedRow = Int(cell.row)
         let clickedCol = Int(cell.col)
@@ -753,9 +752,8 @@ extension RustTerminalView {
         guard bounds.height > 0, bounds.width > 0 else { return false }
         guard cols > 0, rows > 0 else { return false }
 
-        // Use renderSurfaceFrame, not raw bounds, to match the Metal grid
-        // origin after terminal inset and whole-row clipping. See
-        // `pointToCell` for details.
+        // Use the shared render geometry, not raw bounds, so terminal inset
+        // and fractional row/column remainders match the renderer.
         let cell = pointToCell(point)
         let clickedRow = Int(cell.row)
         let clickedCol = Int(cell.col)

@@ -52,14 +52,14 @@ final class RustTerminalContainerView: NSView {
 
         // Resize the shared Metal view if it's placed in this container.
         // Guard against degenerate dimensions during split pane transitions —
-        // the container can have zero bounds momentarily, causing renderRows/
-        // renderCols to return 1. A 1x1 resize corrupts the triple buffer.
+        // the container can have zero bounds momentarily. A 1x1 resize
+        // corrupts the triple buffer, so sample frame and rows from the same
+        // geometry contract and only resize once real dimensions settle.
         if let coordinator = metalCoordinator {
-            let rows = terminalView.renderRows
-            let cols = terminalView.renderCols
-            if rows > 1, cols > 1 {
-                coordinator.metalView.frame = terminalView.renderSurfaceFrame
-                coordinator.resize(rows: rows, cols: cols)
+            let geometry = terminalView.currentRenderGeometry
+            if geometry.rows > 1, geometry.cols > 1 {
+                coordinator.metalView.frame = geometry.surfaceFrame
+                coordinator.resize(rows: geometry.rows, cols: geometry.cols)
             }
         }
 
