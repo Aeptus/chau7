@@ -631,5 +631,44 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         XCTAssertEqual(snapshot.mode, TokenOptimizationMode.allTabs.rawValue)
         XCTAssertFalse(snapshot.assessment.issues.contains(.modeOffWithTrackedSessions))
     }
+
+    // MARK: - Flag Sweep
+
+    /// `CTOFlagManager.removeAllFlags()` should erase every file under the
+    /// flag directory and return the count, so the startup sweep in
+    /// `CTOManager.setup()` can purge state left over from a crashed previous
+    /// run. We seed two flags with test-scoped UUIDs and verify both are
+    /// gone afterwards.
+    func testRemoveAllFlagsErasesSeededFiles() {
+        CTOFlagManager.ensureFlagDirectory()
+        // Snapshot any pre-existing flags from a prior test/run so we can
+        // measure only the ones this test creates.
+        let baseline = CTOFlagManager.removeAllFlags()
+        if baseline > 0 {
+            // Re-seed cleared baseline state isn't possible without the
+            // session IDs; leave the dir empty and continue.
+        }
+
+        let seededIDs = (0 ..< 2).map { _ in UUID().uuidString }
+        for id in seededIDs {
+            XCTAssertTrue(
+                CTOFlagManager.createFlag(sessionID: id),
+                "seed flag should have been created"
+            )
+            XCTAssertTrue(
+                CTOFlagManager.isFlagActive(sessionID: id),
+                "seed flag should be active right after createFlag"
+            )
+        }
+
+        let removed = CTOFlagManager.removeAllFlags()
+        XCTAssertEqual(removed, 2, "exactly the two seeded flags should be removed")
+        for id in seededIDs {
+            XCTAssertFalse(
+                CTOFlagManager.isFlagActive(sessionID: id),
+                "seeded flag must be gone after removeAllFlags()"
+            )
+        }
+    }
 }
 #endif

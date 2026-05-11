@@ -71,6 +71,23 @@ final class CTOManager {
 
         CTOFlagManager.ensureFlagDirectory()
 
+        // Sweep stale flags from any previous run. A clean teardown clears
+        // `cto_active/` itself, but app crashes / force-quits / SIGKILL on
+        // shutdown leave flag files behind — the wrapper scripts then see
+        // those flags on the next launch and route commands through
+        // `chau7-optim` for sessions that no longer exist. Setup runs at
+        // app init before any tab can spawn a shell, so removing every
+        // flag here is safe; `recalculateCTOFlag()` will re-create the
+        // correct flags as sessions come up.
+        let purged = CTOFlagManager.removeAllFlags()
+        if purged > 0 {
+            CTORuntimeMonitor.shared.recordManagerBulkRemove(count: purged)
+            LogEnhanced.info(
+                .cto, "CTO startup sweep purged stale flags",
+                metadata: ["removed": "\(purged)"]
+            )
+        }
+
         for command in supportedCommands {
             installWrapper(for: command)
         }
