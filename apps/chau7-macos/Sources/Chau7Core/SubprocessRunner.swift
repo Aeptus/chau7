@@ -1,3 +1,4 @@
+#if os(macOS)
 import Darwin
 import Foundation
 import os.log
@@ -39,3 +40,4 @@ public enum SubprocessRunner {
         return String(decoding: data, as: UTF8.self)
     }
 }
+#endif

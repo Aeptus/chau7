@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 
 /// Live resolution of "which AI tool is currently running in this shell" from the OS process tree.
@@ -123,3 +124,4 @@ public enum ProcessTreeProviderResolver {
         }
     }
 }
+#endif
