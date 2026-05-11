@@ -167,12 +167,34 @@ final class TokenOptimizationCoreTests: XCTestCase {
         }
     }
 
-    func testStableRuntimeStateRequiresNoActiveSessions() {
-        XCTAssertFalse(
-            isStableCTORuntimeState(recalcCount: 12, unchangedCount: 10, activeSessionCount: 1)
+    func testStableRuntimeStateConvergesWithMajorityNoOpsRegardlessOfActiveSessions() {
+        // Convergence (most recent recalcs are no-ops) is what makes the
+        // runtime stable — having an active AI session does not. The previous
+        // `activeSessionCount == 0` clause meant the system was effectively
+        // never-stable for users with AI tabs open, firing `.lowChangeRate`
+        // on correctly-converged flag state.
+        XCTAssertTrue(
+            isStableCTORuntimeState(recalcCount: 12, unchangedCount: 10, activeSessionCount: 1),
+            "Active sessions don't preclude convergence — flag is set and recalcs are no-ops."
         )
         XCTAssertTrue(
             isStableCTORuntimeState(recalcCount: 12, unchangedCount: 10, activeSessionCount: 0)
+        )
+    }
+
+    func testStableRuntimeStateRequiresEnoughSamples() {
+        // Below the 10-recalc sample threshold, the no-op ratio isn't trusted
+        // yet — the system is still settling.
+        XCTAssertFalse(
+            isStableCTORuntimeState(recalcCount: 9, unchangedCount: 9, activeSessionCount: 0)
+        )
+    }
+
+    func testStableRuntimeStateRequiresMajorityNoOps() {
+        // Even with enough samples, fewer than half no-ops means the system
+        // is still actively changing flag state.
+        XCTAssertFalse(
+            isStableCTORuntimeState(recalcCount: 20, unchangedCount: 5, activeSessionCount: 0)
         )
     }
 

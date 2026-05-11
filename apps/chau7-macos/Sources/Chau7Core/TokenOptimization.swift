@@ -400,16 +400,24 @@ public extension CTORuntimeSnapshot {
     }
 }
 
-/// A runtime state is stable only after enough recalculations have converged
-/// and no sessions remain actively tracked as on.
+/// A runtime state is stable when the decision engine has converged: it has
+/// observed enough recalculations and most of them resolved to no-ops.
+/// Convergence does *not* require zero active sessions — an AI session can
+/// be active and the system can be stable; "stable" means "further recalcs
+/// keep returning the same flag state", which is the correct steady-state
+/// when AI tabs have settled on their flag.
+///
+/// The previous definition also required `activeSessionCount == 0`, which
+/// made the system effectively never-stable for any user with an AI tab
+/// open. That caused the `.lowChangeRate` health issue to fire on every
+/// session whose flag was correctly converged-and-set — the opposite of
+/// what the health metric was supposed to catch.
 public func isStableCTORuntimeState(
     recalcCount: Int,
     unchangedCount: Int,
-    activeSessionCount: Int
+    activeSessionCount _: Int = 0
 ) -> Bool {
-    recalcCount >= 10 &&
-        unchangedCount > recalcCount / 2 &&
-        activeSessionCount == 0
+    recalcCount >= 10 && unchangedCount > recalcCount / 2
 }
 
 // MARK: - Gain Statistics
