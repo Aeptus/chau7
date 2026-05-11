@@ -3,6 +3,7 @@ import Carbon
 import Darwin
 import QuartzCore
 import CoreText
+import MetalKit
 import Chau7Core
 
 // MARK: - Native Rust Grid Renderer
@@ -2051,6 +2052,8 @@ final class RustTerminalView: NSView {
     /// bookkeeping is not coupled to session/UI observers.
     var onDisplayFramePresented: (() -> Void)?
 
+    private(set) var lastDisplayFramePresentedAt: Date?
+
     /// Callback when scroll position changes
     var onScrollChanged: (() -> Void)?
 
@@ -2795,12 +2798,37 @@ final class RustTerminalView: NSView {
         )
     }
 
+    func noteDisplayFramePresented() {
+        lastDisplayFramePresentedAt = Date()
+    }
+
     var renderSurfaceFrame: CGRect {
         currentRenderGeometry.surfaceFrame
     }
 
     var currentRenderGeometry: TerminalRenderGeometry {
         Self.renderGeometry(bounds: bounds, cellSize: renderCellSize)
+    }
+
+    func renderSurfaceReport(now: Date = Date()) -> TerminalRenderSurfaceReport {
+        let metalView = (superview as? RustTerminalContainerView)?.metalCoordinator?.metalView
+        let lastPresentedFrameAgeMs = lastDisplayFramePresentedAt.map {
+            max(0, Int(now.timeIntervalSince($0) * 1000))
+        }
+
+        return TerminalRenderSurfaceReport(
+            windowFrame: window?.frame,
+            contentLayoutRect: window?.contentLayoutRect,
+            contentViewBounds: window?.contentView?.bounds,
+            terminalBounds: bounds,
+            geometry: currentRenderGeometry,
+            backingScaleFactor: window?.backingScaleFactor,
+            metalActive: isMetalRenderingActive,
+            metalViewFrame: metalView?.frame,
+            metalViewBounds: metalView?.bounds,
+            metalDrawableSize: metalView?.drawableSize,
+            lastPresentedFrameAgeMs: lastPresentedFrameAgeMs
+        )
     }
 
     override func layout() {

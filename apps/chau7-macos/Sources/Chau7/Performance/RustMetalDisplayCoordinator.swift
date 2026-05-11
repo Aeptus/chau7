@@ -813,6 +813,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             to: drawable,
             viewportSize: view.bounds.size,
             onCompleted: { [weak presentedView] in
+                presentedView?.noteDisplayFramePresented()
                 presentedView?.onDisplayFramePresented?()
                 presentedView?.onFramePresented?()
             }

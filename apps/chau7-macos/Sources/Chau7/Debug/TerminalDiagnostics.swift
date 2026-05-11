@@ -80,7 +80,12 @@ enum TerminalDiagnostics {
         output += "  isInteractive: \(view.persistentTabID != nil)\n"
         output += "\n"
 
-        // 3. Grid styled ANSI text
+        // 3. Render surface geometry
+        output += "[render-surface]\n"
+        output += view.renderSurfaceReport().formatted(indent: "  ")
+        output += "\n\n"
+
+        // 4. Grid styled ANSI text
         output += "[grid — styled ANSI text follows; SGR sequences preserved]\n"
         if let data = view.getStyledBufferAsData(),
            let text = String(data: data, encoding: .utf8) {
@@ -94,7 +99,7 @@ enum TerminalDiagnostics {
         }
         output += "\n"
 
-        // 4. Recent PTY bytes for the relevant provider's log
+        // 5. Recent PTY bytes for the relevant provider's log
         let ptyLogName: String? = {
             switch aiProvider?.lowercased() {
             case "claude": return "claude-pty.log"
