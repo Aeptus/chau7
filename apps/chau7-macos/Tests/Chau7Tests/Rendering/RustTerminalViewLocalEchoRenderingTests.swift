@@ -34,6 +34,22 @@ final class RustTerminalViewLocalEchoRenderingTests: XCTestCase {
         XCTAssertEqual(syncRequestCount, 0)
     }
 
+    func testClearingLocalEchoOverlayRequestsMetalSyncWhenMetalRenderingIsActive() {
+        let view = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 160, height: 80))
+        view.isMetalRenderingActive = true
+        view.localEchoOverlay = [0: makeCell("x")]
+        var syncRequestCount = 0
+        view.onDisplaySyncNeeded = {
+            syncRequestCount += 1
+        }
+
+        view.clearLocalEchoOverlay()
+
+        XCTAssertTrue(view.localEchoOverlay.isEmpty)
+        XCTAssertTrue(view.needsGridSync)
+        XCTAssertEqual(syncRequestCount, 1)
+    }
+
     private func makeCell(_ character: String) -> RustCellData {
         RustCellData(
             character: UInt32(character.unicodeScalars.first!.value),

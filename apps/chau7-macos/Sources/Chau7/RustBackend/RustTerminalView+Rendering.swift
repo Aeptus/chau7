@@ -655,10 +655,14 @@ extension RustTerminalView {
     }
 
     func clearLocalEchoOverlay() {
+        let shouldInvalidateMetal = isMetalRenderingActive && !localEchoOverlay.isEmpty
         localEchoOverlay.removeAll()
         localEchoCursor = nil
         gridView?.clearOverlay()
         clearLocalEchoState()
+        if shouldInvalidateMetal {
+            invalidateMetalLocalEchoOverlay()
+        }
     }
 
     func clearLocalEchoState() {
@@ -702,6 +706,10 @@ extension RustTerminalView {
         } else {
             gridView?.setOverlayCells(localEchoOverlay)
         }
+        invalidateMetalLocalEchoOverlay()
+    }
+
+    private func invalidateMetalLocalEchoOverlay() {
         if isMetalRenderingActive {
             needsGridSync = true
             onDisplaySyncNeeded?()
