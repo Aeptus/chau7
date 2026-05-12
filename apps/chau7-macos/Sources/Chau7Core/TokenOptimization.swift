@@ -260,6 +260,14 @@ public struct CTORuntimeSnapshot: Codable, Equatable, Sendable {
     public let firstSeenAt: Date
     public let uptimeSeconds: Int
     public let decisionsPerMinute: Double
+    /// Most recent `chau7-optim gain` sample, if any. Polled by
+    /// `CTOManager` while `tokenOptimizationMode` is non-`.off`. Nil when
+    /// the optimizer is not installed, the poller hasn't fired yet, or
+    /// the helper returned no data.
+    public let gainStats: CTOGainStats?
+    /// Wall-clock time of the most recent successful `gainStats` sample.
+    /// Used by diagnostic views to age out stale numbers.
+    public let gainStatsLastSampledAt: Date?
 
     public init(
         mode: String,
@@ -290,7 +298,9 @@ public struct CTORuntimeSnapshot: Codable, Equatable, Sendable {
         recentDecisions: [CTODecisionEvent],
         firstSeenAt: Date,
         uptimeSeconds: Int,
-        decisionsPerMinute: Double
+        decisionsPerMinute: Double,
+        gainStats: CTOGainStats? = nil,
+        gainStatsLastSampledAt: Date? = nil
     ) {
         self.mode = mode
         self.recalcCount = recalcCount
@@ -321,6 +331,8 @@ public struct CTORuntimeSnapshot: Codable, Equatable, Sendable {
         self.firstSeenAt = firstSeenAt
         self.uptimeSeconds = uptimeSeconds
         self.decisionsPerMinute = decisionsPerMinute
+        self.gainStats = gainStats
+        self.gainStatsLastSampledAt = gainStatsLastSampledAt
     }
 }
 

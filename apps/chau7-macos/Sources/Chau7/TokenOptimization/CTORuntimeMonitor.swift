@@ -37,6 +37,8 @@ final class CTORuntimeMonitor {
     private var deferredFlushDelayCount = 0
     private var currentMode: TokenOptimizationMode = .off
     private var lastEmittedAssessment: CTORuntimeAssessment?
+    private var lastGainStats: CTOGainStats?
+    private var lastGainStatsAt: Date?
     private let firstSeenAt: Date
     private let maxRecentDecisions = 50
     private let summaryInterval = 25
@@ -82,7 +84,9 @@ final class CTORuntimeMonitor {
                 recentDecisions: recentDecisions,
                 firstSeenAt: firstSeenAt,
                 uptimeSeconds: Int(elapsedSeconds.rounded()),
-                decisionsPerMinute: decisionsPerMinute
+                decisionsPerMinute: decisionsPerMinute,
+                gainStats: lastGainStats,
+                gainStatsLastSampledAt: lastGainStatsAt
             )
         }
     }
@@ -122,6 +126,8 @@ final class CTORuntimeMonitor {
             deferredFlushDelayCount = 0
             currentMode = .off
             lastEmittedAssessment = nil
+            lastGainStats = nil
+            lastGainStatsAt = nil
         }
         LogEnhanced.info(.cto, "cto monitor reset", metadata: ["scope": "manual"])
     }
@@ -147,6 +153,34 @@ final class CTORuntimeMonitor {
                 "modeChanges": "\(modeChangeCountSnapshot)"
             ]
             LogEnhanced.info(.cto, "CTO mode changed", metadata: metadata)
+        }
+    }
+
+    /// Pipe a fresh `chau7-optim gain` sample into the monitor. Callers
+    /// poll the helper binary and forward the summary here; the snapshot
+    /// then carries the most recent value so diagnostic views and the
+    /// runtime summary can correlate the decision-level health metric
+    /// with actual token savings.
+    ///
+    /// Passing nil indicates the helper returned no data (e.g. optimizer
+    /// not installed, no commands observed yet). The previous sample is
+    /// dropped in that case so the snapshot reports the absence rather
+    /// than a stale-but-positive figure.
+    func recordGainStats(_ stats: CTOGainStats?, at sampledAt: Date = Date()) {
+        withLock {
+            lastGainStats = stats
+            lastGainStatsAt = stats == nil ? nil : sampledAt
+        }
+        if let stats {
+            LogEnhanced.trace(
+                .cto,
+                "CTO gain stats sampled",
+                metadata: [
+                    "commands": "\(stats.commands)",
+                    "savedTokens": "\(stats.savedTokens)",
+                    "savingsPct": String(format: "%.1f", stats.savingsPct)
+                ]
+            )
         }
     }
 

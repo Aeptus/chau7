@@ -935,6 +935,63 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         XCTAssertEqual(snapshot.triggerBreakdown[CTODecisionTrigger.overrideChanged.rawValue], 1)
     }
 
+    // MARK: - Gain Stats
+
+    /// `recordGainStats` should make the supplied summary visible through
+    /// the next `snapshot()` call, along with its sample timestamp.
+    /// Passing nil resets both fields so a stale-but-positive figure
+    /// doesn't outlive its source.
+    func testRecordGainStatsPlumbsThroughSnapshot() {
+        CTORuntimeMonitor.shared.reset()
+
+        let sample = CTOGainStats(
+            commands: 47,
+            inputTokens: 12300,
+            outputTokens: 8900,
+            savedTokens: 4200,
+            savingsPct: 18.7,
+            totalTimeMs: 5120,
+            avgTimeMs: 108
+        )
+        let sampledAt = Date()
+        CTORuntimeMonitor.shared.recordGainStats(sample, at: sampledAt)
+
+        let snapshot = CTORuntimeMonitor.shared.snapshot()
+        XCTAssertEqual(snapshot.gainStats, sample)
+        XCTAssertEqual(snapshot.gainStatsLastSampledAt, sampledAt)
+    }
+
+    func testRecordGainStatsNilClearsPreviousSample() {
+        CTORuntimeMonitor.shared.reset()
+        CTORuntimeMonitor.shared.recordGainStats(
+            CTOGainStats(
+                commands: 1, inputTokens: 1, outputTokens: 1,
+                savedTokens: 1, savingsPct: 1, totalTimeMs: 1, avgTimeMs: 1
+            )
+        )
+        XCTAssertNotNil(CTORuntimeMonitor.shared.snapshot().gainStats)
+
+        // Nil sample (e.g. helper returned no data) — clear the field
+        // instead of preserving the stale positive number.
+        CTORuntimeMonitor.shared.recordGainStats(nil)
+        let snapshot = CTORuntimeMonitor.shared.snapshot()
+        XCTAssertNil(snapshot.gainStats)
+        XCTAssertNil(snapshot.gainStatsLastSampledAt)
+    }
+
+    func testResetClearsGainStats() {
+        CTORuntimeMonitor.shared.recordGainStats(
+            CTOGainStats(
+                commands: 5, inputTokens: 100, outputTokens: 50,
+                savedTokens: 25, savingsPct: 16.6, totalTimeMs: 500, avgTimeMs: 100
+            )
+        )
+        CTORuntimeMonitor.shared.reset()
+        let snapshot = CTORuntimeMonitor.shared.snapshot()
+        XCTAssertNil(snapshot.gainStats)
+        XCTAssertNil(snapshot.gainStatsLastSampledAt)
+    }
+
     // MARK: - Flag Sweep
 
     /// `CTOFlagManager.removeAllFlags()` should erase every file under the
