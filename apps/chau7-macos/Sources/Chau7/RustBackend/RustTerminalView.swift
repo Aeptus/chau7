@@ -2811,7 +2811,8 @@ final class RustTerminalView: NSView {
     }
 
     func renderSurfaceReport(now: Date = Date()) -> TerminalRenderSurfaceReport {
-        let metalView = (superview as? RustTerminalContainerView)?.metalCoordinator?.metalView
+        let coordinator = (superview as? RustTerminalContainerView)?.metalCoordinator
+        let metalView = coordinator?.metalView
         let lastPresentedFrameAgeMs = lastDisplayFramePresentedAt.map {
             max(0, Int(now.timeIntervalSince($0) * 1000))
         }
@@ -2827,7 +2828,8 @@ final class RustTerminalView: NSView {
             metalViewFrame: metalView?.frame,
             metalViewBounds: metalView?.bounds,
             metalDrawableSize: metalView?.drawableSize,
-            lastPresentedFrameAgeMs: lastPresentedFrameAgeMs
+            lastPresentedFrameAgeMs: lastPresentedFrameAgeMs,
+            coordinatorDiagnostics: coordinator?.renderSurfaceDiagnostics
         )
     }
 

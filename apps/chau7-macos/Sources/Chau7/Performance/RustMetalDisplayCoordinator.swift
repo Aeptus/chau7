@@ -259,6 +259,13 @@ final class RustMetalDisplayCoordinator: NSObject {
         renderRequests.requestPresent()
     }
 
+    var renderSurfaceDiagnostics: TerminalRenderSurfaceReport.CoordinatorDiagnostics {
+        TerminalRenderSurfaceReport.CoordinatorDiagnostics(
+            renderRequests: renderRequests.diagnostics,
+            retry: retryState.snapshot
+        )
+    }
+
     /// Coalesce throttled `setNeedsSync` calls into one deferred fire so the
     /// final frame of a streaming chunk still gets rendered when no further
     /// data arrives.

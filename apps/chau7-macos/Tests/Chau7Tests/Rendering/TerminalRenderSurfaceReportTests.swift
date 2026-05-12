@@ -9,6 +9,13 @@ final class TerminalRenderSurfaceReportTests: XCTestCase {
             inset: 4,
             cellSize: CGSize(width: 7, height: 13)
         )
+        var coalescer = TerminalRenderRequestCoalescer(needsSync: false, needsPresent: false)
+        coalescer.requestSync()
+        coalescer.requestSync()
+        var retryState = TerminalRenderRetryState()
+        retryState.recordFailure(reason: .noDrawable)
+        retryState.recordFailure(reason: .noDrawable)
+        retryState.recordFailure(reason: .noDrawable)
         let report = TerminalRenderSurfaceReport(
             windowFrame: CGRect(x: 10, y: 20, width: 1920, height: 1080),
             contentLayoutRect: CGRect(x: 0, y: 0, width: 1920, height: 1042),
@@ -20,18 +27,34 @@ final class TerminalRenderSurfaceReportTests: XCTestCase {
             metalViewFrame: geometry.surfaceFrame,
             metalViewBounds: CGRect(origin: .zero, size: geometry.surfaceFrame.size),
             metalDrawableSize: CGSize(width: 1600, height: 2084),
-            lastPresentedFrameAgeMs: 42
+            lastPresentedFrameAgeMs: 42,
+            coordinatorDiagnostics: .init(
+                renderRequests: coalescer.diagnostics,
+                retry: retryState.snapshot
+            )
         )
 
         let formatted = report.formatted()
 
+        XCTAssertTrue(formatted.contains("windowContentSize: 1920.0x1042.0"))
         XCTAssertTrue(formatted.contains("surfaceFrame: (x:4.0 y:4.0 800.0x1042.0)"))
         XCTAssertTrue(formatted.contains("gridFrame: (x:4.0 y:6.0 798.0x1040.0)"))
+        XCTAssertTrue(formatted.contains("gridOrigin: (x:4.0 y:6.0)"))
+        XCTAssertTrue(formatted.contains("raw cols × rows: 114 × 80"))
         XCTAssertTrue(formatted.contains("cols × rows: 114 × 80"))
+        XCTAssertTrue(formatted.contains("max cols × rows: 2000 × 500"))
         XCTAssertTrue(formatted.contains("remainderX × remainderY: 2.0 × 2.0"))
+        XCTAssertTrue(formatted.contains("remainderPixels: 4.0x4.0"))
         XCTAssertTrue(formatted.contains("metalActive: true"))
         XCTAssertTrue(formatted.contains("metalDrawableSize: 1600.0x2084.0"))
         XCTAssertTrue(formatted.contains("lastPresentedFrameAgeMs: 42"))
+        XCTAssertTrue(
+            formatted.contains(
+                "renderRequests: pending(sync:true present:true count:2) requested(sync:2 present:2)"
+            )
+        )
+        XCTAssertTrue(formatted.contains("coalesced(sync:1 present:1 total:2)"))
+        XCTAssertTrue(formatted.contains("retry: reason:noDrawable consecutiveFailures:3"))
     }
 
     func testFormattedReportHandlesMissingWindowAndMetalFields() {
@@ -57,8 +80,12 @@ final class TerminalRenderSurfaceReportTests: XCTestCase {
         let formatted = report.formatted()
 
         XCTAssertTrue(formatted.contains("windowFrame: <nil>"))
+        XCTAssertTrue(formatted.contains("windowContentSize: <nil>"))
         XCTAssertTrue(formatted.contains("metalViewBounds: <nil>"))
         XCTAssertTrue(formatted.contains("backingScaleFactor: <nil>"))
+        XCTAssertTrue(formatted.contains("remainderPixels: <nil>"))
         XCTAssertTrue(formatted.contains("lastPresentedFrameAgeMs: <nil>"))
+        XCTAssertTrue(formatted.contains("renderRequests: <nil>"))
+        XCTAssertTrue(formatted.contains("retry: <nil>"))
     }
 }
