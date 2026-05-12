@@ -1,4 +1,4 @@
-name = "chau7-relay"
+name = "chau7-ios-relay"
 main = "src/worker.ts"
 compatibility_date = "2024-10-01"
 
@@ -6,7 +6,7 @@ compatibility_date = "2024-10-01"
 RELAY_SECRET = "CHANGE_ME_IN_PRODUCTION"
 
 # Custom domain: relay.chau7.sh
-# Set up via Cloudflare dashboard: Workers > chau7-relay > Settings > Domains & Routes > Add > Custom Domain
+# Set up via Cloudflare dashboard: Workers > chau7-ios-relay > Settings > Domains & Routes > Add > Custom Domain
 # Or via wrangler: uncomment and set zone_name to your zone
 # [[routes]]
 # pattern = "relay.chau7.sh/*"

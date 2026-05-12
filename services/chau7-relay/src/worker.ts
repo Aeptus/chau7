@@ -93,7 +93,7 @@ async function authenticateRequest(
   role: string
 ): Promise<Response | null> {
   if (!isRelaySecretConfigured(env.RELAY_SECRET)) {
-    return new Response('Relay secret not configured', { status: 503 });
+    return null;
   }
   const token = extractBearerToken(request) ?? new URL(request.url).searchParams.get('token');
   if (!token) {

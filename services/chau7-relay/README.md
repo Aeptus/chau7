@@ -3,8 +3,10 @@
 Forwards encrypted frames between macOS and iOS clients and handles APNs push
 notifications for offline devices. The relay does not inspect or store payloads.
 
-The relay fails closed unless `RELAY_SECRET` is set to a real shared secret.
-The shipped placeholder in `wrangler.toml` is intentionally rejected at runtime.
+If `RELAY_SECRET` is set to a real shared secret, the Worker requires HMAC
+authentication for relay and push requests. If it is left unset or left at the
+shipped placeholder value, the Worker accepts unauthenticated requests so older
+clients continue to work during rollout.
 
 ## Routes
 
