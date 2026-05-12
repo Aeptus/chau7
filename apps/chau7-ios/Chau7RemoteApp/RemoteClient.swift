@@ -89,6 +89,8 @@ final class RemoteClient {
     private var suppressLocalNotificationsUntil: Date?
     private var pendingApprovalResponses: [String: Bool] = [:]
     private var approvalResponsesInFlight: Set<String> = []
+    private var pendingStateFetchTask: Task<Void, Never>?
+    private var lastPendingStateFetchAt: Date?
     let terminalRenderer = RemoteTerminalRendererStore()
 
     private static let maxHistory = 50
@@ -98,6 +100,7 @@ final class RemoteClient {
     private static let handshakeTimeoutSeconds = 12.0
     private static let repairFallbackAttempt = 3
     private static let pushNotificationSuppressionWindow: TimeInterval = 15
+    private static let pendingStateFetchMinimumInterval: TimeInterval = 1
     static let appVersion = "1.1.0"
 
     var canSendInput: Bool {
@@ -184,6 +187,7 @@ final class RemoteClient {
                 sendClientStateIfPossible()
                 requestActiveTabRefreshIfPossible()
             }
+            schedulePendingStateFetch(reason: "scene_active")
         case .background:
             beginBackgroundKeepalive()
             currentAppState = .background
@@ -221,6 +225,7 @@ final class RemoteClient {
         } else {
             sendClientStateIfPossible()
         }
+        schedulePendingStateFetch(reason: "push_wake", force: true)
         emitTelemetry(
             type: .notificationOpened,
             status: "push_wake",
@@ -575,6 +580,7 @@ final class RemoteClient {
             lastError = nil
             cancelHandshakeTasks()
             flushPendingURLActions()
+            schedulePendingStateFetch(reason: "session_ready", force: true)
         case .tabList:         handleTabList(payload)
         case .cachedTabList:   handleCachedTabList(payload)
         case .activityState:   handleActivityState(payload)
@@ -707,25 +713,7 @@ final class RemoteClient {
         ) else {
             return
         }
-
-        let previousPromptIDs = Set(pendingInteractivePrompts.map(\.id))
-        let nextPrompts = payload.prompts
-        let nextPromptIDs = Set(nextPrompts.map(\.id))
-
-        pendingInteractivePrompts = nextPrompts
-
-        let removedNotificationIDs = previousPromptIDs
-            .subtracting(nextPromptIDs)
-            .map { notificationIdentifierForInteractivePrompt($0) }
-        if !removedNotificationIDs.isEmpty {
-            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: removedNotificationIDs)
-        }
-
-        for prompt in nextPrompts where !previousPromptIDs.contains(prompt.id) {
-            if shouldScheduleLocalApprovalNotification {
-                scheduleInteractivePromptNotification(for: prompt)
-            }
-        }
+        applyPendingInteractivePrompts(payload.prompts)
     }
 
     private func appendOutput(_ data: Data, tabID: UInt32) {
@@ -780,52 +768,13 @@ final class RemoteClient {
 
     private func handleApprovalRequest(_ data: Data) {
         guard let msg: ApprovalRequestPayload = decodePayload(data, as: ApprovalRequestPayload.self, context: "handleApprovalRequest") else { return }
-        let approval = ApprovalRequest(
-            requestID: msg.requestID, command: msg.command,
-            flaggedCommand: msg.flaggedCommand,
-            tabTitle: msg.tabTitle,
-            toolName: msg.toolName,
-            projectName: msg.projectName,
-            branchName: msg.branchName,
-            currentDirectory: msg.currentDirectory,
-            recentCommand: msg.recentCommand,
-            contextNote: msg.contextNote,
-            sessionID: msg.sessionID,
-            timestamp: Date(),
-            responseState: pendingApprovals.first(where: { $0.requestID == msg.requestID })?.responseState ?? .idle
-        )
-        if let existingIndex = pendingApprovals.firstIndex(where: { $0.requestID == msg.requestID }) {
-            pendingApprovals[existingIndex] = approval
-        } else {
-            pendingApprovals.append(approval)
-        }
+        upsertPendingApproval(msg)
         emitTelemetry(
             type: .approvalReceived,
             status: "pending",
             message: msg.flaggedCommand,
             metadata: ["request_id": msg.requestID]
         )
-
-        if shouldScheduleLocalApprovalNotification {
-            let content = UNMutableNotificationContent()
-            let isProtectedRemoteAction = msg.flaggedCommand != msg.command
-            content.title = isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
-            content.body = approvalNotificationBody(for: msg)
-            content.sound = .default
-            content.interruptionLevel = .timeSensitive
-            content.relevanceScore = 1
-            content.categoryIdentifier = "MCP_APPROVAL"
-            content.userInfo = [
-                "request_id": msg.requestID,
-                "open_approvals": true
-            ]
-            let req = UNNotificationRequest(
-                identifier: msg.requestID,
-                content: content,
-                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
-            )
-            UNUserNotificationCenter.current().add(req)
-        }
     }
 
     // MARK: - Session Establishment
@@ -864,6 +813,7 @@ final class RemoteClient {
         flushBufferedTelemetryEvents()
         sendClientStateIfPossible()
         flushPendingApprovalResponses()
+        schedulePendingStateFetch(reason: "session_encrypted", force: true)
     }
 
     // MARK: - Outgoing
@@ -1364,10 +1314,172 @@ final class RemoteClient {
         notificationsAuthorized && pushToken != nil && currentPushEnvironment() != nil
     }
 
+    private func schedulePendingStateFetch(reason: String, force: Bool = false) {
+        guard pairingInfo != nil else { return }
+        if !force {
+            if pendingStateFetchTask != nil {
+                return
+            }
+            if let lastPendingStateFetchAt,
+               Date().timeIntervalSince(lastPendingStateFetchAt) < Self.pendingStateFetchMinimumInterval {
+                return
+            }
+        }
+
+        pendingStateFetchTask = Task { @MainActor [weak self] in
+            defer {
+                self?.pendingStateFetchTask = nil
+                self?.lastPendingStateFetchAt = Date()
+            }
+            await self?.fetchPendingState(reason: reason)
+        }
+    }
+
     private var shouldScheduleLocalApprovalNotification: Bool {
         guard !shouldSuppressLocalNotifications else { return false }
         guard currentAppState != .foreground else { return false }
         return !canReceiveRemotePushNotifications
+    }
+
+    private func fetchPendingState(reason: String) async {
+        guard let request = pendingStateRequest() else { return }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else { return }
+            guard httpResponse.statusCode == 200 else {
+                log.warning("Pending state fetch failed: status \(httpResponse.statusCode)")
+                return
+            }
+            let payload = try JSONDecoder().decode(RemotePendingStatePayload.self, from: data)
+            applyPendingApprovals(payload.approvals)
+            applyPendingInteractivePrompts(payload.interactivePrompts)
+            emitTelemetry(type: .remoteStateFetched, status: reason)
+        } catch {
+            log.error("Pending state fetch failed (\(reason)): \(error.localizedDescription)")
+        }
+    }
+
+    private func pendingStateRequest() -> URLRequest? {
+        guard let pairing = pairingInfo else { return nil }
+        guard var components = URLComponents(string: pairing.relayURL.strippingTrailingSlash) else {
+            return nil
+        }
+        components.path += "/pending/\(pairing.deviceID)"
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 10
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        return request
+    }
+
+    private func applyPendingApprovals(_ payloads: [ApprovalRequestPayload]) {
+        let existingStates = Dictionary(uniqueKeysWithValues: pendingApprovals.map { ($0.requestID, $0.responseState) })
+        let nextApprovals = payloads.map { payload in
+            approvalRequest(from: payload, responseState: existingStates[payload.requestID] ?? .idle)
+        }
+
+        let previousApprovalIDs = Set(pendingApprovals.map(\.requestID))
+        let nextApprovalIDs = Set(nextApprovals.map(\.requestID))
+        pendingApprovals = nextApprovals
+
+        let removedNotificationIDs = previousApprovalIDs.subtracting(nextApprovalIDs)
+        if !removedNotificationIDs.isEmpty {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: Array(removedNotificationIDs))
+        }
+
+        for payload in payloads where !previousApprovalIDs.contains(payload.requestID) {
+            guard shouldScheduleLocalApprovalNotification else { continue }
+            let content = UNMutableNotificationContent()
+            let isProtectedRemoteAction = payload.flaggedCommand != payload.command
+            content.title = isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
+            content.body = approvalNotificationBody(for: payload)
+            content.sound = .default
+            content.interruptionLevel = .timeSensitive
+            content.relevanceScore = 1
+            content.categoryIdentifier = "MCP_APPROVAL"
+            content.userInfo = [
+                "request_id": payload.requestID,
+                "open_approvals": true
+            ]
+            let request = UNNotificationRequest(
+                identifier: payload.requestID,
+                content: content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
+            )
+            UNUserNotificationCenter.current().add(request)
+        }
+    }
+
+    private func upsertPendingApproval(_ payload: ApprovalRequestPayload) {
+        let approval = approvalRequest(
+            from: payload,
+            responseState: pendingApprovals.first(where: { $0.requestID == payload.requestID })?.responseState ?? .idle
+        )
+        let isNewApproval = !pendingApprovals.contains(where: { $0.requestID == payload.requestID })
+        if let existingIndex = pendingApprovals.firstIndex(where: { $0.requestID == payload.requestID }) {
+            pendingApprovals[existingIndex] = approval
+        } else {
+            pendingApprovals.append(approval)
+        }
+
+        guard isNewApproval, shouldScheduleLocalApprovalNotification else { return }
+        let content = UNMutableNotificationContent()
+        let isProtectedRemoteAction = payload.flaggedCommand != payload.command
+        content.title = isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
+        content.body = approvalNotificationBody(for: payload)
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.relevanceScore = 1
+        content.categoryIdentifier = "MCP_APPROVAL"
+        content.userInfo = [
+            "request_id": payload.requestID,
+            "open_approvals": true
+        ]
+        let request = UNNotificationRequest(
+            identifier: payload.requestID,
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    private func approvalRequest(from payload: ApprovalRequestPayload, responseState: ApprovalResponseState) -> ApprovalRequest {
+        ApprovalRequest(
+            requestID: payload.requestID,
+            command: payload.command,
+            flaggedCommand: payload.flaggedCommand,
+            tabTitle: payload.tabTitle,
+            toolName: payload.toolName,
+            projectName: payload.projectName,
+            branchName: payload.branchName,
+            currentDirectory: payload.currentDirectory,
+            recentCommand: payload.recentCommand,
+            contextNote: payload.contextNote,
+            sessionID: payload.sessionID,
+            timestamp: Self.parseRemoteTimestamp(payload.timestamp),
+            responseState: responseState
+        )
+    }
+
+    private func applyPendingInteractivePrompts(_ nextPrompts: [RemoteInteractivePrompt]) {
+        let previousPromptIDs = Set(pendingInteractivePrompts.map(\.id))
+        let nextPromptIDs = Set(nextPrompts.map(\.id))
+
+        pendingInteractivePrompts = nextPrompts
+
+        let removedNotificationIDs = previousPromptIDs
+            .subtracting(nextPromptIDs)
+            .map { notificationIdentifierForInteractivePrompt($0) }
+        if !removedNotificationIDs.isEmpty {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: removedNotificationIDs)
+        }
+
+        for prompt in nextPrompts where !previousPromptIDs.contains(prompt.id) {
+            if shouldScheduleLocalApprovalNotification {
+                scheduleInteractivePromptNotification(for: prompt)
+            }
+        }
     }
 
     private func currentPushEnvironment() -> RemotePushEnvironment? {
@@ -1376,6 +1488,13 @@ final class RemoteClient {
         #else
         .production
         #endif
+    }
+
+    private static func parseRemoteTimestamp(_ value: String) -> Date {
+        if let date = ISO8601DateFormatter().date(from: value) {
+            return date
+        }
+        return Date()
     }
 
     private func beginBackgroundKeepalive() {

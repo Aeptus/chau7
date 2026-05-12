@@ -275,6 +275,18 @@ struct ApprovalResponsePayload: Codable {
     }
 }
 
+struct RemotePendingStatePayload: Codable {
+    let approvals: [ApprovalRequestPayload]
+    let interactivePrompts: [RemoteInteractivePrompt]
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case approvals
+        case interactivePrompts = "interactive_prompts"
+        case updatedAt = "updated_at"
+    }
+}
+
 // MARK: - Errors
 
 struct RemoteErrorPayload: Codable {

@@ -79,6 +79,10 @@ type Agent struct {
 	currentClientStreamMode string
 	notifiedApprovalIDs     map[string]time.Time
 	notifiedPromptIDs       map[string]time.Time
+
+	pendingStateMu   sync.Mutex
+	pendingApprovals map[string]ApprovalNotificationPayload
+	pendingPrompts   map[string]RemoteInteractivePrompt
 }
 
 type HelloPayload struct {
@@ -135,6 +139,11 @@ type ApprovalNotificationPayload struct {
 	BranchName     string `json:"branch_name,omitempty"`
 }
 
+type ApprovalResponsePayload struct {
+	RequestID string `json:"request_id"`
+	Approved  bool   `json:"approved"`
+}
+
 type InteractivePromptNotification struct {
 	ID       string `json:"id"`
 	Prompt   string `json:"prompt"`
@@ -142,8 +151,29 @@ type InteractivePromptNotification struct {
 	ToolName string `json:"tool_name,omitempty"`
 }
 
+type RemoteInteractivePromptOption struct {
+	ID            string `json:"id"`
+	Label         string `json:"label"`
+	Response      string `json:"response"`
+	IsDestructive bool   `json:"is_destructive,omitempty"`
+}
+
+type RemoteInteractivePrompt struct {
+	ID               string                          `json:"id"`
+	TabID            uint32                          `json:"tab_id"`
+	TabTitle         string                          `json:"tab_title"`
+	ToolName         string                          `json:"tool_name"`
+	ProjectName      string                          `json:"project_name,omitempty"`
+	BranchName       string                          `json:"branch_name,omitempty"`
+	CurrentDirectory string                          `json:"current_directory,omitempty"`
+	Prompt           string                          `json:"prompt"`
+	Detail           string                          `json:"detail,omitempty"`
+	Options          []RemoteInteractivePromptOption `json:"options"`
+	DetectedAt       string                          `json:"detected_at"`
+}
+
 type InteractivePromptListPayload struct {
-	Prompts []InteractivePromptNotification `json:"prompts"`
+	Prompts []RemoteInteractivePrompt `json:"prompts"`
 }
 
 type PushRegistrationPayload struct {
@@ -162,6 +192,12 @@ type PushNotifyPayload struct {
 	RequestID     string `json:"request_id,omitempty"`
 	PromptID      string `json:"prompt_id,omitempty"`
 	OpenApprovals bool   `json:"open_approvals"`
+}
+
+type PendingStatePayload struct {
+	Approvals          []ApprovalNotificationPayload `json:"approvals"`
+	InteractivePrompts []RemoteInteractivePrompt     `json:"interactive_prompts"`
+	UpdatedAt          string                        `json:"updated_at,omitempty"`
 }
 
 type TabSwitchPayload struct {
@@ -209,6 +245,8 @@ func NewAgent(socketPath, relayBaseURL, macName, statePath string) (*Agent, erro
 		currentClientStreamMode: "full",
 		notifiedApprovalIDs:     map[string]time.Time{},
 		notifiedPromptIDs:       map[string]time.Time{},
+		pendingApprovals:        map[string]ApprovalNotificationPayload{},
+		pendingPrompts:          map[string]RemoteInteractivePrompt{},
 	}
 	if err := agent.ensureIdentity(); err != nil {
 		return nil, err
@@ -403,9 +441,11 @@ func (a *Agent) readRelay(ctx context.Context, conn *websocket.Conn) {
 func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 	switch frame.Type {
 	case protocol.TypeApprovalRequest:
+		a.updatePendingApproval(frame.Payload)
 		a.sendEncryptedToRelay(frame)
 		a.handleApprovalRequestForPush(frame.Payload)
 	case protocol.TypeInteractivePromptList:
+		a.replacePendingPrompts(frame.Payload)
 		a.sendEncryptedToRelay(frame)
 		a.handleInteractivePromptListForPush(frame.Payload)
 	case protocol.TypeTabList, protocol.TypeOutput, protocol.TypeSnapshot,
@@ -473,6 +513,12 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		protocol.TypeApprovalResponse:
 		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
 			return
+		}
+		if frame.Type == protocol.TypeApprovalResponse {
+			var response ApprovalResponsePayload
+			if err := json.Unmarshal(frame.Payload, &response); err == nil {
+				a.clearPendingApproval(response.RequestID)
+			}
 		}
 		a.sendToIPC(frame)
 	case protocol.TypePing:
@@ -1038,6 +1084,74 @@ func (a *Agent) relayHTTPPost(path string, payload any) error {
 	return nil
 }
 
+func (a *Agent) syncPendingState() {
+	a.pendingStateMu.Lock()
+	approvals := make([]ApprovalNotificationPayload, 0, len(a.pendingApprovals))
+	for _, approval := range a.pendingApprovals {
+		approvals = append(approvals, approval)
+	}
+	prompts := make([]RemoteInteractivePrompt, 0, len(a.pendingPrompts))
+	for _, prompt := range a.pendingPrompts {
+		prompts = append(prompts, prompt)
+	}
+	a.pendingStateMu.Unlock()
+
+	payload := PendingStatePayload{
+		Approvals:          approvals,
+		InteractivePrompts: prompts,
+	}
+	if err := a.relayHTTPPost("/pending/"+a.state.DeviceID, payload); err != nil {
+		log.Printf("pending state sync: %v", err)
+	}
+}
+
+func (a *Agent) updatePendingApproval(payload []byte) {
+	var approval ApprovalNotificationPayload
+	if err := json.Unmarshal(payload, &approval); err != nil {
+		log.Printf("pending approval sync: unmarshal: %v", err)
+		return
+	}
+	if approval.RequestID == "" {
+		return
+	}
+
+	a.pendingStateMu.Lock()
+	a.pendingApprovals[approval.RequestID] = approval
+	a.pendingStateMu.Unlock()
+	a.syncPendingState()
+}
+
+func (a *Agent) clearPendingApproval(requestID string) {
+	if requestID == "" {
+		return
+	}
+	a.pendingStateMu.Lock()
+	delete(a.pendingApprovals, requestID)
+	a.pendingStateMu.Unlock()
+	a.syncPendingState()
+}
+
+func (a *Agent) replacePendingPrompts(payload []byte) {
+	var promptList InteractivePromptListPayload
+	if err := json.Unmarshal(payload, &promptList); err != nil {
+		log.Printf("pending prompt sync: unmarshal: %v", err)
+		return
+	}
+
+	next := make(map[string]RemoteInteractivePrompt, len(promptList.Prompts))
+	for _, prompt := range promptList.Prompts {
+		if prompt.ID == "" {
+			continue
+		}
+		next[prompt.ID] = prompt
+	}
+
+	a.pendingStateMu.Lock()
+	a.pendingPrompts = next
+	a.pendingStateMu.Unlock()
+	a.syncPendingState()
+}
+
 func (a *Agent) registerPushToken(pairedDeviceID, deviceName string, statePayload RemoteClientStatePayload) {
 	payload := PushRegistrationPayload{
 		PairedDeviceID:          pairedDeviceID,
@@ -1124,7 +1238,7 @@ func (a *Agent) handleInteractivePromptListForPush(payload []byte) {
 		if seen {
 			continue
 		}
-		context := a.approvalContextSummary(prompt.ToolName, prompt.TabTitle, "", "")
+		context := a.approvalContextSummary(prompt.ToolName, prompt.TabTitle, prompt.ProjectName, prompt.BranchName)
 		body := strings.TrimSpace(prompt.Prompt)
 		if context != "" {
 			body = context + "\n" + body

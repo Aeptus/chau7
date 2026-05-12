@@ -5,6 +5,8 @@
  *   GET  /              Landing page (HTML)
  *   WS   /connect/:id   WebSocket relay between macOS and iOS clients
  *   POST /push/:topic/:deviceId  Forward push notification to a paired device
+ *   GET  /pending/:deviceId      Return relay-backed pending approvals/prompts snapshot
+ *   POST /pending/:deviceId      Replace relay-backed pending approvals/prompts snapshot
  *
  * Authentication: HMAC-SHA256 bearer tokens with 5-minute window.
  */
@@ -148,6 +150,18 @@ export default {
     if (action === 'push' && parts.length === 3) {
       const targetDeviceID = parts[2];
       const authFailure = await authenticateRequest(request, env, targetDeviceID, 'mac');
+      if (authFailure) {
+        return authFailure;
+      }
+      const id = env.SESSION.idFromName(targetDeviceID);
+      const stub = env.SESSION.get(id);
+      return stub.fetch(request);
+    }
+
+    if (action === 'pending' && parts.length === 2) {
+      const targetDeviceID = parts[1];
+      const role = request.method === 'GET' ? 'ios' : 'mac';
+      const authFailure = await authenticateRequest(request, env, targetDeviceID, role);
       if (authFailure) {
         return authFailure;
       }

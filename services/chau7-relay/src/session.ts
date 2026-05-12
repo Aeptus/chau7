@@ -37,6 +37,48 @@ interface PushNotifyPayload {
   open_approvals?: boolean;
 }
 
+interface PendingApproval {
+  request_id: string;
+  command: string;
+  flagged_command: string;
+  timestamp: string;
+  tab_title?: string;
+  tool_name?: string;
+  project_name?: string;
+  branch_name?: string;
+  current_directory?: string;
+  recent_command?: string;
+  context_note?: string;
+  session_id?: string;
+}
+
+interface PendingInteractivePromptOption {
+  id: string;
+  label: string;
+  response: string;
+  is_destructive?: boolean;
+}
+
+interface PendingInteractivePrompt {
+  id: string;
+  tab_id: number;
+  tab_title: string;
+  tool_name: string;
+  project_name?: string;
+  branch_name?: string;
+  current_directory?: string;
+  prompt: string;
+  detail?: string;
+  options: PendingInteractivePromptOption[];
+  detected_at: string;
+}
+
+interface PendingStatePayload {
+  approvals: PendingApproval[];
+  interactive_prompts: PendingInteractivePrompt[];
+  updated_at?: string;
+}
+
 interface Env {
   APNS_TEAM_ID?: string;
   APNS_KEY_ID?: string;
@@ -44,6 +86,7 @@ interface Env {
 }
 
 const REGISTRATIONS_KEY = 'push_registrations';
+const PENDING_STATE_KEY = 'pending_state';
 
 export class SessionDO {
   private readonly state: DurableObjectState;
@@ -73,6 +116,15 @@ export class SessionDO {
       if (operation === 'notify') {
         return this.handlePushNotify(request);
       }
+    }
+    if (parts[0] === 'pending' && parts.length === 2) {
+      if (request.method === 'GET') {
+        return this.handlePendingState();
+      }
+      if (request.method === 'POST') {
+        return this.handlePendingSync(request);
+      }
+      return new Response('Method Not Allowed', { status: 405 });
     }
     return new Response('Not Found', { status: 404 });
   }
@@ -207,8 +259,40 @@ export class SessionDO {
     );
   }
 
+  private async loadPendingState(): Promise<PendingStatePayload> {
+    return (
+      (await this.state.storage.get<PendingStatePayload>(PENDING_STATE_KEY)) ?? {
+        approvals: [],
+        interactive_prompts: [],
+        updated_at: new Date(0).toISOString()
+      }
+    );
+  }
+
+  private async savePendingState(state: PendingStatePayload): Promise<void> {
+    await this.state.storage.put(PENDING_STATE_KEY, state);
+  }
+
   private async saveRegistrations(registrations: Record<string, PushRegistration>): Promise<void> {
     await this.state.storage.put(REGISTRATIONS_KEY, registrations);
+  }
+
+  private async handlePendingState(): Promise<Response> {
+    const state = await this.loadPendingState();
+    return Response.json(state);
+  }
+
+  private async handlePendingSync(request: Request): Promise<Response> {
+    const payload = (await request.json()) as PendingStatePayload;
+    const nextState: PendingStatePayload = {
+      approvals: Array.isArray(payload.approvals) ? payload.approvals : [],
+      interactive_prompts: Array.isArray(payload.interactive_prompts)
+        ? payload.interactive_prompts
+        : [],
+      updated_at: new Date().toISOString()
+    };
+    await this.savePendingState(nextState);
+    return Response.json(nextState);
   }
 
   private async sendAPNSNotification(

@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -184,5 +187,80 @@ func TestRequiresEncryptedRelayFrame(t *testing.T) {
 		if requiresEncryptedRelayFrame(frameType) {
 			t.Fatalf("frame type 0x%02x should not require encryption", frameType)
 		}
+	}
+}
+
+func TestUpdatePendingApprovalSyncsRelayState(t *testing.T) {
+	var got PendingStatePayload
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/pending/device-1" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("unmarshal body: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	a := &Agent{
+		relayBaseURL:     server.URL + "/connect",
+		state:            &State{DeviceID: "device-1"},
+		pendingApprovals: map[string]ApprovalNotificationPayload{},
+		pendingPrompts:   map[string]RemoteInteractivePrompt{},
+	}
+
+	payload, err := json.Marshal(ApprovalNotificationPayload{
+		RequestID:      "req-1",
+		Command:        "git push",
+		FlaggedCommand: "git push --force",
+		TabTitle:       "Claude",
+		ToolName:       "Claude Code",
+	})
+	if err != nil {
+		t.Fatalf("marshal approval payload: %v", err)
+	}
+
+	a.updatePendingApproval(payload)
+
+	if len(got.Approvals) != 1 {
+		t.Fatalf("expected 1 approval, got %d", len(got.Approvals))
+	}
+	if got.Approvals[0].RequestID != "req-1" {
+		t.Fatalf("unexpected request id: %s", got.Approvals[0].RequestID)
+	}
+}
+
+func TestClearPendingApprovalRemovesItFromRelayState(t *testing.T) {
+	var got PendingStatePayload
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("unmarshal body: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	a := &Agent{
+		relayBaseURL: server.URL + "/connect",
+		state:        &State{DeviceID: "device-1"},
+		pendingApprovals: map[string]ApprovalNotificationPayload{
+			"req-1": {RequestID: "req-1", Command: "git push"},
+		},
+		pendingPrompts: map[string]RemoteInteractivePrompt{},
+	}
+
+	a.clearPendingApproval("req-1")
+
+	if len(got.Approvals) != 0 {
+		t.Fatalf("expected cleared approvals, got %d", len(got.Approvals))
 	}
 }
