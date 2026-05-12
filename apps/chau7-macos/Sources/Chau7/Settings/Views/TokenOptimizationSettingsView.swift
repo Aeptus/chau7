@@ -750,6 +750,12 @@ struct TokenOptimizationSettingsView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+
+                Button(L("cto.runtime.exportSnapshot", "Export snapshot")) {
+                    exportRuntimeSnapshot()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
 
             HStack {
@@ -812,6 +818,36 @@ struct TokenOptimizationSettingsView: View {
     private func resetRuntimeStats() {
         CTORuntimeMonitor.shared.reset()
         runtimeSnapshot = CTORuntimeMonitor.shared.snapshot()
+    }
+
+    /// Phase 2.3: write the current snapshot to disk as JSON. The
+    /// `recentDecisions` rolling window plus the trigger / reason
+    /// breakdowns survive into a file that can be attached to a bug
+    /// report or analyzed offline, without requiring schema migration
+    /// in the TelemetryStore SQLite pipeline.
+    private func exportRuntimeSnapshot() {
+        let snapshot = CTORuntimeMonitor.shared.snapshot()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(snapshot) else {
+            Log.error("CTO: failed to encode runtime snapshot for export")
+            return
+        }
+
+        let logsDir = RuntimeIsolation.logsDirectory()
+            .appendingPathComponent("Chau7", isDirectory: true)
+        FileOperations.createDirectory(at: logsDir)
+        let stamp = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        let url = logsDir.appendingPathComponent("cto-snapshot-\(stamp).json")
+        do {
+            try data.write(to: url, options: [.atomic])
+            Log.info("CTO: exported runtime snapshot to \(url.path)")
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            Log.error("CTO: failed to write snapshot to \(url.path): \(error)")
+        }
     }
 
     private var compactDateFormatter: DateFormatter {
