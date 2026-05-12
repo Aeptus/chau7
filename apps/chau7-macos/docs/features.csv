@@ -196,6 +196,7 @@ Window Management,Restoration Backup Isolation,"Production tab-state backups sta
 Window Management,Menu Bar Only Mode,Run as a menu bar app — no Dock icon needed,Shipped,No
 SSH, Profiles & Remote,Remote Background Approval Mode,"When Chau7 Remote backgrounds, the session briefly stays alive in approvals-only mode instead of streaming full terminal output",Shipped,Yes
 SSH, Profiles & Remote,Remote Push Approval Delivery,"Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app",Shipped,Yes
+SSH, Profiles & Remote,Remote iOS 20 Minimum Target,"The Chau7 Remote app widget and Rust terminal build all target iOS 20 as their shared minimum deployment floor",Shipped,No
 SSH, Profiles & Remote,Experimental Rust iPhone Renderer,"Optional Rust-backed terminal grid renderer for Chau7 Remote on iPhone, with text fallback retained",Shipped,Yes
 SSH, Profiles & Remote,Selected-Tab Remote Streaming,"macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to",Shipped,Yes
 SSH, Profiles & Remote,Remote iPhone Profiling Hooks,"The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",Shipped,No
