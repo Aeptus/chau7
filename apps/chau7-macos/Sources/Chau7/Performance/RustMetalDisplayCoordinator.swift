@@ -385,6 +385,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         tripleBuffer.markFullRefresh()
         requestSyncRender()
         Log.info("RustMetalDisplayCoordinator: Resized to \(cols)x\(rows)")
+        terminalView?.logRenderSurfaceReport(reason: "metal-resize", force: true)
         scheduleDisplay()
     }
 
@@ -511,6 +512,7 @@ final class RustMetalDisplayCoordinator: NSObject {
             self?.setNeedsSync()
         }
         newView.isMetalRenderingActive = true
+        newView.logInitialRenderSurfaceReportIfNeeded(reason: "metal-initial")
 
         // 6. Reconfigure font if the new view uses a different font/scale
         configureFont()

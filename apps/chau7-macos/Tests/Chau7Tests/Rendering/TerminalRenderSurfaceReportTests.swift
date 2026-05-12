@@ -57,6 +57,39 @@ final class TerminalRenderSurfaceReportTests: XCTestCase {
         XCTAssertTrue(formatted.contains("retry: reason:noDrawable consecutiveFailures:3"))
     }
 
+    func testCompactReportIncludesBugTriageFields() {
+        let geometry = TerminalRenderGeometry.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 808, height: 1050),
+            inset: 4,
+            cellSize: CGSize(width: 7, height: 13)
+        )
+        let report = TerminalRenderSurfaceReport(
+            windowFrame: CGRect(x: 10, y: 20, width: 1920, height: 1080),
+            contentLayoutRect: CGRect(x: 0, y: 0, width: 1920, height: 1042),
+            contentViewBounds: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+            terminalBounds: CGRect(x: 0, y: 0, width: 808, height: 1050),
+            geometry: geometry,
+            backingScaleFactor: 2,
+            metalActive: true,
+            metalViewFrame: geometry.surfaceFrame,
+            metalViewBounds: CGRect(origin: .zero, size: geometry.surfaceFrame.size),
+            metalDrawableSize: CGSize(width: 1600, height: 2084),
+            lastPresentedFrameAgeMs: 42
+        )
+
+        let compact = report.compact(reason: "fullscreen-enter", viewID: 7)
+
+        XCTAssertTrue(compact.contains("Render surface reason=fullscreen-enter view=7"))
+        XCTAssertTrue(compact.contains("windowContent=1920.0x1042.0"))
+        XCTAssertTrue(compact.contains("surface=(x:4.0 y:4.0 800.0x1042.0)"))
+        XCTAssertTrue(compact.contains("gridOrigin=(x:4.0 y:6.0)"))
+        XCTAssertTrue(compact.contains("colsRows=114x80"))
+        XCTAssertTrue(compact.contains("cell=7.0x13.0"))
+        XCTAssertTrue(compact.contains("remainder=2.0x2.0"))
+        XCTAssertTrue(compact.contains("drawable=1600.0x2084.0"))
+        XCTAssertTrue(compact.contains("lastFrameAgeMs=42"))
+    }
+
     func testFormattedReportHandlesMissingWindowAndMetalFields() {
         let geometry = TerminalRenderGeometry.resolve(
             bounds: CGRect(x: 0, y: 0, width: 80, height: 10),

@@ -2053,6 +2053,8 @@ final class RustTerminalView: NSView {
     var onDisplayFramePresented: (() -> Void)?
 
     private(set) var lastDisplayFramePresentedAt: Date?
+    private var didLogInitialRenderSurfaceReport = false
+    private var lastRenderSurfaceReportLogKey: String?
 
     /// Callback when scroll position changes
     var onScrollChanged: (() -> Void)?
@@ -2745,7 +2747,9 @@ final class RustTerminalView: NSView {
             NSWindow.didDeminiaturizeNotification,
             NSWindow.didChangeOcclusionStateNotification,
             NSWindow.didMoveNotification,
-            NSWindow.didResizeNotification
+            NSWindow.didResizeNotification,
+            NSWindow.didEnterFullScreenNotification,
+            NSWindow.didExitFullScreenNotification
         ]
         windowNotificationObservers = names.map { name in
             center.addObserver(forName: name, object: window, queue: .main) { [weak self] notification in
@@ -2764,6 +2768,12 @@ final class RustTerminalView: NSView {
     }
 
     private func handleWindowVisibilityChange(_ name: Notification.Name) {
+        if name == NSWindow.didEnterFullScreenNotification {
+            logRenderSurfaceReport(reason: "fullscreen-enter", force: true)
+        } else if name == NSWindow.didExitFullScreenNotification {
+            logRenderSurfaceReport(reason: "fullscreen-exit", force: true)
+        }
+
         // When the window becomes key, eagerly restart the event drain for
         // the selected tab ONLY (phase == .active). Don't wait for SwiftUI's
         // re-evaluation cycle — the user is already typing. Non-selected tabs
@@ -2833,6 +2843,43 @@ final class RustTerminalView: NSView {
         )
     }
 
+    func logInitialRenderSurfaceReportIfNeeded(reason: String) {
+        guard !didLogInitialRenderSurfaceReport else { return }
+        let geometry = currentRenderGeometry
+        guard geometry.rows > 1, geometry.cols > 1 else { return }
+        didLogInitialRenderSurfaceReport = true
+        logRenderSurfaceReport(reason: reason, force: true)
+    }
+
+    func logRenderSurfaceReport(reason: String, force: Bool = false) {
+        let report = renderSurfaceReport()
+        let key = renderSurfaceReportLogKey(report, reason: reason)
+        guard force || key != lastRenderSurfaceReportLogKey else { return }
+        lastRenderSurfaceReportLogKey = key
+        Log.info(report.compact(reason: reason, viewID: viewId))
+    }
+
+    private func renderSurfaceReportLogKey(
+        _ report: TerminalRenderSurfaceReport,
+        reason: String
+    ) -> String {
+        let content = report.windowContentSize.map { "\($0.width)x\($0.height)" } ?? "nil"
+        let metalBounds = report.metalViewBounds.map { "\($0.width)x\($0.height)" } ?? "nil"
+        let drawable = report.metalDrawableSize.map { "\($0.width)x\($0.height)" } ?? "nil"
+        return [
+            reason,
+            content,
+            "\(report.terminalBounds.width)x\(report.terminalBounds.height)",
+            "\(report.surfaceFrame.width)x\(report.surfaceFrame.height)",
+            "\(report.cols)x\(report.rows)",
+            "\(report.cellSize.width)x\(report.cellSize.height)",
+            "\(report.horizontalRemainder)x\(report.verticalRemainder)",
+            "\(report.metalActive)",
+            metalBounds,
+            drawable
+        ].joined(separator: "|")
+    }
+
     override func layout() {
         super.layout()
 
@@ -2847,6 +2894,9 @@ final class RustTerminalView: NSView {
         let geometry = currentRenderGeometry
         gridView?.frame = geometry.surfaceFrame
         overlayContainer?.frame = geometry.surfaceFrame
+        if isMetalRenderingActive || notifyUpdateChanges {
+            logInitialRenderSurfaceReportIfNeeded(reason: "layout-initial")
+        }
         // Hard clamp against insane layout inputs. During cross-window tab
         // reparenting we've observed layout() firing before bounds settle,
         // producing cols/rows in the thousands. Feeding those into Rust's
@@ -2881,6 +2931,7 @@ final class RustTerminalView: NSView {
                 rows = newRows
                 rustTerminal?.resize(cols: UInt16(cols), rows: UInt16(rows))
                 needsGridSync = true
+                logRenderSurfaceReport(reason: "terminal-resize", force: true)
             }
         } else {
             Log.debug("RustTerminalView[\(viewId)]: layout - skipping degenerate resize target rawCols=\(geometry.rawCols) rawRows=\(geometry.rawRows) bounds=\(bounds)")

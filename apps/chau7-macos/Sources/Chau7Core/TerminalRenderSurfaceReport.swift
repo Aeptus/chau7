@@ -157,6 +157,31 @@ public struct TerminalRenderSurfaceReport: Equatable {
         formattedLines(indent: indent).joined(separator: "\n")
     }
 
+    public func compact(reason: String, viewID: UInt64? = nil) -> String {
+        var parts = ["Render surface"]
+        parts.append("reason=\(reason)")
+        if let viewID {
+            parts.append("view=\(viewID)")
+        }
+        parts.append("windowContent=\(format(windowContentSize))")
+        parts.append("terminal=\(format(terminalBounds))")
+        parts.append("surface=\(format(surfaceFrame))")
+        parts.append("gridOrigin=\(format(gridOrigin))")
+        parts.append("colsRows=\(cols)x\(rows)")
+        parts.append("cell=\(format(cellSize))")
+        parts.append("remainder=\(format(horizontalRemainder))x\(format(verticalRemainder))")
+        parts.append("scale=\(backingScaleFactor.map(format) ?? "<nil>")")
+        parts.append("metalActive=\(metalActive)")
+        parts.append("metalBounds=\(format(metalViewBounds))")
+        parts.append("drawable=\(format(metalDrawableSize))")
+        parts.append("lastFrameAgeMs=\(lastPresentedFrameAgeMs.map(String.init) ?? "<nil>")")
+        if let coordinatorDiagnostics {
+            parts.append("requests=\(format(coordinatorDiagnostics.renderRequests))")
+            parts.append("retry=\(format(coordinatorDiagnostics.retry))")
+        }
+        return parts.joined(separator: " ")
+    }
+
     private func format(_ rect: RectSnapshot?) -> String {
         guard let rect else { return "<nil>" }
         return format(rect)
