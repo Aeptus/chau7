@@ -261,6 +261,11 @@ final class RemoteControlManager {
         self.process = nil
         isAgentRunning = false
         activeRelayURL = nil
+        pairingInfo = nil
+        sessionStatus = nil
+        connectedPairedDeviceID = nil
+        remoteActivity = nil
+        interactivePrompts = []
         pendingProtectedInputs.removeAll()
     }
 
@@ -268,6 +273,24 @@ final class RemoteControlManager {
         guard isAgentRunning else { return }
         stopAgent()
         startAgent()
+    }
+
+    func regeneratePairing() {
+        let plan = RemotePairingRegenerationPlan.make(
+            isRemoteEnabled: FeatureSettings.shared.isRemoteEnabled,
+            isAgentRunning: isAgentRunning
+        )
+        pairingInfo = nil
+        sessionStatus = nil
+        lastError = nil
+        refreshPairedDevices()
+
+        if plan.shouldStopAgent {
+            stopAgent()
+        }
+        if plan.shouldStartAgent {
+            startAgent()
+        }
     }
 
     func applyRelayConfigurationChange() {

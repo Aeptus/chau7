@@ -34,8 +34,20 @@ struct RemoteQRPayload: Codable, Equatable {
     }
 }
 
+struct RemotePairingRegenerationPlan: Equatable {
+    let shouldStopAgent: Bool
+    let shouldStartAgent: Bool
+
+    static func make(isRemoteEnabled: Bool, isAgentRunning: Bool) -> Self {
+        Self(
+            shouldStopAgent: isAgentRunning,
+            shouldStartAgent: isRemoteEnabled
+        )
+    }
+}
+
 extension RemotePairingInfo {
-    func qrPayloadString() -> String? {
+    func pairingJSONString(prettyPrinted: Bool = false) -> String? {
         let payload = RemoteQRPayload(
             relayURL: relayURL,
             deviceID: deviceID,
@@ -43,11 +55,19 @@ extension RemotePairingInfo {
             pairingCode: pairingCode,
             expiresAt: expiresAt
         )
-        guard let data = try? JSONEncoder().encode(payload) else {
+        let encoder = JSONEncoder()
+        if prettyPrinted {
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        }
+        guard let data = try? encoder.encode(payload) else {
             Log.error("RemoteControlManager: failed to encode QR payload")
             return nil
         }
         return String(data: data, encoding: .utf8)
+    }
+
+    func qrPayloadString() -> String? {
+        pairingJSONString()
     }
 }
 

@@ -122,7 +122,8 @@ struct RemoteSettingsView: View {
     @ViewBuilder
     private var pairingView: some View {
         if let info = remote.pairingInfo {
-            let payload = info.qrPayloadString()
+            let payload = info.pairingJSONString()
+            let prettyPayload = info.pairingJSONString(prettyPrinted: true)
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(String(format: L("remote.deviceId", "Device ID: %@"), info.deviceID))
@@ -137,6 +138,19 @@ struct RemoteSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    if let prettyPayload {
+                        ScrollView(.horizontal) {
+                            Text(prettyPayload)
+                                .font(.system(size: 11, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(10)
+                        }
+                        .frame(minHeight: 120)
+                        .background(Color.secondary.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+
                     HStack(spacing: 12) {
                         Button(L("Copy Pairing JSON", "Copy Pairing JSON")) {
                             guard let payload else { return }
@@ -150,7 +164,7 @@ struct RemoteSettingsView: View {
                             pasteboard.setString(info.pairingCode, forType: .string)
                         }
                         Button(L("Regenerate", "Regenerate")) {
-                            remote.restartAgentIfRunning()
+                            remote.regeneratePairing()
                         }
                     }
                     .buttonStyle(.bordered)
