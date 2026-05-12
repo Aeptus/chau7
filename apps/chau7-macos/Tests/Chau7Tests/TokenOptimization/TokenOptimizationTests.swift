@@ -359,6 +359,50 @@ final class TokenOptimizationCoreTests: XCTestCase {
         XCTAssertEqual(penalty, 8) // 15 * 0.5 = 7.5, rounded to 8
     }
 
+    // MARK: - Diagnostic State Snapshot
+
+    /// `CTOStateSnapshot` round-trips through JSON without losing fields,
+    /// and the schemaVersion default matches the current constant. Future
+    /// changes to the on-disk shape can be detected by adjusting this
+    /// test alongside the version bump.
+    func testStateSnapshotCodableRoundTrip() throws {
+        let stats = CTOGainStats(
+            commands: 12, inputTokens: 800, outputTokens: 600,
+            savedTokens: 240, savingsPct: 28.5, totalTimeMs: 1200, avgTimeMs: 100
+        )
+        let snapshot = CTOStateSnapshot(
+            mode: TokenOptimizationMode.allTabs.rawValue,
+            updatedAt: Date(timeIntervalSince1970: 1_715_000_000),
+            activeSessions: ["session-a", "session-b"],
+            trackedSessions: ["session-a", "session-b", "session-c"],
+            deferredSessions: ["session-c"],
+            gainStats: stats
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(snapshot)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(CTOStateSnapshot.self, from: data)
+
+        XCTAssertEqual(decoded, snapshot)
+        XCTAssertEqual(decoded.schemaVersion, CTOStateSnapshot.currentSchemaVersion)
+    }
+
+    func testStateSnapshotDefaultsSchemaVersion() {
+        let snapshot = CTOStateSnapshot(
+            mode: "off",
+            updatedAt: Date(),
+            activeSessions: [],
+            trackedSessions: [],
+            deferredSessions: []
+        )
+        XCTAssertEqual(snapshot.schemaVersion, CTOStateSnapshot.currentSchemaVersion)
+        XCTAssertNil(snapshot.gainStats)
+    }
+
     // MARK: - Assessment Transition Pure Logic
 
     /// First emission (no previous assessment) should report `.initial`
@@ -886,6 +930,50 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         let snapshot = CTORuntimeMonitor.shared.snapshot()
         XCTAssertEqual(snapshot.mode, TokenOptimizationMode.allTabs.rawValue)
         XCTAssertFalse(snapshot.assessment.issues.contains(.modeOffWithTrackedSessions))
+    }
+
+    // MARK: - Diagnostic State File
+
+    /// `writeDiagnosticStateSnapshot()` should materialize the current
+    /// monitor state to `~/.chau7/cto_state.json` and the file should
+    /// round-trip back through `CTOStateSnapshot`'s decoder. This is the
+    /// integration glue between `CTORuntimeMonitor` and `CTOStateFile`.
+    func testWriteDiagnosticStateSnapshotMaterializesFile() throws {
+        CTORuntimeMonitor.shared.reset()
+        CTORuntimeMonitor.shared.recordManagerSetup(mode: .allTabs)
+        let sessionID = UUID().uuidString
+        CTORuntimeMonitor.shared.recordDecision(
+            sessionID: sessionID,
+            mode: .allTabs,
+            override: .default,
+            isAIActive: true,
+            previousState: false,
+            nextState: true,
+            changed: true,
+            reason: .allTabsDefault
+        )
+
+        // `changed: true` above triggers `writeDiagnosticStateSnapshot`
+        // automatically — assert the file exists and is parseable.
+        let url = URL(fileURLWithPath: CTOStateFile.path)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: url.path),
+            "cto_state.json should exist after a changed decision"
+        )
+
+        let data = try Data(contentsOf: url)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let snapshot = try decoder.decode(CTOStateSnapshot.self, from: data)
+        XCTAssertEqual(snapshot.mode, TokenOptimizationMode.allTabs.rawValue)
+        XCTAssertTrue(snapshot.activeSessions.contains(sessionID))
+
+        // teardown should remove the file
+        CTORuntimeMonitor.shared.recordManagerTeardown()
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: url.path),
+            "teardown should drop the diagnostic mirror"
+        )
     }
 
     // MARK: - Decision Trigger Taxonomy

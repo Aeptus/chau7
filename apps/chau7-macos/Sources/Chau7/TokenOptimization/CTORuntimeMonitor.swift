@@ -181,6 +181,10 @@ final class CTORuntimeMonitor {
                     "savingsPct": String(format: "%.1f", stats.savingsPct)
                 ]
             )
+            // Refresh the diagnostic mirror so external tooling reading
+            // `cto_state.json` sees current gain numbers without having
+            // to wait for the next state-changing decision.
+            writeDiagnosticStateSnapshot()
         }
     }
 
@@ -213,6 +217,10 @@ final class CTORuntimeMonitor {
             deferredSessionIDs.removeAll()
         }
         LogEnhanced.info(.cto, "CTO manager teardown observed", metadata: ["teardowns": "\(teardownCountSnapshot)"])
+        // Drop the diagnostic mirror on teardown. The file would
+        // otherwise sit on disk showing the last pre-teardown state,
+        // which is a confusing "ghost" when CTO is actually off.
+        CTOStateFile.remove()
     }
 
     func untrackSession(_ sessionID: String) {
@@ -245,6 +253,9 @@ final class CTORuntimeMonitor {
                 "CTO bulk flag cleanup",
                 metadata: ["removed": "\(count)", "scope": "teardown/all"]
             )
+            // Bulk remove drops every active session — refresh the
+            // diagnostic mirror so it doesn't show a stale active set.
+            writeDiagnosticStateSnapshot()
         }
     }
 
@@ -441,7 +452,31 @@ final class CTORuntimeMonitor {
             if shouldEmitSummary {
                 emitSummary()
             }
+            // Refresh the diagnostic `cto_state.json` mirror whenever a
+            // recorded decision actually flipped per-session state.
+            // Unchanged decisions don't move what's on disk so we don't
+            // rewrite the file on every process-tree poll.
+            if changed {
+                writeDiagnosticStateSnapshot()
+            }
         }
+    }
+
+    /// Build a `CTOStateSnapshot` from the current monitor state and write
+    /// it to disk via `CTOStateFile`. Reads counters under the lock so the
+    /// resulting file is internally consistent.
+    func writeDiagnosticStateSnapshot() {
+        let snapshot: CTOStateSnapshot = withLock {
+            CTOStateSnapshot(
+                mode: currentMode.rawValue,
+                updatedAt: Date(),
+                activeSessions: activeSessions.sorted(),
+                trackedSessions: trackedSessionIDs.sorted(),
+                deferredSessions: deferredSessionIDs.sorted(),
+                gainStats: lastGainStats
+            )
+        }
+        CTOStateFile.write(snapshot)
     }
 
     /// Emit summary metrics for a quick global view in logs.

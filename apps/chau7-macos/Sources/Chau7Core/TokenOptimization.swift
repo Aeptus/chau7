@@ -486,6 +486,49 @@ public extension CTORuntimeSnapshot {
     }
 }
 
+// MARK: - State Snapshot for Disk Export
+
+/// Compact diagnostic snapshot of CTO state, written alongside the per-session
+/// `cto_active/<session-id>` flag files at `~/.chau7/cto_state.json` whenever
+/// the engine's decision state changes. The wrapper scripts continue to read
+/// flag files (their hot-path `[ -f $flag ]` check is a single `stat()`), so
+/// this file is purely a diagnostic mirror — humans, bug reports, and
+/// external tooling can inspect "what does Chau7 currently think CTO is
+/// doing" without scraping multiple files.
+///
+/// Schema version is recorded so future readers can detect older / newer
+/// layouts. Bump it whenever the meaning of any field changes (additive
+/// fields don't require a bump).
+public struct CTOStateSnapshot: Codable, Equatable, Sendable {
+    public static let currentSchemaVersion = 1
+
+    public let schemaVersion: Int
+    public let mode: String
+    public let updatedAt: Date
+    public let activeSessions: [String]
+    public let trackedSessions: [String]
+    public let deferredSessions: [String]
+    public let gainStats: CTOGainStats?
+
+    public init(
+        schemaVersion: Int = CTOStateSnapshot.currentSchemaVersion,
+        mode: String,
+        updatedAt: Date,
+        activeSessions: [String],
+        trackedSessions: [String],
+        deferredSessions: [String],
+        gainStats: CTOGainStats? = nil
+    ) {
+        self.schemaVersion = schemaVersion
+        self.mode = mode
+        self.updatedAt = updatedAt
+        self.activeSessions = activeSessions
+        self.trackedSessions = trackedSessions
+        self.deferredSessions = deferredSessions
+        self.gainStats = gainStats
+    }
+}
+
 // MARK: - Assessment Transitions
 
 /// Describes a transition between two consecutive `CTORuntimeAssessment`
