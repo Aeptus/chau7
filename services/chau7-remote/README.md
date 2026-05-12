@@ -33,7 +33,7 @@ go build ./cmd/chau7-remote
 
 ```bash
 CHAU7_REMOTE_SOCKET="$HOME/Library/Application Support/Chau7/remote.sock" \
-CHAU7_RELAY_URL="wss://relay.example.com/connect" \
+CHAU7_RELAY_URL="wss://relay.chau7.sh/connect" \
 CHAU7_MAC_NAME="$(scutil --get ComputerName)" \
 CHAU7_REMOTE_STATE="$HOME/Library/Application Support/Chau7/remote-state.json" \
 ./chau7-remote

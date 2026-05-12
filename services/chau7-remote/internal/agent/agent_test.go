@@ -133,18 +133,18 @@ func TestRelayAPIBaseURLConvertsWebsocketSchemesForHTTPPosts(t *testing.T) {
 	}{
 		{
 			name:     "secure websocket",
-			relayURL: "wss://relay.example.com/connect",
-			want:     "https://relay.example.com",
+			relayURL: "wss://relay.chau7.sh/connect",
+			want:     "https://relay.chau7.sh",
 		},
 		{
 			name:     "plaintext websocket",
-			relayURL: "ws://relay.example.com/connect",
-			want:     "http://relay.example.com",
+			relayURL: "ws://relay.chau7.sh/connect",
+			want:     "http://relay.chau7.sh",
 		},
 		{
 			name:     "https passthrough",
-			relayURL: "https://relay.example.com/connect",
-			want:     "https://relay.example.com",
+			relayURL: "https://relay.chau7.sh/connect",
+			want:     "https://relay.chau7.sh",
 		},
 	}
 

@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	defaultRelayURL     = "wss://relay.example.com/connect"
+    defaultRelayURL     = "wss://relay.chau7.sh/connect"
 	pairingTTL          = 10 * time.Minute
 	maxFrameSize        = 5 * 1024 * 1024
 	relayRequestTimeout = 10 * time.Second

@@ -50,7 +50,7 @@ Flow:
 
 Both sides connect to relay:
 
-`wss://relay.example.com/connect/{device_id}?role=mac|ios`
+`wss://relay.chau7.sh/connect/{device_id}?role=mac|ios`
 
 Each side sends `HELLO` (cleartext). They compute:
 
@@ -249,7 +249,7 @@ Local IPC payload:
 
 ```json
 {
-  "relay_url": "wss://relay.example.com/connect",
+  "relay_url": "wss://relay.chau7.sh/connect",
   "device_id": "uuid",
   "mac_pub": "base64",
   "pairing_code": "123456",

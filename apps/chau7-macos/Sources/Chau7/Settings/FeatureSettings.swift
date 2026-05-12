@@ -3006,7 +3006,7 @@ final class FeatureSettings {
 
         // Remote Control (default: disabled)
         let remoteEnabled = defaults.object(forKey: Keys.remoteEnabled) as? Bool ?? false
-        let remoteRelayURL = defaults.string(forKey: Keys.remoteRelayURL) ?? "wss://relay.example.com/connect"
+        let remoteRelayURL = defaults.string(forKey: Keys.remoteRelayURL) ?? "wss://relay.chau7.sh/connect"
 
         return MCPRemoteSettings(
             enabled: enabled,
@@ -3737,7 +3737,7 @@ final class FeatureSettings {
         mcpBlockedCommands = []
         mcpProfiles = []
         isRemoteEnabled = false
-        remoteRelayURL = "wss://relay.example.com/connect"
+        remoteRelayURL = "wss://relay.chau7.sh/connect"
         isCTOEnabled = false
         ctoPrefix = ""
         ctoTabOverrides.removeAll()
@@ -4068,7 +4068,7 @@ extension FeatureSettings {
             mcpBlockedCommands: [],
             mcpProfiles: [],
             isRemoteEnabled: false,
-            remoteRelayURL: "wss://relay.example.com/connect",
+            remoteRelayURL: "wss://relay.chau7.sh/connect",
             isCTOEnabled: false,
             ctoPrefix: "",
             ctoTabOverrides: [:]
