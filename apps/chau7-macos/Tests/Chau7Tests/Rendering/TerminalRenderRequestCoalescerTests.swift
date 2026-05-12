@@ -119,4 +119,43 @@ final class TerminalRenderRequestCoalescerTests: XCTestCase {
         XCTAssertEqual(coalescer.diagnostics.coalescedSyncRequestCount, 10)
         XCTAssertEqual(coalescer.diagnostics.coalescedPresentRequestCount, 10)
     }
+
+    func testTwelveAgentBurstKeepsOnlyLatestFramePending() throws {
+        var coalescer = TerminalRenderRequestCoalescer(needsSync: false, needsPresent: false)
+
+        for _ in 0 ..< 12 {
+            for _ in 0 ..< 25 {
+                coalescer.requestSync()
+            }
+        }
+
+        var diagnostics = coalescer.diagnostics
+        XCTAssertEqual(diagnostics.syncRequestCount, 300)
+        XCTAssertEqual(diagnostics.presentRequestCount, 300)
+        XCTAssertEqual(diagnostics.pendingRequestCount, 2)
+        XCTAssertEqual(diagnostics.coalescedSyncRequestCount, 299)
+        XCTAssertEqual(diagnostics.coalescedPresentRequestCount, 299)
+
+        let inFlight = try XCTUnwrap(coalescer.drawRequest())
+        XCTAssertTrue(inFlight.shouldSync)
+        XCTAssertTrue(inFlight.shouldPresent)
+
+        for _ in 0 ..< 12 {
+            coalescer.requestSync()
+        }
+
+        XCTAssertTrue(coalescer.completeCommittedDraw(inFlight))
+        diagnostics = coalescer.diagnostics
+        XCTAssertEqual(diagnostics.syncRequestCount, 312)
+        XCTAssertEqual(diagnostics.presentRequestCount, 312)
+        XCTAssertEqual(diagnostics.pendingRequestCount, 2)
+        XCTAssertEqual(diagnostics.coalescedSyncRequestCount, 311)
+        XCTAssertEqual(diagnostics.coalescedPresentRequestCount, 311)
+
+        let followUp = try XCTUnwrap(coalescer.drawRequest())
+        XCTAssertTrue(followUp.shouldSync)
+        XCTAssertTrue(followUp.shouldPresent)
+        XCTAssertFalse(coalescer.completeCommittedDraw(followUp))
+        XCTAssertNil(coalescer.drawRequest())
+    }
 }
