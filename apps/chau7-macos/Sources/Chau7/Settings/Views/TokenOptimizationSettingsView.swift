@@ -381,6 +381,50 @@ struct TokenOptimizationSettingsView: View {
 
     // MARK: - Token Savings
 
+    /// Phase 1.3: render the latest `chau7-optim gain` sample if one is
+    /// present. When nil — optimizer not installed, poller not yet fired
+    /// during the first 5 min after startup, or mode is off — show a
+    /// muted placeholder so users can tell "we haven't measured yet"
+    /// apart from "we measured and found zero savings".
+    @ViewBuilder
+    private var ctoGainStatsRows: some View {
+        if let gain = runtimeSnapshot.gainStats {
+            statRow(
+                icon: "leaf",
+                iconColor: gain.savedTokens > 0 ? .green : .secondary,
+                label: L("cto.runtime.gainCommands", "Commands optimized"),
+                value: "\(gain.commands)"
+            )
+            statRow(
+                icon: "minus.forwardslash.plus",
+                iconColor: gain.savedTokens > 0 ? .green : .secondary,
+                label: L("cto.runtime.gainSavedTokens", "Tokens saved"),
+                value: "\(gain.savedTokens)"
+            )
+            statRow(
+                icon: "percent",
+                iconColor: gain.savedTokens > 0 ? .green : .secondary,
+                label: L("cto.runtime.gainSavingsPct", "Average savings"),
+                value: String(format: "%.1f%%", gain.savingsPct)
+            )
+            if let sampledAt = runtimeSnapshot.gainStatsLastSampledAt {
+                statRow(
+                    icon: "clock.arrow.circlepath",
+                    iconColor: .secondary,
+                    label: L("cto.runtime.gainSampledAt", "Token savings sampled"),
+                    value: compactDateFormatter.string(from: sampledAt)
+                )
+            }
+        } else {
+            statRow(
+                icon: "leaf",
+                iconColor: .secondary,
+                label: L("cto.runtime.gainPending", "Token savings"),
+                value: L("cto.runtime.gainPendingValue", "no sample yet")
+            )
+        }
+    }
+
     @ViewBuilder
     private var ctoRuntimeStatsView: some View {
         let health = runtimeSnapshot.assessment
@@ -414,6 +458,7 @@ struct TokenOptimizationSettingsView: View {
                 label: L("cto.runtime.healthScore", "Health score"),
                 value: "\(health.score)/100"
             )
+            ctoGainStatsRows
             statRow(
                 icon: "percent",
                 iconColor: .secondary,
