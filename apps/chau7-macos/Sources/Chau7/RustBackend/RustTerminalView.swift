@@ -2587,27 +2587,27 @@ final class RustTerminalView: NSView {
     func setupViews() {
         Log.info("RustTerminalView[\(viewId)]: setupViews - Setting up rendering views")
 
-        // Calculate initial dimensions
-        cols = max(1, Int(bounds.width / cellWidth))
-        rows = max(1, Int(bounds.height / cellHeight))
-        Log.trace("RustTerminalView[\(viewId)]: setupViews - Initial dimensions: \(cols)x\(rows) (bounds: \(bounds))")
+        updateCellDimensions()
+        let geometry = currentRenderGeometry
+        cols = max(1, geometry.cols)
+        rows = max(1, geometry.rows)
+        Log.trace(
+            "RustTerminalView[\(viewId)]: setupViews - Initial dimensions: \(cols)x\(rows) (bounds: \(bounds), surface: \(geometry.surfaceFrame))"
+        )
 
         // Create native grid renderer for Rust terminal output
         Log.trace("RustTerminalView[\(viewId)]: setupViews - Creating RustGridView for rendering")
-        gridView = RustGridView(frame: bounds)
+        gridView = RustGridView(frame: geometry.surfaceFrame)
         gridView.autoresizingMask = [.width, .height]
         gridView.font = font
         gridView.cellSize = CGSize(width: cellWidth, height: cellHeight)
         addSubview(gridView)
         Log.trace("RustTerminalView[\(viewId)]: setupViews - RustGridView added as subview")
 
-        overlayContainer = PassthroughView(frame: bounds)
+        overlayContainer = PassthroughView(frame: geometry.surfaceFrame)
         overlayContainer.autoresizingMask = [.width, .height]
         addSubview(overlayContainer)
         Log.trace("RustTerminalView[\(viewId)]: setupViews - Overlay container added")
-
-        // 3. Update cell dimensions based on font
-        updateCellDimensions()
 
         registerDragTypes()
 
@@ -2625,9 +2625,14 @@ final class RustTerminalView: NSView {
         startupBytesLogged = 0
         isAwaitingInitialPTYOutput = true
 
-        // Recalculate dimensions with actual bounds
-        cols = max(1, Int(bounds.width / cellWidth))
-        rows = max(1, Int(bounds.height / cellHeight))
+        // Recalculate dimensions with the shared render geometry contract so
+        // Rust, CPU, and Metal all agree on the inset terminal grid.
+        updateCellDimensions()
+        let geometry = currentRenderGeometry
+        cols = max(1, geometry.cols)
+        rows = max(1, geometry.rows)
+        gridView?.frame = geometry.surfaceFrame
+        overlayContainer?.frame = geometry.surfaceFrame
         Log.info("RustTerminalView[\(viewId)]: startTerminal - Starting with \(cols)x\(rows), shell=\(configuredShell ?? "<default>")")
 
         // Create Rust terminal (owns PTY and state)

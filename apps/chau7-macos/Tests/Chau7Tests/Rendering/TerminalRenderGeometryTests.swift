@@ -30,6 +30,20 @@ final class TerminalRenderGeometryTests: XCTestCase {
         XCTAssertEqual(geometry.verticalRemainder, 10)
     }
 
+    func testInsetGeometryExcludesPaddingFromAllocatedGridCells() {
+        let geometry = TerminalRenderGeometry.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 1920, height: 1042),
+            inset: 4,
+            cellSize: CGSize(width: 7, height: 13)
+        )
+
+        XCTAssertEqual(geometry.contentBounds, CGRect(x: 4, y: 4, width: 1912, height: 1034))
+        XCTAssertEqual(geometry.cols, 273)
+        XCTAssertEqual(geometry.rows, 79)
+        XCTAssertEqual(Int(1920 / 7), 274)
+        XCTAssertEqual(Int(1042 / 13), 80)
+    }
+
     func testMousePointInBottomRemainderClampsToLastWholeRow() {
         let geometry = TerminalRenderGeometry.resolve(
             bounds: CGRect(x: 0, y: 0, width: 80, height: 49),
