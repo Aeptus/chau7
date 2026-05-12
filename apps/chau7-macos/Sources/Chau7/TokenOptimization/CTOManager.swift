@@ -38,6 +38,18 @@ final class CTOManager {
     /// Directory for CTO data/config files.
     private let dataDir: URL
 
+    /// Dispatch source that polls `chau7-optim gain` and pipes the
+    /// summary into `CTORuntimeMonitor.recordGainStats`. Lazily created
+    /// the first time `startGainStatsPolling()` runs; cancelled (and
+    /// nilled) by `stopGainStatsPolling()` so a subsequent re-arm gets
+    /// a fresh timer with the correct first-fire offset.
+    private var gainStatsPollTimer: DispatchSourceTimer?
+
+    /// 5 minutes — frequent enough to track real usage trends without
+    /// flooding the optimizer binary, infrequent enough that the
+    /// JSON-decode cost is invisible.
+    private static let gainStatsPollInterval: TimeInterval = 300
+
     private init() {
         let base = RuntimeIsolation.chau7Directory()
         self.wrapperBinDir = base.appendingPathComponent("cto_bin", isDirectory: true)
@@ -101,6 +113,48 @@ final class CTOManager {
         }
 
         rotateCommandLogIfNeeded()
+        startGainStatsPolling()
+    }
+
+    /// Begin periodic polling of `chau7-optim gain` (every 5 min). Each
+    /// fire calls `fetchDailyGainStats()` off the main queue and forwards
+    /// the resulting summary to `CTORuntimeMonitor.recordGainStats`. A
+    /// nil result clears the cache so the snapshot reports absence
+    /// rather than a stale-but-positive number from before a teardown.
+    ///
+    /// Safe to call repeatedly — re-arming the timer cancels the old
+    /// one first. Called from `setup()` and the mode-change observer
+    /// that swings out of `.off`.
+    func startGainStatsPolling() {
+        stopGainStatsPolling()
+
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        // First fire after the interval rather than immediately so a
+        // hot setup() doesn't synchronously block on the optimizer
+        // probe. The CTO snapshot will report `gainStats=nil` for the
+        // first ~5 minutes; that's accurate (we haven't sampled yet).
+        timer.schedule(deadline: .now() + Self.gainStatsPollInterval, repeating: Self.gainStatsPollInterval)
+        timer.setEventHandler { [weak self] in
+            self?.pollGainStatsOnce()
+        }
+        timer.resume()
+        gainStatsPollTimer = timer
+    }
+
+    /// Cancel the poller. Called from `teardown()`, mode-flip-to-`.off`,
+    /// and idempotently from `startGainStatsPolling()` before re-arm.
+    func stopGainStatsPolling() {
+        gainStatsPollTimer?.cancel()
+        gainStatsPollTimer = nil
+    }
+
+    /// Run one sample cycle. Exposed `internal` (no `private`) so tests
+    /// can drive it synchronously without waiting on the timer.
+    func pollGainStatsOnce() {
+        Task.detached(priority: .utility) {
+            let response = await CTOManager.shared.fetchDailyGainStats()
+            CTORuntimeMonitor.shared.recordGainStats(response?.summary)
+        }
     }
 
     /// Moves `~/.chau7/<old>` to `~/.chau7/<new>` if old exists and new does not.
@@ -829,6 +883,8 @@ final class CTOManager {
     /// Removes all wrapper scripts and flag files. Called on app quit or
     /// when switching to `.off` mode.
     func teardown() {
+        stopGainStatsPolling()
+        CTORuntimeMonitor.shared.recordGainStats(nil)
         CTORuntimeMonitor.shared.recordManagerTeardown()
         let removed = CTOFlagManager.removeAllFlags()
         CTORuntimeMonitor.shared.recordManagerBulkRemove(count: removed)
