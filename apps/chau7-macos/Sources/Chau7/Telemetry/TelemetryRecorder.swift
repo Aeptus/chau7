@@ -8,6 +8,12 @@ import Chau7Core
 final class TelemetryRecorder {
     static let shared = TelemetryRecorder()
 
+    struct CompletedRunExtractionResult {
+        var run: TelemetryRun
+        var turns: [TelemetryTurn]
+        var toolCalls: [TelemetryToolCall]
+    }
+
     enum RunEndContentMode: Equatable {
         case immediate
         case deferred(reason: String)
@@ -27,6 +33,7 @@ final class TelemetryRecorder {
     private var inProgressRuns: [String: TelemetryRun] = [:]
     private let lock = NSLock()
     private let repairQueue = DispatchQueue(label: "com.chau7.telemetry.repair", qos: .utility)
+    private let extractionQueue = DispatchQueue(label: "com.chau7.telemetry.extraction", qos: .utility)
     /// Coalesces updateRunLiveMetrics writes so they flush at most once per 2 seconds.
     private var pendingMetricsFlush: DispatchWorkItem?
     private var pendingMetricsRuns: [String: TelemetryRun] = [:]
@@ -133,123 +140,81 @@ final class TelemetryRecorder {
         run.exitStatus = exitStatus
         run.durationMs = Int(endedAt.timeIntervalSince(run.startedAt) * 1000)
 
-        var turns: [TelemetryTurn] = []
-        var toolCalls: [TelemetryToolCall] = []
-
         if let reason = contentMode.deferredReason {
             run.metadata["content_extraction"] = "deferred"
             run.metadata["content_extraction_reason"] = reason
             Log.info("TelemetryRecorder: deferred content extraction for run \(runID) reason=\(reason)")
-        } else if let provider = providers.first(where: { $0.canHandle(provider: run.provider) }) {
-            // Extract content from provider-specific storage.
-            // The provider receives runID so all child entities are born with correct IDs.
-            if let content = provider.extractContent(
+            finalizeCompletedRun(
+                run,
+                tabID: tabID,
                 runID: runID,
-                sessionID: run.sessionID,
-                cwd: run.cwd,
-                startedAt: run.startedAt,
-                endedAt: run.endedAt
-            ) {
-                let normalized = TelemetryMetricsSanitizer.sanitize(content, provider: run.provider)
-                if let warning = normalized.warning {
-                    Log.warn("TelemetryRecorder: \(warning) run=\(runID)")
-                }
-
-                let finalContent = normalized.content
-                run.model = finalContent.model ?? run.model
-                run.totalInputTokens = finalContent.totalInputTokens
-                run.totalCacheCreationInputTokens = finalContent.totalCacheCreationInputTokens
-                run.totalCacheReadInputTokens = finalContent.totalCacheReadInputTokens
-                run.totalCachedInputTokens = finalContent.totalCachedInputTokens
-                run.totalOutputTokens = finalContent.totalOutputTokens
-                run.totalReasoningOutputTokens = finalContent.totalReasoningOutputTokens
-                run.costUSD = finalContent.costUSD
-                run.tokenUsageSource = finalContent.tokenUsageSource
-                run.tokenUsageState = finalContent.tokenUsageState
-                run.costSource = finalContent.costSource
-                run.costState = finalContent.costState
-                run.rawTranscriptRef = finalContent.rawTranscriptRef
-                run.turnCount = finalContent.turns.count
-                if finalContent.tokenUsageState == .invalid {
-                    run.errorMessage = "invalidated implausible token metrics during extraction"
-                }
-                turns = finalContent.turns
-                toolCalls = finalContent.toolCalls
-                Log.info("TelemetryRecorder: extracted \(turns.count) turns, \(toolCalls.count) tool calls, model=\(finalContent.model ?? "?")")
-            } else {
-                Log.warn("TelemetryRecorder: content extraction returned nil for run \(runID) session=\(run.sessionID ?? "nil") cwd=\(run.cwd)")
-            }
-        } else {
-            Log.trace("TelemetryRecorder: no content provider for \(run.provider)")
+                exitStatus: exitStatus,
+                turns: [],
+                toolCalls: [],
+                scheduleRepair: false
+            )
+            return
         }
 
-        // Fallback: if no provider extracted turns, try the PTY log (primary) then
-        // the terminal buffer (secondary). The PTY log captures everything written to
-        // the terminal, including content rendered on the alternate screen by TUI-based
-        // tools. The terminal buffer only has main-screen content, which is often just
-        // a brief exit summary for TUI tools.
-        if contentMode == .immediate, turns.isEmpty {
-            var fallbackText: String?
-            var fallbackSource: String?
+        if Self.shouldExtractRunContentInBackground(provider: run.provider, contentMode: contentMode) {
+            finalizeCompletedRun(
+                run,
+                tabID: tabID,
+                runID: runID,
+                exitStatus: exitStatus,
+                turns: [],
+                toolCalls: [],
+                scheduleRepair: true
+            )
 
-            // Primary: read and ANSI-strip the tail of the PTY log
-            if let path = ptyLogPath {
-                fallbackText = Self.readPTYLogTail(path: path, maxBytes: 1_024_000)
-                if fallbackText != nil { fallbackSource = "pty_log" }
-            }
-
-            // Secondary: terminal buffer snapshot
-            if fallbackText == nil, let bufferData = terminalBuffer {
-                let text = String(decoding: bufferData, as: UTF8.self)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty {
-                    fallbackText = text
-                    fallbackSource = "terminal_buffer"
-                }
-            }
-
-            if let text = fallbackText, let source = fallbackSource {
-                let turn = TelemetryTurn(
-                    id: "\(runID)-t0",
+            let runSnapshot = run
+            let terminalBufferSnapshot = terminalBuffer
+            let ptyLogPathSnapshot = ptyLogPath
+            extractionQueue.async { [weak self] in
+                guard let self else { return }
+                let extraction = extractCompletedRunContent(
+                    run: runSnapshot,
                     runID: runID,
-                    turnIndex: 0,
-                    role: .assistant,
-                    content: text,
-                    timestamp: endedAt
+                    terminalBuffer: terminalBufferSnapshot,
+                    ptyLogPath: ptyLogPathSnapshot,
+                    contentMode: contentMode
                 )
-                turns = [turn]
-                run.turnCount = 1
-                run.rawTranscriptRef = source
-                Log.info("TelemetryRecorder: using \(source) fallback (\(text.count) chars) for run \(runID)")
+                guard extraction.run.turnCount > 0
+                    || extraction.run.tokenUsageState != .missing
+                    || extraction.run.rawTranscriptRef != nil
+                    || !extraction.toolCalls.isEmpty
+                else {
+                    return
+                }
+                store.rewriteCompletedRun(
+                    extraction.run,
+                    turns: extraction.turns,
+                    toolCalls: extraction.toolCalls
+                )
+                Log.info(
+                    "TelemetryRecorder: asynchronously extracted \(extraction.turns.count) turns, " +
+                        "\(extraction.toolCalls.count) tool calls, model=\(extraction.run.model ?? "?") run=\(runID)"
+                )
             }
+            return
         }
 
-        // Flush any pending live-metrics writes before finalizing so the final run
-        // state supersedes any coalesced intermediate updates.
-        flushPendingMetrics()
-
-        // Atomic: UPDATE the run row + INSERT turns + INSERT tool calls in one transaction.
-        // This avoids the INSERT OR REPLACE cascade-delete problem.
-        store.finalizeRun(run, turns: turns, toolCalls: toolCalls)
-        if contentMode.deferredReason != "app_termination" {
-            scheduleTranscriptRepairIfNeeded(for: run)
-        }
-        removeLiveRun(runID: run.id)
-        Chau7ObservabilityService.shared.recordEvent(
-            type: "telemetry_run_completed",
-            subsystem: "telemetry",
-            tabID: tabID,
-            sessionID: run.sessionID,
+        let extraction = extractCompletedRunContent(
+            run: run,
             runID: runID,
-            repoPath: run.repoPath,
-            detail: [
-                "provider": run.provider,
-                "exit_status": exitStatus as Any,
-                "turn_count": run.turnCount,
-                "duration_ms": run.durationMs as Any
-            ].compactMapValues { $0 }
+            terminalBuffer: terminalBuffer,
+            ptyLogPath: ptyLogPath,
+            contentMode: contentMode
         )
-        Log.info("TelemetryRecorder: run ended \(runID) exit=\(exitStatus ?? -1) duration=\(run.durationMs ?? 0)ms turns=\(run.turnCount)")
+        finalizeCompletedRun(
+            extraction.run,
+            tabID: tabID,
+            runID: runID,
+            exitStatus: exitStatus,
+            turns: extraction.turns,
+            toolCalls: extraction.toolCalls,
+            scheduleRepair: true
+        )
     }
 
     /// Update session ID for an active run (may be discovered after process start).
@@ -413,6 +378,142 @@ final class TelemetryRecorder {
         for (_, run) in runsToFlush {
             store.updateRunLiveMetrics(run)
         }
+    }
+
+    private func extractCompletedRunContent(
+        run initialRun: TelemetryRun,
+        runID: String,
+        terminalBuffer: Data?,
+        ptyLogPath: String?,
+        contentMode: RunEndContentMode
+    ) -> CompletedRunExtractionResult {
+        var run = initialRun
+        var turns: [TelemetryTurn] = []
+        var toolCalls: [TelemetryToolCall] = []
+
+        if let provider = providers.first(where: { $0.canHandle(provider: run.provider) }) {
+            if let content = provider.extractContent(
+                runID: runID,
+                sessionID: run.sessionID,
+                cwd: run.cwd,
+                startedAt: run.startedAt,
+                endedAt: run.endedAt
+            ) {
+                let normalized = TelemetryMetricsSanitizer.sanitize(content, provider: run.provider)
+                if let warning = normalized.warning {
+                    Log.warn("TelemetryRecorder: \(warning) run=\(runID)")
+                }
+
+                let finalContent = normalized.content
+                run.model = finalContent.model ?? run.model
+                run.totalInputTokens = finalContent.totalInputTokens
+                run.totalCacheCreationInputTokens = finalContent.totalCacheCreationInputTokens
+                run.totalCacheReadInputTokens = finalContent.totalCacheReadInputTokens
+                run.totalCachedInputTokens = finalContent.totalCachedInputTokens
+                run.totalOutputTokens = finalContent.totalOutputTokens
+                run.totalReasoningOutputTokens = finalContent.totalReasoningOutputTokens
+                run.costUSD = finalContent.costUSD
+                run.tokenUsageSource = finalContent.tokenUsageSource
+                run.tokenUsageState = finalContent.tokenUsageState
+                run.costSource = finalContent.costSource
+                run.costState = finalContent.costState
+                run.rawTranscriptRef = finalContent.rawTranscriptRef
+                run.turnCount = finalContent.turns.count
+                if finalContent.tokenUsageState == .invalid {
+                    run.errorMessage = "invalidated implausible token metrics during extraction"
+                }
+                turns = finalContent.turns
+                toolCalls = finalContent.toolCalls
+                Log.info(
+                    "TelemetryRecorder: extracted \(turns.count) turns, " +
+                        "\(toolCalls.count) tool calls, model=\(finalContent.model ?? "?")"
+                )
+            } else {
+                Log.warn(
+                    "TelemetryRecorder: content extraction returned nil for run \(runID) " +
+                        "session=\(run.sessionID ?? "nil") cwd=\(run.cwd)"
+                )
+            }
+        } else {
+            Log.trace("TelemetryRecorder: no content provider for \(run.provider)")
+        }
+
+        if contentMode == .immediate, turns.isEmpty {
+            var fallbackText: String?
+            var fallbackSource: String?
+
+            if let path = ptyLogPath {
+                fallbackText = Self.readPTYLogTail(path: path, maxBytes: 1_024_000)
+                if fallbackText != nil { fallbackSource = "pty_log" }
+            }
+
+            if fallbackText == nil, let bufferData = terminalBuffer {
+                let text = String(decoding: bufferData, as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    fallbackText = text
+                    fallbackSource = "terminal_buffer"
+                }
+            }
+
+            if let text = fallbackText, let source = fallbackSource {
+                let turn = TelemetryTurn(
+                    id: "\(runID)-t0",
+                    runID: runID,
+                    turnIndex: 0,
+                    role: .assistant,
+                    content: text,
+                    timestamp: run.endedAt
+                )
+                turns = [turn]
+                run.turnCount = 1
+                run.rawTranscriptRef = source
+                Log.info("TelemetryRecorder: using \(source) fallback (\(text.count) chars) for run \(runID)")
+            }
+        }
+
+        return CompletedRunExtractionResult(run: run, turns: turns, toolCalls: toolCalls)
+    }
+
+    private func finalizeCompletedRun(
+        _ run: TelemetryRun,
+        tabID: String,
+        runID: String,
+        exitStatus: Int?,
+        turns: [TelemetryTurn],
+        toolCalls: [TelemetryToolCall],
+        scheduleRepair: Bool
+    ) {
+        flushPendingMetrics()
+        store.finalizeRun(run, turns: turns, toolCalls: toolCalls)
+        if scheduleRepair {
+            scheduleTranscriptRepairIfNeeded(for: run)
+        }
+        removeLiveRun(runID: run.id)
+        Chau7ObservabilityService.shared.recordEvent(
+            type: "telemetry_run_completed",
+            subsystem: "telemetry",
+            tabID: tabID,
+            sessionID: run.sessionID,
+            runID: runID,
+            repoPath: run.repoPath,
+            detail: [
+                "provider": run.provider,
+                "exit_status": exitStatus as Any,
+                "turn_count": run.turnCount,
+                "duration_ms": run.durationMs as Any
+            ].compactMapValues { $0 }
+        )
+        Log.info("TelemetryRecorder: run ended \(runID) exit=\(exitStatus ?? -1) duration=\(run.durationMs ?? 0)ms turns=\(run.turnCount)")
+    }
+
+    static func shouldExtractRunContentInBackground(
+        provider: String,
+        contentMode: RunEndContentMode
+    ) -> Bool {
+        guard contentMode == .immediate else { return false }
+        let lower = provider.lowercased()
+        return lower.contains("codex") || lower.contains("openai")
     }
 
     // MARK: - PTY Log Reading

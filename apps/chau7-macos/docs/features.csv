@@ -100,6 +100,7 @@ AI Integration,Codex Session Resolver,Maps Codex OpenAI capture sessions to work
 AI Integration,Context Token Optimization (CTO),Monitor and optimize LLM API token usage in real time — per tab or globally,Shipped,Yes
 AI Integration,CTO Runtime Monitor,"Real-time CTO metrics: decision counts, mode changes, deferred operations, health assessment",Shipped,Yes
 AI Integration,CTO Flag Manager,Manages per-tab CTO flag files that AI tools read to adjust context behavior,Shipped,Yes
+API Analytics,Asynchronous Completed-Run Extraction,"Codex and other OpenAI-family telemetry runs finalize immediately at run end, then backfill richer transcript and tool-call content asynchronously when provider extraction completes",Shipped,Yes
 History,Persistent History Clear Ordering,History maintenance operations serialize on the DB queue so queued async inserts cannot repopulate after `clearAll()`; regression tests cover the race,Shipped,No
 MCP Server,Built-in MCP Server,"Embedded JSON-RPC 2.0 server on Unix socket (~/.chau7/mcp.sock) — AI agents can control your terminal",Shipped,Yes
 MCP Server,MCP Protocol v2024-11-05,Full MCP protocol compliance with tools and resources capabilities,Shipped,Yes
