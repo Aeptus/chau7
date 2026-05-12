@@ -119,7 +119,14 @@ ci_golangci_lint_dir() {
   if ! command -v golangci-lint >/dev/null 2>&1; then
     ci_fail "golangci-lint is required. Install with 'brew install golangci-lint'."
   fi
-  ci_run_in "$label" "$dir" golangci-lint run ./...
+  ci_section "$label"
+  (
+    cd "$CI_REPO_ROOT/$dir"
+    export GOCACHE="$CI_REPO_ROOT/.cache/go-build"
+    export GOLANGCI_LINT_CACHE="$CI_REPO_ROOT/.cache/golangci-lint"
+    mkdir -p "$GOCACHE" "$GOLANGCI_LINT_CACHE"
+    golangci-lint run ./...
+  )
 }
 
 ci_shellcheck_tracked() {
