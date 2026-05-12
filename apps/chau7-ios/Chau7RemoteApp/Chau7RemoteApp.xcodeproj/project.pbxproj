@@ -16,7 +16,7 @@
 		4A94D78431F2A00100A1B001 /* RemoteLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78331F2A00100A1B001 /* RemoteLiveActivityManager.swift */; };
 		4A94D78631F2A00100A1B001 /* Chau7RemoteWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78531F2A00100A1B001 /* Chau7RemoteWidget.swift */; };
 		4A94D78731F2A00100A1B001 /* RemoteActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78131F2A00100A1B001 /* RemoteActivityAttributes.swift */; };
-		4A94D78E31F2A00100A1B001 /* Chau7RemoteWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 4A94D78931F2A00100A1B001 /* Chau7RemoteWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		4A94D78E31F2A00100A1B001 /* Chau7RemoteWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4A94D78931F2A00100A1B001 /* Chau7RemoteWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4A94D79031F2A00100A1B001 /* RemoteTerminalOutputStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78F31F2A00100A1B001 /* RemoteTerminalOutputStore.swift */; };
 		4A94D79131F2A00100A1B001 /* RemoteRustTerminalPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */; };
 		4A94D79331F2A00100A1B001 /* RemoteTerminalRendererStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */; };
@@ -42,15 +42,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		F1A4000731F2A00100A1B001 /* Embed App Extensions */ = {
+		F1A4000731F2A00100A1B001 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				4A94D78E31F2A00100A1B001 /* Chau7RemoteWidget.appex in Embed App Extensions */,
+				4A94D78E31F2A00100A1B001 /* Chau7RemoteWidget.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -128,7 +128,7 @@
 				4A94D78131F2A00100A1B001 /* RemoteActivityAttributes.swift */,
 				4A94D78331F2A00100A1B001 /* RemoteLiveActivityManager.swift */,
 				84B3033C2F31076300A7D19E /* Chau7RemoteApp */,
-				F1A4000831F2A00100A1B001 /* Chau7RemoteWidget */,
+				F1A4000831F2A00100A1B001 /* ../Chau7RemoteWidget */,
 				84B3033B2F31076300A7D19E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -142,7 +142,7 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		F1A4000831F2A00100A1B001 /* Chau7RemoteWidget */ = {
+		F1A4000831F2A00100A1B001 /* ../Chau7RemoteWidget */ = {
 			isa = PBXGroup;
 			children = (
 				4A94D78531F2A00100A1B001 /* Chau7RemoteWidget.swift */,
@@ -162,7 +162,7 @@
 				84B303362F31076300A7D19E /* Sources */,
 				84B303372F31076300A7D19E /* Frameworks */,
 				84B303382F31076300A7D19E /* Resources */,
-				F1A4000731F2A00100A1B001 /* Embed App Extensions */,
+				F1A4000731F2A00100A1B001 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -208,7 +208,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2620;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					84B303392F31076300A7D19E = {
 						CreatedOnToolsVersion = 26.2;
@@ -380,12 +380,13 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-					IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -438,11 +439,12 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-					IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -455,7 +457,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = N69N8XYVF6;
+				DEVELOPMENT_TEAM = XQ8B6NS6H2;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -464,7 +466,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-					INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -478,7 +480,7 @@
 					"$(inherited)",
 					"-lchau7_terminal",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.chau7.remote.Chau7RemoteApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aeptus.remote.Chau7RemoteApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -497,7 +499,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = N69N8XYVF6;
+				DEVELOPMENT_TEAM = XQ8B6NS6H2;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -506,7 +508,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-					INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -520,7 +522,7 @@
 					"$(inherited)",
 					"-lchau7_terminal",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.chau7.remote.Chau7RemoteApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aeptus.remote.Chau7RemoteApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -537,17 +539,17 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = N69N8XYVF6;
+				DEVELOPMENT_TEAM = XQ8B6NS6H2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ../Chau7RemoteWidget/Info.plist;
-					IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.chau7.remote.Chau7RemoteApp.Chau7RemoteWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aeptus.remote.Chau7RemoteApp.Chau7RemoteWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -565,17 +567,17 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = N69N8XYVF6;
+				DEVELOPMENT_TEAM = XQ8B6NS6H2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ../Chau7RemoteWidget/Info.plist;
-					IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.chau7.remote.Chau7RemoteApp.Chau7RemoteWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aeptus.remote.Chau7RemoteApp.Chau7RemoteWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
