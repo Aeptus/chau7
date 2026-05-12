@@ -32,7 +32,8 @@ enum HelpContent {
     ```text
     apps/chau7-macos        macOS app
     apps/chau7-ios          iOS companion app
-    services/chau7-relay    Cloudflare relay
+    services/chau7-relay    Cloudflare remote relay
+    services/chau7-issues   Cloudflare issue intake
     services/chau7-remote   Go remote agent
     services/chau7-remote/docs  remote protocol
     apps/chau7-ios/docs         remote iOS UX
@@ -83,6 +84,7 @@ enum HelpContent {
     - `apps/chau7-macos`
     - `apps/chau7-ios`
     - `services/chau7-relay`
+    - `services/chau7-issues`
     - `services/chau7-remote`
     - `services/chau7-remote/docs`
     - `apps/chau7-ios/docs`
@@ -130,6 +132,7 @@ enum HelpContent {
     | Component | Path | Stack |
     |-----------|------|-------|
     | Relay | `services/chau7-relay` | Cloudflare Workers + Durable Objects |
+    | Issue intake | `services/chau7-issues` | Cloudflare Worker + Durable Objects |
     | Remote agent | `services/chau7-remote` | Go |
     | iOS companion | `apps/chau7-ios` | Swift / Xcode project |
 

@@ -4,14 +4,12 @@ compatibility_date = "2024-10-01"
 
 [vars]
 RELAY_SECRET = "CHANGE_ME_IN_PRODUCTION"
-# Issue reporting: set GITHUB_ISSUE_PAT and GITHUB_ISSUE_REPO as Wrangler secrets (not here).
-# Fine-grained PAT scoped to the private issue intake repo, Issues: Read & Write only.
 
-# Custom domain: issues.chau7.sh
+# Custom domain: relay.chau7.sh
 # Set up via Cloudflare dashboard: Workers > chau7-relay > Settings > Domains & Routes > Add > Custom Domain
 # Or via wrangler: uncomment and set zone_name to your zone
 # [[routes]]
-# pattern = "issues.chau7.sh/*"
+# pattern = "relay.chau7.sh/*"
 # zone_name = "chau7.sh"
 
 [[durable_objects.bindings]]

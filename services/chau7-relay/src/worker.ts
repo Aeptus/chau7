@@ -3,12 +3,10 @@
  *
  * Routes:
  *   GET  /              Landing page (HTML)
- *   POST / or /issue    Create a GitHub issue via the private intake repo
  *   WS   /connect/:id   WebSocket relay between macOS and iOS clients
  *   POST /push/:topic/:deviceId  Forward push notification to a paired device
  *
  * Authentication: HMAC-SHA256 bearer tokens with 5-minute window.
- * Rate limiting: 5 issue reports per hour per IP, enforced via Durable Objects.
  */
 import { SessionDO } from './session';
 import { isRelaySecretConfigured } from './auth.js';
@@ -20,7 +18,7 @@ const LANDING_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chau7 Issue Relay</title>
+<title>Chau7 Relay</title>
 <style>
   body { font-family: -apple-system, system-ui, sans-serif; max-width: 480px; margin: 80px auto; padding: 0 20px; color: #e0e0e0; background: #1a1a1a; }
   h1 { font-size: 1.3em; }
@@ -30,11 +28,9 @@ const LANDING_HTML = `<!DOCTYPE html>
 </style>
 </head>
 <body>
-<h1>Chau7 Issue Relay</h1>
-<p>You found the place where <a href="https://chau7.sh">Chau7</a> bug reports land. The app sends them here, we forward them to a private repo, and that's the whole story.</p>
-<p>If you're a human with a browser — hi, but there's genuinely nothing for you here. If you're a JSON payload with a title and a body — step right in.</p>
-<p style="font-size: 0.85em; color: #666; margin-top: -8px;">(When we say "a body" we mean the technical kind. Please do not bring an actual body here. That would be very, very odd and honestly we are not equipped for that.)</p>
-<!-- If you just want to move your body, time for some French Touch: https://www.youtube.com/watch?v=FQlAEiCb8m0 -->
+<h1>Chau7 Relay</h1>
+<p>This worker carries encrypted remote-control traffic between Chau7 on macOS and Chau7 Remote on iPhone.</p>
+<p>If you're a browser, there is nothing interactive for you here. If you're a paired Chau7 client, connect over WebSocket at <code>/connect/&lt;deviceId&gt;?role=mac|ios</code>.</p>
 <p><a href="https://chau7.sh">chau7.sh</a></p>
 </body>
 </html>`;
@@ -45,8 +41,6 @@ interface Env {
   APNS_TEAM_ID?: string;
   APNS_KEY_ID?: string;
   APNS_PRIVATE_KEY?: string;
-  GITHUB_ISSUE_PAT?: string;
-  GITHUB_ISSUE_REPO?: string; // e.g. "owner/repo"
 }
 
 /**
@@ -117,28 +111,12 @@ export default {
     const url = new URL(request.url);
     const parts = url.pathname.split('/').filter(Boolean);
 
-    // Root: issue submission (POST) or landing page (GET)
-    // This is the primary endpoint for issues.chau7.sh
-    if (parts.length === 0 || (parts.length === 1 && parts[0] === 'issue')) {
+    if (parts.length === 0) {
       if (request.method === 'GET') {
         return new Response(LANDING_HTML, {
           status: 200,
           headers: { 'Content-Type': 'text/html; charset=utf-8' }
         });
-      }
-      if (request.method === 'OPTIONS') {
-        return new Response(null, {
-          status: 204,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-            'Access-Control-Max-Age': '86400'
-          }
-        });
-      }
-      if (request.method === 'POST') {
-        return handleIssueCreate(request, env);
       }
       return new Response('Method Not Allowed', { status: 405 });
     }
@@ -181,127 +159,3 @@ export default {
     return new Response('Not Found', { status: 404 });
   }
 };
-
-// MARK: - Issue Reporting
-
-const ISSUE_RATE_MAX = 5;
-const ISSUE_RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-
-/**
- * Forward a bug report to the private GitHub intake repo.
- * Validates body (title ≤256, body ≤65535), enforces rate limits via Durable Object,
- * and creates a GitHub issue using a fine-grained PAT.
- */
-async function handleIssueCreate(request: Request, env: Env): Promise<Response> {
-  // Validate secrets
-  if (!env.GITHUB_ISSUE_PAT || !env.GITHUB_ISSUE_REPO) {
-    return jsonResponse({ error: 'Issue reporting not configured on this relay.' }, 503);
-  }
-
-  // Sanitize repo path — must be "owner/repo" format
-  const repo = env.GITHUB_ISSUE_REPO;
-  if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(repo)) {
-    console.error(`Invalid GITHUB_ISSUE_REPO format: ${repo}`);
-    return jsonResponse({ error: 'Issue reporting misconfigured.' }, 503);
-  }
-
-  // Rate limit by IP using Durable Object storage (survives Worker restarts)
-  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
-  const rateLimitId = env.SESSION.idFromName('issue-ratelimit');
-  const rateLimitDO = env.SESSION.get(rateLimitId);
-  let rlCheck: Response;
-  try {
-    rlCheck = await rateLimitDO.fetch(
-      new Request('https://internal/ratelimit/check', {
-        method: 'POST',
-        body: JSON.stringify({ ip, max: ISSUE_RATE_MAX, windowMs: ISSUE_RATE_WINDOW_MS })
-      })
-    );
-  } catch (e) {
-    console.error('Rate limit DO error:', e);
-    return jsonResponse({ error: 'Rate limit check failed. Try again.' }, 503);
-  }
-  if (rlCheck.status !== 200) {
-    const code = rlCheck.status === 429 ? 429 : 503;
-    return jsonResponse(
-      {
-        error:
-          code === 429 ? 'Rate limited. Maximum 5 reports per hour.' : 'Rate limit check failed.'
-      },
-      code
-    );
-  }
-
-  // Parse and validate body
-  let body: { title?: string; body?: string; labels?: string[] };
-  try {
-    body = await request.json();
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON body.' }, 400);
-  }
-
-  const title = typeof body.title === 'string' ? body.title.trim() : '';
-  const issueBody = typeof body.body === 'string' ? body.body.trim() : '';
-
-  if (!title || !issueBody) {
-    return jsonResponse(
-      { error: "Both 'title' and 'body' are required and must be non-empty." },
-      400
-    );
-  }
-
-  if (title.length > 256) {
-    return jsonResponse({ error: `Title too long (${title.length} chars, max 256).` }, 400);
-  }
-
-  if (issueBody.length > 65535) {
-    return jsonResponse({ error: `Body too long (${issueBody.length} chars, max 65535).` }, 400);
-  }
-
-  // Validate labels if provided
-  const labels = Array.isArray(body.labels)
-    ? body.labels.filter((l): l is string => typeof l === 'string').slice(0, 5)
-    : [];
-
-  // Create GitHub issue
-  const ghBody: Record<string, unknown> = { title, body: issueBody };
-  if (labels.length > 0) {
-    ghBody.labels = labels;
-  }
-
-  const ghResponse = await fetch(`https://api.github.com/repos/${env.GITHUB_ISSUE_REPO}/issues`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.GITHUB_ISSUE_PAT}`,
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'chau7-relay',
-      'X-GitHub-Api-Version': '2022-11-28'
-    },
-    body: JSON.stringify(ghBody)
-  });
-
-  if (!ghResponse.ok) {
-    const errText = await ghResponse.text();
-    console.error(`GitHub API error: ${ghResponse.status} ${errText.slice(0, 500)}`);
-    return jsonResponse({ error: `GitHub API error (${ghResponse.status}).` }, 502);
-  }
-
-  const ghData = (await ghResponse.json()) as { number?: number };
-
-  return jsonResponse({
-    ok: true,
-    issue_number: ghData.number ?? 0
-  });
-}
-
-function jsonResponse(data: Record<string, unknown>, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    }
-  });
-}

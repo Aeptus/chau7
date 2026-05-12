@@ -16,7 +16,8 @@ This repository keeps public-facing documentation close to the code it describes
 - [`apps/chau7-macos/docs/STYLING_GUIDE.md`](../apps/chau7-macos/docs/STYLING_GUIDE.md): UI spacing, typography, and color system
 - [`apps/chau7-macos/rust/chau7_terminal/README.md`](../apps/chau7-macos/rust/chau7_terminal/README.md): Rust terminal crate build and source overview
 - [`apps/chau7-macos/rust/chau7_terminal/FFI_DESIGN.md`](../apps/chau7-macos/rust/chau7_terminal/FFI_DESIGN.md): FFI contract, memory rules, and thread safety
-- [`services/chau7-relay/README.md`](../services/chau7-relay/README.md): relay build and deployment notes
+- [`services/chau7-relay/README.md`](../services/chau7-relay/README.md): remote relay build and deployment notes
+- [`services/chau7-issues/README.md`](../services/chau7-issues/README.md): bug-report intake worker build and deployment notes
 - [`services/chau7-remote/README.md`](../services/chau7-remote/README.md): remote agent build and runtime notes
 - [`services/chau7-remote/docs/PROTOCOL.md`](../services/chau7-remote/docs/PROTOCOL.md): remote transport and payload contract
 - [`apps/chau7-ios/README.md`](../apps/chau7-ios/README.md): iOS companion app scope and build
