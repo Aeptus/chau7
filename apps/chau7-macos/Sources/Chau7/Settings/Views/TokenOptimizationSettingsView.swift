@@ -571,6 +571,17 @@ struct TokenOptimizationSettingsView: View {
                 value: "\(runtimeSnapshot.deferredSkipCount)"
             )
             statRow(
+                icon: "xmark.circle",
+                iconColor: .secondary,
+                // Phase 0.2: cancels are deferred-sets that closed or
+                // mode-flipped before reaching their first prompt. They
+                // are subtracted from the flush-rate denominator, so
+                // surfacing the raw count next to set / flush / skip
+                // makes the eligible math legible.
+                label: L("cto.runtime.deferredCancel", "Deferred cancels"),
+                value: "\(runtimeSnapshot.deferredCancelCount)"
+            )
+            statRow(
                 icon: "gauge.with.dots.needle.bottom.50percent",
                 iconColor: .orange,
                 label: L("cto.runtime.deferredDelayCount", "Deferred delay samples"),
@@ -612,6 +623,39 @@ struct TokenOptimizationSettingsView: View {
                 }
             }
 
+            // Phase 1.2: the trigger breakdown lives next to reasons. The
+            // reasonBreakdown answers "which decision rule produced the
+            // current flag state"; this answers "what event caused us to
+            // re-check". A snapshot dominated by `aiStateChanged` triggers
+            // with mostly-unchanged reasons points at jittery process-tree
+            // signals; mode/override-dominated triggers point at user
+            // churn.
+            if !runtimeSnapshot.triggerBreakdown.isEmpty {
+                Text(L("cto.runtime.triggerBreakdown", "Decision triggers"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+
+                let totalTriggerCount = runtimeSnapshot.triggerBreakdown.values.reduce(0, +)
+                ForEach(runtimeSnapshot.triggerBreakdown.sorted(by: { $0.key < $1.key }), id: \.key) { trigger, count in
+                    let ratio = totalTriggerCount > 0
+                        ? (Double(count) / Double(totalTriggerCount) * 100)
+                        : 0
+                    HStack(spacing: 8) {
+                        Image(systemName: "bolt.horizontal")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Text(trigger)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 160, alignment: .leading)
+                        Text("\(count) (\(String(format: "%.1f%%", ratio)))")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
             if !runtimeSnapshot.recentDecisions.isEmpty {
                 Text(L("cto.runtime.recentDecisions", "Recent decisions"))
                     .font(.caption)
@@ -629,9 +673,18 @@ struct TokenOptimizationSettingsView: View {
                             .frame(minWidth: 150, alignment: .leading)
                         Text("\(decision.sessionID.prefix(8))")
                             .font(.system(.caption, design: .monospaced))
-                        Text("\(decision.mode) \(decision.override) \(decision.reason.rawValue)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        // Format: `<mode> <override> <reason> ← <trigger>`
+                        // The trigger arrow points at the cause-of-recalc
+                        // separate from the resolution reason, so a row
+                        // reads "allTabs default unchanged ← aiStateChanged"
+                        // (a process-tree no-op) vs. "allTabs default
+                        // unchanged ← modeChanged" (a mode-change no-op).
+                        Text(
+                            "\(decision.mode) \(decision.override) \(decision.reason.rawValue)" +
+                                (decision.trigger.map { " ← \($0.rawValue)" } ?? "")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
                 }
             } else {
