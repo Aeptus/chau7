@@ -1114,7 +1114,7 @@ final class MetalTerminalRenderer: NSObject {
         row: Int,
         cursorCol: Int
     ) {
-        guard EnvVars.isEnabled(EnvVars.inputDiagnostics) else { return }
+        guard EnvVars.isEnabled(EnvVars.renderRowDiagnostics) else { return }
         guard cols > 0, row >= 0 else { return }
         let rowStart = row * cols
         guard rowStart < count else { return }

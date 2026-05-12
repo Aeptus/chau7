@@ -481,11 +481,33 @@ extension RustTerminalView {
         cursor: (col: UInt16, row: UInt16),
         source: String
     ) {
-        guard EnvVars.isEnabled(EnvVars.inputDiagnostics) else { return }
         guard cols > 0, rows > 0 else { return }
         let cursorRow = Int(cursor.row)
         let cursorCol = Int(cursor.col)
         guard cursorRow >= 0, cursorRow < rows else { return }
+        let absRow = renderTopVisibleRow + cursorRow
+
+        // Anomaly detection — only on the Metal-render path, since cpu-grid
+        // gets its absRow recomputed via fresh `cachedScrollbackRows` and
+        // legitimately moves with scrollback growth. The Metal path reads
+        // `cachedScrollbackRows` (last value written by the cpu path) and
+        // `cursor.row` together; large absRow jumps between consecutive
+        // metal-grid calls indicate either a real scroll storm OR the
+        // grid/cursor desync producing the visible "output overflowing
+        // input field, mixed glyphs" symptom. Flag for offline inspection.
+        if source == "metal-grid", EnvVars.isEnabled(EnvVars.inputDiagnostics) {
+            if let previous = lastMetalGridAbsRow {
+                let delta = absRow - previous
+                if abs(delta) > Self.metalGridAnomalyDeltaThreshold {
+                    TerminalOutputCapture.shared.recordMarker(
+                        "view=\(viewId) source=metal-grid absRow_jump previous=\(previous) current=\(absRow) delta=\(delta) viewportRow=\(cursorRow) cursorCol=\(cursorCol) renderTopVisibleRow=\(renderTopVisibleRow) cachedScrollbackRows=\(cachedScrollbackRows)"
+                    )
+                }
+            }
+            lastMetalGridAbsRow = absRow
+        }
+
+        guard EnvVars.isEnabled(EnvVars.renderRowDiagnostics) else { return }
 
         let rowCells = UnsafeBufferPointer(
             start: cells.advanced(by: cursorRow * cols),
@@ -496,7 +518,7 @@ extension RustTerminalView {
 
         var hasher = Hasher()
         hasher.combine(source)
-        hasher.combine(renderTopVisibleRow + cursorRow)
+        hasher.combine(absRow)
         hasher.combine(cursorCol)
         hasher.combine(window.lowerBound)
         hasher.combine(window.upperBound)
@@ -516,31 +538,9 @@ extension RustTerminalView {
             return "\(col):U+\(Self.diagnosticHex(cell.character))/\(Self.diagnosticScalarLabel(for: cell.character)) f=\(String(format: "%02X", cell.flags)) u=\(cell._pad & 0x07)"
         }.joined(separator: " ")
 
-        let absRow = renderTopVisibleRow + cursorRow
-
         Log.debug(
             "RustTerminalView[\(viewId)]: input-row diag source=\(source) absRow=\(absRow) viewportRow=\(cursorRow) cursorCol=\(cursorCol) cols=\(window.lowerBound)-\(window.upperBound) text=\(textPreview.debugDescription) cells=[\(cellSummary)]"
         )
-
-        // Anomaly detection — only on the Metal-render path, since cpu-grid
-        // gets its absRow recomputed via fresh `cachedScrollbackRows` and
-        // legitimately moves with scrollback growth. The Metal path reads
-        // `cachedScrollbackRows` (last value written by the cpu path) and
-        // `cursor.row` together; large absRow jumps between consecutive
-        // metal-grid calls indicate either a real scroll storm OR the
-        // grid/cursor desync producing the visible "output overflowing
-        // input field, mixed glyphs" symptom. Flag for offline inspection.
-        if source == "metal-grid" {
-            if let previous = lastMetalGridAbsRow {
-                let delta = absRow - previous
-                if abs(delta) > Self.metalGridAnomalyDeltaThreshold {
-                    TerminalOutputCapture.shared.recordMarker(
-                        "view=\(viewId) source=metal-grid absRow_jump previous=\(previous) current=\(absRow) delta=\(delta) viewportRow=\(cursorRow) cursorCol=\(cursorCol) renderTopVisibleRow=\(renderTopVisibleRow) cachedScrollbackRows=\(cachedScrollbackRows)"
-                    )
-                }
-            }
-            lastMetalGridAbsRow = absRow
-        }
     }
 
     /// Threshold used by the metal-grid anomaly detector. A normal newline

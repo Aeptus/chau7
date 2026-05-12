@@ -67,6 +67,7 @@ enum EnvVars {
     static let commandFallbackSeconds = "CHAU7_COMMAND_FALLBACK_SECONDS"
     static let clearOnLaunch = "CHAU7_CLEAR_ON_LAUNCH"
     static let inputDiagnostics = "CHAU7_INPUT_DIAGNOSTICS"
+    static let renderRowDiagnostics = "CHAU7_RENDER_ROW_DIAGNOSTICS"
 
     // Debug output capture
     static let ptyDumpMaxBytes = "CHAU7_PTY_DUMP_MAX_BYTES"
