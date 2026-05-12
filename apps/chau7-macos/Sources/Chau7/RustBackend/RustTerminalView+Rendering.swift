@@ -702,6 +702,10 @@ extension RustTerminalView {
         } else {
             gridView?.setOverlayCells(localEchoOverlay)
         }
+        if isMetalRenderingActive {
+            needsGridSync = true
+            onDisplaySyncNeeded?()
+        }
     }
 
     func advanceLocalEchoCursor(_ cursor: inout (row: Int, col: Int)) {
