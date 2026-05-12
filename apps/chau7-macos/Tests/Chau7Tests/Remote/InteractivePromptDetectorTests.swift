@@ -63,6 +63,29 @@ final class InteractivePromptDetectorTests: XCTestCase {
         XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Gemini"))
     }
 
+    func testFallbackDetectsFreeTextPromptForUnsupportedTool() throws {
+        let transcript = """
+        Redb needs your guidance for the next step.
+        How should I proceed with the migration?
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.fallbackInputRequest(in: transcript))
+        XCTAssertEqual(prompt.prompt, "How should I proceed with the migration?")
+        XCTAssertEqual(prompt.detail, "Redb needs your guidance for the next step.")
+        XCTAssertTrue(prompt.options.isEmpty)
+    }
+
+    func testFallbackPrefersColonTerminatedInputPrompt() throws {
+        let transcript = """
+        Reviewing changeset...
+        Provide additional context:
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.fallbackInputRequest(in: transcript))
+        XCTAssertEqual(prompt.prompt, "Provide additional context:")
+        XCTAssertEqual(prompt.detail, "Reviewing changeset...")
+    }
+
     // MARK: - Gating edge cases
 
     func testToolMatchingIsCaseInsensitive() {

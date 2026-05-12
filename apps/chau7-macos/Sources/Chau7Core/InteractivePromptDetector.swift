@@ -35,6 +35,22 @@ public enum InteractivePromptDetector {
         )
     }
 
+    public static func fallbackInputRequest(in text: String) -> DetectedInteractivePrompt? {
+        let normalized = normalize(text)
+        guard !normalized.isEmpty else { return nil }
+
+        let allLines = normalized.components(separatedBy: "\n")
+        let lines = Array(allLines.suffix(80))
+        guard let match = findFallbackPrompt(in: lines) else { return nil }
+
+        return DetectedInteractivePrompt(
+            signature: signature(prompt: match.prompt, options: []),
+            prompt: match.prompt,
+            detail: match.detail,
+            options: []
+        )
+    }
+
     private static func supports(toolName: String) -> Bool {
         AIToolRegistry.usesTerminalUIHeuristics(forName: toolName)
     }
@@ -128,6 +144,25 @@ public enum InteractivePromptDetector {
         return details.isEmpty ? nil : details.joined(separator: "\n")
     }
 
+    private static func findFallbackPrompt(in lines: [String]) -> (prompt: String, detail: String?)? {
+        let cleaned = lines.map(cleanedLine)
+        let nonEmpty = cleaned.enumerated().filter { !$0.element.isEmpty && !isMetaLine($0.element) }
+        guard !nonEmpty.isEmpty else { return nil }
+
+        let preferredPromptIndex = nonEmpty.last { _, line in
+            isFallbackPromptCandidate(line)
+        }?.offset
+
+        let promptIndex = preferredPromptIndex ?? nonEmpty.last?.offset
+        guard let promptIndex else { return nil }
+
+        let prompt = cleaned[promptIndex]
+        guard !prompt.isEmpty else { return nil }
+
+        let detail = parseDetail(in: lines, aroundPromptAt: promptIndex)
+        return (prompt, detail)
+    }
+
     private static func cleanedLine(_ line: String) -> String {
         line
             .replacingOccurrences(of: "\u{00A0}", with: " ")
@@ -156,6 +191,31 @@ public enum InteractivePromptDetector {
             "allow this"
         ]
         return keywords.contains { lowered.contains($0) }
+    }
+
+    private static func isFallbackPromptCandidate(_ line: String) -> Bool {
+        let lowered = line.lowercased()
+        if lowered.contains("?") {
+            return true
+        }
+
+        let keywords = [
+            "enter your",
+            "type your",
+            "waiting for",
+            "input required",
+            "provide",
+            "respond",
+            "reply",
+            "what should",
+            "how should",
+            "continue:"
+        ]
+        if keywords.contains(where: { lowered.contains($0) }) {
+            return true
+        }
+
+        return line.hasSuffix(":")
     }
 
     private static func signature(prompt: String, options: [RemoteInteractivePromptOption]) -> String {

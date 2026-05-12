@@ -3,11 +3,13 @@ import Chau7Core
 
 /// Approval workflow tab: interactive prompts, pending approval requests,
 /// and decision history. Pending requests show command context (tool, directory,
-/// recent command). Destructive interactive prompts require confirmation.
+/// recent command). Dangerous interactive prompts require confirmation.
 struct ApprovalsView: View {
     var client: RemoteClient
     @State private var hapticTrigger = false
     @State private var pendingPromptConfirmation: PendingInteractivePromptConfirmation?
+    @State private var customPromptDraft = ""
+    @State private var activeCustomPromptID: String?
 
     var body: some View {
         NavigationStack {
@@ -25,19 +27,31 @@ struct ApprovalsView: View {
                 if !client.pendingInteractivePrompts.isEmpty {
                     Section("Interactive Prompts") {
                         ForEach(client.pendingInteractivePrompts) { prompt in
-                            InteractivePromptCard(prompt: prompt) { option in
-                                if option.isDestructive {
-                                    pendingPromptConfirmation = PendingInteractivePromptConfirmation(
-                                        promptID: prompt.id,
-                                        promptText: prompt.prompt,
-                                        toolName: prompt.toolName,
-                                        tabTitle: prompt.tabTitle,
-                                        option: option
-                                    )
-                                } else if client.respondToInteractivePrompt(promptID: prompt.id, optionID: option.id) {
-                                    hapticTrigger.toggle()
+                            InteractivePromptCard(
+                                prompt: prompt,
+                                customText: binding(for: prompt.id),
+                                onRespond: { option in
+                                    if option.isDestructive {
+                                        pendingPromptConfirmation = PendingInteractivePromptConfirmation(
+                                            promptID: prompt.id,
+                                            promptText: prompt.prompt,
+                                            toolName: prompt.toolName,
+                                            tabTitle: prompt.tabTitle,
+                                            option: option
+                                        )
+                                    } else if client.respondToInteractivePrompt(promptID: prompt.id, optionID: option.id) {
+                                        resetCustomPromptState(for: prompt.id)
+                                        hapticTrigger.toggle()
+                                    }
+                                },
+                                onSendCustom: {
+                                    let text = customText(for: prompt.id)
+                                    if client.respondToInteractivePrompt(promptID: prompt.id, customText: text) {
+                                        resetCustomPromptState(for: prompt.id)
+                                        hapticTrigger.toggle()
+                                    }
                                 }
-                            }
+                            )
                         }
                     }
                 }
@@ -100,6 +114,26 @@ struct ApprovalsView: View {
             }
         )
     }
+
+    private func binding(for promptID: String) -> Binding<String> {
+        Binding(
+            get: { customText(for: promptID) },
+            set: { newValue in
+                activeCustomPromptID = promptID
+                customPromptDraft = newValue
+            }
+        )
+    }
+
+    private func customText(for promptID: String) -> String {
+        activeCustomPromptID == promptID ? customPromptDraft : ""
+    }
+
+    private func resetCustomPromptState(for promptID: String) {
+        guard activeCustomPromptID == promptID else { return }
+        customPromptDraft = ""
+        activeCustomPromptID = nil
+    }
 }
 
 private struct PendingInteractivePromptConfirmation: Equatable {
@@ -109,7 +143,7 @@ private struct PendingInteractivePromptConfirmation: Equatable {
     let tabTitle: String
     let option: RemoteInteractivePromptOption
 
-    var title: String { "Confirm Destructive Prompt" }
+    var title: String { "Confirm Dangerous Prompt" }
     var confirmationLabel: String { option.label }
     var message: String {
         "\(toolName) on \(tabTitle) is asking:\n\n\(promptText)\n\nThis will send `\(option.response.trimmingCharacters(in: .whitespacesAndNewlines))` back to the terminal."
@@ -118,14 +152,16 @@ private struct PendingInteractivePromptConfirmation: Equatable {
 
 struct InteractivePromptCard: View {
     let prompt: RemoteInteractivePrompt
+    @Binding var customText: String
     let onRespond: (RemoteInteractivePromptOption) -> Void
+    let onSendCustom: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Label("Interactive Prompt", systemImage: "text.bubble")
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                     Text("\(prompt.toolName) · \(prompt.tabTitle)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -137,7 +173,8 @@ struct InteractivePromptCard: View {
             }
 
             Text(prompt.prompt)
-                .font(.body.weight(.semibold))
+                .font(.callout.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
 
             let contextItems = promptContextItems(for: prompt)
             if !contextItems.isEmpty {
@@ -153,29 +190,40 @@ struct InteractivePromptCard: View {
             }
 
             if let detail = prompt.detail, !detail.isEmpty {
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                ApprovalContextDetailRow(
+                    title: "Prompt Context",
+                    value: detail,
+                    systemImage: "text.alignleft"
+                )
             }
 
             ForEach(prompt.options) { option in
-                Button {
+                PromptOptionButton(option: option) {
                     onRespond(option)
-                } label: {
-                    HStack {
-                        Text(option.label)
-                        Spacer()
-                        Text(option.response.trimmingCharacters(in: .whitespacesAndNewlines))
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(option.isDestructive ? .red : .blue)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Custom reply")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                TextField("Escape prompt and send text", text: $customText, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.callout, design: .monospaced))
+                    .lineLimit(1 ... 3)
+
+                HStack {
+                    Spacer()
+                    Button("Send Reply") {
+                        onSendCustom()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
     }
 
     private func promptContextItems(for prompt: RemoteInteractivePrompt) -> [ApprovalContextItem] {
@@ -197,12 +245,12 @@ struct ApprovalRequestCard: View {
     let onRespond: (Bool) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                 Text(request.title)
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
                 Text(request.timestamp, style: .relative)
                     .font(.caption2)
@@ -248,10 +296,12 @@ struct ApprovalRequestCard: View {
 
             Text(request.command)
                 .font(.system(.callout, design: .monospaced))
-                .padding(8)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(UIColor.tertiarySystemBackground))
-                .cornerRadius(8)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             if request.flaggedCommand != request.command {
                 Label("Flagged: \(request.flaggedCommand)", systemImage: "flag")
@@ -265,7 +315,7 @@ struct ApprovalRequestCard: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Button(role: .destructive) { onRespond(false) } label: {
                     Label("Deny", systemImage: "xmark")
                         .frame(maxWidth: .infinity)
@@ -318,8 +368,8 @@ private struct ApprovalContextRow: View {
                 ForEach(items) { item in
                     Label(item.label, systemImage: item.systemImage)
                         .font(.caption)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
                         .background(Color(UIColor.secondarySystemBackground))
                         .clipShape(Capsule())
                 }
@@ -341,11 +391,61 @@ private struct ApprovalContextDetailRow: View {
             Text(value)
                 .font(.system(.caption, design: .monospaced))
                 .textSelection(.enabled)
-                .padding(8)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(UIColor.tertiarySystemBackground))
-                .cornerRadius(8)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
+    }
+}
+
+private struct PromptOptionButton: View {
+    let option: RemoteInteractivePromptOption
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(option.label)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                    if !trimmedResponse.isEmpty {
+                        Text(trimmedResponse)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                Image(systemName: option.isDestructive ? "exclamationmark.triangle.fill" : "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(option.isDestructive ? .orange : .secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(backgroundColor)
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(borderColor, lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var trimmedResponse: String {
+        option.response.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var backgroundColor: Color {
+        option.isDestructive ? Color.orange.opacity(0.10) : Color(UIColor.secondarySystemBackground)
+    }
+
+    private var borderColor: Color {
+        option.isDestructive ? Color.orange.opacity(0.35) : Color.primary.opacity(0.08)
     }
 }
 

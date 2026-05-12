@@ -178,10 +178,6 @@ export class SessionDO {
   }
 
   private async handlePushNotify(request: Request): Promise<Response> {
-    if (this.iosSocket) {
-      return new Response(null, { status: 204 });
-    }
-
     const payload = (await request.json()) as PushNotifyPayload;
     const registrations = Object.values(await this.loadRegistrations()).filter(
       (registration) =>
@@ -236,7 +232,9 @@ export class SessionDO {
           body: payload.body
         },
         sound: 'default',
-        'content-available': 1
+        'content-available': 1,
+        'interruption-level': 'time-sensitive',
+        'relevance-score': 1
       },
       kind: payload.kind,
       request_id: payload.request_id,

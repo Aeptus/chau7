@@ -10,6 +10,7 @@ final class RemoteControlManager {
 
     private(set) var isAgentRunning = false
     private(set) var isIPCConnected = false
+    private(set) var activeRelayURL: String?
     private(set) var sessionStatus: String?
     private(set) var pairingInfo: RemotePairingInfo?
     private(set) var lastError: String?
@@ -99,7 +100,7 @@ final class RemoteControlManager {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.restartAgentIfRunning()
+                self?.applyRelayConfigurationChange()
             }
         }
 
@@ -200,7 +201,8 @@ final class RemoteControlManager {
             return
         }
         env["CHAU7_REMOTE_SOCKET"] = socketPath.path
-        env["CHAU7_RELAY_URL"] = FeatureSettings.shared.remoteRelayURL
+        let relayURL = FeatureSettings.shared.remoteRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        env["CHAU7_RELAY_URL"] = relayURL
         env["CHAU7_MAC_NAME"] = Host.current().localizedName ?? "Mac"
         process.environment = env
 
@@ -237,6 +239,7 @@ final class RemoteControlManager {
             try process.run()
             self.process = process
             isAgentRunning = true
+            activeRelayURL = relayURL
             lastError = nil
             logger.info("Remote agent started from \(binaryPath.path, privacy: .public)")
             refreshPairedDevices()
@@ -257,12 +260,27 @@ final class RemoteControlManager {
         ManagedProcess.cleanup(outputPipe: &outputPipe, errorPipe: &errorPipe)
         self.process = nil
         isAgentRunning = false
+        activeRelayURL = nil
         pendingProtectedInputs.removeAll()
     }
 
     func restartAgentIfRunning() {
         guard isAgentRunning else { return }
         stopAgent()
+        startAgent()
+    }
+
+    func applyRelayConfigurationChange() {
+        pairingInfo = nil
+        sessionStatus = nil
+        lastError = nil
+        refreshPairedDevices()
+
+        guard FeatureSettings.shared.isRemoteEnabled else { return }
+
+        if isAgentRunning {
+            stopAgent()
+        }
         startAgent()
     }
 
@@ -630,8 +648,12 @@ final class RemoteControlManager {
 
                 let toolName = activityToolName(for: session, tab: tab)
                 guard let snapshot = session.captureRemoteSnapshot(),
-                      let text = String(data: snapshot, encoding: .utf8),
-                      let detected = InteractivePromptDetector.detect(in: text, toolName: toolName) else {
+                      let text = String(data: snapshot, encoding: .utf8) else {
+                    return nil
+                }
+
+                guard let detected = InteractivePromptDetector.detect(in: text, toolName: toolName)
+                    ?? InteractivePromptDetector.fallbackInputRequest(in: text) else {
                     return nil
                 }
 

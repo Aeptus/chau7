@@ -331,6 +331,30 @@ final class RemoteClient {
         return true
     }
 
+    @discardableResult
+    func respondToInteractivePrompt(promptID: String, customText: String) -> Bool {
+        guard let promptIndex = pendingInteractivePrompts.firstIndex(where: { $0.id == promptID }) else {
+            return false
+        }
+
+        let trimmed = customText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        let prompt = pendingInteractivePrompts[promptIndex]
+        guard sendInput("\u{1B}", appendNewline: false, to: prompt.tabID, allowUnlistedTab: true) else {
+            return false
+        }
+        guard sendInteractivePromptResponse(trimmed + "\r", to: prompt.tabID) else {
+            return false
+        }
+
+        pendingInteractivePrompts.remove(at: promptIndex)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(
+            withIdentifiers: [notificationIdentifierForInteractivePrompt(prompt.id)]
+        )
+        return true
+    }
+
     func handle(url: URL) {
         guard let action = RemoteActivityURLAction(url: url) else { return }
         if !performURLAction(action) {
@@ -698,7 +722,7 @@ final class RemoteClient {
         }
 
         for prompt in nextPrompts where !previousPromptIDs.contains(prompt.id) {
-            if !shouldSuppressLocalNotifications {
+            if shouldScheduleLocalApprovalNotification {
                 scheduleInteractivePromptNotification(for: prompt)
             }
         }
@@ -782,12 +806,14 @@ final class RemoteClient {
             metadata: ["request_id": msg.requestID]
         )
 
-        if !shouldSuppressLocalNotifications {
+        if shouldScheduleLocalApprovalNotification {
             let content = UNMutableNotificationContent()
             let isProtectedRemoteAction = msg.flaggedCommand != msg.command
             content.title = isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
             content.body = approvalNotificationBody(for: msg)
             content.sound = .default
+            content.interruptionLevel = .timeSensitive
+            content.relevanceScore = 1
             content.categoryIdentifier = "MCP_APPROVAL"
             content.userInfo = [
                 "request_id": msg.requestID,
@@ -1253,6 +1279,8 @@ final class RemoteClient {
         content.title = "Interactive Prompt"
         content.body = interactivePromptNotificationBody(for: prompt)
         content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.relevanceScore = 1
         content.categoryIdentifier = "INTERACTIVE_PROMPT"
         content.userInfo = [
             "prompt_id": prompt.id,
@@ -1330,6 +1358,16 @@ final class RemoteClient {
             return false
         }
         return true
+    }
+
+    private var canReceiveRemotePushNotifications: Bool {
+        notificationsAuthorized && pushToken != nil && currentPushEnvironment() != nil
+    }
+
+    private var shouldScheduleLocalApprovalNotification: Bool {
+        guard !shouldSuppressLocalNotifications else { return false }
+        guard currentAppState != .foreground else { return false }
+        return !canReceiveRemotePushNotifications
     }
 
     private func currentPushEnvironment() -> RemotePushEnvironment? {

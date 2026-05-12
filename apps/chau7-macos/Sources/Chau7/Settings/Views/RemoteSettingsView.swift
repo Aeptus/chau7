@@ -5,6 +5,7 @@ struct RemoteSettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
     private var remote = RemoteControlManager.shared
     @State private var devicePendingRevocation: RemotePairedDevice?
+    @State private var relayURLDraft = FeatureSettings.shared.remoteRelayURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -26,11 +27,7 @@ struct RemoteSettingsView: View {
             )
 
             SettingsSectionHeader(L("settings.remote.relay", "Relay"), icon: "network")
-            SettingsRow(L("settings.remote.relayUrl", "Relay URL"), help: L("settings.remote.relayUrl.help", "WebSocket relay base URL")) {
-                TextField("", text: $settings.remoteRelayURL)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 360)
-            }
+            relaySettingsView
 
             SettingsSectionHeader(L("settings.remote.pairing", "Pairing"), icon: "qrcode")
             pairingView
@@ -56,6 +53,14 @@ struct RemoteSettingsView: View {
         } message: { device in
             Text(String(format: L("settings.remote.revoke.confirm.message", "This will remove %@ and force it to pair again before it can reconnect."), device.name))
         }
+        .onAppear {
+            relayURLDraft = settings.remoteRelayURL
+        }
+        .onChange(of: settings.remoteRelayURL) { _, newValue in
+            if normalizedRelayURL(relayURLDraft) == normalizedRelayURL(newValue) {
+                relayURLDraft = newValue
+            }
+        }
     }
 
     private var statusRow: some View {
@@ -80,6 +85,35 @@ struct RemoteSettingsView: View {
                     Text(remote.isIPCConnected ? L("remote.ipc.connected", "IPC connected") : L("remote.ipc.disconnected", "IPC not connected"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var relaySettingsView: some View {
+        SettingsRow(L("settings.remote.relayUrl", "Relay URL"), help: L("settings.remote.relayUrl.help", "WebSocket relay base URL")) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 10) {
+                    TextField("", text: $relayURLDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 360)
+
+                    Button(relayHasPendingChanges ? L("common.apply", "Apply") : L("common.applied", "Applied")) {
+                        applyRelayURL()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!relayHasPendingChanges || normalizedRelayURL(relayURLDraft).isEmpty)
+                }
+
+                Text(relayStatusText)
+                    .font(.caption)
+                    .foregroundStyle(relayHasPendingChanges ? .orange : .secondary)
+
+                if let activeRelayURL = remote.activeRelayURL, !activeRelayURL.isEmpty {
+                    Text("Active relay: \(activeRelayURL)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
             }
         }
@@ -175,5 +209,31 @@ struct RemoteSettingsView: View {
                 }
             }
         }
+    }
+
+    private var relayHasPendingChanges: Bool {
+        normalizedRelayURL(relayURLDraft) != normalizedRelayURL(settings.remoteRelayURL)
+    }
+
+    private var relayStatusText: String {
+        if relayHasPendingChanges {
+            if settings.isRemoteEnabled {
+                return "Relay URL changed. Apply to restart the remote agent and refresh pairing."
+            }
+            return "Relay URL changed. Apply to save it. The new relay will be used the next time Remote Control is enabled."
+        }
+        if settings.isRemoteEnabled {
+            return "This relay URL is currently configured. Remote Control will start or reconnect against it automatically."
+        }
+        return "This relay URL is saved but inactive until Remote Control is enabled."
+    }
+
+    private func applyRelayURL() {
+        settings.remoteRelayURL = normalizedRelayURL(relayURLDraft)
+        relayURLDraft = settings.remoteRelayURL
+    }
+
+    private func normalizedRelayURL(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

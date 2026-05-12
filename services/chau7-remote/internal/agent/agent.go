@@ -547,6 +547,12 @@ func (a *Agent) shouldForwardLiveFrames() bool {
 	return a.currentClientStreamMode != "approvals_only"
 }
 
+func (a *Agent) shouldNotifyClientViaPush() bool {
+	a.clientStateMu.Lock()
+	defer a.clientStateMu.Unlock()
+	return a.currentClientAppState != "foreground" || a.currentClientStreamMode == "approvals_only"
+}
+
 func (a *Agent) handlePairRequest(payload []byte) {
 	var request PairRequestPayload
 	if err := json.Unmarshal(payload, &request); err != nil {
@@ -1053,6 +1059,9 @@ func (a *Agent) notifyPush(payload PushNotifyPayload) {
 }
 
 func (a *Agent) handleApprovalRequestForPush(payload []byte) {
+	if !a.shouldNotifyClientViaPush() {
+		return
+	}
 	var approval ApprovalNotificationPayload
 	if err := json.Unmarshal(payload, &approval); err != nil {
 		log.Printf("approval push: unmarshal: %v", err)
@@ -1092,6 +1101,9 @@ func (a *Agent) handleApprovalRequestForPush(payload []byte) {
 }
 
 func (a *Agent) handleInteractivePromptListForPush(payload []byte) {
+	if !a.shouldNotifyClientViaPush() {
+		return
+	}
 	var promptList InteractivePromptListPayload
 	if err := json.Unmarshal(payload, &promptList); err != nil {
 		log.Printf("interactive prompt push: unmarshal: %v", err)
