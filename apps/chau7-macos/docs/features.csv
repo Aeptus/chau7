@@ -26,6 +26,7 @@ Terminal Core,Copy on Select,Selected text is automatically copied to the clipbo
 Terminal Core,Click-to-Position,Option+click to position the cursor anywhere on the command line,Shipped,No
 Performance,Metal GPU Rendering,Hardware-accelerated text rendering via Apple Metal — smooth even at high throughput,Shipped,Yes
 Performance,CPU/Metal Layout Parity,"Pure geometry contract and tests keep CPU and Metal rows, columns, cursor cells, mouse mapping, and remainder pixels aligned",Shipped,Yes
+Performance,Render Request Coalescing Diagnostics,"Latest-frame-wins sync and present counters expose how many obsolete intermediate frames were skipped during heavy AI-output bursts",Shipped,Yes
 Performance,Startup Metal Frame Handoff,"Forced selected-tab reveal timeouts keep the next real Metal visible-frame signal armed so startup restore records real frames instead of synthesizing 5s fallbacks",Shipped,Yes
 Performance,IOSurface Direct Display,Bypass the macOS compositor entirely for GPU-to-display output,Shipped,Yes
 Performance,Glyph Atlas Caching,Dynamic glyph cache eliminates redundant text rasterization,Shipped,Yes

@@ -8,27 +8,73 @@ public struct TerminalRenderRequestCoalescer: Equatable, Sendable {
         fileprivate let presentGeneration: UInt64
     }
 
+    public struct Diagnostics: Equatable, Sendable {
+        public let pendingSync: Bool
+        public let pendingPresent: Bool
+        public let pendingRequestCount: Int
+        public let syncRequestCount: UInt64
+        public let presentRequestCount: UInt64
+        public let coalescedSyncRequestCount: UInt64
+        public let coalescedPresentRequestCount: UInt64
+
+        public var coalescedRequestCount: UInt64 {
+            coalescedSyncRequestCount + coalescedPresentRequestCount
+        }
+    }
+
     public private(set) var needsSync: Bool
     public private(set) var needsPresent: Bool
     private var syncGeneration: UInt64
     private var presentGeneration: UInt64
+    private var syncRequestCount: UInt64
+    private var presentRequestCount: UInt64
+    private var coalescedSyncRequestCount: UInt64
+    private var coalescedPresentRequestCount: UInt64
 
     public init(needsSync: Bool = true, needsPresent: Bool = true) {
         self.needsSync = needsSync
         self.needsPresent = needsPresent
         self.syncGeneration = needsSync ? 1 : 0
         self.presentGeneration = needsPresent ? 1 : 0
+        self.syncRequestCount = needsSync ? 1 : 0
+        self.presentRequestCount = needsPresent ? 1 : 0
+        self.coalescedSyncRequestCount = 0
+        self.coalescedPresentRequestCount = 0
+    }
+
+    public var diagnostics: Diagnostics {
+        Diagnostics(
+            pendingSync: needsSync,
+            pendingPresent: needsPresent,
+            pendingRequestCount: (needsSync ? 1 : 0) + (needsPresent ? 1 : 0),
+            syncRequestCount: syncRequestCount,
+            presentRequestCount: presentRequestCount,
+            coalescedSyncRequestCount: coalescedSyncRequestCount,
+            coalescedPresentRequestCount: coalescedPresentRequestCount
+        )
     }
 
     public mutating func requestSync() {
+        if needsSync {
+            coalescedSyncRequestCount &+= 1
+        }
+        if needsPresent {
+            coalescedPresentRequestCount &+= 1
+        }
         needsSync = true
         needsPresent = true
+        syncRequestCount &+= 1
+        presentRequestCount &+= 1
         syncGeneration &+= 1
         presentGeneration &+= 1
     }
 
     public mutating func requestPresent() {
+        if needsPresent {
+            coalescedPresentRequestCount &+= 1
+        }
         needsPresent = true
+        presentRequestCount &+= 1
         presentGeneration &+= 1
     }
 

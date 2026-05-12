@@ -66,4 +66,57 @@ final class TerminalRenderRequestCoalescerTests: XCTestCase {
         XCTAssertTrue(coalescer.needsSync)
         XCTAssertTrue(coalescer.needsPresent)
     }
+
+    func testSyncBurstCoalescesToSingleLatestDrawRequest() throws {
+        var coalescer = TerminalRenderRequestCoalescer(needsSync: false, needsPresent: false)
+
+        for _ in 0 ..< 100 {
+            coalescer.requestSync()
+        }
+
+        let request = try XCTUnwrap(coalescer.drawRequest())
+        XCTAssertTrue(request.shouldSync)
+        XCTAssertTrue(request.shouldPresent)
+        XCTAssertEqual(coalescer.diagnostics.pendingRequestCount, 2)
+        XCTAssertEqual(coalescer.diagnostics.syncRequestCount, 100)
+        XCTAssertEqual(coalescer.diagnostics.presentRequestCount, 100)
+        XCTAssertEqual(coalescer.diagnostics.coalescedSyncRequestCount, 99)
+        XCTAssertEqual(coalescer.diagnostics.coalescedPresentRequestCount, 99)
+
+        XCTAssertFalse(coalescer.completeCommittedDraw(request))
+        XCTAssertNil(coalescer.drawRequest())
+    }
+
+    func testPresentBurstCoalescesWithoutForcingSync() throws {
+        var coalescer = TerminalRenderRequestCoalescer(needsSync: false, needsPresent: false)
+
+        for _ in 0 ..< 12 {
+            coalescer.requestPresent()
+        }
+
+        let request = try XCTUnwrap(coalescer.drawRequest())
+        XCTAssertFalse(request.shouldSync)
+        XCTAssertTrue(request.shouldPresent)
+        XCTAssertEqual(coalescer.diagnostics.pendingRequestCount, 1)
+        XCTAssertEqual(coalescer.diagnostics.syncRequestCount, 0)
+        XCTAssertEqual(coalescer.diagnostics.presentRequestCount, 12)
+        XCTAssertEqual(coalescer.diagnostics.coalescedPresentRequestCount, 11)
+    }
+
+    func testDiagnosticsRetainLatestFrameWinsAfterOlderCommit() throws {
+        var coalescer = TerminalRenderRequestCoalescer()
+        let inFlight = try XCTUnwrap(coalescer.drawRequest())
+
+        for _ in 0 ..< 10 {
+            coalescer.requestSync()
+        }
+
+        XCTAssertTrue(coalescer.completeCommittedDraw(inFlight))
+        XCTAssertTrue(coalescer.needsSync)
+        XCTAssertTrue(coalescer.needsPresent)
+        XCTAssertEqual(coalescer.diagnostics.syncRequestCount, 11)
+        XCTAssertEqual(coalescer.diagnostics.presentRequestCount, 11)
+        XCTAssertEqual(coalescer.diagnostics.coalescedSyncRequestCount, 10)
+        XCTAssertEqual(coalescer.diagnostics.coalescedPresentRequestCount, 10)
+    }
 }
