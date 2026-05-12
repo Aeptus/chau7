@@ -291,6 +291,74 @@ final class TokenOptimizationCoreTests: XCTestCase {
         )
     }
 
+    // MARK: - Continuous Health Scoring
+
+    /// `lowChangeRatePenalty` should be 0 at the threshold, scale linearly
+    /// to the maximum at 0%, and stay 0 above the threshold. Replaces the
+    /// old binary cliff that hit -30 at any value below 30%.
+    func testLowChangeRatePenaltyAtBoundaries() {
+        XCTAssertEqual(CTOHealthScoring.lowChangeRatePenalty(changeRatePercent: 30), 0)
+        XCTAssertEqual(CTOHealthScoring.lowChangeRatePenalty(changeRatePercent: 100), 0)
+        XCTAssertEqual(
+            CTOHealthScoring.lowChangeRatePenalty(changeRatePercent: 0),
+            CTOHealthScoring.lowChangeRateMaxPenalty
+        )
+    }
+
+    func testLowChangeRatePenaltyScalesProportionally() {
+        // 15% change rate is halfway between 30 (threshold) and 0 (worst).
+        // Penalty should be half the max (15 of 30, rounded).
+        let penalty = CTOHealthScoring.lowChangeRatePenalty(changeRatePercent: 15)
+        XCTAssertEqual(penalty, 15)
+
+        // 28% is one-fifteenth of the way past the threshold.
+        let near = CTOHealthScoring.lowChangeRatePenalty(changeRatePercent: 28)
+        XCTAssertEqual(near, 2)
+    }
+
+    /// `highDeferredSkipsPenalty` should be 0 at and below the threshold,
+    /// scale to max at 100%.
+    func testHighDeferredSkipsPenaltyAtBoundaries() {
+        XCTAssertEqual(CTOHealthScoring.highDeferredSkipsPenalty(skipRatePercent: 0), 0)
+        XCTAssertEqual(CTOHealthScoring.highDeferredSkipsPenalty(skipRatePercent: 35), 0)
+        XCTAssertEqual(
+            CTOHealthScoring.highDeferredSkipsPenalty(skipRatePercent: 100),
+            CTOHealthScoring.highDeferredSkipsMaxPenalty
+        )
+    }
+
+    /// `lowDeferredFlushRatePenalty` should be 0 at and above the threshold,
+    /// max at 0%.
+    func testLowDeferredFlushRatePenaltyAtBoundaries() {
+        XCTAssertEqual(CTOHealthScoring.lowDeferredFlushRatePenalty(flushRatePercent: 80), 0)
+        XCTAssertEqual(CTOHealthScoring.lowDeferredFlushRatePenalty(flushRatePercent: 100), 0)
+        XCTAssertEqual(
+            CTOHealthScoring.lowDeferredFlushRatePenalty(flushRatePercent: 0),
+            CTOHealthScoring.lowDeferredFlushRateMaxPenalty
+        )
+    }
+
+    /// `staleDecisionsPenalty` should be 0 at and below 5 minutes, max at
+    /// and beyond 30 minutes. Mid-window (e.g. 17 minutes) scales linearly.
+    func testStaleDecisionsPenaltyAtBoundaries() {
+        XCTAssertEqual(CTOHealthScoring.staleDecisionsPenalty(ageSinceLastDecisionSeconds: 0), 0)
+        XCTAssertEqual(CTOHealthScoring.staleDecisionsPenalty(ageSinceLastDecisionSeconds: 300), 0)
+        XCTAssertEqual(
+            CTOHealthScoring.staleDecisionsPenalty(ageSinceLastDecisionSeconds: 1800),
+            CTOHealthScoring.staleDecisionsMaxPenalty
+        )
+        XCTAssertEqual(
+            CTOHealthScoring.staleDecisionsPenalty(ageSinceLastDecisionSeconds: 3600),
+            CTOHealthScoring.staleDecisionsMaxPenalty
+        )
+    }
+
+    func testStaleDecisionsPenaltyMidWindow() {
+        // 1050s is halfway between the 300s threshold and 1800s worst case.
+        let penalty = CTOHealthScoring.staleDecisionsPenalty(ageSinceLastDecisionSeconds: 1050)
+        XCTAssertEqual(penalty, 8) // 15 * 0.5 = 7.5, rounded to 8
+    }
+
     // MARK: - TabTokenOptOverride Properties
 
     func testTabTokenOptOverrideAllCases() {

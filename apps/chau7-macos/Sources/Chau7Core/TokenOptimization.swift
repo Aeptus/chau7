@@ -354,40 +354,58 @@ public extension CTORuntimeSnapshot {
         var score = 100
         var issues: [CTORuntimeAssessmentIssue] = []
 
+        // Each rule below contributes a *continuous* deduction proportional
+        // to how far the current value is past its threshold. The previous
+        // implementation used binary cliffs (e.g. 29.9% change rate got the
+        // same -30 hit as 1%), which gave the user no way to tell "mildly
+        // off" from "wildly broken" and made the score state jump abruptly
+        // when a single recalculation crossed a boundary.
+
         // Low change rate only matters while the system is still settling.
-        // Once stable, a low change rate means convergence — that's healthy.
-        if recalcCount > 0 && decisionsChangeRatePercent < 30.0 && !isStableState {
-            score -= 30
-            issues.append(.lowChangeRate)
+        // Once stable (`isStableCTORuntimeState`), a low change rate means
+        // convergence — that's healthy and the rule is skipped.
+        if recalcCount > 0, !isStableState {
+            let penalty = CTOHealthScoring.lowChangeRatePenalty(changeRatePercent: decisionsChangeRatePercent)
+            if penalty > 0 {
+                score -= penalty
+                issues.append(.lowChangeRate)
+            }
         }
 
-        // Need enough samples before percentages are meaningful (>= 5
-        // *eligible* deferred sets — sessions that closed before reaching
-        // their first prompt are subtracted from the denominator).
-        if deferredEligibleCount >= 5 && deferredSkipRatePercent > 35.0 {
-            score -= 30
-            issues.append(.highDeferredSkips)
-        }
-
-        if deferredEligibleCount >= 5 && deferredFlushRatePercent < 80.0 {
-            score -= 20
-            issues.append(.lowDeferredFlushRate)
+        // Skip / flush rates need enough samples before they're meaningful
+        // (>= 5 *eligible* deferred sets, i.e. excluding cancelled defers).
+        if deferredEligibleCount >= 5 {
+            let skipPenalty = CTOHealthScoring.highDeferredSkipsPenalty(skipRatePercent: deferredSkipRatePercent)
+            if skipPenalty > 0 {
+                score -= skipPenalty
+                issues.append(.highDeferredSkips)
+            }
+            let flushPenalty = CTOHealthScoring.lowDeferredFlushRatePenalty(flushRatePercent: deferredFlushRatePercent)
+            if flushPenalty > 0 {
+                score -= flushPenalty
+                issues.append(.lowDeferredFlushRate)
+            }
         }
 
         // Stale decisions only matter if sessions are actively running.
         // In steady state with all tabs idle/settled, no decisions is correct.
-        if let age = ageSinceLastDecisionSeconds, age > 300,
-           activeSessionCount > 0, !isStableState {
-            score -= 15
-            issues.append(.staleDecisions)
+        if let age = ageSinceLastDecisionSeconds, activeSessionCount > 0, !isStableState {
+            let penalty = CTOHealthScoring.staleDecisionsPenalty(ageSinceLastDecisionSeconds: age)
+            if penalty > 0 {
+                score -= penalty
+                issues.append(.staleDecisions)
+            }
         }
 
-        if mode == TokenOptimizationMode.off.rawValue && trackedSessions > 0 {
+        if mode == TokenOptimizationMode.off.rawValue, trackedSessions > 0 {
+            // Mode-off is binary by nature — it's either on or off — so this
+            // rule keeps its flat deduction.
             score -= 20
             issues.append(.modeOffWithTrackedSessions)
         }
 
-        if recalcCount == 0 && trackedSessions > 0 && uptimeSeconds >= 60 {
+        if recalcCount == 0, trackedSessions > 0, uptimeSeconds >= 60 {
+            // Same — either the engine has run or it hasn't.
             score -= 10
             issues.append(.lowDecisionThroughput)
         }
@@ -414,6 +432,96 @@ public extension CTORuntimeSnapshot {
             issues: issues,
             summary: summary
         )
+    }
+}
+
+// MARK: - Health Scoring
+
+/// Continuous-scoring functions for each CTO health rule. Pulled into a
+/// caseless enum so they're independently testable (per-rule partition
+/// coverage) without exercising the full `CTORuntimeSnapshot` constructor.
+public enum CTOHealthScoring {
+
+    /// `.lowChangeRate` rule: change rate in [0, 30] maps to penalty
+    /// [maxPenalty, 0]. At or above 30%, no penalty.
+    public static let lowChangeRateThresholdPercent = 30.0
+    public static let lowChangeRateMaxPenalty = 30
+
+    public static func lowChangeRatePenalty(changeRatePercent: Double) -> Int {
+        proportionalPenalty(
+            value: changeRatePercent,
+            threshold: lowChangeRateThresholdPercent,
+            worstCase: 0,
+            maxPenalty: lowChangeRateMaxPenalty
+        )
+    }
+
+    /// `.highDeferredSkips` rule: skip rate in [35, 100] maps to penalty
+    /// [0, maxPenalty]. At or below 35%, no penalty.
+    public static let highDeferredSkipsThresholdPercent = 35.0
+    public static let highDeferredSkipsMaxPenalty = 30
+
+    public static func highDeferredSkipsPenalty(skipRatePercent: Double) -> Int {
+        proportionalPenalty(
+            value: skipRatePercent,
+            threshold: highDeferredSkipsThresholdPercent,
+            worstCase: 100,
+            maxPenalty: highDeferredSkipsMaxPenalty
+        )
+    }
+
+    /// `.lowDeferredFlushRate` rule: flush rate in [0, 80] maps to penalty
+    /// [maxPenalty, 0]. At or above 80%, no penalty.
+    public static let lowDeferredFlushRateThresholdPercent = 80.0
+    public static let lowDeferredFlushRateMaxPenalty = 20
+
+    public static func lowDeferredFlushRatePenalty(flushRatePercent: Double) -> Int {
+        proportionalPenalty(
+            value: flushRatePercent,
+            threshold: lowDeferredFlushRateThresholdPercent,
+            worstCase: 0,
+            maxPenalty: lowDeferredFlushRateMaxPenalty
+        )
+    }
+
+    /// `.staleDecisions` rule: age in [300, 1800] seconds maps to penalty
+    /// [0, maxPenalty]. At or under 5 min, no penalty; at or over 30 min,
+    /// the full hit. The previous binary "any age > 300s → -15" turned
+    /// short idle pauses into the same severity as multi-hour silence.
+    public static let staleDecisionsThresholdSeconds = 300
+    public static let staleDecisionsWorstSeconds = 1800
+    public static let staleDecisionsMaxPenalty = 15
+
+    public static func staleDecisionsPenalty(ageSinceLastDecisionSeconds age: Int) -> Int {
+        proportionalPenalty(
+            value: Double(age),
+            threshold: Double(staleDecisionsThresholdSeconds),
+            worstCase: Double(staleDecisionsWorstSeconds),
+            maxPenalty: staleDecisionsMaxPenalty
+        )
+    }
+
+    /// Compute a penalty proportional to how far `value` has moved from
+    /// `threshold` toward `worstCase`. Returns 0 when `value` is on the
+    /// "healthy" side of `threshold`, and `maxPenalty` at or past
+    /// `worstCase`. Handles both increasing (skip rate, age) and decreasing
+    /// (change rate, flush rate) severity directions by checking which
+    /// side of the threshold is worse.
+    private static func proportionalPenalty(
+        value: Double, threshold: Double, worstCase: Double, maxPenalty: Int
+    ) -> Int {
+        let span = worstCase - threshold
+        guard span != 0 else { return 0 }
+        let normalized: Double
+        if span > 0 {
+            // Severity increases as value grows past threshold.
+            normalized = (value - threshold) / span
+        } else {
+            // Severity increases as value falls below threshold.
+            normalized = (threshold - value) / -span
+        }
+        let clamped = min(max(normalized, 0), 1)
+        return Int((Double(maxPenalty) * clamped).rounded())
     }
 }
 
