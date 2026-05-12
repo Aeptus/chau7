@@ -25,6 +25,9 @@ final class RustTermBridge {
     /// Key = viewport row (0-based), value = SIMD4 RGBA tint color.
     var rowTints: [Int: SIMD4<Float>] = [:]
 
+    /// Flat-indexed local echo cells overlaid before Metal conversion.
+    var localEchoOverlay: [Int: RustCellData] = [:]
+
     // MARK: - Init
 
     init() {
@@ -72,7 +75,7 @@ final class RustTermBridge {
         for row in 0 ..< syncRows {
             for col in 0 ..< syncCols {
                 let idx = row * gridCols + col
-                let rustCell = cells[idx]
+                let rustCell = localEchoOverlay[idx] ?? cells[idx]
                 let metalCell = convertCell(rustCell, row: row)
                 buffer.setCell(row: row, col: col, metalCell)
             }
@@ -150,6 +153,9 @@ final class RustTermBridge {
         var metalFlags = UInt32(flags & RustCellFlags.metalStyleMask)
         // Underline variant in bits 8-10 (from _pad bits 0-2)
         metalFlags |= UInt32(cell._pad & 0x07) << 8
+        if cell.link_id > 0, flags & RustCellFlags.underline == 0 {
+            metalFlags |= TerminalCell.linkUnderlineFlag
+        }
 
         return TerminalCell(
             character: cell.character,

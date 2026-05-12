@@ -29,6 +29,8 @@ Performance,CPU/Metal Layout Parity,"Pure geometry contract and tests keep CPU a
 Performance,Render Request Coalescing Diagnostics,"Latest-frame-wins sync and present counters expose how many obsolete intermediate frames were skipped during heavy AI-output bursts",Shipped,Yes
 Performance,Typed Metal Retry Recovery,"Font, grid, zero-size, drawable, zero-cell, and commit failures retry safely with sampled diagnostics and recovery reset after the next committed frame",Shipped,Yes
 Performance,Render Surface Diagnostics,"Bug reports include window content size, terminal surface and grid geometry, rows and columns, cell size, point and pixel remainders, Metal view and drawable size, frame age, coalescing counters, and retry state",Shipped,Yes
+Performance,Metal Parity Audit,"Tracked parity matrix for wide glyphs, emoji fallback, ligatures, OSC8 links, selection, local echo overlays, inline images, and command-block tinting with covered partial or external-overlay status",Shipped,Yes
+Performance,Metal OSC8 and Local Echo Parity,"Metal sync overlays predicted local-echo cells before GPU conversion and renders OSC8 link underlines when no explicit SGR underline is present",Shipped,Yes
 Performance,Startup Metal Frame Handoff,"Forced selected-tab reveal timeouts keep the next real Metal visible-frame signal armed so startup restore records real frames instead of synthesizing 5s fallbacks",Shipped,Yes
 Performance,IOSurface Direct Display,Bypass the macOS compositor entirely for GPU-to-display output,Shipped,Yes
 Performance,Glyph Atlas Caching,Dynamic glyph cache eliminates redundant text rasterization,Shipped,Yes

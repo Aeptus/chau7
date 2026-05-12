@@ -411,6 +411,14 @@ final class RustMetalDisplayCoordinator: NSObject {
             metalView.clearColor = clearColor
             renderer.backgroundClearColor = clearColor
         }
+        if let link = NSColor.linkColor.usingColorSpace(.sRGB) {
+            renderer.linkUnderlineColor = SIMD4(
+                Float(link.redComponent),
+                Float(link.greenComponent),
+                Float(link.blueComponent),
+                Float(link.alphaComponent)
+            )
+        }
     }
 
     /// Called when the font changes.
@@ -720,6 +728,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             } else {
                 bridge.rowTints = [:]
             }
+            bridge.localEchoOverlay = terminalView?.localEchoOverlay ?? [:]
 
             // 3. Convert grid pointer to typed pointer and sync to triple buffer.
             let gridPtr = snapshot.grid.assumingMemoryBound(to: RustGridSnapshot.self)

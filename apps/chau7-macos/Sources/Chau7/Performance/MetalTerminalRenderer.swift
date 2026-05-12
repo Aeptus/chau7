@@ -167,6 +167,7 @@ final class MetalTerminalRenderer: NSObject {
     var cursorStyle = "block"
     var cursorVisible = true
     var cursorColor: SIMD4<Float> = SIMD4(1, 1, 1, 0.7)
+    var linkUnderlineColor: SIMD4<Float> = SIMD4(0, 0.48, 1, 1)
     var backgroundClearColor: MTLClearColor = MTLClearColorMake(0.1, 0.1, 0.1, 1.0)
 
     // MARK: - Blink State
@@ -193,6 +194,7 @@ final class MetalTerminalRenderer: NSObject {
         var blinkVisible: Float // 1.0 = show blinking text, 0.0 = hide
         var underlineY: Float // normalized Y position for underline (0=top, 1=bottom)
         var _pad: Float = 0 // alignment padding
+        var linkUnderlineColor: SIMD4<Float>
     }
 
     // MARK: - Initialization
@@ -1250,7 +1252,8 @@ final class MetalTerminalRenderer: NSObject {
             viewportSize: SIMD2(Float(viewportSize.width), Float(viewportSize.height)),
             scaleFactor: Float(scaleFactor),
             blinkVisible: textBlinkPhase ? 1.0 : 0.0,
-            underlineY: underlinePosition
+            underlineY: underlinePosition,
+            linkUnderlineColor: linkUnderlineColor
         )
     }
 
@@ -1294,6 +1297,14 @@ final class MetalTerminalRenderer: NSObject {
 
 /// Represents a single terminal cell for GPU rendering
 struct TerminalCell {
+    static let boldFlag: UInt32 = 1 << 0
+    static let italicFlag: UInt32 = 1 << 1
+    static let underlineFlag: UInt32 = 1 << 2
+    static let strikethroughFlag: UInt32 = 1 << 3
+    static let blinkFlag: UInt32 = 1 << 4
+    static let cursorPresentFlag: UInt32 = 1 << 5
+    static let linkUnderlineFlag: UInt32 = 1 << 11
+
     var character: UInt32
     var foregroundColor: SIMD4<Float>
     var backgroundColor: SIMD4<Float>
@@ -1340,6 +1351,7 @@ extension MetalTerminalRenderer {
         float blinkVisible;  // 1.0 = show blinking text, 0.0 = hide
         float underlineY;    // normalized Y position for underline decoration
         float _pad;
+        float4 linkUnderlineColor;
     };
 
     struct VertexOut {
@@ -1495,6 +1507,15 @@ extension MetalTerminalRenderer {
                 if (in.cellLocalPos.y > underlineY && in.cellLocalPos.y < underlineY + thickness) {
                     return float4(in.foreground.rgb, 1.0);
                 }
+            }
+        }
+
+        // OSC 8 link underline, used only when the cell does not already carry
+        // an explicit underline style from SGR.
+        if ((in.flags & (1u << 11)) != 0) {
+            float underlineY = uniforms.underlineY;
+            if (in.cellLocalPos.y > underlineY && in.cellLocalPos.y < underlineY + thickness) {
+                return uniforms.linkUnderlineColor;
             }
         }
 
