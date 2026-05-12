@@ -271,6 +271,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | **Feature profiler** | Per-feature timing with os.signpost integration |
 | **CPU/Metal layout parity** | Pure geometry contract and tests keep CPU and Metal rows, columns, cursor cells, mouse mapping, and remainder pixels aligned |
 | **Render request coalescing diagnostics** | Latest-frame-wins sync/present counters expose how many obsolete intermediate frames were skipped during heavy AI-output bursts |
+| **Typed Metal retry recovery** | Font, grid, zero-size, drawable, zero-cell, and commit failures retry safely with sampled diagnostics and recovery reset after the next committed frame |
 | **Startup live-frame handoff** | Forced selected-tab reveal timeouts keep the next real Metal frame signal armed, so startup restore records the real visible frame instead of waiting for a synthetic fallback |
 | **Tier-based graphics memory release** | Background tabs release NSImage snapshot caches and mark Metal textures/buffers volatile on demotion, letting the OS reclaim GPU memory under pressure and rebuilding on promotion |
 | **Background window render backpressure** | Only the key window owns live selected-tab presentation; visible selected tabs in main-but-not-key or otherwise non-input-priority windows keep a retained passive surface and drain through the shared background path instead of driving full live Metal sync |

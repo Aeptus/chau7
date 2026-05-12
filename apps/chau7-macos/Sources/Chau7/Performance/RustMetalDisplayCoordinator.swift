@@ -53,6 +53,7 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var lastLigaturesEnabled: Bool?
     private var lastCursorBlinkEnabled: Bool?
     private var pendingRetryDisplay = false
+    private var retryState = TerminalRenderRetryState()
 
     // MARK: - Blink Timer
 
@@ -339,10 +340,16 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// bails such as zero bounds, missing drawables, or a temporarily missing
     /// provider. Without this, the request remains pending but no future draw
     /// is guaranteed.
-    private func scheduleRetryDisplay(after delay: TimeInterval = 0.05) {
+    private func scheduleRetryDisplay(reason: TerminalRenderRetryReason) {
+        let decision = retryState.recordFailure(reason: reason)
+        if decision.shouldLog {
+            Log.debug(
+                "RustMetalDisplayCoordinator: scheduling retry reason=\(reason.rawValue) attempt=\(decision.consecutiveFailureCount) delay=\(decision.delay)s"
+            )
+        }
         guard !pendingRetryDisplay else { return }
         pendingRetryDisplay = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + decision.delay) { [weak self] in
             guard let self else { return }
             pendingRetryDisplay = false
             guard renderRequests.drawRequest() != nil else { return }
@@ -664,7 +671,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                 Log.debug("RustMetalDisplayCoordinator: draw skipped — font not configured")
                 Self.lastWarningLogTime = now
             }
-            scheduleRetryDisplay()
+            scheduleRetryDisplay(reason: .fontNotConfigured)
             return
         }
 
@@ -679,7 +686,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                     Self.lastWarningLogTime = now
                 }
                 FeatureProfiler.shared.end(token)
-                scheduleRetryDisplay()
+                scheduleRetryDisplay(reason: .gridUnavailable)
                 return
             }
             defer { snapshot.free() }
@@ -774,7 +781,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         // 5. Get drawable (skip silently when window has zero bounds — minimized/hidden)
         guard view.bounds.width > 0, view.bounds.height > 0 else {
             FeatureProfiler.shared.end(token)
-            scheduleRetryDisplay()
+            scheduleRetryDisplay(reason: .zeroBounds)
             return
         }
         guard let drawable = (view.layer as? CAMetalLayer)?.nextDrawable() else {
@@ -784,7 +791,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                 Self.lastNoDrawableWarningLogTime = now
             }
             FeatureProfiler.shared.end(token)
-            scheduleRetryDisplay()
+            scheduleRetryDisplay(reason: .noDrawable)
             return
         }
 
@@ -800,7 +807,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                 Self.lastWarningLogTime = now
             }
             FeatureProfiler.shared.end(token)
-            scheduleRetryDisplay()
+            scheduleRetryDisplay(reason: .zeroCells)
             return
         }
 
@@ -840,9 +847,10 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         )
         guard didCommit else {
             FeatureProfiler.shared.end(token)
-            scheduleRetryDisplay()
+            scheduleRetryDisplay(reason: .renderCommitFailed)
             return
         }
+        retryState.recordSuccess()
 
         // 7. Advance triple buffer only when we consumed fresh synced terminal state.
         if shouldSync {
