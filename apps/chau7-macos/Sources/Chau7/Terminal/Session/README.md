@@ -22,6 +22,10 @@ Terminal session lifecycle, command block tracking, history navigation, and inpu
 - `CommandHistoryManager` — singleton providing per-tab and cross-tab command history navigation
 - `InputLineTracker` — bounded set tracking which rows are user input lines
 
+## Notes
+
+- When a session transitions into `waitingForInput` or `approvalRequired`, `TerminalSessionModel` now reveals the bottom of the terminal viewport so approval pickers and interactive choice prompts do not render below the visible area during redraw storms.
+
 ## Dependencies
 
 - **Uses:** Logging, Settings, History, Keyboard, Monitoring, Utilities, AI

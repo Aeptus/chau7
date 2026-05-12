@@ -187,6 +187,9 @@ final class TerminalSessionModel {
         didSet {
             onSessionStateChanged?()
             if status != oldValue {
+                if Self.shouldAutoRevealInteractivePrompt(from: oldValue, to: status) {
+                    scheduleInteractivePromptReveal()
+                }
                 postRuntimeReadinessChange(source: "status")
             }
         }
@@ -857,6 +860,16 @@ final class TerminalSessionModel {
         return retries >= threshold
     }
 
+    static func shouldAutoRevealInteractivePrompt(
+        from oldStatus: CommandStatus,
+        to newStatus: CommandStatus
+    ) -> Bool {
+        guard newStatus == .waitingForInput || newStatus == .approvalRequired else {
+            return false
+        }
+        return oldStatus != newStatus
+    }
+
     static func resolveEffectiveStatus(
         historyState: HistorySessionState,
         fallback: CommandStatus
@@ -954,6 +967,7 @@ final class TerminalSessionModel {
     /// text input and synthesized key presses, then flushes on view attachment.
     @ObservationIgnored private var pendingTerminalActions: [PendingTerminalAction] = []
     @ObservationIgnored private var pendingAutomationSubmitWorkItem: DispatchWorkItem?
+    @ObservationIgnored private var pendingInteractivePromptRevealWorkItem: DispatchWorkItem?
     @ObservationIgnored private var lastAutomationInputAt: Date?
     @ObservationIgnored private var settingsObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var idleTimer: DispatchSourceTimer?
@@ -1231,6 +1245,28 @@ final class TerminalSessionModel {
 
     private var activeRustTerminalView: RustTerminalView? {
         rustTerminalView ?? retainedRustTerminalView
+    }
+
+    private func scheduleInteractivePromptReveal() {
+        pendingInteractivePromptRevealWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            pendingInteractivePromptRevealWorkItem = nil
+            guard status == .waitingForInput || status == .approvalRequired else { return }
+
+            activeTerminalView?.scrollToBottom()
+            scheduleHighlightAfterScroll()
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self, status == .waitingForInput || status == .approvalRequired else { return }
+                activeTerminalView?.scrollToBottom()
+                scheduleHighlightAfterScroll()
+            }
+        }
+
+        pendingInteractivePromptRevealWorkItem = workItem
+        DispatchQueue.main.async(execute: workItem)
     }
 
     private func shutdownActiveTerminalRendering() {

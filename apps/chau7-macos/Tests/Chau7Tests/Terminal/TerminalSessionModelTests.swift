@@ -33,6 +33,39 @@ final class TerminalSessionModelTests: XCTestCase {
         )
     }
 
+    func testShouldAutoRevealInteractivePromptWhenEnteringWaitingForInput() {
+        XCTAssertTrue(
+            TerminalSessionModel.shouldAutoRevealInteractivePrompt(
+                from: .running,
+                to: .waitingForInput
+            )
+        )
+    }
+
+    func testShouldAutoRevealInteractivePromptWhenEnteringApprovalRequired() {
+        XCTAssertTrue(
+            TerminalSessionModel.shouldAutoRevealInteractivePrompt(
+                from: .running,
+                to: .approvalRequired
+            )
+        )
+    }
+
+    func testShouldAutoRevealInteractivePromptIgnoresNonInteractiveTransitions() {
+        XCTAssertFalse(
+            TerminalSessionModel.shouldAutoRevealInteractivePrompt(
+                from: .running,
+                to: .running
+            )
+        )
+        XCTAssertFalse(
+            TerminalSessionModel.shouldAutoRevealInteractivePrompt(
+                from: .waitingForInput,
+                to: .done
+            )
+        )
+    }
+
     // MARK: - Background Live Rendering
 
     func testShouldKeepLiveRenderingInBackgroundRequiresActiveAIApp() {
