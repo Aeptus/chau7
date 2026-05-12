@@ -121,12 +121,14 @@ extension OverlayTabsModel {
         guard let session = selectedPresentationSession(for: tab) else { return }
         let now = CFAbsoluteTimeGetCurrent()
         let completion = force
-            ? session.forcePresentationLive(now: now)
+            ? session.forcePresentationLive(now: now, preserveVisibleFrameHandoff: true)
             : session.commitPresentationReveal(now: now)
         guard let completion else { return }
 
         resetSelectedTerminalRevealScheduling()
-        session.cancelVisibleFrameReadyHandoff()
+        if !force {
+            session.cancelVisibleFrameReadyHandoff()
+        }
         if let selectedIndex = tabs.firstIndex(where: { $0.id == tab.id }) {
             tabs[selectedIndex].restorePreviewSnapshot = nil
         }
@@ -194,7 +196,7 @@ extension OverlayTabsModel {
         return true
     }
 
-    /// Catch the case where the selected session's first frame already
+    /// Catch the case where the selected session's visible frame already
     /// presented before the per-window `terminalSessionVisibleFrameReady`
     /// observer was registered. Multi-window startup deterministically
     /// trips this: the SwiftUI terminal view's first paint fires the
@@ -211,7 +213,7 @@ extension OverlayTabsModel {
         guard StartupRestoreCoordinator.shared.isActive,
               let selectedTab,
               let selectedSession = selectedPresentationSession(for: selectedTab),
-              selectedSession.presentationSurfaceState.firstFramePresentedAt != nil
+              selectedSession.presentationSurfaceState.lastVisibleFramePresentedAt != nil
         else {
             return false
         }

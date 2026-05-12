@@ -413,8 +413,14 @@ final class TerminalSessionModel {
         presentationSurfaceState.commitLiveReveal(now: now)
     }
 
-    func forcePresentationLive(now: TimeInterval) -> TerminalPresentationRevealCompletion? {
-        presentationSurfaceState.forceLiveReveal(now: now)
+    func forcePresentationLive(
+        now: TimeInterval,
+        preserveVisibleFrameHandoff: Bool = false
+    ) -> TerminalPresentationRevealCompletion? {
+        presentationSurfaceState.forceLiveReveal(
+            now: now,
+            preserveVisibleFrameHandoff: preserveVisibleFrameHandoff
+        )
     }
 
     func resetPresentationSurfaceToLive() {

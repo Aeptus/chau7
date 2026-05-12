@@ -135,6 +135,40 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         )
     }
 
+    func testWindowVisibleReplayRecordsFramePresentedAfterForcedRevealTimeout() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        model.overlayWindow = window
+
+        let session = try XCTUnwrap(model.tabs[0].session)
+        _ = session.beginPresentationReveal(shouldAwaitVisibleFrame: true, now: 10)
+        _ = session.forcePresentationLive(now: 10.75, preserveVisibleFrameHandoff: true)
+        XCTAssertTrue(session.awaitingVisibleFrameReady)
+
+        session.notifyVisibleFrameReadyIfNeeded()
+        XCTAssertFalse(session.awaitingVisibleFrameReady)
+        XCTAssertNotNil(session.presentationSurfaceState.lastVisibleFramePresentedAt)
+        XCTAssertNil(session.presentationSurfaceState.firstFramePresentedAt)
+
+        StartupRestoreCoordinator.shared.begin()
+        defer { StartupRestoreCoordinator.shared.end() }
+        StartupRestoreCoordinator.shared.noteWindowVisible(
+            windowNumber: window.windowNumber,
+            selectedTabID: model.selectedTabID
+        )
+
+        XCTAssertTrue(
+            model.replaySelectedTabLiveFrameIfAlreadyPresented(reason: "window_visible_replay_test")
+        )
+        XCTAssertTrue(
+            StartupRestoreCoordinator.shared.hasSelectedTabLiveFrame(windowNumber: window.windowNumber)
+        )
+    }
+
     func testSelectTabKeepsAttachedLiveSurfaceInPlace() {
         model.newTab(selectNewTab: false)
         let targetID = model.tabs[1].id

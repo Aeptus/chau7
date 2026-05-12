@@ -269,6 +269,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | **Predictive rendering** | Pre-cache likely output to shave display latency |
 | **Dirty region tracking** | Only re-render what changed |
 | **Feature profiler** | Per-feature timing with os.signpost integration |
+| **Startup live-frame handoff** | Forced selected-tab reveal timeouts keep the next real Metal frame signal armed, so startup restore records the real visible frame instead of waiting for a synthetic fallback |
 | **Tier-based graphics memory release** | Background tabs release NSImage snapshot caches and mark Metal textures/buffers volatile on demotion, letting the OS reclaim GPU memory under pressure and rebuilding on promotion |
 | **Background window render backpressure** | Only the key window owns live selected-tab presentation; visible selected tabs in main-but-not-key or otherwise non-input-priority windows keep a retained passive surface and drain through the shared background path instead of driving full live Metal sync |
 | **Adaptive render-loop throttling** | Active tab drops to ~10 Hz after idle, snaps back instantly on PTY data or user input — cuts wakeups and CPU on idle AI sessions |
