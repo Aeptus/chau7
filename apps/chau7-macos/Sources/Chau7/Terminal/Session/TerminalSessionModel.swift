@@ -3050,7 +3050,12 @@ final class TerminalSessionModel {
             previousState: decision.previousState,
             nextState: decision.nextState,
             changed: decision.changed,
-            reason: reason
+            reason: reason,
+            // The session-internal recalc path is only fired by
+            // `activeAppName.didSet` and `liveAgentName.didSet` (the
+            // `applyCTOFlagRecalculation` debounced work item). Every
+            // recalc through here is an AI-state-change trigger.
+            trigger: .aiStateChanged
         )
 
         // Notify tab bar to re-render bolt icon state (the OverlayTab struct

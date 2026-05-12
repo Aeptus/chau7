@@ -80,7 +80,8 @@ extension OverlayTabsModel {
                     mode: mode,
                     override: next,
                     isAIActive: isAI
-                )
+                ),
+                trigger: .overrideChanged
             )
         }
 
@@ -137,7 +138,8 @@ extension OverlayTabsModel {
                     mode: mode,
                     override: tab.tokenOptOverride,
                     isAIActive: isAI
-                )
+                ),
+                trigger: .modeChanged
             )
         }
     }

@@ -916,7 +916,8 @@ final class TerminalControlService {
                     previousState: decision.previousState,
                     nextState: decision.nextState,
                     changed: decision.changed,
-                    reason: decisionReason(mode: mode, override: override, isAIActive: isAI)
+                    reason: decisionReason(mode: mode, override: override, isAIActive: isAI),
+                    trigger: .overrideChanged
                 )
             }
 

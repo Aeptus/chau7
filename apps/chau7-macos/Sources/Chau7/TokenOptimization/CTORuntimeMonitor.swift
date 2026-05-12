@@ -25,6 +25,7 @@ final class CTORuntimeMonitor {
     private var activeSessionCount = 0
     private var trackedSessions = 0
     private var reasonBreakdown: [CTODecisionReason: Int] = [:]
+    private var triggerBreakdown: [CTODecisionTrigger: Int] = [:]
     private var activeSessions: Set<String> = []
     private var trackedSessionIDs: Set<String> = []
     private var deferredSessionIDs: Set<String> = []
@@ -69,6 +70,7 @@ final class CTORuntimeMonitor {
                 trackedSessions: trackedSessions,
                 pendingDeferredSessions: deferredSessionIDs.count,
                 reasonBreakdown: reasonBreakdown.reduce(into: [:]) { $0[$1.key.rawValue] = $1.value },
+                triggerBreakdown: triggerBreakdown.reduce(into: [:]) { $0[$1.key.rawValue] = $1.value },
                 deferredFlushDelayCount: deferredFlushDelayCount,
                 deferredFlushDelayMinMs: deferredFlushDelayCount > 0 ? deferredFlushDelayMinMs : nil,
                 deferredFlushDelayMaxMs: deferredFlushDelayCount > 0 ? deferredFlushDelayMaxMs : nil,
@@ -111,6 +113,7 @@ final class CTORuntimeMonitor {
             activeSessionCount = 0
             trackedSessions = 0
             reasonBreakdown.removeAll(keepingCapacity: true)
+            triggerBreakdown.removeAll(keepingCapacity: true)
             deferredFlushDelaySumMs = 0
             deferredFlushDelayMinMs = 0
             deferredFlushDelayMaxMs = 0
@@ -255,6 +258,7 @@ final class CTORuntimeMonitor {
                 nextState: nextState,
                 changed: changed,
                 reason: reason,
+                trigger: .shellInitialized,
                 deferred: true,
                 delayToActivateMs: delayToActivateMs,
                 debugNote: note
@@ -370,6 +374,7 @@ final class CTORuntimeMonitor {
         nextState: Bool,
         changed: Bool,
         reason: CTODecisionReason,
+        trigger: CTODecisionTrigger? = nil,
         delayToActivateMs: Int? = nil,
         note: String? = nil
     ) {
@@ -385,6 +390,7 @@ final class CTORuntimeMonitor {
                 nextState: nextState,
                 changed: changed,
                 reason: reason,
+                trigger: trigger,
                 deferred: false,
                 delayToActivateMs: delayToActivateMs,
                 debugNote: note
@@ -454,12 +460,16 @@ final class CTORuntimeMonitor {
         nextState: Bool,
         changed: Bool,
         reason: CTODecisionReason,
+        trigger: CTODecisionTrigger? = nil,
         deferred: Bool,
         delayToActivateMs: Int?,
         debugNote: String?
     ) -> CTODecisionEvent {
         recalcCount += 1
         reasonBreakdown[reason, default: 0] += 1
+        if let trigger {
+            triggerBreakdown[trigger, default: 0] += 1
+        }
         if changed {
             if nextState {
                 createdCount += 1
@@ -485,6 +495,7 @@ final class CTORuntimeMonitor {
             previousState: previousState,
             nextState: nextState,
             reason: reason,
+            trigger: trigger,
             deferred: deferred,
             delayToActivateMs: delayToActivateMs,
             changed: changed,

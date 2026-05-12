@@ -815,6 +815,53 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         XCTAssertFalse(snapshot.assessment.issues.contains(.modeOffWithTrackedSessions))
     }
 
+    // MARK: - Decision Trigger Taxonomy
+
+    /// Recording a decision with a trigger should accumulate per-trigger
+    /// counts in the snapshot's `triggerBreakdown`. The trigger is
+    /// independent from the resolution `reason` — the same `unchanged`
+    /// reason can be produced by different triggers (an AI-state poll
+    /// re-resolving to the same flag vs. a mode change re-resolving the
+    /// same way), and the snapshot must let callers distinguish them.
+    func testTriggerBreakdownAccumulates() {
+        CTORuntimeMonitor.shared.reset()
+
+        // Three different triggers, all resolving to `allTabsDefault`.
+        for trigger: CTODecisionTrigger in [.aiStateChanged, .modeChanged, .overrideChanged] {
+            CTORuntimeMonitor.shared.recordDecision(
+                sessionID: UUID().uuidString,
+                mode: .allTabs,
+                override: .default,
+                isAIActive: true,
+                previousState: true,
+                nextState: true,
+                changed: false,
+                reason: .allTabsDefault,
+                trigger: trigger
+            )
+        }
+
+        // A fourth without a trigger — for source-compat we still record
+        // the decision, just not the trigger.
+        CTORuntimeMonitor.shared.recordDecision(
+            sessionID: UUID().uuidString,
+            mode: .allTabs,
+            override: .default,
+            isAIActive: true,
+            previousState: true,
+            nextState: true,
+            changed: false,
+            reason: .allTabsDefault
+        )
+
+        let snapshot = CTORuntimeMonitor.shared.snapshot()
+        XCTAssertEqual(snapshot.recalcCount, 4, "all four recalcs should land in recalcCount")
+        XCTAssertEqual(snapshot.triggerBreakdown.values.reduce(0, +), 3, "trigger-less call should not inflate breakdown")
+        XCTAssertEqual(snapshot.triggerBreakdown[CTODecisionTrigger.aiStateChanged.rawValue], 1)
+        XCTAssertEqual(snapshot.triggerBreakdown[CTODecisionTrigger.modeChanged.rawValue], 1)
+        XCTAssertEqual(snapshot.triggerBreakdown[CTODecisionTrigger.overrideChanged.rawValue], 1)
+    }
+
     // MARK: - Flag Sweep
 
     /// `CTOFlagManager.removeAllFlags()` should erase every file under the

@@ -428,7 +428,8 @@ extension OverlayTabsModel {
                         mode: FeatureSettings.shared.tokenOptimizationMode,
                         override: tabs[index].tokenOptOverride,
                         isAIActive: isAI
-                    )
+                    ),
+                    trigger: .sessionClosed
                 )
             }
             CTORuntimeMonitor.shared.untrackSession(sessionID)

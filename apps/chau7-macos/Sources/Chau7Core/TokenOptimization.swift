@@ -95,7 +95,11 @@ public func decisionReason(
 
 // MARK: - Decision Reason
 
-/// Runtime telemetry reason for token optimization decisions.
+/// Runtime telemetry **resolution** reason for token-optimization decisions —
+/// which rule in `decisionReason(mode:override:isAIActive:)` produced the
+/// final flag state. Sibling of `CTODecisionTrigger`, which captures the
+/// *event* that caused the recalc; reason answers "what's the new state and
+/// why", trigger answers "what made us re-check".
 public enum CTODecisionReason: String, Codable, Sendable {
     case off
     case allTabsDefault
@@ -106,6 +110,29 @@ public enum CTODecisionReason: String, Codable, Sendable {
     case forceOff
     case skippedDueToDeferred
     case unchanged
+}
+
+/// What caused a recalc to fire. Recorded alongside `CTODecisionReason` so
+/// `reasonBreakdown` can answer questions like "of the 153 unchanged
+/// recalcs today, how many were `.aiStateChanged` no-ops?" — the partition
+/// the `.lowChangeRate` health rule wants to distinguish (jitter in the
+/// active-app signal vs. genuine flap of mode/override).
+public enum CTODecisionTrigger: String, Codable, Sendable {
+    /// Process-tree or shell-integration update flipped `activeAppName` or
+    /// `liveAgentName`. Dominant source of no-op recalcs.
+    case aiStateChanged
+    /// Global `tokenOptimizationMode` setting changed via Settings or MCP.
+    case modeChanged
+    /// Per-tab `tokenOptOverride` changed (Settings, command palette, MCP).
+    case overrideChanged
+    /// First prompt after shell init flushed a deferred-flag set.
+    case shellInitialized
+    /// Tab / split-pane close path defensive cleanup.
+    case sessionClosed
+    /// Initial recalc as a session's `setup()` finishes — the legacy "we
+    /// don't know yet" bucket; should narrow as more call sites adopt
+    /// explicit triggers.
+    case initialEvaluation
 }
 
 // MARK: - Runtime Health
@@ -153,6 +180,10 @@ public struct CTODecisionEvent: Codable, Equatable, Identifiable, Sendable {
     public let nextState: Bool
     public let changed: Bool
     public let reason: CTODecisionReason
+    /// What event prompted the recalc. Optional for source-compat with
+    /// pre-1.2 call sites that didn't supply this; new call sites should
+    /// always pass a meaningful trigger.
+    public let trigger: CTODecisionTrigger?
     public let deferred: Bool
     public let delayToActivateMs: Int?
     public let debugNote: String?
@@ -165,6 +196,7 @@ public struct CTODecisionEvent: Codable, Equatable, Identifiable, Sendable {
         previousState: Bool,
         nextState: Bool,
         reason: CTODecisionReason,
+        trigger: CTODecisionTrigger? = nil,
         deferred: Bool = false,
         delayToActivateMs: Int? = nil,
         changed: Bool = true,
@@ -180,6 +212,7 @@ public struct CTODecisionEvent: Codable, Equatable, Identifiable, Sendable {
         self.nextState = nextState
         self.changed = changed
         self.reason = reason
+        self.trigger = trigger
         self.deferred = deferred
         self.delayToActivateMs = delayToActivateMs
         self.debugNote = debugNote
@@ -214,6 +247,10 @@ public struct CTORuntimeSnapshot: Codable, Equatable, Sendable {
     public let trackedSessions: Int
     public let pendingDeferredSessions: Int
     public let reasonBreakdown: [String: Int]
+    /// Per-trigger counts of recalcs since the last reset. Keys are
+    /// `CTODecisionTrigger.rawValue`. Empty for snapshots taken from
+    /// pre-1.2 callers that didn't pass a trigger.
+    public let triggerBreakdown: [String: Int]
     public let deferredFlushDelayCount: Int
     public let deferredFlushDelayMinMs: Int?
     public let deferredFlushDelayMaxMs: Int?
@@ -244,6 +281,7 @@ public struct CTORuntimeSnapshot: Codable, Equatable, Sendable {
         trackedSessions: Int,
         pendingDeferredSessions: Int,
         reasonBreakdown: [String: Int],
+        triggerBreakdown: [String: Int] = [:],
         deferredFlushDelayCount: Int,
         deferredFlushDelayMinMs: Int?,
         deferredFlushDelayMaxMs: Int?,
@@ -273,6 +311,7 @@ public struct CTORuntimeSnapshot: Codable, Equatable, Sendable {
         self.trackedSessions = trackedSessions
         self.pendingDeferredSessions = pendingDeferredSessions
         self.reasonBreakdown = reasonBreakdown
+        self.triggerBreakdown = triggerBreakdown
         self.deferredFlushDelayCount = deferredFlushDelayCount
         self.deferredFlushDelayMinMs = deferredFlushDelayMinMs
         self.deferredFlushDelayMaxMs = deferredFlushDelayMaxMs
