@@ -158,10 +158,10 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 84B303452F31076400A7D19E /* Build configuration list for PBXNativeTarget "Chau7RemoteApp" */;
 			buildPhases = (
+				4A94D79731F2A00100A1B001 /* Build Rust Terminal */,
 				84B303362F31076300A7D19E /* Sources */,
 				84B303372F31076300A7D19E /* Frameworks */,
 				84B303382F31076300A7D19E /* Resources */,
-				4A94D79731F2A00100A1B001 /* Build Rust Terminal */,
 				F1A4000731F2A00100A1B001 /* Embed App Extensions */,
 			);
 			buildRules = (
@@ -261,18 +261,20 @@
 /* Begin PBXShellScriptBuildPhase section */
 		4A94D79731F2A00100A1B001 /* Build Rust Terminal */ = {
 			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(PROJECT_DIR)/../Scripts/build-rust-terminal-ios.sh",
+				"$(PROJECT_DIR)/../../chau7-macos/rust/chau7_terminal",
 			);
 			name = "Build Rust Terminal";
 			outputFileListPaths = (
 			);
 			outputPaths = (
+				"$(DERIVED_FILE_DIR)/rust-terminal-build.stamp",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;

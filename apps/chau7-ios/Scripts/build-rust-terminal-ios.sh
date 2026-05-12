@@ -5,11 +5,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IOS_APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MACOS_APP_DIR="$(cd "$IOS_APP_DIR/../chau7-macos" && pwd)"
 CRATE_MANIFEST="$MACOS_APP_DIR/rust/chau7_terminal/Cargo.toml"
-RUST_TARGET_DIR="$IOS_APP_DIR/BuildArtifacts/rust/target"
+deployment_target="${IPHONEOS_DEPLOYMENT_TARGET:-17.0}"
+deployment_target_key="${deployment_target//./_}"
+RUST_TARGET_DIR="$IOS_APP_DIR/BuildArtifacts/rust/target/ios-${deployment_target_key}"
 PLATFORM_LIB_DIR="$IOS_APP_DIR/BuildArtifacts/rust/lib/${PLATFORM_NAME:-iphonesimulator}"
 
 platform="${PLATFORM_NAME:-iphonesimulator}"
 export PATH="$HOME/.cargo/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+export IPHONEOS_DEPLOYMENT_TARGET="$deployment_target"
 
 find_tool() {
     local tool_name="$1"
@@ -38,6 +41,7 @@ RUSTUP_BIN="$(find_tool rustup "$HOME/.cargo/bin/rustup")" || {
 }
 
 mkdir -p "$PLATFORM_LIB_DIR"
+stamp_file="${SCRIPT_OUTPUT_FILE_0:-}"
 
 build_mode="debug"
 cargo_flags=()
@@ -58,6 +62,35 @@ require_target() {
 
 build_target() {
     local target="$1"
+    local rustflags_env=""
+    local min_version_flag=""
+
+    case "$target" in
+        aarch64-apple-ios)
+            rustflags_env="CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS"
+            min_version_flag="-miphoneos-version-min=$deployment_target"
+            ;;
+        aarch64-apple-ios-sim)
+            rustflags_env="CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUSTFLAGS"
+            min_version_flag="-mios-simulator-version-min=$deployment_target"
+            ;;
+        x86_64-apple-ios)
+            rustflags_env="CARGO_TARGET_X86_64_APPLE_IOS_RUSTFLAGS"
+            min_version_flag="-mios-simulator-version-min=$deployment_target"
+            ;;
+    esac
+
+    if [[ -n "$rustflags_env" && -n "$min_version_flag" ]]; then
+        local current_rustflags="${!rustflags_env:-}"
+        if [[ "$current_rustflags" != *"$min_version_flag"* ]]; then
+            printf -v "$rustflags_env" '%s%s-C link-arg=%s' \
+                "$current_rustflags" \
+                "${current_rustflags:+ }" \
+                "$min_version_flag"
+            export "${rustflags_env}=${!rustflags_env}"
+        fi
+    fi
+
     if [[ "${#cargo_flags[@]}" -gt 0 ]]; then
         "$CARGO_BIN" build \
             "${cargo_flags[@]}" \
@@ -98,3 +131,8 @@ case "$platform" in
         exit 1
         ;;
 esac
+
+if [[ -n "$stamp_file" ]]; then
+    mkdir -p "$(dirname "$stamp_file")"
+    touch "$stamp_file"
+fi
