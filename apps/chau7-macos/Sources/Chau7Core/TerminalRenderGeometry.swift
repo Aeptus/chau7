@@ -49,6 +49,18 @@ public struct TerminalRenderGeometry: Equatable {
         max(0, surfaceFrame.height - CGFloat(rows) * cellSize.height)
     }
 
+    public var gridOrigin: CGPoint {
+        gridFrame.origin
+    }
+
+    public func remainderPixels(backingScaleFactor scale: CGFloat) -> CGSize {
+        let safeScale = scale.isFinite && scale > 0 ? scale : 1
+        return CGSize(
+            width: horizontalRemainder * safeScale,
+            height: verticalRemainder * safeScale
+        )
+    }
+
     public static func resolve(
         bounds: CGRect,
         inset: CGFloat,
@@ -123,6 +135,25 @@ public struct TerminalRenderGeometry: Equatable {
         return CellCoordinate(
             col: max(0, min(rawCol, cols - 1)),
             row: max(0, min(rawRow, rows - 1))
+        )
+    }
+
+    /// AppKit-space rectangle for a visible whole cell. Row 0 is the top
+    /// terminal row; the fractional bottom/right remainder is not assigned to
+    /// any cell.
+    public func cellRect(col: Int, row: Int) -> CGRect? {
+        guard col >= 0, col < cols,
+              row >= 0, row < rows,
+              cellSize.width > 0,
+              cellSize.height > 0 else {
+            return nil
+        }
+
+        return CGRect(
+            x: gridFrame.minX + CGFloat(col) * cellSize.width,
+            y: gridFrame.maxY - CGFloat(row + 1) * cellSize.height,
+            width: cellSize.width,
+            height: cellSize.height
         )
     }
 
