@@ -35,6 +35,29 @@ final class RustTermBridgeParityTests: XCTestCase {
         XCTAssertNotEqual(explicitlyUnderlinedLinkCell.flags & TerminalCell.underlineFlag, 0)
     }
 
+    func testDimensionMismatchStillSyncsOverlapAsRaceFallback() {
+        var cells = [
+            makeCell("a"),
+            makeCell("b"),
+            makeCell("c"),
+            makeCell("d")
+        ]
+        let bridge = RustTermBridge()
+        let buffer = TripleBufferedTerminal(rows: 1, cols: 2)
+
+        let result = syncAllowingMismatch(
+            cells: &cells,
+            rows: 2,
+            cols: 2,
+            bridge: bridge,
+            buffer: buffer
+        )
+
+        XCTAssertNil(result)
+        XCTAssertEqual(buffer.getCell(row: 0, col: 0).character, scalar("a"))
+        XCTAssertEqual(buffer.getCell(row: 0, col: 1).character, scalar("b"))
+    }
+
     private func sync(
         cells: inout [RustCellData],
         rows: UInt16,
@@ -42,8 +65,26 @@ final class RustTermBridgeParityTests: XCTestCase {
         bridge: RustTermBridge,
         buffer: TripleBufferedTerminal
     ) {
+        XCTAssertNotNil(
+            syncAllowingMismatch(
+                cells: &cells,
+                rows: rows,
+                cols: cols,
+                bridge: bridge,
+                buffer: buffer
+            )
+        )
+    }
+
+    private func syncAllowingMismatch(
+        cells: inout [RustCellData],
+        rows: UInt16,
+        cols: UInt16,
+        bridge: RustTermBridge,
+        buffer: TripleBufferedTerminal
+    ) -> (rows: Int, cols: Int)? {
         let capacity = cells.count
-        cells.withUnsafeMutableBufferPointer { cellBuffer in
+        return cells.withUnsafeMutableBufferPointer { cellBuffer in
             var snapshot = RustGridSnapshot(
                 cells: cellBuffer.baseAddress,
                 cols: cols,
@@ -55,13 +96,11 @@ final class RustTermBridgeParityTests: XCTestCase {
                 capacity: capacity
             )
 
-            withUnsafeMutablePointer(to: &snapshot) { snapshotPointer in
-                XCTAssertNotNil(
-                    bridge.syncToTripleBuffer(
-                        buffer,
-                        grid: snapshotPointer,
-                        viewID: 0
-                    )
+            return withUnsafeMutablePointer(to: &snapshot) { snapshotPointer in
+                bridge.syncToTripleBuffer(
+                    buffer,
+                    grid: snapshotPointer,
+                    viewID: 0
                 )
             }
         }

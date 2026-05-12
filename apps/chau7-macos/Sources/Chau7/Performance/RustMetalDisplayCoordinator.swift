@@ -48,12 +48,11 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var cols: Int
     private var fontConfigured = false
     private var lastFontConfigurationSignature: FontConfigurationSignature?
-    private var lastTripleBufferRebuildSignature = ""
-    private var lastTripleBufferRebuildAt: CFAbsoluteTime = 0
     private var lastLigaturesEnabled: Bool?
     private var lastCursorBlinkEnabled: Bool?
     private var pendingRetryDisplay = false
     private var retryState = TerminalRenderRetryState()
+    private var didLogFirstGridDimensionMismatch = false
 
     // MARK: - Blink Timer
 
@@ -387,6 +386,39 @@ final class RustMetalDisplayCoordinator: NSObject {
         Log.info("RustMetalDisplayCoordinator: Resized to \(cols)x\(rows)")
         terminalView?.logRenderSurfaceReport(reason: "metal-resize", force: true)
         scheduleDisplay()
+    }
+
+    /// Aligns the triple buffer to the Rust grid before syncing cell data.
+    /// Layout can resize the Metal surface before Rust has produced a grid at
+    /// the new PTY dimensions; preflighting avoids a partial sync into a
+    /// wrong-sized buffer and keeps profiler mismatches for true races.
+    @discardableResult
+    private func rebuildTripleBufferForGridDimensionsIfNeeded(
+        rows newRows: Int,
+        cols newCols: Int,
+        reason: String
+    ) -> Bool {
+        guard newRows > 0, newCols > 0 else { return false }
+        guard tripleBuffer.rows != newRows || tripleBuffer.cols != newCols else { return false }
+
+        let previousRows = tripleBuffer.rows
+        let previousCols = tripleBuffer.cols
+        rows = newRows
+        cols = newCols
+        tripleBuffer = TripleBufferedTerminal(rows: newRows, cols: newCols)
+
+        if !didLogFirstGridDimensionMismatch {
+            didLogFirstGridDimensionMismatch = true
+            Log.info(
+                "RustMetalDisplayCoordinator: grid dimensions diverged before sync reason=\(reason) grid=\(newCols)x\(newRows) buffer=\(previousCols)x\(previousRows); rebuilt triple buffer"
+            )
+            terminalView?.logRenderSurfaceReport(reason: "grid-dimension-mismatch", force: true)
+        } else {
+            Log.debug(
+                "RustMetalDisplayCoordinator: rebuilt triple buffer for grid dimensions reason=\(reason) grid=\(newCols)x\(newRows) buffer=\(previousCols)x\(previousRows)"
+            )
+        }
+        return true
     }
 
     /// Called when the color scheme changes.
@@ -744,36 +776,28 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                     source: "metal-grid"
                 )
             }
+            rebuildTripleBufferForGridDimensionsIfNeeded(
+                rows: Int(gridPtr.pointee.rows),
+                cols: Int(gridPtr.pointee.cols),
+                reason: "pre-sync"
+            )
             if bridge.syncToTripleBuffer(tripleBuffer, grid: gridPtr, viewID: renderViewID) == nil {
                 let gs = gridPtr.pointee
                 let newRows = Int(gs.rows)
                 let newCols = Int(gs.cols)
                 if newRows > 0, newCols > 0 {
-                    let rebuildSignature = "\(newCols)x\(newRows)"
                     let rebuildStartedAt = CFAbsoluteTimeGetCurrent()
-                    let sameDimensions = newRows == rows && newCols == cols
-                    let isRapidDuplicate = sameDimensions && rebuildSignature == lastTripleBufferRebuildSignature
-                        && rebuildStartedAt - lastTripleBufferRebuildAt < 0.25
-
-                    if isRapidDuplicate {
-                        tripleBuffer.markFullRefresh()
-                    } else {
-                        if rebuildSignature != lastTripleBufferRebuildSignature || rebuildStartedAt - lastTripleBufferRebuildAt >= 1.0 {
-                            Log.info("RustMetalDisplayCoordinator: Grid dimensions changed to \(rebuildSignature), rebuilding triple buffer")
-                        }
-                        rows = newRows
-                        cols = newCols
-                        tripleBuffer = TripleBufferedTerminal(rows: newRows, cols: newCols)
-                        lastTripleBufferRebuildSignature = rebuildSignature
-                        lastTripleBufferRebuildAt = rebuildStartedAt
-                    }
-
+                    rebuildTripleBufferForGridDimensionsIfNeeded(
+                        rows: newRows,
+                        cols: newCols,
+                        reason: "bridge-mismatch"
+                    )
                     bridge.syncToTripleBuffer(tripleBuffer, grid: gridPtr, viewID: renderViewID)
                     FeatureProfiler.shared.recordMainThreadStallIfNeeded(
                         operation: "RustMetalDisplayCoordinator.rebuildTripleBuffer",
                         startedAt: rebuildStartedAt,
                         thresholdMs: 120,
-                        metadata: "grid=\(rebuildSignature) duplicate=\(isRapidDuplicate)"
+                        metadata: "grid=\(newCols)x\(newRows)"
                     )
                 }
             }
