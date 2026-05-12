@@ -30,11 +30,11 @@ import (
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
 
-	"chau7-remote/internal/protocol"
+	"github.com/chau7/chau7-remote/internal/protocol"
 )
 
 const (
-    defaultRelayURL     = "wss://relay.chau7.sh/connect"
+	defaultRelayURL     = "wss://relay.chau7.sh/connect"
 	pairingTTL          = 10 * time.Minute
 	maxFrameSize        = 5 * 1024 * 1024
 	relayRequestTimeout = 10 * time.Second

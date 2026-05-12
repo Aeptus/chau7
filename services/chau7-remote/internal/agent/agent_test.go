@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"chau7-remote/internal/protocol"
+	"github.com/chau7/chau7-remote/internal/protocol"
 )
 
 func TestIsPairRequestAuthorizedAcceptsValidPairingCode(t *testing.T) {

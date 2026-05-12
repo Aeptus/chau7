@@ -17,7 +17,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"chau7-remote/internal/agent"
+	"github.com/chau7/chau7-remote/internal/agent"
 )
 
 func main() {

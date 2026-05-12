@@ -1,4 +1,4 @@
-module chau7-remote
+module github.com/chau7/chau7-remote
 
 go 1.25.0
 
