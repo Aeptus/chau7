@@ -474,6 +474,56 @@ public extension CTORuntimeSnapshot {
     }
 }
 
+// MARK: - Assessment Transitions
+
+/// Describes a transition between two consecutive `CTORuntimeAssessment`
+/// emissions for the runtime-state-change log line. Pure-data result of
+/// comparing two assessments so the comparison logic can be unit-tested
+/// in the core target.
+public enum CTOAssessmentTransition: Equatable, Sendable {
+    /// First emission since reset / launch — no previous assessment to
+    /// compare to. Carries the initial state for the log line so timelines
+    /// have an anchor.
+    case initial(state: CTORuntimeHealthState, score: Int, issues: [CTORuntimeAssessmentIssue])
+    /// State worsened (e.g. healthy → warning, warning → critical).
+    /// `metadata` is the pre-formatted dictionary for `LogEnhanced`.
+    case degraded(metadata: [String: String])
+    /// State improved (e.g. warning → healthy, critical → warning).
+    case recovered(metadata: [String: String])
+
+    /// Compute the transition (if any) between `previous` and `current`.
+    /// Returns nil when both assessments share the same `state` — score
+    /// movement within the same state band is observable through
+    /// `emitSummary` already and doesn't need its own line.
+    public static func between(
+        previous: CTORuntimeAssessment?, current: CTORuntimeAssessment
+    ) -> CTOAssessmentTransition? {
+        guard let previous else {
+            return .initial(state: current.state, score: current.score, issues: current.issues)
+        }
+        guard previous.state != current.state else { return nil }
+
+        let previousIssues = Set(previous.issues)
+        let currentIssues = Set(current.issues)
+        let addedIssues = currentIssues.subtracting(previousIssues).map(\.rawValue).sorted()
+        let resolvedIssues = previousIssues.subtracting(currentIssues).map(\.rawValue).sorted()
+
+        let metadata: [String: String] = [
+            "from": previous.state.rawValue,
+            "to": current.state.rawValue,
+            "scoreFrom": "\(previous.score)",
+            "scoreTo": "\(current.score)",
+            "scoreDelta": "\(current.score - previous.score)",
+            "addedIssues": addedIssues.joined(separator: ","),
+            "resolvedIssues": resolvedIssues.joined(separator: ",")
+        ]
+
+        return current.score > previous.score
+            ? .recovered(metadata: metadata)
+            : .degraded(metadata: metadata)
+    }
+}
+
 // MARK: - Health Scoring
 
 /// Continuous-scoring functions for each CTO health rule. Pulled into a

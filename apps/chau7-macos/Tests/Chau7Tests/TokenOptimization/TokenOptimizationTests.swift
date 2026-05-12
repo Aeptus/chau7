@@ -359,6 +359,79 @@ final class TokenOptimizationCoreTests: XCTestCase {
         XCTAssertEqual(penalty, 8) // 15 * 0.5 = 7.5, rounded to 8
     }
 
+    // MARK: - Assessment Transition Pure Logic
+
+    /// First emission (no previous assessment) should report `.initial`
+    /// carrying the current state — this is the "anchor" log the
+    /// transition emitter logs at INFO so log timelines have a known
+    /// starting point.
+    func testTransitionInitialOnFirstEmission() {
+        let current = makeAssessment(state: .healthy, score: 95, issues: [])
+        let transition = CTOAssessmentTransition.between(previous: nil, current: current)
+        switch transition {
+        case .initial(let state, let score, let issues):
+            XCTAssertEqual(state, .healthy)
+            XCTAssertEqual(score, 95)
+            XCTAssertEqual(issues, [])
+        default:
+            XCTFail("Expected .initial for first emission, got \(String(describing: transition))")
+        }
+    }
+
+    /// No transition is emitted when the state hasn't changed, even if
+    /// the score moved within the same band. Score-only movements are
+    /// observable through the regular summary log.
+    func testTransitionSuppressedWhenStateUnchanged() {
+        let previous = makeAssessment(state: .warning, score: 70, issues: [.lowChangeRate])
+        let current = makeAssessment(state: .warning, score: 65, issues: [.lowChangeRate, .highDeferredSkips])
+        XCTAssertNil(CTOAssessmentTransition.between(previous: previous, current: current))
+    }
+
+    func testTransitionDegradedCarriesDelta() {
+        let previous = makeAssessment(state: .healthy, score: 95, issues: [])
+        let current = makeAssessment(state: .warning, score: 75, issues: [.lowChangeRate])
+        let transition = CTOAssessmentTransition.between(previous: previous, current: current)
+        guard case .degraded(let metadata) = transition else {
+            XCTFail("Expected .degraded, got \(String(describing: transition))")
+            return
+        }
+        XCTAssertEqual(metadata["from"], "healthy")
+        XCTAssertEqual(metadata["to"], "warning")
+        XCTAssertEqual(metadata["scoreFrom"], "95")
+        XCTAssertEqual(metadata["scoreTo"], "75")
+        XCTAssertEqual(metadata["scoreDelta"], "-20")
+        XCTAssertEqual(metadata["addedIssues"], "lowChangeRate")
+        XCTAssertEqual(metadata["resolvedIssues"], "")
+    }
+
+    func testTransitionRecoveredCarriesResolvedIssues() {
+        let previous = makeAssessment(
+            state: .critical, score: 40,
+            issues: [.lowChangeRate, .lowDeferredFlushRate, .highDeferredSkips]
+        )
+        let current = makeAssessment(
+            state: .warning, score: 70,
+            issues: [.lowChangeRate]
+        )
+        let transition = CTOAssessmentTransition.between(previous: previous, current: current)
+        guard case .recovered(let metadata) = transition else {
+            XCTFail("Expected .recovered, got \(String(describing: transition))")
+            return
+        }
+        XCTAssertEqual(metadata["scoreDelta"], "30")
+        // Resolved issues are sorted; two of three previous issues resolved.
+        XCTAssertEqual(metadata["resolvedIssues"], "highDeferredSkips,lowDeferredFlushRate")
+        XCTAssertEqual(metadata["addedIssues"], "")
+    }
+
+    private func makeAssessment(
+        state: CTORuntimeHealthState,
+        score: Int,
+        issues: [CTORuntimeAssessmentIssue]
+    ) -> CTORuntimeAssessment {
+        CTORuntimeAssessment(state: state, score: score, issues: issues, summary: state.rawValue)
+    }
+
     // MARK: - TabTokenOptOverride Properties
 
     func testTabTokenOptOverrideAllCases() {

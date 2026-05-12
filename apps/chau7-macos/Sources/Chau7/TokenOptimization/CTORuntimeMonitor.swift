@@ -36,6 +36,7 @@ final class CTORuntimeMonitor {
     private var deferredFlushDelayLastMs: Int?
     private var deferredFlushDelayCount = 0
     private var currentMode: TokenOptimizationMode = .off
+    private var lastEmittedAssessment: CTORuntimeAssessment?
     private let firstSeenAt: Date
     private let maxRecentDecisions = 50
     private let summaryInterval = 25
@@ -120,6 +121,7 @@ final class CTORuntimeMonitor {
             deferredFlushDelayLastMs = nil
             deferredFlushDelayCount = 0
             currentMode = .off
+            lastEmittedAssessment = nil
         }
         LogEnhanced.info(.cto, "cto monitor reset", metadata: ["scope": "manual"])
     }
@@ -447,6 +449,55 @@ final class CTORuntimeMonitor {
         case .warning, .critical:
             LogEnhanced.warn(.cto, "CTO runtime summary", metadata: metadata)
         }
+
+        emitAssessmentTransitionIfChanged(assessment)
+    }
+
+    /// Log a one-line transition record whenever `emitSummary` observes a
+    /// change in `assessment.state` compared to the previous summary. The
+    /// previous code only emitted at WARN when the state was non-healthy,
+    /// so the recovery edge (warning → healthy, critical → warning) was
+    /// silent — you couldn't tell from logs whether the system *got
+    /// better* after a fix, only that it had been bad earlier. This
+    /// records both edges symmetrically:
+    ///   - degradations (healthy → warning, warning → critical, …) at WARN
+    ///   - recoveries  (warning → healthy, critical → warning, …) at INFO
+    /// New issues and resolved issues are included so the line carries
+    /// the actionable delta, not just a state label.
+    private func emitAssessmentTransitionIfChanged(_ current: CTORuntimeAssessment) {
+        let previous = withLock { lastEmittedAssessment }
+        withLock { lastEmittedAssessment = current }
+
+        guard let transition = CTOAssessmentTransition.between(previous: previous, current: current) else {
+            return
+        }
+
+        switch transition {
+        case .initial(let state, let score, let issues):
+            LogEnhanced.info(
+                .cto,
+                "CTO runtime state initial",
+                metadata: [
+                    "state": state.rawValue,
+                    "score": "\(score)",
+                    "issues": issues.map(\.rawValue).joined(separator: ",")
+                ]
+            )
+
+        case .degraded(let metadata):
+            LogEnhanced.warn(.cto, "CTO runtime state degraded", metadata: metadata)
+
+        case .recovered(let metadata):
+            LogEnhanced.info(.cto, "CTO runtime state recovered", metadata: metadata)
+        }
+    }
+
+    /// Test accessor: most recent assessment recorded by `emitSummary`.
+    /// Production code should use `snapshot().assessment` for live data;
+    /// this hook exists so transition-emission tests can assert the
+    /// monitor's view of its own history.
+    var lastEmittedAssessmentForTesting: CTORuntimeAssessment? {
+        withLock { lastEmittedAssessment }
     }
 
     // MARK: - Private
