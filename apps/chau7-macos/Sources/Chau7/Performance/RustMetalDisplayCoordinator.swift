@@ -515,6 +515,15 @@ final class RustMetalDisplayCoordinator: NSObject {
             if let oldContainer = oldView.superview as? RustTerminalContainerView {
                 oldContainer.metalCoordinator = nil
             }
+
+            // The coordinator is shared across tabs, so stale present-only
+            // requests from the previous view must not survive the handoff.
+            // Otherwise a rebinding can briefly present the old frame into the
+            // new container before the new grid sync lands.
+            renderRequests.reset()
+            retryState.recordSuccess()
+            pendingRetryDisplay = false
+            pendingDeferredSync = false
         }
 
         // 2. Swap grid provider + view reference

@@ -252,6 +252,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (with confirmation).
 - Default start directory and optional startup commands.
 - Copy on select, Option+click cursor positioning, paste escaping.
+- Speculative local echo now self-cleans when shell redraws or render-phase/interactivity changes make the optimistic overlay stale, preventing duplicated typed characters across live and passive shell surfaces.
 
 ## Performance
 
@@ -272,6 +273,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | **Feature profiler** | Per-feature timing with os.signpost integration |
 | **CPU/Metal layout parity** | Pure geometry contract and tests keep CPU and Metal rows, columns, cursor cells, mouse mapping, and remainder pixels aligned |
 | **Render request coalescing diagnostics** | Latest-frame-wins sync/present counters expose how many obsolete intermediate frames were skipped during heavy AI-output bursts |
+| **Shared Metal handoff reset** | Cross-view coordinator switches clear pending render work and retry/deferred-sync state so one tab cannot briefly present another tab's stale frame |
 | **Typed Metal retry recovery** | Font, grid, zero-size, drawable, zero-cell, and commit failures retry safely with sampled diagnostics and recovery reset after the next committed frame |
 | **Render surface diagnostics** | Bug reports include window content size, terminal/surface/grid geometry, rows/columns, cell size, point and pixel remainders, Metal view/drawable size, frame age, coalescing counters, and retry state |
 | **Metal parity audit** | Tracked parity matrix for wide glyphs, emoji fallback, ligatures, OSC8 links, selection, local echo overlays, inline images, and command-block tinting, with covered/partial/external-overlay status |

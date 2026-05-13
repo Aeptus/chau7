@@ -158,4 +158,23 @@ final class TerminalRenderRequestCoalescerTests: XCTestCase {
         XCTAssertFalse(coalescer.completeCommittedDraw(followUp))
         XCTAssertNil(coalescer.drawRequest())
     }
+
+    func testResetDropsStalePendingRequestsAndDiagnostics() {
+        var coalescer = TerminalRenderRequestCoalescer(needsSync: false, needsPresent: false)
+
+        coalescer.requestPresent()
+        coalescer.requestSync()
+        XCTAssertNotNil(coalescer.drawRequest())
+
+        coalescer.reset()
+
+        XCTAssertFalse(coalescer.needsSync)
+        XCTAssertFalse(coalescer.needsPresent)
+        XCTAssertEqual(coalescer.diagnostics.pendingRequestCount, 0)
+        XCTAssertEqual(coalescer.diagnostics.syncRequestCount, 0)
+        XCTAssertEqual(coalescer.diagnostics.presentRequestCount, 0)
+        XCTAssertEqual(coalescer.diagnostics.coalescedSyncRequestCount, 0)
+        XCTAssertEqual(coalescer.diagnostics.coalescedPresentRequestCount, 0)
+        XCTAssertNil(coalescer.drawRequest())
+    }
 }

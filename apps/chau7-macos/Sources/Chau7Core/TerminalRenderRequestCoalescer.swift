@@ -90,6 +90,20 @@ public struct TerminalRenderRequestCoalescer: Equatable, Sendable {
         )
     }
 
+    public mutating func reset(
+        needsSync: Bool = false,
+        needsPresent: Bool = false
+    ) {
+        self.needsSync = needsSync
+        self.needsPresent = needsPresent
+        syncGeneration = needsSync ? 1 : 0
+        presentGeneration = needsPresent ? 1 : 0
+        syncRequestCount = needsSync ? 1 : 0
+        presentRequestCount = needsPresent ? 1 : 0
+        coalescedSyncRequestCount = 0
+        coalescedPresentRequestCount = 0
+    }
+
     /// Clears only the generations consumed by the committed draw.
     /// Returns true when a newer request remains pending and needs another draw.
     @discardableResult

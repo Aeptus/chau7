@@ -27,6 +27,16 @@ extension RustTerminalView {
             return data
         }
 
+        // Prompt redraws and cursor-motion sequences are authoritative. If we
+        // keep suppressing bytes after the PTY has repositioned the cursor, the
+        // speculative overlay can remain on the old row while the real text is
+        // painted elsewhere.
+        if shouldBypassLocalEchoSuppression(for: data) {
+            clearLocalEchoOverlay()
+            detectEchoMode(in: data)
+            return data
+        }
+
         var filtered: [UInt8] = []
         filtered.reserveCapacity(data.count)
 
@@ -91,6 +101,19 @@ extension RustTerminalView {
         }
 
         return Data(filtered)
+    }
+
+    func shouldBypassLocalEchoSuppression(for data: Data) -> Bool {
+        for byte in data {
+            switch byte {
+            case 0x1B, // ESC: cursor movement / redraw / OSC / CSI
+                 0x0D: // CR: prompt redraws often rewrite the current line
+                return true
+            default:
+                continue
+            }
+        }
+        return false
     }
 
     /// Detect patterns that indicate echo should be disabled (password prompts, raw mode)

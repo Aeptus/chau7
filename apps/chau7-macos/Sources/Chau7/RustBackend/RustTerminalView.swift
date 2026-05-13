@@ -3094,6 +3094,7 @@ final class RustTerminalView: NSView {
 
     func applyRenderPhase(_ phase: TabRenderPhase, isInteractive: Bool, reason: String) {
         let previousPhase = currentRenderPhase
+        let previousInteractive = self.isInteractive
         currentRenderPhase = phase
         self.isInteractive = isInteractive
         let shouldHide = !phase.keepsVisibleSurface
@@ -3111,6 +3112,10 @@ final class RustTerminalView: NSView {
         // channels and starve the selected tab.
         if !phase.allowsLivePresentation {
             stopEventDrain()
+        }
+        if localEchoOverlay.isEmpty == false,
+           !phase.allowsLivePresentation || !isInteractive || previousInteractive != isInteractive {
+            clearLocalEchoOverlay()
         }
         updatePollingMode(reason: "applyRenderPhase:\(phase.rawValue)")
         refreshRenderPipelineProfilingState(mode: "\(currentRenderLoopMode):\(phase.rawValue)")
