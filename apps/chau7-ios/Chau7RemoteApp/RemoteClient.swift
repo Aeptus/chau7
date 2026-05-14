@@ -996,7 +996,7 @@ final class RemoteClient {
                 if success {
                     self.pendingApprovalResponses.removeValue(forKey: requestID)
                     self.completeApprovalResponse(requestID: requestID, approved: approved)
-                    if self.pendingApprovalResponses.isEmpty, self.currentAppState == .foreground {
+                    if self.pendingApprovalResponses.isEmpty {
                         self.endBackgroundKeepalive()
                     }
                 } else {
@@ -1361,7 +1361,7 @@ final class RemoteClient {
 
     private func pendingStateRequest() -> URLRequest? {
         guard let pairing = pairingInfo else { return nil }
-        guard var components = URLComponents(string: pairing.relayURL.strippingTrailingSlash) else {
+        guard var components = Self.relayAPIURLComponents(from: pairing.relayURL) else {
             return nil
         }
         components.path += "/pending/\(pairing.deviceID)"
@@ -1371,6 +1371,25 @@ final class RemoteClient {
         request.timeoutInterval = 10
         request.cachePolicy = .reloadIgnoringLocalCacheData
         return request
+    }
+
+    private static func relayAPIURLComponents(from relayURL: String) -> URLComponents? {
+        var trimmed = relayURL.strippingTrailingSlash
+        if trimmed.hasSuffix("/connect") {
+            trimmed.removeLast("/connect".count)
+        }
+        guard var components = URLComponents(string: trimmed) else {
+            return nil
+        }
+        switch components.scheme {
+        case "wss":
+            components.scheme = "https"
+        case "ws":
+            components.scheme = "http"
+        default:
+            break
+        }
+        return components
     }
 
     private func applyPendingApprovals(_ payloads: [ApprovalRequestPayload]) {
@@ -1499,11 +1518,14 @@ final class RemoteClient {
 
     private func beginBackgroundKeepalive() {
         guard backgroundTaskID == .invalid else { return }
-        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "ch7.remote.approvals") { [weak self] in
+        var taskID: UIBackgroundTaskIdentifier = .invalid
+        taskID = UIApplication.shared.beginBackgroundTask(withName: "ch7.remote.approvals") { [weak self] in
+            UIApplication.shared.endBackgroundTask(taskID)
             Task { @MainActor [weak self] in
-                self?.handleBackgroundTaskExpiration()
+                self?.handleBackgroundTaskExpiration(expiredTaskID: taskID)
             }
         }
+        backgroundTaskID = taskID
     }
 
     private func endBackgroundKeepalive() {
@@ -1512,8 +1534,10 @@ final class RemoteClient {
         backgroundTaskID = .invalid
     }
 
-    private func handleBackgroundTaskExpiration() {
-        endBackgroundKeepalive()
+    private func handleBackgroundTaskExpiration(expiredTaskID: UIBackgroundTaskIdentifier) {
+        if backgroundTaskID == expiredTaskID {
+            backgroundTaskID = .invalid
+        }
         suppressLocalNotificationsUntil = Date().addingTimeInterval(Self.pushNotificationSuppressionWindow)
         disconnect(autoReconnect: false, preserveApprovalsAndPrompts: true)
         status = "Background suspended"
