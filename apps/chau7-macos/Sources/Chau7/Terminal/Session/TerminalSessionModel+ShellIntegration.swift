@@ -340,10 +340,46 @@ extension TerminalSessionModel {
         if isApprovalRequired || isWaiting {
             DispatchQueue.main.async { [weak self] in
                 guard let self, status == .running || status == .stuck else { return }
-                status = isApprovalRequired ? .approvalRequired : .waitingForInput
+                let detectedStatus: CommandStatus = isApprovalRequired ? .approvalRequired : .waitingForInput
+                status = detectedStatus
                 Log.trace("AI agent blocked detected status=\(status.rawValue)")
+                emitTerminalDetectedAttentionIfNeeded(status: detectedStatus)
             }
         }
+    }
+
+    private func emitTerminalDetectedAttentionIfNeeded(status detectedStatus: CommandStatus) {
+        guard detectedStatus == .waitingForInput || detectedStatus == .approvalRequired else { return }
+        guard let ownerTabID else { return }
+        guard !hasPendingResumePrefillActivity else { return }
+        guard !suppressWaitingInputFallbackUntilNextUserCommand else { return }
+        guard !deliveredSystemResumePrefillSinceLastUserCommand else { return }
+        guard pendingCommandLine.flatMap(AIResumeParser.extractMetadata(from:)) == nil else { return }
+        guard let provider = effectiveAIProvider,
+              let source = AIEventSource.forProvider(provider) else { return }
+
+        let toolName = aiDisplayAppName
+            ?? Self.displayName(fromProvider: provider)
+            ?? notificationTabName
+        let projectName = URL(fileURLWithPath: currentDirectory).lastPathComponent
+        let location = projectName.isEmpty ? notificationTabName : projectName
+        let type = detectedStatus == .approvalRequired ? "permission" : "waiting_input"
+        let message = detectedStatus == .approvalRequired
+            ? "\(toolName) needs your approval in \(location)"
+            : "\(toolName) is waiting for your input in \(location)"
+
+        appModel?.recordEvent(
+            source: source,
+            type: type,
+            tool: toolName,
+            message: message,
+            notify: true,
+            directory: currentDirectory,
+            tabID: ownerTabID,
+            sessionID: effectiveAISessionId,
+            producer: "terminal_wait_pattern_attention",
+            reliability: .heuristic
+        )
     }
 
     func processAILogOutput(_ data: Data) -> (loggable: Data?, exitCode: Int?) {

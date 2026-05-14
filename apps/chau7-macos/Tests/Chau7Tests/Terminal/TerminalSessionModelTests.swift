@@ -1024,6 +1024,35 @@ final class TerminalSessionModelTests: XCTestCase {
         RuntimeSessionManager.shared.resetForTesting()
     }
 
+    func testTerminalWaitPatternEmitsHeuristicWaitingInputEvent() async {
+        RuntimeSessionManager.shared.resetForTesting()
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let tabID = UUID()
+
+        session.ownerTabID = tabID
+        session.currentDirectory = "/tmp/aethyme"
+        session.activeAppName = "Claude"
+        session.lastDetectedAppName = "Claude"
+        session.lastAIProvider = "claude"
+        session.lastAISessionId = "claude-session-1"
+        session.status = .running
+
+        session.handleOutput(Data("Proceed?".utf8))
+        await flushMainQueue()
+        await flushMainQueue()
+
+        let event = model.recentEvents.last
+        XCTAssertEqual(session.status, .waitingForInput)
+        XCTAssertEqual(event?.source, .claudeCode)
+        XCTAssertEqual(event?.type, "waiting_input")
+        XCTAssertEqual(event?.tabID, tabID)
+        XCTAssertEqual(event?.sessionID, "claude-session-1")
+        XCTAssertEqual(event?.producer, "terminal_wait_pattern_attention")
+        XCTAssertEqual(event?.reliability, .heuristic)
+        RuntimeSessionManager.shared.resetForTesting()
+    }
+
     func testHandlePromptDetectedSkipsFallbackWhenRuntimeSessionOwnsTab() async {
         RuntimeSessionManager.shared.resetForTesting()
         let model = AppModel()
