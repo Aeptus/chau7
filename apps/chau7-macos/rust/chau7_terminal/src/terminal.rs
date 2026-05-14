@@ -1,5 +1,6 @@
 //! Core terminal emulator: Chau7Terminal struct, PTY management, and terminal operations.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Arc;
@@ -47,6 +48,66 @@ struct AnsiCellStyle {
 /// the moment it happens. A power-of-two so `is_multiple_of` is a single
 /// AND in release builds.
 const INVARIANT_CHECK_PERIOD: u64 = 16;
+const MALLOC_STACK_LOGGING_WARNING: &[u8] =
+    b" MallocStackLogging: can't turn off malloc stack logging because it was not enabled.";
+
+fn filter_terminal_output_noise<'a>(data: &'a [u8]) -> Cow<'a, [u8]> {
+    if !data
+        .windows(b"MallocStackLogging".len())
+        .any(|window| window == b"MallocStackLogging")
+    {
+        return Cow::Borrowed(data);
+    }
+
+    let mut filtered = Vec::with_capacity(data.len());
+    let mut line_start = 0usize;
+    for (index, byte) in data.iter().enumerate() {
+        if *byte != b'\n' {
+            continue;
+        }
+        let line = &data[line_start..=index];
+        if !is_suppressed_terminal_noise_line(line) {
+            filtered.extend_from_slice(line);
+        }
+        line_start = index + 1;
+    }
+
+    if line_start < data.len() {
+        let tail = &data[line_start..];
+        if !is_suppressed_terminal_noise_line(tail) {
+            filtered.extend_from_slice(tail);
+        }
+    }
+
+    if filtered.len() == data.len() {
+        Cow::Borrowed(data)
+    } else {
+        Cow::Owned(filtered)
+    }
+}
+
+fn is_suppressed_terminal_noise_line(line: &[u8]) -> bool {
+    let mut start = 0usize;
+    while start < line.len() && matches!(line[start], b' ' | b'\t') {
+        start += 1;
+    }
+    let mut end = line.len();
+    while end > start && matches!(line[end - 1], b'\r' | b'\n' | b' ' | b'\t') {
+        end -= 1;
+    }
+    let trimmed = &line[start..end];
+    if !trimmed.starts_with(b"codex(") || !trimmed.ends_with(MALLOC_STACK_LOGGING_WARNING) {
+        return false;
+    }
+
+    let process_end = trimmed.len() - MALLOC_STACK_LOGGING_WARNING.len();
+    let pid_with_close_paren = &trimmed[b"codex(".len()..process_end];
+    if let Some(pid) = pid_with_close_paren.strip_suffix(b")") {
+        !pid.is_empty() && pid.iter().all(u8::is_ascii_digit)
+    } else {
+        false
+    }
+}
 
 // ============================================================================
 // Error types
@@ -762,9 +823,12 @@ impl Chau7Terminal {
             match pty_rx.recv_timeout(timeout) {
                 Ok(PtyMessage::Data(data)) => {
                     bytes_this_poll += data.len();
-                    local_output.extend_from_slice(&data);
-                    self.process_pty_data(&data);
-                    had_data = true;
+                    let visible_data = filter_terminal_output_noise(&data);
+                    if !visible_data.is_empty() {
+                        local_output.extend_from_slice(visible_data.as_ref());
+                        self.process_pty_data(visible_data.as_ref());
+                        had_data = true;
+                    }
                 }
                 Ok(PtyMessage::Closed) => {
                     info!("[terminal-{}] PTY closed message received in poll", self.id);
@@ -785,9 +849,12 @@ impl Chau7Terminal {
                 match pty_rx.try_recv() {
                     Ok(PtyMessage::Data(data)) => {
                         bytes_this_poll += data.len();
-                        local_output.extend_from_slice(&data);
-                        self.process_pty_data(&data);
-                        had_data = true;
+                        let visible_data = filter_terminal_output_noise(&data);
+                        if !visible_data.is_empty() {
+                            local_output.extend_from_slice(visible_data.as_ref());
+                            self.process_pty_data(visible_data.as_ref());
+                            had_data = true;
+                        }
                     }
                     Ok(PtyMessage::Closed) => {
                         info!(
@@ -2174,6 +2241,27 @@ impl Drop for Chau7Terminal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn filters_codex_malloc_stack_logging_noise_line() {
+        let input = b"before\r\ncodex(67690) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.\r\nafter\n";
+        let filtered = filter_terminal_output_noise(input);
+        assert_eq!(filtered.as_ref(), b"before\r\nafter\n");
+    }
+
+    #[test]
+    fn filters_codex_malloc_stack_logging_noise_without_newline() {
+        let input = b"codex(67690) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.";
+        let filtered = filter_terminal_output_noise(input);
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn keeps_related_non_matching_output() {
+        let input = b"echo codex(67690) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.\n";
+        let filtered = filter_terminal_output_noise(input);
+        assert_eq!(filtered.as_ref(), input);
+    }
 
     #[test]
     fn test_grid_snapshot_has_visible_content() {
