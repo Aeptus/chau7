@@ -239,6 +239,9 @@ final class AttachedSessionNoteTests: XCTestCase {
             }
             RunLoop.main.run(until: Date().addingTimeInterval(pollInterval))
         }
+        if condition() {
+            return
+        }
         XCTFail("Condition not met before timeout", file: file, line: line)
     }
 }
