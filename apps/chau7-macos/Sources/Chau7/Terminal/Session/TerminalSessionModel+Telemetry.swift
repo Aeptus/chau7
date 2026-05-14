@@ -102,7 +102,16 @@ extension TerminalSessionModel {
             : title
         let appName = activeAppName ?? "shell"
         let avg = averageMs ?? -1
-        Log.warn("Latency spike: \(kind)=\(Int(elapsedMs.rounded()))ms avg=\(avg)ms p50/p95=\(percentiles) tab=\(tabName) app=\(appName) cwd=\(tabPathDisplayName())")
+        // Tag with current CTO state for this session so we can answer
+        // "is CTO contributing to input latency?" from logs alone. The
+        // `stat()` is cheap (single syscall) and the spike path already
+        // includes higher-cost work like percentile computation.
+        let ctoActive = CTOFlagManager.isFlagActive(sessionID: tabIdentifier)
+        Log.warn(
+            "Latency spike: \(kind)=\(Int(elapsedMs.rounded()))ms avg=\(avg)ms " +
+                "p50/p95=\(percentiles) tab=\(tabName) app=\(appName) " +
+                "cwd=\(tabPathDisplayName()) cto_active=\(ctoActive)"
+        )
 
         let percentileValues = latencyPercentiles(for: samples)
         recordLagEvent(
