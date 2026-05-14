@@ -10,9 +10,8 @@ import Chau7Core
 /// MCP sessions run on dedicated background queues. Read-only operations use
 /// DispatchQueue.main.sync. Input-sending operations (execInTab, sendInput)
 /// validate synchronously but send asynchronously via DispatchQueue.main.async
-/// to avoid deadlocking: the onInput callback chain re-enters Rust FFI
-/// (isPtyEchoDisabled → pty_handle.lock()), which deadlocks if the Rust poll
-/// thread concurrently holds that lock for PtyWrite event processing.
+/// so PTY backpressure or input bookkeeping cannot stall the control-plane
+/// caller while it is waiting for a response.
 final class TerminalControlService {
     static let shared = TerminalControlService()
 
@@ -355,11 +354,9 @@ final class TerminalControlService {
             return err
         }
 
-        // Validate tab existence and prompt state synchronously on main,
-        // but send the actual input asynchronously to avoid deadlocking
-        // the main thread. The Rust terminal's sendInput → onInput callback
-        // chain can re-enter pty_handle.lock() (via isPtyEchoDisabled),
-        // which deadlocks if the poll thread holds that lock concurrently.
+        // Validate tab existence and prompt state synchronously on main, but
+        // send the actual input asynchronously. The control plane should not
+        // wait inside input bookkeeping or PTY writes under backpressure.
         let validationResult: (
             isValid: Bool,
             error: String?,
@@ -510,8 +507,8 @@ final class TerminalControlService {
         }
 
         // Validate tab existence synchronously, send input asynchronously.
-        // Same deadlock avoidance as execInTab — sendInput triggers the
-        // same onInput → handleInputLine → isPtyEchoDisabled → pty_handle.lock() chain.
+        // Same control-plane isolation as execInTab: do not wait inside input
+        // bookkeeping or PTY writes under backpressure.
         let tabExists: Bool = onMain {
             self.resolveTab(tabID) != nil
         }

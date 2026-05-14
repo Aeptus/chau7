@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use alacritty_terminal::event::Event;
@@ -164,6 +164,12 @@ pub struct Chau7Terminal {
     pub(crate) processor: Mutex<Processor>,
     /// PTY handle for writing input when backed by a live shell.
     pub(crate) pty_handle: Mutex<Option<PtyHandle>>,
+    /// Duplicated master PTY fd used only for echo detection.
+    ///
+    /// Keep this separate from `pty_handle`: PTY writes can block under
+    /// backpressure while holding that mutex, and echo detection runs from
+    /// Swift input bookkeeping on the main thread.
+    pub(crate) echo_fd: AtomicI32,
     /// Child process handle (to avoid zombies)
     pub(crate) child: Mutex<Option<Box<dyn portable_pty::Child + Send + Sync>>>,
     /// Shell process ID (for dev server monitoring)
@@ -299,6 +305,7 @@ impl Chau7Terminal {
             term: Mutex::new(term),
             processor: Mutex::new(Processor::new()),
             pty_handle: Mutex::new(None),
+            echo_fd: AtomicI32::new(-1),
             child: Mutex::new(None),
             shell_pid: AtomicU64::new(0),
             pty_rx: None,
@@ -529,7 +536,6 @@ impl Chau7Terminal {
         let pty_handle = PtyHandle {
             writer,
             _master: pair.master,
-            master_fd,
         };
 
         info!(
@@ -543,6 +549,7 @@ impl Chau7Terminal {
             term: Mutex::new(term),
             processor: Mutex::new(Processor::new()),
             pty_handle: Mutex::new(Some(pty_handle)),
+            echo_fd: AtomicI32::new(master_fd),
             child: Mutex::new(Some(child)),
             shell_pid: AtomicU64::new(shell_pid as u64),
             pty_rx: Some(pty_rx),
@@ -617,17 +624,14 @@ impl Chau7Terminal {
     /// Uses tcgetattr on the duplicated master fd to check the ECHO flag.
     /// Returns true if ECHO is disabled (password/secret input mode).
     pub fn is_echo_disabled(&self) -> bool {
-        let handle = self.pty_handle.lock();
-        let Some(handle) = handle.as_ref() else {
-            return false;
-        };
-        if handle.master_fd < 0 {
+        let echo_fd = self.echo_fd.load(Ordering::Acquire);
+        if echo_fd < 0 {
             // fd capture failed at creation time, can't check
             return false;
         }
         unsafe {
             let mut termios: libc::termios = std::mem::zeroed();
-            if libc::tcgetattr(handle.master_fd, &mut termios) == 0 {
+            if libc::tcgetattr(echo_fd, &mut termios) == 0 {
                 let echo_off = (termios.c_lflag & (libc::ECHO as libc::tcflag_t)) == 0;
                 trace!(
                     "[terminal-{}] tcgetattr: ECHO={}, echo_disabled={}",
@@ -2151,16 +2155,16 @@ impl Drop for Chau7Terminal {
             self.id, uptime, sent, received
         );
 
-        // Close the duplicated master fd used for echo detection
-        if let Some(handle) = self.pty_handle.lock().as_ref()
-            && handle.master_fd >= 0
-        {
+        // Close the duplicated master fd used for echo detection without taking
+        // the PTY writer lock. Drop can run while a write is backpressured.
+        let echo_fd = self.echo_fd.swap(-1, Ordering::AcqRel);
+        if echo_fd >= 0 {
             unsafe {
-                libc::close(handle.master_fd);
+                libc::close(echo_fd);
             }
             debug!(
                 "[terminal-{}] Closed echo detection fd {}",
-                self.id, handle.master_fd
+                self.id, echo_fd
             );
         }
 
@@ -2261,6 +2265,25 @@ mod tests {
         let input = b"echo codex(67690) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.\n";
         let filtered = filter_terminal_output_noise(input);
         assert_eq!(filtered.as_ref(), input);
+    }
+
+    #[test]
+    fn echo_detection_does_not_wait_for_pty_handle_lock() {
+        let term = Arc::new(Chau7Terminal::new_headless(2, 2).expect("headless terminal"));
+        let _held_writer_lock = term.pty_handle.lock();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker_term = Arc::clone(&term);
+        std::thread::spawn(move || {
+            let _ = worker_term.is_echo_disabled();
+            let _ = tx.send(());
+        });
+
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(200))
+                .is_ok(),
+            "echo detection must not wait behind the PTY writer lock"
+        );
     }
 
     #[test]

@@ -56,9 +56,6 @@ pub enum PtyMessage {
 pub struct PtyHandle {
     pub writer: Box<dyn Write + Send>,
     pub _master: Box<dyn portable_pty::MasterPty + Send>,
-    /// Raw file descriptor of the master PTY, used for tcgetattr echo detection.
-    /// Captured at creation time while the concrete type is still available.
-    pub master_fd: i32,
 }
 
 impl PtyHandle {

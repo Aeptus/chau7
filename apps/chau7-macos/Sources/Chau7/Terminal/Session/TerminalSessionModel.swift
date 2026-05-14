@@ -1853,9 +1853,15 @@ final class TerminalSessionModel {
         // `removeFlag` again on an already-gone flag is a no-op.
         releaseCTOFlagOnClose()
 
-        // Send exit to the shell (works with both backends)
-        activeTerminalView?.send(txt: "exit\n")
         scheduleForcedTerminationIfNeeded()
+        // Close-generated exit is control-plane cleanup, not user input. Send
+        // directly to the PTY so it cannot re-enter input bookkeeping and block
+        // the main thread on echo detection while a PTY write is backpressured.
+        if let rustTerminal = activeRustTerminalView?.rustTerminal {
+            rustTerminal.sendText("exit\n")
+        } else {
+            activeTerminalView?.send(txt: "exit\n")
+        }
         Log.trace("Sent exit command to shell session.")
     }
 
