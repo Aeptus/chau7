@@ -797,6 +797,7 @@ extension OverlayTabsModel {
             tabs[index].notificationStyle = nil
             Log.info("Tab notification style cleared for tab \(id) (selected)")
         }
+        _ = reconcileTabAttentionStyles(reason: "select_tab")
 
         cancelSuspension(for: id)
         if suspendedTabIDs.remove(id) != nil {

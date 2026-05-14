@@ -107,6 +107,12 @@ struct OverlayTab: Identifiable, Equatable {
 
     /// Active notification style for this tab (nil = default appearance)
     var notificationStyle: TabNotificationStyle?
+    /// The attention style currently owned by terminal session state.
+    ///
+    /// Notification actions may also style tabs for success/error/conflict
+    /// events. This marker lets the state reconciler repair and clear only the
+    /// persistent waiting/approval style it owns.
+    var stateAttentionKind: TabAttentionKind = .none
 
     // MARK: - Repo Grouping
 
@@ -268,7 +274,7 @@ struct OverlayTab: Identifiable, Equatable {
     ///
     /// Fields covered:
     ///   - id / isMCPControlled / tokenOptOverride / notificationStyle /
-    ///     repoGroupID / hasInheritedRepoGroup — original list
+    ///     stateAttentionKind / repoGroupID / hasInheritedRepoGroup — original list
     ///   - customTitle — rename + MCP renameTab
     ///   - color / autoColor / isManualColorOverride — color picker +
     ///     F05 auto-color
@@ -289,6 +295,7 @@ struct OverlayTab: Identifiable, Equatable {
             && lhs.isMCPControlled == rhs.isMCPControlled
             && lhs.tokenOptOverride == rhs.tokenOptOverride
             && lhs.notificationStyle == rhs.notificationStyle
+            && lhs.stateAttentionKind == rhs.stateAttentionKind
             && lhs.repoGroupID == rhs.repoGroupID
             && lhs.hasInheritedRepoGroup == rhs.hasInheritedRepoGroup
     }
@@ -1103,6 +1110,7 @@ final class OverlayTabsModel {
     @ObservationIgnored var renderSuspensionObserver: NSObjectProtocol?
     @ObservationIgnored var visibleFrameReadyObserver: NSObjectProtocol?
     @ObservationIgnored var terminalDidStartObserver: NSObjectProtocol?
+    @ObservationIgnored var terminalRuntimeReadinessObserver: NSObjectProtocol?
     @ObservationIgnored var repoGroupingModeObserver: NSObjectProtocol?
     var renderLifecycleRefreshToken = UUID()
     @ObservationIgnored var suspensionDebounceItem: DispatchWorkItem?
@@ -1258,6 +1266,7 @@ final class OverlayTabsModel {
         DispatchQueue.main.async { [weak self] in
             self?.isDiagnosticsLoggingEnabled = true
             self?.logVisualState(reason: "init")
+            self?.reconcileTabAttentionStyles(reason: "init")
         }
 
         // Per-window autosave removed — AppDelegate now coordinates multi-window saves
@@ -1308,6 +1317,20 @@ final class OverlayTabsModel {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: item)
         }
 
+        self.terminalRuntimeReadinessObserver = NotificationCenter.default.addObserver(
+            forName: .terminalSessionRuntimeReadinessChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self, let session = note.object as? TerminalSessionModel else { return }
+            guard tabs.contains(where: { tab in
+                tab.splitController.terminalSessions.contains { _, candidate in candidate === session }
+            }) else { return }
+
+            let source = note.userInfo?["source"] as? String ?? "unknown"
+            reconcileTabAttentionStyles(reason: "runtime_readiness:\(source)")
+        }
+
         self.visibleFrameReadyObserver = NotificationCenter.default.addObserver(
             forName: .terminalSessionVisibleFrameReady,
             object: nil,
@@ -1354,6 +1377,7 @@ final class OverlayTabsModel {
         if let repoGroupingModeObserver { NotificationCenter.default.removeObserver(repoGroupingModeObserver) }
         if let visibleFrameReadyObserver { NotificationCenter.default.removeObserver(visibleFrameReadyObserver) }
         if let terminalDidStartObserver { NotificationCenter.default.removeObserver(terminalDidStartObserver) }
+        if let terminalRuntimeReadinessObserver { NotificationCenter.default.removeObserver(terminalRuntimeReadinessObserver) }
         sharedMetalCoordinator?.stop()
         previousLiveHierarchyReleaseWorkItem?.cancel()
         terminalReadyCommitWorkItem?.cancel()

@@ -480,6 +480,8 @@ extension OverlayTabsModel {
     func checkTabBarHealth() {
         dispatchPrecondition(condition: .onQueue(.main))
 
+        _ = reconcileTabAttentionStyles(reason: "tab_bar_watchdog")
+
         // Suspend rendering for idle tabs in the dropdown (saves GPU/CPU).
         // Resume happens in selectTab() when a tab is selected.
         if FeatureSettings.shared.groupIdleTabs {

@@ -158,9 +158,17 @@ extension OverlayTabsModel {
         guard let index = tabs.firstIndex(where: { $0.id == targetID }) else { return false }
 
         if tabs[index].notificationStyle == style {
+            if style == nil, tabs[index].stateAttentionKind != .none {
+                tabs[index].stateAttentionKind = .none
+                Log.info("Tab state attention ownership cleared for tab \(targetID)")
+                return true
+            }
             return false
         }
 
+        if tabs[index].stateAttentionKind != .none {
+            tabs[index].stateAttentionKind = .none
+        }
         tabs[index].notificationStyle = style
         if let style {
             let desc = style.icon ?? "border/color"
@@ -185,6 +193,7 @@ extension OverlayTabsModel {
         guard let index = tabs.firstIndex(where: { $0.id == tabID }),
               tabs[index].notificationStyle?.persistent == true else { return }
         tabs[index].notificationStyle = nil
+        tabs[index].stateAttentionKind = .none
         Log.info("Persistent tab style cleared for tab \(tabID) (permission resolved)")
     }
 
