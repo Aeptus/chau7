@@ -1,4 +1,5 @@
 Category,Feature,Description,Status,Differentiator
+AI Detection & Integration,State-Driven Tab Attention,"Pure tested policy derives tab attention from waitingForInput/approvalRequired session state so highlights can be repaired independently of banner delivery",Shipped,Yes
 AI Detection & Integration,Terminal Wait-Pattern Backstop,"Terminal-side AI prompt detection emits lower-confidence attention events as soon as a TUI appears blocked, closing provider-hook delays while preserving authoritative hook precedence",Shipped,Yes
 AI Detection & Integration,Resilient Waiting-Input Attention,"Waiting-input and attention-required events keep persistent tab highlights even when duplicate suppression, rate limits, or disabled idle actions suppress follow-up notification delivery",Shipped,Yes
 Terminal Core,Rust Terminal Backend,"Custom terminal emulator written in Rust with FFI bridge — fast, memory-safe, and correct",Shipped,Yes

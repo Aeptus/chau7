@@ -67,6 +67,7 @@ Detection methods:
 - **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
 - **AI event notifications** — finished, failed, permission, needs_validation, tool_complete, session_end, idle. Default policy: finished, failed, and permission. Noisier triggers available in settings.
 - **Resilient waiting-input attention** — waiting-input and attention-required events keep persistent tab highlights even when duplicate suppression, rate limits, or disabled idle actions suppress the follow-up notification path.
+- **State-driven tab attention** — terminal session state is reduced through a pure policy so `waitingForInput` / `approvalRequired` tabs have a single source of truth independent of banner delivery.
 - **Terminal wait-pattern backstop** — terminal-side AI prompt detection emits lower-confidence attention events as soon as a TUI appears blocked, closing provider-hook delays while preserving authoritative hook precedence.
 - **Multi-provider event normalization** — Claude, Codex, and terminal sources translate provider-specific events into one shared semantic layer. Authoritative events from runtime and hooks take priority over history-derived fallbacks.
 - **Session-aware notification routing** — notifications route by exact AI session ID with fallback to provider/title heuristics. Handles tab restoration, split sessions, nested working directories, and cross-tab file conflicts.
