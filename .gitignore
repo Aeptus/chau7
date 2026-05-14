@@ -1,4 +1,10 @@
 .DS_Store
+.cache/
+.chau7/plan.md
+.chau7/pre-commit-review.conf
+.chau7/sessions/
+.codex/
+*.profraw
 *.dmg
 .build/
 build/
