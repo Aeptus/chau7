@@ -1911,7 +1911,7 @@ extension TerminalSessionModel {
 
             let text = lineText(for: row)
             let sanitized = EscapeSequenceSanitizer.sanitize(text)
-            var isRisk = CommandRiskDetection.isRisky(commandLine: sanitized, patterns: settings.dangerousCommandPatterns)
+            var isRisk = CommandRiskDetection.isRiskyOutputLine(sanitized, patterns: settings.dangerousCommandPatterns)
             if isRisk {
                 outputRiskCache[row] = (version: version, isRisk: true)
                 rows.append(row)
@@ -1924,7 +1924,7 @@ extension TerminalSessionModel {
                 if trimmed.count >= cols - 1, row + 1 <= end {
                     let nextText = lineText(for: row + 1)
                     let combined = trimmed + EscapeSequenceSanitizer.sanitize(nextText)
-                    if CommandRiskDetection.isRisky(commandLine: combined, patterns: settings.dangerousCommandPatterns) {
+                    if CommandRiskDetection.isRiskyOutputLine(combined, patterns: settings.dangerousCommandPatterns) {
                         isRisk = true
                         outputRiskCache[row] = (version: version, isRisk: true)
                         outputRiskCache[row + 1] = (version: version, isRisk: true)

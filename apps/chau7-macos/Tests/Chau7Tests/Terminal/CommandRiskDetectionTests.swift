@@ -31,20 +31,35 @@ final class CommandRiskDetectionTests: XCTestCase {
         XCTAssertFalse(CommandRiskDetection.isRisky(commandLine: "", patterns: ["rm -rf"]))
     }
 
-    // MARK: - Anchoring Behavior (substring matching)
+    // MARK: - Command Context Matching
 
-    func testPatternMatchesAnywhere() {
-        let patterns = ["--force"]
-        // Pattern should match as substring, not only at start
+    func testPatternMatchesAtCommandStart() {
+        let patterns = ["git push --force"]
         XCTAssertTrue(CommandRiskDetection.isRisky(commandLine: "git push --force origin main", patterns: patterns))
-        XCTAssertTrue(CommandRiskDetection.isRisky(commandLine: "some-command --force-yes", patterns: patterns))
+    }
+
+    func testCommandMatcherAllowsOptionOnlyCustomPattern() {
+        let patterns = ["--force"]
+        XCTAssertTrue(CommandRiskDetection.isRisky(commandLine: "git push --force origin main", patterns: patterns))
+        XCTAssertFalse(CommandRiskDetection.isRisky(commandLine: "git push --force-with-lease origin main", patterns: patterns))
+    }
+
+    func testPatternMatchesAfterPromptOrMarkdownPrefix() {
+        let patterns = ["rm -rf", "git push --force"]
+        XCTAssertTrue(CommandRiskDetection.isRiskyOutputLine("$ rm -rf /tmp", patterns: patterns))
+        XCTAssertTrue(CommandRiskDetection.isRiskyOutputLine("- `git push --force origin main`", patterns: patterns))
     }
 
     func testPatternDoesNotMatchPartialWords() {
         let patterns = ["rm -rf"]
-        // "storm -rf" contains "rm -rf" as a substring but only because "storm" ends with "rm"
-        // With normalize, "storm -rf" → "storm -rf" which contains "rm -rf"
-        XCTAssertTrue(CommandRiskDetection.isRisky(commandLine: "storm -rf /tmp", patterns: patterns))
+        XCTAssertFalse(CommandRiskDetection.isRisky(commandLine: "storm -rf /tmp", patterns: patterns))
+    }
+
+    func testPatternDoesNotMatchProseMentions() {
+        let patterns = ["rm -rf", "delete from", "drop table"]
+        XCTAssertFalse(CommandRiskDetection.isRiskyOutputLine("Do not run rm -rf /tmp.", patterns: patterns))
+        XCTAssertFalse(CommandRiskDetection.isRiskyOutputLine("Security note: delete from statements need review.", patterns: patterns))
+        XCTAssertFalse(CommandRiskDetection.isRiskyOutputLine("The audit mentions DROP TABLE in the migration notes.", patterns: patterns))
     }
 
     // MARK: - Multi-Command Separators
@@ -62,6 +77,14 @@ final class CommandRiskDetectionTests: XCTestCase {
     func testMultiCommandWithPipe() {
         let patterns = ["rm -rf"]
         XCTAssertTrue(CommandRiskDetection.isRisky(commandLine: "find . -name '*.tmp' | xargs rm -rf", patterns: patterns))
+    }
+
+    func testWrapperCommandsMatch() {
+        let patterns = ["rm -rf", "drop table"]
+        XCTAssertTrue(CommandRiskDetection.isRisky(commandLine: "sudo rm -rf /tmp", patterns: patterns))
+        XCTAssertTrue(CommandRiskDetection.isRisky(commandLine: "env FOO=bar rm -rf /tmp", patterns: patterns))
+        XCTAssertTrue(CommandRiskDetection.isRisky(commandLine: "bash -lc 'rm -rf /tmp'", patterns: patterns))
+        XCTAssertTrue(CommandRiskDetection.isRisky(commandLine: "sql DROP TABLE users", patterns: patterns))
     }
 
     // MARK: - Whitespace Normalization
@@ -85,8 +108,8 @@ final class CommandRiskDetectionTests: XCTestCase {
 
     func testVeryLongCommand() {
         let patterns = ["dangerous"]
-        let longPrefix = String(repeating: "a", count: 10000)
-        XCTAssertTrue(CommandRiskDetection.isRisky(commandLine: "\(longPrefix) dangerous", patterns: patterns))
+        let longSuffix = String(repeating: " --flag", count: 10000)
+        XCTAssertTrue(CommandRiskDetection.isRisky(commandLine: "dangerous\(longSuffix)", patterns: patterns))
     }
 
     func testWhitespaceOnlyCommand() {
