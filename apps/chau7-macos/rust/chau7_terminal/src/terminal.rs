@@ -18,6 +18,7 @@ use crossbeam_channel::{Receiver, TryRecvError, bounded};
 use log::{debug, error, info, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::color::{ThemeColors, color_to_rgb_with_theme};
 use crate::graphics;
@@ -1181,7 +1182,16 @@ impl Chau7Terminal {
         // We hold the term lock only for grid iteration. Color conversion
         // uses the cloned theme (no lock). Hyperlink URI extraction must
         // happen here since it references grid cell data.
-        let (mut cells, cols, rows, display_offset, history_size, link_url_vec, cursor_visible) = {
+        let (
+            mut cells,
+            mut clusters,
+            cols,
+            rows,
+            display_offset,
+            history_size,
+            link_url_vec,
+            cursor_visible,
+        ) = {
             let term = self.term.lock();
             let grid = term.grid();
 
@@ -1202,6 +1212,11 @@ impl Chau7Terminal {
             let selection_range = term.selection.as_ref().and_then(|sel| sel.to_range(&*term));
 
             let mut cells: Vec<CellData> = get_cell_buffer_pool().acquire(total_cells);
+            // UTF-8 cluster buffer. Pre-size for ASCII-dense grids (1 byte/cell).
+            // Emoji-heavy grids will grow this, which is fine — the Vec doubles.
+            let mut clusters: Vec<u8> = Vec::with_capacity(total_cells);
+            // Scratch buffer reused across cells to avoid per-cell allocation.
+            let mut cluster_scratch = String::with_capacity(16);
 
             // Hyperlink tracking: map URI → link_id for deduplication.
             // Index 0 is reserved (no link). IDs start at 1.
@@ -1223,7 +1238,54 @@ impl Chau7Terminal {
                     let point = Point::new(line, Column(col_idx));
                     let cell = &grid[point];
 
-                    let character = cell.c as u32;
+                    let is_spacer = cell.flags.contains(CellFlags::WIDE_CHAR_SPACER);
+                    let is_wide = cell.flags.contains(CellFlags::WIDE_CHAR);
+
+                    // Build the cluster from the primary char + zero-width extras
+                    // (combining marks, VS16, ZWJ), then NFC-normalize so that NFD
+                    // input ("e\u{0301}") and NFC ("é") hash to the same atlas key.
+                    //
+                    // Spacer cells own no glyph — they're the right half of a wide
+                    // grapheme. Empty cluster (len=0) signals "paint background only".
+                    // NUL is also treated as blank.
+                    let (cluster_offset, cluster_len, width, continuation) = if is_spacer {
+                        (0u32, 0u16, 0u8, 1u8)
+                    } else if cell.c == '\u{0}' {
+                        (0u32, 0u16, 1u8, 0u8)
+                    } else {
+                        cluster_scratch.clear();
+                        cluster_scratch.push(cell.c);
+                        if let Some(extras) = cell.zerowidth() {
+                            for &ch in extras {
+                                cluster_scratch.push(ch);
+                            }
+                        }
+                        // `cluster_offset` is u32 in the FFI struct, so the cluster
+                        // buffer must stay below 4 GiB. A terminal grid producing
+                        // that much grapheme data in a single snapshot is unheard
+                        // of; the debug_assert catches a runaway producer in tests
+                        // without paying a release-build branch.
+                        debug_assert!(
+                            clusters.len() <= u32::MAX as usize,
+                            "clusters buffer exceeded u32::MAX bytes; cluster_offset would truncate"
+                        );
+                        let offset = clusters.len() as u32;
+                        // NFC normalization: streams the iterator straight into the buffer.
+                        for ch in cluster_scratch.chars().nfc() {
+                            let mut buf = [0u8; 4];
+                            clusters.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+                        }
+                        let written = clusters.len() as u32 - offset;
+                        // cluster_len is u16; a single grapheme above 65 KiB is
+                        // pathological but should still fail loudly in debug.
+                        debug_assert!(
+                            written <= u16::MAX as u32,
+                            "single grapheme cluster exceeded u16::MAX bytes"
+                        );
+                        let len = written as u16;
+                        let w = if is_wide { 2u8 } else { 1u8 };
+                        (offset, len, w, 0u8)
+                    };
 
                     let fg_color = Self::effective_cell_fg(cell);
 
@@ -1256,15 +1318,18 @@ impl Chau7Terminal {
                     }
 
                     cells.push(CellData {
-                        character,
+                        cluster_offset,
                         fg_r,
                         fg_g,
                         fg_b,
                         bg_r,
                         bg_g,
                         bg_b,
+                        cluster_len,
+                        width,
+                        continuation,
                         flags,
-                        _pad: underline_style(cell.flags),
+                        underline_style: underline_style(cell.flags),
                         link_id,
                     });
                 }
@@ -1273,6 +1338,7 @@ impl Chau7Terminal {
             // term lock is dropped at the end of this block
             (
                 cells,
+                clusters,
                 cols,
                 rows,
                 display_offset,
@@ -1301,6 +1367,18 @@ impl Chau7Terminal {
         let cells_ptr = cells.as_mut_ptr();
         std::mem::forget(cells);
 
+        // Same forget-dance for the cluster byte buffer. Freed alongside cells
+        // in `chau7_terminal_free_grid`.
+        let clusters_len = clusters.len();
+        let clusters_capacity = clusters.capacity();
+        let clusters_ptr = if clusters_capacity == 0 {
+            std::ptr::null_mut()
+        } else {
+            let p = clusters.as_mut_ptr();
+            std::mem::forget(clusters);
+            p
+        };
+
         // Track performance metrics
         let snapshot_time_us = start.elapsed().as_micros() as u64;
         self.metrics
@@ -1326,6 +1404,9 @@ impl Chau7Terminal {
 
         GridSnapshot {
             cells: cells_ptr,
+            clusters_utf8: clusters_ptr,
+            clusters_len,
+            clusters_capacity,
             cols: cols as u16,
             rows: rows as u16,
             cursor_visible: if cursor_visible { 1 } else { 0 },
@@ -2313,13 +2394,27 @@ mod tests {
 
         let total = snapshot.cols as usize * snapshot.rows as usize;
         let cells = unsafe { std::slice::from_raw_parts(snapshot.cells, total) };
+        let clusters = if snapshot.clusters_utf8.is_null() {
+            &[][..]
+        } else {
+            unsafe { std::slice::from_raw_parts(snapshot.clusters_utf8, snapshot.clusters_len) }
+        };
+        let cell_str = |c: &CellData| -> &str {
+            if c.cluster_len == 0 {
+                return "";
+            }
+            let start = c.cluster_offset as usize;
+            let end = start + c.cluster_len as usize;
+            std::str::from_utf8(&clusters[start..end]).unwrap_or("?")
+        };
 
         // Print first row for debugging
         let first_row: String = cells[..snapshot.cols as usize]
             .iter()
             .map(|c| {
-                if c.character >= 32 && c.character < 127 {
-                    char::from_u32(c.character).unwrap_or('?')
+                let s = cell_str(c);
+                if s.len() == 1 && s.as_bytes()[0].is_ascii_graphic() {
+                    s.chars().next().unwrap()
                 } else {
                     '.'
                 }
@@ -2330,14 +2425,11 @@ mod tests {
         // Print first few cells with color info
         for (i, c) in cells.iter().enumerate().take(std::cmp::min(12, total)) {
             eprintln!(
-                "  cell[{}]: char=U+{:04X} ({}) fg=({},{},{}) bg=({},{},{}) flags=0x{:02X}",
+                "  cell[{}]: cluster={:?} w={} cont={} fg=({},{},{}) bg=({},{},{}) flags=0x{:02X}",
                 i,
-                c.character,
-                if (32..127).contains(&c.character) {
-                    char::from_u32(c.character).unwrap_or('?')
-                } else {
-                    '.'
-                },
+                cell_str(c),
+                c.width,
+                c.continuation,
                 c.fg_r,
                 c.fg_g,
                 c.fg_b,
@@ -2349,7 +2441,7 @@ mod tests {
         }
 
         // Verify "Hello" appears somewhere in the grid
-        let has_h = cells.iter().any(|c| c.character == b'H' as u32);
+        let has_h = cells.iter().any(|c| cell_str(c) == "H");
         let has_visible_fg = cells.iter().any(|c| c.fg_r > 0 || c.fg_g > 0 || c.fg_b > 0);
 
         eprintln!("Has 'H': {}", has_h);
@@ -2364,6 +2456,13 @@ mod tests {
         // Clean up - reconstruct Vec to free memory
         unsafe {
             let _ = Vec::from_raw_parts(snapshot.cells, total, snapshot.capacity);
+            if !snapshot.clusters_utf8.is_null() {
+                let _ = Vec::from_raw_parts(
+                    snapshot.clusters_utf8,
+                    snapshot.clusters_len,
+                    snapshot.clusters_capacity,
+                );
+            }
         }
     }
 
@@ -2558,9 +2657,13 @@ mod tests {
         let snapshot = term.get_grid_snapshot();
         let total = snapshot.cols as usize * snapshot.rows as usize;
         let cells = unsafe { std::slice::from_raw_parts(snapshot.cells, total) };
+        let clusters =
+            unsafe { std::slice::from_raw_parts(snapshot.clusters_utf8, snapshot.clusters_len) };
         // First cell 'R' should have red foreground
         let r_cell = &cells[0];
-        assert_eq!(r_cell.character, b'R' as u32);
+        let r_start = r_cell.cluster_offset as usize;
+        let r_end = r_start + r_cell.cluster_len as usize;
+        assert_eq!(&clusters[r_start..r_end], b"R");
         // Red in default 16-color palette is typically (205, 49, 49) or similar
         assert!(
             r_cell.fg_r > 150,
@@ -2689,5 +2792,134 @@ mod tests {
         term.inject_output(b"\t"); // Tab to first stop (col 8)
         let (col, _) = cursor_pos(&term);
         assert_eq!(col, 8, "First tab stop should be at col 8, got {}", col);
+    }
+
+    /// Helper: snapshot the grid and return (cell at row r col c, its cluster as &str,
+    /// and the continuation cell to the right if any). Used by grapheme round-trip tests.
+    fn snapshot_cell_str(term: &Chau7Terminal, row: usize, col: usize) -> (String, u8, u8) {
+        let snap = term.get_grid_snapshot();
+        let total = snap.cols as usize * snap.rows as usize;
+        let cells = unsafe { std::slice::from_raw_parts(snap.cells, total) };
+        let clusters = if snap.clusters_utf8.is_null() {
+            &[][..]
+        } else {
+            unsafe { std::slice::from_raw_parts(snap.clusters_utf8, snap.clusters_len) }
+        };
+        let idx = row * snap.cols as usize + col;
+        let c = &cells[idx];
+        let s = if c.cluster_len == 0 {
+            String::new()
+        } else {
+            let start = c.cluster_offset as usize;
+            String::from_utf8_lossy(&clusters[start..start + c.cluster_len as usize]).into_owned()
+        };
+        let (width, cont) = (c.width, c.continuation);
+        unsafe {
+            let _ = Vec::from_raw_parts(snap.cells, total, snap.capacity);
+            if !snap.clusters_utf8.is_null() {
+                let _ = Vec::from_raw_parts(
+                    snap.clusters_utf8,
+                    snap.clusters_len,
+                    snap.clusters_capacity,
+                );
+            }
+        }
+        (s, width, cont)
+    }
+
+    #[test]
+    fn grapheme_ascii_survives_snapshot() {
+        let term = Chau7Terminal::new_with_env(10, 2, "", &[]).expect("create");
+        term.inject_output(b"A");
+        let (s, w, cont) = snapshot_cell_str(&term, 0, 0);
+        assert_eq!(s, "A");
+        assert_eq!(w, 1);
+        assert_eq!(cont, 0);
+    }
+
+    #[test]
+    fn grapheme_nfd_e_acute_normalizes_to_nfc() {
+        // "e" + U+0301 (combining acute) → NFC "é"
+        let term = Chau7Terminal::new_with_env(10, 2, "", &[]).expect("create");
+        term.inject_output("e\u{0301}".as_bytes());
+        let (s, w, cont) = snapshot_cell_str(&term, 0, 0);
+        assert_eq!(s, "é");
+        assert_eq!(w, 1);
+        assert_eq!(cont, 0);
+    }
+
+    #[test]
+    fn grapheme_emoji_vs16_survives() {
+        // ❤ + VS16 (U+FE0F) → emoji-presentation heart
+        let term = Chau7Terminal::new_with_env(10, 2, "", &[]).expect("create");
+        term.inject_output("\u{2764}\u{FE0F}".as_bytes());
+        let (s, _w, cont) = snapshot_cell_str(&term, 0, 0);
+        assert_eq!(s, "\u{2764}\u{FE0F}", "VS16 must survive the snapshot");
+        assert_eq!(cont, 0);
+    }
+
+    #[test]
+    fn grapheme_regional_indicator_flag_survives() {
+        // 🇫🇷 = Regional Indicator F + R. One grapheme, but Alacritty assigns the
+        // pair to two columns (each RI is itself a 2-wide codepoint). The first
+        // cell carries the flag bytes; we just verify the bytes round-trip.
+        let term = Chau7Terminal::new_with_env(10, 2, "", &[]).expect("create");
+        term.inject_output("\u{1F1EB}\u{1F1F7}".as_bytes());
+        let (s, _w, _cont) = snapshot_cell_str(&term, 0, 0);
+        assert!(
+            s.starts_with('\u{1F1EB}'),
+            "First RI must survive intact, got {:?}",
+            s
+        );
+    }
+
+    #[test]
+    fn grapheme_zwj_family_emoji_survives() {
+        // 👨🏽‍💻 = U+1F468 U+1F3FD U+200D U+1F4BB (4 codepoints, single grapheme).
+        // Alacritty's cell model puts each wide codepoint in its own cell pair;
+        // zero-width chars (ZWJ) attach to the preceding cell. We verify all four
+        // codepoints survive *somewhere* on the row — none are silently dropped.
+        let term = Chau7Terminal::new_with_env(10, 2, "", &[]).expect("create");
+        term.inject_output("\u{1F468}\u{1F3FD}\u{200D}\u{1F4BB}".as_bytes());
+        let snap = term.get_grid_snapshot();
+        let total = snap.cols as usize * snap.rows as usize;
+        let cells = unsafe { std::slice::from_raw_parts(snap.cells, total) };
+        let clusters = unsafe { std::slice::from_raw_parts(snap.clusters_utf8, snap.clusters_len) };
+        let mut row0 = String::new();
+        for c in cells.iter().take(snap.cols as usize) {
+            if c.cluster_len > 0 {
+                let start = c.cluster_offset as usize;
+                row0.push_str(
+                    std::str::from_utf8(&clusters[start..start + c.cluster_len as usize]).unwrap(),
+                );
+            }
+        }
+        unsafe {
+            let _ = Vec::from_raw_parts(snap.cells, total, snap.capacity);
+            let _ = Vec::from_raw_parts(
+                snap.clusters_utf8,
+                snap.clusters_len,
+                snap.clusters_capacity,
+            );
+        }
+        assert!(row0.contains('\u{1F468}'), "man codepoint lost: {:?}", row0);
+        assert!(row0.contains('\u{1F3FD}'), "skin-tone lost: {:?}", row0);
+        assert!(row0.contains('\u{200D}'), "ZWJ lost: {:?}", row0);
+        assert!(row0.contains('\u{1F4BB}'), "laptop lost: {:?}", row0);
+    }
+
+    #[test]
+    fn grapheme_wide_char_marks_continuation_cell() {
+        // CJK char is wide → cell 0 has width=2, cell 1 has continuation=1, len=0.
+        let term = Chau7Terminal::new_with_env(10, 2, "", &[]).expect("create");
+        term.inject_output("中".as_bytes());
+        let (s0, w0, c0) = snapshot_cell_str(&term, 0, 0);
+        let (s1, w1, c1) = snapshot_cell_str(&term, 0, 1);
+        assert_eq!(s0, "中");
+        assert_eq!(w0, 2);
+        assert_eq!(c0, 0);
+        assert_eq!(s1, "", "continuation cell must have empty cluster");
+        assert_eq!(w1, 0);
+        assert_eq!(c1, 1);
     }
 }

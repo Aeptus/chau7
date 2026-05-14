@@ -49,12 +49,21 @@ final class MetalTerminalRenderer: NSObject {
         var padding: UInt32 = 0 // Alignment padding
     }
 
-    /// Glyph cache key: codepoint + style variant
+    /// Glyph cache key: grapheme cluster bytes + style variant.
+    ///
+    /// Multi-codepoint clusters (ZWJ emoji, regional indicators, VS16, combining marks)
+    /// hash to a single atlas slot, so the same `👨🏽‍💻` cluster is shaped once and
+    /// reused. ASCII clusters are single-byte Data values and incur no per-cluster
+    /// allocation thanks to Data's inline storage.
     struct GlyphKey: Hashable {
-        let codePoint: UInt32
+        let cluster: Data
         let bold: Bool
         let italic: Bool
     }
+
+    // `GlyphInfo` extended to know whether its atlas slot stores RGBA color data
+    // (Apple Color Emoji, sbix/COLR/CBDT) or a monochrome alpha mask. Fragment
+    // shader branches on this via the `colorGlyphFlag` bit in the instance flags.
 
     /// Ligature cache key: multi-character sequence + style
     struct LigatureKey: Hashable {
@@ -69,6 +78,7 @@ final class MetalTerminalRenderer: NSObject {
         let bearing: CGPoint // Offset from baseline
         let advance: CGFloat // Horizontal advance
         let isWide: Bool // Double-width (CJK)
+        let isColor: Bool // True for color bitmap glyphs (emoji); false for mono alpha mask
     }
 
     /// Ligature information: a multi-cell glyph in the atlas
@@ -411,17 +421,25 @@ final class MetalTerminalRenderer: NSObject {
         ]
         for style in styles {
             for cp: UInt32 in 32 ... 126 {
-                _ = rasterizeGlyph(codePoint: cp, bold: style.bold, italic: style.italic)
+                let byte = UInt8(cp)
+                let data = Data([byte])
+                _ = rasterizeGlyph(cluster: data, isWideHint: false, bold: style.bold, italic: style.italic)
             }
         }
     }
 
     // MARK: - Dynamic Glyph Rasterization
 
-    /// Rasterizes a single glyph into the atlas. Returns the GlyphInfo, or nil if atlas is full.
+    /// Rasterizes a single grapheme cluster into the atlas. Returns the GlyphInfo, or nil
+    /// if the atlas is full or the cluster is empty.
+    ///
+    /// `isWideHint` comes from Rust's `WIDE_CHAR` flag (explicit width from the snapshot)
+    /// and is preferred over the legacy advance-based heuristic. The advance check is
+    /// kept as a fallback for clusters that arrive without a wide hint (e.g. ligatures).
     @discardableResult
-    private func rasterizeGlyph(codePoint: UInt32, bold: Bool, italic: Bool) -> GlyphInfo? {
-        let key = GlyphKey(codePoint: codePoint, bold: bold, italic: italic)
+    private func rasterizeGlyph(cluster: Data, isWideHint: Bool, bold: Bool, italic: Bool) -> GlyphInfo? {
+        guard !cluster.isEmpty else { return nil }
+        let key = GlyphKey(cluster: cluster, bold: bold, italic: italic)
         if let existing = glyphCache[key] { return existing }
 
         guard let context = atlasContext else { return nil }
@@ -434,8 +452,8 @@ final class MetalTerminalRenderer: NSObject {
         case (false, false): font = regularFont
         }
 
-        guard let scalar = Unicode.Scalar(codePoint) else { return nil }
-        let charStr = String(Character(scalar))
+        let charStr = String(decoding: cluster, as: UTF8.self)
+        guard !charStr.isEmpty else { return nil }
         var unichars = [UniChar](charStr.utf16)
         var glyphs = [CGGlyph](repeating: 0, count: unichars.count)
 
@@ -445,11 +463,7 @@ final class MetalTerminalRenderer: NSObject {
 
         // Font cascade fallback: if the primary font doesn't have this glyph
         // (returns false or glyph ID 0 / .notdef), ask CoreText to find a font that does.
-        // This is what CTLine does automatically in the CPU renderer — we replicate
-        // it here so box-drawing chars (U+2500–U+257F), emoji, and other symbols render.
-        //
-        // Note: CTFontGetGlyphsForCharacters returns false if ANY character couldn't be
-        // mapped. We also check glyph[0]==0 for the single-char case.
+        // For emoji and ZWJ sequences this is how we get Apple Color Emoji.
         if !found || glyphs[0] == 0 {
             let fallback = CTFontCreateForString(font, charStr as CFString, CFRangeMake(0, charStr.utf16.count))
             CTFontGetGlyphsForCharacters(fallback, &unichars, &glyphs, unichars.count)
@@ -458,17 +472,19 @@ final class MetalTerminalRenderer: NSObject {
             }
         }
 
-        // Diagnostic: log box-drawing glyph resolution (trace-only)
-        let isBoxDraw = codePoint >= 0x2500 && codePoint <= 0x257F
-        if isBoxDraw && Log.isTraceEnabled {
-            let fontName = CTFontCopyPostScriptName(drawFont) as String
-            Log.trace("[DIAG-SWIFT] rasterizeGlyph U+\(String(codePoint, radix: 16, uppercase: true)) '\(charStr)' found=\(found) glyph=\(glyphs[0]) font=\(fontName) bold=\(bold)")
-        }
+        let isColor = Self.isColorGlyph(font: drawFont, glyph: glyphs[0])
 
-        // Determine if this is a wide character
-        var advanceSize = CGSize.zero
-        CTFontGetAdvancesForGlyphs(drawFont, .horizontal, &glyphs, &advanceSize, 1)
-        let isWide = advanceSize.width > cellSize.width * 1.3
+        // Determine width: Rust's explicit hint takes precedence; fall back to
+        // advance-based detection only when no hint was provided (single-byte
+        // clusters in prerasterizeASCII).
+        let isWide: Bool
+        if isWideHint {
+            isWide = true
+        } else {
+            var advanceSize = CGSize.zero
+            CTFontGetAdvancesForGlyphs(drawFont, .horizontal, &glyphs, &advanceSize, 1)
+            isWide = advanceSize.width > cellSize.width * 1.3
+        }
 
         let slotWidth = isWide ? cellSize.width * 2 : cellSize.width
         let slotHeight = cellSize.height
@@ -487,30 +503,40 @@ final class MetalTerminalRenderer: NSObject {
             resetAtlas()
             prerasterizeASCII()
             uploadAtlasTexture()
-            // Re-check after reset — the glyph we want should now fit
             if packY + slotHeight > CGFloat(atlasHeight) {
-                Log.error("MetalRenderer: Atlas still full after reset, cannot rasterize U+\(String(codePoint, radix: 16))")
+                Log.error("MetalRenderer: Atlas still full after reset, cannot rasterize cluster \(charStr.debugDescription)")
                 return nil
             }
         }
 
         packRowHeight = max(packRowHeight, slotHeight)
 
-        // Draw glyph into atlas bitmap.
-        // CTFontDrawGlyphs positions glyphs at the baseline. We place the
-        // baseline at a fixed offset within each slot: descent from the slot's
-        // bottom edge (equivalently, ascent below the slot's top edge).
-        // In CG coordinates (origin bottom-left, Y up):
-        //   slot bottom = atlasHeight - packY - slotHeight
-        //   baseline    = slot bottom + fontDescent
-        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        // Draw the cluster into the atlas slot.
+        //
+        // For monochrome glyphs we paint with white-opaque fill; the shader then
+        // multiplies the alpha mask by the per-instance foreground color.
+        //
+        // For color glyphs (Apple Color Emoji, sbix/COLR/CBDT) we DO NOT override
+        // the fill — CoreText writes the embedded RGBA bitmap directly. The shader
+        // detects this via the `colorGlyphFlag` instance bit and samples the texture
+        // as-is. Setting `shouldSmoothFonts = false` for color emoji avoids the
+        // subpixel hinting that distorts color bitmaps.
+        context.saveGState()
+        if isColor {
+            context.setShouldSmoothFonts(false)
+        } else {
+            context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        }
         var boundingRect = CGRect.zero
         CTFontGetBoundingRectsForGlyphs(drawFont, .horizontal, glyphs, &boundingRect, 1)
         let baselineY = CGFloat(atlasHeight) - packY - slotHeight + fontDescent
         var position = CGPoint(x: packX, y: baselineY)
         CTFontDrawGlyphs(drawFont, glyphs, &position, 1, context)
+        context.restoreGState()
 
         // Diagnostic: check if box-drawing glyph produced visible pixels (trace-only)
+        let firstScalar = charStr.unicodeScalars.first.map { $0.value } ?? 0
+        let isBoxDraw = (0x2500 ... 0x257F).contains(firstScalar)
         if isBoxDraw, Log.isTraceEnabled, let data = context.data {
             let bytesPerRow = context.bytesPerRow
             let slotRowStart = Int(packY)
@@ -531,7 +557,7 @@ final class MetalTerminalRenderer: NSObject {
             }
             Log
                 .trace(
-                    "[DIAG-SWIFT] rasterizeGlyph U+\(String(codePoint, radix: 16, uppercase: true)) pixelCheck: \(nonZeroAlpha)/\(totalPixels) non-zero alpha, slot=(\(slotColStart),\(slotRowStart))-(\(slotColEnd),\(slotRowEnd)), baseline=\(baselineY), packY=\(packY)"
+                    "[DIAG-SWIFT] rasterizeGlyph U+\(String(firstScalar, radix: 16, uppercase: true)) pixelCheck: \(nonZeroAlpha)/\(totalPixels) non-zero alpha, slot=(\(slotColStart),\(slotRowStart))-(\(slotColEnd),\(slotRowEnd)), baseline=\(baselineY), packY=\(packY)"
                 )
 
             dumpAtlasToPNG()
@@ -552,7 +578,8 @@ final class MetalTerminalRenderer: NSObject {
             textureRect: texRect,
             bearing: CGPoint(x: boundingRect.origin.x, y: boundingRect.origin.y),
             advance: slotWidth,
-            isWide: isWide
+            isWide: isWide,
+            isColor: isColor
         )
         glyphCache[key] = info
 
@@ -599,30 +626,70 @@ final class MetalTerminalRenderer: NSObject {
         atlasDirty = false
     }
 
-    /// Looks up a glyph, rasterizing on-demand if needed. Returns space glyph as fallback.
-    private func lookupGlyph(codePoint: UInt32, bold: Bool, italic: Bool) -> GlyphInfo? {
+    /// Looks up a glyph for a UTF-8 grapheme cluster, rasterizing on-demand. Returns
+    /// the space glyph as a last-resort fallback.
+    ///
+    /// `isWideHint` should reflect the cell's `width == 2` from the Rust snapshot.
+    private func lookupGlyph(cluster: Data, isWideHint: Bool, bold: Bool, italic: Bool) -> GlyphInfo? {
         glyphLookupCount += 1
-        let key = GlyphKey(codePoint: codePoint, bold: bold, italic: italic)
+        let key = GlyphKey(cluster: cluster, bold: bold, italic: italic)
         if let info = glyphCache[key] { return info }
 
-        // Cache miss — rasterize on demand
         glyphCacheMisses += 1
-        if let info = rasterizeGlyph(codePoint: codePoint, bold: bold, italic: italic) {
+        if let info = rasterizeGlyph(cluster: cluster, isWideHint: isWideHint, bold: bold, italic: italic) {
             return info
         }
 
         // Fallback: try regular style
-        let fallbackKey = GlyphKey(codePoint: codePoint, bold: false, italic: false)
+        let fallbackKey = GlyphKey(cluster: cluster, bold: false, italic: false)
         if let info = glyphCache[fallbackKey] { return info }
-        if let info = rasterizeGlyph(codePoint: codePoint, bold: false, italic: false) {
+        if let info = rasterizeGlyph(cluster: cluster, isWideHint: isWideHint, bold: false, italic: false) {
             return info
         }
 
         // Ultimate fallback: space
-        return glyphCache[GlyphKey(codePoint: 0x20, bold: false, italic: false)]
+        return glyphCache[GlyphKey(cluster: Data([0x20]), bold: false, italic: false)]
     }
 
     // MARK: - Ligature Rendering
+
+    // MARK: - Color Glyph Detection
+
+    //
+    // Apple Color Emoji and other glyphs that ship pre-rendered RGBA bitmaps in
+    // their font (sbix / COLR / CBDT tables) must be drawn into the atlas as
+    // color pixels and shaded directly, instead of being treated as alpha masks
+    // and tinted by the per-instance foreground.
+    //
+    // This is called once per atlas miss — never on the hot draw path — so a few
+    // CT table probes are cheap relative to the rasterization that follows.
+    //
+    // TODO(USER-AUTHORED): implement this 5–10 line helper that decides whether
+    // `glyph` in `font` should be rasterized as RGBA color. Recommended approach:
+    //
+    //   1. Probe `CTFontCopyTable(font, kCTFontTableSbix, [])` and
+    //      `CTFontCopyTable(font, kCTFontTableCOLR, [])` (and optionally CBDT).
+    //   2. If neither table is present, the font has no color glyphs — return false
+    //      immediately.
+    //   3. If sbix/COLR is present, the font *can* hold color glyphs but specific
+    //      glyph IDs may still be monochrome. Apple Color Emoji has sbix for all
+    //      glyphs, so presence of sbix is a sufficient signal there. For COLR
+    //      fonts that mix mono and color (Symbols 2, etc.), you may need a per-
+    //      glyph check via `CTFontCopyTraits` or by sampling the rasterized
+    //      pixels — pick the trade-off that fits the call sites in this file.
+    //   4. Return true if the glyph should be drawn as color RGBA.
+    //
+    // The result is cached in `GlyphInfo.isColor` and threaded through to the
+    // fragment shader via `TerminalCell.colorGlyphFlag`.
+    private static func isColorGlyph(font: CTFont, glyph: CGGlyph) -> Bool {
+        // PLACEHOLDER — implement me.
+        // Returning `false` for every glyph keeps emoji rendering monochrome
+        // (current behavior), but the wiring through the atlas + shader is now
+        // ready for the real check.
+        _ = font
+        _ = glyph
+        return false
+    }
 
     /// Try to form a ligature from consecutive cells. Returns nil if the font doesn't
     /// produce a ligature for this sequence (glyph count == char count = no substitution).
@@ -746,8 +813,13 @@ final class MetalTerminalRenderer: NSObject {
 
     /// Try to form a ligature from consecutive cells starting at index.
     /// Returns nil if no ligature is formed or if the cells cross a row boundary.
+    ///
+    /// Ligatures only form from printable ASCII single-byte clusters with the same
+    /// style. Multi-codepoint clusters (emoji, RI flags, combining marks) cannot
+    /// participate in a ligature run.
     private func tryLigature(
         cells: UnsafeBufferPointer<TerminalCell>,
+        clusters: ContiguousArray<UInt8>,
         index: Int, count: Int, cols: Int,
         bold: Bool, italic: Bool
     ) -> LigatureInfo? {
@@ -755,25 +827,24 @@ final class MetalTerminalRenderer: NSObject {
         let maxLen = min(Self.maxLigatureLength, cols - col, count - index)
         guard maxLen >= 2 else { return nil }
 
-        // Try longest sequence first (3-char, then 2-char)
         for len in stride(from: maxLen, through: 2, by: -1) {
-            // All cells in the sequence must be printable ASCII with the same style
             var sequence = ""
             var valid = true
             for j in 0 ..< len {
                 let c = cells[index + j]
-                guard c.character >= 0x21, c.character < 0x7F,
-                      let scalar = Unicode.Scalar(c.character) else {
-                    valid = false
+                guard c.clusterLen == 1, c.continuation == 0 else { valid = false
                     break
                 }
-                // Check same bold/italic style
+                let byte = clusters[Int(c.clusterStart)]
+                guard byte >= 0x21, byte < 0x7F else { valid = false
+                    break
+                }
                 let cBold = (c.flags & 1) != 0
                 let cItalic = (c.flags & 2) != 0
                 if cBold != bold || cItalic != italic { valid = false
                     break
                 }
-                sequence.append(Character(scalar))
+                sequence.append(Character(Unicode.Scalar(byte)))
             }
             guard valid else { continue }
 
@@ -787,8 +858,13 @@ final class MetalTerminalRenderer: NSObject {
     // MARK: - Rendering
 
     /// Renders terminal cells to the given drawable.
+    ///
+    /// `buffer` provides both the cell instances and the parallel `clusters` byte
+    /// buffer that cells index into for grapheme cluster bytes. The renderer must
+    /// receive them together — cluster offsets are only meaningful relative to a
+    /// specific frame's buffer.
     func render(
-        cells: UnsafeBufferPointer<TerminalCell>,
+        buffer: TripleBufferedTerminal.TerminalBuffer,
         rows: Int,
         cols: Int,
         dirtyRows: IndexSet,
@@ -800,6 +876,8 @@ final class MetalTerminalRenderer: NSObject {
         let renderStartedAt = CFAbsoluteTimeGetCurrent()
         guard let commandBuffer = commandQueue.makeCommandBuffer() else { return false }
 
+        let cells = UnsafeBufferPointer(buffer.cells)
+        let clusters = buffer.clusters
         let requestedCellCount = min(cells.count, max(0, rows * cols))
         let grewInstanceBuffer = growInstanceBufferIfNeeded(for: requestedCellCount)
         let cellCount = min(requestedCellCount, instanceCapacity)
@@ -816,6 +894,7 @@ final class MetalTerminalRenderer: NSObject {
             let generationBeforeUpdate = atlasGeneration
             updateInstanceBuffer(
                 cells: cells,
+                clusters: clusters,
                 count: cellCount,
                 rows: rows,
                 cols: cols,
@@ -879,6 +958,7 @@ final class MetalTerminalRenderer: NSObject {
 
     private func updateInstanceBuffer(
         cells: UnsafeBufferPointer<TerminalCell>,
+        clusters: ContiguousArray<UInt8>,
         count: Int,
         rows: Int,
         cols: Int,
@@ -934,62 +1014,114 @@ final class MetalTerminalRenderer: NSObject {
                     rowHasBlinking = true
                 }
 
-                if cell.character >= 0x2500, cell.character <= 0x257F {
-                    boxDrawCount += 1
-                    if traceBoxDraw, cell.character != 0x2500 || boxDrawCount == 1, boxDrawCount <= 3 {
-                        let fg = cell.foregroundColor
-                        let bg = cell.backgroundColor
-                        let ch = Unicode.Scalar(cell.character).map { String(Character($0)) } ?? "?"
-                        Log.trace(
-                            "[DIAG-SWIFT] box-draw: '\(ch)' U+\(String(cell.character, radix: 16)) at (\(row),\(col)) fg=(\(String(format: "%.2f", fg.x)),\(String(format: "%.2f", fg.y)),\(String(format: "%.2f", fg.z))) bg=(\(String(format: "%.2f", bg.x)),\(String(format: "%.2f", bg.y)),\(String(format: "%.2f", bg.z)))"
-                        )
-                    }
-                }
-
                 var texCoord: SIMD4<Float> = SIMD4(0, 0, 0, 0)
+                var instanceFlags = cell.flags
 
-                if ligaturesEnabled, cell.character >= 0x21, cell.character < 0x7F, ligatureSkip <= 0 {
-                    let ligInfo = tryLigature(
-                        cells: cells,
-                        index: index,
-                        count: count,
-                        cols: cols,
-                        bold: isBold,
-                        italic: isItalic
-                    )
-                    if let lig = ligInfo {
-                        let sliceWidth = Float(lig.textureRect.width) / Float(lig.cellSpan)
-                        texCoord = SIMD4(
-                            Float(lig.textureRect.origin.x),
-                            Float(lig.textureRect.origin.y),
-                            sliceWidth,
-                            Float(lig.textureRect.height)
-                        )
-                        ligatureSkip = lig.cellSpan - 1
-                        ligatureRect = lig.textureRect
-                        ligatureSpan = lig.cellSpan
-                        ligatureSlice = 1
+                // Continuation cells (right half of a wide grapheme) emit the
+                // RIGHT half of the wide glyph's atlas rect — the wide glyph at
+                // (row, col-1) emits the left half. Together they tile a 2-cell
+                // glyph using 1-cell quads, with no shader changes needed.
+                if cell.continuation != 0 {
+                    if col > 0 {
+                        let prev = cells[index - 1]
+                        if prev.width == 2, prev.clusterLen > 0 {
+                            let prevBold = (prev.flags & 1) != 0
+                            let prevItalic = (prev.flags & 2) != 0
+                            let cluster = Data(clusters[Int(prev.clusterStart) ..< Int(prev.clusterStart) + Int(prev.clusterLen)])
+                            if let info = lookupGlyph(cluster: cluster, isWideHint: true, bold: prevBold, italic: prevItalic) {
+                                let half = Float(info.textureRect.width) * 0.5
+                                texCoord = SIMD4(
+                                    Float(info.textureRect.origin.x) + half,
+                                    Float(info.textureRect.origin.y),
+                                    half,
+                                    Float(info.textureRect.height)
+                                )
+                                if info.isColor { instanceFlags |= TerminalCell.colorGlyphFlag }
+                            }
+                        }
                     }
-                }
+                } else if cell.clusterLen > 0 {
+                    // Ligatures: ASCII-only, single-byte clusters with same style.
+                    if ligaturesEnabled,
+                       cell.clusterLen == 1,
+                       ligatureSkip <= 0,
+                       clusters[Int(cell.clusterStart)] >= 0x21,
+                       clusters[Int(cell.clusterStart)] < 0x7F {
+                        if let lig = tryLigature(
+                            cells: cells,
+                            clusters: clusters,
+                            index: index,
+                            count: count,
+                            cols: cols,
+                            bold: isBold,
+                            italic: isItalic
+                        ) {
+                            let sliceWidth = Float(lig.textureRect.width) / Float(lig.cellSpan)
+                            texCoord = SIMD4(
+                                Float(lig.textureRect.origin.x),
+                                Float(lig.textureRect.origin.y),
+                                sliceWidth,
+                                Float(lig.textureRect.height)
+                            )
+                            ligatureSkip = lig.cellSpan - 1
+                            ligatureRect = lig.textureRect
+                            ligatureSpan = lig.cellSpan
+                            ligatureSlice = 1
+                        }
+                    }
 
-                if ligatureSkip > 0, texCoord == SIMD4(0, 0, 0, 0) {
-                    let sliceWidth = Float(ligatureRect.width) / Float(ligatureSpan)
-                    texCoord = SIMD4(
-                        Float(ligatureRect.origin.x) + sliceWidth * Float(ligatureSlice),
-                        Float(ligatureRect.origin.y),
-                        sliceWidth,
-                        Float(ligatureRect.height)
-                    )
-                    ligatureSlice += 1
-                    ligatureSkip -= 1
-                } else if texCoord == SIMD4(0, 0, 0, 0),
-                          let info = lookupGlyph(codePoint: cell.character, bold: isBold, italic: isItalic) {
-                    texCoord = SIMD4(
-                        Float(info.textureRect.origin.x),
-                        Float(info.textureRect.origin.y),
-                        Float(info.textureRect.width),
-                        Float(info.textureRect.height)
-                    )
+                    if ligatureSkip > 0, texCoord == SIMD4(0, 0, 0, 0) {
+                        let sliceWidth = Float(ligatureRect.width) / Float(ligatureSpan)
+                        texCoord = SIMD4(
+                            Float(ligatureRect.origin.x) + sliceWidth * Float(ligatureSlice),
+                            Float(ligatureRect.origin.y),
+                            sliceWidth,
+                            Float(ligatureRect.height)
+                        )
+                        ligatureSlice += 1
+                        ligatureSkip -= 1
+                    } else if texCoord == SIMD4(0, 0, 0, 0) {
+                        let cluster = Data(clusters[Int(cell.clusterStart) ..< Int(cell.clusterStart) + Int(cell.clusterLen)])
+
+                        // Diagnostic: log box-drawing glyph resolution
+                        if cell.clusterLen == 3 {
+                            let b0 = cluster[0], b1 = cluster[1]
+                            if b0 == 0xE2, b1 == 0x94 || b1 == 0x95 { // U+2500..U+257F is encoded 0xE2 94/95 ..
+                                boxDrawCount += 1
+                                if traceBoxDraw, boxDrawCount <= 3 {
+                                    let fg = cell.foregroundColor
+                                    let bg = cell.backgroundColor
+                                    let s = String(decoding: cluster, as: UTF8.self)
+                                    Log.trace(
+                                        "[DIAG-SWIFT] box-draw: '\(s)' at (\(row),\(col)) fg=(\(String(format: "%.2f", fg.x)),\(String(format: "%.2f", fg.y)),\(String(format: "%.2f", fg.z))) bg=(\(String(format: "%.2f", bg.x)),\(String(format: "%.2f", bg.y)),\(String(format: "%.2f", bg.z)))"
+                                    )
+                                }
+                            }
+                        }
+
+                        if let info = lookupGlyph(cluster: cluster, isWideHint: cell.width == 2, bold: isBold, italic: isItalic) {
+                            // Wide glyphs are tiled as left+right halves across
+                            // this cell + the continuation cell to its right.
+                            // Emit only the LEFT half here.
+                            if cell.width == 2 {
+                                let half = Float(info.textureRect.width) * 0.5
+                                texCoord = SIMD4(
+                                    Float(info.textureRect.origin.x),
+                                    Float(info.textureRect.origin.y),
+                                    half,
+                                    Float(info.textureRect.height)
+                                )
+                            } else {
+                                texCoord = SIMD4(
+                                    Float(info.textureRect.origin.x),
+                                    Float(info.textureRect.origin.y),
+                                    Float(info.textureRect.width),
+                                    Float(info.textureRect.height)
+                                )
+                            }
+                            if info.isColor { instanceFlags |= TerminalCell.colorGlyphFlag }
+                        }
+                    }
                 }
 
                 instances[index] = CellInstance(
@@ -998,7 +1130,7 @@ final class MetalTerminalRenderer: NSObject {
                     foreground: cell.foregroundColor,
                     background: cell.backgroundColor,
                     cursorColor: SIMD4(0, 0, 0, 0),
-                    flags: cell.flags
+                    flags: instanceFlags
                 )
             }
 
@@ -1026,6 +1158,7 @@ final class MetalTerminalRenderer: NSObject {
         if let cursorState = currentCursorState {
             logCursorRowMappingIfNeeded(
                 cells: cells,
+                clusters: clusters,
                 instances: instances,
                 count: count,
                 cols: cols,
@@ -1108,6 +1241,7 @@ final class MetalTerminalRenderer: NSObject {
 
     private func logCursorRowMappingIfNeeded(
         cells: UnsafeBufferPointer<TerminalCell>,
+        clusters: ContiguousArray<UInt8>,
         instances: UnsafeMutablePointer<CellInstance>,
         count: Int,
         cols: Int,
@@ -1137,7 +1271,8 @@ final class MetalTerminalRenderer: NSObject {
         for col in window {
             let cell = rowSlice[col]
             let instance = instances[rowStart + col]
-            hasher.combine(cell.character)
+            hasher.combine(cell.clusterStart)
+            hasher.combine(cell.clusterLen)
             hasher.combine(cell.flags)
             hasher.combine(instance.texCoord.x.bitPattern)
             hasher.combine(instance.texCoord.y.bitPattern)
@@ -1148,21 +1283,21 @@ final class MetalTerminalRenderer: NSObject {
         guard diagnosticKey != lastCursorRowDiagnosticKey else { return }
         lastCursorRowDiagnosticKey = diagnosticKey
 
-        let textPreview = window.map { Self.diagnosticPreview(for: rowSlice[$0].character) }.joined()
-        let mappingSummary = window.map { col in
+        let textPreview = window.map { Self.diagnosticPreview(for: rowSlice[$0], clusters: clusters) }.joined()
+        let mappingSummary = window.map { col -> String in
             let cell = rowSlice[col]
             let instance = instances[rowStart + col]
             let tex = instance.texCoord
             let mapping = tex.z > 0 && tex.w > 0
                 ? String(format: "uv=(%.3f,%.3f,%.3f,%.3f)", tex.x, tex.y, tex.z, tex.w)
                 : "uv=missing"
-            return "\(col):U+\(Self.diagnosticHex(cell.character))/\(Self.diagnosticScalarLabel(for: cell.character)) \(mapping) f=\(String(format: "%02X", cell.flags))"
+            return "\(col):\(Self.diagnosticScalarLabel(for: cell, clusters: clusters)) \(mapping) f=\(String(format: "%02X", cell.flags))"
         }.joined(separator: " ")
 
         let hasMissingGlyph = window.contains { col in
             let cell = rowSlice[col]
             let tex = instances[rowStart + col].texCoord
-            return cell.character != 0 && cell.character != 0x20 && (tex.z == 0 || tex.w == 0)
+            return cell.clusterLen > 0 && cell.continuation == 0 && (tex.z == 0 || tex.w == 0)
         }
 
         let message =
@@ -1183,7 +1318,7 @@ final class MetalTerminalRenderer: NSObject {
         let cursor = min(max(cursorCol, 0), rowCells.count - 1)
         let interestingCols = rowCells.indices.filter { col in
             let cell = rowCells[col]
-            return col == cursor || cell.character != 0 && cell.character != 0x20 || cell.flags != 0
+            return col == cursor || cell.clusterLen > 0 || cell.flags != 0
         }
 
         let rawStart = interestingCols.min() ?? cursor
@@ -1200,37 +1335,37 @@ final class MetalTerminalRenderer: NSObject {
         return start ... end
     }
 
-    private static func diagnosticPreview(for codePoint: UInt32) -> String {
-        if codePoint == 0 || codePoint == 0x20 {
-            return " "
-        }
-        if codePoint < 0x20 || codePoint == 0x7F {
-            return "·"
-        }
-        guard let scalar = UnicodeScalar(codePoint) else {
-            return "�"
-        }
-        return String(Character(scalar))
+    private static func diagnosticPreview(for cell: TerminalCell, clusters: ContiguousArray<UInt8>) -> String {
+        if cell.clusterLen == 0 { return " " }
+        if cell.continuation != 0 { return "" }
+        let start = Int(cell.clusterStart)
+        let end = start + Int(cell.clusterLen)
+        guard end <= clusters.count else { return "�" }
+        let bytes = Array(clusters[start ..< end])
+        // Control characters → middle dot
+        if bytes.count == 1, bytes[0] < 0x20 || bytes[0] == 0x7F { return "·" }
+        return String(decoding: bytes, as: UTF8.self)
     }
 
-    private static func diagnosticScalarLabel(for codePoint: UInt32) -> String {
-        if codePoint == 0 {
-            return "NUL"
+    private static func diagnosticScalarLabel(for cell: TerminalCell, clusters: ContiguousArray<UInt8>) -> String {
+        if cell.clusterLen == 0 { return "SP" }
+        if cell.continuation != 0 { return "CONT" }
+        let start = Int(cell.clusterStart)
+        let end = start + Int(cell.clusterLen)
+        guard end <= clusters.count else { return "INVALID" }
+        let bytes = Array(clusters[start ..< end])
+        if bytes.count == 1 {
+            let b = bytes[0]
+            if b == 0x20 { return "SP" }
+            if b < 0x20 || b == 0x7F { return "CTRL" }
+            return String(format: "U+%04X", b)
         }
-        if codePoint == 0x20 {
-            return "SP"
+        let str = String(decoding: bytes, as: UTF8.self)
+        if let first = str.unicodeScalars.first, str.unicodeScalars.count == 1 {
+            return String(format: "U+%04X", first.value)
         }
-        if codePoint < 0x20 || codePoint == 0x7F {
-            return "CTRL"
-        }
-        guard let scalar = UnicodeScalar(codePoint) else {
-            return "INVALID"
-        }
-        return String(Character(scalar)).debugDescription
-    }
-
-    private static func diagnosticHex(_ codePoint: UInt32) -> String {
-        String(format: "%04X", codePoint)
+        // Multi-codepoint cluster — show as quoted string
+        return str.debugDescription
     }
 
     private func updateUniforms(viewportSize: CGSize) {
@@ -1295,7 +1430,12 @@ final class MetalTerminalRenderer: NSObject {
 
 // MARK: - Terminal Cell Type
 
-/// Represents a single terminal cell for GPU rendering
+/// Represents a single terminal cell for GPU rendering.
+///
+/// Cells reference UTF-8 grapheme cluster bytes stored in the owning
+/// `TerminalBuffer.clusters` array (offset + length). `width` and `continuation`
+/// come straight from the Rust snapshot — the renderer no longer probes glyph
+/// advance to decide cell span.
 struct TerminalCell {
     static let boldFlag: UInt32 = 1 << 0
     static let italicFlag: UInt32 = 1 << 1
@@ -1304,24 +1444,41 @@ struct TerminalCell {
     static let blinkFlag: UInt32 = 1 << 4
     static let cursorPresentFlag: UInt32 = 1 << 5
     static let linkUnderlineFlag: UInt32 = 1 << 11
+    /// Set per-instance when the resolved glyph is a color bitmap (sbix/COLR/CBDT).
+    /// Fragment shader samples `texColor.rgb` directly instead of tinting `fg`.
+    static let colorGlyphFlag: UInt32 = 1 << 12
 
-    var character: UInt32
+    /// Byte offset into the owning `TerminalBuffer.clusters` array.
+    var clusterStart: UInt32
     var foregroundColor: SIMD4<Float>
     var backgroundColor: SIMD4<Float>
     /// Bold=1, italic=2, underline=4, strikethrough=8, blink=16
     /// Cursor bits (set by renderer): cursor_present=32, cursor_style in bits 6-7
+    /// Color-glyph bit 12 is set when this cell's atlas slot is a color bitmap.
     var flags: UInt32
+    /// UTF-8 byte length of the grapheme cluster. 0 = blank cell.
+    var clusterLen: UInt16
+    /// 1 = narrow, 2 = wide; 0 on continuation cells.
+    var width: UInt8
+    /// 1 = right half of a wide grapheme owned by the cell to the left.
+    var continuation: UInt8
 
     init(
-        character: UInt32 = 0x20,
+        clusterStart: UInt32 = 0,
+        clusterLen: UInt16 = 0,
         foreground: SIMD4<Float> = SIMD4(1, 1, 1, 1),
         background: SIMD4<Float> = SIMD4(0, 0, 0, 1),
-        flags: UInt32 = 0
+        flags: UInt32 = 0,
+        width: UInt8 = 1,
+        continuation: UInt8 = 0
     ) {
-        self.character = character
+        self.clusterStart = clusterStart
         self.foregroundColor = foreground
         self.backgroundColor = background
         self.flags = flags
+        self.clusterLen = clusterLen
+        self.width = width
+        self.continuation = continuation
     }
 }
 
@@ -1435,8 +1592,14 @@ extension MetalTerminalRenderer {
             return float4(0, 0, 0, 0); // transparent — shows background only
         }
 
-        // Base glyph color
-        float4 color = float4(in.foreground.rgb, texColor.a * in.foreground.a);
+        // Color glyph branch (bit 12): the atlas slot stores RGBA color data
+        // (Apple Color Emoji, sbix/COLR/CBDT). Sample texture directly and let
+        // the foreground alpha control overall opacity (e.g., for dim text).
+        // Monochrome glyphs continue to tint texColor.a by foreground.rgb.
+        bool isColorGlyph = (in.flags & (1u << 12)) != 0;
+        float4 color = isColorGlyph
+            ? float4(texColor.rgb, texColor.a * in.foreground.a)
+            : float4(in.foreground.rgb, texColor.a * in.foreground.a);
 
         // Cursor handling
         bool hasCursor = (in.flags & (1u << 5)) != 0;

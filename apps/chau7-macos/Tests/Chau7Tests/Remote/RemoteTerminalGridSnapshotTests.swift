@@ -3,8 +3,9 @@ import XCTest
 
 final class RemoteTerminalGridSnapshotTests: XCTestCase {
     func testRoundTripPreservesMetadataAndCells() throws {
-        // 2 cols × 1 row × 16 bytes/cell = 32 bytes
-        let cells = Data((0 ..< 32).map(UInt8.init))
+        // 2 cols × 1 row × 20 bytes/cell = 40 bytes (v2 cell stride)
+        let cells = Data((0 ..< 40).map(UInt8.init))
+        let clusters = Data("hi".utf8)
         let snapshot = RemoteTerminalGridSnapshot(
             cols: 2,
             rows: 1,
@@ -13,7 +14,8 @@ final class RemoteTerminalGridSnapshotTests: XCTestCase {
             cursorVisible: true,
             scrollbackRows: 42,
             displayOffset: 3,
-            cells: cells
+            cells: cells,
+            clusters: clusters
         )
 
         let encoded = try XCTUnwrap(snapshot.encode())
@@ -35,6 +37,7 @@ final class RemoteTerminalGridSnapshotTests: XCTestCase {
         invalid.appendUInt32LE(0)
         invalid.appendUInt32LE(0)
         invalid.appendUInt32LE(1)
+        invalid.appendUInt32LE(0)
         invalid.append(0)
 
         XCTAssertThrowsError(try RemoteTerminalGridSnapshot.decode(from: invalid))
@@ -69,7 +72,8 @@ final class RemoteTerminalGridSnapshotTests: XCTestCase {
         bytes.append(contentsOf: [0, 0, 0])
         bytes.appendUInt32LE(0) // scrollbackRows
         bytes.appendUInt32LE(0) // displayOffset
-        bytes.appendUInt32LE(128) // claims 128 bytes of cell data
+        bytes.appendUInt32LE(160) // claims 160 bytes of cell data (4*2*20)
+        bytes.appendUInt32LE(0) // clusters length
         bytes.append(0xFF) // only 1 byte of payload actually present
 
         XCTAssertThrowsError(try RemoteTerminalGridSnapshot.decode(from: bytes))
@@ -87,7 +91,8 @@ final class RemoteTerminalGridSnapshotTests: XCTestCase {
             cursorVisible: false,
             scrollbackRows: 0,
             displayOffset: 0,
-            cells: Data()
+            cells: Data(),
+            clusters: Data()
         )
         let encoded = try XCTUnwrap(snapshot.encode())
         let decoded = try RemoteTerminalGridSnapshot.decode(from: encoded)

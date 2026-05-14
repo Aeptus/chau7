@@ -357,6 +357,16 @@ pub unsafe extern "C" fn chau7_terminal_free_grid(grid: *mut GridSnapshot) {
             let buffer = Vec::from_raw_parts(snapshot.cells, total_cells, capacity);
             get_cell_buffer_pool().release(buffer);
         }
+
+        // Free the UTF-8 cluster buffer. Not pooled — sizes vary too much with
+        // emoji density; the allocator handles this fine.
+        if !snapshot.clusters_utf8.is_null() {
+            drop(Vec::from_raw_parts(
+                snapshot.clusters_utf8,
+                snapshot.clusters_len,
+                snapshot.clusters_capacity,
+            ));
+        }
         trace!("chau7_terminal_free_grid: complete");
     }
 }

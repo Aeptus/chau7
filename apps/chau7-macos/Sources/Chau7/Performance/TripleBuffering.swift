@@ -24,9 +24,14 @@ final class TripleBufferedTerminal {
 
     // MARK: - Types
 
-    /// Single terminal buffer containing all cell data
+    /// Single terminal buffer containing all cell data.
+    ///
+    /// `clusters` holds packed UTF-8 grapheme cluster bytes referenced by cells
+    /// via `(clusterStart, clusterLen)`. The bridge rewrites both `cells` and
+    /// `clusters` each frame; the renderer reads from them in lockstep.
     final class TerminalBuffer {
         let cells: UnsafeMutableBufferPointer<TerminalCell>
+        var clusters: ContiguousArray<UInt8>
         let rows: Int
         let cols: Int
 
@@ -44,11 +49,56 @@ final class TripleBufferedTerminal {
             let ptr = UnsafeMutablePointer<TerminalCell>.allocate(capacity: count)
             ptr.initialize(repeating: TerminalCell(), count: count)
             self.cells = UnsafeMutableBufferPointer(start: ptr, count: count)
+            // Reserve enough for ASCII-dense terminals (~1 byte/cell). Vec doubles
+            // when emoji push past the reservation.
+            self.clusters = ContiguousArray<UInt8>()
+            clusters.reserveCapacity(count)
         }
 
         deinit {
             cells.baseAddress?.deinitialize(count: cells.count)
             cells.baseAddress?.deallocate()
+        }
+
+        /// Reset the cluster buffer for a new frame. Called by the bridge before
+        /// writing cells; clears bytes but keeps the allocation.
+        func resetClusters() {
+            clusters.removeAll(keepingCapacity: true)
+        }
+
+        /// Append a UTF-8 cluster, returning the start offset.
+        @inlinable
+        func appendCluster(_ bytes: UnsafeBufferPointer<UInt8>) -> UInt32 {
+            let offset = UInt32(clusters.count)
+            clusters.append(contentsOf: bytes)
+            return offset
+        }
+
+        /// Returns the UTF-8 cluster bytes for a cell as a copied `Data` — safe to
+        /// retain past the call. Use when the renderer needs to hash a cluster or
+        /// build a `String` for shaping.
+        func clusterData(at offset: UInt32, length: UInt16) -> Data {
+            guard length > 0 else { return Data() }
+            let start = Int(offset)
+            let end = start + Int(length)
+            guard end <= clusters.count else { return Data() }
+            return clusters.withUnsafeBufferPointer { buf in
+                guard let base = buf.baseAddress else { return Data() }
+                return Data(bytes: base.advanced(by: start), count: Int(length))
+            }
+        }
+
+        /// Build a Swift `String` from a cell's cluster bytes. Returns `""` for blanks.
+        func clusterString(at offset: UInt32, length: UInt16) -> String {
+            guard length > 0 else { return "" }
+            let start = Int(offset)
+            let end = start + Int(length)
+            guard end <= clusters.count else { return "" }
+            return clusters.withUnsafeBufferPointer { buf in
+                guard let base = buf.baseAddress else { return "" }
+                let slice = UnsafeBufferPointer(start: base.advanced(by: start), count: Int(length))
+                return String(decoding: slice, as: UTF8.self)
+            }
         }
 
         /// Marks a row as dirty
@@ -82,8 +132,24 @@ final class TripleBufferedTerminal {
             }
         }
 
+        /// CLUSTER OFFSET INVARIANT
+        ///
+        /// The bridge rewrites `clusters` from scratch every frame, appending
+        /// bytes in column-major scan order. So for two frames with identical
+        /// content, identical cells will produce identical offsets. If any
+        /// earlier cell on the same scan path changes byte-length (e.g. an
+        /// ASCII char becomes an emoji), every downstream cell's offset shifts,
+        /// and `clusterStart` differs — which `cellsDiffer` picks up below,
+        /// marking those rows dirty so `copyDirtyFrom` re-copies them against
+        /// the new wholesale `clusters` array. This is the self-healing
+        /// property `copyDirtyFrom` relies on; do not weaken `cellsDiffer` to
+        /// ignore `clusterStart` without first replacing the diff with a
+        /// content-hash key.
         private static func cellsDiffer(_ lhs: TerminalCell, _ rhs: TerminalCell) -> Bool {
-            lhs.character != rhs.character ||
+            lhs.clusterStart != rhs.clusterStart ||
+                lhs.clusterLen != rhs.clusterLen ||
+                lhs.width != rhs.width ||
+                lhs.continuation != rhs.continuation ||
                 lhs.foregroundColor != rhs.foregroundColor ||
                 lhs.backgroundColor != rhs.backgroundColor ||
                 lhs.flags != rhs.flags
@@ -93,11 +159,18 @@ final class TripleBufferedTerminal {
         func copyFrom(_ other: TerminalBuffer) {
             guard other.rows == rows, other.cols == cols else { return }
             memcpy(cells.baseAddress!, other.cells.baseAddress!, cells.count * MemoryLayout<TerminalCell>.stride)
+            clusters = other.clusters
             dirtyRows = other.dirtyRows
             fullRefreshNeeded = other.fullRefreshNeeded
         }
 
-        /// Copies only dirty rows from another buffer
+        /// Copies only dirty rows from another buffer.
+        ///
+        /// Cluster bytes are replaced wholesale (not per-row). See the CLUSTER
+        /// OFFSET INVARIANT on `cellsDiffer`: any byte-length change earlier in
+        /// the scan shifts every downstream cell's `clusterStart`, which marks
+        /// those cells dirty, so all live offsets in the partially-copied cells
+        /// remain valid against the new `clusters` array.
         func copyDirtyFrom(_ other: TerminalBuffer) {
             guard other.rows == rows, other.cols == cols else { return }
 
@@ -114,6 +187,7 @@ final class TripleBufferedTerminal {
                     cols * MemoryLayout<TerminalCell>.stride
                 )
             }
+            clusters = other.clusters
             dirtyRows.formUnion(other.dirtyRows)
         }
     }
@@ -269,6 +343,7 @@ final class TripleBufferedTerminal {
             for i in 0 ..< buffer.cells.count {
                 buffer.cells[i] = defaultCell
             }
+            buffer.resetClusters()
             buffer.fullRefreshNeeded = true
         }
     }

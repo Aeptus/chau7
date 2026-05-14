@@ -17,21 +17,31 @@ let rustCellFlagInverse: UInt8 = 1 << 4
 let rustCellFlagDim: UInt8 = 1 << 5
 let rustCellFlagHidden: UInt8 = 1 << 6
 
+/// iOS mirror of the macOS `RustCellData` (see chau7_terminal.h).
+///
+/// Cells reference UTF-8 grapheme clusters stored in
+/// `RemoteTerminalRenderState.clusters` via `(cluster_offset, cluster_len)`.
 struct RustCellData {
-    var character: UInt32
-    var fg_r: UInt8
-    var fg_g: UInt8
-    var fg_b: UInt8
-    var bg_r: UInt8
-    var bg_g: UInt8
-    var bg_b: UInt8
-    var flags: UInt8
-    var _pad: UInt8
-    var link_id: UInt16
+    var cluster_offset: UInt32 = 0
+    var fg_r: UInt8 = 255
+    var fg_g: UInt8 = 255
+    var fg_b: UInt8 = 255
+    var bg_r: UInt8 = 0
+    var bg_g: UInt8 = 0
+    var bg_b: UInt8 = 0
+    var cluster_len: UInt16 = 0
+    var width: UInt8 = 1
+    var continuation: UInt8 = 0
+    var flags: UInt8 = 0
+    var underline_style: UInt8 = 0
+    var link_id: UInt16 = 0
 }
 
 struct RustGridSnapshot {
     var cells: UnsafeMutablePointer<RustCellData>?
+    var clusters_utf8: UnsafeMutablePointer<UInt8>?
+    var clusters_len: Int
+    var clusters_capacity: Int
     var cols: UInt16
     var rows: UInt16
     var cursor_visible: UInt8
@@ -43,6 +53,9 @@ struct RustGridSnapshot {
 
 struct RemoteTerminalRenderState {
     let cells: [RustCellData]
+    /// Packed UTF-8 cluster bytes referenced by `cells[i].cluster_offset`. The
+    /// renderer decodes a Swift `String` from a slice on demand.
+    let clusters: Data
     let cols: Int
     let rows: Int
     let cursorCol: Int
@@ -52,6 +65,16 @@ struct RemoteTerminalRenderState {
     let displayOffset: Int
 
     var totalRows: Int { rows + scrollbackRows }
+
+    /// Decode a cell's grapheme cluster bytes as a String. Returns "" for blank
+    /// cells, continuation cells, or out-of-range offsets.
+    func clusterString(for cell: RustCellData) -> String {
+        guard cell.cluster_len > 0, cell.continuation == 0 else { return "" }
+        let start = Int(cell.cluster_offset)
+        let end = start + Int(cell.cluster_len)
+        guard end <= clusters.count else { return "" }
+        return String(decoding: clusters[start ..< end], as: UTF8.self)
+    }
 }
 
 enum RemoteTerminalRenderStateDecoder {
@@ -73,6 +96,7 @@ enum RemoteTerminalRenderStateDecoder {
         guard cells.count == cellCount else { return nil }
         return RemoteTerminalRenderState(
             cells: cells,
+            clusters: snapshot.clusters,
             cols: Int(snapshot.cols),
             rows: Int(snapshot.rows),
             cursorCol: Int(snapshot.cursorCol),
@@ -193,12 +217,21 @@ final class RemoteRustTerminalPlayback {
         let totalCells = cols * rows
         let cells = Array(UnsafeBufferPointer(start: cellsPointer, count: totalCells))
 
+        // Copy the FFI cluster bytes before the snapshot is freed by the defer.
+        let clusters: Data
+        if let base = snapshot.clusters_utf8, snapshot.clusters_len > 0 {
+            clusters = Data(bytes: base, count: snapshot.clusters_len)
+        } else {
+            clusters = Data()
+        }
+
         var cursorCol: UInt16 = 0
         var cursorRow: UInt16 = 0
         chau7_terminal_cursor_position(handle, &cursorCol, &cursorRow)
 
         return RemoteTerminalRenderState(
             cells: cells,
+            clusters: clusters,
             cols: cols,
             rows: rows,
             cursorCol: Int(cursorCol),

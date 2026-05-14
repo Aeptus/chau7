@@ -17,7 +17,7 @@ pub const CELL_FLAG_INVERSE: u8 = 1 << 4;
 pub const CELL_FLAG_DIM: u8 = 1 << 5;
 pub const CELL_FLAG_HIDDEN: u8 = 1 << 6;
 
-/// Underline style variants (stored in CellData._pad byte, formerly unused).
+/// Underline style variants stored in `CellData.underline_style`.
 /// 0 = no underline (or simple single), 1 = single, 2 = double, 3 = curl, 4 = dotted, 5 = dashed.
 pub const UNDERLINE_SINGLE: u8 = 1;
 pub const UNDERLINE_DOUBLE: u8 = 2;
@@ -29,11 +29,18 @@ pub const UNDERLINE_DASHED: u8 = 5;
 // Core cell data
 // ============================================================================
 
-/// C-compatible cell data for a single terminal cell
+/// C-compatible cell data for a single terminal cell.
+///
+/// A cell points to a UTF-8 grapheme cluster stored in `GridSnapshot.clusters_utf8`.
+/// This preserves multi-codepoint clusters (ZWJ emoji, regional indicators, VS16,
+/// combining marks) end-to-end instead of truncating to a single codepoint.
+///
+/// `width` and `continuation` describe layout authoritatively — the renderer does
+/// not guess from glyph advance.
 #[repr(C)]
 pub struct CellData {
-    /// Unicode codepoint of the character
-    pub character: u32,
+    /// Byte offset into `GridSnapshot.clusters_utf8` where this cell's grapheme begins.
+    pub cluster_offset: u32,
     /// Foreground color RGB
     pub fg_r: u8,
     pub fg_g: u8,
@@ -42,26 +49,36 @@ pub struct CellData {
     pub bg_r: u8,
     pub bg_g: u8,
     pub bg_b: u8,
+    /// UTF-8 byte length of the cluster. 0 = blank cell (no atlas lookup; paint bg only).
+    pub cluster_len: u16,
+    /// Display width in columns. 1 = narrow, 2 = wide. 0 on continuation cells.
+    pub width: u8,
+    /// 1 = this cell is the right half of a wide grapheme owned by the cell to its left.
+    /// Renderer must skip glyph drawing on continuation cells (background still paints).
+    pub continuation: u8,
     /// Cell attribute flags (bold, italic, underline, etc.)
     pub flags: u8,
-    /// Padding byte for natural alignment of link_id
-    pub _pad: u8,
-    /// Hyperlink ID (OSC 8). 0 = no link. Use chau7_terminal_get_link_url() to resolve.
+    /// Underline style variant (0 = none, 1=single, 2=double, 3=curl, 4=dotted, 5=dashed).
+    pub underline_style: u8,
+    /// Hyperlink ID (OSC 8). 0 = no link. Use `chau7_terminal_get_link_url()` to resolve.
     pub link_id: u16,
 }
 
 impl Default for CellData {
     fn default() -> Self {
         CellData {
-            character: ' ' as u32,
+            cluster_offset: 0,
             fg_r: 255,
             fg_g: 255,
             fg_b: 255,
             bg_r: 0,
             bg_g: 0,
             bg_b: 0,
+            cluster_len: 0,
+            width: 1,
+            continuation: 0,
             flags: 0,
-            _pad: 0,
+            underline_style: 0,
             link_id: 0,
         }
     }
@@ -71,11 +88,21 @@ impl Default for CellData {
 // Grid snapshot
 // ============================================================================
 
-/// C-compatible grid snapshot containing all cell data
+/// C-compatible grid snapshot containing all cell data.
+///
+/// Owns two parallel allocations: the `cells` array and the `clusters_utf8` byte
+/// buffer that cells point into. Both must be freed via `chau7_terminal_free_grid`.
 #[repr(C)]
 pub struct GridSnapshot {
     /// Pointer to array of CellData (cols * rows elements)
     pub cells: *mut CellData,
+    /// Packed UTF-8 grapheme clusters. Cells reference slices via cluster_offset/cluster_len.
+    /// All clusters are NFC-normalized at snapshot time.
+    pub clusters_utf8: *mut u8,
+    /// Used length of clusters_utf8 in bytes.
+    pub clusters_len: usize,
+    /// Allocated capacity of clusters_utf8 (for safe Vec reconstruction on free).
+    pub clusters_capacity: usize,
     /// Number of columns
     pub cols: u16,
     /// Number of visible rows
@@ -294,7 +321,9 @@ mod tests {
     #[test]
     fn test_cell_data_default() {
         let cell = CellData::default();
-        assert_eq!(cell.character, ' ' as u32);
+        assert_eq!(cell.cluster_len, 0);
+        assert_eq!(cell.width, 1);
+        assert_eq!(cell.continuation, 0);
         assert_eq!(cell.fg_r, 255);
         assert_eq!(cell.bg_r, 0);
         assert_eq!(cell.flags, 0);

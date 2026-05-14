@@ -36,7 +36,7 @@
 #define CELL_FLAG_HIDDEN (1 << 6)
 
 /*
- Underline style variants (stored in CellData._pad byte, formerly unused).
+ Underline style variants stored in `CellData.underline_style`.
  0 = no underline (or simple single), 1 = single, 2 = double, 3 = curl, 4 = dotted, 5 = dashed.
  */
 #define UNDERLINE_SINGLE 1
@@ -70,13 +70,20 @@
 typedef struct Chau7Terminal Chau7Terminal;
 
 /*
- C-compatible cell data for a single terminal cell
+ C-compatible cell data for a single terminal cell.
+
+ A cell points to a UTF-8 grapheme cluster stored in `GridSnapshot.clusters_utf8`.
+ This preserves multi-codepoint clusters (ZWJ emoji, regional indicators, VS16,
+ combining marks) end-to-end instead of truncating to a single codepoint.
+
+ `width` and `continuation` describe layout authoritatively — the renderer does
+ not guess from glyph advance.
  */
 typedef struct CellData {
     /*
-     Unicode codepoint of the character
+     Byte offset into `GridSnapshot.clusters_utf8` where this cell's grapheme begins.
      */
-    uint32_t character;
+    uint32_t cluster_offset;
     /*
      Foreground color RGB
      */
@@ -90,27 +97,56 @@ typedef struct CellData {
     uint8_t bg_g;
     uint8_t bg_b;
     /*
+     UTF-8 byte length of the cluster. 0 = blank cell (no atlas lookup; paint bg only).
+     */
+    uint16_t cluster_len;
+    /*
+     Display width in columns. 1 = narrow, 2 = wide. 0 on continuation cells.
+     */
+    uint8_t width;
+    /*
+     1 = this cell is the right half of a wide grapheme owned by the cell to its left.
+     Renderer must skip glyph drawing on continuation cells (background still paints).
+     */
+    uint8_t continuation;
+    /*
      Cell attribute flags (bold, italic, underline, etc.)
      */
     uint8_t flags;
     /*
-     Padding byte for natural alignment of link_id
+     Underline style variant (0 = none, 1=single, 2=double, 3=curl, 4=dotted, 5=dashed).
      */
-    uint8_t _pad;
+    uint8_t underline_style;
     /*
-     Hyperlink ID (OSC 8). 0 = no link. Use chau7_terminal_get_link_url() to resolve.
+     Hyperlink ID (OSC 8). 0 = no link. Use `chau7_terminal_get_link_url()` to resolve.
      */
     uint16_t link_id;
 } CellData;
 
 /*
- C-compatible grid snapshot containing all cell data
+ C-compatible grid snapshot containing all cell data.
+
+ Owns two parallel allocations: the `cells` array and the `clusters_utf8` byte
+ buffer that cells point into. Both must be freed via `chau7_terminal_free_grid`.
  */
 typedef struct GridSnapshot {
     /*
      Pointer to array of CellData (cols * rows elements)
      */
     struct CellData *cells;
+    /*
+     Packed UTF-8 grapheme clusters. Cells reference slices via cluster_offset/cluster_len.
+     All clusters are NFC-normalized at snapshot time.
+     */
+    uint8_t *clusters_utf8;
+    /*
+     Used length of clusters_utf8 in bytes.
+     */
+    size_t clusters_len;
+    /*
+     Allocated capacity of clusters_utf8 (for safe Vec reconstruction on free).
+     */
+    size_t clusters_capacity;
     /*
      Number of columns
      */

@@ -253,6 +253,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - Default start directory and optional startup commands.
 - Copy on select, Option+click cursor positioning, paste escaping.
 - Speculative local echo now self-cleans when shell redraws or render-phase/interactivity changes make the optimistic overlay stale, preventing duplicated typed characters across live and passive shell surfaces.
+- Full grapheme-cluster rendering — ZWJ emoji (👨🏽‍💻), regional-indicator flags (🇫🇷), VS16 emoji presentation (❤️), and combining marks (NFD `é`) all survive the Rust → Swift FFI snapshot intact. Cell width and continuation are now explicit, so the renderer no longer guesses from glyph advance. The Metal atlas + fragment shader are wired for color-emoji RGBA rendering; full color rasterization lights up once `MetalTerminalRenderer.isColorGlyph` is implemented.
 
 ## Performance
 

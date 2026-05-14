@@ -451,11 +451,27 @@ extension RustTerminalView {
             if usePartialSync {
                 partialSyncCount += 1
                 Log.trace("RustTerminalView[\(viewId)]: syncGridToRenderer - Partial sync for \(dirtyRows.count)/\(gridRows) dirty rows")
-                gridView?.updateGrid(cells: cells, cols: gridCols, rows: gridRows, cursor: cursor, dirtyRows: dirtyRows)
+                gridView?.updateGrid(
+                    cells: cells,
+                    clusters: snapshot.clusters_utf8,
+                    clustersLen: snapshot.clusters_len,
+                    cols: gridCols,
+                    rows: gridRows,
+                    cursor: cursor,
+                    dirtyRows: dirtyRows
+                )
             } else {
                 fullSyncCount += 1
                 Log.trace("RustTerminalView[\(viewId)]: syncGridToRenderer - Full sync for \(gridCols)x\(gridRows) grid (dims changed: \(dimensionsChanged), dirty: \(dirtyRows.count))")
-                gridView?.updateGrid(cells: cells, cols: gridCols, rows: gridRows, cursor: cursor, dirtyRows: nil)
+                gridView?.updateGrid(
+                    cells: cells,
+                    clusters: snapshot.clusters_utf8,
+                    clustersLen: snapshot.clusters_len,
+                    cols: gridCols,
+                    rows: gridRows,
+                    cursor: cursor,
+                    dirtyRows: nil
+                )
             }
         }
 
@@ -524,19 +540,23 @@ extension RustTerminalView {
         hasher.combine(window.upperBound)
         for col in window {
             let cell = rowCells[col]
-            hasher.combine(cell.character)
+            hasher.combine(cell.cluster_offset)
+            hasher.combine(cell.cluster_len)
             hasher.combine(cell.flags)
-            hasher.combine(cell._pad)
+            hasher.combine(cell.underline_style)
         }
         let diagnosticKey = "\(source):\(hasher.finalize())"
         guard diagnosticKey != lastInputRowDiagnosticKey else { return }
         lastInputRowDiagnosticKey = diagnosticKey
 
-        let textPreview = window.map { Self.diagnosticPreview(for: rowCells[$0].character) }.joined()
-        let cellSummary = window.map { col in
+        // Diagnostic preview omits cluster bytes — those live in the snapshot's
+        // clusters buffer which isn't threaded into this helper. Renderer-side
+        // diagnostics in MetalTerminalRenderer show the actual bytes.
+        let cellSummary = window.map { col -> String in
             let cell = rowCells[col]
-            return "\(col):U+\(Self.diagnosticHex(cell.character))/\(Self.diagnosticScalarLabel(for: cell.character)) f=\(String(format: "%02X", cell.flags)) u=\(cell._pad & 0x07)"
+            return "\(col):L=\(cell.cluster_len)/w=\(cell.width)\(cell.continuation != 0 ? "/CONT" : "") f=\(String(format: "%02X", cell.flags)) u=\(cell.underline_style & 0x07)"
         }.joined(separator: " ")
+        let textPreview = ""
 
         Log.debug(
             "RustTerminalView[\(viewId)]: input-row diag source=\(source) absRow=\(absRow) viewportRow=\(cursorRow) cursorCol=\(cursorCol) cols=\(window.lowerBound)-\(window.upperBound) text=\(textPreview.debugDescription) cells=[\(cellSummary)]"
@@ -559,7 +579,7 @@ extension RustTerminalView {
         let cursor = min(max(cursorCol, 0), rowCells.count - 1)
         let interestingCols = rowCells.indices.filter { col in
             let cell = rowCells[col]
-            return col == cursor || cell.character != 0 && cell.character != 0x20 || cell.flags != 0 || cell._pad != 0
+            return col == cursor || cell.cluster_len > 0 || cell.flags != 0 || cell.underline_style != 0
         }
 
         let rawStart = interestingCols.min() ?? cursor
@@ -574,39 +594,6 @@ extension RustTerminalView {
         }
 
         return start ... end
-    }
-
-    private static func diagnosticPreview(for codePoint: UInt32) -> String {
-        if codePoint == 0 || codePoint == 0x20 {
-            return " "
-        }
-        if codePoint < 0x20 || codePoint == 0x7F {
-            return "·"
-        }
-        guard let scalar = UnicodeScalar(codePoint) else {
-            return "�"
-        }
-        return String(Character(scalar))
-    }
-
-    private static func diagnosticScalarLabel(for codePoint: UInt32) -> String {
-        if codePoint == 0 {
-            return "NUL"
-        }
-        if codePoint == 0x20 {
-            return "SP"
-        }
-        if codePoint < 0x20 || codePoint == 0x7F {
-            return "CTRL"
-        }
-        guard let scalar = UnicodeScalar(codePoint) else {
-            return "INVALID"
-        }
-        return String(Character(scalar)).debugDescription
-    }
-
-    private static func diagnosticHex(_ codePoint: UInt32) -> String {
-        String(format: "%04X", codePoint)
     }
 
     /// Updates the grid view's row tints from the danger tints provider.
@@ -632,13 +619,21 @@ extension RustTerminalView {
         gridView?.rowTints = viewportTints
     }
 
-    /// Compare two cells for equality (inlined for performance)
+    /// Compare two cells for equality (inlined for performance).
+    /// `cluster_offset` is unstable across frames (snapshot rebuilds the buffer
+    /// from scratch), so cells whose only difference is offset will trigger an
+    /// over-paint of their row. That's preferable to hashing the bytes on the
+    /// hot path; the actual byte-content equality check lives in
+    /// `clusterBytesEqual(...)` for callers that need it.
     @inline(__always)
     func cellsEqual(_ a: RustCellData, _ b: RustCellData) -> Bool {
-        return a.character == b.character &&
+        return a.cluster_offset == b.cluster_offset &&
+            a.cluster_len == b.cluster_len &&
+            a.width == b.width &&
+            a.continuation == b.continuation &&
             a.fg_r == b.fg_r && a.fg_g == b.fg_g && a.fg_b == b.fg_b &&
             a.bg_r == b.bg_r && a.bg_g == b.bg_g && a.bg_b == b.bg_b &&
-            a.flags == b.flags && a.link_id == b.link_id
+            a.flags == b.flags && a.underline_style == b.underline_style && a.link_id == b.link_id
     }
 
     /// Reset grid sync state (call on resize or other major changes)
@@ -697,7 +692,7 @@ extension RustTerminalView {
         if idx >= 0, idx < previousGrid.count {
             return previousGrid[idx]
         }
-        return RustCellData(character: 0, fg_r: 255, fg_g: 255, fg_b: 255, bg_r: 0, bg_g: 0, bg_b: 0, flags: 0, _pad: 0, link_id: 0)
+        return RustCellData()
     }
 
     func updateLocalEchoOverlay() {

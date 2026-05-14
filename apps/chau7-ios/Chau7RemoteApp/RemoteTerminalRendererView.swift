@@ -283,12 +283,14 @@ private final class RemoteTerminalCanvasView: UIView {
                 guard idx < renderState.cells.count else { continue }
                 let cell = renderState.cells[idx]
                 if cell.flags & rustCellFlagHidden != 0 { continue }
-                guard let scalar = UnicodeScalar(cell.character), scalar.value != 0, scalar != " " else { continue }
+                if cell.continuation != 0 { continue }
+                let clusterStr = renderState.clusterString(for: cell)
+                if clusterStr.isEmpty || clusterStr == " " { continue }
 
                 let fgKey = colorCache.foregroundKey(for: cell)
                 let fg = colorCache.foreground(forKey: fgKey)
                 let font = resolvedFont(for: cell)
-                let str = String(scalar) as NSString
+                let str = clusterStr as NSString
                 str.draw(
                     at: CGPoint(x: CGFloat(col) * cellW, y: y + baselineOffset),
                     withAttributes: colorCache.textAttributes(font: font, colorKey: fgKey, color: fg)

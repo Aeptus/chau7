@@ -7,11 +7,17 @@ public enum RemoteTerminalGridSnapshotError: Error, Sendable {
 }
 
 public enum RemoteTerminalGridSnapshotLayout {
-    public static let magic = "CHG1".data(using: .utf8)!
-    public static let version: UInt8 = 1
-    public static let headerSize = 29
-    /// Must match MemoryLayout<RustCellData>.stride (UInt32 + 6×UInt8 + UInt8 + UInt8 + UInt16 = 14 → padded to 16)
-    public static let cellStride = 16
+    /// Wire-format magic. "CHG2" = grapheme-cluster-aware format.
+    /// ASCII bytes are statically known; no runtime parse required.
+    public static let magic = Data([0x43, 0x48, 0x47, 0x32])
+    public static let version: UInt8 = 2
+    /// Header is the same 29 bytes as v1, plus an extra UInt32 for clusters length.
+    public static let headerSize = 33
+    /// Must match `MemoryLayout<RustCellData>.stride`:
+    ///   UInt32 (cluster_offset) + 6×UInt8 (colors) + UInt16 (cluster_len)
+    ///   + 4×UInt8 (width, continuation, flags, underline_style) + UInt16 (link_id)
+    ///   = 18 bytes → padded to 20 by 4-byte alignment of the leading UInt32.
+    public static let cellStride = 20
 }
 
 public struct RemoteTerminalGridSnapshot: Equatable, Sendable {
@@ -23,6 +29,8 @@ public struct RemoteTerminalGridSnapshot: Equatable, Sendable {
     public let scrollbackRows: UInt32
     public let displayOffset: UInt32
     public let cells: Data
+    /// UTF-8 grapheme cluster bytes referenced by `cells[i].cluster_offset`.
+    public let clusters: Data
 
     public init(
         cols: UInt16,
@@ -32,7 +40,8 @@ public struct RemoteTerminalGridSnapshot: Equatable, Sendable {
         cursorVisible: Bool,
         scrollbackRows: UInt32,
         displayOffset: UInt32,
-        cells: Data
+        cells: Data,
+        clusters: Data
     ) {
         self.cols = cols
         self.rows = rows
@@ -42,6 +51,7 @@ public struct RemoteTerminalGridSnapshot: Equatable, Sendable {
         self.scrollbackRows = scrollbackRows
         self.displayOffset = displayOffset
         self.cells = cells
+        self.clusters = clusters
     }
 
     public var cellCount: Int {
@@ -54,7 +64,7 @@ public struct RemoteTerminalGridSnapshot: Equatable, Sendable {
 
     public func encode() -> Data? {
         guard isValid else { return nil }
-        var data = Data(capacity: RemoteTerminalGridSnapshotLayout.headerSize + cells.count)
+        var data = Data(capacity: RemoteTerminalGridSnapshotLayout.headerSize + cells.count + clusters.count)
         data.append(RemoteTerminalGridSnapshotLayout.magic)
         data.append(RemoteTerminalGridSnapshotLayout.version)
         data.appendUInt16LE(cols)
@@ -66,7 +76,9 @@ public struct RemoteTerminalGridSnapshot: Equatable, Sendable {
         data.appendUInt32LE(scrollbackRows)
         data.appendUInt32LE(displayOffset)
         data.appendUInt32LE(UInt32(cells.count))
+        data.appendUInt32LE(UInt32(clusters.count))
         data.append(cells)
+        data.append(clusters)
         return data
     }
 
@@ -91,15 +103,19 @@ public struct RemoteTerminalGridSnapshot: Equatable, Sendable {
         let scrollbackRows = try data.readUInt32LE(at: 17)
         let displayOffset = try data.readUInt32LE(at: 21)
         let cellsByteCount = try Int(data.readUInt32LE(at: 25))
-        let expectedCount = Int(cols) * Int(rows) * RemoteTerminalGridSnapshotLayout.cellStride
-        guard cellsByteCount == expectedCount else {
+        let clustersByteCount = try Int(data.readUInt32LE(at: 29))
+        let expectedCellsBytes = Int(cols) * Int(rows) * RemoteTerminalGridSnapshotLayout.cellStride
+        guard cellsByteCount == expectedCellsBytes else {
             throw RemoteTerminalGridSnapshotError.invalidLength
         }
-        let totalLength = RemoteTerminalGridSnapshotLayout.headerSize + cellsByteCount
-        guard data.count >= totalLength else {
+        let cellsStart = RemoteTerminalGridSnapshotLayout.headerSize
+        let cellsEnd = cellsStart + cellsByteCount
+        let clustersEnd = cellsEnd + clustersByteCount
+        guard data.count >= clustersEnd else {
             throw RemoteTerminalGridSnapshotError.invalidLength
         }
-        let cells = data.subdata(in: RemoteTerminalGridSnapshotLayout.headerSize ..< totalLength)
+        let cells = data.subdata(in: cellsStart ..< cellsEnd)
+        let clusters = data.subdata(in: cellsEnd ..< clustersEnd)
         return RemoteTerminalGridSnapshot(
             cols: cols,
             rows: rows,
@@ -108,7 +124,8 @@ public struct RemoteTerminalGridSnapshot: Equatable, Sendable {
             cursorVisible: cursorVisible,
             scrollbackRows: scrollbackRows,
             displayOffset: displayOffset,
-            cells: cells
+            cells: cells,
+            clusters: clusters
         )
     }
 }

@@ -19,6 +19,7 @@ parking_lot = "0.12"
 crossbeam-channel = "0.5"
 memchr = "2"
 base64 = "0.22"
+unicode-normalization = "0.1"
 
 [build-dependencies]
 cbindgen = "0.29"

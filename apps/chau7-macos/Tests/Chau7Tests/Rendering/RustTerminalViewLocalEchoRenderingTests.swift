@@ -51,17 +51,10 @@ final class RustTerminalViewLocalEchoRenderingTests: XCTestCase {
     }
 
     private func makeCell(_ character: String) -> RustCellData {
-        RustCellData(
-            character: UInt32(character.unicodeScalars.first!.value),
-            fg_r: 255,
-            fg_g: 255,
-            fg_b: 255,
-            bg_r: 0,
-            bg_g: 0,
-            bg_b: 0,
-            flags: 0,
-            _pad: 0,
-            link_id: 0
-        )
+        var cell = RustCellData()
+        let byte = UInt8(character.unicodeScalars.first!.value)
+        cell.cluster_offset = RustCellLocalEcho.encode(byte: byte)
+        cell.cluster_len = 1
+        return cell
     }
 }

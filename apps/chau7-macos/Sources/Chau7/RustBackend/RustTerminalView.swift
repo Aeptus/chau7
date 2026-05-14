@@ -49,6 +49,9 @@ final class RustGridView: NSView {
     private var cols = 0
     private var rows = 0
     private var cells: [RustCellData] = []
+    /// UTF-8 grapheme cluster bytes referenced by `cells[i].cluster_offset`.
+    /// Copied from the Rust snapshot during `updateGrid` so cells outlive it.
+    private var clusterStorage = Data()
     private var overlayCells: [Int: RustCellData] = [:]
     /// Viewport-relative row tints (row index → tint color). Applied as a blend over cell backgrounds.
     var rowTints: [Int: NSColor] = [:] {
@@ -105,6 +108,8 @@ final class RustGridView: NSView {
 
     func updateGrid(
         cells source: UnsafeMutablePointer<RustCellData>,
+        clusters: UnsafeMutablePointer<UInt8>?,
+        clustersLen: Int,
         cols: Int,
         rows: Int,
         cursor: (col: UInt16, row: UInt16),
@@ -114,7 +119,7 @@ final class RustGridView: NSView {
         if self.cols != cols || self.rows != rows || cells.count != totalCells {
             self.cols = cols
             self.rows = rows
-            cells = Array(repeating: RustCellData(character: 0, fg_r: 255, fg_g: 255, fg_b: 255, bg_r: 0, bg_g: 0, bg_b: 0, flags: 0, _pad: 0, link_id: 0), count: totalCells)
+            cells = Array(repeating: RustCellData(), count: totalCells)
             // Full redraw when dimensions change.
             needsDisplay = true
         }
@@ -132,7 +137,37 @@ final class RustGridView: NSView {
             needsDisplay = true
         }
 
+        // Cluster bytes are referenced by offset from `cells`. The Rust snapshot
+        // is freed by the caller right after this method returns, so we must
+        // copy the whole buffer wholesale even on partial cell updates — offsets
+        // would otherwise dangle into freed memory.
+        if let clusters, clustersLen > 0 {
+            clusterStorage = Data(bytes: clusters, count: clustersLen)
+        } else {
+            clusterStorage = Data()
+        }
+
         updateCursor(cursor)
+    }
+
+    /// Default-init helper for blank cells. Equivalent to `RustCellData()` but
+    /// kept explicit for readability.
+    fileprivate func defaultCell() -> RustCellData {
+        RustCellData()
+    }
+
+    /// Read a cell's grapheme cluster as a Swift String from the local store.
+    /// Returns "" for blank cells, continuation cells, or out-of-range offsets.
+    /// Handles the `RustCellLocalEcho` sentinel so predictive overlay cells render.
+    private func clusterString(for cell: RustCellData) -> String {
+        guard cell.cluster_len > 0, cell.continuation == 0 else { return "" }
+        if RustCellLocalEcho.isEncoded(offset: cell.cluster_offset) {
+            return String(decoding: [RustCellLocalEcho.decode(offset: cell.cluster_offset)], as: UTF8.self)
+        }
+        let start = Int(cell.cluster_offset)
+        let end = start + Int(cell.cluster_len)
+        guard end <= clusterStorage.count else { return "" }
+        return String(decoding: clusterStorage[start ..< end], as: UTF8.self)
     }
 
     func setOverlayCells(_ cells: [Int: RustCellData]) {
@@ -252,9 +287,10 @@ final class RustGridView: NSView {
                 let idx = row * cols + col
                 let cell = overlayCells[idx] ?? cells[idx]
 
-                guard cell.character > 0, cell.character != 0xFFFF else { continue }
-                guard let scalar = UnicodeScalar(cell.character) else { continue }
+                if cell.cluster_len == 0 || cell.continuation != 0 { continue }
                 if cell.flags & RustCellFlags.hidden != 0 { continue }
+                let clusterStr = clusterString(for: cell)
+                if clusterStr.isEmpty { continue }
 
                 let x = CGFloat(col) * cellWidth
                 let (fg, _) = resolveColors(for: cell)
@@ -268,7 +304,7 @@ final class RustGridView: NSView {
                     .font: drawFont,
                     .foregroundColor: textColor
                 ]
-                let attrString = NSAttributedString(string: String(Character(scalar)), attributes: attrs)
+                let attrString = NSAttributedString(string: clusterStr, attributes: attrs)
                 let line = CTLineCreateWithAttributedString(attrString)
                 ctx.textPosition = CGPoint(x: x, y: y + baselineOffset)
                 CTLineDraw(line, ctx)
@@ -276,7 +312,7 @@ final class RustGridView: NSView {
                 // Decorations — underline variants (stored in _pad byte)
                 // 0/1=single, 2=double, 3=curl/wavy, 4=dotted, 5=dashed
                 if cell.flags & RustCellFlags.underline != 0 {
-                    let underlineVariant = cell._pad
+                    let underlineVariant = cell.underline_style
                     ctx.setStrokeColor(textColor.cgColor)
                     let lineW = max(1, drawFont.underlineThickness)
                     ctx.setLineWidth(lineW)
@@ -368,15 +404,16 @@ final class RustGridView: NSView {
 
             let idx = cursor.row * cols + cursor.col
             let cell = overlayCells[idx] ?? cells[idx]
-            guard cell.character > 0, cell.character != 0xFFFF else { return }
-            guard let scalar = UnicodeScalar(cell.character) else { return }
+            if cell.cluster_len == 0 || cell.continuation != 0 { return }
+            let clusterStr = clusterString(for: cell)
+            if clusterStr.isEmpty { return }
             let (_, bg) = resolveColors(for: cell)
             let drawFont = fontForCell(cell.flags)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: drawFont,
                 .foregroundColor: bg
             ]
-            let attrString = NSAttributedString(string: String(Character(scalar)), attributes: attrs)
+            let attrString = NSAttributedString(string: clusterStr, attributes: attrs)
             let line = CTLineCreateWithAttributedString(attrString)
             ctx.textPosition = CGPoint(x: x, y: y + baselineOffset)
             CTLineDraw(line, ctx)
@@ -1323,9 +1360,11 @@ final class RustTerminalFFI {
         let rowOffset = row * gridCols
         for col in 0 ..< gridCols {
             let cell = cellsPtr[rowOffset + col]
-            if let scalar = UnicodeScalar(cell.character), cell.character != 0 {
-                lineText.append(Character(scalar))
-            } else { lineText.append(" ") }
+            if cell.cluster_len == 0 || cell.continuation != 0 {
+                lineText.append(" ")
+                continue
+            }
+            lineText.append(cell.clusterString(buffer: snapshot.clusters_utf8))
         }
         while lineText.last == " " {
             lineText.removeLast()
@@ -3398,6 +3437,12 @@ final class RustTerminalView: NSView {
             bytes: cells,
             count: cellCount * MemoryLayout<RustCellData>.stride
         )
+        let clusterBytes: Data
+        if let clusters = snapshot.clusters_utf8, snapshot.clusters_len > 0 {
+            clusterBytes = Data(bytes: clusters, count: snapshot.clusters_len)
+        } else {
+            clusterBytes = Data()
+        }
         let cursor = rust.cursorPosition
         let payload = RemoteTerminalGridSnapshot(
             cols: snapshot.cols,
@@ -3407,7 +3452,8 @@ final class RustTerminalView: NSView {
             cursorVisible: snapshot.cursor_visible != 0,
             scrollbackRows: snapshot.scrollback_rows,
             displayOffset: snapshot.display_offset,
-            cells: cellBytes
+            cells: cellBytes,
+            clusters: clusterBytes
         )
         return payload.encode()
     }

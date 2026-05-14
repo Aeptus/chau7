@@ -60,6 +60,8 @@ final class RustTermBridge {
         let startedAt = CFAbsoluteTimeGetCurrent()
         let snapshot = grid.pointee
         guard let cells = snapshot.cells else { return nil }
+        let clustersBase = snapshot.clusters_utf8
+        let clustersLen = snapshot.clusters_len
 
         let gridRows = Int(snapshot.rows)
         let gridCols = Int(snapshot.cols)
@@ -72,11 +74,22 @@ final class RustTermBridge {
         let syncRows = min(gridRows, buffer.rows)
         let syncCols = min(gridCols, buffer.cols)
 
+        // Rebuild the cluster bytes on the update buffer. Offsets in cells point
+        // into this buffer; we reset it each frame so stale ranges can't be read.
+        let updateBuf = buffer.updateBuffer
+        updateBuf.resetClusters()
+
         for row in 0 ..< syncRows {
             for col in 0 ..< syncCols {
                 let idx = row * gridCols + col
                 let rustCell = localEchoOverlay[idx] ?? cells[idx]
-                let metalCell = convertCell(rustCell, row: row)
+                let metalCell = convertCell(
+                    rustCell,
+                    row: row,
+                    sourceClusters: clustersBase,
+                    sourceClustersLen: clustersLen,
+                    destBuffer: updateBuf
+                )
                 buffer.setCell(row: row, col: col, metalCell)
             }
         }
@@ -109,8 +122,16 @@ final class RustTermBridge {
     // MARK: - Cell Conversion
 
     /// Converts a single Rust CellData to a Metal TerminalCell, blending any row tint.
+    /// Copies the cell's UTF-8 grapheme cluster from the snapshot's cluster buffer
+    /// into the destination TerminalBuffer's `clusters` array.
     @inline(__always)
-    private func convertCell(_ cell: RustCellData, row: Int) -> TerminalCell {
+    private func convertCell(
+        _ cell: RustCellData,
+        row: Int,
+        sourceClusters: UnsafeMutablePointer<UInt8>?,
+        sourceClustersLen: Int,
+        destBuffer: TripleBufferedTerminal.TerminalBuffer
+    ) -> TerminalCell {
         let flags = cell.flags
 
         // Convert u8 RGB → SIMD4<Float>
@@ -151,17 +172,50 @@ final class RustTermBridge {
         // Bits 0-3 (bold, italic, underline, strikethrough) have identical positions
         // in Rust and Metal — use a single bitwise widening instead of per-flag branches.
         var metalFlags = UInt32(flags & RustCellFlags.metalStyleMask)
-        // Underline variant in bits 8-10 (from _pad bits 0-2)
-        metalFlags |= UInt32(cell._pad & 0x07) << 8
+        // Underline variant in bits 8-10
+        metalFlags |= UInt32(cell.underline_style & 0x07) << 8
         if cell.link_id > 0, flags & RustCellFlags.underline == 0 {
             metalFlags |= TerminalCell.linkUnderlineFlag
         }
 
+        // Copy the cluster bytes into the destination buffer. Continuation cells
+        // and blanks contribute no bytes — they render as background only.
+        //
+        // Local-echo overlay cells encode their single ASCII byte inline via
+        // `RustCellLocalEcho.encode` and bypass the snapshot's clusters buffer.
+        //
+        // If neither path succeeds (corrupt or mid-resize snapshot), we drop the
+        // cluster entirely rather than ship a TerminalCell with `clusterLen > 0`
+        // pointing at offset 0 — that would make the renderer read unrelated
+        // bytes or trap on an empty destination cluster array.
+        var clusterStart: UInt32 = 0
+        var clusterLen: UInt16 = 0
+        if cell.cluster_len > 0 {
+            if RustCellLocalEcho.isEncoded(offset: cell.cluster_offset) {
+                var byte = RustCellLocalEcho.decode(offset: cell.cluster_offset)
+                clusterStart = withUnsafePointer(to: &byte) { p in
+                    destBuffer.appendCluster(UnsafeBufferPointer(start: p, count: 1))
+                }
+                clusterLen = cell.cluster_len
+            } else if let src = sourceClusters,
+                      Int(cell.cluster_offset) + Int(cell.cluster_len) <= sourceClustersLen {
+                let slice = UnsafeBufferPointer(
+                    start: src.advanced(by: Int(cell.cluster_offset)),
+                    count: Int(cell.cluster_len)
+                )
+                clusterStart = destBuffer.appendCluster(slice)
+                clusterLen = cell.cluster_len
+            }
+        }
+
         return TerminalCell(
-            character: cell.character,
+            clusterStart: clusterStart,
+            clusterLen: clusterLen,
             foreground: fg,
             background: bg,
-            flags: metalFlags
+            flags: metalFlags,
+            width: cell.width,
+            continuation: cell.continuation
         )
     }
 

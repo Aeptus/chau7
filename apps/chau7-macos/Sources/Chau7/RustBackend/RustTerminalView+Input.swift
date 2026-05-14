@@ -225,7 +225,15 @@ extension RustTerminalView {
                 pendingLocalEcho.append(byte)
                 let idx = cursor.row * cols + cursor.col
                 var cell = baseCellForLocalEcho(row: cursor.row, col: cursor.col)
-                cell.character = UInt32(byte)
+                // Encode the single ASCII byte inline using the high bit of
+                // `cluster_offset` as a sentinel — the bridge sees this and
+                // writes the byte directly into the destination cluster buffer
+                // instead of reading from the snapshot's clusters_utf8 (which
+                // doesn't contain this synthetic local-echo content).
+                cell.cluster_offset = RustCellLocalEcho.encode(byte: byte)
+                cell.cluster_len = 1
+                cell.width = 1
+                cell.continuation = 0
                 localEchoOverlay[idx] = cell
                 advanceLocalEchoCursor(&cursor)
             } else if byte == 0x7F || byte == 0x08 {

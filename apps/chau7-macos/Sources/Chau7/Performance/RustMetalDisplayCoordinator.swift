@@ -877,7 +877,6 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             Log.trace("RustMetalDisplayCoordinator: Metal render — \(cols)x\(rows) (\(cellCount) cells), drawCalls=\(Self.drawCallCount), viewport=\(view.bounds.size)")
         }
 
-        let cellsPtr = UnsafeBufferPointer(sourceBuffer.cells)
         if let viewID = terminalView?.viewId {
             RenderPipelineProfiler.shared.recordDraw(
                 viewID: viewID,
@@ -891,7 +890,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         // the full pixel-space drawable automatically.
         let presentedView = terminalView
         let didCommit = renderer.render(
-            cells: cellsPtr,
+            buffer: sourceBuffer,
             rows: rows,
             cols: cols,
             dirtyRows: dirtyRows,

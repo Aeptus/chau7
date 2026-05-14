@@ -17,23 +17,32 @@ enum RustCellFlags {
 }
 
 /// C-compatible cell data matching Rust's CellData (chau7_terminal.h).
-/// Single definition used by both CPU renderer and Metal bridge.
+///
+/// Cells reference a UTF-8 grapheme cluster in `RustGridSnapshot.clusters_utf8`
+/// (offset + length). `width` and `continuation` describe layout authoritatively;
+/// the renderer does not infer width from glyph advance.
 struct RustCellData {
-    var character: UInt32
-    var fg_r: UInt8
-    var fg_g: UInt8
-    var fg_b: UInt8
-    var bg_r: UInt8
-    var bg_g: UInt8
-    var bg_b: UInt8
-    var flags: UInt8
-    var _pad: UInt8 // bits 0-2: underline variant
-    var link_id: UInt16 // OSC 8 hyperlink ID (0 = no link)
+    var cluster_offset: UInt32 = 0
+    var fg_r: UInt8 = 255
+    var fg_g: UInt8 = 255
+    var fg_b: UInt8 = 255
+    var bg_r: UInt8 = 0
+    var bg_g: UInt8 = 0
+    var bg_b: UInt8 = 0
+    var cluster_len: UInt16 = 0
+    var width: UInt8 = 1 // 1 = narrow, 2 = wide, 0 on continuation
+    var continuation: UInt8 = 0 // 1 = right half of a wide grapheme (no glyph)
+    var flags: UInt8 = 0
+    var underline_style: UInt8 = 0
+    var link_id: UInt16 = 0
 }
 
 /// C-compatible grid snapshot matching Rust's GridSnapshot (chau7_terminal.h).
 struct RustGridSnapshot {
     var cells: UnsafeMutablePointer<RustCellData>?
+    var clusters_utf8: UnsafeMutablePointer<UInt8>?
+    var clusters_len: Int
+    var clusters_capacity: Int
     var cols: UInt16
     var rows: UInt16
     var cursor_visible: UInt8 // DECTCEM: 0 = hidden, 1 = visible
@@ -41,6 +50,46 @@ struct RustGridSnapshot {
     var scrollback_rows: UInt32
     var display_offset: UInt32
     var capacity: Int // Must match Rust's usize (8 bytes on 64-bit)
+}
+
+extension RustCellData {
+    /// Read this cell's grapheme cluster as a Swift String. Returns "" for blank cells
+    /// (cluster_len == 0) and for continuation cells. The buffer must outlive this call.
+    ///
+    /// Handles the local-echo sentinel encoding (`RustCellLocalEcho.encode`).
+    @inlinable
+    func clusterString(buffer: UnsafePointer<UInt8>?) -> String {
+        guard cluster_len > 0 else { return "" }
+        if RustCellLocalEcho.isEncoded(offset: cluster_offset) {
+            return String(decoding: [RustCellLocalEcho.decode(offset: cluster_offset)], as: UTF8.self)
+        }
+        guard let base = buffer else { return "" }
+        let bytes = UnsafeBufferPointer(
+            start: base.advanced(by: Int(cluster_offset)),
+            count: Int(cluster_len)
+        )
+        return String(decoding: bytes, as: UTF8.self)
+    }
+}
+
+/// Sentinel encoding for local-echo cells: a single ASCII byte stored inline in
+/// `cluster_offset` (high bit set), bypassing the snapshot's `clusters_utf8`
+/// buffer. The bridge re-emits the byte into the destination buffer at render
+/// time. Only used by `RustTerminalView+Input` predictive overlays.
+enum RustCellLocalEcho {
+    static let sentinelBit: UInt32 = 0x8000_0000
+
+    @inlinable static func encode(byte: UInt8) -> UInt32 {
+        sentinelBit | UInt32(byte)
+    }
+
+    @inlinable static func isEncoded(offset: UInt32) -> Bool {
+        offset & sentinelBit != 0
+    }
+
+    @inlinable static func decode(offset: UInt32) -> UInt8 {
+        UInt8(offset & 0xFF)
+    }
 }
 
 // MARK: - Terminal Font Utilities
