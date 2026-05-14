@@ -3139,6 +3139,14 @@ final class RustTerminalView: NSView {
         }
     }
 
+    var isInteractiveForRendering: Bool {
+        isInteractive
+    }
+
+    var allowsLivePresentationForRendering: Bool {
+        currentRenderPhase.allowsLivePresentation
+    }
+
     func requestAuthoritativeReveal(reason: String) {
         authoritativeRevealPending = true
         needsGridSync = true
