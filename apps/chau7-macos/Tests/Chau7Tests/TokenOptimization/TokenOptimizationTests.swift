@@ -361,10 +361,7 @@ final class TokenOptimizationCoreTests: XCTestCase {
 
     // MARK: - Diagnostic State Snapshot
 
-    /// `CTOStateSnapshot` round-trips through JSON without losing fields,
-    /// and the schemaVersion default matches the current constant. Future
-    /// changes to the on-disk shape can be detected by adjusting this
-    /// test alongside the version bump.
+    /// `CTOStateSnapshot` round-trips through JSON without losing fields.
     func testStateSnapshotCodableRoundTrip() throws {
         let stats = CTOGainStats(
             commands: 12, inputTokens: 800, outputTokens: 600,
@@ -393,10 +390,9 @@ final class TokenOptimizationCoreTests: XCTestCase {
         let decoded = try decoder.decode(CTOStateSnapshot.self, from: data)
 
         XCTAssertEqual(decoded, snapshot)
-        XCTAssertEqual(decoded.schemaVersion, CTOStateSnapshot.currentSchemaVersion)
     }
 
-    func testStateSnapshotDefaultsSchemaVersion() {
+    func testStateSnapshotOptionalFieldsDefault() {
         let snapshot = CTOStateSnapshot(
             mode: "off",
             updatedAt: Date(),
@@ -404,18 +400,17 @@ final class TokenOptimizationCoreTests: XCTestCase {
             trackedSessions: [],
             deferredSessions: []
         )
-        XCTAssertEqual(snapshot.schemaVersion, CTOStateSnapshot.currentSchemaVersion)
         XCTAssertNil(snapshot.gainStats)
         XCTAssertNil(
             snapshot.lastStateChangeAt,
             "lastStateChangeAt should default to nil so heartbeat-first writes are explicit"
         )
+        XCTAssertEqual(snapshot.toolSessions, [])
     }
 
-    /// R3: each deferred entry must carry the reason it was deferred and
-    /// the wall-clock instant it entered the deferred set. A round-trip
-    /// pins down field naming (used by external readers) and the
-    /// schemaVersion bump.
+    /// Each deferred entry must carry the reason it was deferred and the
+    /// wall-clock instant it entered the deferred set. A round-trip
+    /// pins down the field naming on-disk readers will grep for.
     func testDeferredSessionInfoRoundTrip() throws {
         let info = CTODeferredSessionInfo(
             sessionID: "abc",
@@ -439,7 +434,6 @@ final class TokenOptimizationCoreTests: XCTestCase {
         decoder.dateDecodingStrategy = .iso8601
         let decoded = try decoder.decode(CTOStateSnapshot.self, from: data)
 
-        XCTAssertEqual(decoded.schemaVersion, 2, "Schema v2 carries CTODeferredSessionInfo")
         XCTAssertEqual(decoded.deferredSessions.count, 1)
         let entry = try XCTUnwrap(decoded.deferredSessions.first)
         XCTAssertEqual(entry.sessionID, "abc")

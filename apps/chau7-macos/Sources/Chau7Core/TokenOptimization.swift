@@ -496,9 +496,6 @@ public extension CTORuntimeSnapshot {
 /// external tooling can inspect "what does Chau7 currently think CTO is
 /// doing" without scraping multiple files.
 ///
-/// Schema version is recorded so future readers can detect older / newer
-/// layouts. Bump it whenever the meaning of any field changes (additive
-/// fields don't require a bump).
 /// Cross-reference between a Chau7 session UUID (which CTO tracks) and
 /// the tool-side session identity Claude/Codex/etc. emits in *their*
 /// logs and telemetry. Without this, on-call engineers correlating a
@@ -552,13 +549,6 @@ public struct CTODeferredSessionInfo: Codable, Equatable, Sendable {
 }
 
 public struct CTOStateSnapshot: Codable, Equatable, Sendable {
-    /// Schema version 2 changed `deferredSessions` from `[String]` to
-    /// `[CTODeferredSessionInfo]`. Readers that parse v1 will fail on
-    /// v2 (the deferred entries are no longer JSON strings), so the
-    /// bump is required.
-    public static let currentSchemaVersion = 2
-
-    public let schemaVersion: Int
     public let mode: String
     /// Wall-clock time the file was last written. Bumps on every write
     /// (including heartbeats), so external readers can use it as a
@@ -576,14 +566,13 @@ public struct CTOStateSnapshot: Codable, Equatable, Sendable {
     public let trackedSessions: [String]
     public let deferredSessions: [CTODeferredSessionInfo]
     public let gainStats: CTOGainStats?
-    /// Tool-side identity cross-reference (R5). Empty when no tracked
+    /// Tool-side identity cross-reference. Empty when no tracked
     /// session has yet been detected as running an AI tool. Sparse —
     /// only sessions with at least one of `provider`/`toolSessionID`
     /// known appear here; pure shell sessions are absent.
     public let toolSessions: [CTOToolSessionInfo]
 
     public init(
-        schemaVersion: Int = CTOStateSnapshot.currentSchemaVersion,
         mode: String,
         updatedAt: Date,
         lastStateChangeAt: Date? = nil,
@@ -593,7 +582,6 @@ public struct CTOStateSnapshot: Codable, Equatable, Sendable {
         gainStats: CTOGainStats? = nil,
         toolSessions: [CTOToolSessionInfo] = []
     ) {
-        self.schemaVersion = schemaVersion
         self.mode = mode
         self.updatedAt = updatedAt
         self.lastStateChangeAt = lastStateChangeAt
