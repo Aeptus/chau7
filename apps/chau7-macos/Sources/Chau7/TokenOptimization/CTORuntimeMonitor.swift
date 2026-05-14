@@ -29,6 +29,18 @@ final class CTORuntimeMonitor {
     private var activeSessions: Set<String> = []
     private var trackedSessionIDs: Set<String> = []
     private var deferredSessionIDs: Set<String> = []
+    /// Per-session metadata for entries in `deferredSessionIDs`. Populated
+    /// by `recordDeferredSet`; pruned whenever a deferred session
+    /// transitions out (flush / skip / cancel / bulk-remove / teardown).
+    /// Kept as a sibling Dictionary rather than a Set-of-structs because
+    /// every read path (snapshot, transition-detection) already keys by
+    /// sessionID.
+    private var deferredSessionDetails: [String: (reason: String, since: Date)] = [:]
+    /// Tool-side identity cross-reference per tracked session (R5).
+    /// Pushed by `TerminalSessionModel.applyCTOFlagRecalculation` so the
+    /// monitor doesn't have to walk session models itself. Pruned on
+    /// session untrack / teardown / bulk-remove / reset.
+    private var toolSessionIdentities: [String: (provider: String?, toolSessionID: String?)] = [:]
     private var recentDecisions: [CTODecisionEvent] = []
     private var deferredFlushDelaySumMs: Int64 = 0
     private var deferredFlushDelayMinMs = 0
@@ -39,6 +51,12 @@ final class CTORuntimeMonitor {
     private var lastEmittedAssessment: CTORuntimeAssessment?
     private var lastGainStats: CTOGainStats?
     private var lastGainStatsAt: Date?
+    /// Wall-clock time the disk-mirror state was last written by a
+    /// change-driven event (vs a heartbeat). Heartbeat writes still
+    /// bump `updatedAt` in the file, but leave this value alone so
+    /// readers can distinguish "system is alive and quiet" from "system
+    /// is alive and busy".
+    private var lastStateChangeAt: Date?
     private let firstSeenAt: Date
     private let maxRecentDecisions = 50
     private let summaryInterval = 25
@@ -114,6 +132,8 @@ final class CTORuntimeMonitor {
             activeSessions.removeAll()
             trackedSessionIDs.removeAll()
             deferredSessionIDs.removeAll()
+            deferredSessionDetails.removeAll()
+            toolSessionIdentities.removeAll()
             recentDecisions.removeAll(keepingCapacity: true)
             activeSessionCount = 0
             trackedSessions = 0
@@ -128,6 +148,7 @@ final class CTORuntimeMonitor {
             lastEmittedAssessment = nil
             lastGainStats = nil
             lastGainStatsAt = nil
+            lastStateChangeAt = nil
         }
         LogEnhanced.info(.cto, "cto monitor reset", metadata: ["scope": "manual"])
     }
@@ -142,6 +163,8 @@ final class CTORuntimeMonitor {
             self.currentMode = currentMode
             if currentMode == .off {
                 deferredSessionIDs.removeAll()
+                deferredSessionDetails.removeAll()
+                toolSessionIdentities.removeAll()
             }
             modeChangeCountSnapshot = modeChangeCount
         }
@@ -215,6 +238,8 @@ final class CTORuntimeMonitor {
             teardownCount += 1
             teardownCountSnapshot = teardownCount
             deferredSessionIDs.removeAll()
+            deferredSessionDetails.removeAll()
+            toolSessionIdentities.removeAll()
         }
         LogEnhanced.info(.cto, "CTO manager teardown observed", metadata: ["teardowns": "\(teardownCountSnapshot)"])
         // Drop the diagnostic mirror on teardown. The file would
@@ -228,6 +253,8 @@ final class CTORuntimeMonitor {
             let removedTracked = trackedSessionIDs.remove(sessionID) != nil
             let removedActive = activeSessions.remove(sessionID) != nil
             let removedDeferred = deferredSessionIDs.remove(sessionID) != nil
+            deferredSessionDetails.removeValue(forKey: sessionID)
+            toolSessionIdentities.removeValue(forKey: sessionID)
             activeSessionCount = activeSessions.count
             trackedSessions = trackedSessionIDs.count
             return removedTracked || removedActive || removedDeferred
@@ -242,6 +269,8 @@ final class CTORuntimeMonitor {
             removedCount += count
             reasonBreakdown[.off, default: 0] += count
             deferredSessionIDs.removeAll()
+            deferredSessionDetails.removeAll()
+            toolSessionIdentities.removeAll()
             trackedSessionIDs.subtract(activeSessions)
             activeSessions.removeAll()
             activeSessionCount = 0
@@ -259,11 +288,49 @@ final class CTORuntimeMonitor {
         }
     }
 
-    func recordDeferredSet(sessionID: String) {
+    /// Cross-reference a Chau7 session UUID with its current tool-side
+    /// identity (provider + toolSessionID), or clear it when both
+    /// arguments are nil. Surfaced in `cto_state.json` as
+    /// `toolSessions`. The monitor doesn't drive any decisions off
+    /// this — it's purely a correlation aid for external log readers.
+    ///
+    /// Idempotent: passing the same trio twice is a no-op write to the
+    /// underlying dictionary, so callers can fire freely from change
+    /// hooks without a "did anything actually change" guard.
+    func recordToolSessionIdentity(
+        sessionID: String,
+        provider: String?,
+        toolSessionID: String?
+    ) {
+        withLock {
+            if provider == nil, toolSessionID == nil {
+                toolSessionIdentities.removeValue(forKey: sessionID)
+            } else {
+                toolSessionIdentities[sessionID] = (provider: provider, toolSessionID: toolSessionID)
+            }
+        }
+    }
+
+    /// Mark a session as deferred. `reason` is a short free-form tag
+    /// surfaced in `cto_state.json` so external readers can answer
+    /// "why is this session deferred". Defaults to
+    /// `"pending_first_prompt"` for source-compat with existing
+    /// callers; new deferral sites should pass a descriptive tag.
+    func recordDeferredSet(
+        sessionID: String,
+        reason: String = "pending_first_prompt"
+    ) {
         var pendingDeferred = 0
         withLock {
             deferredSetCount += 1
             deferredSessionIDs.insert(sessionID)
+            // Preserve the original `since` if this session is being
+            // re-marked deferred (e.g. mode flip + re-defer) — readers
+            // expect `since` to mean "earliest time this session
+            // entered the deferred set", not "most recent set".
+            if deferredSessionDetails[sessionID] == nil {
+                deferredSessionDetails[sessionID] = (reason: reason, since: Date())
+            }
             pendingDeferred = deferredSessionIDs.count
             trackSession(sessionID)
         }
@@ -273,6 +340,7 @@ final class CTORuntimeMonitor {
             metadata: [
                 "session": sessionID,
                 "mode": currentMode.rawValue,
+                "reason": reason,
                 "pendingDeferred": "\(pendingDeferred)"
             ]
         )
@@ -294,6 +362,7 @@ final class CTORuntimeMonitor {
         withLock {
             deferredFlushCount += 1
             deferredSessionIDs.remove(sessionID)
+            deferredSessionDetails.removeValue(forKey: sessionID)
             trackSession(sessionID)
             updateDeferredDelayStats(delayToActivateMs: delayToActivateMs)
             event = recordDecisionInternal(
@@ -336,6 +405,7 @@ final class CTORuntimeMonitor {
         withLock {
             deferredSkipCount += 1
             deferredSessionIDs.remove(sessionID)
+            deferredSessionDetails.removeValue(forKey: sessionID)
             trackSession(sessionID)
             event = CTODecisionEvent(
                 sessionID: sessionID,
@@ -384,6 +454,7 @@ final class CTORuntimeMonitor {
         withLock {
             deferredCancelCount += 1
             deferredSessionIDs.remove(sessionID)
+            deferredSessionDetails.removeValue(forKey: sessionID)
             event = CTODecisionEvent(
                 sessionID: sessionID,
                 mode: mode,
@@ -462,18 +533,78 @@ final class CTORuntimeMonitor {
         }
     }
 
+    /// Emit a periodic `CTO health snapshot` log line. Unlike `emitSummary`
+    /// (which is driven by `recalcCount % summaryInterval`), this is
+    /// invoked on a wall-clock timer so quiet periods still produce a
+    /// log heartbeat. The line captures the smallest set of fields an
+    /// on-call engineer would want when answering "is CTO doing
+    /// anything?" from logs alone.
+    ///
+    /// Side-effect-free: does not touch `lastEmittedAssessment`, does
+    /// not write the state file. Pair with `writeDiagnosticStateSnapshot()`
+    /// at the call site if you also want the JSON heartbeated.
+    func logHealthSnapshot() {
+        let snap = snapshot()
+        let assessment = snap.assessment
+
+        var metadata: [String: String] = [
+            "mode": snap.mode,
+            "activeCount": "\(snap.activeSessionCount)",
+            "trackedCount": "\(snap.trackedSessions)",
+            "deferredCount": "\(snap.pendingDeferredSessions)",
+            "healthState": assessment.state.rawValue,
+            "healthScore": "\(assessment.score)",
+            "uptimeMinutes": String(format: "%.1f", Double(snap.uptimeSeconds) / 60.0)
+        ]
+
+        if let gain = snap.gainStats {
+            metadata["gainCommands"] = "\(gain.commands)"
+            metadata["gainSavingsPct"] = String(format: "%.2f", gain.savingsPct)
+            metadata["gainAvgTimeMs"] = "\(gain.avgTimeMs)"
+        }
+
+        LogEnhanced.info(.cto, "CTO health snapshot", metadata: metadata)
+    }
+
     /// Build a `CTOStateSnapshot` from the current monitor state and write
     /// it to disk via `CTOStateFile`. Reads counters under the lock so the
     /// resulting file is internally consistent.
-    func writeDiagnosticStateSnapshot() {
+    ///
+    /// - Parameter isHeartbeat: When `false` (the default), the call
+    ///   represents a real state change and `lastStateChangeAt` is
+    ///   advanced to "now". When `true`, the field is preserved so
+    ///   external readers can detect quiet-but-alive systems.
+    func writeDiagnosticStateSnapshot(isHeartbeat: Bool = false) {
         let snapshot: CTOStateSnapshot = withLock {
-            CTOStateSnapshot(
+            let now = Date()
+            if !isHeartbeat {
+                lastStateChangeAt = now
+            }
+            let deferredInfos: [CTODeferredSessionInfo] = deferredSessionIDs.sorted().map { id in
+                let detail = deferredSessionDetails[id]
+                return CTODeferredSessionInfo(
+                    sessionID: id,
+                    reason: detail?.reason ?? "unknown",
+                    since: detail?.since ?? now
+                )
+            }
+            let toolInfos: [CTOToolSessionInfo] = toolSessionIdentities.keys.sorted().map { id in
+                let entry = toolSessionIdentities[id]
+                return CTOToolSessionInfo(
+                    sessionID: id,
+                    provider: entry?.provider,
+                    toolSessionID: entry?.toolSessionID
+                )
+            }
+            return CTOStateSnapshot(
                 mode: currentMode.rawValue,
-                updatedAt: Date(),
+                updatedAt: now,
+                lastStateChangeAt: lastStateChangeAt,
                 activeSessions: activeSessions.sorted(),
                 trackedSessions: trackedSessionIDs.sorted(),
-                deferredSessions: deferredSessionIDs.sorted(),
-                gainStats: lastGainStats
+                deferredSessions: deferredInfos,
+                gainStats: lastGainStats,
+                toolSessions: toolInfos
             )
         }
         CTOStateFile.write(snapshot)

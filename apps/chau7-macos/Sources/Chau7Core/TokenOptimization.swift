@@ -499,33 +499,109 @@ public extension CTORuntimeSnapshot {
 /// Schema version is recorded so future readers can detect older / newer
 /// layouts. Bump it whenever the meaning of any field changes (additive
 /// fields don't require a bump).
+/// Cross-reference between a Chau7 session UUID (which CTO tracks) and
+/// the tool-side session identity Claude/Codex/etc. emits in *their*
+/// logs and telemetry. Without this, on-call engineers correlating a
+/// telemetry-warn line ("session=d170ee37 had nil extraction") with a
+/// CTO state file ("19 tracked sessions, all UUIDs") have no way to
+/// know they refer to the same session — the two sides use different
+/// session-id namespaces. Surfaced as an additive sibling field on
+/// `CTOStateSnapshot` so older v2 readers ignore it gracefully.
+public struct CTOToolSessionInfo: Codable, Equatable, Sendable {
+    /// Chau7 internal session UUID — matches an entry in
+    /// `CTOStateSnapshot.trackedSessions`.
+    public let sessionID: String
+    /// Normalized tool name ("claude", "codex", …), or nil when the
+    /// session is shell-only / hasn't been detected as AI yet.
+    public let provider: String?
+    /// Tool-side session id (e.g. Claude's UUID from its JSONL
+    /// transcripts). Nil when CTO knows the provider but not its
+    /// session-id (e.g. a Codex tab whose session id hasn't been
+    /// observed yet).
+    public let toolSessionID: String?
+
+    public init(sessionID: String, provider: String?, toolSessionID: String?) {
+        self.sessionID = sessionID
+        self.provider = provider
+        self.toolSessionID = toolSessionID
+    }
+}
+
+/// Per-deferred-session detail surfaced in `CTOStateSnapshot`. A bare
+/// list of UUIDs doesn't answer "why is this session deferred and for
+/// how long" — the two questions an on-call engineer hits first when
+/// inspecting `cto_state.json`. Each entry carries:
+/// - `sessionID`: the Chau7 session UUID, same shape as
+///   `activeSessions` / `trackedSessions` entries.
+/// - `reason`: free-form short string describing why the engine chose
+///   to defer (e.g. `"pending_first_prompt"`). Free-form because the
+///   set of reasons is expected to grow without rebuilding readers.
+/// - `since`: wall-clock instant the session entered the deferred set.
+///   A `since` significantly older than `now - <typical shell init>`
+///   is suspicious (the deferral never fired or never resolved).
+public struct CTODeferredSessionInfo: Codable, Equatable, Sendable {
+    public let sessionID: String
+    public let reason: String
+    public let since: Date
+
+    public init(sessionID: String, reason: String, since: Date) {
+        self.sessionID = sessionID
+        self.reason = reason
+        self.since = since
+    }
+}
+
 public struct CTOStateSnapshot: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion = 1
+    /// Schema version 2 changed `deferredSessions` from `[String]` to
+    /// `[CTODeferredSessionInfo]`. Readers that parse v1 will fail on
+    /// v2 (the deferred entries are no longer JSON strings), so the
+    /// bump is required.
+    public static let currentSchemaVersion = 2
 
     public let schemaVersion: Int
     public let mode: String
+    /// Wall-clock time the file was last written. Bumps on every write
+    /// (including heartbeats), so external readers can use it as a
+    /// liveness signal.
     public let updatedAt: Date
+    /// Wall-clock time the underlying state last *meaningfully* changed
+    /// — i.e. when this file was last written by a change-driven path
+    /// rather than a heartbeat. Lets readers distinguish "Chau7 is
+    /// alive and CTO is stable" (recent `updatedAt`, old
+    /// `lastStateChangeAt`) from "Chau7 hasn't touched this file in
+    /// hours, something is wrong" (both stale). Nil only on the very
+    /// first write of a fresh monitor.
+    public let lastStateChangeAt: Date?
     public let activeSessions: [String]
     public let trackedSessions: [String]
-    public let deferredSessions: [String]
+    public let deferredSessions: [CTODeferredSessionInfo]
     public let gainStats: CTOGainStats?
+    /// Tool-side identity cross-reference (R5). Empty when no tracked
+    /// session has yet been detected as running an AI tool. Sparse —
+    /// only sessions with at least one of `provider`/`toolSessionID`
+    /// known appear here; pure shell sessions are absent.
+    public let toolSessions: [CTOToolSessionInfo]
 
     public init(
         schemaVersion: Int = CTOStateSnapshot.currentSchemaVersion,
         mode: String,
         updatedAt: Date,
+        lastStateChangeAt: Date? = nil,
         activeSessions: [String],
         trackedSessions: [String],
-        deferredSessions: [String],
-        gainStats: CTOGainStats? = nil
+        deferredSessions: [CTODeferredSessionInfo],
+        gainStats: CTOGainStats? = nil,
+        toolSessions: [CTOToolSessionInfo] = []
     ) {
         self.schemaVersion = schemaVersion
         self.mode = mode
         self.updatedAt = updatedAt
+        self.lastStateChangeAt = lastStateChangeAt
         self.activeSessions = activeSessions
         self.trackedSessions = trackedSessions
         self.deferredSessions = deferredSessions
         self.gainStats = gainStats
+        self.toolSessions = toolSessions
     }
 }
 

@@ -3094,6 +3094,17 @@ final class TerminalSessionModel {
             trigger: .aiStateChanged
         )
 
+        // R5: push the tool-side identity to the monitor so
+        // `cto_state.json` carries the correlation between Chau7
+        // session UUIDs and Claude/Codex session ids. Recalc is the
+        // natural sync point — it fires on every AI-state change, so
+        // the published cross-reference can't drift far behind reality.
+        CTORuntimeMonitor.shared.recordToolSessionIdentity(
+            sessionID: tabIdentifier,
+            provider: effectiveAIProvider,
+            toolSessionID: effectiveAISessionId
+        )
+
         // Notify tab bar to re-render bolt icon state (the OverlayTab struct
         // is a value type and doesn't observe session changes directly).
         NotificationCenter.default.post(name: .ctoFlagRecalculated, object: nil)

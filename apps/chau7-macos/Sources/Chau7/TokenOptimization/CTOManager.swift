@@ -45,10 +45,34 @@ final class CTOManager {
     /// a fresh timer with the correct first-fire offset.
     private var gainStatsPollTimer: DispatchSourceTimer?
 
+    /// Periodic emitter of `CTO health snapshot` log lines. Independent
+    /// of `gainStatsPollTimer` because the two cadences are different
+    /// (gain is 5 min, health log is 30 min — quieter signal that an
+    /// on-call engineer would want without flooding the file).
+    private var healthSnapshotTimer: DispatchSourceTimer?
+
+    /// Periodic heartbeat writer for `~/.chau7/cto_state.json`. The
+    /// file is event-driven on its own (state-changing decisions
+    /// trigger an immediate write), so a quiet day can leave the file
+    /// timestamped hours in the past — external readers can't tell
+    /// "stable" from "Chau7 hung". This timer rewrites the file every
+    /// 5 minutes regardless of activity; `lastStateChangeAt` inside
+    /// the file lets readers separate heartbeats from real changes.
+    private var stateHeartbeatTimer: DispatchSourceTimer?
+
     /// 5 minutes — frequent enough to track real usage trends without
     /// flooding the optimizer binary, infrequent enough that the
     /// JSON-decode cost is invisible.
     private static let gainStatsPollInterval: TimeInterval = 300
+
+    /// 30 minutes between `CTO health snapshot` log lines. Tuned so that
+    /// a full day of logs has ~48 lines (auditable, but not noisy).
+    private static let healthSnapshotInterval: TimeInterval = 1800
+
+    /// 5 minutes between heartbeat writes of `cto_state.json`. Matches
+    /// `gainStatsPollInterval` so a reader hitting the file at any
+    /// time sees `updatedAt` within at most ~5 minutes of "now".
+    private static let stateHeartbeatInterval: TimeInterval = 300
 
     private init() {
         let base = RuntimeIsolation.chau7Directory()
@@ -114,6 +138,8 @@ final class CTOManager {
 
         rotateCommandLogIfNeeded()
         startGainStatsPolling()
+        startHealthSnapshotLogging()
+        startStateFileHeartbeat()
     }
 
     /// Begin periodic polling of `chau7-optim gain` (every 5 min). Each
@@ -146,6 +172,62 @@ final class CTOManager {
     func stopGainStatsPolling() {
         gainStatsPollTimer?.cancel()
         gainStatsPollTimer = nil
+    }
+
+    /// Begin periodic `CTO health snapshot` log emission (every 30 min).
+    /// Read-only — does not write the diagnostic state file (R2 handles
+    /// that on its own cadence) and does not touch transition state.
+    ///
+    /// Safe to call repeatedly; re-arming cancels the old timer first.
+    func startHealthSnapshotLogging() {
+        stopHealthSnapshotLogging()
+
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        // First fire after the interval — a setup-time emission would
+        // mostly produce zero counters (we just started). The first
+        // useful snapshot is after one interval of activity.
+        timer.schedule(
+            deadline: .now() + Self.healthSnapshotInterval,
+            repeating: Self.healthSnapshotInterval
+        )
+        timer.setEventHandler {
+            CTORuntimeMonitor.shared.logHealthSnapshot()
+        }
+        timer.resume()
+        healthSnapshotTimer = timer
+    }
+
+    func stopHealthSnapshotLogging() {
+        healthSnapshotTimer?.cancel()
+        healthSnapshotTimer = nil
+    }
+
+    /// Begin periodic heartbeat writes of `~/.chau7/cto_state.json`.
+    /// Each fire rewrites the file with `isHeartbeat: true` so
+    /// `updatedAt` advances but `lastStateChangeAt` is preserved from
+    /// the most recent state-changing decision.
+    ///
+    /// Safe to call repeatedly; re-arming cancels the old timer first.
+    func startStateFileHeartbeat() {
+        stopStateFileHeartbeat()
+
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        // First fire after the interval so the change-driven write at
+        // setup time isn't immediately overwritten with a heartbeat.
+        timer.schedule(
+            deadline: .now() + Self.stateHeartbeatInterval,
+            repeating: Self.stateHeartbeatInterval
+        )
+        timer.setEventHandler {
+            CTORuntimeMonitor.shared.writeDiagnosticStateSnapshot(isHeartbeat: true)
+        }
+        timer.resume()
+        stateHeartbeatTimer = timer
+    }
+
+    func stopStateFileHeartbeat() {
+        stateHeartbeatTimer?.cancel()
+        stateHeartbeatTimer = nil
     }
 
     /// Run one sample cycle. Exposed `internal` (no `private`) so tests
@@ -884,6 +966,8 @@ final class CTOManager {
     /// when switching to `.off` mode.
     func teardown() {
         stopGainStatsPolling()
+        stopHealthSnapshotLogging()
+        stopStateFileHeartbeat()
         CTORuntimeMonitor.shared.recordGainStats(nil)
         CTORuntimeMonitor.shared.recordManagerTeardown()
         let removed = CTOFlagManager.removeAllFlags()

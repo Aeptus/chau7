@@ -370,12 +370,17 @@ final class TokenOptimizationCoreTests: XCTestCase {
             commands: 12, inputTokens: 800, outputTokens: 600,
             savedTokens: 240, savingsPct: 28.5, totalTimeMs: 1200, avgTimeMs: 100
         )
+        let deferred = CTODeferredSessionInfo(
+            sessionID: "session-c",
+            reason: "pending_first_prompt",
+            since: Date(timeIntervalSince1970: 1_715_000_000)
+        )
         let snapshot = CTOStateSnapshot(
             mode: TokenOptimizationMode.allTabs.rawValue,
             updatedAt: Date(timeIntervalSince1970: 1_715_000_000),
             activeSessions: ["session-a", "session-b"],
             trackedSessions: ["session-a", "session-b", "session-c"],
-            deferredSessions: ["session-c"],
+            deferredSessions: [deferred],
             gainStats: stats
         )
 
@@ -401,6 +406,136 @@ final class TokenOptimizationCoreTests: XCTestCase {
         )
         XCTAssertEqual(snapshot.schemaVersion, CTOStateSnapshot.currentSchemaVersion)
         XCTAssertNil(snapshot.gainStats)
+        XCTAssertNil(
+            snapshot.lastStateChangeAt,
+            "lastStateChangeAt should default to nil so heartbeat-first writes are explicit"
+        )
+    }
+
+    /// R3: each deferred entry must carry the reason it was deferred and
+    /// the wall-clock instant it entered the deferred set. A round-trip
+    /// pins down field naming (used by external readers) and the
+    /// schemaVersion bump.
+    func testDeferredSessionInfoRoundTrip() throws {
+        let info = CTODeferredSessionInfo(
+            sessionID: "abc",
+            reason: "pending_first_prompt",
+            since: Date(timeIntervalSince1970: 1_715_000_500)
+        )
+        let snapshot = CTOStateSnapshot(
+            mode: TokenOptimizationMode.allTabs.rawValue,
+            updatedAt: Date(timeIntervalSince1970: 1_715_000_600),
+            lastStateChangeAt: Date(timeIntervalSince1970: 1_715_000_500),
+            activeSessions: [],
+            trackedSessions: ["abc"],
+            deferredSessions: [info]
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(snapshot)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(CTOStateSnapshot.self, from: data)
+
+        XCTAssertEqual(decoded.schemaVersion, 2, "Schema v2 carries CTODeferredSessionInfo")
+        XCTAssertEqual(decoded.deferredSessions.count, 1)
+        let entry = try XCTUnwrap(decoded.deferredSessions.first)
+        XCTAssertEqual(entry.sessionID, "abc")
+        XCTAssertEqual(entry.reason, "pending_first_prompt")
+        XCTAssertEqual(entry.since, Date(timeIntervalSince1970: 1_715_000_500))
+    }
+
+    /// R5: each tool-session entry must round-trip provider +
+    /// toolSessionID alongside the Chau7 session UUID, including the
+    /// "provider known but session id not yet observed" case where
+    /// `toolSessionID` is nil. Field naming is load-bearing — external
+    /// readers grep on these names.
+    func testToolSessionInfoRoundTrip() throws {
+        let known = CTOToolSessionInfo(
+            sessionID: "chau7-1", provider: "claude", toolSessionID: "claude-abc"
+        )
+        let providerOnly = CTOToolSessionInfo(
+            sessionID: "chau7-2", provider: "codex", toolSessionID: nil
+        )
+        let snapshot = CTOStateSnapshot(
+            mode: TokenOptimizationMode.allTabs.rawValue,
+            updatedAt: Date(timeIntervalSince1970: 1_715_000_700),
+            activeSessions: ["chau7-1", "chau7-2"],
+            trackedSessions: ["chau7-1", "chau7-2"],
+            deferredSessions: [],
+            toolSessions: [known, providerOnly]
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(snapshot)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(CTOStateSnapshot.self, from: data)
+
+        XCTAssertEqual(decoded.toolSessions, [known, providerOnly])
+        XCTAssertEqual(decoded.toolSessions[0].provider, "claude")
+        XCTAssertEqual(decoded.toolSessions[0].toolSessionID, "claude-abc")
+        XCTAssertNil(decoded.toolSessions[1].toolSessionID)
+    }
+
+    /// R5 default value sanity: snapshots constructed without specifying
+    /// `toolSessions` should round-trip as an empty list, not throw on
+    /// missing key. Older code paths that construct snapshots inline
+    /// (and don't yet know about tool identity) must keep working.
+    func testToolSessionsDefaultsToEmpty() throws {
+        let snapshot = CTOStateSnapshot(
+            mode: "off",
+            updatedAt: Date(timeIntervalSince1970: 1_715_000_800),
+            activeSessions: [],
+            trackedSessions: [],
+            deferredSessions: []
+        )
+        XCTAssertEqual(snapshot.toolSessions, [])
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(snapshot)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(CTOStateSnapshot.self, from: data)
+        XCTAssertEqual(decoded.toolSessions, [])
+    }
+
+    /// R2 heartbeat semantics. A snapshot that carries both `updatedAt`
+    /// (always set) and `lastStateChangeAt` (only set when the
+    /// underlying state actually moved) must round-trip both fields so
+    /// external readers can tell heartbeat-only writes from real
+    /// changes.
+    func testStateSnapshotRoundTripsLastStateChangeAt() throws {
+        let updated = Date(timeIntervalSince1970: 1_715_000_300)
+        let lastChange = Date(timeIntervalSince1970: 1_715_000_000)
+        let snapshot = CTOStateSnapshot(
+            mode: TokenOptimizationMode.allTabs.rawValue,
+            updatedAt: updated,
+            lastStateChangeAt: lastChange,
+            activeSessions: ["a"],
+            trackedSessions: ["a"],
+            deferredSessions: []
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(snapshot)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(CTOStateSnapshot.self, from: data)
+
+        XCTAssertEqual(decoded.updatedAt, updated)
+        XCTAssertEqual(decoded.lastStateChangeAt, lastChange)
+        XCTAssertGreaterThan(
+            decoded.updatedAt,
+            decoded.lastStateChangeAt!,
+            "Heartbeat advances updatedAt past lastStateChangeAt"
+        )
     }
 
     // MARK: - Assessment Transition Pure Logic
@@ -830,6 +965,52 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         XCTAssertNotNil(snapshot.lastDecision)
     }
 
+    func testLogHealthSnapshotIsSideEffectFree() {
+        CTORuntimeMonitor.shared.reset()
+
+        // Prime some decisions so the snapshot has non-zero counters and
+        // the assessment is computable.
+        CTORuntimeMonitor.shared.recordModeChanged(from: .off, to: .allTabs)
+        CTORuntimeMonitor.shared.recordDecision(
+            sessionID: "health-log-session",
+            mode: .allTabs,
+            override: .default,
+            isAIActive: false,
+            previousState: false,
+            nextState: true,
+            changed: true,
+            reason: .allTabsDefault
+        )
+
+        // Capture state BEFORE: emitSummary has never run so there's no
+        // recorded assessment; calling logHealthSnapshot() must not
+        // create one (else the next emitSummary would compute a bogus
+        // transition against this synthetic baseline).
+        let beforeAssessment = CTORuntimeMonitor.shared.lastEmittedAssessmentForTesting
+        let beforeSnapshot = CTORuntimeMonitor.shared.snapshot()
+
+        CTORuntimeMonitor.shared.logHealthSnapshot()
+
+        let afterAssessment = CTORuntimeMonitor.shared.lastEmittedAssessmentForTesting
+        let afterSnapshot = CTORuntimeMonitor.shared.snapshot()
+
+        XCTAssertEqual(
+            beforeAssessment,
+            afterAssessment,
+            "logHealthSnapshot must not mutate the assessment-transition memo"
+        )
+        XCTAssertEqual(
+            beforeSnapshot.recalcCount,
+            afterSnapshot.recalcCount,
+            "logHealthSnapshot must not advance recalc bookkeeping"
+        )
+        XCTAssertEqual(
+            beforeSnapshot.activeSessionCount,
+            afterSnapshot.activeSessionCount,
+            "logHealthSnapshot must not change active-session bookkeeping"
+        )
+    }
+
     func testCTORuntimeAssessmentSignals() {
         CTORuntimeMonitor.shared.reset()
 
@@ -974,6 +1155,67 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
             FileManager.default.fileExists(atPath: url.path),
             "teardown should drop the diagnostic mirror"
         )
+    }
+
+    /// R2 heartbeat behavior at the monitor level. A heartbeat write
+    /// must bump `updatedAt` (so external readers see freshness) but
+    /// must NOT advance `lastStateChangeAt` (so they can still tell
+    /// "quiet" from "broken"). Conversely, a state-change write advances
+    /// both timestamps.
+    func testHeartbeatWritePreservesLastStateChangeAt() throws {
+        CTORuntimeMonitor.shared.reset()
+        CTORuntimeMonitor.shared.recordManagerSetup(mode: .allTabs)
+        let sessionID = UUID().uuidString
+        CTORuntimeMonitor.shared.recordDecision(
+            sessionID: sessionID,
+            mode: .allTabs,
+            override: .default,
+            isAIActive: true,
+            previousState: false,
+            nextState: true,
+            changed: true,
+            reason: .allTabsDefault
+        )
+
+        let url = URL(fileURLWithPath: CTOStateFile.path)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let afterChange = try decoder.decode(
+            CTOStateSnapshot.self, from: Data(contentsOf: url)
+        )
+        let changeStamp = try XCTUnwrap(
+            afterChange.lastStateChangeAt,
+            "Change-driven write must set lastStateChangeAt"
+        )
+        XCTAssertEqual(
+            afterChange.updatedAt.timeIntervalSinceReferenceDate,
+            changeStamp.timeIntervalSinceReferenceDate,
+            accuracy: 0.001,
+            "Change-driven write uses the same instant for both stamps"
+        )
+
+        // Tight loop on `Date()` can occasionally return the same value
+        // at sub-millisecond resolution; sleep briefly so the heartbeat
+        // is observably newer than the change.
+        Thread.sleep(forTimeInterval: 0.01)
+        CTORuntimeMonitor.shared.writeDiagnosticStateSnapshot(isHeartbeat: true)
+
+        let afterHeartbeat = try decoder.decode(
+            CTOStateSnapshot.self, from: Data(contentsOf: url)
+        )
+        XCTAssertEqual(
+            afterHeartbeat.lastStateChangeAt,
+            changeStamp,
+            "Heartbeat must preserve lastStateChangeAt from the prior change"
+        )
+        XCTAssertGreaterThan(
+            afterHeartbeat.updatedAt,
+            changeStamp,
+            "Heartbeat must advance updatedAt past the previous change time"
+        )
+
+        CTORuntimeMonitor.shared.recordManagerTeardown()
     }
 
     // MARK: - Decision Trigger Taxonomy
