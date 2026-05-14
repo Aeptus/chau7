@@ -60,4 +60,20 @@ final class TabAttentionStateTests: XCTestCase {
         XCTAssertFalse(decision.shouldClearVisibleStyle)
         XCTAssertEqual(decision.nextOwnedKind, .none)
     }
+
+    func testAttentionReportCompactLineIncludesStateAndStyle() {
+        let report = TabAttentionReport(
+            statuses: ["waitingForInput"],
+            ownedKind: .none,
+            hasVisibleStyle: false,
+            isSelected: true,
+            styleSummary: "none"
+        )
+
+        XCTAssertEqual(report.desiredKind, .waitingForInput)
+        XCTAssertEqual(
+            report.compactLine,
+            "statuses=waitingForInput desired=waitingForInput owned=none style=none visibleStyle=false selected=true"
+        )
+    }
 }

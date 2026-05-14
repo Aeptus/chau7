@@ -89,6 +89,37 @@ public struct TabAttentionDecision: Equatable {
     }
 }
 
+public struct TabAttentionReport: Equatable, Codable {
+    public let statuses: [String]
+    public let desiredKind: TabAttentionKind
+    public let ownedKind: TabAttentionKind
+    public let hasVisibleStyle: Bool
+    public let isSelected: Bool
+    public let styleSummary: String
+
+    public init(
+        statuses: [String],
+        ownedKind: TabAttentionKind,
+        hasVisibleStyle: Bool,
+        isSelected: Bool,
+        styleSummary: String
+    ) {
+        self.statuses = statuses
+        self.desiredKind = TabAttentionKind.strongest(statuses: statuses)
+        self.ownedKind = ownedKind
+        self.hasVisibleStyle = hasVisibleStyle
+        self.isSelected = isSelected
+        self.styleSummary = styleSummary
+    }
+
+    public var compactLine: String {
+        let statusSummary = statuses.isEmpty ? "none" : statuses.joined(separator: ",")
+        return "statuses=\(statusSummary) desired=\(desiredKind.rawValue) "
+            + "owned=\(ownedKind.rawValue) style=\(styleSummary) "
+            + "visibleStyle=\(hasVisibleStyle) selected=\(isSelected)"
+    }
+}
+
 public enum TabAttentionStatePolicy {
     public static func reconcile(_ snapshot: TabAttentionSnapshot) -> TabAttentionDecision {
         let desiredKind = TabAttentionKind.strongest(statuses: snapshot.rawStatuses)

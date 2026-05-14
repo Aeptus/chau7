@@ -165,9 +165,14 @@ struct StateSnapshot: Codable {
         let customTitle: String?
         let activeAppName: String?
         let status: String
+        let effectiveStatus: String
         let currentDirectory: String
         let isGitRepo: Bool
         let gitBranch: String?
+        let notificationStyle: String
+        let stateAttentionKind: String
+        let desiredAttentionKind: String
+        let attentionReport: String
     }
 
     struct ClaudeSessionState: Codable {
@@ -207,15 +212,23 @@ struct StateSnapshot: Codable {
             activeTabIndex = overlay.tabs.firstIndex { $0.id == overlay.selectedTabID } ?? 0
 
             for tab in overlay.tabs {
+                let attentionReport = overlay.attentionReport(for: tab)
                 tabStates.append(TabState(
                     id: tab.id.uuidString,
                     title: tab.session?.title ?? "(no terminal)",
                     customTitle: tab.customTitle,
                     activeAppName: tab.session?.activeAppName ?? "",
                     status: tab.session?.status.rawValue ?? "unknown",
+                    effectiveStatus: tab.displaySession?.effectiveStatus.rawValue
+                        ?? tab.session?.effectiveStatus.rawValue
+                        ?? "unknown",
                     currentDirectory: tab.session?.currentDirectory ?? "",
                     isGitRepo: tab.session?.isGitRepo ?? false,
-                    gitBranch: tab.session?.gitBranch
+                    gitBranch: tab.session?.gitBranch,
+                    notificationStyle: attentionReport.styleSummary,
+                    stateAttentionKind: attentionReport.ownedKind.rawValue,
+                    desiredAttentionKind: attentionReport.desiredKind.rawValue,
+                    attentionReport: attentionReport.compactLine
                 ))
             }
         }

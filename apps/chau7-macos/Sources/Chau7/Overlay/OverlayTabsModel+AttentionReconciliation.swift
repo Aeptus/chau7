@@ -41,10 +41,9 @@ extension OverlayTabsModel {
         }
         tabs[index].stateAttentionKind = decision.nextOwnedKind
 
-        let message = "tab attention reconciled tab=\(tabID) "
-            + "statuses=\(statuses.joined(separator: ",")) "
+        let message = "attentionReport tab=\(tabID) "
+            + "\(attentionReport(for: tabs[index]).compactLine) "
             + "previousOwned=\(previousOwnedKind.rawValue) "
-            + "desired=\(decision.desiredKind.rawValue) "
             + "action=\(decision.action.rawValue) reason=\(reason)"
         Log.info(message)
         return true
@@ -61,5 +60,55 @@ extension OverlayTabsModel {
         ])
         style.persistent = true
         return style
+    }
+
+    func attentionReport(for tab: OverlayTab) -> TabAttentionReport {
+        TabAttentionReport(
+            statuses: attentionStatuses(for: tab),
+            ownedKind: tab.stateAttentionKind,
+            hasVisibleStyle: tab.notificationStyle != nil,
+            isSelected: tab.id == selectedTabID,
+            styleSummary: notificationStyleSummary(tab.notificationStyle)
+        )
+    }
+
+    func attentionReportPayload(for tab: OverlayTab) -> [String: Any] {
+        let report = attentionReport(for: tab)
+        return [
+            "statuses": report.statuses,
+            "desired_kind": report.desiredKind.rawValue,
+            "owned_kind": report.ownedKind.rawValue,
+            "has_visible_style": report.hasVisibleStyle,
+            "is_selected": report.isSelected,
+            "style": report.styleSummary,
+            "compact": report.compactLine
+        ]
+    }
+
+    private func attentionStatuses(for tab: OverlayTab) -> [String] {
+        tab.splitController.terminalSessions.map { _, session in
+            session.effectiveStatus.rawValue
+        }
+    }
+
+    private func notificationStyleSummary(_ style: TabNotificationStyle?) -> String {
+        guard let style else { return "none" }
+        var parts: [String] = []
+        if let icon = style.icon {
+            parts.append("icon=\(icon)")
+        }
+        if style.persistent {
+            parts.append("persistent")
+        }
+        if style.shouldPulse {
+            parts.append("pulse")
+        }
+        if style.borderWidth > 0 {
+            parts.append("border=\(style.borderWidth)")
+        }
+        if let badge = style.badgeText {
+            parts.append("badge=\(badge)")
+        }
+        return parts.isEmpty ? "custom" : parts.joined(separator: "+")
     }
 }

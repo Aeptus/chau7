@@ -222,6 +222,9 @@ final class TerminalControlService {
                 for tab in model.tabs {
                     var summary = self.tabSummary(tab)
                     summary["window_id"] = windowID
+                    let attentionReport = model.attentionReportPayload(for: tab)
+                    summary["attention"] = attentionReport
+                    summary["attention_report"] = attentionReport["compact"]
                     result.append(summary)
                 }
             }
