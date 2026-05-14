@@ -1,4 +1,5 @@
 Category,Feature,Description,Status,Differentiator
+AI Detection & Integration,Resilient Waiting-Input Attention,"Waiting-input and attention-required events keep persistent tab highlights even when duplicate suppression, rate limits, or disabled idle actions suppress follow-up notification delivery",Shipped,Yes
 Terminal Core,Rust Terminal Backend,"Custom terminal emulator written in Rust with FFI bridge — fast, memory-safe, and correct",Shipped,Yes
 Tabs,Single Live Selected-Tab Surface,"Selected tabs now render through one live surface only; snapshot and cursor handoff overlays no longer stack on top of the live terminal during switches",Shipped,Yes
 Tabs,On-Demand Deferred Restore,"Non-selected restored tabs stay deferred until selected instead of auto-restoring and mutating visible tabs immediately after launch",Shipped,Yes

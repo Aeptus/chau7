@@ -122,6 +122,57 @@ final class NotificationDeliverySemanticsTests: XCTestCase {
         )
     }
 
+    func testDoesNotClearPersistentAttentionForWaitingInput() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "waiting_input",
+            tool: "Claude",
+            message: "Ready for your input",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "session-1",
+            reliability: .authoritative
+        )
+
+        XCTAssertFalse(NotificationDeliverySemantics.shouldClearPersistentAttentionStyle(
+            event: event,
+            semanticKind: .waitingForInput
+        ))
+    }
+
+    func testDoesNotClearPersistentAttentionForIdlePromptText() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "idle",
+            tool: "Claude",
+            message: "Waiting for input in Chau7",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "session-1",
+            reliability: .authoritative
+        )
+
+        XCTAssertFalse(NotificationDeliverySemantics.shouldClearPersistentAttentionStyle(
+            event: event,
+            semanticKind: .idle
+        ))
+    }
+
+    func testClearsPersistentAttentionForTrueIdle() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "idle",
+            tool: "Claude",
+            message: "No new history for 5s.",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "session-1",
+            reliability: .authoritative
+        )
+
+        XCTAssertTrue(NotificationDeliverySemantics.shouldClearPersistentAttentionStyle(
+            event: event,
+            semanticKind: .idle
+        ))
+    }
+
     func testRepeatSuppressionCoalescesAttentionFamilyAcrossTypes() {
         let permission = AIEvent(
             source: .claudeCode,

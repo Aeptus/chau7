@@ -227,6 +227,50 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertTrue(reason.contains("state-only"))
     }
 
+    func testClaudeIdlePromptTextMapsToWaitingInput() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "idle",
+            tool: "Claude",
+            message: "Waiting for input in Chau7",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "claude-session-1",
+            producer: "claude_code_idle",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(adapted, canonical) = decision else {
+            return XCTFail("Expected Claude idle prompt to canonicalize")
+        }
+
+        XCTAssertEqual(canonical.kind, .waitingForInput)
+        XCTAssertEqual(adapted.type, "waiting_input")
+        XCTAssertEqual(adapted.reliability, .authoritative)
+    }
+
+    func testClaudeRawWaitingInputPreservesHeuristicReliability() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "waiting_input",
+            tool: "Claude",
+            message: "Claude is waiting for your input",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "claude-session-1",
+            producer: "terminal_wait_pattern_attention",
+            reliability: .heuristic
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(adapted, canonical) = decision else {
+            return XCTFail("Expected Claude waiting_input to canonicalize")
+        }
+
+        XCTAssertEqual(canonical.kind, .waitingForInput)
+        XCTAssertEqual(adapted.type, "waiting_input")
+        XCTAssertEqual(adapted.reliability, .heuristic)
+    }
+
     func testClaudeNotificationEventMapsToAttentionRequired() {
         let event = AIEvent(
             source: .claudeCode,

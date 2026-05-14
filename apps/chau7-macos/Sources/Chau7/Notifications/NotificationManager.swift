@@ -150,15 +150,17 @@ final class NotificationManager {
     }
 
     /// Clears a tab's persistent permission-style highlight when the AI tool
-    /// announces a state that supersedes the permission prompt (idle, waiting
-    /// input, finished, running, etc).
+    /// announces a state that supersedes the prompt (finished, failed, true
+    /// idle, etc). Interactive attention events must not clear here: they may
+    /// be dropped later as repeats/rate-limited events, and clearing before
+    /// delivery would remove the only visible "needs input" marker.
     ///
     /// Why this lives in `ingestAcceptedEvent` rather than later: events get
     /// dropped/coalesced/dedup'd between ingress and the action pipeline. The
     /// stuck `bell.fill` we observed on the emdash-upstream tab on
     /// 2026-05-09 was caused exactly by this — the user answered the
     /// permission inside Claude Code's TUI, Claude emitted authoritative
-    /// `idle`/`waiting_input` follow-up events, and those got dropped at
+    /// resolution follow-up events, and those got dropped at
     /// the `Trigger claude_code.idle disabled` step in `processEvent`.
     /// Calling the clearer at ingress runs before all those filters, so
     /// the resolution side-effect happens regardless of whether the user
@@ -176,8 +178,10 @@ final class NotificationManager {
         event: AIEvent,
         semanticKind: NotificationSemanticKind
     ) {
-        guard semanticKind != .permissionRequired else { return }
-        guard event.reliability == .authoritative else { return }
+        guard NotificationDeliverySemantics.shouldClearPersistentAttentionStyle(
+            event: event,
+            semanticKind: semanticKind
+        ) else { return }
         guard let tabID = event.tabID else { return }
         _ = TerminalControlService.shared.clearPersistentNotificationStyleAcrossWindows(tabID: tabID)
     }

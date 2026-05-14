@@ -64,4 +64,26 @@ public enum NotificationSemanticMapping {
             .map(String.init)
             .joined(separator: "_")
     }
+
+    public static func isInputPromptLike(
+        title: String?,
+        message: String,
+        notificationType: String?
+    ) -> Bool {
+        if let notificationType,
+           kind(forNotificationType: notificationType) == .waitingForInput {
+            return true
+        }
+
+        let haystack = [title, message]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .joined(separator: " ")
+
+        return haystack.contains("waiting for input")
+            || haystack.contains("waiting for your input")
+            || haystack.contains("needs your input")
+            || haystack.contains("input requested")
+            || haystack.contains("question requested")
+            || haystack.contains("ready for your input")
+    }
 }

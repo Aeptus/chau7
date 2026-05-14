@@ -301,6 +301,14 @@ private struct ClaudeCodeNotificationAdapter: NotificationProviderAdapter {
         case "elicitation":
             return .emit(event.canonicalEvent(kind: .attentionRequired, reliability: .authoritative))
 
+        case "idle":
+            let kind: NotificationSemanticKind = NotificationSemanticMapping.isInputPromptLike(
+                title: event.title,
+                message: event.message,
+                notificationType: event.notificationType
+            ) ? .waitingForInput : .idle
+            return .emit(event.canonicalEvent(kind: kind))
+
         case "response_complete", "responsecomplete":
             return .drop(reason: "Claude response_complete is state-only; Notification hook owns user-facing delivery")
 
@@ -314,7 +322,7 @@ private struct ClaudeCodeNotificationAdapter: NotificationProviderAdapter {
             guard kind != .unknown else {
                 return .drop(reason: "Unsupported Claude raw event \(rawType)")
             }
-            return .emit(event.canonicalEvent(kind: kind, reliability: .authoritative))
+            return .emit(event.canonicalEvent(kind: kind))
         }
     }
 

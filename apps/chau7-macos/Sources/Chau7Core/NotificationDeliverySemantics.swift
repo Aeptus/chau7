@@ -134,6 +134,28 @@ public enum NotificationDeliverySemantics {
         return now.timeIntervalSince(seenAt) <= suppressionSeconds
     }
 
+    public static func shouldClearPersistentAttentionStyle(
+        event: AIEvent,
+        semanticKind: NotificationSemanticKind
+    ) -> Bool {
+        guard event.reliability == .authoritative else {
+            return false
+        }
+
+        switch semanticKind {
+        case .permissionRequired, .waitingForInput, .attentionRequired:
+            return false
+        case .idle:
+            return !NotificationSemanticMapping.isInputPromptLike(
+                title: event.title,
+                message: event.message,
+                notificationType: event.notificationType
+            )
+        case .taskFinished, .taskFailed, .authenticationSucceeded, .informational, .unknown:
+            return true
+        }
+    }
+
     private static func repeatSuppressionFamily(for event: AIEvent) -> String? {
         switch event.normalizedType {
         case "permission", "waiting_input", "attention_required", "idle", "elicitation":
