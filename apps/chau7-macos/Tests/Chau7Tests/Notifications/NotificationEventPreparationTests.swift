@@ -2,13 +2,17 @@ import XCTest
 @testable import Chau7Core
 
 final class NotificationEventPreparationTests: XCTestCase {
-    func testPrepareDropsDisabledTriggerWithoutResolvingTab() {
+    func testPrepareResolvesTabEvenWhenTriggerIsDisabled() {
+        let expectedTabID = UUID()
         let event = AIEvent(
-            source: .claudeCode,
+            source: .historyMonitor,
             type: "finished",
             tool: "Claude",
             message: "done",
-            ts: "2026-04-01T00:00:00Z"
+            ts: "2026-04-01T00:00:00Z",
+            directory: "/tmp/chau7",
+            sessionID: "session-1",
+            reliability: .fallback
         )
         var triggerState = NotificationTriggerState()
         let trigger = NotificationTriggerCatalog.trigger(for: event)
@@ -16,13 +20,27 @@ final class NotificationEventPreparationTests: XCTestCase {
         triggerState.setEnabled(false, for: trigger!)
 
         var resolverCallCount = 0
-        let decision = NotificationEventPreparation.prepare(event, triggerState: triggerState) { _ in
+        let decision = NotificationEventPreparation.prepare(event, triggerState: triggerState) { target in
             resolverCallCount += 1
-            return UUID()
+            XCTAssertEqual(
+                target,
+                TabTarget(
+                    tool: "Claude",
+                    directory: "/tmp/chau7",
+                    tabID: nil,
+                    sessionID: "session-1"
+                )
+            )
+            return expectedTabID
         }
 
-        XCTAssertEqual(resolverCallCount, 0)
-        XCTAssertEqual(decision, .drop(reason: "Trigger claude_code.finished disabled"))
+        XCTAssertEqual(resolverCallCount, 1)
+        if case .proceed(let prepared) = decision {
+            XCTAssertEqual(prepared.event.tabID, expectedTabID)
+            XCTAssertEqual(prepared.resolutionMethod, "resolved_via_tab_resolver")
+        } else {
+            XCTFail("Expected disabled trigger to proceed through routing")
+        }
     }
 
     func testPrepareResolvesTabForEnabledFallbackTrigger() {

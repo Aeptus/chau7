@@ -21,10 +21,7 @@ public enum NotificationEventPreparation {
         triggerState: NotificationTriggerState,
         tabResolver: ((TabTarget) -> UUID?)?
     ) -> Decision {
-        if let trigger = NotificationTriggerCatalog.trigger(for: event),
-           !triggerState.isEnabled(for: trigger) {
-            return .drop(reason: "Trigger \(trigger.id) disabled")
-        }
+        _ = triggerState
 
         if let explicitTabID = event.tabID {
             if let correctedEvent = rebindAuthoritativeExplicitTabIfNeeded(event, tabResolver: tabResolver),
