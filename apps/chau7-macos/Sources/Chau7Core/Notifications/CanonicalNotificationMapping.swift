@@ -14,6 +14,19 @@ public enum NotificationSemanticMapping {
         return .unknown
     }
 
+    public static func kind(
+        rawType: String?,
+        notificationType: String? = nil,
+        canonicalType: String?
+    ) -> NotificationSemanticKind {
+        let primary = kind(rawType: rawType, notificationType: notificationType)
+        guard primary == .unknown,
+              let canonicalType else {
+            return primary
+        }
+        return kind(rawType: canonicalType)
+    }
+
     public static func kind(forNotificationType value: String) -> NotificationSemanticKind? {
         switch normalize(value) {
         case "permission_prompt", "permissionrequest", "permission":

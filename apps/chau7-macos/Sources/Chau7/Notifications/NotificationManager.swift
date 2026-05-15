@@ -293,6 +293,8 @@ final class NotificationManager {
             return
         }
 
+        assertInteractiveAttentionIfNeeded(for: preparedEvent)
+
         if NotificationDeliverySemantics.shouldSuppressRepeat(
             preparedEvent,
             recentRepeatEvents: recentRepeatedAttentionEvents
@@ -565,6 +567,33 @@ final class NotificationManager {
             history.appendNote(eventID: event.id, note: note)
         }
         return report.didStyleTab
+    }
+
+    private func assertInteractiveAttentionIfNeeded(for event: AIEvent) {
+        let semanticKind = NotificationSemanticMapping.kind(
+            rawType: event.rawType,
+            notificationType: event.notificationType,
+            canonicalType: event.type
+        )
+        let attentionKind = TabAttentionKind.fromNotificationSemantic(semanticKind)
+        guard attentionKind.isInteractive else { return }
+        guard let tabID = event.tabID else {
+            let reason = "Skipped interactive tab attention without explicit tabID"
+            Log.warn("\(reason) id=\(event.id.uuidString) type=\(event.type) tool=\(event.tool)")
+            history.appendNote(eventID: event.id, note: reason)
+            return
+        }
+
+        NotificationActionExecutor.shared.cancelPendingStyleWork(
+            tabID: tabID,
+            sessionID: event.sessionID
+        )
+        _ = TerminalControlService.shared.assertAttentionStyleAcrossWindows(
+            tabID: tabID,
+            kind: attentionKind,
+            reason: "notification:\(event.type)",
+            sessionID: event.sessionID
+        )
     }
 
     // MARK: - Notification Dispatch

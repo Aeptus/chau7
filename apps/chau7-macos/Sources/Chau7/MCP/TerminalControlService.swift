@@ -197,6 +197,36 @@ final class TerminalControlService {
         return false
     }
 
+    @discardableResult
+    func assertAttentionStyleAcrossWindows(
+        tabID: UUID,
+        kind: TabAttentionKind,
+        reason: String,
+        sessionID: String? = nil
+    ) -> Bool {
+        onMain {
+            var foundTab = false
+            for (_, model) in self.allModels {
+                guard model.tabs.contains(where: { $0.id == tabID }) else { continue }
+                foundTab = true
+                if model.assertNotificationAttention(
+                    tabID: tabID,
+                    kind: kind,
+                    sessionID: sessionID,
+                    reason: reason
+                ) {
+                    return true
+                }
+            }
+            if foundTab {
+                Log.debug("assertAttentionStyle: tabID \(tabID) already matched requested attention")
+            } else {
+                Log.warn("assertAttentionStyle: tabID \(tabID) not found across \(self.allModels.count) windows")
+            }
+            return false
+        }
+    }
+
     // MARK: - Tab Operations
 
     func listTabs() -> String {

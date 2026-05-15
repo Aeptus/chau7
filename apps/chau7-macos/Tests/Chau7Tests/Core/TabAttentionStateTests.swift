@@ -9,6 +9,25 @@ final class TabAttentionStateTests: XCTestCase {
         )
     }
 
+    func testNotificationSemanticMapsToInteractiveAttentionKind() {
+        XCTAssertEqual(
+            TabAttentionKind.fromNotificationSemantic(.waitingForInput),
+            .waitingForInput
+        )
+        XCTAssertEqual(
+            TabAttentionKind.fromNotificationSemantic(.permissionRequired),
+            .approvalRequired
+        )
+        XCTAssertEqual(
+            TabAttentionKind.fromNotificationSemantic(.attentionRequired),
+            .approvalRequired
+        )
+        XCTAssertEqual(
+            TabAttentionKind.fromNotificationSemantic(.taskFinished),
+            .none
+        )
+    }
+
     func testWaitingInputAppliesStateOwnedStyleWhenMissing() {
         let decision = TabAttentionStatePolicy.reconcile(TabAttentionSnapshot(
             rawStatuses: ["waitingForInput"],

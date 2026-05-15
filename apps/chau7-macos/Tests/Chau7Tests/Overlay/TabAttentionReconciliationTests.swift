@@ -83,5 +83,42 @@ final class TabAttentionReconciliationTests: XCTestCase {
         XCTAssertEqual(model.tabs[0].stateAttentionKind, .none)
         XCTAssertEqual(model.tabs[0].notificationStyle, .success)
     }
+
+    func testNotificationAttentionPromotesMatchingSessionState() throws {
+        let session = try XCTUnwrap(model.tabs[0].session)
+        session.lastAISessionId = "session-1"
+        session.lastAISessionIdentitySource = .observed
+        session.status = .running
+
+        let changed = model.assertNotificationAttention(
+            tabID: model.tabs[0].id,
+            kind: .waitingForInput,
+            sessionID: "session-1",
+            reason: "test-notification"
+        )
+
+        XCTAssertTrue(changed)
+        XCTAssertEqual(session.status, .waitingForInput)
+        XCTAssertEqual(model.tabs[0].stateAttentionKind, .waitingForInput)
+        XCTAssertTrue(model.tabs[0].notificationStyle?.persistent == true)
+    }
+
+    func testNotificationAttentionDoesNotDowngradeApprovalToWaiting() throws {
+        let session = try XCTUnwrap(model.tabs[0].session)
+        session.lastAISessionId = "session-1"
+        session.lastAISessionIdentitySource = .observed
+        session.status = .approvalRequired
+        _ = model.reconcileTabAttentionStyles(reason: "test-approval")
+
+        _ = model.assertNotificationAttention(
+            tabID: model.tabs[0].id,
+            kind: .waitingForInput,
+            sessionID: "session-1",
+            reason: "test-waiting-repeat"
+        )
+
+        XCTAssertEqual(session.status, .approvalRequired)
+        XCTAssertEqual(model.tabs[0].stateAttentionKind, .approvalRequired)
+    }
 }
 #endif

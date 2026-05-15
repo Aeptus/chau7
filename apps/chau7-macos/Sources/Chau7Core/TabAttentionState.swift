@@ -33,6 +33,17 @@ public enum TabAttentionKind: String, Codable, CaseIterable, Equatable {
         }
     }
 
+    public static func fromNotificationSemantic(_ semanticKind: NotificationSemanticKind) -> TabAttentionKind {
+        switch semanticKind {
+        case .waitingForInput:
+            return .waitingForInput
+        case .permissionRequired, .attentionRequired:
+            return .approvalRequired
+        case .taskFinished, .taskFailed, .authenticationSucceeded, .idle, .informational, .unknown:
+            return .none
+        }
+    }
+
     public static func strongest(statuses: [String]) -> TabAttentionKind {
         statuses
             .map { fromStatus($0) }

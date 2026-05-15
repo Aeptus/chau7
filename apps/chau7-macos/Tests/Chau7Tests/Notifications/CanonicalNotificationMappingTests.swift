@@ -53,6 +53,15 @@ final class CanonicalNotificationMappingTests: XCTestCase {
         )
     }
 
+    func testCanonicalTypeFallbackWhenRawTypeIsUnknown() {
+        let kind: NotificationSemanticKind = NotificationSemanticMapping.kind(
+            rawType: "provider_specific_waiting_payload",
+            notificationType: nil,
+            canonicalType: "waiting_input"
+        )
+        XCTAssertEqual(kind, .waitingForInput)
+    }
+
     func testNormalize() {
         XCTAssertEqual(NotificationSemanticMapping.normalize(" Permission Prompt "), "permission_prompt")
         XCTAssertEqual(NotificationSemanticMapping.normalize("idle-prompt"), "idle_prompt")

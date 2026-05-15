@@ -1,6 +1,12 @@
 import Chau7Core
 import Foundation
 
+private enum NotificationAttentionSessionAssertion {
+    case asserted
+    case noMatchingSession
+    case skippedTerminatedSession
+}
+
 extension OverlayTabsModel {
     /// Repairs tab attention from terminal state only. This deliberately avoids
     /// NotificationActionExecutor so native banners/sounds/rate limits stay
@@ -17,6 +23,60 @@ extension OverlayTabsModel {
         }
 
         return changedCount
+    }
+
+    /// Promotes a resolved notification event into durable tab attention.
+    ///
+    /// Notification delivery can be suppressed by trigger settings, repeated
+    /// event suppression, focus rules, or rate limits. Interactive tab
+    /// attention cannot depend on those delivery paths: a resolved
+    /// waiting/approval event means the tab should remain visibly marked until
+    /// terminal/session state proves it is resolved.
+    @discardableResult
+    func assertNotificationAttention(
+        tabID: UUID,
+        kind: TabAttentionKind,
+        sessionID: String?,
+        reason: String
+    ) -> Bool {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard kind.isInteractive,
+              let index = tabs.firstIndex(where: { $0.id == tabID }) else {
+            return false
+        }
+
+        switch assertSessionAttentionStatus(at: index, kind: kind, sessionID: sessionID) {
+        case .asserted:
+            let changed = reconcileTabAttentionStyle(at: index, reason: reason)
+            if !changed {
+                logNotificationAttentionAssertion(
+                    tabID: tabID,
+                    index: index,
+                    action: "notificationAssertNoop",
+                    reason: reason,
+                    sessionMatched: true
+                )
+            }
+            return changed
+
+        case .noMatchingSession:
+            return applyNotificationAttentionFallback(
+                tabID: tabID,
+                index: index,
+                kind: kind,
+                reason: reason
+            )
+
+        case .skippedTerminatedSession:
+            logNotificationAttentionAssertion(
+                tabID: tabID,
+                index: index,
+                action: "notificationAssertSkippedTerminated",
+                reason: reason,
+                sessionMatched: true
+            )
+            return false
+        }
     }
 
     private func reconcileTabAttentionStyle(at index: Int, reason: String) -> Bool {
@@ -47,6 +107,106 @@ extension OverlayTabsModel {
             + "action=\(decision.action.rawValue) reason=\(reason)"
         Log.info(message)
         return true
+    }
+
+    private func assertSessionAttentionStatus(
+        at index: Int,
+        kind: TabAttentionKind,
+        sessionID: String?
+    ) -> NotificationAttentionSessionAssertion {
+        guard let targetStatus = commandStatus(for: kind) else {
+            return .noMatchingSession
+        }
+
+        let candidates = notificationAttentionCandidateSessions(at: index, sessionID: sessionID)
+        guard !candidates.isEmpty else {
+            return .noMatchingSession
+        }
+
+        var assertedLiveSession = false
+        for session in candidates {
+            guard session.status != .exited else { continue }
+            assertedLiveSession = true
+            let currentKind = TabAttentionKind.fromStatus(session.status.rawValue)
+            guard kind.priority >= currentKind.priority else { continue }
+            if session.status != targetStatus {
+                session.status = targetStatus
+            }
+        }
+
+        return assertedLiveSession ? .asserted : .skippedTerminatedSession
+    }
+
+    private func notificationAttentionCandidateSessions(
+        at index: Int,
+        sessionID: String?
+    ) -> [TerminalSessionModel] {
+        let sessions = tabs[index].splitController.terminalSessions.map { _, session in session }
+        if let sessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sessionID.isEmpty {
+            return sessions.filter { $0.effectiveAISessionId == sessionID }
+        }
+        if let displaySession = tabs[index].displaySession {
+            return [displaySession]
+        }
+        if sessions.count == 1 {
+            return sessions
+        }
+        return []
+    }
+
+    private func applyNotificationAttentionFallback(
+        tabID: UUID,
+        index: Int,
+        kind: TabAttentionKind,
+        reason: String
+    ) -> Bool {
+        if tabs[index].stateAttentionKind.isInteractive {
+            logNotificationAttentionAssertion(
+                tabID: tabID,
+                index: index,
+                action: "notificationAssertNoMatchPreservedOwned",
+                reason: reason,
+                sessionMatched: false
+            )
+            return false
+        }
+
+        let previousStyle = tabs[index].notificationStyle
+        tabs[index].notificationStyle = stateAttentionStyle(for: kind)
+        let changed = previousStyle != tabs[index].notificationStyle
+        logNotificationAttentionAssertion(
+            tabID: tabID,
+            index: index,
+            action: changed ? "notificationFallbackApply" : "notificationFallbackNoop",
+            reason: reason,
+            sessionMatched: false
+        )
+        return changed
+    }
+
+    private func commandStatus(for kind: TabAttentionKind) -> CommandStatus? {
+        switch kind {
+        case .waitingForInput:
+            return .waitingForInput
+        case .approvalRequired:
+            return .approvalRequired
+        case .none:
+            return nil
+        }
+    }
+
+    private func logNotificationAttentionAssertion(
+        tabID: UUID,
+        index: Int,
+        action: String,
+        reason: String,
+        sessionMatched: Bool
+    ) {
+        let message = "attentionReport tab=\(tabID) "
+            + "\(attentionReport(for: tabs[index]).compactLine) "
+            + "action=\(action) reason=\(reason) sessionMatched=\(sessionMatched)"
+        Log.info(message)
     }
 
     private func stateAttentionStyle(for kind: TabAttentionKind) -> TabNotificationStyle? {
