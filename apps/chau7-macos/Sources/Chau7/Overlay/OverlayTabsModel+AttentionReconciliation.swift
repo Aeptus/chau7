@@ -79,6 +79,47 @@ extension OverlayTabsModel {
         }
     }
 
+    @discardableResult
+    func clearNotificationAttention(
+        tabID: UUID,
+        sessionID: String?,
+        resolvedStatus: CommandStatus,
+        reason: String
+    ) -> Bool {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let index = tabs.firstIndex(where: { $0.id == tabID }) else {
+            return false
+        }
+
+        var changed = false
+        let candidates = notificationAttentionCandidateSessions(at: index, sessionID: sessionID)
+        for session in candidates {
+            guard session.status == .waitingForInput || session.status == .approvalRequired else {
+                continue
+            }
+            session.status = resolvedStatus
+            changed = true
+        }
+
+        if !candidates.isEmpty, tabs[index].stateAttentionKind.isInteractive {
+            changed = reconcileTabAttentionStyle(at: index, reason: reason) || changed
+        } else if !candidates.isEmpty, tabs[index].notificationStyle?.persistent == true {
+            tabs[index].notificationStyle = nil
+            changed = true
+        }
+
+        if changed {
+            logNotificationAttentionAssertion(
+                tabID: tabID,
+                index: index,
+                action: "notificationResolvedClear",
+                reason: reason,
+                sessionMatched: !candidates.isEmpty
+            )
+        }
+        return changed
+    }
+
     private func reconcileTabAttentionStyle(at index: Int, reason: String) -> Bool {
         let statuses = tabs[index].splitController.terminalSessions.map { _, session in
             session.effectiveStatus.rawValue

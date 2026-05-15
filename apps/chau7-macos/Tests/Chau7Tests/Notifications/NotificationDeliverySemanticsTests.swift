@@ -283,4 +283,66 @@ final class NotificationDeliverySemanticsTests: XCTestCase {
             )
         )
     }
+
+    func testClosedSuppressionUsesExactSessionAcrossToolNames() {
+        let finished = AIEvent(
+            source: .codex,
+            type: "finished",
+            tool: "Codex",
+            message: "done",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "shared-session",
+            reliability: .authoritative
+        )
+        let staleFallbackAttention = AIEvent(
+            source: .claudeCode,
+            type: "waiting_input",
+            tool: "Claude",
+            message: "waiting",
+            ts: "2026-04-01T00:00:01Z",
+            sessionID: "shared-session",
+            reliability: .fallback
+        )
+        let closedEvents = Dictionary(
+            uniqueKeysWithValues: NotificationDeliverySemantics.closedIdentityKeys(for: finished).map { ($0, Date()) }
+        )
+
+        XCTAssertTrue(
+            NotificationDeliverySemantics.shouldSuppressAfterClose(
+                staleFallbackAttention,
+                recentlyClosedEvents: closedEvents
+            )
+        )
+    }
+
+    func testClosedSuppressionKeepsDirectoryFallbackToolScoped() {
+        let finished = AIEvent(
+            source: .codex,
+            type: "finished",
+            tool: "Codex",
+            message: "done",
+            ts: "2026-04-01T00:00:00Z",
+            directory: "/tmp/project",
+            reliability: .authoritative
+        )
+        let otherToolAttention = AIEvent(
+            source: .claudeCode,
+            type: "waiting_input",
+            tool: "Claude",
+            message: "waiting",
+            ts: "2026-04-01T00:00:01Z",
+            directory: "/tmp/project",
+            reliability: .fallback
+        )
+        let closedEvents = Dictionary(
+            uniqueKeysWithValues: NotificationDeliverySemantics.closedIdentityKeys(for: finished).map { ($0, Date()) }
+        )
+
+        XCTAssertFalse(
+            NotificationDeliverySemantics.shouldSuppressAfterClose(
+                otherToolAttention,
+                recentlyClosedEvents: closedEvents
+            )
+        )
+    }
 }

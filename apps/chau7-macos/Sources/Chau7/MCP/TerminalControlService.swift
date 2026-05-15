@@ -227,6 +227,36 @@ final class TerminalControlService {
         }
     }
 
+    @discardableResult
+    func clearAttentionStateAcrossWindows(
+        tabID: UUID,
+        sessionID: String?,
+        resolvedStatus: CommandStatus,
+        reason: String
+    ) -> Bool {
+        onMain {
+            var foundTab = false
+            for (_, model) in self.allModels {
+                guard model.tabs.contains(where: { $0.id == tabID }) else { continue }
+                foundTab = true
+                if model.clearNotificationAttention(
+                    tabID: tabID,
+                    sessionID: sessionID,
+                    resolvedStatus: resolvedStatus,
+                    reason: reason
+                ) {
+                    return true
+                }
+            }
+            if foundTab {
+                Log.debug("clearAttentionState: tabID \(tabID) had no interactive attention to clear")
+            } else {
+                Log.warn("clearAttentionState: tabID \(tabID) not found across \(self.allModels.count) windows")
+            }
+            return false
+        }
+    }
+
     // MARK: - Tab Operations
 
     func listTabs() -> String {

@@ -109,6 +109,14 @@ public enum NotificationDeliverySemantics {
         return "\(tool)|\(identity)"
     }
 
+    public static func closedIdentityKeys(for event: AIEvent) -> [String] {
+        if let sessionID = event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sessionID.isEmpty {
+            return ["session:\(sessionID.lowercased())", closedIdentityKey(for: event)]
+        }
+        return [closedIdentityKey(for: event)]
+    }
+
     public static func shouldRegisterClosedIdentity(_ event: AIEvent) -> Bool {
         switch event.normalizedType {
         case "finished", "failed":
@@ -127,11 +135,14 @@ public enum NotificationDeliverySemantics {
         guard repeatSuppressionFamily(for: event) != nil else {
             return false
         }
-        let key = closedIdentityKey(for: event)
-        guard let seenAt = recentlyClosedEvents[key] else {
-            return false
+
+        for key in closedIdentityKeys(for: event) {
+            guard let seenAt = recentlyClosedEvents[key] else { continue }
+            if now.timeIntervalSince(seenAt) <= suppressionSeconds {
+                return true
+            }
         }
-        return now.timeIntervalSince(seenAt) <= suppressionSeconds
+        return false
     }
 
     public static func shouldClearPersistentAttentionStyle(

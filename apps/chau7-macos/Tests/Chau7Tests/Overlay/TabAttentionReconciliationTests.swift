@@ -120,5 +120,45 @@ final class TabAttentionReconciliationTests: XCTestCase {
         XCTAssertEqual(session.status, .approvalRequired)
         XCTAssertEqual(model.tabs[0].stateAttentionKind, .approvalRequired)
     }
+
+    func testNotificationResolutionClearsPromotedInteractiveState() throws {
+        let session = try XCTUnwrap(model.tabs[0].session)
+        session.lastAISessionId = "session-1"
+        session.lastAISessionIdentitySource = .observed
+        session.status = .approvalRequired
+        _ = model.reconcileTabAttentionStyles(reason: "test-approval")
+
+        let changed = model.clearNotificationAttention(
+            tabID: model.tabs[0].id,
+            sessionID: "session-1",
+            resolvedStatus: .done,
+            reason: "test-finished"
+        )
+
+        XCTAssertTrue(changed)
+        XCTAssertEqual(session.status, .done)
+        XCTAssertEqual(model.tabs[0].stateAttentionKind, .none)
+        XCTAssertNil(model.tabs[0].notificationStyle)
+    }
+
+    func testNotificationResolutionDoesNotClearDifferentSession() throws {
+        let session = try XCTUnwrap(model.tabs[0].session)
+        session.lastAISessionId = "session-1"
+        session.lastAISessionIdentitySource = .observed
+        session.status = .waitingForInput
+        _ = model.reconcileTabAttentionStyles(reason: "test-waiting")
+
+        let changed = model.clearNotificationAttention(
+            tabID: model.tabs[0].id,
+            sessionID: "other-session",
+            resolvedStatus: .done,
+            reason: "test-finished"
+        )
+
+        XCTAssertFalse(changed)
+        XCTAssertEqual(session.status, .waitingForInput)
+        XCTAssertEqual(model.tabs[0].stateAttentionKind, .waitingForInput)
+        XCTAssertNotNil(model.tabs[0].notificationStyle)
+    }
 }
 #endif

@@ -34,6 +34,9 @@ final class NotificationManager {
     /// Used to fill in missing tabIDs on events from external sources (e.g. Claude Code hooks).
     /// Wired to `TabResolver.resolve` — gets full 5-tier matching for free.
     var tabResolver: ((TabTarget) -> UUID?)?
+    /// Strict resolver for authoritative events that must never fall back to
+    /// brand/title/directory heuristics.
+    var strictTabResolver: ((TabTarget) -> UUID?)?
 
     // MARK: - Focus/DND State (push-based)
 
@@ -225,8 +228,8 @@ final class NotificationManager {
         pruneAuthoritativeEvents()
 
         let ns = FeatureSettings.shared.notificationSettings
-        let preparedEvent: AIEvent
-        let resolutionMethod: String
+        var preparedEvent: AIEvent
+        var resolutionMethod: String
         switch NotificationEventPreparation.prepare(
             event,
             triggerState: ns.triggerState,
@@ -241,6 +244,13 @@ final class NotificationManager {
             resolutionMethod = prepared.resolutionMethod
         }
 
+        if NotificationDeliverySemantics.requiresAuthoritativeRouting(preparedEvent),
+           preparedEvent.tabID == nil,
+           let resolvedTabID = strictTabResolver?(preparedEvent.tabTarget) {
+            preparedEvent = preparedEvent.resolvingTabID(resolvedTabID)
+            resolutionMethod = "resolved_via_strict_session"
+        }
+
         Log.info(
             """
             Notification delivery prepared: id=\(preparedEvent.id.uuidString) type=\(preparedEvent.type) tool=\(preparedEvent.tool) resolution=\(resolutionMethod) tabID=\(preparedEvent.tabID?
@@ -248,6 +258,9 @@ final class NotificationManager {
             """
         )
         history.markPrepared(event: preparedEvent, resolutionMethod: resolutionMethod)
+
+        registerClosedIdentityIfNeeded(preparedEvent)
+        clearResolvedInteractiveAttentionIfNeeded(for: preparedEvent)
 
         if NotificationDeliverySemantics.requiresAuthoritativeRouting(preparedEvent),
            preparedEvent.tabID == nil {
@@ -307,7 +320,6 @@ final class NotificationManager {
         }
 
         registerAuthoritativeEventIfNeeded(preparedEvent)
-        registerClosedIdentityIfNeeded(preparedEvent)
 
         let input = NotificationPipeline.Input(
             event: preparedEvent,
@@ -541,7 +553,43 @@ final class NotificationManager {
         guard NotificationDeliverySemantics.shouldRegisterClosedIdentity(event) else {
             return
         }
-        recentClosedSessionEvents[NotificationDeliverySemantics.closedIdentityKey(for: event)] = now
+        for key in NotificationDeliverySemantics.closedIdentityKeys(for: event) {
+            recentClosedSessionEvents[key] = now
+        }
+    }
+
+    private func clearResolvedInteractiveAttentionIfNeeded(for event: AIEvent) {
+        let semanticKind = NotificationSemanticMapping.kind(
+            rawType: event.rawType,
+            notificationType: event.notificationType,
+            canonicalType: event.type
+        )
+        guard NotificationDeliverySemantics.shouldClearPersistentAttentionStyle(
+            event: event,
+            semanticKind: semanticKind
+        ) else { return }
+        guard let tabID = event.tabID,
+              let resolvedStatus = resolvedCommandStatus(for: semanticKind) else {
+            return
+        }
+
+        _ = TerminalControlService.shared.clearAttentionStateAcrossWindows(
+            tabID: tabID,
+            sessionID: event.sessionID,
+            resolvedStatus: resolvedStatus,
+            reason: "notification:\(event.type):resolved"
+        )
+    }
+
+    private func resolvedCommandStatus(for semanticKind: NotificationSemanticKind) -> CommandStatus? {
+        switch semanticKind {
+        case .idle:
+            return .idle
+        case .taskFinished, .taskFailed, .authenticationSucceeded:
+            return .done
+        case .permissionRequired, .waitingForInput, .attentionRequired, .informational, .unknown:
+            return nil
+        }
     }
 
     /// Applies a default tab style for attention-worthy events when no explicit

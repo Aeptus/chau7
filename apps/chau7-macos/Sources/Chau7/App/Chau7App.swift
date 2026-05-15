@@ -68,6 +68,10 @@ struct Chau7App: App {
             let tabs = TerminalControlService.shared.allTabs
             return TabResolver.resolve(target, in: tabs)?.id
         }
+        NotificationManager.shared.strictTabResolver = { target in
+            let tabs = TerminalControlService.shared.allTabs
+            return TabResolver.resolveStrictSession(target, in: tabs)?.id
+        }
 
         _overlayModel = State(wrappedValue: overlayModel)
         _ = SnippetManager.shared
