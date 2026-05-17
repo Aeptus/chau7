@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Extract the changelog section for a given version from docs/CHANGELOG.md.
+# Prints the section body (everything between `## [VERSION]` and the next `## [`)
+# without the heading itself, so it can be embedded under a custom header.
+#
+# Usage: extract-changelog <version>
+#   e.g. extract-changelog 0.3.0
+set -euo pipefail
+
+VERSION="${1:?Usage: extract-changelog VERSION}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHANGELOG="${SCRIPT_DIR}/../docs/CHANGELOG.md"
+
+if [ ! -f "$CHANGELOG" ]; then
+  echo "extract-changelog: CHANGELOG not found at $CHANGELOG" >&2
+  exit 1
+fi
+
+awk -v v="$VERSION" '
+  BEGIN { capture = 0 }
+  /^## \[/ {
+    if (capture) { exit }
+    pattern = "^## \\[" v "\\]"
+    if ($0 ~ pattern) { capture = 1; next }
+  }
+  capture { print }
+' "$CHANGELOG"
