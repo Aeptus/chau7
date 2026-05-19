@@ -2011,7 +2011,7 @@ final class TerminalSessionModel {
             }
         }
         Log.warn("Force-terminating shell process group for session '\(title)' (pid=\(currentPID))")
-        sendTerminationSignal(SIGINT, toShellPID: currentPID)
+        sendTerminationSignalToTree(SIGINT, shellPID: currentPID)
 
         // Stage 1b (AI sessions only): re-send SIGINT after 0.6s. Modern AI
         // TUIs (Codex, Claude Code) implement a "Press Ctrl+C again to exit"
@@ -2050,7 +2050,7 @@ final class TerminalSessionModel {
         terminationStateQueue.sync {
             secondSigintSentAt = Date()
         }
-        sendTerminationSignal(SIGINT, toShellPID: currentPID)
+        sendTerminationSignalToTree(SIGINT, shellPID: currentPID)
     }
 
     private func escalateToSIGTERM(expectedPID: pid_t) {
@@ -2068,7 +2068,7 @@ final class TerminalSessionModel {
         }
         let diagnostics = terminationDiagnosticsSummary(stage: "sigterm", shellPID: currentPID)
         Log.warn("Shell process group survived SIGINT; sending SIGTERM (pid=\(currentPID)) \(diagnostics)")
-        sendTerminationSignal(SIGTERM, toShellPID: currentPID)
+        sendTerminationSignalToTree(SIGTERM, shellPID: currentPID)
 
         // Stage 3: SIGKILL after 3s more — unconditional kill
         let hardKill = DispatchWorkItem { [weak self] in
@@ -2270,6 +2270,59 @@ final class TerminalSessionModel {
             Log.warn("Failed to send signal \(signal) to process group \(shellPID): errno=\(errno)")
             _ = Darwin.kill(shellPID, signal)
         }
+    }
+
+    /// Sends `signal` to the shell's process group plus every distinct child
+    /// process group whose leader sits inside the descendant tree.
+    ///
+    /// Plain shells stash all children in the shell's own pgid (so the
+    /// descendant pgid set collapses to nothing extra), but AI TUIs (Codex,
+    /// Claude Code) spawn MCP/tool subtrees into their own pgids via setsid —
+    /// those subtrees never receive a signal sent only to the shell pgid, so
+    /// the 8s SIGINT/SIGTERM/SIGKILL cascade was running with no effect on
+    /// the processes that actually needed to flush. Stage 3 SIGKILL doesn't
+    /// need this — `killEscapedDescendants` already kills each descendant
+    /// individually.
+    private func sendTerminationSignalToTree(_ signal: Int32, shellPID: pid_t) {
+        sendTerminationSignal(signal, toShellPID: shellPID)
+
+        let descendants = captureDescendantPIDs(of: shellPID)
+        let pgids = Self.distinctDescendantPGIDsToSignal(
+            shellPID: shellPID,
+            descendants: descendants,
+            selfPGID: getpgrp(),
+            pgidFor: { getpgid($0) }
+        )
+        for pgid in pgids {
+            _ = Darwin.kill(-pgid, signal)
+        }
+    }
+
+    /// Pure selection logic for descendant process-group IDs eligible to
+    /// receive a termination signal. Returns pgids EXCLUDING the shell's
+    /// pgid (caller already signals that). A pgid is included only if its
+    /// leader pid is itself a descendant in the captured tree — guaranteeing
+    /// every signaled group has its leader inside the shell's subtree.
+    /// Filters out system pgids (≤1) and the caller's own pgid.
+    static func distinctDescendantPGIDsToSignal(
+        shellPID: pid_t,
+        descendants: [DescendantProcess],
+        selfPGID: pid_t,
+        pgidFor: (pid_t) -> pid_t
+    ) -> [pid_t] {
+        let allowedLeaders = Set(descendants.map(\.pid)).union([shellPID])
+        var seen: Set<pid_t> = [shellPID]
+        var result: [pid_t] = []
+        for desc in descendants {
+            let pgid = pgidFor(desc.pid)
+            guard pgid > 1,
+                  pgid != selfPGID,
+                  allowedLeaders.contains(pgid),
+                  !seen.contains(pgid) else { continue }
+            seen.insert(pgid)
+            result.append(pgid)
+        }
+        return result
     }
 
     func copyOrInterrupt() {
