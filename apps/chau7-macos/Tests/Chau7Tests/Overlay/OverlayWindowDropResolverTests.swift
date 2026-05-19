@@ -60,4 +60,33 @@ final class OverlayWindowDropResolverTests: XCTestCase {
             )
         )
     }
+
+    // Regression: two overlay windows stacked at the same frame. Drop happens
+    // inside the source window's content area (not on any tab bar). Before the
+    // fix, the source was excluded and the other window's fallbackFrame matched
+    // the same point, silently re-homing the tab to the wrong window.
+    // Frame/point values captured from a real session log on 2026-05-19.
+    func testTargetIndexDoesNotJumpWhenWindowsOverlapAndDropIsBelowTabBar() {
+        let candidates = [
+            OverlayWindowDropCandidate(
+                index: 0,
+                primaryFrame: CGRect(x: 10, y: 5, width: 1902, height: 28),
+                fallbackFrame: CGRect(x: 1512, y: -87, width: 1920, height: 1080)
+            ),
+            OverlayWindowDropCandidate(
+                index: 1,
+                primaryFrame: CGRect(x: 80, y: 5, width: 1832, height: 28),
+                fallbackFrame: CGRect(x: 1512, y: -87, width: 1920, height: 1080)
+            )
+        ]
+
+        XCTAssertNil(
+            OverlayWindowDropResolver.targetIndex(
+                at: CGPoint(x: 3231, y: 943),
+                candidates: candidates,
+                excluding: 1
+            ),
+            "Drop in source window's content area must not be routed to another overlapping window"
+        )
+    }
 }
