@@ -77,7 +77,11 @@ public struct TabRoutingIndex: Equatable, Sendable {
 
         guard let sessionRecords = recordsBySessionID[sessionID],
               !sessionRecords.isEmpty else {
-            return nil
+            // A non-matching sessionID must not be worse than no sessionID. Some
+            // tools (Codex notify hook) emit an opaque thread_id that lives in
+            // a different identifier space than the tab's stored session id —
+            // fall back to tool+directory routing rather than dropping.
+            return strictSession ? nil : resolveWithoutSession(target)
         }
 
         return resolveSessionRecords(sessionRecords, target: target)
