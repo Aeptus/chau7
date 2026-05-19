@@ -750,6 +750,16 @@ final class RuntimeSessionManager {
     }
 
     private func _resolveClaudeTabBySessionID(_ sessionID: String, cwd: String) -> UUID? {
+        let target = TabTarget(
+            tool: "Claude",
+            directory: cwd,
+            tabID: nil,
+            sessionID: sessionID
+        )
+        if let indexed = TerminalControlService.shared.resolveTabID(for: target, strictSession: true) {
+            return indexed
+        }
+
         let tabs = listAITabs()
         if let resolved = Self.resolveClaudeTabID(sessionID: sessionID, cwd: cwd, tabs: tabs) {
             return resolved
@@ -838,8 +848,7 @@ final class RuntimeSessionManager {
             tabID: nil,
             sessionID: sessionID
         )
-        let tabs = TerminalControlService.shared.allTabs
-        return TabResolver.resolveStrictSession(target, in: tabs)?.id
+        return TerminalControlService.shared.resolveTabID(for: target, strictSession: true)
     }
 
     struct AITabSummary {

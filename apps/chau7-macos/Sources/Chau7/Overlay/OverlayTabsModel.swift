@@ -881,7 +881,10 @@ final class OverlayTabsModel {
     static var lastArchivedMultiWindowTabStateAt: Date = .distantPast
 
     var tabs: [OverlayTab] {
-        didSet { onTabsChanged?() }
+        didSet {
+            TerminalControlService.shared.invalidateRoutingIndex(reason: "tabs_changed")
+            onTabsChanged?()
+        }
     }
 
     var selectedTabID: UUID {

@@ -24,6 +24,9 @@ final class TerminalControlService {
     private var registeredModels: [WeakModel] = []
     private var nextWindowID = 0
     private var mcpTabIDs = MCPTabIDAllocator()
+    private var routingIndex = TabRoutingIndex(records: [])
+    private var routingIndexNeedsRebuild = true
+    private var learnedSessionRoutes: [String: UUID] = [:]
     var activeOverlayModelProvider: (() -> OverlayTabsModel?)?
 
     /// Hard ceiling — even if the user sets a higher value in settings.
@@ -48,11 +51,13 @@ final class TerminalControlService {
         let id = nextWindowID
         nextWindowID += 1
         registeredModels.append(WeakModel(windowID: id, model: model))
+        invalidateRoutingIndex(reason: "register_model")
     }
 
     /// Unregister when a window closes. Optional — dead refs are pruned lazily.
     func unregister(_ model: OverlayTabsModel) {
         registeredModels.removeAll { $0.model == nil || $0.model === model }
+        invalidateRoutingIndex(reason: "unregister_model")
     }
 
     /// All currently alive (windowID, model) pairs, preserving stable IDs.
@@ -69,6 +74,45 @@ final class TerminalControlService {
         allModels.flatMap { $0.model.tabs }
     }
 
+    func invalidateRoutingIndex(reason _: String) {
+        onMain {
+            self.routingIndexNeedsRebuild = true
+        }
+    }
+
+    func resolveTabID(for target: TabTarget, strictSession: Bool = false) -> UUID? {
+        onMain {
+            self.resolveTabIDLocked(for: target, strictSession: strictSession)
+        }
+    }
+
+    func resolveTab(for target: TabTarget, strictSession: Bool = false) -> OverlayTab? {
+        onMain {
+            guard let tabID = self.resolveTabIDLocked(for: target, strictSession: strictSession) else {
+                return nil
+            }
+            return self.tabLocked(for: tabID)
+        }
+    }
+
+    func tabTitle(for target: TabTarget) -> String? {
+        resolveTab(for: target)?.displayTitle
+    }
+
+    func repoName(for target: TabTarget) -> String? {
+        guard let tab = resolveTab(for: target),
+              let session = tab.displaySession ?? tab.session,
+              let rootPath = session.gitRootPath else { return nil }
+        return URL(fileURLWithPath: rootPath).lastPathComponent
+    }
+
+    func isActiveTab(_ target: TabTarget) -> Bool {
+        guard let tabID = resolveTabID(for: target) else { return false }
+        return onMain {
+            self.allModels.contains { $0.model.selectedTabID == tabID }
+        }
+    }
+
     @discardableResult
     func adoptHistorySession(_ request: HistorySessionAdoptionRequest) -> Bool {
         onMain {
@@ -78,7 +122,7 @@ final class TerminalControlService {
                 tabID: request.tabID,
                 sessionID: request.sessionId
             )
-            guard let tab = TabResolver.resolve(target, in: self.allTabs),
+            guard let tab = self.resolveTabLocked(for: target),
                   let session = self.historyAdoptionSession(in: tab, request: request) else {
                 Log.trace(
                     "History adoption skipped: no compatible tab for tool=\(request.displayName) session=\(request.sessionId.prefix(8))"
@@ -1065,6 +1109,156 @@ final class TerminalControlService {
             }
         }
         return nil
+    }
+
+    private func resolveTabIDLocked(for target: TabTarget, strictSession: Bool = false) -> UUID? {
+        rebuildRoutingIndexIfNeededLocked()
+
+        if let routeKey = learnedSessionRouteKey(target: target),
+           let learnedTabID = learnedSessionRoutes[routeKey],
+           routingIndex.contains(tabID: learnedTabID) {
+            return learnedTabID
+        }
+
+        if let indexed = routingIndex.resolve(target, strictSession: strictSession) {
+            learnSessionRouteLocked(target: target, tabID: indexed)
+            return indexed
+        }
+
+        guard !strictSession else { return nil }
+
+        guard let fallback = TabResolver.resolve(target, in: allTabs)?.id else {
+            return nil
+        }
+        learnSessionRouteLocked(target: target, tabID: fallback)
+        return fallback
+    }
+
+    private func resolveTabLocked(for target: TabTarget, strictSession: Bool = false) -> OverlayTab? {
+        guard let tabID = resolveTabIDLocked(for: target, strictSession: strictSession) else {
+            return nil
+        }
+        return tabLocked(for: tabID)
+    }
+
+    private func tabLocked(for tabID: UUID) -> OverlayTab? {
+        for (_, model) in allModels {
+            if let tab = model.tabs.first(where: { $0.id == tabID }) {
+                return tab
+            }
+        }
+        return nil
+    }
+
+    private func learnSessionRouteLocked(target: TabTarget, tabID: UUID) {
+        guard let routeKey = learnedSessionRouteKey(target: target),
+              routingIndex.contains(tabID: tabID) else {
+            return
+        }
+        learnedSessionRoutes[routeKey] = tabID
+    }
+
+    private func learnedSessionRouteKey(target: TabTarget) -> String? {
+        guard let sessionID = TabRoutingIndex.normalizedSessionID(target.sessionID) else {
+            return nil
+        }
+        let provider = AIResumeParser.normalizeProviderName(target.tool)
+            ?? target.tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !provider.isEmpty else { return nil }
+        return "\(provider)|\(sessionID)"
+    }
+
+    private func rebuildRoutingIndexIfNeededLocked() {
+        guard routingIndexNeedsRebuild else { return }
+        let validTabIDs = Set(allTabs.map(\.id))
+        learnedSessionRoutes = learnedSessionRoutes.filter { validTabIDs.contains($0.value) }
+        routingIndex = TabRoutingIndex(records: routingRecordsLocked())
+        routingIndexNeedsRebuild = false
+    }
+
+    private func routingRecordsLocked() -> [TabRouteRecord] {
+        var records: [TabRouteRecord] = []
+        for (_, model) in allModels {
+            for tab in model.tabs {
+                records.append(contentsOf: liveRoutingRecordsLocked(for: tab))
+
+                if let state = model.deferredRestoreStatesByTabID[tab.id]
+                    ?? model.persistedRestoreFallbackStatesByTabID[tab.id] {
+                    records.append(contentsOf: savedRoutingRecordsLocked(for: tab, state: state))
+                }
+            }
+        }
+        return records
+    }
+
+    private func liveRoutingRecordsLocked(for tab: OverlayTab) -> [TabRouteRecord] {
+        let displaySession = tab.displaySession
+        return tab.splitController.terminalSessions.map { paneID, session in
+            TabRouteRecord(
+                tabID: tab.id,
+                paneID: paneID,
+                title: tab.displayTitle,
+                directory: session.currentDirectory,
+                repoRoot: session.gitRootPath,
+                provider: session.lastAIProvider,
+                displayName: session.aiDisplayAppName,
+                activeAppName: session.activeAppName,
+                sessionID: session.normalizedStoredAISessionId(),
+                lastActivity: session.lastActivityDate,
+                isDisplaySession: session === displaySession
+            )
+        }
+    }
+
+    private func savedRoutingRecordsLocked(for tab: OverlayTab, state: SavedTabState) -> [TabRouteRecord] {
+        var records: [TabRouteRecord] = []
+        let topLevelProvider = AIResumeParser.normalizeProviderName(state.aiProvider ?? "")
+        let topLevelSessionID = TabRoutingIndex.normalizedSessionID(state.aiSessionId)
+        if topLevelProvider != nil || topLevelSessionID != nil {
+            records.append(TabRouteRecord(
+                tabID: tab.id,
+                title: tab.displayTitle,
+                directory: state.directory,
+                repoRoot: state.knownRepoRoot ?? state.repoGroupID,
+                provider: topLevelProvider,
+                displayName: displayNameLocked(provider: topLevelProvider),
+                sessionID: topLevelSessionID,
+                lastActivity: maxDate(state.lastInputAt, state.lastExitAt, state.agentStartedAt)
+            ))
+        }
+
+        for paneState in state.paneStates ?? [] {
+            let provider = AIResumeParser.normalizeProviderName(paneState.aiProvider ?? "")
+            let sessionID = TabRoutingIndex.normalizedSessionID(paneState.aiSessionId)
+            guard provider != nil || sessionID != nil else { continue }
+            records.append(TabRouteRecord(
+                tabID: tab.id,
+                paneID: UUID(uuidString: paneState.paneID),
+                title: tab.displayTitle,
+                directory: paneState.directory,
+                repoRoot: paneState.knownRepoRoot,
+                provider: provider,
+                displayName: displayNameLocked(provider: provider),
+                sessionID: sessionID,
+                lastActivity: maxDate(
+                    paneState.lastInputAt,
+                    paneState.lastOutputAt,
+                    paneState.agentStartedAt,
+                    paneState.lastExitAt
+                )
+            ))
+        }
+        return records
+    }
+
+    private func displayNameLocked(provider: String?) -> String? {
+        guard let provider else { return nil }
+        return AIToolRegistry.allTools.first { $0.resumeProviderKey == provider }?.displayName
+            ?? provider.capitalized
+    }
+
+    private func maxDate(_ dates: Date?...) -> Date {
+        dates.compactMap { $0 }.max() ?? .distantPast
     }
 
     private func historyAdoptionSession(

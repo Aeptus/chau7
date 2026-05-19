@@ -32,7 +32,8 @@ final class NotificationManager {
 
     /// Injectable resolver: maps a TabTarget to the owning tab's UUID.
     /// Used to fill in missing tabIDs on events from external sources (e.g. Claude Code hooks).
-    /// Wired to `TabResolver.resolve` — gets full 5-tier matching for free.
+    /// Wired through `TerminalControlService` so normal routing uses the
+    /// session index before falling back to recovery matching.
     var tabResolver: ((TabTarget) -> UUID?)?
     /// Strict resolver for authoritative events that must never fall back to
     /// brand/title/directory heuristics.

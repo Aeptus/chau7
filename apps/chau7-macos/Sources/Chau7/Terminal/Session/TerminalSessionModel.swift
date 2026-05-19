@@ -121,7 +121,10 @@ final class TerminalSessionModel {
     }
 
     var currentDirectory: String = TerminalSessionModel.defaultStartDirectory() {
-        didSet { onSessionStateChanged?() }
+        didSet {
+            TerminalControlService.shared.invalidateRoutingIndex(reason: "session_directory")
+            onSessionStateChanged?()
+        }
     }
 
     /// Last rendered terminal snapshot used for snapshot-backed tab switching.
@@ -237,6 +240,7 @@ final class TerminalSessionModel {
                     name: .terminalSessionRenderSuspensionStateChanged,
                     object: self
                 )
+                TerminalControlService.shared.invalidateRoutingIndex(reason: "active_app")
             }
             onSessionStateChanged?()
         }
@@ -266,6 +270,7 @@ final class TerminalSessionModel {
                 name: .terminalSessionRenderSuspensionStateChanged,
                 object: self
             )
+            TerminalControlService.shared.invalidateRoutingIndex(reason: "live_agent")
             if oldValue == nil, liveAgentName != nil {
                 MainActor.assumeIsolated {
                     PromptInjectionInjector.onAIToolDetected(session: self)
@@ -527,7 +532,12 @@ final class TerminalSessionModel {
 
     var lastAIProvider: String?
     var lastAISessionId: String? {
-        didSet { syncRustTerminalObservabilityScope() }
+        didSet {
+            syncRustTerminalObservabilityScope()
+            if lastAISessionId != oldValue {
+                TerminalControlService.shared.invalidateRoutingIndex(reason: "ai_session_id")
+            }
+        }
     }
 
     var lastAISessionIdentitySource: AISessionIdentitySource?
@@ -549,6 +559,7 @@ final class TerminalSessionModel {
         lastAIProvider = record.provider
         lastAISessionId = record.sessionId
         lastAISessionIdentitySource = record.source
+        TerminalControlService.shared.invalidateRoutingIndex(reason: "agent_identity")
     }
 
     /// The last app name set by live detection (command or output).
@@ -574,6 +585,7 @@ final class TerminalSessionModel {
 
         // Always keep lastAIProvider current so persistence is correct
         lastAIProvider = newProvider
+        TerminalControlService.shared.invalidateRoutingIndex(reason: "detected_app")
 
         // Only clear session metadata on an actual provider SWITCH.
         // When oldProvider is nil (after restore or first detection),

@@ -30,19 +30,13 @@ struct Chau7App: App {
         // not just window 0's overlayModel. Without this, notifications for tabs
         // in window 1+ never get titles, repo names, or tab IDs resolved.
         NotificationManager.shared.tabTitleProvider = { target in
-            let tabs = TerminalControlService.shared.allTabs
-            return TabResolver.resolve(target, in: tabs)?.displayTitle
+            TerminalControlService.shared.tabTitle(for: target)
         }
         NotificationManager.shared.repoNameProvider = { target in
-            let tabs = TerminalControlService.shared.allTabs
-            guard let tab = TabResolver.resolve(target, in: tabs),
-                  let session = tab.displaySession ?? tab.session,
-                  let rootPath = session.gitRootPath else { return nil }
-            return URL(fileURLWithPath: rootPath).lastPathComponent
+            TerminalControlService.shared.repoName(for: target)
         }
         model.tabIDResolver = { target in
-            let tabs = TerminalControlService.shared.allTabs
-            return TabResolver.resolve(target, in: tabs)?.id
+            TerminalControlService.shared.resolveTabID(for: target)
         }
         model.historySessionAdopter = { request in
             TerminalControlService.shared.adoptHistorySession(request)
@@ -56,21 +50,15 @@ struct Chau7App: App {
 
         // Wire activeTabChecker so onlyWhenTabInactive condition works
         NotificationManager.shared.activeTabChecker = { target in
-            let tabs = TerminalControlService.shared.allTabs
-            guard let tab = TabResolver.resolve(target, in: tabs) else { return false }
-            // Check if this tab is the selected tab in ANY window
-            return TerminalControlService.shared.allModels
-                .contains { $0.model.selectedTabID == tab.id }
+            TerminalControlService.shared.isActiveTab(target)
         }
 
         // Wire tabResolver so external events get tabID filled in
         NotificationManager.shared.tabResolver = { target in
-            let tabs = TerminalControlService.shared.allTabs
-            return TabResolver.resolve(target, in: tabs)?.id
+            TerminalControlService.shared.resolveTabID(for: target)
         }
         NotificationManager.shared.strictTabResolver = { target in
-            let tabs = TerminalControlService.shared.allTabs
-            return TabResolver.resolveStrictSession(target, in: tabs)?.id
+            TerminalControlService.shared.resolveTabID(for: target, strictSession: true)
         }
 
         _overlayModel = State(wrappedValue: overlayModel)

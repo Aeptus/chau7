@@ -1451,7 +1451,6 @@ final class NotificationActionAdapter: NotificationActionDelegate {
     }
 
     func resolveExactTab(target: TabTarget) -> UUID? {
-        let tabs = TerminalControlService.shared.allTabs
-        return TabResolver.resolveStrictSession(target, in: tabs)?.id
+        TerminalControlService.shared.resolveTabID(for: target, strictSession: true)
     }
 }
