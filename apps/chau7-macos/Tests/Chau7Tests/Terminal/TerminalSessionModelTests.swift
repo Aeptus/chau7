@@ -861,6 +861,24 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertNil(session.lastAISessionId)
     }
 
+    func testRestoreAIMetadataCanAvoidActivatingBackgroundAIState() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.restoreAIMetadata(
+            provider: "codex",
+            sessionId: "session-123",
+            lastStatus: .running,
+            activateRestoredAppName: false
+        )
+
+        XCTAssertEqual(session.lastAIProvider, "codex")
+        XCTAssertEqual(session.lastAISessionId, "session-123")
+        XCTAssertEqual(session.aiDisplayAppName, "Codex")
+        XCTAssertNil(session.activeAppName)
+        XCTAssertTrue(session.backgroundLiveRenderReasons().isEmpty)
+    }
+
     func testCaptureRemoteSnapshotFallsBackToCachedRemoteOutputText() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)

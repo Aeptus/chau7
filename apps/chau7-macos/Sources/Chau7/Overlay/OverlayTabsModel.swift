@@ -1132,6 +1132,8 @@ final class OverlayTabsModel {
 
     @ObservationIgnored weak var overlayWindow: NSWindow?
     @ObservationIgnored var onCloseLastTab: (() -> Void)?
+    /// Full saved states for tabs that have not completed an interactive restore.
+    /// The scheduler may already have hydrated identity facts for these tabs.
     @ObservationIgnored var deferredRestoreStatesByTabID: [UUID: SavedTabState] = [:]
     @ObservationIgnored var deferredRestoreTabOrder: [UUID] = []
     @ObservationIgnored var persistedRestoreFallbackStatesByTabID: [UUID: SavedTabState] = [:]
@@ -1500,6 +1502,44 @@ final class OverlayTabsModel {
         return paneStates
     }
 
+    private func exportParkedDeferredRestoreState(
+        for tab: OverlayTab,
+        state: SavedTabState,
+        index: Int,
+        isSelected: Bool,
+        overrideRaw: String?
+    ) -> SavedTabState {
+        SavedTabState(
+            tabID: tab.id.uuidString,
+            selectedTabID: isSelected ? tab.id.uuidString : nil,
+            customTitle: tab.customTitle,
+            color: tab.color.rawValue,
+            directory: state.directory,
+            selectedIndex: isSelected ? index : nil,
+            tokenOptOverride: overrideRaw,
+            scrollbackContent: state.scrollbackContent,
+            aiResumeCommand: state.aiResumeCommand,
+            aiProvider: state.aiProvider,
+            aiSessionId: state.aiSessionId,
+            aiSessionIdSource: state.aiSessionIdSource,
+            splitLayout: state.splitLayout,
+            focusedPaneID: state.focusedPaneID,
+            paneStates: state.paneStates,
+            createdAt: state.createdAt,
+            repoGroupID: tab.repoGroupID ?? state.repoGroupID,
+            knownRepoRoot: state.knownRepoRoot,
+            knownGitBranch: state.knownGitBranch,
+            lastInputAt: state.lastInputAt,
+            lastStatus: state.lastStatus,
+            agentLaunchCommand: state.agentLaunchCommand,
+            agentStartedAt: state.agentStartedAt,
+            lastExitCode: state.lastExitCode,
+            lastExitAt: state.lastExitAt,
+            commandBlocks: state.commandBlocks,
+            previewSnapshotPNGData: nil
+        )
+    }
+
     /// Exports current tab states without persisting to disk.
     /// Used by AppDelegate to collect all windows' states for multi-window save.
     func exportTabStates() -> [SavedTabState] {
@@ -1512,6 +1552,19 @@ final class OverlayTabsModel {
             let terminalSessions = tab.splitController.terminalSessions
             let isSelected = tab.id == selectedID
             let overrideRaw: String? = tab.tokenOptOverride == .default ? nil : tab.tokenOptOverride.rawValue
+
+            if let parkedState = deferredRestoreStatesByTabID[tab.id] {
+                states.append(
+                    exportParkedDeferredRestoreState(
+                        for: tab,
+                        state: parkedState,
+                        index: i,
+                        isSelected: isSelected,
+                        overrideRaw: overrideRaw
+                    )
+                )
+                continue
+            }
 
             let paneStates = buildPaneStates(
                 for: tab,

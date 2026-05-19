@@ -82,6 +82,7 @@ Detection methods:
 - **Restore supersession guard** — stale retry callbacks can no longer overwrite a newer pane’s delivered restore outcome, so the ledger keeps the winning pane state instead of regressing to `superseded`.
 - **Single Live Selected-Tab Surface** — selected tabs now render through one live surface only; the old snapshot/cursor handoff no longer stacks on top of the live terminal during tab switches.
 - **On-Demand Deferred Restore** — non-selected restored tabs stay deferred until the user selects them, instead of auto-restoring and mutating visible tabs immediately after launch.
+- **Identity-only background restore** — deferred background tabs hydrate provider/session facts for routing and titles without activating AI live-render state, restoring command blocks, or queuing resume input until selected.
 
 ### Context Token Optimization (CTO)
 

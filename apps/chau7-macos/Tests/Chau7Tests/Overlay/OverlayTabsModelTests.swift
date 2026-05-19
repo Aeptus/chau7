@@ -1081,11 +1081,11 @@ final class OverlayTabsModelTests: XCTestCase {
 
         XCTAssertTrue(restoredModel.restoreOneDeferredTabIfNeeded(reason: "test"))
         XCTAssertEqual(restoredModel.deferredRestoreTabOrder.count, 1)
-        XCTAssertEqual(restoredModel.deferredRestoreStatesByTabID.count, 1)
+        XCTAssertEqual(restoredModel.deferredRestoreStatesByTabID.count, 2)
 
         XCTAssertTrue(restoredModel.restoreOneDeferredTabIfNeeded(reason: "test"))
         XCTAssertEqual(restoredModel.deferredRestoreTabOrder.count, 0)
-        XCTAssertEqual(restoredModel.deferredRestoreStatesByTabID.count, 0)
+        XCTAssertEqual(restoredModel.deferredRestoreStatesByTabID.count, 2)
 
         XCTAssertFalse(restoredModel.restoreOneDeferredTabIfNeeded(reason: "test"))
     }

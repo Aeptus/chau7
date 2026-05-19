@@ -1497,23 +1497,32 @@ extension TerminalSessionModel {
         lastOutputAt: Date? = nil,
         lastStatus: CommandStatus? = nil,
         lastExitCode: Int? = nil,
-        lastExitAt: Date? = nil
+        lastExitAt: Date? = nil,
+        activateRestoredAppName: Bool = true
     ) {
         let normalizedProvider = AIResumeParser.normalizeProviderName(
             provider ?? ""
         )
         let restoredDisplayName = Self.displayName(fromProvider: normalizedProvider)
-        if let name = restoredDisplayName {
+        if activateRestoredAppName, let name = restoredDisplayName {
             applyAIDetectionRestore(appName: name)
         }
-        activeAppName = restoredDisplayName
+        if activateRestoredAppName {
+            activeAppName = restoredDisplayName
+        }
         lastAIProvider = normalizedProvider
-        suppressWaitingInputFallbackUntilNextUserCommand = restoredDisplayName != nil
-        pendingWaitingInputFallbackArmed = false
-        pendingWaitingInputFallbackSawLiveOutput = false
-        if restoredDisplayName != nil {
+        if activateRestoredAppName {
+            suppressWaitingInputFallbackUntilNextUserCommand = restoredDisplayName != nil
+            pendingWaitingInputFallbackArmed = false
+            pendingWaitingInputFallbackSawLiveOutput = false
+        }
+        if activateRestoredAppName, restoredDisplayName != nil {
             Log.info(
                 "Restored AI metadata for tab=\(tabIdentifier); suppressing prompt waiting_input fallback until explicit user command"
+            )
+        } else if restoredDisplayName != nil {
+            Log.trace(
+                "Restored AI identity facts for tab=\(tabIdentifier) without activating background AI state"
             )
         }
         // Diagnostic: surface resolved title inputs post-restore so we can

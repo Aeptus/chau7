@@ -10,6 +10,31 @@ extension OverlayTabsModel {
     static let resumeCommandMaxRetryDelay: TimeInterval = 1.5
     static let resumeCommandMaxAttempts = 16
 
+    enum RestoreExecutionProfile: String {
+        case interactiveFull = "interactive_full"
+        case backgroundIdentityOnly = "background_identity_only"
+
+        var tracksStartupBootstrap: Bool {
+            self == .interactiveFull
+        }
+
+        var appliesCommandBlocks: Bool {
+            self == .interactiveFull
+        }
+
+        var appliesFocusedPane: Bool {
+            self == .interactiveFull
+        }
+
+        var activatesRestoredAIApp: Bool {
+            self == .interactiveFull
+        }
+
+        var schedulesResumePrefills: Bool {
+            self == .interactiveFull
+        }
+    }
+
     static func paneStateMap(from states: [SavedTerminalPaneState]?) -> [UUID: SavedTerminalPaneState] {
         guard let states else { return [:] }
         var map: [UUID: SavedTerminalPaneState] = [:]
@@ -637,13 +662,17 @@ extension OverlayTabsModel {
         // timers. This keeps restore mutation bound to the session lifecycle
         // and avoids post-reveal retry storms.
         useResumeRetryScheduler: Bool = false,
-        executeSynchronouslyWhenPossible: Bool = false
+        executeSynchronouslyWhenPossible: Bool = false,
+        executionProfile: RestoreExecutionProfile = .interactiveFull
     ) {
         let targetTabID = tab.id
         let terminalSessions = tab.splitController.terminalSessions
-        Log.info("restoreTabState: scheduled for tab=\(targetTabID), panes=\(terminalSessions.count)")
+        Log.info(
+            "restoreTabState: scheduled for tab=\(targetTabID), panes=\(terminalSessions.count) profile=\(executionProfile.rawValue)"
+        )
         guard !terminalSessions.isEmpty else { return }
         let startupRestoreActive = StartupRestoreCoordinator.shared.isActive
+            && executionProfile.tracksStartupBootstrap
         if startupRestoreActive {
             let previousHadPendingWork = hasPendingStartupRestoreWork
             restoreBootstrapTabIDs.insert(targetTabID)
@@ -653,7 +682,8 @@ extension OverlayTabsModel {
 
         // Keep the restored focus for the active terminal pane (or fallback to
         // first terminal if an editor pane was serialized).
-        if let restoredFocus = state.focusedPaneID.flatMap(UUID.init),
+        if executionProfile.appliesFocusedPane,
+           let restoredFocus = state.focusedPaneID.flatMap(UUID.init),
            tab.splitController.root.paneType(for: restoredFocus) == .terminal {
             tab.splitController.setFocusedPane(restoredFocus)
         }
@@ -665,77 +695,81 @@ extension OverlayTabsModel {
             state: state
         )
 
-        for (paneID, session) in terminalSessions {
-            session.onRestoreBootstrapPhaseChanged = { [weak self] phase in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    if phase == .settled {
-                        StartupRestoreCoordinator.shared.noteRestoreBootstrapSettled(
-                            tabID: targetTabID,
-                            paneID: paneID,
-                            source: "phase_changed"
-                        )
-                        if let restoredTab = self.tabs.first(where: { $0.id == targetTabID }) {
-                            let currentSessions = restoredTab.splitController.terminalSessions.map(\.1)
-                            if currentSessions.allSatisfy({ !$0.isRestoreBootstrapPending }) {
-                                let previousHadPendingWork = self.hasPendingStartupRestoreWork
-                                self.restoreBootstrapTabIDs.remove(targetTabID)
-                                self.updateSuspensionState()
-                                self.notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
+        if executionProfile.tracksStartupBootstrap {
+            for (paneID, session) in terminalSessions {
+                session.onRestoreBootstrapPhaseChanged = { [weak self] phase in
+                    DispatchQueue.main.async {
+                        guard let self else { return }
+                        if phase == .settled {
+                            StartupRestoreCoordinator.shared.noteRestoreBootstrapSettled(
+                                tabID: targetTabID,
+                                paneID: paneID,
+                                source: "phase_changed"
+                            )
+                            if let restoredTab = self.tabs.first(where: { $0.id == targetTabID }) {
+                                let currentSessions = restoredTab.splitController.terminalSessions.map(\.1)
+                                if currentSessions.allSatisfy({ !$0.isRestoreBootstrapPending }) {
+                                    let previousHadPendingWork = self.hasPendingStartupRestoreWork
+                                    self.restoreBootstrapTabIDs.remove(targetTabID)
+                                    self.updateSuspensionState()
+                                    self.notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
+                                }
                             }
                         }
+                        self.updateSuspensionState()
+                        guard targetTabID == self.selectedTabID else { return }
+                        guard StartupRestoreCoordinator.shared.isActive else {
+                            Log.trace(
+                                "restoreBootstrap: skipping runtime selected-tab reveal for \(targetTabID)"
+                            )
+                            return
+                        }
+                        if let selectedTab = self.selectedTab,
+                           let selectedSession = selectedTab.displaySession ?? selectedTab.session,
+                           selectedSession.existingRustTerminalView != nil,
+                           selectedSession.presentationSurfaceState.isLivePresentable {
+                            _ = self.noteStartupSelectedTabLiveFrameAfterRestoreBootstrapSettledIfNeeded(
+                                tabID: targetTabID,
+                                reason: "restore_bootstrap_settled"
+                            )
+                            Log.trace(
+                                "restoreBootstrap: skipping selected-tab reveal for \(targetTabID) because the selected surface is already live"
+                            )
+                            return
+                        }
+                        let startupLiveFrameAlreadyRecorded = self.overlayWindow.map {
+                            StartupRestoreCoordinator.shared.hasSelectedTabLiveFrame(windowNumber: $0.windowNumber)
+                        } ?? false
+                        if StartupRestoreCoordinator.shared.isActive,
+                           startupLiveFrameAlreadyRecorded {
+                            Log.trace(
+                                "restoreBootstrap: skipping selected-tab reveal for \(targetTabID) after first startup live frame"
+                            )
+                            return
+                        }
+                        self.requestSelectedTabAuthoritativeReveal(reason: "restore_bootstrap_phase")
                     }
-                    self.updateSuspensionState()
-                    guard targetTabID == self.selectedTabID else { return }
-                    guard StartupRestoreCoordinator.shared.isActive else {
-                        Log.trace(
-                            "restoreBootstrap: skipping runtime selected-tab reveal for \(targetTabID)"
-                        )
-                        return
-                    }
-                    if let selectedTab = self.selectedTab,
-                       let selectedSession = selectedTab.displaySession ?? selectedTab.session,
-                       selectedSession.existingRustTerminalView != nil,
-                       selectedSession.presentationSurfaceState.isLivePresentable {
-                        _ = self.noteStartupSelectedTabLiveFrameAfterRestoreBootstrapSettledIfNeeded(
-                            tabID: targetTabID,
-                            reason: "restore_bootstrap_settled"
-                        )
-                        Log.trace(
-                            "restoreBootstrap: skipping selected-tab reveal for \(targetTabID) because the selected surface is already live"
-                        )
-                        return
-                    }
-                    let startupLiveFrameAlreadyRecorded = self.overlayWindow.map {
-                        StartupRestoreCoordinator.shared.hasSelectedTabLiveFrame(windowNumber: $0.windowNumber)
-                    } ?? false
-                    if StartupRestoreCoordinator.shared.isActive,
-                       startupLiveFrameAlreadyRecorded {
-                        Log.trace(
-                            "restoreBootstrap: skipping selected-tab reveal for \(targetTabID) after first startup live frame"
-                        )
-                        return
-                    }
-                    self.requestSelectedTabAuthoritativeReveal(reason: "restore_bootstrap_phase")
                 }
             }
         }
 
-        for (paneID, session) in terminalSessions {
-            let paneState = paneStatesToRestore[paneID]
-            let expectsResumePrefill = Self.normalizedResumeCommand(paneState?.aiResumeCommand) != nil
-                || (paneState?.aiProvider != nil && paneState?.aiSessionId != nil)
-                || (paneStatesToRestore.isEmpty && terminalSessions.count == 1 && (
-                    Self.normalizedResumeCommand(state.aiResumeCommand) != nil
-                        || (state.aiProvider != nil && state.aiSessionId != nil)
-                ))
-            if expectsResumePrefill {
-                StartupRestoreCoordinator.shared.noteRestoreBootstrapStarted(
-                    tabID: targetTabID,
-                    paneID: paneID,
-                    expectsResumePrefill: expectsResumePrefill
-                )
-                session.beginRestoreBootstrap(expectsResumePrefill: expectsResumePrefill)
+        if executionProfile.tracksStartupBootstrap {
+            for (paneID, session) in terminalSessions {
+                let paneState = paneStatesToRestore[paneID]
+                let expectsResumePrefill = Self.normalizedResumeCommand(paneState?.aiResumeCommand) != nil
+                    || (paneState?.aiProvider != nil && paneState?.aiSessionId != nil)
+                    || (paneStatesToRestore.isEmpty && terminalSessions.count == 1 && (
+                        Self.normalizedResumeCommand(state.aiResumeCommand) != nil
+                            || (state.aiProvider != nil && state.aiSessionId != nil)
+                    ))
+                if expectsResumePrefill {
+                    StartupRestoreCoordinator.shared.noteRestoreBootstrapStarted(
+                        tabID: targetTabID,
+                        paneID: paneID,
+                        expectsResumePrefill: expectsResumePrefill
+                    )
+                    session.beginRestoreBootstrap(expectsResumePrefill: expectsResumePrefill)
+                }
             }
         }
 
@@ -758,7 +792,8 @@ extension OverlayTabsModel {
                 scheduledDelay: scheduledDelay,
                 restoreScheduledAt: restoreScheduledAt,
                 useResumeRetryScheduler: useResumeRetryScheduler,
-                startupRestoreActive: startupRestoreActive
+                startupRestoreActive: startupRestoreActive,
+                executionProfile: executionProfile
             )
         }
         if executeSynchronouslyWhenPossible, scheduledDelay <= 0 {
@@ -829,7 +864,8 @@ extension OverlayTabsModel {
         paneStatesByID: [UUID: SavedTerminalPaneState],
         paneStatesToRestore: inout [UUID: SavedTerminalPaneState],
         state: SavedTabState,
-        targetTabID: UUID
+        targetTabID: UUID,
+        activateRestoredAppName: Bool = true
     ) -> [UUID: SavedTerminalPaneState] {
         var resolvedPaneStates: [UUID: SavedTerminalPaneState] = [:]
         let paneMapKeys = Set(paneStatesToRestore.keys.map { String($0.uuidString.prefix(8)) })
@@ -892,7 +928,8 @@ extension OverlayTabsModel {
                 lastOutputAt: paneState.lastOutputAt,
                 lastStatus: paneState.lastStatus,
                 lastExitCode: paneState.lastExitCode,
-                lastExitAt: paneState.lastExitAt
+                lastExitAt: paneState.lastExitAt,
+                activateRestoredAppName: activateRestoredAppName
             )
 
             let effectivePaneState = SavedTerminalPaneState(
@@ -1041,13 +1078,14 @@ extension OverlayTabsModel {
         scheduledDelay: TimeInterval,
         restoreScheduledAt: CFAbsoluteTime,
         useResumeRetryScheduler: Bool,
-        startupRestoreActive: Bool
+        startupRestoreActive: Bool,
+        executionProfile: RestoreExecutionProfile
     ) {
         var paneStatesToRestore = paneStatesToRestore
         let restoreStartedAt = CFAbsoluteTimeGetCurrent()
         let waitedMs = Int((restoreStartedAt - restoreScheduledAt) * 1000)
         Log.info(
-            "restoreTabState: executing for tab=\(targetTabID) selected=\(isSelectedRestore) waited=\(waitedMs)ms scheduledDelayMs=\(Int((scheduledDelay * 1000).rounded()))"
+            "restoreTabState: executing for tab=\(targetTabID) selected=\(isSelectedRestore) profile=\(executionProfile.rawValue) waited=\(waitedMs)ms scheduledDelayMs=\(Int((scheduledDelay * 1000).rounded()))"
         )
         // Sub-phase timing so profiling can identify which branch of
         // `executeRestore` consumes the main-thread budget. Previously
@@ -1076,9 +1114,18 @@ extension OverlayTabsModel {
             Log.warn("restoreTabState: tab no longer exists for id=\(targetTabID)")
             return
         }
+        if executionProfile == .backgroundIdentityOnly,
+           deferredRestoreStatesByTabID[targetTabID] == nil {
+            Log.trace(
+                "restoreTabState: skipped stale background identity restore for tab=\(targetTabID)"
+            )
+            return
+        }
 
         let phaseBlocksStart = CFAbsoluteTimeGetCurrent()
-        Self.restoreCommandBlocksForTab(state: state, targetTabID: targetTabID)
+        if executionProfile.appliesCommandBlocks {
+            Self.restoreCommandBlocksForTab(state: state, targetTabID: targetTabID)
+        }
         recordPhase("blocks", startedAt: phaseBlocksStart)
 
         let currentSessions = restoredTab.splitController.terminalSessions
@@ -1095,7 +1142,8 @@ extension OverlayTabsModel {
             restoredTab.splitController.focusedTerminalSessionID() ?? currentSessions[0].0
         }
 
-        if restoredTab.splitController.root.paneType(for: focusedTerminalPaneID) == .terminal {
+        if executionProfile.appliesFocusedPane,
+           restoredTab.splitController.root.paneType(for: focusedTerminalPaneID) == .terminal {
             restoredTab.splitController.setFocusedPane(focusedTerminalPaneID)
         }
 
@@ -1105,18 +1153,25 @@ extension OverlayTabsModel {
             paneStatesByID: paneStatesByID,
             paneStatesToRestore: &paneStatesToRestore,
             state: state,
-            targetTabID: targetTabID
+            targetTabID: targetTabID,
+            activateRestoredAppName: executionProfile.activatesRestoredAIApp
         )
         recordPhase("metadata", startedAt: phaseMetadataStart)
 
         let phaseResumeStart = CFAbsoluteTimeGetCurrent()
-        scheduleResumePrefillsForRestore(
-            currentSessions: currentSessions,
-            resolvedPaneStates: resolvedPaneStates,
-            focusedTerminalPaneID: focusedTerminalPaneID,
-            targetTabID: targetTabID,
-            useResumeRetryScheduler: useResumeRetryScheduler
-        )
+        if executionProfile.schedulesResumePrefills {
+            scheduleResumePrefillsForRestore(
+                currentSessions: currentSessions,
+                resolvedPaneStates: resolvedPaneStates,
+                focusedTerminalPaneID: focusedTerminalPaneID,
+                targetTabID: targetTabID,
+                useResumeRetryScheduler: useResumeRetryScheduler
+            )
+        } else {
+            Log.trace(
+                "restoreTabState: deferred resume scheduling for tab=\(targetTabID) profile=\(executionProfile.rawValue)"
+            )
+        }
         recordPhase("resume", startedAt: phaseResumeStart)
 
         if startupRestoreActive,

@@ -9,7 +9,8 @@ import Foundation
 ///   - `beginDeferredRestoreIfNeeded` — flips `hasStartedDeferredRestore`
 ///     once the scheduler is ready to start consuming.
 ///   - `restoreOneDeferredTabIfNeeded` — pops the next queued tab and
-///     invokes `restoreTabState` (in `+RestorePipeline.swift`).
+///     performs identity-only hydration. The full saved state remains parked
+///     for selection, close, export, or cross-window transfer.
 ///   - `restoreSelectedDeferredTabIfNeeded` — priority path used by
 ///     `selectTab` so a clicked background tab restores immediately
 ///     rather than waiting for its turn in the FIFO.
@@ -53,16 +54,23 @@ extension OverlayTabsModel {
         guard !deferredRestoreTabOrder.isEmpty else { return false }
         let previousHadPendingWork = hasPendingStartupRestoreWork
         let tabID = deferredRestoreTabOrder.removeFirst()
-        guard let state = deferredRestoreStatesByTabID.removeValue(forKey: tabID) else {
+        hasStartedDeferredRestore = !deferredRestoreTabOrder.isEmpty
+        guard let state = deferredRestoreStatesByTabID[tabID] else {
             notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
             return true
         }
         guard let tab = tabs.first(where: { $0.id == tabID }) else {
+            deferredRestoreStatesByTabID.removeValue(forKey: tabID)
             notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
             return true
         }
-        Log.info("Deferred restore: restoring tab=\(tabID) remaining=\(deferredRestoreTabOrder.count) [\(reason)]")
-        restoreTabState(for: tab, state: state, scheduledDelayOverride: 0)
+        Log.info("Deferred restore: hydrating identity for tab=\(tabID) remaining=\(deferredRestoreTabOrder.count) [\(reason)]")
+        restoreTabState(
+            for: tab,
+            state: state,
+            scheduledDelayOverride: 0,
+            executionProfile: .backgroundIdentityOnly
+        )
         notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
         return true
     }
