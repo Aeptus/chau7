@@ -106,9 +106,27 @@ final class RenderPipelineProfiler {
     private var liveViews: [UInt64: LiveViewState] = [:]
     private var lastFlushAt = Date()
     private let flushInterval: TimeInterval
+    private var lastFlushFootprintBytes: UInt64 = 0
+    private var peakFootprintBytes: UInt64 = 0
 
     init(flushInterval: TimeInterval = 30) {
         self.flushInterval = flushInterval
+    }
+
+    /// Reads the process's `phys_footprint` via `task_vm_info`. Returns 0 on
+    /// failure. Same Mach call MemoryPressureResponder uses for pressure
+    /// thresholds — duplicated here to keep this file dependency-free for
+    /// the 30s flush hot path.
+    private static func currentPhysFootprintBytes() -> UInt64 {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let result: kern_return_t = withUnsafeMutablePointer(to: &info) { infoPtr in
+            infoPtr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), rebound, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return 0 }
+        return info.phys_footprint
     }
 
     func updateRenderLoopState(
@@ -277,11 +295,19 @@ final class RenderPipelineProfiler {
     private func recordMutation(_ mutation: (_ now: Date) -> Void) {
         let now = Date()
         var snapshot: Snapshot?
+        var memorySample: (current: UInt64, delta: Int64, peak: UInt64)?
 
         lock.lock()
         mutation(now)
         if now.timeIntervalSince(lastFlushAt) >= flushInterval {
             snapshot = buildSnapshot(asOf: now)
+            let current = Self.currentPhysFootprintBytes()
+            let delta: Int64 = lastFlushFootprintBytes == 0
+                ? 0
+                : Int64(bitPattern: current) - Int64(bitPattern: lastFlushFootprintBytes)
+            peakFootprintBytes = max(peakFootprintBytes, current)
+            memorySample = (current, delta, peakFootprintBytes)
+            lastFlushFootprintBytes = current
             totals = Totals()
             liveViews = liveViews.reduce(into: [:]) { result, entry in
                 let (viewID, state) = entry
@@ -319,6 +345,12 @@ final class RenderPipelineProfiler {
             "fullRefresh=%d maxDirtyRows=%d maxDirtyCells=%d maxFrameCells=%d " +
             "maxInstanceBuffer=%.1fMiB saturatedFrames=%d glyphCache=%d ligatureCache=%d " +
             "glyphLookups=%d missRate=%.1f%%"
+        let memorySuffix = memorySample.map { sample -> String in
+            let currentMB = Int(sample.current / 1_048_576)
+            let peakMB = Int(sample.peak / 1_048_576)
+            let deltaMB = sample.delta / 1_048_576
+            return String(format: " phys=%dMB peak=%dMB delta=%+dMB", currentMB, peakMB, deltaMB)
+        } ?? ""
         Log.info(
             String(
                 format: summaryFormat,
@@ -342,7 +374,7 @@ final class RenderPipelineProfiler {
                 snapshot.maxLigatureCacheSize,
                 snapshot.glyphLookups,
                 missRate
-            )
+            ) + memorySuffix
         )
         if !snapshot.liveViews.isEmpty {
             let detail = snapshot.liveViews.map { liveView in
