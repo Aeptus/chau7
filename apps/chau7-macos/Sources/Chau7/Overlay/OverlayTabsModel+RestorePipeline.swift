@@ -45,6 +45,43 @@ extension OverlayTabsModel {
         return map
     }
 
+    static func estimatedRestorePayloadBytes(for state: SavedTabState) -> Int {
+        func byteCount(_ value: String?) -> Int {
+            value?.utf8.count ?? 0
+        }
+
+        var total = 0
+        total += byteCount(state.tabID)
+        total += byteCount(state.selectedTabID)
+        total += byteCount(state.customTitle)
+        total += byteCount(state.color)
+        total += byteCount(state.directory)
+        total += byteCount(state.tokenOptOverride)
+        total += byteCount(state.scrollbackContent)
+        total += byteCount(state.aiResumeCommand)
+        total += byteCount(state.aiProvider)
+        total += byteCount(state.aiSessionId)
+        total += byteCount(state.focusedPaneID)
+        total += byteCount(state.createdAt)
+        total += byteCount(state.repoGroupID)
+        total += byteCount(state.knownRepoRoot)
+        total += byteCount(state.knownGitBranch)
+        total += byteCount(state.agentLaunchCommand)
+        total += state.previewSnapshotPNGData?.count ?? 0
+        for pane in state.paneStates ?? [] {
+            total += byteCount(pane.paneID)
+            total += byteCount(pane.directory)
+            total += byteCount(pane.scrollbackContent)
+            total += byteCount(pane.aiResumeCommand)
+            total += byteCount(pane.aiProvider)
+            total += byteCount(pane.aiSessionId)
+            total += byteCount(pane.knownRepoRoot)
+            total += byteCount(pane.knownGitBranch)
+            total += byteCount(pane.agentLaunchCommand)
+        }
+        return total
+    }
+
     /// Restore the primary window from the first saved window entry.
     /// Preference order:
     /// 1. Multi-window state key → first saved window
@@ -1083,6 +1120,8 @@ extension OverlayTabsModel {
     ) {
         var paneStatesToRestore = paneStatesToRestore
         let restoreStartedAt = CFAbsoluteTimeGetCurrent()
+        let restoreStartMemoryMB = PerfTracker.currentMemoryMB()
+        let payloadBytes = Self.estimatedRestorePayloadBytes(for: state)
         let waitedMs = Int((restoreStartedAt - restoreScheduledAt) * 1000)
         Log.info(
             "restoreTabState: executing for tab=\(targetTabID) selected=\(isSelectedRestore) profile=\(executionProfile.rawValue) waited=\(waitedMs)ms scheduledDelayMs=\(Int((scheduledDelay * 1000).rounded()))"
@@ -1105,8 +1144,42 @@ extension OverlayTabsModel {
                 metadata: "tab=\(targetTabID) panes=\(terminalSessions.count)"
             )
             let totalMs = Int(((CFAbsoluteTimeGetCurrent() - restoreStartedAt) * 1000).rounded())
+            let endMemoryMB = PerfTracker.currentMemoryMB()
+            let memoryDeltaMB: Double?
+            if let restoreStartMemoryMB, let endMemoryMB {
+                memoryDeltaMB = endMemoryMB - restoreStartMemoryMB
+            } else {
+                memoryDeltaMB = nil
+            }
+            let breakdown = phaseTimings.map { "\($0.name)=\($0.ms)ms" }.joined(separator: " ")
+            let memoryLabel = if let endMemoryMB {
+                String(format: "%.1fMB", endMemoryMB)
+            } else {
+                "nil"
+            }
+            let memoryDeltaLabel = if let memoryDeltaMB {
+                String(format: "%+.1fMB", memoryDeltaMB)
+            } else {
+                "nil"
+            }
+            FeatureProfiler.shared.record(
+                feature: .restorePipeline,
+                durationMs: Double(totalMs),
+                bytes: payloadBytes,
+                metadata: """
+                tab=\(targetTabID) profile=\(executionProfile.rawValue) selected=\(isSelectedRestore) \
+                panes=\(terminalSessions.count) waited=\(waitedMs)ms scheduledDelayMs=\(Int((scheduledDelay * 1000).rounded())) \
+                rss=\(memoryLabel) rssDelta=\(memoryDeltaLabel) stages=[\(breakdown)]
+                """
+            )
+            Log.info(
+                """
+                restoreTabState: telemetry tab=\(targetTabID) profile=\(executionProfile.rawValue) \
+                selected=\(isSelectedRestore) panes=\(terminalSessions.count) total=\(totalMs)ms waited=\(waitedMs)ms \
+                payload=\(payloadBytes)B rss=\(memoryLabel) rssDelta=\(memoryDeltaLabel) stages=[\(breakdown)]
+                """
+            )
             if totalMs >= 50 {
-                let breakdown = phaseTimings.map { "\($0.name)=\($0.ms)ms" }.joined(separator: " ")
                 Log.trace("restoreTabState: phase breakdown tab=\(targetTabID) total=\(totalMs)ms \(breakdown)")
             }
         }

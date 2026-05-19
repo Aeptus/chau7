@@ -640,3 +640,4 @@ Key patterns:
 - Background terminal snapshots can fall back to cached remote transcript text when the live terminal view is detached, and notification trigger/style logic now treats elicitation plus tool/response failures as first-class interactive events.
 - `tab_output` can read a fresher active AI PTY log tail for MCP-driven tabs, improving retrieval of live Codex and Claude responses.
 - PTY log tail parsing normalizes terminal control sequences and backspaces before downstream consumers read the transcript.
+- Deferred restore scheduling backs off during rapid tab switching, prioritizes tabs nearest to the selected tab, and logs per-tab restore stage timings with RSS deltas.

@@ -789,6 +789,7 @@ extension OverlayTabsModel {
         previousTabIndex = oldIndex
         previousLiveHierarchyTabID = nil
         selectedTabID = id
+        lastSelectionChangedAt = CFAbsoluteTimeGetCurrent()
 
         // Clear notification style when switching to a tab (user acknowledged it),
         // unless the style is persistent (e.g., permission requests stay until resolved).

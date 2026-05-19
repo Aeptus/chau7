@@ -1138,6 +1138,7 @@ final class OverlayTabsModel {
     @ObservationIgnored var deferredRestoreTabOrder: [UUID] = []
     @ObservationIgnored var persistedRestoreFallbackStatesByTabID: [UUID: SavedTabState] = [:]
     @ObservationIgnored var hasStartedDeferredRestore = false
+    @ObservationIgnored var lastSelectionChangedAt: CFAbsoluteTime?
 
     @ObservationIgnored let appModel: AppModel
     struct RestorableTabsPayload {

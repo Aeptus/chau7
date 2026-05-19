@@ -219,6 +219,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         model.bootstrap()
         beginLatencyCriticalScope(reason: "startup-restore", timeout: 90)
         StartupRestoreCoordinator.shared.begin()
+        Self.logRSSSample("startup_restore_begin")
 
         // Activate persisted security-scoped bookmarks before tabs are restored,
         // so git detection in ~/Downloads etc. works on the first check.
@@ -240,6 +241,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         // Restore additional windows from multi-window save state
         restoreAdditionalWindows()
+        Self.logRSSSample("startup_restore_windows_prepared windows=\(overlayHosts.count)")
 
         // Ensure theme is applied after windows exist
         applyAppTheme()
@@ -361,6 +363,8 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
         didCompleteStartupRestore = true
         Log.info("Startup restore completion: reason=\(reason) expectedWindows=\(expectedWindowCount)")
+        let pendingDeferredTabs = overlayHosts.reduce(0) { $0 + $1.model.deferredRestoreTabOrder.count }
+        Self.logRSSSample("startup_restore_ready windows=\(overlayHosts.count) pendingDeferred=\(pendingDeferredTabs)")
         let finishPresentation = { [weak self] in
             guard let self else { return }
             revealPreparedStartupOverlayWindows(reason: "startup_ready")
@@ -407,11 +411,17 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     private func scheduleNextDeferredRestoreStep(
         reason: String,
-        after delay: TimeInterval = OverlayTabsModel.deferredRestoreStepInterval
+        after delay: TimeInterval = OverlayTabsModel.deferredRestoreStepInterval,
+        honorsSelectionBackoff: Bool = false
     ) {
         deferredRestoreSchedulerWorkItem?.cancel()
         guard overlayHosts.contains(where: { $0.model.hasPendingDeferredRestore }) else { return }
-        let effectiveDelay = StartupRestoreCoordinator.shared.isActive ? 0.05 : delay
+        let effectiveDelay = if StartupRestoreCoordinator.shared.isActive,
+                                !honorsSelectionBackoff {
+            0.05
+        } else {
+            delay
+        }
         let work = DispatchWorkItem { [weak self] in
             self?.restoreNextDeferredTabAcrossWindows(reason: reason)
         }
@@ -424,14 +434,27 @@ private final class OverlayBlurView: NSVisualEffectView {
         guard !overlayHosts.isEmpty else { return }
 
         let hostCount = overlayHosts.count
+        var shortestDeferral: TimeInterval?
         for offset in 0 ..< hostCount {
             let index = (deferredRestoreRoundRobinIndex + offset) % hostCount
             let host = overlayHosts[index]
-            if host.model.restoreOneDeferredTabIfNeeded(reason: reason) {
+            switch host.model.restoreOneDeferredTabIfAllowed(reason: reason) {
+            case .restored:
                 deferredRestoreRoundRobinIndex = (index + 1) % hostCount
                 scheduleNextDeferredRestoreStep(reason: reason)
                 return
+            case .deferred(let delay):
+                shortestDeferral = min(shortestDeferral ?? delay, delay)
+            case .idle:
+                continue
             }
+        }
+        if let shortestDeferral {
+            scheduleNextDeferredRestoreStep(
+                reason: reason,
+                after: max(shortestDeferral, 0.05),
+                honorsSelectionBackoff: true
+            )
         }
     }
 

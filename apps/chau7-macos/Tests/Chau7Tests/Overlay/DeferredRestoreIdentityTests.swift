@@ -16,11 +16,12 @@ final class DeferredRestoreIdentityTests: XCTestCase {
         directory: String,
         aiProvider: String?,
         aiSessionId: String?,
-        aiResumeCommand: String?
+        aiResumeCommand: String?,
+        selectedTabIDMarker: UUID? = nil
     ) -> SavedTabState {
         SavedTabState(
             tabID: tabID.uuidString,
-            selectedTabID: nil,
+            selectedTabID: selectedTabIDMarker?.uuidString,
             customTitle: title,
             color: TabColor.blue.rawValue,
             directory: directory,
@@ -31,7 +32,15 @@ final class DeferredRestoreIdentityTests: XCTestCase {
             aiProvider: aiProvider,
             aiSessionId: aiSessionId,
             aiSessionIdSource: aiSessionId == nil ? nil : .explicit,
-            splitLayout: SavedSplitNode(kind: .terminal, id: paneID.uuidString),
+            splitLayout: SavedSplitNode(
+                kind: .terminal,
+                id: paneID.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: nil
+            ),
             focusedPaneID: paneID.uuidString,
             paneStates: [
                 SavedTerminalPaneState(
@@ -88,6 +97,58 @@ final class DeferredRestoreIdentityTests: XCTestCase {
 
         XCTAssertNil(restoredModel.deferredRestoreStatesByTabID[deferredTabID])
         XCTAssertEqual(deferredSession.activeAppName, "Codex")
+    }
+
+    func testDeferredRestoreSchedulerWaitsAfterRecentSelection() {
+        let tabIDs = (0 ..< 3).map { _ in UUID() }
+        let paneIDs = (0 ..< 3).map { _ in UUID() }
+        let states = (0 ..< 3).map { index in
+            makeSavedTabState(
+                tabID: tabIDs[index],
+                paneID: paneIDs[index],
+                title: "Tab \(index)",
+                directory: "/tmp/tab-\(index)",
+                aiProvider: "codex",
+                aiSessionId: "session-\(index)",
+                aiResumeCommand: "codex resume session-\(index)",
+                selectedTabIDMarker: index == 0 ? tabIDs[0] : nil
+            )
+        }
+        let restoredModel = OverlayTabsModel(appModel: AppModel(), restoreState: false, restoringStates: states)
+        restoredModel.lastSelectionChangedAt = 10
+
+        let result = restoredModel.restoreOneDeferredTabIfAllowed(reason: "test", now: 10.2)
+
+        if case .deferred(let delay) = result {
+            XCTAssertEqual(delay, 0.25, accuracy: 0.0001)
+        } else {
+            XCTFail("Expected background identity restore to wait after a recent selection")
+        }
+        XCTAssertEqual(restoredModel.deferredRestoreTabOrder, [tabIDs[1], tabIDs[2]])
+    }
+
+    func testDeferredRestoreSchedulerPrioritizesNearestTabToSelection() {
+        let tabIDs = (0 ..< 4).map { _ in UUID() }
+        let paneIDs = (0 ..< 4).map { _ in UUID() }
+        let states = (0 ..< 4).map { index in
+            makeSavedTabState(
+                tabID: tabIDs[index],
+                paneID: paneIDs[index],
+                title: "Tab \(index)",
+                directory: "/tmp/tab-\(index)",
+                aiProvider: "codex",
+                aiSessionId: "session-\(index)",
+                aiResumeCommand: "codex resume session-\(index)",
+                selectedTabIDMarker: index == 1 ? tabIDs[1] : nil
+            )
+        }
+        let restoredModel = OverlayTabsModel(appModel: AppModel(), restoreState: false, restoringStates: states)
+
+        XCTAssertEqual(restoredModel.restoreOneDeferredTabIfAllowed(reason: "test", now: 20), .restored)
+
+        XCTAssertFalse(restoredModel.deferredRestoreTabOrder.contains(tabIDs[2]))
+        XCTAssertTrue(restoredModel.deferredRestoreTabOrder.contains(tabIDs[0]))
+        XCTAssertTrue(restoredModel.deferredRestoreTabOrder.contains(tabIDs[3]))
     }
 }
 #endif

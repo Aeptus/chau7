@@ -111,10 +111,10 @@ final class TabRoutingIndexTests: XCTestCase {
         XCTAssertEqual(resolved, targetTabID)
     }
 
-    // Non-strict resolution must not fail closed when the supplied sessionID
-    // does not match any record — Codex notify-hook events use an opaque
-    // thread_id that lives in a different identifier space than the rollout
-    // session id tabs store. Tool+directory should still route the event.
+    /// Non-strict resolution must not fail closed when the supplied sessionID
+    /// does not match any record — Codex notify-hook events use an opaque
+    /// thread_id that lives in a different identifier space than the rollout
+    /// session id tabs store. Tool+directory should still route the event.
     func testNonStrictFallsThroughWhenSessionIDDoesNotMatch() {
         let targetTabID = UUID()
         let index = TabRoutingIndex(records: [
