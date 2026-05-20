@@ -86,6 +86,13 @@ final class TerminalControlService {
         }
     }
 
+    /// Snapshot of all routing-relevant tab/session records across all
+    /// windows. Used by `TabAttribution` as its data source. Thread-safe;
+    /// dispatches to main if needed.
+    func routingRecords() -> [TabRouteRecord] {
+        onMain { self.routingRecordsLocked() }
+    }
+
     func resolveTab(for target: TabTarget, strictSession: Bool = false) -> OverlayTab? {
         onMain {
             guard let tabID = self.resolveTabIDLocked(for: target, strictSession: strictSession) else {

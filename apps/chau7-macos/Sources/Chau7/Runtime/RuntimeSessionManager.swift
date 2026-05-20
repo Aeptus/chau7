@@ -47,6 +47,14 @@ final class RuntimeSessionManager {
 
     private init() {}
 
+    /// Unified attribution resolver — replaces the scatter of session/tab
+    /// matching logic that produced today's leak chain. Migration is
+    /// incremental: this commit migrates only `tryAdoptFromEvent`; remaining
+    /// callers still go through the legacy resolvers.
+    private lazy var tabAttribution = TabAttribution {
+        TerminalControlService.shared.routingRecords()
+    }
+
     // MARK: - Session Creation
 
     /// Create a new runtime session. Does NOT create the tab — caller is responsible.
@@ -687,46 +695,11 @@ final class RuntimeSessionManager {
 
         if shouldSkipAdoptionByCooldown(cacheKey) { return nil }
 
-        let tabID: UUID?
-        if let normalizedClaudeSessionID {
-            tabID = resolveClaudeTabBySessionID(normalizedClaudeSessionID, cwd: event.cwd)
-            if tabID == nil {
-                recordAdoptionFailure(cacheKey)
-                // Consult the chronic-orphan tracker — it returns exactly
-                // one of: .log (below threshold), .logSuppressionMarker
-                // (just crossed threshold), .suppress (already past). The
-                // call mutates internal state so it's invoked exactly
-                // once per failure.
-                let decision = decideChronicOrphanLog(sessionID: normalizedClaudeSessionID)
-                switch decision {
-                case .suppress:
-                    break
-                case .log:
-                    emitNoTabMatchWarning(
-                        sessionID: normalizedClaudeSessionID,
-                        cwd: event.cwd
-                    )
-                case .logSuppressionMarker:
-                    emitNoTabMatchWarning(
-                        sessionID: normalizedClaudeSessionID,
-                        cwd: event.cwd
-                    )
-                    Log.warn(
-                        "RuntimeSessionManager: permanently suppressing further 'no tab match' warnings for Claude session=\(normalizedClaudeSessionID) — " +
-                            "crossed \(Self.chronicOrphanSuppressionThreshold)-failure threshold over \(Int(Self.chronicOrphanSuppressionDuration))s. " +
-                            "Session is likely orphaned (process exited, tab closed). resetAdoptionCache() clears suppression."
-                    )
-                }
-            }
-        } else {
-            tabID = resolveUnboundClaudeTabByCwd(event.cwd)
-            if tabID == nil {
-                recordAdoptionFailure(cacheKey)
-                Log.warn(
-                    "RuntimeSessionManager: no unambiguous Claude tab for cwd=\(event.cwd) (process-tree disambiguation found 0 or >1 candidates)"
-                )
-            }
-        }
+        let tabID = resolveAdoptionTabID(
+            sessionID: normalizedClaudeSessionID,
+            cwd: event.cwd,
+            cacheKey: cacheKey
+        )
         guard let tabID else { return nil }
 
         let backend = ClaudeCodeBackend()
@@ -736,6 +709,92 @@ final class RuntimeSessionManager {
         }
         Log.info("RuntimeSessionManager: auto-adopted session \(session.id) for cwd=\(event.cwd)")
         return session
+    }
+
+    /// Resolves which tab to bind a hook-event session to using TabAttribution
+    /// policies. Falls back to the live process tree on `.ambiguous` because
+    /// the pure resolver can't see which shell actually has claude running.
+    private func resolveAdoptionTabID(
+        sessionID: String?,
+        cwd: String,
+        cacheKey: String
+    ) -> UUID? {
+        let target = TabTarget(tool: "Claude", directory: cwd, sessionID: sessionID)
+
+        if let sessionID {
+            // Authoritative: caller knows the session id, the tab should
+            // already have it in its routing snapshot.
+            let result = tabAttribution.resolve(target: target, policy: .requireSessionMatch)
+            switch result {
+            case let .matched(tabID, _):
+                return tabID
+            case .ambiguous, .refused, .auditTrail:
+                // Should not happen for `.requireSessionMatch`/`.audit`, but
+                // treat as no-match for adoption purposes.
+                break
+            case .noMatch:
+                break
+            }
+        }
+
+        // First-event-binding fallback: only adopt UNBOUND Claude tabs whose
+        // cwd matches. This is the path that legitimately binds a brand-new
+        // session to the tab that just spawned it.
+        let bindResult = tabAttribution.resolve(target: target, policy: .bindUnboundByDirectory)
+        switch bindResult {
+        case let .matched(tabID, _):
+            return tabID
+        case let .ambiguous(candidates, _):
+            // Pure resolver can't choose — consult live process tree to pick
+            // the tab whose shell actually has claude running.
+            if let disambiguated = TerminalControlService.shared
+                .disambiguateClaudeTabsByProcessTree(candidates: candidates) {
+                return disambiguated
+            }
+            recordAdoptionFailure(cacheKey)
+            Log.warn(
+                "RuntimeSessionManager: ambiguous Claude tabs for cwd=\(cwd) — " +
+                    "process-tree disambiguation found 0 or >1 candidates"
+            )
+            return nil
+        case .refused:
+            // bindUnboundByDirectory refuses when all matching tabs are
+            // already bound — exactly the external-claude leak signature.
+            recordAdoptionFailure(cacheKey)
+            if let sessionID {
+                emitChronicOrphanLogIfNeeded(sessionID: sessionID, cwd: cwd)
+            }
+            return nil
+        case .noMatch:
+            recordAdoptionFailure(cacheKey)
+            if let sessionID {
+                emitChronicOrphanLogIfNeeded(sessionID: sessionID, cwd: cwd)
+            } else {
+                Log.warn(
+                    "RuntimeSessionManager: no Claude tab matches cwd=\(cwd) for sessionless adoption"
+                )
+            }
+            return nil
+        case .auditTrail:
+            return nil
+        }
+    }
+
+    private func emitChronicOrphanLogIfNeeded(sessionID: String, cwd: String) {
+        let decision = decideChronicOrphanLog(sessionID: sessionID)
+        switch decision {
+        case .suppress:
+            break
+        case .log:
+            emitNoTabMatchWarning(sessionID: sessionID, cwd: cwd)
+        case .logSuppressionMarker:
+            emitNoTabMatchWarning(sessionID: sessionID, cwd: cwd)
+            Log.warn(
+                "RuntimeSessionManager: permanently suppressing further 'no tab match' warnings for Claude session=\(sessionID) — " +
+                    "crossed \(Self.chronicOrphanSuppressionThreshold)-failure threshold over \(Int(Self.chronicOrphanSuppressionDuration))s. " +
+                    "Session is likely orphaned (process exited, tab closed). resetAdoptionCache() clears suppression."
+            )
+        }
     }
 
     /// Find a tab UUID by working directory, searching all registered windows.
