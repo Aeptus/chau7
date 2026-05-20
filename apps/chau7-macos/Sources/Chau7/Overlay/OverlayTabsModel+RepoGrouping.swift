@@ -127,12 +127,26 @@ extension OverlayTabsModel {
         }
     }
 
-    /// Called when a new tab is added — always assign repoGroupID from gitRootPath
-    /// and subscribe to future changes. The mode only controls whether the user sees
-    /// grouping controls in settings, not whether tabs get tagged (since tabBarSegments
-    /// always renders existing groups).
+    /// Called when a new tab is added OR when a deferred-restore tab finishes
+    /// hydrating. In `.auto` mode, aggressively reconcile the repoGroupID
+    /// against the freshly-attached session — the persisted `repoGroupID`
+    /// can lag behind the actual cwd (e.g. a Chau7-era persisted tag on a
+    /// tab whose shell is now in /Aethyme), and reconcileAutoRepoGroup
+    /// re-derives from the session's current cwd/gitRoot via
+    /// KnownRepoRootResolver, which only returns the existing preferred
+    /// root when the new cwd is inside it.
+    ///
+    /// In `.manual`/`.off` modes preserve the existing tag (it's user-set)
+    /// — only fill in if currently unset.
     func setupRepoGroupingForTab(_ tab: OverlayTab) {
         guard let session = tab.session else { return }
+        observeGitRootForAutoGrouping(tabID: tab.id, session: session)
+
+        if FeatureSettings.shared.repoGroupingMode == .auto {
+            reconcileAutoRepoGroup(tabID: tab.id, preferredRoot: session.gitRootPath)
+            return
+        }
+
         if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
             if tabs[idx].repoGroupID == nil {
                 tabs[idx].repoGroupID = session.gitRootPath ?? knownRepoRoot(for: tabs[idx])
@@ -142,7 +156,6 @@ extension OverlayTabsModel {
                 coalesceGroup(repoGroupID: repoGroupID)
             }
         }
-        observeGitRootForAutoGrouping(tabID: tab.id, session: session)
     }
 
     private func knownRepoRoot(for tab: OverlayTab) -> String? {
