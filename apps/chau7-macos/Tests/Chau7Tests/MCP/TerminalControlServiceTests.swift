@@ -420,6 +420,51 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertEqual(session.currentDirectory, pinned)
     }
 
+    func testUpdateSessionDirectoryRefusesForeignDirectoryEvenWhenSessionMatches() throws {
+        // The stuck-binding case: lastAISessionId was persisted from a prior
+        // misattribution (now removed at source by other commits), so a new
+        // event arrives whose sessionID matches the stale value. The session
+        // check passes, but the directory is clearly foreign to this tab.
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.lastAISessionId = "session-bound-from-disk"
+        session.updateCurrentDirectory("/tmp/aethyme")
+        session.gitRootPath = "/tmp/aethyme"
+
+        let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: tab.id,
+            sessionID: "session-bound-from-disk",
+            directory: "/tmp/totally-unrelated-repo"
+        )
+
+        XCTAssertFalse(applied)
+        XCTAssertEqual(
+            session.currentDirectory,
+            "/tmp/aethyme",
+            "Foreign directory write must be refused even when session ids agree"
+        )
+    }
+
+    func testUpdateSessionDirectoryAcceptsRelatedDirectory() throws {
+        // Regression-guard the inverse: cd'ing within the same repo (parent →
+        // subdir) must still be applied; this is the legitimate Claude-TUI
+        // chpwd-replacement path that the foreign-cwd refusal must not block.
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.lastAISessionId = "session-live"
+        session.updateCurrentDirectory("/tmp/repo")
+        session.gitRootPath = "/tmp/repo"
+
+        let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: tab.id,
+            sessionID: "session-live",
+            directory: "/tmp/repo/subdir"
+        )
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(session.currentDirectory, "/tmp/repo/subdir")
+    }
+
     func testUpdateSessionDirectoryAppliesWhenTabHasNoLiveAISessionYet() throws {
         // First-event-binding case: tab restored without a live AI session
         // identity yet. We must still accept the cwd write so the tab's PWD

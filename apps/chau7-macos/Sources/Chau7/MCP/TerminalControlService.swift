@@ -233,12 +233,59 @@ final class TerminalControlService {
                     )
                     return false
                 }
+                // Directory sanity: if the new cwd has no prefix relationship
+                // to the tab's current cwd OR git root, the lastAISessionId is
+                // probably a stale binding restored from disk and we'd be
+                // helping it mis-attribute. This catches the case where an
+                // external claude session id got persisted into SavedTabState
+                // (from a pre-fix leak) — the session-match check above passes
+                // because the IDs agree on the wrong value, but the directory
+                // is clearly foreign. Refuse rather than write the lie.
+                if self.shouldRefuseCwdWriteAsForeign(session: session, newDirectory: trimmed) {
+                    Log.warn(
+                        "updateSessionDirectory: refusing foreign-cwd write tab=\(tabID) " +
+                            "session=\(sessionID ?? "nil") tabCwd=\(session.currentDirectory) eventCwd=\(trimmed)"
+                    )
+                    return false
+                }
                 guard session.currentDirectory != trimmed else { return true }
                 session.updateCurrentDirectory(trimmed)
                 return true
             }
             return false
         }
+    }
+
+    /// Returns true when `newDirectory` has no prefix relationship to either
+    /// the session's current directory or its git root. A genuine cd inside a
+    /// TUI moves between paths that share a parent (or at least relate to the
+    /// tab's repo); a writeback for a totally unrelated path almost always
+    /// means the session id is bound to the wrong tab.
+    private func shouldRefuseCwdWriteAsForeign(
+        session: TerminalSessionModel,
+        newDirectory: String
+    ) -> Bool {
+        let normalizedTarget = URL(fileURLWithPath: newDirectory).standardized.path
+        let candidates: [String?] = [session.currentDirectory, session.gitRootPath]
+        for candidate in candidates {
+            guard let candidate, !candidate.isEmpty else { continue }
+            let normalizedCandidate = URL(fileURLWithPath: candidate).standardized.path
+            if DirectoryPathMatcher.bidirectionalPrefixRank(
+                targetPath: normalizedTarget,
+                candidatePath: normalizedCandidate
+            ) != nil {
+                return false
+            }
+        }
+        // No candidate had a path relationship — every meaningful anchor we
+        // have (cwd + git root) is unrelated to this writeback. Treat as
+        // foreign. If the tab has no cwd or root set yet, we have no anchor
+        // to reject against, so allow the write to seed the first one.
+        let hasAnchor = candidates.contains { value in
+            guard let value else { return false }
+            return !value.isEmpty
+        }
+        return hasAnchor
     }
 
     @discardableResult
