@@ -387,16 +387,22 @@ final class TerminalControlServiceTests: XCTestCase {
         let tab = try XCTUnwrap(overlayModel.tabs.first)
         let session = try XCTUnwrap(tab.session)
         session.lastAISessionId = "session-live"
+        // Seed a cwd inside the same repo so the directory sanity check
+        // (introduced by 606a0dc, refined by feb677d) treats the writeback
+        // as a normal within-repo cd rather than a foreign event. Without
+        // this seed the test would fail under the two-axis policy because
+        // the default cwd is unrelated to /tmp/repo/subdir.
+        session.updateCurrentDirectory("/tmp/repo")
         let originalCwd = session.currentDirectory
 
         let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
             tabID: tab.id,
             sessionID: "session-live",
-            directory: "/tmp/new-path"
+            directory: "/tmp/repo/subdir"
         )
 
         XCTAssertTrue(applied)
-        XCTAssertEqual(session.currentDirectory, "/tmp/new-path")
+        XCTAssertEqual(session.currentDirectory, "/tmp/repo/subdir")
         XCTAssertNotEqual(session.currentDirectory, originalCwd)
     }
 
@@ -493,11 +499,14 @@ final class TerminalControlServiceTests: XCTestCase {
 
     func testUpdateSessionDirectoryAppliesWhenTabHasNoLiveAISessionYet() throws {
         // First-event-binding case: tab restored without a live AI session
-        // identity yet. We must still accept the cwd write so the tab's PWD
-        // catches up on the very first hook event.
+        // identity yet AND no cwd/gitRoot anchor. With both signals empty
+        // shouldRefuseCwdWriteAsForeign returns false (no anchor to reject
+        // against), so the writeback seeds the very first cwd.
         let tab = try XCTUnwrap(overlayModel.tabs.first)
         let session = try XCTUnwrap(tab.session)
         session.lastAISessionId = nil
+        session.currentDirectory = ""
+        session.gitRootPath = nil
 
         let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
             tabID: tab.id,

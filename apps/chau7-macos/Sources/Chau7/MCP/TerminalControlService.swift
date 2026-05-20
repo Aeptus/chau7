@@ -225,55 +225,44 @@ final class TerminalControlService {
                 guard let tab = model.tabs.first(where: { $0.id == tabID }),
                       let session = tab.session
                 else { continue }
+
+                // Two-axis decision matrix (row = session, col = directory):
+                //                     dir related   dir foreign
+                //   session matches   accept        refuse  (stale binding,
+                //                                              foreign cwd)
+                //   session differs   accept+adopt  refuse  (foreign event for
+                //                                              another tab)
+                // i.e. accept iff directory is related; on accept, adopt the
+                // new sessionID when it differs from the tab's live binding.
                 let directoryIsRelated = !self.shouldRefuseCwdWriteAsForeign(
                     session: session,
                     newDirectory: trimmed
                 )
-                let sessionMismatch: Bool
-                if let sessionID,
-                   let live = session.lastAISessionId,
-                   live != sessionID {
-                    sessionMismatch = true
-                } else {
-                    sessionMismatch = false
-                }
-
-                // Two-axis decision: a writeback is accepted when EITHER the
-                // session id matches the tab's live binding OR the directory
-                // is path-related to the tab's current cwd / gitRoot. Both
-                // disagreeing means the binding is foreign.
-                //
-                // - session match + dir match: normal Claude-TUI chpwd path.
-                // - session match + dir unrelated: refused — a stale binding
-                //   (foreign sessionID persisted into SavedTabState) is being
-                //   used to overwrite this tab's cwd with someone else's path.
-                // - session mismatch + dir match: the user restarted claude in
-                //   this tab. Adopt the new session and apply the cwd.
-                // - session mismatch + dir unrelated: foreign event for a
-                //   different tab — refuse.
-                if sessionMismatch, !directoryIsRelated {
+                guard directoryIsRelated else {
                     Log.warn(
-                        "updateSessionDirectory: refusing foreign event tab=\(tabID) " +
+                        "updateSessionDirectory: refusing foreign-cwd write tab=\(tabID) " +
                             "session=\(sessionID ?? "nil") liveSession=\(session.lastAISessionId ?? "nil") " +
                             "tabCwd=\(session.currentDirectory) eventCwd=\(trimmed)"
                     )
                     return false
                 }
-                if !sessionMismatch, !directoryIsRelated {
-                    Log.warn(
-                        "updateSessionDirectory: refusing foreign-cwd write tab=\(tabID) " +
-                            "session=\(sessionID ?? "nil") tabCwd=\(session.currentDirectory) eventCwd=\(trimmed)"
-                    )
-                    return false
-                }
-                if sessionMismatch, directoryIsRelated, let sessionID {
+
+                if let sessionID,
+                   let live = session.lastAISessionId,
+                   live != sessionID {
                     Log.info(
                         "updateSessionDirectory: adopting new session for tab=\(tabID) " +
-                            "previous=\(session.lastAISessionId ?? "nil") new=\(sessionID)"
+                            "previous=\(live) new=\(sessionID) tabCwd=\(session.currentDirectory) " +
+                            "tabGitRoot=\(session.gitRootPath ?? "nil") eventCwd=\(trimmed)"
                     )
                     session.lastAISessionId = sessionID
                 }
                 guard session.currentDirectory != trimmed else { return true }
+                Log.trace(
+                    "updateSessionDirectory: applying tab=\(tabID) " +
+                        "session=\(sessionID ?? "nil") oldCwd=\(session.currentDirectory) " +
+                        "newCwd=\(trimmed)"
+                )
                 session.updateCurrentDirectory(trimmed)
                 return true
             }
@@ -290,27 +279,11 @@ final class TerminalControlService {
         session: TerminalSessionModel,
         newDirectory: String
     ) -> Bool {
-        let normalizedTarget = URL(fileURLWithPath: newDirectory).standardized.path
-        let candidates: [String?] = [session.currentDirectory, session.gitRootPath]
-        for candidate in candidates {
-            guard let candidate, !candidate.isEmpty else { continue }
-            let normalizedCandidate = URL(fileURLWithPath: candidate).standardized.path
-            if DirectoryPathMatcher.bidirectionalPrefixRank(
-                targetPath: normalizedTarget,
-                candidatePath: normalizedCandidate
-            ) != nil {
-                return false
-            }
-        }
-        // No candidate had a path relationship — every meaningful anchor we
-        // have (cwd + git root) is unrelated to this writeback. Treat as
-        // foreign. If the tab has no cwd or root set yet, we have no anchor
-        // to reject against, so allow the write to seed the first one.
-        let hasAnchor = candidates.contains { value in
-            guard let value else { return false }
-            return !value.isEmpty
-        }
-        return hasAnchor
+        ForeignCwdPolicy.shouldRefuse(
+            newDirectory: newDirectory,
+            tabCurrentDirectory: session.currentDirectory,
+            tabGitRoot: session.gitRootPath
+        )
     }
 
     @discardableResult

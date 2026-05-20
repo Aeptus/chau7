@@ -1247,6 +1247,16 @@ extension OverlayTabsModel {
         }
         recordPhase("resume", startedAt: phaseResumeStart)
 
+        // Close the auto-grouping session-attach race: the initial
+        // setupRepoGrouping pass at model init can iterate over a tab whose
+        // session hasn't attached yet (deferred restore), leaving the tab
+        // without an onGitRootPathChanged callback. Re-wire here now that
+        // the session is attached and any restored cwd / gitRoot will
+        // re-fire the callback as `refreshGitStatus` resolves async.
+        if FeatureSettings.shared.repoGroupingMode == .auto {
+            setupRepoGroupingForTab(restoredTab)
+        }
+
         if startupRestoreActive,
            currentSessions.allSatisfy({ !$0.1.isRestoreBootstrapPending }) {
             let previousHadPendingWork = hasPendingStartupRestoreWork

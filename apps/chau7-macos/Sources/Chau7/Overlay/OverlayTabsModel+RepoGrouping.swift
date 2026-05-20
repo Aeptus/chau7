@@ -53,6 +53,13 @@ extension OverlayTabsModel {
         }
     }
 
+    /// `observeGitRootForAutoGrouping` is only wired here when
+    /// `tabs[i].session` is non-nil at iteration time. Deferred-restore tabs
+    /// whose session attaches AFTER `setupRepoGrouping` runs at init are
+    /// re-wired by `restoreTabState`'s tail call to `setupRepoGroupingForTab`
+    /// (`OverlayTabsModel+RestorePipeline.swift`), which catches the late
+    /// attach and primes the callback. The new-tab path goes through the
+    /// same helper from `OverlayTabsModel+TabSwitchOptimization`.
     func applyAutoGroupingToAllTabs() {
         clearAllGitRootCallbacks()
         for i in tabs.indices {

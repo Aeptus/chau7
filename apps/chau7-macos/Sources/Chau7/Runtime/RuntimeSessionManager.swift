@@ -923,16 +923,21 @@ final class RuntimeSessionManager {
         // 2) Directory-only fallback: no tab has the real Claude session ID
         //    yet. This is the common case on the FIRST hook event for a
         //    freshly-attached Claude session — tabs hold synthetic or nil
-        //    session IDs until authoritative binding. If exactly ONE Claude
-        //    tab's cwd uniquely matches the event cwd, adopt it. The
-        //    `== 1` requirement is load-bearing: multiple Claude tabs in
-        //    the same directory ARE possible, and silently stealing a
-        //    session ID from a different live session is worse than not
-        //    adopting. Pre-W3.17 this fallback didn't exist and every
-        //    first-event routing failed with "no tab match".
+        //    session IDs until authoritative binding.
+        //
+        //    Only adopt an UNBOUND tab (sessionID == nil). A bound tab
+        //    matching by directory is the external-claude leak signature:
+        //    the tab already has its own legitimate Claude session, and an
+        //    external claude (Terminal.app, iTerm2, ...) running in the
+        //    same repo emits history entries that would otherwise steal
+        //    the binding. With Layer 1's CHAU7_TAB_ID hook stamp,
+        //    legitimate Chau7-spawned events resolve via fast-path tabID
+        //    match in TerminalControlService.resolveTabIDLocked and never
+        //    reach this code, so the unbound-only filter only excludes
+        //    the leak case.
         let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedCwd.isEmpty else { return nil }
-        let claudeTabs = tabs.filter { $0.provider == "claude" }
+        let claudeTabs = tabs.filter { $0.provider == "claude" && $0.sessionID == nil }
         let directoryMatches = claudeTabs.compactMap { summary -> (tabID: UUID, rank: Int)? in
             guard let rank = DirectoryPathMatcher.bidirectionalPrefixRank(
                 targetPath: trimmedCwd,
