@@ -20,6 +20,9 @@ extension RustTerminalView {
     /// Process PTY output to suppress characters we already locally echoed
     /// Returns the filtered data with echoed characters removed
     func processOutputForLocalEcho(_ data: Data) -> Data {
+        // PTY output arrived — the post-Enter "cursor is stale" window is over.
+        awaitingPostEnterPTYOutput = false
+
         // Fast path: no pending echo, return as-is
         guard !pendingLocalEcho.isEmpty || pendingLocalBackspaces > 0 else {
             // Check for echo-disabling patterns in output (password prompts, etc.)
@@ -210,6 +213,11 @@ extension RustTerminalView {
         defer { FeatureProfiler.shared.end(token) }
 
         if cols <= 0 || rows <= 0 { return }
+        // Don't predict when we can't predict: between Enter and the shell's
+        // response, rust.cursorPosition still points at the old input line, so
+        // painting an overlay from it lands on the wrong row. Skip the paint
+        // for this keystroke; the shell echo will paint it ~one round-trip later.
+        if localEchoCursor == nil, awaitingPostEnterPTYOutput { return }
         var cursor = localEchoCursor ?? {
             if let rust = rustTerminal {
                 return (row: Int(rust.cursorPosition.row), col: Int(rust.cursorPosition.col))
@@ -258,6 +266,7 @@ extension RustTerminalView {
                 clearLocalEchoOverlay()
                 clearLocalEchoState()
                 localEchoCursor = nil
+                awaitingPostEnterPTYOutput = true
                 return
             }
         }

@@ -2410,6 +2410,13 @@ final class RustTerminalView: NSView {
     var localEchoOverlay: [Int: RustCellData] = [:]
     var localEchoCursor: (row: Int, col: Int)?
 
+    /// Set when the user presses Enter; cleared on next PTY output. While set,
+    /// the local-echo overlay must not be painted, because `rust.cursorPosition`
+    /// still points at the end of the previous input line and any speculative
+    /// cell painted from it lands on the wrong row (visible as "input appears
+    /// twice" / "characters append the previous line").
+    var awaitingPostEnterPTYOutput = false
+
     /// Local echo requires a renderer that can apply predicted output.
     /// The native Rust grid renderer provides a lightweight overlay for this.
     let supportsLocalEcho = true

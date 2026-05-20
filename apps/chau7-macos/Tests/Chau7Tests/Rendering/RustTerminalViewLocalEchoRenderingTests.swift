@@ -57,4 +57,42 @@ final class RustTerminalViewLocalEchoRenderingTests: XCTestCase {
         cell.cluster_len = 1
         return cell
     }
+
+    func testProcessOutputClearsPostEnterPTYWait() {
+        let view = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 160, height: 80))
+        view.awaitingPostEnterPTYOutput = true
+
+        _ = view.processOutputForLocalEcho(Data([0x20])) // any byte
+
+        XCTAssertFalse(
+            view.awaitingPostEnterPTYOutput,
+            "PTY output must end the post-Enter stale-cursor window"
+        )
+    }
+
+    func testApplyLocalEchoSkipsPaintWhileAwaitingPostEnterPTY() {
+        let settings = FeatureSettings.shared
+        let previous = settings.isLocalEchoEnabled
+        settings.isLocalEchoEnabled = true
+        defer { settings.isLocalEchoEnabled = previous }
+
+        let view = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 160, height: 80))
+        view.cols = 80
+        view.rows = 24
+        view.isPtyEchoLikelyEnabled = true
+        view.hostsAITUI = false
+        view.localEchoCursor = nil
+        view.awaitingPostEnterPTYOutput = true
+
+        view.applyLocalEcho(for: [0x61]) // 'a'
+
+        XCTAssertTrue(
+            view.localEchoOverlay.isEmpty,
+            "Overlay must not be painted while rust.cursorPosition is stale after Enter"
+        )
+        XCTAssertTrue(
+            view.pendingLocalEcho.isEmpty,
+            "Suppression queue must not be primed for a paint we didn't make"
+        )
+    }
 }
