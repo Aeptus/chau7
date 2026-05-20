@@ -2,13 +2,11 @@ import Foundation
 import Chau7Core
 
 enum CodexSessionResolver {
-    /// Register CWD resolver with TabResolver so Codex events route
-    /// through the same generic cwd fallback tier as every other tool.
-    static func registerWithTabResolver() {
-        TabResolver.registerCWDResolver(forProviderKey: "codex") { dir in
-            sessionCandidates(forDirectory: dir).map(\.lastActivity).max()
-        }
-    }
+    /// No-op kept for API compatibility: the TabResolver CWD-resolver
+    /// registry was deleted alongside TabResolver itself when the routing
+    /// pipeline collapsed into the policy-based TabAttribution. Codex
+    /// events now route through CHAU7_TAB_ID stamps + the policy enum.
+    static func registerWithTabResolver() {}
 
     struct Candidate: Equatable {
         let sessionId: String

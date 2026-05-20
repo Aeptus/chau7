@@ -26,7 +26,6 @@ final class TerminalControlService {
     private var mcpTabIDs = MCPTabIDAllocator()
     private var routingIndex = TabRoutingIndex(records: [])
     private var routingIndexNeedsRebuild = true
-    private var learnedSessionRoutes: [String: UUID] = [:]
     var activeOverlayModelProvider: (() -> OverlayTabsModel?)?
 
     /// Hard ceiling — even if the user sets a higher value in settings.
@@ -1234,28 +1233,8 @@ final class TerminalControlService {
         return nil
     }
 
-    private func learnSessionRouteLocked(target: TabTarget, tabID: UUID) {
-        guard let routeKey = learnedSessionRouteKey(target: target),
-              routingIndex.contains(tabID: tabID) else {
-            return
-        }
-        learnedSessionRoutes[routeKey] = tabID
-    }
-
-    private func learnedSessionRouteKey(target: TabTarget) -> String? {
-        guard let sessionID = TabRoutingIndex.normalizedSessionID(target.sessionID) else {
-            return nil
-        }
-        let provider = AIResumeParser.normalizeProviderName(target.tool)
-            ?? target.tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !provider.isEmpty else { return nil }
-        return "\(provider)|\(sessionID)"
-    }
-
     private func rebuildRoutingIndexIfNeededLocked() {
         guard routingIndexNeedsRebuild else { return }
-        let validTabIDs = Set(allTabs.map(\.id))
-        learnedSessionRoutes = learnedSessionRoutes.filter { validTabIDs.contains($0.value) }
         routingIndex = TabRoutingIndex(records: routingRecordsLocked())
         routingIndexNeedsRebuild = false
     }

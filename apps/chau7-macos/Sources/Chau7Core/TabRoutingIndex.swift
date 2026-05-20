@@ -66,32 +66,6 @@ public struct TabRoutingIndex: Equatable, Sendable {
         recordsByTabID[tabID] ?? []
     }
 
-    public func resolve(_ target: TabTarget, strictSession: Bool = false) -> UUID? {
-        if let tabID = target.tabID, contains(tabID: tabID) {
-            return tabID
-        }
-
-        guard let sessionID = Self.normalizedSessionID(target.sessionID) else {
-            return strictSession ? nil : resolveWithoutSession(target)
-        }
-
-        guard let sessionRecords = recordsBySessionID[sessionID],
-              !sessionRecords.isEmpty else {
-            // Reverted: an unmatched sessionID must FAIL CLOSED. The prior
-            // fall-through to tool+directory was added to recover Codex events
-            // whose opaque thread_id sits in a different identifier space, but
-            // it also lets external claudes (Terminal.app, iTerm2, ...) attach
-            // their sessions to whichever Chau7 tab happens to match the cwd.
-            // Legit Chau7 events carry CHAU7_TAB_ID via the hook ownership
-            // stamp, so they short-circuit at the `target.tabID` fast path
-            // above and never reach this branch. Codex needs the hook stamp
-            // too — that's the fix, not relaxing this check.
-            return nil
-        }
-
-        return resolveSessionRecords(sessionRecords, target: target)
-    }
-
     public static func normalizedToolLabels(for tool: String) -> Set<String> {
         guard let normalized = normalizedLabel(tool) else { return [] }
 
@@ -130,99 +104,11 @@ public struct TabRoutingIndex: Equatable, Sendable {
         return trimmed
     }
 
-    private func resolveSessionRecords(_ sessionRecords: [TabRouteRecord], target: TabTarget) -> UUID? {
-        let toolLabels = Self.normalizedToolLabels(for: target.tool)
-        let providerMatches = sessionRecords.filter { record in
-            !recordToolLabels(record).isDisjoint(with: toolLabels)
-        }
-        let providerPool = providerMatches.isEmpty ? sessionRecords : providerMatches
-        let directoryPool = recordsBestMatchingDirectory(providerPool, directory: target.directory)
-        let pool = directoryPool.isEmpty ? providerPool : directoryPool
-
-        return uniqueBestTabID(from: pool)
-    }
-
-    private func resolveWithoutSession(_ target: TabTarget) -> UUID? {
-        let toolLabels = Self.normalizedToolLabels(for: target.tool)
-        guard !toolLabels.isEmpty else { return nil }
-
-        let toolMatches = records.filter { record in
-            !recordToolLabels(record).isDisjoint(with: toolLabels)
-        }
-        guard !toolMatches.isEmpty else { return nil }
-
-        let directoryPool = recordsBestMatchingDirectory(toolMatches, directory: target.directory)
-        let pool = directoryPool.isEmpty ? toolMatches : directoryPool
-        return uniqueBestTabID(from: pool)
-    }
-
-    private func recordsBestMatchingDirectory(_ candidates: [TabRouteRecord], directory: String?) -> [TabRouteRecord] {
-        guard let normalizedTarget = normalizedPath(directory) else { return [] }
-
-        let ranked = candidates.compactMap { record -> (record: TabRouteRecord, rank: Int)? in
-            guard let candidatePath = normalizedPath(record.directory) ?? normalizedPath(record.repoRoot),
-                  let rank = DirectoryPathMatcher.bidirectionalPrefixRank(
-                      targetPath: normalizedTarget,
-                      candidatePath: candidatePath
-                  ) else {
-                return nil
-            }
-            return (record, rank)
-        }
-        guard let bestRank = ranked.map(\.rank).min() else { return [] }
-        return ranked.filter { $0.rank == bestRank }.map(\.record)
-    }
-
-    private func uniqueBestTabID(from candidates: [TabRouteRecord]) -> UUID? {
-        let grouped = Dictionary(grouping: candidates, by: \.tabID)
-        guard !grouped.isEmpty else { return nil }
-        if grouped.count == 1 {
-            return grouped.keys.first
-        }
-
-        let ranked = grouped.map { tabID, records -> (tabID: UUID, displayRank: Int, activity: Date) in
-            let displayRank = records.contains(where: \.isDisplaySession) ? 0 : 1
-            let activity = records.map(\.lastActivity).max() ?? .distantPast
-            return (tabID, displayRank, activity)
-        }.sorted { lhs, rhs in
-            if lhs.displayRank != rhs.displayRank {
-                return lhs.displayRank < rhs.displayRank
-            }
-            return lhs.activity > rhs.activity
-        }
-
-        guard let best = ranked.first else { return nil }
-        let ties = ranked.filter {
-            $0.displayRank == best.displayRank && $0.activity == best.activity
-        }
-        return ties.count == 1 ? best.tabID : nil
-    }
-
-    private func recordToolLabels(_ record: TabRouteRecord) -> Set<String> {
-        var labels = Set<String>()
-        for value in [record.provider, record.displayName, record.activeAppName, record.title] {
-            guard let normalized = Self.normalizedLabel(value) else { continue }
-            labels.insert(normalized)
-            if let provider = AIResumeParser.normalizeProviderName(normalized) {
-                labels.insert(provider)
-            }
-        }
-        return labels
-    }
-
     private static func normalizedLabel(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               !trimmed.isEmpty else {
             return nil
         }
         return trimmed
-    }
-
-    private func normalizedPath(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else {
-            return nil
-        }
-        return URL(fileURLWithPath: trimmed).standardized.path
     }
 }
