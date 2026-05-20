@@ -156,21 +156,36 @@ final class RuntimeSessionManager {
 
     func exactClaudeTabID(sessionID: String, cwd: String?) -> UUID? {
         guard let normalized = normalizeClaudeSessionID(sessionID) else { return nil }
-        let tabs = {
-            if Thread.isMainThread {
-                return listAITabs()
+
+        // Bound-session fast path: if we already adopted this session, the
+        // bound tab is authoritative when the cwd still looks consistent
+        // with the binding. Preserves the historical behaviour of
+        // `resolveAuthoritativeClaudeTabID`'s boundSession check.
+        if let bound = sessionForClaudeSessionID(normalized) {
+            let tabExists = tabExistsLocked(bound.tabID)
+            let cwdMatches = cwd.map { incoming -> Bool in
+                let trimmed = incoming.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return true }
+                return DirectoryPathMatcher.bidirectionalPrefixRank(
+                    targetPath: trimmed,
+                    candidatePath: bound.config.directory
+                ) != nil
+            } ?? true
+            if tabExists, cwdMatches {
+                return bound.tabID
             }
-            return DispatchQueue.main.sync { listAITabs() }
-        }()
-        return Self.resolveAuthoritativeClaudeTabID(
-            sessionID: normalized,
-            cwd: cwd,
-            boundSession: sessionForClaudeSessionID(normalized),
-            tabs: tabs,
-            strictResolver: { [weak self] sessionID, cwd in
-                self?.resolveClaudeTabByStrictSession(sessionID, cwd: cwd)
-            }
-        )
+        }
+
+        let target = TabTarget(tool: "Claude", directory: cwd, sessionID: normalized)
+        let result = tabAttribution.resolve(target: target, policy: .requireSessionMatch)
+        if case let .matched(tabID, _) = result {
+            return tabID
+        }
+        return nil
+    }
+
+    private func tabExistsLocked(_ tabID: UUID) -> Bool {
+        TerminalControlService.shared.routingRecords().contains { $0.tabID == tabID }
     }
 
     func allSessions(includeStopped: Bool = false) -> [RuntimeSession] {
@@ -512,14 +527,24 @@ final class RuntimeSessionManager {
         let existingBindings = runtimeToClaudeSession
         lock.unlock()
 
-        if let normalizedClaudeSessionID,
-           let exactTabID = resolveClaudeTabBySessionID(normalizedClaudeSessionID, cwd: event.cwd),
-           let exactSession = sessionForTab(exactTabID) {
-            associateClaudeSessionID(normalizedClaudeSessionID, withRuntimeSessionID: exactSession.id)
-            Log.info(
-                "RuntimeSessionManager: resolved Claude session \(normalizedClaudeSessionID) via exact tab \(exactTabID)"
+        if let normalizedClaudeSessionID {
+            let target = TabTarget(
+                tool: "Claude",
+                directory: event.cwd,
+                sessionID: normalizedClaudeSessionID
             )
-            return exactSession
+            let result = tabAttribution.resolve(target: target, policy: .requireSessionMatch)
+            if case let .matched(exactTabID, _) = result,
+               let exactSession = sessionForTab(exactTabID) {
+                associateClaudeSessionID(
+                    normalizedClaudeSessionID,
+                    withRuntimeSessionID: exactSession.id
+                )
+                Log.info(
+                    "RuntimeSessionManager: resolved Claude session \(normalizedClaudeSessionID) via exact tab \(exactTabID)"
+                )
+                return exactSession
+            }
         }
 
         let claudeCandidates = candidates.filter { $0.backend.name == "claude" }
