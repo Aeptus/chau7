@@ -124,8 +124,22 @@ final class TerminalSessionModel {
         didSet {
             TerminalControlService.shared.invalidateRoutingIndex(reason: "session_directory")
             onSessionStateChanged?()
+            // Notify repo-grouping (OverlayTabsModel) so the tab's repoGroupID
+            // can re-evaluate against the new cwd directly, without waiting
+            // for the async refreshGitStatus → gitRootPath.didSet chain that
+            // may not fire (or may fire with nil) for protected paths
+            // without a cached known identity. Closes the "tab stuck in
+            // /Chau7 group while shell pwd is /Aethyme" class of bug.
+            if currentDirectory != oldValue {
+                onCurrentDirectoryChanged?(currentDirectory)
+            }
         }
     }
+
+    /// Callback invoked when `currentDirectory` changes (used by
+    /// `OverlayTabsModel` to re-evaluate `repoGroupID` on cwd shifts even
+    /// when `gitRootPath` async refresh hasn't completed yet).
+    @ObservationIgnored var onCurrentDirectoryChanged: ((String) -> Void)?
 
     /// Last rendered terminal snapshot used for snapshot-backed tab switching.
     @ObservationIgnored var lastRenderedSnapshot: NSImage?

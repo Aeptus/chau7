@@ -50,6 +50,7 @@ extension OverlayTabsModel {
     private func clearAllGitRootCallbacks() {
         for tab in tabs {
             tab.session?.onGitRootPathChanged = nil
+            tab.session?.onCurrentDirectoryChanged = nil
         }
     }
 
@@ -85,28 +86,44 @@ extension OverlayTabsModel {
     func observeGitRootForAutoGrouping(tabID: UUID, session: TerminalSessionModel) {
         session.onGitRootPathChanged = { [weak self] newRoot in
             DispatchQueue.main.async {
+                self?.reconcileAutoRepoGroup(tabID: tabID, preferredRoot: newRoot)
+            }
+        }
+        // Also re-evaluate on raw cwd changes — refreshGitStatus is async and
+        // may not produce a value (protected paths without cached identity),
+        // leaving the tab tagged with a stale group even though the shell
+        // has moved on. Triggering reconciliation directly from cwd ensures
+        // the tag follows the shell, not the historical persisted state.
+        session.onCurrentDirectoryChanged = { [weak self] _ in
+            DispatchQueue.main.async {
                 guard let self,
                       let idx = self.tabs.firstIndex(where: { $0.id == tabID }) else { return }
-
-                if FeatureSettings.shared.repoGroupingMode == .auto {
-                    // KnownRepoRootResolver only returns the existing
-                    // preferred root when the new cwd is actually inside it,
-                    // so this resolves to nil instead of preserving a stale
-                    // tag whose path no longer contains the cwd.
-                    self.tabs[idx].repoGroupID = newRoot ?? self.knownRepoRoot(for: self.tabs[idx])
-                    self.tabs[idx].hasInheritedRepoGroup = false
-                    if let repoGroupID = self.tabs[idx].repoGroupID {
-                        self.coalesceGroup(repoGroupID: repoGroupID)
-                    }
-                    return
-                }
-
-                if self.tabs[idx].hasInheritedRepoGroup,
-                   self.tabs[idx].repoGroupID != newRoot {
-                    self.tabs[idx].repoGroupID = nil
-                    self.tabs[idx].hasInheritedRepoGroup = false
-                }
+                self.reconcileAutoRepoGroup(
+                    tabID: tabID,
+                    preferredRoot: self.tabs[idx].session?.gitRootPath
+                )
             }
+        }
+    }
+
+    private func reconcileAutoRepoGroup(tabID: UUID, preferredRoot: String?) {
+        guard let idx = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+        if FeatureSettings.shared.repoGroupingMode == .auto {
+            // KnownRepoRootResolver only returns the existing preferred
+            // root when the new cwd is actually inside it, so this
+            // resolves to nil instead of preserving a stale tag whose
+            // path no longer contains the cwd.
+            tabs[idx].repoGroupID = preferredRoot ?? knownRepoRoot(for: tabs[idx])
+            tabs[idx].hasInheritedRepoGroup = false
+            if let repoGroupID = tabs[idx].repoGroupID {
+                coalesceGroup(repoGroupID: repoGroupID)
+            }
+            return
+        }
+        if tabs[idx].hasInheritedRepoGroup,
+           tabs[idx].repoGroupID != preferredRoot {
+            tabs[idx].repoGroupID = nil
+            tabs[idx].hasInheritedRepoGroup = false
         }
     }
 
