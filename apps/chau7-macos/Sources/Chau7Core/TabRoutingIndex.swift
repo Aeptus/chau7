@@ -77,11 +77,16 @@ public struct TabRoutingIndex: Equatable, Sendable {
 
         guard let sessionRecords = recordsBySessionID[sessionID],
               !sessionRecords.isEmpty else {
-            // A non-matching sessionID must not be worse than no sessionID. Some
-            // tools (Codex notify hook) emit an opaque thread_id that lives in
-            // a different identifier space than the tab's stored session id —
-            // fall back to tool+directory routing rather than dropping.
-            return strictSession ? nil : resolveWithoutSession(target)
+            // Reverted: an unmatched sessionID must FAIL CLOSED. The prior
+            // fall-through to tool+directory was added to recover Codex events
+            // whose opaque thread_id sits in a different identifier space, but
+            // it also lets external claudes (Terminal.app, iTerm2, ...) attach
+            // their sessions to whichever Chau7 tab happens to match the cwd.
+            // Legit Chau7 events carry CHAU7_TAB_ID via the hook ownership
+            // stamp, so they short-circuit at the `target.tabID` fast path
+            // above and never reach this branch. Codex needs the hook stamp
+            // too — that's the fix, not relaxing this check.
+            return nil
         }
 
         return resolveSessionRecords(sessionRecords, target: target)

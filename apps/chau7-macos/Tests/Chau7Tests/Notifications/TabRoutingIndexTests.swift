@@ -111,39 +111,33 @@ final class TabRoutingIndexTests: XCTestCase {
         XCTAssertEqual(resolved, targetTabID)
     }
 
-    /// Non-strict resolution must not fail closed when the supplied sessionID
-    /// does not match any record — Codex notify-hook events use an opaque
-    /// thread_id that lives in a different identifier space than the rollout
-    /// session id tabs store. Tool+directory should still route the event.
-    func testNonStrictFallsThroughWhenSessionIDDoesNotMatch() {
-        let targetTabID = UUID()
+    /// An unmatched sessionID must FAIL CLOSED — even in non-strict mode.
+    /// The prior behaviour fell through to tool+directory routing, which
+    /// let external claudes (Terminal.app, iTerm2, ...) attach their
+    /// session ids to whichever Chau7 tab happened to match the cwd. The
+    /// proper recovery path is the hook's CHAU7_TAB_ID ownership stamp +
+    /// fast-path tabID match, not relaxing this check.
+    func testNonStrictFailsClosedWhenSessionIDDoesNotMatchAnyTab() {
         let index = TabRoutingIndex(records: [
             TabRouteRecord(
-                tabID: targetTabID,
-                directory: "/tmp/project",
-                provider: "codex",
-                displayName: "Codex",
-                sessionID: "rollout-session-id"
-            ),
-            TabRouteRecord(
                 tabID: UUID(),
-                directory: "/tmp/other",
-                provider: "codex",
-                displayName: "Codex",
-                sessionID: "rollout-other"
+                directory: "/tmp/project",
+                provider: "claude",
+                displayName: "Claude",
+                sessionID: "tab-owned-session"
             )
         ])
 
         let resolved = index.resolve(
             TabTarget(
-                tool: "codex",
+                tool: "claude",
                 directory: "/tmp/project",
-                sessionID: "opaque-thread-id-that-matches-nothing"
+                sessionID: "foreign-session-id"
             ),
             strictSession: false
         )
 
-        XCTAssertEqual(resolved, targetTabID)
+        XCTAssertNil(resolved)
     }
 
     func testStrictModeStillFailsClosedOnUnknownSessionID() {

@@ -48,6 +48,19 @@ enum TabResolver {
             return exactSessionMatch
         }
 
+        // When the caller supplied a sessionID hint that didn't match any tab,
+        // refuse to attribute via weaker heuristics. The single-match brand /
+        // title / deep / cwd paths below would otherwise return an arbitrary
+        // Claude tab and the downstream HistorySessionAdopter would overwrite
+        // its `lastAISessionId` with the foreign session — the exact leak path
+        // that put an external Terminal.app claude session onto a Chau7 tab.
+        // Legitimate Chau7-spawned events carry CHAU7_TAB_ID and resolve via
+        // the fast-path tabID match above, so this guard does not block them.
+        if let sessionID = target.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sessionID.isEmpty {
+            return nil
+        }
+
         guard !candidates.isEmpty else { return nil }
 
         func matchesCandidate(_ rawName: String?) -> Bool {
