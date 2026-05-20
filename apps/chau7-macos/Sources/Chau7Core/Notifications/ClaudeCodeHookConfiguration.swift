@@ -52,6 +52,18 @@ public enum ClaudeCodeHookConfiguration {
             return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
         def main():
+            # OWNERSHIP STAMP: the Claude hook is installed globally in
+            # ~/.claude/settings.json, so EVERY `claude` invocation on the
+            # machine fires it — including ones running in Terminal.app,
+            # iTerm2, tmux, etc. Without this guard those events would land
+            # in Chau7's events file and get misattributed by the resolver
+            # to whatever Chau7 tab happened to match the cwd. Only emit
+            # when CHAU7_TAB_ID is present, which Chau7 sets on the shells
+            # it spawns. External claudes silently no-op.
+            tab_id = os.environ.get("CHAU7_TAB_ID", "").strip()
+            if not tab_id:
+                return
+
             try:
                 raw = sys.stdin.read()
                 payload = json.loads(raw) if raw.strip() else {}
@@ -75,6 +87,7 @@ public enum ClaudeCodeHookConfiguration {
                 "toolName": payload.get("tool_name", ""),
                 "message": payload.get("message") or payload.get("prompt") or "",
                 "cwd": payload.get("cwd", ""),
+                "tabID": tab_id,
                 "timestamp": iso_now(),
             }
 
