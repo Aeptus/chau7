@@ -1081,7 +1081,7 @@ final class AppModel {
         claudeCodeEvents.trimToLast(50)
 
         let directory = event.cwd.isEmpty ? nil : event.cwd
-        let runtimeTabID = resolveAuthoritativeClaudeTabID(sessionID: event.sessionId, directory: directory)
+        let runtimeTabID = exactClaudeTabID(sessionID: event.sessionId, directory: directory)
 
         // Claude Code emits the session's authoritative cwd on every hook
         // event. Push it onto the bound tab's session so the tab's tracked
@@ -1131,7 +1131,7 @@ final class AppModel {
         cancelPendingClaudeWaitingInputFallback(sessionID: session.id)
         syncClaudeCodeSessions()
         let directory = session.cwd.isEmpty ? nil : session.cwd
-        let resolvedTabID = resolveAuthoritativeClaudeTabID(sessionID: session.id, directory: directory)
+        let resolvedTabID = exactClaudeTabID(sessionID: session.id, directory: directory)
 
         // See note in `handleClaudeCodeMonitorEvent`: keep the bound tab's
         // `currentDirectory` in sync with Claude's session cwd, since the
@@ -1178,7 +1178,7 @@ final class AppModel {
             pendingClaudeWaitingInputFallbacks.removeValue(forKey: sessionID)
 
             let directory = event.cwd.isEmpty ? nil : event.cwd
-            let tabID = resolveAuthoritativeClaudeTabID(sessionID: sessionID, directory: directory)
+            let tabID = exactClaudeTabID(sessionID: sessionID, directory: directory)
             let location = event.projectName == "Unknown" ? "Claude" : event.projectName
             let fallbackEvent = AIEvent(
                 source: .claudeCode,
@@ -1210,7 +1210,7 @@ final class AppModel {
         pendingClaudeWaitingInputFallbacks.removeValue(forKey: trimmed)?.cancel()
     }
 
-    private func resolveAuthoritativeClaudeTabID(sessionID: String, directory: String?) -> UUID? {
+    private func exactClaudeTabID(sessionID: String, directory: String?) -> UUID? {
         RuntimeSessionManager.shared.exactClaudeTabID(sessionID: sessionID, cwd: directory)
     }
 
