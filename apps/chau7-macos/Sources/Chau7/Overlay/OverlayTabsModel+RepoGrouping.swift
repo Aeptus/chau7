@@ -56,10 +56,13 @@ extension OverlayTabsModel {
     func applyAutoGroupingToAllTabs() {
         clearAllGitRootCallbacks()
         for i in tabs.indices {
-            let fallbackRepoRoot = knownRepoRoot(for: tabs[i])
-            tabs[i].repoGroupID = tabs[i].session?.gitRootPath
-                ?? fallbackRepoRoot
-                ?? tabs[i].repoGroupID
+            // The previous fallback chain ended with `?? tabs[i].repoGroupID`,
+            // which kept a stale tag when neither the session nor known-roots
+            // could confirm membership. That preserved e.g. a `/Chau7` tag on
+            // a tab whose cwd had moved to `/Aethyme` and whose gitRootPath
+            // hadn't resolved yet. In auto mode the honest answer is "no
+            // group" until something authoritative confirms one.
+            tabs[i].repoGroupID = tabs[i].session?.gitRootPath ?? knownRepoRoot(for: tabs[i])
             tabs[i].hasInheritedRepoGroup = false
             if let session = tabs[i].session {
                 observeGitRootForAutoGrouping(tabID: tabs[i].id, session: session)
@@ -79,6 +82,10 @@ extension OverlayTabsModel {
                       let idx = self.tabs.firstIndex(where: { $0.id == tabID }) else { return }
 
                 if FeatureSettings.shared.repoGroupingMode == .auto {
+                    // KnownRepoRootResolver only returns the existing
+                    // preferred root when the new cwd is actually inside it,
+                    // so this resolves to nil instead of preserving a stale
+                    // tag whose path no longer contains the cwd.
                     self.tabs[idx].repoGroupID = newRoot ?? self.knownRepoRoot(for: self.tabs[idx])
                     self.tabs[idx].hasInheritedRepoGroup = false
                     if let repoGroupID = self.tabs[idx].repoGroupID {

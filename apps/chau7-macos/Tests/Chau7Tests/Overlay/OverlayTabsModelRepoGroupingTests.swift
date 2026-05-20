@@ -60,5 +60,30 @@ final class OverlayTabsModelRepoGroupingTests: XCTestCase {
         XCTAssertEqual(model.tabs[0].repoGroupID, "/tmp/chau7-shared")
         XCTAssertEqual(model.tabs[1].repoGroupID, "/tmp/chau7-shared")
     }
+
+    // Regression: when a tab's cwd has moved out of its old repo group and
+    // no new group can be confirmed (gitRootPath unresolved, cwd not in any
+    // recent root), the old tag must be dropped rather than preserved.
+    // Previously `applyAutoGroupingToAllTabs` ended its fallback with
+    // `?? tabs[i].repoGroupID` which kept the stale tag forever.
+    func testAutoGroupingDropsStaleTagWhenResolverCannotConfirmMembership() {
+        FeatureSettings.shared.repoGroupingMode = .auto
+        defer { FeatureSettings.shared.repoGroupingMode = .off }
+
+        // Set up a tab whose persisted/inherited tag is /tmp/chau7 but whose
+        // session cwd has moved to /tmp/aethyme and whose gitRootPath has
+        // not (yet) been resolved.
+        model.tabs[0].repoGroupID = "/tmp/chau7"
+        model.tabs[0].session?.gitRootPath = nil
+        model.tabs[0].session?.updateCurrentDirectory("/tmp/aethyme")
+
+        model.applyAutoGroupingToAllTabs()
+
+        XCTAssertNotEqual(
+            model.tabs[0].repoGroupID,
+            "/tmp/chau7",
+            "Stale tag must not survive when cwd has clearly left its path"
+        )
+    }
 }
 #endif
