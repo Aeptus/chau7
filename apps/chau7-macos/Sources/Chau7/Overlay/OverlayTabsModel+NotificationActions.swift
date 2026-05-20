@@ -312,12 +312,15 @@ extension OverlayTabsModel {
     // MARK: - Notification Action Handlers
 
     /// Resolve a tab from a target, preferring the pre-resolved tabID to avoid
-    /// redundant TabResolver calls. Falls back to full resolution if no tabID.
+    /// redundant attribution work. Falls back to TabAttribution when no tabID.
     func resolveTab(for target: TabTarget) -> OverlayTab? {
         if let tabID = target.tabID {
             return tabs.first(where: { $0.id == tabID })
         }
-        return TabResolver.resolve(target, in: tabs)
+        guard let resolvedID = TerminalControlService.shared.resolveTabID(for: target) else {
+            return nil
+        }
+        return tabs.first(where: { $0.id == resolvedID })
     }
 
     /// Finds the tab matching the target and selects it.

@@ -1271,11 +1271,13 @@ extension OverlayTabsModel {
     }
 
     func notificationTabTitle(for target: TabTarget) -> String? {
-        TabResolver.resolve(target, in: tabs)?.displayTitle
+        guard let id = TerminalControlService.shared.resolveTabID(for: target) else { return nil }
+        return tabs.first(where: { $0.id == id })?.displayTitle
     }
 
     func notificationRepoName(for target: TabTarget) -> String? {
-        guard let tab = TabResolver.resolve(target, in: tabs),
+        guard let id = TerminalControlService.shared.resolveTabID(for: target),
+              let tab = tabs.first(where: { $0.id == id }),
               let session = tab.displaySession ?? tab.session,
               let rootPath = session.gitRootPath else { return nil }
         return URL(fileURLWithPath: rootPath).lastPathComponent

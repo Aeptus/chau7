@@ -1184,24 +1184,38 @@ final class TerminalControlService {
     private func resolveTabIDLocked(for target: TabTarget, strictSession: Bool = false) -> UUID? {
         rebuildRoutingIndexIfNeededLocked()
 
-        if let routeKey = learnedSessionRouteKey(target: target),
-           let learnedTabID = learnedSessionRoutes[routeKey],
-           routingIndex.contains(tabID: learnedTabID) {
-            return learnedTabID
+        // Fast-path: stamped tabID from a trusted source.
+        if let tabID = target.tabID,
+           routingIndex.contains(tabID: tabID) {
+            return tabID
         }
 
-        if let indexed = routingIndex.resolve(target, strictSession: strictSession) {
-            learnSessionRouteLocked(target: target, tabID: indexed)
-            return indexed
+        // Session-id-driven resolution. Strict callers fail closed on
+        // unmatched session; lenient callers fall through to first-event
+        // binding by directory only when sessionID is absent.
+        if target.sessionID != nil {
+            let result = tabAttribution.resolve(target: target, policy: .requireSessionMatch)
+            if case let .matched(tabID, _) = result {
+                return tabID
+            }
+            // requireSessionMatch refused / ambiguous / noMatch — return nil
+            // regardless of strictSession. The "loose" fallback path was the
+            // leak vector closed by today's investigation.
+            return nil
         }
 
         guard !strictSession else { return nil }
 
-        guard let fallback = TabResolver.resolve(target, in: allTabs)?.id else {
-            return nil
+        // No sessionID hint: try to bind to an unbound tab in the directory.
+        let bind = tabAttribution.resolve(target: target, policy: .bindUnboundByDirectory)
+        if case let .matched(tabID, _) = bind {
+            return tabID
         }
-        learnSessionRouteLocked(target: target, tabID: fallback)
-        return fallback
+        return nil
+    }
+
+    private lazy var tabAttribution = TabAttribution {
+        self.onMain { self.routingRecordsLocked() }
     }
 
     private func resolveTabLocked(for target: TabTarget, strictSession: Bool = false) -> OverlayTab? {
