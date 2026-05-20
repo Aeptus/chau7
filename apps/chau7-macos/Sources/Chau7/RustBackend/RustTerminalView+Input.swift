@@ -27,6 +27,20 @@ extension RustTerminalView {
         guard !pendingLocalEcho.isEmpty || pendingLocalBackspaces > 0 else {
             // Check for echo-disabling patterns in output (password prompts, etc.)
             detectEchoMode(in: data)
+            // Prime localEchoCursor from the now-fresh Rust cursor so the
+            // next keystroke can predict from a confirmed position. The
+            // applyLocalEcho path skips when localEchoCursor is nil; this
+            // is the seeding step that lets it start firing again after
+            // any reset (Enter, bypass, password prompt, password recovery,
+            // etc.) without falling back to a stale Rust cursor mid-update.
+            if localEchoCursor == nil, !shouldBypassLocalEchoSuppression(for: data),
+               let rust = rustTerminal {
+                let r = max(0, min(rows - 1, Int(rust.cursorPosition.row)))
+                let c = max(0, min(cols - 1, Int(rust.cursorPosition.col)))
+                if rows > 0, cols > 0 {
+                    localEchoCursor = (row: r, col: c)
+                }
+            }
             return data
         }
 
@@ -213,17 +227,20 @@ extension RustTerminalView {
         defer { FeatureProfiler.shared.end(token) }
 
         if cols <= 0 || rows <= 0 { return }
-        // Don't predict when we can't predict: between Enter and the shell's
-        // response, rust.cursorPosition still points at the old input line, so
-        // painting an overlay from it lands on the wrong row. Skip the paint
-        // for this keystroke; the shell echo will paint it ~one round-trip later.
-        if localEchoCursor == nil, awaitingPostEnterPTYOutput { return }
-        var cursor = localEchoCursor ?? {
-            if let rust = rustTerminal {
-                return (row: Int(rust.cursorPosition.row), col: Int(rust.cursorPosition.col))
-            }
-            return (row: 0, col: 0)
-        }()
+        // Don't predict when we can't predict. localEchoCursor is the
+        // authoritative Swift-side cursor, advanced explicitly on each
+        // keystroke and reset whenever PTY output that we can't reason about
+        // arrives (Enter, ESC, CR, password prompts, mode resets). When it's
+        // nil we have no confirmed position — falling back to
+        // rust.cursorPosition is unsafe because Rust's cursor follows the
+        // SHELL's last action (which may include inline syntax-highlight or
+        // autosuggestion redraws that moved it past where our overlay should
+        // sit). Skip this keystroke's overlay paint; the shell's own echo
+        // ~one round-trip later will draw it at the correct position.
+        // Generalised from the post-Enter-only guard (f2e28d7) because the
+        // same race exists after any bypass-triggering byte, not just Enter.
+        guard let initialCursor = localEchoCursor else { return }
+        var cursor = initialCursor
         cursor.row = max(0, min(rows - 1, cursor.row))
         cursor.col = max(0, min(cols - 1, cursor.col))
 
