@@ -277,7 +277,6 @@ final class FeatureSettingsTests: XCTestCase {
         _ = settings.isJSONPrettyPrintEnabled // default: false
         _ = settings.isSemanticSearchEnabled // default: false
         _ = settings.isSplitPanesEnabled // default: true
-        _ = settings.isLocalEchoEnabled // default: false
         _ = settings.isSmartScrollEnabled // default: true
         _ = settings.bellEnabled // default: true
         _ = settings.cursorBlink // default: true

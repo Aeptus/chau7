@@ -2,18 +2,6 @@ import XCTest
 @testable import Chau7
 
 final class RustTermBridgeParityTests: XCTestCase {
-    func testLocalEchoOverlayOverridesGridCellBeforeMetalSync() {
-        var fixture = makeFixture(strings: ["a", "b"])
-        let bridge = RustTermBridge()
-        bridge.localEchoOverlay = [1: makeOverlayCell("z")]
-        let buffer = TripleBufferedTerminal(rows: 1, cols: 2)
-
-        sync(fixture: &fixture, rows: 1, cols: 2, bridge: bridge, buffer: buffer)
-
-        XCTAssertEqual(clusterString(buffer.getCell(row: 0, col: 0), in: buffer), "a")
-        XCTAssertEqual(clusterString(buffer.getCell(row: 0, col: 1), in: buffer), "z")
-    }
-
     func testOSC8LinkCellsSetMetalLinkUnderlineFlagWhenNotExplicitlyUnderlined() {
         var fixture = makeFixture(
             cells: [
@@ -184,18 +172,6 @@ final class RustTermBridgeParityTests: XCTestCase {
         return cell
     }
 
-    /// Build a local-echo overlay cell using the sentinel encoding.
-    private func makeOverlayCell(_ character: String) -> RustCellData {
-        var cell = RustCellData()
-        let byte = UInt8(character.unicodeScalars.first!.value)
-        cell.cluster_offset = RustCellLocalEcho.encode(byte: byte)
-        cell.cluster_len = 1
-        cell.width = 1
-        cell.fg_r = 255
-        cell.fg_g = 255
-        cell.fg_b = 255
-        return cell
-    }
 
     /// Read a terminal cell's cluster bytes from the buffer's parallel clusters store.
     private func clusterString(_ cell: TerminalCell, in tb: TripleBufferedTerminal) -> String {

@@ -922,8 +922,6 @@
 "settings.terminal.performance.metalRenderer.help" = "استخدام تسريع GPU للعرض (موصى به)";
 "settings.terminal.performance.reducedMotion" = "حركة مخفضة";
 "settings.terminal.performance.reducedMotion.help" = "تقليل الحركات لأداء أفضل";
-"settings.terminal.localEcho" = "صدى محلي";
-"settings.terminal.localEcho.help" = "اعرض الأحرف المكتوبة فورًا عندما يكون صدى PTY مفعّلًا (قد يقلل تأخر الإدخال)";
 
 // -----------------------------------------------------------------------------
 // MARK: إعدادات التبويبات
@@ -2721,8 +2719,6 @@
 "settings.search.ligatures.title" = "ترابطات الخط";
 "settings.search.llmProvider.description" = "ضبط مزوّد LLM ومفاتيح API";
 "settings.search.llmProvider.title" = "مزوّد LLM";
-"settings.search.localEcho.description" = "عرض الأحرف المكتوبة فورًا";
-"settings.search.localEcho.title" = "الصدى المحلي";
 "settings.search.lsColors.description" = "تفعيل مخرجات ls الملوّنة في الجلسات الجديدة";
 "settings.search.lsColors.title" = "ألوان ls";
 "settings.search.metalRenderer.description" = "عرض طرفية مسرَّع بالـ GPU";

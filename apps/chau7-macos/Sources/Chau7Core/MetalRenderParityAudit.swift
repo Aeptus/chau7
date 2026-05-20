@@ -4,7 +4,6 @@ public enum MetalRenderParityFeature: String, CaseIterable, Hashable, Sendable {
     case ligatures
     case osc8LinkUnderline
     case selection
-    case localEchoOverlays
     case inlineImages
     case commandBlockTinting
 }
@@ -48,11 +47,6 @@ public enum MetalRenderParityAudit {
             feature: .selection,
             status: .partial,
             note: "Selection colors flow through cell colors, but selection-edge and mixed-style parity need snapshot coverage."
-        ),
-        MetalRenderParityAuditEntry(
-            feature: .localEchoOverlays,
-            status: .covered,
-            note: "Metal sync now overlays predicted local-echo cells before converting to GPU cells."
         ),
         MetalRenderParityAuditEntry(
             feature: .inlineImages,

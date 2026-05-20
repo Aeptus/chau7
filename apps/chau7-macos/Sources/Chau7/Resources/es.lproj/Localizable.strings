@@ -943,8 +943,6 @@
 "settings.terminal.performance.metalRenderer.help" = "Usar aceleración GPU para el renderizado (recomendado)";
 "settings.terminal.performance.reducedMotion" = "Movimiento reducido";
 "settings.terminal.performance.reducedMotion.help" = "Minimizar las animaciones para un mejor rendimiento";
-"settings.terminal.localEcho" = "Eco local";
-"settings.terminal.localEcho.help" = "Mostrar inmediatamente los caracteres escritos cuando el eco PTY está activado (puede reducir la latencia percibida)";
 
 // -----------------------------------------------------------------------------
 // MARK: Configuración de pestañas
@@ -2801,8 +2799,6 @@
 "settings.search.ligatures.title" = "Ligaduras de fuentes";
 "settings.search.llmProvider.description" = "Configurar proveedor de LLM y claves API";
 "settings.search.llmProvider.title" = "Proveedor de LLM";
-"settings.search.localEcho.description" = "Mostrar caracteres escritos inmediatamente";
-"settings.search.localEcho.title" = "Eco local";
 "settings.search.lsColors.description" = "Activar salida coloreada de ls en nuevas sesiones";
 "settings.search.lsColors.title" = "Colores de ls";
 "settings.search.metalRenderer.description" = "Renderizado del terminal acelerado por GPU";

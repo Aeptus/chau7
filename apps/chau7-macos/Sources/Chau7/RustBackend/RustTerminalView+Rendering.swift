@@ -209,10 +209,6 @@ extension RustTerminalView {
                 )
             }
 
-            // LOCAL ECHO SUPPRESSION: Filter out characters we already displayed locally
-            // This prevents "double echo" when PTY confirms what we predicted
-            outputData = processOutputForLocalEcho(outputData)
-
             if !outputData.isEmpty {
                 onOutput?(outputData)
             }
@@ -483,10 +479,6 @@ extension RustTerminalView {
             Log.trace("RustTerminalView[\(viewId)]: syncStats - full:\(fullSyncCount) partial:\(partialSyncCount) skipped:\(skippedSyncCount)")
         }
 
-        if pendingLocalEcho.isEmpty, pendingLocalBackspaces == 0 {
-            clearLocalEchoOverlay()
-        }
-
         updateInlineImagePositions()
     }
 
@@ -646,86 +638,6 @@ extension RustTerminalView {
         hasRetainedFrameSourceReady = false
         retainedFrameSourceVersion = 0
         needsGridSync = true
-        clearLocalEchoOverlay()
-    }
-
-    func clearLocalEchoOverlay() {
-        let shouldInvalidateMetal = isMetalRenderingActive && !localEchoOverlay.isEmpty
-        localEchoOverlay.removeAll()
-        localEchoCursor = nil
-        gridView?.clearOverlay()
-        clearLocalEchoState()
-        if shouldInvalidateMetal {
-            invalidateMetalLocalEchoOverlay()
-        }
-    }
-
-    func clearLocalEchoState() {
-        pendingLocalEcho.removeAll()
-        pendingLocalEchoOffset = 0
-        pendingLocalBackspaces = 0
-    }
-
-    func removeLastPendingLocalEchoChar() {
-        guard !pendingLocalEcho.isEmpty else { return }
-        pendingLocalEcho.removeLast()
-        if pendingLocalEchoOffset > pendingLocalEcho.count {
-            pendingLocalEchoOffset = pendingLocalEcho.count
-        }
-    }
-
-    func compactConsumedLocalEchoIfNeeded() {
-        guard pendingLocalEchoOffset > 0 else { return }
-        if pendingLocalEchoOffset >= pendingLocalEcho.count {
-            pendingLocalEcho.removeAll()
-            pendingLocalEchoOffset = 0
-            return
-        }
-        if pendingLocalEchoOffset > 64 {
-            pendingLocalEcho.removeFirst(pendingLocalEchoOffset)
-            pendingLocalEchoOffset = 0
-        }
-    }
-
-    func baseCellForLocalEcho(row: Int, col: Int) -> RustCellData {
-        let idx = row * cols + col
-        if idx >= 0, idx < previousGrid.count {
-            return previousGrid[idx]
-        }
-        return RustCellData()
-    }
-
-    func updateLocalEchoOverlay() {
-        if localEchoOverlay.isEmpty {
-            gridView?.clearOverlay()
-        } else {
-            gridView?.setOverlayCells(localEchoOverlay)
-        }
-        invalidateMetalLocalEchoOverlay()
-    }
-
-    private func invalidateMetalLocalEchoOverlay() {
-        if isMetalRenderingActive {
-            needsGridSync = true
-            onDisplaySyncNeeded?()
-        }
-    }
-
-    func advanceLocalEchoCursor(_ cursor: inout (row: Int, col: Int)) {
-        cursor.col += 1
-        if cursor.col >= cols {
-            cursor.col = 0
-            cursor.row = min(rows - 1, cursor.row + 1)
-        }
-    }
-
-    func retreatLocalEchoCursor(_ cursor: inout (row: Int, col: Int)) {
-        if cursor.col > 0 {
-            cursor.col -= 1
-        } else if cursor.row > 0 {
-            cursor.row -= 1
-            cursor.col = max(0, cols - 1)
-        }
     }
 
     func hideTipOverlay() {

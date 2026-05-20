@@ -943,8 +943,6 @@
 "settings.terminal.performance.metalRenderer.help" = "Use GPU acceleration for rendering (recommended)";
 "settings.terminal.performance.reducedMotion" = "Reduced Motion";
 "settings.terminal.performance.reducedMotion.help" = "Minimize animations for better performance";
-"settings.terminal.localEcho" = "Local Echo";
-"settings.terminal.localEcho.help" = "Render typed characters immediately when the PTY has echo enabled (can reduce perceived input lag)";
 
 // -----------------------------------------------------------------------------
 // MARK: Tabs Settings
@@ -2753,8 +2751,6 @@
 "settings.search.ligatures.title" = "Font Ligatures";
 "settings.search.llmProvider.description" = "Configure LLM provider and API keys";
 "settings.search.llmProvider.title" = "LLM Provider";
-"settings.search.localEcho.description" = "Render typed characters immediately";
-"settings.search.localEcho.title" = "Local Echo";
 "settings.search.lsColors.description" = "Enable colored ls output in new sessions";
 "settings.search.lsColors.title" = "ls Colors";
 "settings.search.metalRenderer.description" = "GPU-accelerated terminal rendering";

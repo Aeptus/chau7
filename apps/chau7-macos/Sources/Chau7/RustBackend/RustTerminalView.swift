@@ -158,12 +158,8 @@ final class RustGridView: NSView {
 
     /// Read a cell's grapheme cluster as a Swift String from the local store.
     /// Returns "" for blank cells, continuation cells, or out-of-range offsets.
-    /// Handles the `RustCellLocalEcho` sentinel so predictive overlay cells render.
     private func clusterString(for cell: RustCellData) -> String {
         guard cell.cluster_len > 0, cell.continuation == 0 else { return "" }
-        if RustCellLocalEcho.isEncoded(offset: cell.cluster_offset) {
-            return String(decoding: [RustCellLocalEcho.decode(offset: cell.cluster_offset)], as: UTF8.self)
-        }
         let start = Int(cell.cluster_offset)
         let end = start + Int(cell.cluster_len)
         guard end <= clusterStorage.count else { return "" }
@@ -2184,15 +2180,9 @@ final class RustTerminalView: NSView {
 
     /// Set when the live process-tree resolver sees a known TUI agent (Claude
     /// Code, Codex, Aider, …) running under this view's shell. Used to
-    /// short-circuit terminal heuristics that assume a shell-style PTY:
-    ///   - `ScrollbackMemoryManager` flush/reload: flattening the TUI surface
-    ///     to plain text and re-pouring it on reveal destroys the application's
-    ///     UI invariants (see `applyRenderPhase`).
-    ///   - Local-echo prediction (`applyLocalEcho`): TUI apps don't echo typed
-    ///     bytes back as plain ASCII — they redraw their own input box at a
-    ///     cursor-positioned location, which the prediction layer can't match,
-    ///     leaving phantom characters at stale positions and producing
-    ///     "input appears twice" / "input remains after Enter" symptoms.
+    /// short-circuit `ScrollbackMemoryManager` flush/reload — flattening the
+    /// TUI surface to plain text and re-pouring it on reveal destroys the
+    /// application's UI invariants (see `applyRenderPhase`).
     var hostsAITUI = false
 
     /// Whether to notify of update changes (for suspended state)
@@ -2388,60 +2378,14 @@ final class RustTerminalView: NSView {
     /// Flag to prevent event drain callbacks from accessing deallocated view
     var isBeingDeallocated = false
 
-    // MARK: - Local Echo State (Latency Optimization)
-
-    // Track pending local echo to suppress PTY duplicates
-    // This shows typed characters immediately without waiting for PTY round-trip
-
-    /// Characters that have been locally echoed and await PTY confirmation
-    var pendingLocalEcho: [UInt8] = []
-    /// Offset into `pendingLocalEcho` for robust partial matching.
-    /// Matches can only consume from this offset to avoid O(n) queue churn and
-    /// corruption when output contains control/escape bytes before echoed text.
-    var pendingLocalEchoOffset = 0
-
-    /// Bound used to periodically compact/clear pending local-echo state.
-    static let maxPendingLocalEcho = 100
-
-    /// Track pending backspaces to suppress PTY's backspace response
-    var pendingLocalBackspaces = 0
-
-    /// Local echo overlay cells keyed by grid index
-    var localEchoOverlay: [Int: RustCellData] = [:]
-    var localEchoCursor: (row: Int, col: Int)?
-
-    /// Set when the user presses Enter; cleared on next PTY output. While set,
-    /// the local-echo overlay must not be painted, because `rust.cursorPosition`
-    /// still points at the end of the previous input line and any speculative
-    /// cell painted from it lands on the wrong row (visible as "input appears
-    /// twice" / "characters append the previous line").
-    var awaitingPostEnterPTYOutput = false
-
-    /// Local echo requires a renderer that can apply predicted output.
-    /// The native Rust grid renderer provides a lightweight overlay for this.
-    let supportsLocalEcho = true
-
-    /// Heuristic-based echo detection: disabled when password prompts or raw mode detected.
-    /// The Rust terminal owns the PTY, so we rely on heuristics:
-    /// - Password prompt patterns ("password:", "sudo password", etc.) disable echo
-    /// - Shell prompt patterns ($ # %) re-enable echo
-    /// - Timeout recovery re-enables echo after 5 seconds
-    /// This approach handles 95%+ of real-world cases without direct termios access.
-    var isPtyEchoLikelyEnabled = true
-
     /// Returns true when the PTY echo is likely disabled (password prompt detected).
-    /// Exposes the heuristic echo state for history filtering.
+    /// Exposes the termios-derived echo state for history filtering. The
+    /// previous heuristic fallback (pattern-matching prompts in PTY output)
+    /// was removed alongside the speculative local-echo system; modern
+    /// libchau7_terminal exposes termios state authoritatively via FFI.
     var isPtyEchoDisabled: Bool {
-        // Primary: Use reliable termios-based detection via Rust FFI (100% accurate)
-        if let termiosResult = rustTerminal?.isEchoDisabledViaTermios() {
-            return termiosResult
-        }
-        // Fallback: Heuristic-based detection (older libraries without FFI support)
-        return !isPtyEchoLikelyEnabled
+        rustTerminal?.isEchoDisabledViaTermios() ?? false
     }
-
-    /// Timestamp when echo was last disabled (for timeout recovery)
-    var echoDisabledTime: CFAbsoluteTime = 0
 
     // MARK: - Input State (stored properties for extension files)
 
@@ -2482,9 +2426,6 @@ final class RustTerminalView: NSView {
 
     /// Threshold for considering user "at bottom" (0.99 = within 1% of end)
     static let scrollBottomThreshold = 0.99
-
-    /// Timeout after which we re-enable echo detection (5 seconds)
-    static let echoDisabledTimeout: CFAbsoluteTime = 5.0
 
     /// Font
     var font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular) {
@@ -3140,7 +3081,6 @@ final class RustTerminalView: NSView {
 
     func applyRenderPhase(_ phase: TabRenderPhase, isInteractive: Bool, reason: String) {
         let previousPhase = currentRenderPhase
-        let previousInteractive = self.isInteractive
         currentRenderPhase = phase
         self.isInteractive = isInteractive
         let shouldHide = !phase.keepsVisibleSurface
@@ -3158,10 +3098,6 @@ final class RustTerminalView: NSView {
         // channels and starve the selected tab.
         if !phase.allowsLivePresentation {
             stopEventDrain()
-        }
-        if localEchoOverlay.isEmpty == false,
-           !phase.allowsLivePresentation || !isInteractive || previousInteractive != isInteractive {
-            clearLocalEchoOverlay()
         }
         updatePollingMode(reason: "applyRenderPhase:\(phase.rawValue)")
         refreshRenderPipelineProfilingState(mode: "\(currentRenderLoopMode):\(phase.rawValue)")

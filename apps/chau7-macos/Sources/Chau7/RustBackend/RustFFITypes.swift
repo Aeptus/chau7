@@ -55,40 +55,15 @@ struct RustGridSnapshot {
 extension RustCellData {
     /// Read this cell's grapheme cluster as a Swift String. Returns "" for blank cells
     /// (cluster_len == 0) and for continuation cells. The buffer must outlive this call.
-    ///
-    /// Handles the local-echo sentinel encoding (`RustCellLocalEcho.encode`).
     @inlinable
     func clusterString(buffer: UnsafePointer<UInt8>?) -> String {
         guard cluster_len > 0 else { return "" }
-        if RustCellLocalEcho.isEncoded(offset: cluster_offset) {
-            return String(decoding: [RustCellLocalEcho.decode(offset: cluster_offset)], as: UTF8.self)
-        }
         guard let base = buffer else { return "" }
         let bytes = UnsafeBufferPointer(
             start: base.advanced(by: Int(cluster_offset)),
             count: Int(cluster_len)
         )
         return String(decoding: bytes, as: UTF8.self)
-    }
-}
-
-/// Sentinel encoding for local-echo cells: a single ASCII byte stored inline in
-/// `cluster_offset` (high bit set), bypassing the snapshot's `clusters_utf8`
-/// buffer. The bridge re-emits the byte into the destination buffer at render
-/// time. Only used by `RustTerminalView+Input` predictive overlays.
-enum RustCellLocalEcho {
-    static let sentinelBit: UInt32 = 0x8000_0000
-
-    @inlinable static func encode(byte: UInt8) -> UInt32 {
-        sentinelBit | UInt32(byte)
-    }
-
-    @inlinable static func isEncoded(offset: UInt32) -> Bool {
-        offset & sentinelBit != 0
-    }
-
-    @inlinable static func decode(offset: UInt32) -> UInt8 {
-        UInt8(offset & 0xFF)
     }
 }
 

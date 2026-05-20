@@ -463,16 +463,6 @@ extension FeatureSettings {
             description: L("settings.search.scrollback.description", "Lines to keep in scrollback")
         ),
         SearchableSetting(
-            id: "localEcho",
-            section: .scrollbackPerf,
-            title: L("settings.search.localEcho.title", "Local Echo"),
-            keywords: localizedKeywords(
-                "settings.search.localEcho.keywords",
-                "echo,typing,latency,input"
-            ),
-            description: L("settings.search.localEcho.description", "Render typed characters immediately")
-        ),
-        SearchableSetting(
             id: "terminalBackend",
             section: .scrollbackPerf,
             title: L("settings.search.terminalBackend.title", "Terminal Backend"),

@@ -25,9 +25,6 @@ final class RustTermBridge {
     /// Key = viewport row (0-based), value = SIMD4 RGBA tint color.
     var rowTints: [Int: SIMD4<Float>] = [:]
 
-    /// Flat-indexed local echo cells overlaid before Metal conversion.
-    var localEchoOverlay: [Int: RustCellData] = [:]
-
     // MARK: - Init
 
     init() {
@@ -82,7 +79,7 @@ final class RustTermBridge {
         for row in 0 ..< syncRows {
             for col in 0 ..< syncCols {
                 let idx = row * gridCols + col
-                let rustCell = localEchoOverlay[idx] ?? cells[idx]
+                let rustCell = cells[idx]
                 let metalCell = convertCell(
                     rustCell,
                     row: row,
@@ -181,24 +178,15 @@ final class RustTermBridge {
         // Copy the cluster bytes into the destination buffer. Continuation cells
         // and blanks contribute no bytes — they render as background only.
         //
-        // Local-echo overlay cells encode their single ASCII byte inline via
-        // `RustCellLocalEcho.encode` and bypass the snapshot's clusters buffer.
-        //
-        // If neither path succeeds (corrupt or mid-resize snapshot), we drop the
-        // cluster entirely rather than ship a TerminalCell with `clusterLen > 0`
-        // pointing at offset 0 — that would make the renderer read unrelated
-        // bytes or trap on an empty destination cluster array.
+        // If the cluster offset is corrupt or mid-resize, drop the cluster
+        // rather than ship a TerminalCell with `clusterLen > 0` pointing at
+        // offset 0 — that would make the renderer read unrelated bytes or
+        // trap on an empty destination cluster array.
         var clusterStart: UInt32 = 0
         var clusterLen: UInt16 = 0
         if cell.cluster_len > 0 {
-            if RustCellLocalEcho.isEncoded(offset: cell.cluster_offset) {
-                var byte = RustCellLocalEcho.decode(offset: cell.cluster_offset)
-                clusterStart = withUnsafePointer(to: &byte) { p in
-                    destBuffer.appendCluster(UnsafeBufferPointer(start: p, count: 1))
-                }
-                clusterLen = cell.cluster_len
-            } else if let src = sourceClusters,
-                      Int(cell.cluster_offset) + Int(cell.cluster_len) <= sourceClustersLen {
+            if let src = sourceClusters,
+               Int(cell.cluster_offset) + Int(cell.cluster_len) <= sourceClustersLen {
                 let slice = UnsafeBufferPointer(
                     start: src.advanced(by: Int(cell.cluster_offset)),
                     count: Int(cell.cluster_len)

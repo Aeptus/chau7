@@ -771,8 +771,6 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             } else {
                 bridge.rowTints = [:]
             }
-            bridge.localEchoOverlay = terminalView?.localEchoOverlay ?? [:]
-
             // 3. Convert grid pointer to typed pointer and sync to triple buffer.
             let gridPtr = snapshot.grid.assumingMemoryBound(to: RustGridSnapshot.self)
             let renderViewID = terminalView?.viewId ?? 0

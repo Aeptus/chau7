@@ -922,8 +922,6 @@
 "settings.terminal.performance.metalRenderer.help" = "השתמש בהאצת GPU לעיבוד (מומלץ)";
 "settings.terminal.performance.reducedMotion" = "תנועה מופחתת";
 "settings.terminal.performance.reducedMotion.help" = "צמצם הנפשות לביצועים טובים יותר";
-"settings.terminal.localEcho" = "הד מקומי";
-"settings.terminal.localEcho.help" = "הצג מיד תווים מוקלדים כאשר הד PTY פעיל (עשוי להפחית את השהיית הקלט)";
 
 // -----------------------------------------------------------------------------
 // MARK: הגדרות כרטיסיות
@@ -2721,8 +2719,6 @@
 "settings.search.ligatures.title" = "ליגטורות גופן";
 "settings.search.llmProvider.description" = "הגדר ספק LLM ומפתחות API";
 "settings.search.llmProvider.title" = "ספק LLM";
-"settings.search.localEcho.description" = "הצג תווים שהוקלדו מיד";
-"settings.search.localEcho.title" = "הד מקומי";
 "settings.search.lsColors.description" = "אפשר פלט ls בצבעים בהפעלות חדשות";
 "settings.search.lsColors.title" = "צבעי ls";
 "settings.search.metalRenderer.description" = "עיבוד טרמינל מואץ GPU";

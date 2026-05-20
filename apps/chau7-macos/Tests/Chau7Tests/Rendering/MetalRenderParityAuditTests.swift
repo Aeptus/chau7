@@ -14,10 +14,6 @@ final class MetalRenderParityAuditTests: XCTestCase {
             .covered
         )
         XCTAssertEqual(
-            try XCTUnwrap(MetalRenderParityAudit.entry(for: .localEchoOverlays)).status,
-            .covered
-        )
-        XCTAssertEqual(
             try XCTUnwrap(MetalRenderParityAudit.entry(for: .commandBlockTinting)).status,
             .covered
         )

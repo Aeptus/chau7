@@ -154,63 +154,6 @@ final class RustTerminalViewTextInputTests: XCTestCase {
         XCTAssertEqual(view.currentRenderLoopMode, "background_drain")
     }
 
-    func testApplyRenderPhaseClearsLocalEchoWhenViewBecomesNonInteractive() {
-        let view = RustTerminalView(frame: .zero)
-        view.localEchoOverlay = [0: makeCell("g")]
-        view.isInteractive = true
-
-        view.applyRenderPhase(.active, isInteractive: false, reason: "test")
-
-        XCTAssertTrue(view.localEchoOverlay.isEmpty)
-    }
-
-    func testApplyRenderPhaseClearsLocalEchoWhenViewStopsLivePresentation() {
-        let view = RustTerminalView(frame: .zero)
-        view.localEchoOverlay = [0: makeCell("g")]
-
-        view.applyRenderPhase(.hidden, isInteractive: false, reason: "test")
-
-        XCTAssertTrue(view.localEchoOverlay.isEmpty)
-    }
-
-    func testProcessOutputForLocalEchoSuppressesPlainEchoBytes() {
-        let view = RustTerminalView(frame: .zero)
-        view.pendingLocalEcho = Array("git".utf8)
-        view.localEchoOverlay = [0: makeCell("g")]
-
-        let filtered = view.processOutputForLocalEcho(Data("git".utf8))
-
-        XCTAssertTrue(filtered.isEmpty)
-        XCTAssertTrue(view.pendingLocalEcho.isEmpty)
-        XCTAssertTrue(view.localEchoOverlay.isEmpty)
-    }
-
-    func testProcessOutputForLocalEchoBypassesSuppressionWhenOutputContainsEscapeSequence() {
-        let view = RustTerminalView(frame: .zero)
-        view.pendingLocalEcho = Array("git".utf8)
-        view.localEchoOverlay = [0: makeCell("g")]
-
-        let output = Data([0x1B, 0x5B, 0x32, 0x4B] + Array("git".utf8))
-        let filtered = view.processOutputForLocalEcho(output)
-
-        XCTAssertEqual(filtered, output)
-        XCTAssertTrue(view.pendingLocalEcho.isEmpty)
-        XCTAssertTrue(view.localEchoOverlay.isEmpty)
-    }
-
-    func testProcessOutputForLocalEchoBypassesSuppressionWhenOutputContainsCarriageReturn() {
-        let view = RustTerminalView(frame: .zero)
-        view.pendingLocalEcho = Array("git".utf8)
-        view.localEchoOverlay = [0: makeCell("g")]
-
-        let output = Data([0x0D] + Array("git".utf8))
-        let filtered = view.processOutputForLocalEcho(output)
-
-        XCTAssertEqual(filtered, output)
-        XCTAssertTrue(view.pendingLocalEcho.isEmpty)
-        XCTAssertTrue(view.localEchoOverlay.isEmpty)
-    }
-
     private func makeCell(_ character: String) -> RustCellData {
         RustCellData(
             character: UInt32(character.unicodeScalars.first!.value),

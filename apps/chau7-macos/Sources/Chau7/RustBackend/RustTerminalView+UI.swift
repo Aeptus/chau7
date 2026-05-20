@@ -88,7 +88,6 @@ extension RustTerminalView {
         Log.trace("RustTerminalView[\(viewId)]: scroll(toPosition:) - position=\(position)")
         rustTerminal?.scrollTo(position: position)
         needsGridSync = true
-        clearLocalEchoOverlay()
         // Smart Scroll: Track if user is at or near the bottom
         updateIsUserAtBottom()
         updateInlineImagePositions()
@@ -100,7 +99,6 @@ extension RustTerminalView {
         Log.trace("RustTerminalView[\(viewId)]: scrollUp - lines=\(lines)")
         rustTerminal?.scrollLines(Int32(lines))
         needsGridSync = true
-        clearLocalEchoOverlay()
         // Smart Scroll: Track if user is at or near the bottom
         updateIsUserAtBottom()
         updateInlineImagePositions()
@@ -112,7 +110,6 @@ extension RustTerminalView {
         Log.trace("RustTerminalView[\(viewId)]: scrollDown - lines=\(lines)")
         rustTerminal?.scrollLines(Int32(-lines))
         needsGridSync = true
-        clearLocalEchoOverlay()
         // Smart Scroll: Track if user is at or near the bottom
         updateIsUserAtBottom()
         updateInlineImagePositions()
@@ -344,7 +341,6 @@ extension RustTerminalView {
         // Clear Rust terminal's scrollback history (frees memory)
         rustTerminal?.clearScrollback()
 
-        clearLocalEchoOverlay()
 
         // Clear inline images
         clearInlineImages()

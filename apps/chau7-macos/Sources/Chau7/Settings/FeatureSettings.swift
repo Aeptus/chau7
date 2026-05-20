@@ -1809,13 +1809,6 @@ final class FeatureSettings {
 
     // MARK: - Immediate Display Flush (Latency Optimization)
 
-    /// Enables immediate display flush after input for reduced perceived latency.
-    /// Forces CATransaction.flush() after each keystroke to ensure pending display
-    /// updates are rendered immediately rather than waiting for the next frame.
-    var isLocalEchoEnabled: Bool {
-        didSet { UserDefaults.standard.set(isLocalEchoEnabled, forKey: Keys.localEchoEnabled) }
-    }
-
     // MARK: - Smart Scroll (Auto-Scroll Control)
 
     /// When enabled, new terminal output will NOT auto-scroll to the bottom if the user
@@ -2422,8 +2415,6 @@ final class FeatureSettings {
         static let semanticSearch = "feature.semanticSearch"
         /// F02
         static let splitPanes = "feature.splitPanes"
-        /// Local Echo (Latency Optimization)
-        static let localEchoEnabled = "feature.localEchoEnabled"
         /// Smart Scroll
         static let smartScrollEnabled = "feature.smartScrollEnabled"
         /// F11
@@ -2556,8 +2547,6 @@ final class FeatureSettings {
 
         // Local Echo / Immediate Display Flush (default: disabled)
         // Initialize early to ensure all properties are set before any are accessed
-        self.isLocalEchoEnabled = defaults.object(forKey: Keys.localEchoEnabled) as? Bool ?? false
-
         // Notification Settings — load individual fields, assemble into struct
         let loadedFilters: NotificationFilters
         if let data = defaults.data(forKey: Keys.notificationFilters),
@@ -2893,8 +2882,6 @@ final class FeatureSettings {
 
         // Smart Scroll (default: enabled - preserves user's scroll position on new output)
         self.isSmartScrollEnabled = defaults.object(forKey: Keys.smartScrollEnabled) as? Bool ?? true
-
-        // Note: isLocalEchoEnabled is initialized earlier in the init to avoid property access errors
 
         // F11: Keybindings (default: "default")
         self.keybindingPreset = defaults.string(forKey: Keys.keybindingPreset) ?? "default"

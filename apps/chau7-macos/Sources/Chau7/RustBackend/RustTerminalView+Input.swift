@@ -2,7 +2,7 @@ import AppKit
 import Carbon
 import Chau7Core
 
-// MARK: - Local Echo (Latency Optimization)
+// MARK: - Helpers
 
 extension RustTerminalView {
 
@@ -13,291 +13,6 @@ extension RustTerminalView {
     func firstResponderDebugName() -> String {
         guard let responder = window?.firstResponder else { return "nil" }
         return String(describing: type(of: responder))
-    }
-
-    // MARK: - Local Echo (Latency Optimization)
-
-    /// Process PTY output to suppress characters we already locally echoed
-    /// Returns the filtered data with echoed characters removed
-    func processOutputForLocalEcho(_ data: Data) -> Data {
-        // PTY output arrived — the post-Enter "cursor is stale" window is over.
-        awaitingPostEnterPTYOutput = false
-
-        // Fast path: no pending echo, return as-is
-        guard !pendingLocalEcho.isEmpty || pendingLocalBackspaces > 0 else {
-            // Check for echo-disabling patterns in output (password prompts, etc.)
-            detectEchoMode(in: data)
-            // Prime localEchoCursor from the now-fresh Rust cursor so the
-            // next keystroke can predict from a confirmed position. The
-            // applyLocalEcho path skips when localEchoCursor is nil; this
-            // is the seeding step that lets it start firing again after
-            // any reset (Enter, bypass, password prompt, password recovery,
-            // etc.) without falling back to a stale Rust cursor mid-update.
-            if localEchoCursor == nil, !shouldBypassLocalEchoSuppression(for: data),
-               let rust = rustTerminal {
-                let r = max(0, min(rows - 1, Int(rust.cursorPosition.row)))
-                let c = max(0, min(cols - 1, Int(rust.cursorPosition.col)))
-                if rows > 0, cols > 0 {
-                    localEchoCursor = (row: r, col: c)
-                }
-            }
-            return data
-        }
-
-        // Prompt redraws and cursor-motion sequences are authoritative. If we
-        // keep suppressing bytes after the PTY has repositioned the cursor, the
-        // speculative overlay can remain on the old row while the real text is
-        // painted elsewhere.
-        if shouldBypassLocalEchoSuppression(for: data) {
-            clearLocalEchoOverlay()
-            detectEchoMode(in: data)
-            return data
-        }
-
-        var filtered: [UInt8] = []
-        filtered.reserveCapacity(data.count)
-
-        var i = data.startIndex
-        while i < data.endIndex {
-            let byte = data[i]
-
-            // Check for PTY backspace/delete confirmations (e.g. DEL, BS, or BS space BS)
-            if pendingLocalBackspaces > 0 {
-                let remaining = data.endIndex - i
-                if byte == 0x08 && remaining >= 3 && data[i + 1] == 0x20 &&
-                    (data[i + 2] == 0x08 || data[i + 2] == 0x7F) {
-                    // Suppress backspace sequence we already displayed: "\b \b" or "\b \x7f"
-                    pendingLocalBackspaces -= 1
-                    removeLastPendingLocalEchoChar()
-                    i += 3
-                    continue
-                }
-
-                if byte == 0x08 || byte == 0x7F {
-                    // Suppress single-byte backspace/delete echo
-                    pendingLocalBackspaces -= 1
-                    removeLastPendingLocalEchoChar()
-                    i += 1
-                    continue
-                }
-            }
-
-            // Check for local echo character match
-            if pendingLocalEchoOffset < pendingLocalEcho.count, byte == pendingLocalEcho[pendingLocalEchoOffset] {
-                // This byte matches our local echo queue - suppress it
-                pendingLocalEchoOffset += 1
-                i += 1
-                continue
-            }
-
-            // Include this byte in output
-            filtered.append(byte)
-            i += 1
-        }
-
-        compactConsumedLocalEchoIfNeeded()
-
-        // Clear stale pending state (timeout protection)
-        // If we have too much pending prediction state, something is out of sync
-        if (pendingLocalEcho.count - pendingLocalEchoOffset) > Self.maxPendingLocalEcho || pendingLocalBackspaces > Self.maxPendingLocalEcho {
-            Log.trace("RustTerminalView[\(viewId)]: Local echo buffer overflow, clearing")
-            clearLocalEchoState()
-            clearLocalEchoOverlay()
-        }
-
-        // Check for echo-disabling patterns in the filtered output
-        detectEchoMode(in: Data(filtered))
-
-        if pendingLocalEcho.isEmpty, pendingLocalBackspaces == 0 {
-            clearLocalEchoOverlay()
-        }
-
-        if filtered.isEmpty {
-            // All bytes were suppressed
-            return Data()
-        }
-
-        return Data(filtered)
-    }
-
-    func shouldBypassLocalEchoSuppression(for data: Data) -> Bool {
-        for byte in data {
-            switch byte {
-            case 0x1B, // ESC: cursor movement / redraw / OSC / CSI
-                 0x0D: // CR: prompt redraws often rewrite the current line
-                return true
-            default:
-                continue
-            }
-        }
-        return false
-    }
-
-    /// Detect patterns that indicate echo should be disabled (password prompts, raw mode)
-    func detectEchoMode(in data: Data) {
-        // Check for timeout recovery: re-enable echo after timeout
-        let now = CFAbsoluteTimeGetCurrent()
-        if !isPtyEchoLikelyEnabled, now - echoDisabledTime > Self.echoDisabledTimeout {
-            isPtyEchoLikelyEnabled = true
-            Log.trace("RustTerminalView[\(viewId)]: Echo re-enabled after timeout")
-        }
-
-        // Look for common password prompt patterns that indicate echo is off
-        // These heuristics work since we can't query termios directly
-        guard let text = String(data: data, encoding: .utf8) else { return }
-
-        let lowercased = text.lowercased()
-
-        // Password prompt patterns (echo disabled)
-        let passwordPatterns = [
-            "password:",
-            "password for",
-            "passphrase:",
-            "passphrase for",
-            "enter passphrase",
-            "sudo password",
-            "pin:",
-            "secret:",
-            "[sudo]"
-        ]
-
-        for pattern in passwordPatterns {
-            if lowercased.contains(pattern) {
-                isPtyEchoLikelyEnabled = false
-                echoDisabledTime = now
-                clearLocalEchoState()
-                clearLocalEchoOverlay()
-                Log.trace("RustTerminalView[\(viewId)]: Echo disabled (detected password prompt)")
-                return
-            }
-        }
-
-        // If we see a shell prompt ($ # %) after being disabled, re-enable echo
-        // This indicates we're back at a normal prompt
-        if !isPtyEchoLikelyEnabled {
-            let promptPatterns = ["$ ", "# ", "% ", "> "]
-            for pattern in promptPatterns {
-                if text.hasSuffix(pattern) || text.contains(pattern + "\n") {
-                    isPtyEchoLikelyEnabled = true
-                    Log.trace("RustTerminalView[\(viewId)]: Echo re-enabled (detected shell prompt)")
-                    return
-                }
-            }
-        }
-    }
-
-    /// Apply local echo for user input (display immediately before PTY round-trip)
-    /// This reduces perceived latency by showing typed characters instantly
-    func applyLocalEcho(for bytes: [UInt8]) {
-        // Check if local echo is enabled in settings
-        guard supportsLocalEcho else { return }
-        guard FeatureSettings.shared.isLocalEchoEnabled else {
-            if !pendingLocalEcho.isEmpty || pendingLocalEchoOffset > 0 || pendingLocalBackspaces > 0 {
-                clearLocalEchoState()
-                clearLocalEchoOverlay()
-            }
-            return
-        }
-
-        // TUI apps (Claude Code, Codex, etc.) don't echo typed bytes back as
-        // plain ASCII — they redraw their own input box at a cursor-positioned
-        // location, which the prediction layer can't match. The result is
-        // overlay characters stranded at stale positions ("input appears
-        // twice" / "input remains after Enter"). The TUI already redraws
-        // typed input within ~one frame, so local-echo's latency win is
-        // marginal; skip it cleanly.
-        guard !hostsAITUI else {
-            if !pendingLocalEcho.isEmpty || pendingLocalEchoOffset > 0 || pendingLocalBackspaces > 0 {
-                clearLocalEchoState()
-                clearLocalEchoOverlay()
-            }
-            return
-        }
-
-        // Check if PTY echo is likely enabled (not in password mode, etc.)
-        guard isPtyEchoLikelyEnabled else {
-            if !pendingLocalEcho.isEmpty || pendingLocalEchoOffset > 0 || pendingLocalBackspaces > 0 {
-                clearLocalEchoState()
-                clearLocalEchoOverlay()
-            }
-            return
-        }
-
-        let token = FeatureProfiler.shared.begin(.localEcho, bytes: bytes.count)
-        defer { FeatureProfiler.shared.end(token) }
-
-        if cols <= 0 || rows <= 0 { return }
-        // Don't predict when we can't predict. localEchoCursor is the
-        // authoritative Swift-side cursor, advanced explicitly on each
-        // keystroke and reset whenever PTY output that we can't reason about
-        // arrives (Enter, ESC, CR, password prompts, mode resets). When it's
-        // nil we have no confirmed position — falling back to
-        // rust.cursorPosition is unsafe because Rust's cursor follows the
-        // SHELL's last action (which may include inline syntax-highlight or
-        // autosuggestion redraws that moved it past where our overlay should
-        // sit). Skip this keystroke's overlay paint; the shell's own echo
-        // ~one round-trip later will draw it at the correct position.
-        // Generalised from the post-Enter-only guard (f2e28d7) because the
-        // same race exists after any bypass-triggering byte, not just Enter.
-        guard let initialCursor = localEchoCursor else { return }
-        var cursor = initialCursor
-        cursor.row = max(0, min(rows - 1, cursor.row))
-        cursor.col = max(0, min(cols - 1, cursor.col))
-
-        for byte in bytes {
-            // Only local echo printable ASCII (0x20-0x7E)
-            if byte >= 0x20 && byte <= 0x7E {
-                pendingLocalEcho.append(byte)
-                let idx = cursor.row * cols + cursor.col
-                var cell = baseCellForLocalEcho(row: cursor.row, col: cursor.col)
-                // Encode the single ASCII byte inline using the high bit of
-                // `cluster_offset` as a sentinel — the bridge sees this and
-                // writes the byte directly into the destination cluster buffer
-                // instead of reading from the snapshot's clusters_utf8 (which
-                // doesn't contain this synthetic local-echo content).
-                cell.cluster_offset = RustCellLocalEcho.encode(byte: byte)
-                cell.cluster_len = 1
-                cell.width = 1
-                cell.continuation = 0
-                localEchoOverlay[idx] = cell
-                advanceLocalEchoCursor(&cursor)
-            } else if byte == 0x7F || byte == 0x08 {
-                // Backspace/Delete: Undo the last local echo visually
-                // Track the backspace so we suppress PTY's backspace response too
-                pendingLocalBackspaces += 1
-                retreatLocalEchoCursor(&cursor)
-                let idx = cursor.row * cols + cursor.col
-                localEchoOverlay.removeValue(forKey: idx)
-                removeLastPendingLocalEchoChar()
-                if !pendingLocalEcho.isEmpty, pendingLocalEchoOffset > pendingLocalEcho.count {
-                    pendingLocalEchoOffset = pendingLocalEcho.count
-                }
-            } else if byte == 0x03 || byte == 0x15 {
-                // Ctrl+C (0x03) or Ctrl+U (0x15): Clear local echo buffer
-                // These typically abort/clear the current line
-                clearLocalEchoState()
-                clearLocalEchoOverlay()
-                localEchoCursor = nil
-                return
-            } else if byte == 0x0A || byte == 0x0D {
-                clearLocalEchoOverlay()
-                clearLocalEchoState()
-                localEchoCursor = nil
-                awaitingPostEnterPTYOutput = true
-                return
-            }
-        }
-
-        compactConsumedLocalEchoIfNeeded()
-
-        localEchoCursor = cursor
-        updateLocalEchoOverlay()
-    }
-
-    /// Apply local echo for text input
-    func applyLocalEchoForText(_ text: String) {
-        let bytes = Array(text.utf8)
-        applyLocalEcho(for: bytes)
     }
 
     // MARK: - Input Handling
@@ -397,9 +112,6 @@ extension RustTerminalView {
             Log.info("RustTerminalView[\(viewId)]: \(logContext) - Suppressed user input by command guard")
             return false
         }
-        if sequence == [0x7F] || sequence == [0x08], let text = String(bytes: sequence, encoding: .utf8) {
-            applyLocalEchoForText(text)
-        }
         if let text = String(bytes: sequence, encoding: .utf8) {
             onInput?(text)
         }
@@ -473,7 +185,6 @@ extension RustTerminalView {
                 Log.info("RustTerminalView[\(viewId)]: \(logContext) - Suppressed fallback characters by command guard")
                 return true
             }
-            applyLocalEchoForText(chars)
             send(txt: chars)
             return true
         }
@@ -485,7 +196,6 @@ extension RustTerminalView {
                 Log.info("RustTerminalView[\(viewId)]: \(logContext) - Suppressed fallback chars (no mod) by command guard")
                 return true
             }
-            applyLocalEchoForText(charsNoMod)
             send(txt: charsNoMod)
             return true
         }
@@ -799,10 +509,6 @@ extension RustTerminalView {
                 needsGridSync = true
             }
 
-            if encoded.bytes == [0x7F] || encoded.bytes == [0x08],
-               let text = String(bytes: encoded.bytes, encoding: .utf8) {
-                applyLocalEchoForText(text)
-            }
             if let text = encoded.text ?? String(bytes: encoded.bytes, encoding: .utf8) {
                 onInput?(text)
             }
@@ -898,7 +604,6 @@ extension RustTerminalView: NSTextInputClient {
                 Log.info("RustTerminalView[\(viewId)]: insertText - Suppressed keyboard input by command guard")
                 return
             }
-            applyLocalEchoForText(text)
             Log.trace("RustTerminalView[\(viewId)]: insertText (keyboard) — \(text.count) chars")
             send(txt: text)
         } else {

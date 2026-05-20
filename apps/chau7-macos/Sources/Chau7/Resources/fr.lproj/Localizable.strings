@@ -941,8 +941,6 @@
 "settings.terminal.performance.metalRenderer.help" = "Utiliser l'accélération GPU pour le rendu (recommandé)";
 "settings.terminal.performance.reducedMotion" = "Mouvement réduit";
 "settings.terminal.performance.reducedMotion.help" = "Minimiser les animations pour de meilleures performances";
-"settings.terminal.localEcho" = "Écho local";
-"settings.terminal.localEcho.help" = "Affiche immédiatement les caractères saisis lorsque l'écho PTY est activé (peut réduire la latence perçue)";
 
 // -----------------------------------------------------------------------------
 // MARK: Paramètres des onglets
@@ -2755,8 +2753,6 @@
 "settings.search.ligatures.title" = "Ligatures de police";
 "settings.search.llmProvider.description" = "Configurer le fournisseur LLM et les clés API";
 "settings.search.llmProvider.title" = "Fournisseur LLM";
-"settings.search.localEcho.description" = "Afficher immédiatement les caractères saisis";
-"settings.search.localEcho.title" = "Écho local";
 "settings.search.lsColors.description" = "Activer la sortie colorée de ls dans les nouvelles sessions";
 "settings.search.lsColors.title" = "Couleurs de ls";
 "settings.search.metalRenderer.description" = "Rendu du terminal accéléré par GPU";

@@ -38,12 +38,6 @@ struct ScrollbackPerfSettingsView: View {
             SettingsSectionHeader(L("settings.terminal.performance", "Performance"), icon: "gauge.with.dots.needle.33percent")
 
             SettingsToggle(
-                label: L("settings.terminal.localEcho", "Local Echo"),
-                help: L("settings.terminal.localEcho.help", "Render typed characters immediately when the PTY has echo enabled (can reduce perceived input lag)"),
-                isOn: $settings.isLocalEchoEnabled
-            )
-
-            SettingsToggle(
                 label: L("settings.terminal.suspendBackgroundRendering", "Suspend Background Rendering"),
                 help: L(
                     "settings.terminal.suspendBackgroundRendering.help",
