@@ -225,28 +225,53 @@ final class TerminalControlService {
                 guard let tab = model.tabs.first(where: { $0.id == tabID }),
                       let session = tab.session
                 else { continue }
+                let directoryIsRelated = !self.shouldRefuseCwdWriteAsForeign(
+                    session: session,
+                    newDirectory: trimmed
+                )
+                let sessionMismatch: Bool
                 if let sessionID,
                    let live = session.lastAISessionId,
                    live != sessionID {
-                    Log.info(
-                        "updateSessionDirectory: skipping stale-session cwd write tab=\(tabID) liveSession=\(live) eventSession=\(sessionID)"
+                    sessionMismatch = true
+                } else {
+                    sessionMismatch = false
+                }
+
+                // Two-axis decision: a writeback is accepted when EITHER the
+                // session id matches the tab's live binding OR the directory
+                // is path-related to the tab's current cwd / gitRoot. Both
+                // disagreeing means the binding is foreign.
+                //
+                // - session match + dir match: normal Claude-TUI chpwd path.
+                // - session match + dir unrelated: refused — a stale binding
+                //   (foreign sessionID persisted into SavedTabState) is being
+                //   used to overwrite this tab's cwd with someone else's path.
+                // - session mismatch + dir match: the user restarted claude in
+                //   this tab. Adopt the new session and apply the cwd.
+                // - session mismatch + dir unrelated: foreign event for a
+                //   different tab — refuse.
+                if sessionMismatch, !directoryIsRelated {
+                    Log.warn(
+                        "updateSessionDirectory: refusing foreign event tab=\(tabID) " +
+                            "session=\(sessionID ?? "nil") liveSession=\(session.lastAISessionId ?? "nil") " +
+                            "tabCwd=\(session.currentDirectory) eventCwd=\(trimmed)"
                     )
                     return false
                 }
-                // Directory sanity: if the new cwd has no prefix relationship
-                // to the tab's current cwd OR git root, the lastAISessionId is
-                // probably a stale binding restored from disk and we'd be
-                // helping it mis-attribute. This catches the case where an
-                // external claude session id got persisted into SavedTabState
-                // (from a pre-fix leak) — the session-match check above passes
-                // because the IDs agree on the wrong value, but the directory
-                // is clearly foreign. Refuse rather than write the lie.
-                if self.shouldRefuseCwdWriteAsForeign(session: session, newDirectory: trimmed) {
+                if !sessionMismatch, !directoryIsRelated {
                     Log.warn(
                         "updateSessionDirectory: refusing foreign-cwd write tab=\(tabID) " +
                             "session=\(sessionID ?? "nil") tabCwd=\(session.currentDirectory) eventCwd=\(trimmed)"
                     )
                     return false
+                }
+                if sessionMismatch, directoryIsRelated, let sessionID {
+                    Log.info(
+                        "updateSessionDirectory: adopting new session for tab=\(tabID) " +
+                            "previous=\(session.lastAISessionId ?? "nil") new=\(sessionID)"
+                    )
+                    session.lastAISessionId = sessionID
                 }
                 guard session.currentDirectory != trimmed else { return true }
                 session.updateCurrentDirectory(trimmed)

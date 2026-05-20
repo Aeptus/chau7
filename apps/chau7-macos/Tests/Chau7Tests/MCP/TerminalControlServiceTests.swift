@@ -420,6 +420,32 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertEqual(session.currentDirectory, pinned)
     }
 
+    func testUpdateSessionDirectoryAdoptsNewSessionWhenDirectoryRelates() throws {
+        // The stuck-binding case the user hit on Eval: a stale lastAISessionId
+        // from a previous claude invocation was persisted. The user restarted
+        // claude in the same tab — new sessionID, same repo. Without this
+        // logic the legitimate event for the new session is refused forever.
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.lastAISessionId = "stale-from-disk"
+        session.updateCurrentDirectory("/tmp/aethyme")
+        session.gitRootPath = "/tmp/aethyme"
+
+        let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: tab.id,
+            sessionID: "fresh-claude-session",
+            directory: "/tmp/aethyme/subdir"
+        )
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(session.currentDirectory, "/tmp/aethyme/subdir")
+        XCTAssertEqual(
+            session.lastAISessionId,
+            "fresh-claude-session",
+            "Tab adopts the new sessionID when directory confirms the event is for this tab"
+        )
+    }
+
     func testUpdateSessionDirectoryRefusesForeignDirectoryEvenWhenSessionMatches() throws {
         // The stuck-binding case: lastAISessionId was persisted from a prior
         // misattribution (now removed at source by other commits), so a new
