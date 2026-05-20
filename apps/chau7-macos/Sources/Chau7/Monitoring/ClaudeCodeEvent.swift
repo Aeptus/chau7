@@ -56,6 +56,12 @@ struct ClaudeCodeEvent: Identifiable, Equatable {
     let message: String
     let notificationType: String?
     let cwd: String
+    /// The Chau7 tab that owns the shell this event originated from
+    /// (`CHAU7_TAB_ID` env var stamped by the hook). Empty when the hook
+    /// failed to write it OR when the event came from an externally-spawned
+    /// claude (Terminal.app, iTerm2, etc.) — those must be dropped by the
+    /// monitor to avoid misattribution.
+    let tabID: String
     let timestamp: Date
 
     /// Project name extracted from cwd
@@ -80,6 +86,7 @@ struct ClaudeCodeEvent: Identifiable, Equatable {
         message: String,
         notificationType: String? = nil,
         cwd: String,
+        tabID: String = "",
         timestamp: Date
     ) {
         self.type = type
@@ -91,6 +98,7 @@ struct ClaudeCodeEvent: Identifiable, Equatable {
         self.message = message
         self.notificationType = notificationType
         self.cwd = cwd
+        self.tabID = tabID
         self.timestamp = timestamp
     }
 }
@@ -124,6 +132,7 @@ enum ClaudeCodeEventParser {
         let message = json["message"] as? String ?? ""
         let notificationType = (json["notificationType"] as? String) ?? (json["notification_type"] as? String)
         let cwd = json["cwd"] as? String ?? ""
+        let tabID = (json["tabID"] as? String) ?? (json["tab_id"] as? String) ?? ""
         let timestampStr = json["timestamp"] as? String ?? ""
 
         // Parse timestamp
@@ -139,6 +148,7 @@ enum ClaudeCodeEventParser {
             message: message,
             notificationType: notificationType,
             cwd: cwd,
+            tabID: tabID,
             timestamp: timestamp
         )
     }

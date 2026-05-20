@@ -164,6 +164,20 @@ final class ClaudeCodeMonitor {
 
     /// Called from background queue by FileTailer - dispatches to main thread internally
     private func handleEvent(_ event: ClaudeCodeEvent) {
+        // OWNERSHIP STAMP: the Claude notify hook is installed globally in
+        // ~/.claude/settings.json so it fires for every claude on the
+        // machine — including externally-spawned ones (Terminal.app, iTerm2,
+        // tmux, ...). Those events would otherwise get misattributed to
+        // whatever Chau7 tab happened to win the resolver's directory
+        // heuristic. The hook now stamps CHAU7_TAB_ID, and we drop anything
+        // without one rather than guessing.
+        let trimmedTabID = event.tabID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTabID.isEmpty else {
+            Log.trace(
+                "Claude event dropped (no owner): type=\(event.type.rawValue) session=\(event.shortSessionId) cwd=\(event.cwd)"
+            )
+            return
+        }
         Log.trace("Claude event: type=\(event.type.rawValue) session=\(event.shortSessionId) tool=\(event.toolName)")
 
         // Update session state (dispatches to main internally)
