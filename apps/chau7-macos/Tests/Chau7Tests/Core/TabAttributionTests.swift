@@ -2,6 +2,7 @@ import XCTest
 @testable import Chau7Core
 
 final class TabAttributionTests: XCTestCase {
+
     // MARK: - trustStampedTabID
 
     func testTrustStampedTabIDMatchesWhenTabExists() {
@@ -156,8 +157,8 @@ final class TabAttributionTests: XCTestCase {
         }
     }
 
-    // Regression for today's external-Terminal.app leak — refuse to attribute
-    // an unknown sessionID just because some Chau7 tab is in the same repo.
+    /// Regression for today's external-Terminal.app leak — refuse to attribute
+    /// an unknown sessionID just because some Chau7 tab is in the same repo.
     func testRequireSessionMatchRefusesForeignTerminalAppClaude() {
         let resolver = TabAttribution(snapshotProvider: {
             [

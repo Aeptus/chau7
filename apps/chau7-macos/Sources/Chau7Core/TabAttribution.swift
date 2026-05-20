@@ -219,7 +219,7 @@ public final class TabAttribution {
             }
             if let directory,
                let candidatePath = Self.normalizedPath(record.directory)
-                   ?? Self.normalizedPath(record.repoRoot),
+               ?? Self.normalizedPath(record.repoRoot),
                let rank = DirectoryPathMatcher.bidirectionalPrefixRank(
                    targetPath: directory,
                    candidatePath: candidatePath

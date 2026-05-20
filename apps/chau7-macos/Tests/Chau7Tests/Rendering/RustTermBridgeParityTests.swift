@@ -172,7 +172,6 @@ final class RustTermBridgeParityTests: XCTestCase {
         return cell
     }
 
-
     /// Read a terminal cell's cluster bytes from the buffer's parallel clusters store.
     private func clusterString(_ cell: TerminalCell, in tb: TripleBufferedTerminal) -> String {
         tb.renderBuffer.clusterString(at: cell.clusterStart, length: cell.clusterLen)

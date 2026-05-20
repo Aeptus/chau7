@@ -341,7 +341,6 @@ extension RustTerminalView {
         // Clear Rust terminal's scrollback history (frees memory)
         rustTerminal?.clearScrollback()
 
-
         // Clear inline images
         clearInlineImages()
 
