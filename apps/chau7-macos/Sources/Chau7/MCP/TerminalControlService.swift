@@ -203,11 +203,21 @@ final class TerminalControlService {
     /// session event — feeding that back here keeps tab-pwd-derived UI
     /// (snippet context, repo grouping, telemetry) in sync.
     ///
+    /// `sessionID` is the event's AI session id. When the tab has a live
+    /// `lastAISessionId` that differs, the write is skipped — stale sessions
+    /// that linger in `claude-events.jsonl` after a tab has been re-used for
+    /// a new claude invocation would otherwise oscillate the tab's cwd
+    /// between two unrelated directories.
+    ///
     /// Returns true when an actual session was updated (vs. tab existing
     /// but having no live session yet — common during background-window
     /// lazy load).
     @discardableResult
-    func updateSessionDirectoryAcrossWindows(tabID: UUID, directory: String) -> Bool {
+    func updateSessionDirectoryAcrossWindows(
+        tabID: UUID,
+        sessionID: String?,
+        directory: String
+    ) -> Bool {
         let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         return onMain {
@@ -215,6 +225,14 @@ final class TerminalControlService {
                 guard let tab = model.tabs.first(where: { $0.id == tabID }),
                       let session = tab.session
                 else { continue }
+                if let sessionID,
+                   let live = session.lastAISessionId,
+                   live != sessionID {
+                    Log.info(
+                        "updateSessionDirectory: skipping stale-session cwd write tab=\(tabID) liveSession=\(live) eventSession=\(sessionID)"
+                    )
+                    return false
+                }
                 guard session.currentDirectory != trimmed else { return true }
                 session.updateCurrentDirectory(trimmed)
                 return true

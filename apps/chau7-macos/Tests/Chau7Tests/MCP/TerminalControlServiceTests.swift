@@ -383,6 +383,61 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertEqual(overlayModel.tabs.first?.notificationStyle, .attention)
     }
 
+    func testUpdateSessionDirectoryAppliesWhenSessionMatchesLiveAISession() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.lastAISessionId = "session-live"
+        let originalCwd = session.currentDirectory
+
+        let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: tab.id,
+            sessionID: "session-live",
+            directory: "/tmp/new-path"
+        )
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(session.currentDirectory, "/tmp/new-path")
+        XCTAssertNotEqual(session.currentDirectory, originalCwd)
+    }
+
+    func testUpdateSessionDirectorySkipsWhenSessionIsStale() throws {
+        // The motivating bug: a tab hosting Claude session 'live' has its cwd
+        // oscillated by stale events arriving from a previously-resumed Claude
+        // session 'stale' that still emits to claude-events.jsonl.
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.lastAISessionId = "session-live"
+        let pinned = "/tmp/live-path"
+        session.updateCurrentDirectory(pinned)
+
+        let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: tab.id,
+            sessionID: "session-stale",
+            directory: "/tmp/stale-path"
+        )
+
+        XCTAssertFalse(applied)
+        XCTAssertEqual(session.currentDirectory, pinned)
+    }
+
+    func testUpdateSessionDirectoryAppliesWhenTabHasNoLiveAISessionYet() throws {
+        // First-event-binding case: tab restored without a live AI session
+        // identity yet. We must still accept the cwd write so the tab's PWD
+        // catches up on the very first hook event.
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.lastAISessionId = nil
+
+        let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: tab.id,
+            sessionID: "session-first",
+            directory: "/tmp/first-bind"
+        )
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(session.currentDirectory, "/tmp/first-bind")
+    }
+
     private func parseJSONObject(_ text: String) -> [String: Any]? {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {

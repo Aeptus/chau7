@@ -1092,6 +1092,7 @@ final class AppModel {
         if let runtimeTabID, let directory {
             TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
                 tabID: runtimeTabID,
+                sessionID: event.sessionId.isEmpty ? nil : event.sessionId,
                 directory: directory
             )
         }
@@ -1138,6 +1139,7 @@ final class AppModel {
         if let resolvedTabID, let directory {
             TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
                 tabID: resolvedTabID,
+                sessionID: session.id.isEmpty ? nil : session.id,
                 directory: directory
             )
         }
