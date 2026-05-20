@@ -289,9 +289,17 @@ enum TabResolver {
     private static func disambiguate(_ matches: [OverlayTab], target: TabTarget) -> OverlayTab? {
         guard matches.count > 1 else { return matches.first }
 
-        // 1) Session ID disambiguation: exact match on AI session identity
-        if let sessionID = target.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !sessionID.isEmpty {
+        let providedSessionID = target.sessionID
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+
+        // 1) Session ID disambiguation: exact match on AI session identity.
+        // When a sessionID is provided AND no tab owns it, refuse to fall
+        // through to weaker heuristics — externally-spawned claudes
+        // (Terminal.app, iTerm2, ...) emit events with sessionIDs unknown
+        // to Chau7 and the directory/activity fallback would otherwise
+        // silently attribute them to whatever Chau7 tab won the heuristic.
+        if let sessionID = providedSessionID {
             if let sessionMatch = matches.first(where: { tab in
                 tab.splitController.terminalSessions.contains { _, session in
                     session.effectiveAISessionId == sessionID
@@ -300,10 +308,21 @@ enum TabResolver {
                 Log.info("TabResolver: disambiguated via sessionID=\(sessionID.prefix(8)) → tab=\(sessionMatch.id)")
                 return sessionMatch
             }
+            logAmbiguousFallback(
+                target: target,
+                matchesCount: matches.count,
+                candidateTabIDPrefixes: matches.prefix(8).map { String($0.id.uuidString.prefix(8)) },
+                chosenTabIDPrefix: nil,
+                trail: ["sessionID=\(sessionID.prefix(8)) unmatched; refusing to guess"]
+            )
+            return nil
         }
 
         // 2) Directory-based disambiguation: find tabs matching the event's directory.
-        //    If multiple match, prefer the most recently active one.
+        // When multiple tabs match at the same rank, refuse to pick the
+        // most-recently-active — the heuristic was the original footgun
+        // that married external Claude sessions to whichever Chau7 tab
+        // happened to have been touched last in the same repo.
         if let dir = target.directory?.trimmingCharacters(in: .whitespacesAndNewlines),
            !dir.isEmpty {
             let normalized = URL(fileURLWithPath: dir).standardized.path
@@ -318,34 +337,29 @@ enum TabResolver {
                     return dirMatches[0]
                 }
                 if dirMatches.count > 1 {
-                    let best = dirMatches.max(by: { a, b in
-                        let aDate = tabLastActivityDate(a)
-                        let bDate = tabLastActivityDate(b)
-                        return aDate < bDate
-                    })
-                    if let best {
-                        let scope = bestRank == 0 ? "dir+activity exact" : "dir+activity related"
-                        Log.info("TabResolver: disambiguated via \(scope) (\(normalized.suffix(20))) → tab=\(best.id)")
-                        return best
-                    }
+                    logAmbiguousFallback(
+                        target: target,
+                        matchesCount: matches.count,
+                        candidateTabIDPrefixes: dirMatches.prefix(8).map { String($0.id.uuidString.prefix(8)) },
+                        chosenTabIDPrefix: nil,
+                        trail: [
+                            "sessionID unset",
+                            "dir=\(normalized.suffix(30)) matched=\(dirMatches.count) tabs; refusing to guess"
+                        ]
+                    )
+                    return nil
                 }
             }
         }
 
-        // 3) Deterministic fallback: most recently active tab.
-        //
-        // Build a short reason trail so the fallback log carries enough
-        // signal to diagnose which disambiguation step failed — chronic
-        // `no tab match` noise is brutal without knowing which keys
-        // were tried.
-        var trail: [String] = []
-        if let sessionID = target.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines), !sessionID.isEmpty {
-            trail.append("sessionID=\(sessionID.prefix(8)) unmatched")
-        } else {
-            trail.append("sessionID unset")
-        }
+        // 3) Final fallback: pick the most recently active tab. Only reached
+        // when no sessionID was provided AND directory matching yielded
+        // nothing — i.e. the caller gave us no identifying hint at all, so
+        // any pick is as good as any other and the deterministic choice
+        // is the most-recent.
+        var trail: [String] = ["sessionID unset"]
         if let dir = target.directory?.trimmingCharacters(in: .whitespacesAndNewlines), !dir.isEmpty {
-            trail.append("dir=\(URL(fileURLWithPath: dir).standardized.path.suffix(30)) matched>1 with equal activity")
+            trail.append("dir=\(URL(fileURLWithPath: dir).standardized.path.suffix(30)) no rank")
         } else {
             trail.append("directory unset")
         }
