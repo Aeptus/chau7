@@ -70,6 +70,15 @@ extension RustTerminalView {
             handleBell()
         }
 
+        // Check for current working directory change (OSC 7). Captured by the
+        // Rust ANSI parser as bytes arrive — race-free even when multiple
+        // Swift views share the same Rust terminal (the prior `last_output`
+        // byte scan dropped OSC 7 whenever a sibling view drained first).
+        if let cwdPayload = rust.getPendingCwd() {
+            Log.info("RustTerminalView[\(viewId)]: OSC 7 sequence: \(cwdPayload)")
+            processOSC7URL(cwdPayload)
+        }
+
         // Check for terminal title changes (OSC 0/1/2)
         if let title = rust.getPendingTitle() {
             // Rate-limit: only log when the title actually changes (spinner animations
@@ -179,9 +188,9 @@ extension RustTerminalView {
             // downstream prompt detection can consume the reported exit status.
             parseChau7Exit(from: outputData)
 
-            // Parse OSC 7 (current working directory) before processing
-            // OSC 7 format: ESC ] 7 ; file://hostname/path BEL
-            parseOSC7(from: outputData)
+            // OSC 7 now handled by Rust ANSI parser via `getPendingCwd` above —
+            // see processTerminalStateAfterPollLocked. Swift no longer scans
+            // raw bytes for OSC 7, which closes the multi-view drain race.
 
             // Parse OSC 9 chau7 shell integration reports (git branch + repo root)
             // Format: ESC ] 9 ; chau7;branch=NAME BEL

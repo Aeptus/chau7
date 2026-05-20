@@ -788,6 +788,18 @@ uint32_t chau7_terminal_dirty_row_count(struct Chau7Terminal *term);
 void chau7_terminal_clear_dirty_rows(struct Chau7Terminal *term);
 
 /*
+ Get pending current working directory from OSC 7 escape sequences.
+ Returns the raw payload Swift previously scanned out of `last_output`
+ (typically `file://host/path`). Race-free across multiple Swift views
+ sharing the same Rust terminal.
+
+ # Safety
+ - `term` must be a valid pointer
+ - The returned string must be freed with `chau7_terminal_free_string`
+ */
+char *chau7_terminal_get_pending_cwd(struct Chau7Terminal *term);
+
+/*
  Get pending title change from OSC 0/1/2 escape sequences
 
  # Safety

@@ -208,6 +208,13 @@ pub struct Chau7Terminal {
     pub(crate) pending_title: Mutex<Option<String>>,
     /// Fast check flag — avoids locking pending_title Mutex on every poll (99% empty).
     pub(crate) has_pending_title: AtomicBool,
+    /// Pending current working directory (from OSC 7).
+    /// Captured by `process_pty_data` so attribution is race-free w.r.t. the
+    /// `last_output` drain (which is consumed by `std::mem::take` and is thus
+    /// vulnerable to whichever Swift view polls first).
+    pub(crate) pending_cwd: Mutex<Option<String>>,
+    /// Fast check flag — avoids locking pending_cwd Mutex on every poll.
+    pub(crate) has_pending_cwd: AtomicBool,
     /// Pending child exit code (from Event::ChildExit)
     pub(crate) pending_exit_code: Mutex<Option<i32>>,
     /// Flag indicating PTY has closed
@@ -326,6 +333,8 @@ impl Chau7Terminal {
             metrics: PerformanceMetrics::default(),
             pending_title: Mutex::new(None),
             has_pending_title: AtomicBool::new(false),
+            pending_cwd: Mutex::new(None),
+            has_pending_cwd: AtomicBool::new(false),
             pending_exit_code: Mutex::new(None),
             pty_closed: AtomicBool::new(true),
             link_urls: Mutex::new(vec![String::new()]),
@@ -574,6 +583,8 @@ impl Chau7Terminal {
             metrics: PerformanceMetrics::default(),
             pending_title: Mutex::new(None),
             has_pending_title: AtomicBool::new(false),
+            pending_cwd: Mutex::new(None),
+            has_pending_cwd: AtomicBool::new(false),
             pending_exit_code: Mutex::new(None),
             pty_closed: AtomicBool::new(false),
             // Hyperlinks (OSC 8) — index 0 reserved for "no link"
@@ -1003,6 +1014,69 @@ impl Chau7Terminal {
         was_dirty
     }
 
+    /// Scan a chunk of PTY bytes for OSC 7 (current working directory) and
+    /// store the most recent payload in `pending_cwd`. Terminators are BEL
+    /// (0x07) or ST (ESC \). Non-UTF8 payloads are dropped silently — Swift
+    /// would only re-emit the warning and we keep this hot path quiet.
+    fn scan_osc7(&self, data: &[u8]) {
+        if data.len() < 6 {
+            return;
+        }
+        let mut i = 0usize;
+        let mut latest: Option<String> = None;
+        while i + 4 < data.len() {
+            if data[i] == 0x1B
+                && data[i + 1] == 0x5D
+                && data[i + 2] == b'7'
+                && data[i + 3] == b';'
+            {
+                let start = i + 4;
+                let mut end = start;
+                while end < data.len() {
+                    if data[end] == 0x07 {
+                        break;
+                    }
+                    if data[end] == 0x1B && end + 1 < data.len() && data[end + 1] == 0x5C {
+                        break;
+                    }
+                    end += 1;
+                }
+                if end > start && end < data.len() {
+                    if let Ok(payload) = std::str::from_utf8(&data[start..end]) {
+                        latest = Some(payload.to_owned());
+                    }
+                    i = end + 1;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        if let Some(payload) = latest {
+            let mut pending = self.pending_cwd.lock();
+            *pending = Some(payload);
+            self.has_pending_cwd
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
+
+    /// Take the pending OSC 7 cwd payload, if any. Format is the raw URL the
+    /// shell emitted (typically `file://host/path` — Swift handles parsing).
+    pub fn get_pending_cwd(&self) -> Option<String> {
+        if !self
+            .has_pending_cwd
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return None;
+        }
+        let mut pending = self.pending_cwd.lock();
+        let value = pending.take();
+        if value.is_some() {
+            self.has_pending_cwd
+                .store(false, std::sync::atomic::Ordering::Release);
+        }
+        value
+    }
+
     /// Get the raw output bytes from the last poll.
     pub fn get_last_output(&self) -> Vec<u8> {
         let mut last_output = self.last_output.lock();
@@ -1017,6 +1091,16 @@ impl Chau7Terminal {
             self.id,
             data.len()
         );
+
+        // Scan for OSC 7 (current working directory report) before any
+        // downstream consumer can drain or filter the bytes. Alacritty's VTE
+        // processor doesn't emit a Cwd event for OSC 7, and the prior
+        // Swift-side scan on `last_output` was vulnerable to a race when
+        // multiple Swift views shared the same Rust terminal: whichever view
+        // polled first drained the buffer via `std::mem::take`, leaving the
+        // others to re-parse empty data. Capturing here gives a single
+        // race-free pickup point queried via `get_pending_cwd`.
+        self.scan_osc7(data);
 
         let (passthrough_owned, events, shell_events) = {
             let mut interceptor = self.graphics_interceptor.lock();

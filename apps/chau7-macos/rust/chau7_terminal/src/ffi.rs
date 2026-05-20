@@ -1270,6 +1270,37 @@ pub unsafe extern "C" fn chau7_terminal_clear_dirty_rows(term: *mut Chau7Termina
 // Terminal Event FFI Functions
 // ============================================================================
 
+/// Get pending current working directory from OSC 7 escape sequences.
+/// Returns the raw payload Swift previously scanned out of `last_output`
+/// (typically `file://host/path`). Race-free across multiple Swift views
+/// sharing the same Rust terminal.
+///
+/// # Safety
+/// - `term` must be a valid pointer
+/// - The returned string must be freed with `chau7_terminal_free_string`
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_get_pending_cwd(term: *mut Chau7Terminal) -> *mut c_char {
+    unsafe {
+        if term.is_null() {
+            return std::ptr::null_mut();
+        }
+        let terminal = &*term;
+        let Some(cwd) = terminal.get_pending_cwd() else {
+            return std::ptr::null_mut();
+        };
+        match CString::new(cwd) {
+            Ok(cstr) => cstr.into_raw(),
+            Err(e) => {
+                warn!(
+                    "chau7_terminal_get_pending_cwd: payload contains null byte at pos {}",
+                    e.nul_position()
+                );
+                std::ptr::null_mut()
+            }
+        }
+    }
+}
+
 /// Get pending title change from OSC 0/1/2 escape sequences
 ///
 /// # Safety

@@ -580,6 +580,7 @@ final class RustTerminalFFI {
     private typealias ResetMetricsFn = @convention(c) (OpaquePointer?) -> Void
     // Terminal event functions (title, exit, PTY closed)
     private typealias GetPendingTitleFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
+    private typealias GetPendingCwdFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
     private typealias GetPendingExitCodeFn = @convention(c) (OpaquePointer?) -> Int32
     private typealias IsPtyClosedFn = @convention(c) (OpaquePointer?) -> Bool
     /// Echo detection via termios (Phase 2: reliable password prompt detection)
@@ -657,6 +658,7 @@ final class RustTerminalFFI {
         let resetMetrics: ResetMetricsFn? // Optional - for performance analysis
         // Terminal event functions (title, exit, PTY closed)
         let getPendingTitle: GetPendingTitleFn? // Optional - for terminal title updates
+        let getPendingCwd: GetPendingCwdFn? // Optional - OSC 7 cwd from Rust ANSI parser
         let getPendingExitCode: GetPendingExitCodeFn? // Optional - for process exit detection
         let isPtyClosed: IsPtyClosedFn? // Optional - for PTY close detection
         /// Echo detection via termios (Phase 2)
@@ -939,6 +941,11 @@ final class RustTerminalFFI {
             Log.info("RustTerminalFFI: get_pending_title symbol not found (optional)")
         }
 
+        let getPendingCwdSym = loadSymbol("chau7_terminal_get_pending_cwd")
+        if getPendingCwdSym == nil {
+            Log.info("RustTerminalFFI: get_pending_cwd symbol not found (optional)")
+        }
+
         let getPendingExitCodeSym = loadSymbol("chau7_terminal_get_pending_exit_code")
         if getPendingExitCodeSym == nil {
             Log.info("RustTerminalFFI: get_pending_exit_code symbol not found (optional)")
@@ -1038,6 +1045,7 @@ final class RustTerminalFFI {
             getFullBufferAnsiText: getFullBufferAnsiTextSym.map { unsafeBitCast($0, to: GetFullBufferAnsiTextFn.self) },
             resetMetrics: resetMetricsSym.map { unsafeBitCast($0, to: ResetMetricsFn.self) },
             getPendingTitle: getPendingTitleSym.map { unsafeBitCast($0, to: GetPendingTitleFn.self) },
+            getPendingCwd: getPendingCwdSym.map { unsafeBitCast($0, to: GetPendingCwdFn.self) },
             getPendingExitCode: getPendingExitCodeSym.map { unsafeBitCast($0, to: GetPendingExitCodeFn.self) },
             isPtyClosed: isPtyClosedSym.map { unsafeBitCast($0, to: IsPtyClosedFn.self) },
             isEchoDisabled: isEchoDisabledSym.map { unsafeBitCast($0, to: IsEchoDisabledFn.self) },
@@ -1815,6 +1823,22 @@ final class RustTerminalFFI {
         let title = String(cString: cstr)
         Log.trace("RustTerminalFFI[\(instanceId)]: getPendingTitle = \"\(title)\"")
         return title
+    }
+
+    /// Get pending current working directory from OSC 7 escape sequences.
+    /// Captured by the Rust ANSI parser as bytes arrive, so it's race-free
+    /// across multiple Swift views sharing the same Rust terminal.
+    /// After calling this, the pending cwd is cleared.
+    func getPendingCwd() -> String? {
+        guard let getPendingCwdFn = Self.functions?.getPendingCwd,
+              let freeStringFn = Self.functions?.freeString else {
+            return nil
+        }
+        guard let cstr = getPendingCwdFn(terminal) else {
+            return nil
+        }
+        defer { freeStringFn(cstr) }
+        return String(cString: cstr)
     }
 
     /// Get pending child process exit code.
