@@ -80,6 +80,52 @@ final class TabAttentionStateTests: XCTestCase {
         XCTAssertEqual(decision.nextOwnedKind, .none)
     }
 
+    func testSelectedTabSuppressesVisibleStyleWhileKeepingOwnership() {
+        let decision = TabAttentionStatePolicy.reconcile(TabAttentionSnapshot(
+            rawStatuses: ["approvalRequired"],
+            currentOwnedKind: .approvalRequired,
+            hasVisibleStyle: true,
+            isSelected: true
+        ))
+
+        XCTAssertEqual(decision.action, .suppressForSelection)
+        XCTAssertTrue(decision.shouldClearVisibleStyle)
+        XCTAssertFalse(decision.shouldApplyStyle)
+        // Ownership preserved so the next reconcile after deselection
+        // re-applies the bell when the issue is still unresolved.
+        XCTAssertEqual(decision.nextOwnedKind, .approvalRequired)
+    }
+
+    func testSelectedTabDoesNotRepairMissingStyle() {
+        // User cleared the bell by selecting; reconcile must NOT put it back
+        // while the tab stays selected, even though the status is interactive.
+        let decision = TabAttentionStatePolicy.reconcile(TabAttentionSnapshot(
+            rawStatuses: ["approvalRequired"],
+            currentOwnedKind: .approvalRequired,
+            hasVisibleStyle: false,
+            isSelected: true
+        ))
+
+        XCTAssertEqual(decision.action, .none)
+        XCTAssertFalse(decision.shouldApplyStyle)
+        XCTAssertEqual(decision.nextOwnedKind, .approvalRequired)
+    }
+
+    func testDeselectingReappliesVisibleStyleForUnresolvedInteractiveTab() {
+        // Same ownership as before, but no longer selected and bell missing.
+        // The repair path should kick back in.
+        let decision = TabAttentionStatePolicy.reconcile(TabAttentionSnapshot(
+            rawStatuses: ["approvalRequired"],
+            currentOwnedKind: .approvalRequired,
+            hasVisibleStyle: false,
+            isSelected: false
+        ))
+
+        XCTAssertEqual(decision.action, .repairMissingStyle)
+        XCTAssertTrue(decision.shouldApplyStyle)
+        XCTAssertEqual(decision.nextOwnedKind, .approvalRequired)
+    }
+
     func testAttentionReportCompactLineIncludesStateAndStyle() {
         let report = TabAttentionReport(
             statuses: ["waitingForInput"],

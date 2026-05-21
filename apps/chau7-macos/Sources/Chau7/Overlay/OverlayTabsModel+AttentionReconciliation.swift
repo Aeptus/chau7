@@ -127,7 +127,8 @@ extension OverlayTabsModel {
         let decision = TabAttentionStatePolicy.reconcile(TabAttentionSnapshot(
             rawStatuses: statuses,
             currentOwnedKind: tabs[index].stateAttentionKind,
-            hasVisibleStyle: tabs[index].notificationStyle != nil
+            hasVisibleStyle: tabs[index].notificationStyle != nil,
+            isSelected: tabs[index].id == selectedTabID
         ))
 
         guard decision.action != .none else { return false }

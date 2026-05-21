@@ -55,15 +55,23 @@ public struct TabAttentionSnapshot: Equatable {
     public let rawStatuses: [String]
     public let currentOwnedKind: TabAttentionKind
     public let hasVisibleStyle: Bool
+    /// Whether the tab is the user's currently-selected one. The bell exists to
+    /// pull attention to a *background* tab; once a tab is selected the user
+    /// is already looking at it, so the policy suppresses the visible style
+    /// while keeping ownership so it re-applies the moment the tab is
+    /// deselected with the issue still unresolved.
+    public let isSelected: Bool
 
     public init(
         rawStatuses: [String],
         currentOwnedKind: TabAttentionKind,
-        hasVisibleStyle: Bool
+        hasVisibleStyle: Bool,
+        isSelected: Bool = false
     ) {
         self.rawStatuses = rawStatuses
         self.currentOwnedKind = currentOwnedKind
         self.hasVisibleStyle = hasVisibleStyle
+        self.isSelected = isSelected
     }
 }
 
@@ -73,6 +81,9 @@ public enum TabAttentionReconcileAction: String, Codable, Equatable {
     case repairMissingStyle
     case clearOwnedStyle
     case releaseOwnership
+    /// Tab is selected: hide the visible bell while keeping ownership so the
+    /// style restores when the tab is deselected with the issue unresolved.
+    case suppressForSelection
 }
 
 public struct TabAttentionDecision: Equatable {
@@ -136,6 +147,27 @@ public enum TabAttentionStatePolicy {
         let desiredKind = TabAttentionKind.strongest(statuses: snapshot.rawStatuses)
 
         if desiredKind.isInteractive {
+            if snapshot.isSelected {
+                // User is looking at the tab — the bell has done its job.
+                // Suppress visible style but keep ownership so the next
+                // reconcile after deselection re-applies if still interactive.
+                if snapshot.hasVisibleStyle {
+                    return decision(
+                        desiredKind: desiredKind,
+                        action: .suppressForSelection,
+                        shouldClearVisibleStyle: true,
+                        nextOwnedKind: desiredKind,
+                        reason: "selected_tab_suppresses_visible_style"
+                    )
+                }
+                return decision(
+                    desiredKind: desiredKind,
+                    action: .none,
+                    nextOwnedKind: desiredKind,
+                    reason: "selected_tab_no_visible_style"
+                )
+            }
+
             if snapshot.currentOwnedKind == desiredKind {
                 if snapshot.hasVisibleStyle {
                     return decision(
