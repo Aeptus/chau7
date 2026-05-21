@@ -1492,37 +1492,35 @@ final class AppModel {
     }
 
     private func publishUnifiedEvent(_ event: AIEvent, notify: Bool) {
-        let acceptedEvent: NotificationIngress.AcceptedEvent?
-        switch NotificationIngress.ingest(event) {
-        case .accept(let accepted):
-            acceptedEvent = accepted
-        case .drop(let reason):
-            Log.trace("Notification ingress dropped unified event: \(reason) id=\(event.id.uuidString) type=\(event.type) source=\(event.source.rawValue)")
-            acceptedEvent = nil
-        }
-
-        guard let acceptedEvent else { return }
-
         if Thread.isMainThread {
             MainActor.assumeIsolated {
-                publishUnifiedEventOnMain(acceptedEvent, notify: notify)
+                publishUnifiedEventOnMain(event, notify: notify)
             }
         } else {
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
-                    self?.publishUnifiedEventOnMain(acceptedEvent, notify: notify)
+                    self?.publishUnifiedEventOnMain(event, notify: notify)
                 }
             }
         }
     }
 
     @MainActor
-    private func publishUnifiedEventOnMain(_ acceptedEvent: NotificationIngress.AcceptedEvent, notify: Bool) {
+    private func publishUnifiedEventOnMain(_ event: AIEvent, notify: Bool) {
+        guard let acceptedEvent = NotificationManager.shared.processUnifiedEvent(
+            event,
+            deliveryRequested: notify
+        ) else {
+            return
+        }
+
+        publishAcceptedUnifiedEventOnMain(acceptedEvent)
+    }
+
+    @MainActor
+    private func publishAcceptedUnifiedEventOnMain(_ acceptedEvent: NotificationIngress.AcceptedEvent) {
         let event = acceptedEvent.sharedEvent
         Chau7ObservabilityService.shared.recordAIEvent(event)
-        if notify {
-            NotificationManager.shared.notify(acceptedEvent: acceptedEvent)
-        }
         recentEvents.append(event)
         recentEvents.trimToLast(25)
 

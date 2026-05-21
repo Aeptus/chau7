@@ -54,6 +54,7 @@ final class NotificationManager {
     private var recentRepeatedAttentionEvents: [String: Date] = [:]
     private var recentClosedSessionEvents: [String: Date] = [:]
     private let authoritativeRetryDelays: [TimeInterval] = [0.05, 0.15, 0.5]
+    private let eventEngine = AIEventNotificationEngine()
 
     private init() {
         guard !isIsolatedTestMode else {
@@ -95,12 +96,8 @@ final class NotificationManager {
         }
 
         DispatchQueue.main.async { [weak self] in
-            self?.ingestEvent(event)
+            _ = self?.processUnifiedEvent(event, deliveryRequested: true)
         }
-    }
-
-    func notify(acceptedEvent: NotificationIngress.AcceptedEvent) {
-        ingestAcceptedEvent(acceptedEvent)
     }
 
     // MARK: - Drop Log Coalescing
@@ -124,33 +121,77 @@ final class NotificationManager {
         lastDropFlush = now
     }
 
-    private func ingestEvent(_ event: AIEvent) {
-        switch NotificationIngress.ingest(event) {
-        case .drop(let reason):
-            logCoalescedDrop(reason: reason)
-            return
-        case .accept(let accepted):
-            ingestAcceptedEvent(accepted)
+    @discardableResult
+    func processUnifiedEvent(
+        _ event: AIEvent,
+        deliveryRequested: Bool
+    ) -> NotificationIngress.AcceptedEvent? {
+        switch eventEngine.process(event, deliveryRequested: deliveryRequested) {
+        case .dropped(let drop):
+            logEngineDrop(drop, deliveryRequested: deliveryRequested)
+            return nil
+
+        case .accepted(let accepted):
+            logRawObservationIfNeeded(accepted.rawObservationNote, eventID: accepted.acceptedEvent.sharedEvent.id)
+            if deliveryRequested {
+                processAcceptedEngineOutput(accepted)
+            }
+            return accepted.acceptedEvent
         }
     }
 
-    private func ingestAcceptedEvent(_ accepted: NotificationIngress.AcceptedEvent) {
-        let adapted = accepted.sharedEvent
-        let canonical = accepted.canonicalEvent
+    private func logRawObservationIfNeeded(_ note: String?, eventID: UUID) {
+        guard let note else { return }
+        Log.trace("Notification engine observed raw event: \(note) id=\(eventID.uuidString)")
+    }
+
+    private func logEngineDrop(
+        _ drop: AIEventNotificationEngine.Drop,
+        deliveryRequested: Bool
+    ) {
+        logRawObservationIfNeeded(drop.rawObservationNote, eventID: drop.eventID)
+        switch drop.stage {
+        case .ingress:
+            if deliveryRequested {
+                logCoalescedDrop(reason: drop.reason)
+            } else {
+                Log.trace("Notification ingress dropped unified event: \(drop.reason) id=\(drop.eventID.uuidString)")
+            }
+        case .reconciliation:
+            Log.info("Notification session reconciler dropped: \(drop.reason) id=\(drop.eventID.uuidString)")
+        }
+    }
+
+    private func processAcceptedEngineOutput(_ output: AIEventNotificationEngine.Accepted) {
+        let acceptedEvent = output.acceptedEvent
+        let adapted = acceptedEvent.sharedEvent
+        let canonical = acceptedEvent.canonicalEvent
         Log.info(
             """
             Notification ingress accepted: id=\(adapted.id.uuidString) source=\(adapted.source.rawValue) type=\(adapted.type) semantic=\(canonical.kind.rawValue) reliability=\(adapted.reliability
                 .rawValue) tabID=\(adapted.tabID?.uuidString ?? "nil") sessionID=\(adapted.sessionID ?? "nil")
             """
         )
-        clearStalePermissionStyleIfNeeded(event: adapted, semanticKind: canonical.kind)
         history.begin(
             event: adapted,
             semanticKind: canonical.kind.rawValue,
             rawType: canonical.rawType,
             notificationType: canonical.notificationType
         )
-        enqueueEvent(adapted)
+        clearStalePermissionStyleIfNeeded(event: adapted, semanticKind: canonical.kind)
+
+        switch output.delivery {
+        case .disabled:
+            return
+        case .dropped(let drop):
+            Log.info(
+                "Notification session reconciler dropped: \(drop.reason) id=\(adapted.id.uuidString) source=\(adapted.source.rawValue) type=\(adapted.type) reliability=\(adapted.reliability.rawValue)"
+            )
+            history.markDropped(eventID: adapted.id, reason: drop.reason)
+            return
+        case .deliver(let intent):
+            enqueueEvent(intent.event)
+        }
     }
 
     /// Clears a tab's persistent permission-style highlight when the AI tool
