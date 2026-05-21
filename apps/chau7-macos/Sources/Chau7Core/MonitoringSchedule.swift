@@ -125,24 +125,12 @@ public enum MonitoringSchedule {
     /// or rate-limit bucket when only partial routing metadata is available.
     ///
     /// Resolution order:
-    /// 1. Exact tab UUID
-    /// 2. AI session ID
+    /// 1. AI session ID
+    /// 2. Exact tab UUID
     /// 3. Working directory
     /// 4. Event UUID (no durable identity available, so do not coalesce)
     public static func notificationIdentityKey(for event: AIEvent) -> String {
-        if let tabID = event.tabID {
-            return "tab:\(tabID.uuidString.lowercased())"
-        }
-
-        if let sessionID = normalizedNotificationIdentityComponent(event.sessionID) {
-            return "session:\(sessionID)"
-        }
-
-        if let directory = normalizedNotificationDirectory(event.directory) {
-            return "dir:\(directory)"
-        }
-
-        return "event:\(event.id.uuidString.lowercased())"
+        AIObservation.identityKey(for: event)
     }
 
     /// Generates a coalescing key for notification deduplication.
@@ -150,36 +138,18 @@ public enum MonitoringSchedule {
     /// The key is scoped by the best available event identity so different tabs,
     /// sessions, or directories do not overwrite each other.
     public static func notificationCoalescingKey(for event: AIEvent) -> String {
-        let normalizedTool = event.tool
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
+        let provider = AIObservation.providerKey(for: event)
         let normalizedType = event.type
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
         let identity = notificationIdentityKey(for: event)
-        let producer = event.producer?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "unknown"
-        return "\(event.source.rawValue)|\(event.reliability.rawValue)|\(producer)|\(normalizedType)|\(normalizedTool)|\(identity)"
+        return "\(provider)|\(normalizedType)|\(identity)"
     }
 
     /// Scopes notification rate limiting by both trigger and event identity.
     /// Without this, one noisy tab can suppress the same trigger on a different tab.
     public static func notificationRateLimitKey(triggerID: String, event: AIEvent) -> String {
-        "\(triggerID)|\(event.reliability.rawValue)|\(notificationIdentityKey(for: event))"
+        "\(triggerID)|\(notificationIdentityKey(for: event))"
     }
 
-    private static func normalizedNotificationIdentityComponent(_ rawValue: String?) -> String? {
-        guard let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else {
-            return nil
-        }
-        return trimmed.lowercased()
-    }
-
-    private static func normalizedNotificationDirectory(_ rawValue: String?) -> String? {
-        guard let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else {
-            return nil
-        }
-        return URL(fileURLWithPath: trimmed).standardized.path.lowercased()
-    }
 }

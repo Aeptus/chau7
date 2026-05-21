@@ -15,29 +15,38 @@ final class NotificationCoalescingTests: XCTestCase {
         let key = MonitoringSchedule.notificationCoalescingKey(for: event)
         XCTAssertEqual(
             key,
-            "claude_code|authoritative|unknown|finished|claude|event:\(event.id.uuidString.lowercased())"
+            "claude|finished|event:\(event.id.uuidString.lowercased())"
         )
     }
 
-    func testCoalescingKeyVariesBySource() {
-        let shellEvent = AIEvent(
-            source: .shell,
-            type: "finished",
-            tool: "Claude",
-            message: "",
-            ts: "2026-03-05T00:00:00Z"
-        )
-        let historyEvent = AIEvent(
+    func testCoalescingKeyIgnoresProducerAndReliabilityForSameProviderState() {
+        let id = UUID()
+        let fallbackEvent = AIEvent(
+            id: id,
             source: .historyMonitor,
             type: "finished",
             tool: "Claude",
             message: "",
-            ts: "2026-03-05T00:00:00Z"
+            ts: "2026-03-05T00:00:00Z",
+            sessionID: "session-1",
+            producer: "history_idle_monitor",
+            reliability: .fallback
+        )
+        let authoritativeEvent = AIEvent(
+            id: id,
+            source: .claudeCode,
+            type: "finished",
+            tool: "Claude",
+            message: "",
+            ts: "2026-03-05T00:00:00Z",
+            sessionID: "session-1",
+            producer: "claude_code_monitor",
+            reliability: .authoritative
         )
 
-        let shellKey = MonitoringSchedule.notificationCoalescingKey(for: shellEvent)
-        let historyKey = MonitoringSchedule.notificationCoalescingKey(for: historyEvent)
-        XCTAssertNotEqual(shellKey, historyKey)
+        let fallbackKey = MonitoringSchedule.notificationCoalescingKey(for: fallbackEvent)
+        let authoritativeKey = MonitoringSchedule.notificationCoalescingKey(for: authoritativeEvent)
+        XCTAssertEqual(fallbackKey, authoritativeKey)
     }
 
     func testCoalescingWindowIsConfigured() {
@@ -56,7 +65,7 @@ final class NotificationCoalescingTests: XCTestCase {
         let key = MonitoringSchedule.notificationCoalescingKey(for: event)
         XCTAssertEqual(
             key,
-            "history_monitor|fallback|unknown|||event:\(event.id.uuidString.lowercased())"
+            "history_monitor||event:\(event.id.uuidString.lowercased())"
         )
     }
 
@@ -73,7 +82,7 @@ final class NotificationCoalescingTests: XCTestCase {
         let key = MonitoringSchedule.notificationCoalescingKey(for: event)
         XCTAssertEqual(
             key,
-            "runtime|authoritative|unknown|permission|claude|session:session-123"
+            "claude|permission|session:session-123"
         )
     }
 
@@ -90,7 +99,7 @@ final class NotificationCoalescingTests: XCTestCase {
         let key = MonitoringSchedule.notificationCoalescingKey(for: event)
         XCTAssertEqual(
             key,
-            "shell|authoritative|unknown|finished|codex|dir:/tmp/chau7"
+            "codex|finished|dir:/tmp/chau7"
         )
     }
 
