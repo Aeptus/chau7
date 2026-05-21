@@ -1025,10 +1025,7 @@ impl Chau7Terminal {
         let mut i = 0usize;
         let mut latest: Option<String> = None;
         while i + 4 < data.len() {
-            if data[i] == 0x1B
-                && data[i + 1] == 0x5D
-                && data[i + 2] == b'7'
-                && data[i + 3] == b';'
+            if data[i] == 0x1B && data[i + 1] == 0x5D && data[i + 2] == b'7' && data[i + 3] == b';'
             {
                 let start = i + 4;
                 let mut end = start;
