@@ -746,7 +746,7 @@ final class RuntimeSessionManager {
     ) -> UUID? {
         let target = TabTarget(tool: "Claude", directory: cwd, sessionID: sessionID)
 
-        if let sessionID {
+        if sessionID != nil {
             // Authoritative: caller knows the session id, the tab should
             // already have it in its routing snapshot.
             let result = tabAttribution.resolve(target: target, policy: .requireSessionMatch)
