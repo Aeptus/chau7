@@ -309,12 +309,14 @@ extension TerminalSessionModel {
             "Approve?",
             "Continue?",
             "Proceed?",
-            "Permission",
-            "> ", // Common prompt indicator
-            "? ", // Question prompt
+            "Permission required",
+            "Question requested",
+            "Input requested",
+            "Needs your input",
+            "Ready for your input",
             "Enter your",
             "Type your",
-            "waiting for"
+            "waiting for your input"
         ]
 
         let lowercased = text.lowercased()
@@ -357,6 +359,7 @@ extension TerminalSessionModel {
         guard pendingCommandLine.flatMap(AIResumeParser.extractMetadata(from:)) == nil else { return }
         guard let provider = effectiveAIProvider,
               let source = AIEventSource.forProvider(provider) else { return }
+        guard !hasAuthoritativeNotifications(for: provider) else { return }
 
         let toolName = aiDisplayAppName
             ?? Self.displayName(fromProvider: provider)

@@ -3554,15 +3554,26 @@ final class TerminalSessionModel {
 
     /// Called when the terminal received an OSC 9 desktop-notification sequence
     /// Handles a foreign OSC 9 desktop notification (ESC]9;<message>BEL)
-    /// emitted by any AI CLI tool running in this terminal. The classifier
-    /// uses the session's detected AI tool for source attribution, falling
-    /// back to Codex (the most common OSC 9 producer) if no tool is detected.
+    /// emitted by an AI CLI tool running in this terminal. OSC 9 is generic
+    /// terminal syntax, so unknown messages or sessions without a detected AI
+    /// provider are ignored rather than guessed as Codex completions.
     func handleForeignDesktopNotification(_ message: String) {
-        let activeSource = AIEventSource.forProvider(effectiveAIProvider) ?? .codex
-        let activeTool = aiDisplayAppName ?? lastDetectedAppName ?? "Codex"
-        let classification = Self.classifyForeignDesktopNotification(
+        guard let provider = effectiveAIProvider,
+              let activeSource = AIEventSource.forProvider(provider) else {
+            Log.trace("Dropping OSC 9 notification without AI provider context: \(message.prefix(120))")
+            return
+        }
+
+        let activeTool = aiDisplayAppName
+            ?? lastDetectedAppName
+            ?? Self.displayName(fromProvider: provider)
+            ?? provider
+        guard let classification = Self.classifyForeignDesktopNotification(
             message, source: activeSource, tool: activeTool
-        )
+        ) else {
+            Log.trace("Dropping unrecognized OSC 9 AI notification: \(message.prefix(120))")
+            return
+        }
         appModel?.recordEvent(
             source: classification.source,
             type: classification.type,
@@ -3595,9 +3606,12 @@ final class TerminalSessionModel {
         _ message: String,
         source: AIEventSource = .codex,
         tool: String = "Codex"
-    ) -> ForeignNotificationClassification {
-        let trimmed = message.trimmingCharacters(in: .whitespaces)
+    ) -> ForeignNotificationClassification? {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let lowered = trimmed.lowercased()
+        guard !trimmed.isEmpty else {
+            return nil
+        }
 
         // Codex-specific prefix matching (most common OSC 9 producer)
         if trimmed.hasPrefix("Approval requested:")
@@ -3629,7 +3643,13 @@ final class TerminalSessionModel {
             return ForeignNotificationClassification(source: source, type: "attention_required", tool: tool)
         }
 
-        // Default: turn complete
-        return ForeignNotificationClassification(source: source, type: "finished", tool: tool)
+        if lowered == "agent turn complete"
+            || lowered.hasPrefix("agent turn complete:")
+            || lowered.hasPrefix("codex finished")
+            || lowered.hasPrefix("task finished") {
+            return ForeignNotificationClassification(source: source, type: "finished", tool: tool)
+        }
+
+        return nil
     }
 }

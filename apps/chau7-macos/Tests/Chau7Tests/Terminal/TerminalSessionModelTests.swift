@@ -765,83 +765,79 @@ final class TerminalSessionModelTests: XCTestCase {
         let result = TerminalSessionModel.classifyForeignDesktopNotification(
             "Approval requested: rm -rf /tmp/foo"
         )
-        XCTAssertEqual(result.source, .codex)
-        XCTAssertEqual(result.type, "permission")
-        XCTAssertEqual(result.tool, "Codex")
+        XCTAssertEqual(result?.source, .codex)
+        XCTAssertEqual(result?.type, "permission")
+        XCTAssertEqual(result?.tool, "Codex")
     }
 
     func testForeignNotification_elicitationRequested_mapsToPermission() {
         let result = TerminalSessionModel.classifyForeignDesktopNotification(
             "Approval requested by github_mcp_server"
         )
-        XCTAssertEqual(result.type, "permission")
+        XCTAssertEqual(result?.type, "permission")
     }
 
     func testForeignNotification_editApproval_mapsToPermission() {
         let result = TerminalSessionModel.classifyForeignDesktopNotification(
             "Codex wants to edit src/foo.rs"
         )
-        XCTAssertEqual(result.type, "permission")
+        XCTAssertEqual(result?.type, "permission")
     }
 
     func testForeignNotification_editApprovalMultipleFiles_mapsToPermission() {
         let result = TerminalSessionModel.classifyForeignDesktopNotification(
             "Codex wants to edit 3 files"
         )
-        XCTAssertEqual(result.type, "permission")
+        XCTAssertEqual(result?.type, "permission")
     }
 
     func testForeignNotification_questionRequested_mapsToWaitingInput() {
         let result = TerminalSessionModel.classifyForeignDesktopNotification(
             "Question requested: Which branch?"
         )
-        XCTAssertEqual(result.type, "waiting_input")
+        XCTAssertEqual(result?.type, "waiting_input")
     }
 
     func testForeignNotification_questionsRequestedPlural_mapsToWaitingInput() {
         let result = TerminalSessionModel.classifyForeignDesktopNotification(
             "Questions requested: 3"
         )
-        XCTAssertEqual(result.type, "waiting_input")
+        XCTAssertEqual(result?.type, "waiting_input")
     }
 
     func testForeignNotification_questionRequestedNoColon_mapsToWaitingInput() {
         let result = TerminalSessionModel.classifyForeignDesktopNotification(
             "Question requested"
         )
-        XCTAssertEqual(result.type, "waiting_input")
+        XCTAssertEqual(result?.type, "waiting_input")
     }
 
     func testForeignNotification_planModePrompt_mapsToAttentionRequired() {
         let result = TerminalSessionModel.classifyForeignDesktopNotification(
             "Plan mode prompt: Choose an approach"
         )
-        XCTAssertEqual(result.type, "attention_required")
+        XCTAssertEqual(result?.type, "attention_required")
     }
 
-    func testForeignNotification_agentTurnComplete_defaultsToFinished() {
-        // AgentTurnComplete has no distinguishing prefix — it's just the first
-        // ~200 chars of the assistant response. Default bucket = finished.
+    func testForeignNotification_unrecognizedMessageIsDropped() {
         let result = TerminalSessionModel.classifyForeignDesktopNotification(
             "Committed the refactor as abc123 and pushed to main"
         )
-        XCTAssertEqual(result.type, "finished")
-        XCTAssertEqual(result.source, .codex)
+        XCTAssertNil(result)
     }
 
-    func testForeignNotification_emptyMessage_defaultsToFinished() {
-        // AgentTurnComplete fallback when response is empty: "Agent turn complete"
+    func testForeignNotification_agentTurnComplete_mapsToFinished() {
         let result = TerminalSessionModel.classifyForeignDesktopNotification(
             "Agent turn complete"
         )
-        XCTAssertEqual(result.type, "finished")
+        XCTAssertEqual(result?.type, "finished")
     }
 
     func testForeignNotification_trimsWhitespaceBeforeClassifying() {
         let result = TerminalSessionModel.classifyForeignDesktopNotification(
             "   Approval requested: git reset --hard   "
         )
-        XCTAssertEqual(result.type, "permission")
+        XCTAssertEqual(result?.type, "permission")
     }
 
     func testRestoreAIMetadata() {
@@ -1042,7 +1038,7 @@ final class TerminalSessionModelTests: XCTestCase {
         RuntimeSessionManager.shared.resetForTesting()
     }
 
-    func testTerminalWaitPatternEmitsHeuristicWaitingInputEvent() async {
+    func testTerminalWaitPatternSkipsHeuristicEventWhenProviderHasAuthoritativeNotifications() async {
         RuntimeSessionManager.shared.resetForTesting()
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
@@ -1062,12 +1058,7 @@ final class TerminalSessionModelTests: XCTestCase {
 
         let event = model.recentEvents.last
         XCTAssertEqual(session.status, .waitingForInput)
-        XCTAssertEqual(event?.source, .claudeCode)
-        XCTAssertEqual(event?.type, "waiting_input")
-        XCTAssertEqual(event?.tabID, tabID)
-        XCTAssertEqual(event?.sessionID, "claude-session-1")
-        XCTAssertEqual(event?.producer, "terminal_wait_pattern_attention")
-        XCTAssertEqual(event?.reliability, .heuristic)
+        XCTAssertNil(event)
         RuntimeSessionManager.shared.resetForTesting()
     }
 
