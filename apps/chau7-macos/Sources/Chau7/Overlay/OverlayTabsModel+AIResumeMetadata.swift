@@ -242,7 +242,7 @@ extension OverlayTabsModel {
     func persistedAIResumeMetadata(
         from session: TerminalSessionModel,
         resolvedResumeMetadata: (provider: String, sessionId: String)?,
-        claimedSessionIds: Set<String> = [],
+        claimedSessions: Set<AIResumeOwnership.ClaimedSession> = [],
         applySessionMutations: Bool = true
     ) -> AIResumeOwnership.Metadata {
         if let resolvedResumeMetadata {
@@ -257,7 +257,7 @@ extension OverlayTabsModel {
         let preserved = AIResumeOwnership.sanitizeForPersistence(
             provider: explicitProvider,
             sessionId: explicitSessionId,
-            claimedSessionIds: claimedSessionIds
+            claimedSessions: claimedSessions
         )
         if explicitSessionId != nil,
            preserved.sessionId == nil,
@@ -275,7 +275,7 @@ extension OverlayTabsModel {
 
     func persistedAISessionIdentity(
         from session: TerminalSessionModel,
-        claimedSessionIds: Set<String> = []
+        claimedSessions: Set<AIResumeOwnership.ClaimedSession> = []
     ) -> (provider: String?, sessionId: String?, sessionIdSource: AISessionIdentitySource?) {
         let effectiveProvider = Self.normalizedAIProvider(from: session.effectiveAIProvider ?? session.lastAIProvider)
         let effectiveSessionId = Self.normalizePersistedAISessionId(
@@ -285,7 +285,7 @@ extension OverlayTabsModel {
         let sanitized = AIResumeOwnership.sanitizeForPersistence(
             provider: effectiveProvider,
             sessionId: effectiveSessionId,
-            claimedSessionIds: claimedSessionIds
+            claimedSessions: claimedSessions
         )
         let persistedSource: AISessionIdentitySource?
         if sanitized.sessionId == nil {
@@ -301,7 +301,7 @@ extension OverlayTabsModel {
     }
 
     static func sanitizeRestoredAIResumeOwnership(states: [SavedTabState]) -> [SavedTabState] {
-        var claimedSessionIds = Set<String>()
+        var claimedSessions = Set<AIResumeOwnership.ClaimedSession>()
 
         return states.map { state in
             let originalTopLevelCommand = normalizedResumeCommand(state.aiResumeCommand)
@@ -315,10 +315,12 @@ extension OverlayTabsModel {
                         paneState.aiSessionId,
                         source: paneState.aiSessionIdSource
                     ) ?? commandMetadata?.sessionId,
-                    claimedSessionIds: claimedSessionIds
+                    claimedSessions: claimedSessions
                 )
-                if let sessionId = sanitizedPane.sessionId {
-                    claimedSessionIds.insert(sessionId)
+                if let sessionId = sanitizedPane.sessionId, let provider = sanitizedPane.provider {
+                    claimedSessions.insert(
+                        AIResumeOwnership.ClaimedSession(provider: provider, sessionId: sessionId)
+                    )
                 }
 
                 let sanitizedCommand = sanitizedResumeCommand(
@@ -356,10 +358,12 @@ extension OverlayTabsModel {
                     state.aiSessionId,
                     source: state.aiSessionIdSource
                 ) ?? topLevelCommandMetadata?.sessionId,
-                claimedSessionIds: claimedSessionIds
+                claimedSessions: claimedSessions
             )
-            if let sessionId = sanitizedTopLevel.sessionId {
-                claimedSessionIds.insert(sessionId)
+            if let sessionId = sanitizedTopLevel.sessionId, let provider = sanitizedTopLevel.provider {
+                claimedSessions.insert(
+                    AIResumeOwnership.ClaimedSession(provider: provider, sessionId: sessionId)
+                )
             }
             let sanitizedTopLevelCommand = sanitizedResumeCommand(
                 originalCommand: originalTopLevelCommand,

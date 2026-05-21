@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 #if !SWIFT_PACKAGE
+import Chau7Core
 @testable import Chau7
 
 private func drainMainQueue() {
@@ -1942,7 +1943,9 @@ final class OverlayTabsModelTests: XCTestCase {
         let persisted = model.persistedAIResumeMetadata(
             from: session,
             resolvedResumeMetadata: resolved,
-            claimedSessionIds: [claimedSessionID]
+            claimedSessions: [
+                AIResumeOwnership.ClaimedSession(provider: "claude", sessionId: claimedSessionID)
+            ]
         )
 
         XCTAssertNil(resolved)

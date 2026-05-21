@@ -1435,7 +1435,7 @@ final class OverlayTabsModel {
         for tab: OverlayTab,
         maxLines: Int,
         fallbackTabState: SavedTabState?,
-        claimedSessionIds: inout Set<String>
+        claimedSessions: inout Set<AIResumeOwnership.ClaimedSession>
     ) -> [SavedTerminalPaneState] {
         let terminalSessions = tab.splitController.terminalSessions
         let fallbackPaneStatesByID = Self.paneStateMap(from: fallbackTabState?.paneStates)
@@ -1451,7 +1451,7 @@ final class OverlayTabsModel {
             )
             let persistedIdentity = persistedAISessionIdentity(
                 from: session,
-                claimedSessionIds: claimedSessionIds
+                claimedSessions: claimedSessions
             )
             let fallbackPaneState = fallbackPaneStatesByID[paneID]
             let fallbackMetadata = fallbackPaneState.flatMap {
@@ -1465,7 +1465,7 @@ final class OverlayTabsModel {
             let fallbackSanitized = AIResumeOwnership.sanitizeForPersistence(
                 provider: fallbackMetadata?.provider,
                 sessionId: fallbackMetadata?.sessionId,
-                claimedSessionIds: claimedSessionIds
+                claimedSessions: claimedSessions
             )
             let effectiveProvider = persistedIdentity.provider ?? fallbackSanitized.provider
             let effectiveSessionID = persistedIdentity.sessionId ?? fallbackSanitized.sessionId
@@ -1479,7 +1479,11 @@ final class OverlayTabsModel {
                 sessionId: effectiveSessionID,
                 sessionIdSource: effectiveSessionIDSource
             ) ?? Self.normalizedResumeCommand(fallbackPaneState?.aiResumeCommand)
-            if let sessionId = effectiveSessionID { claimedSessionIds.insert(sessionId) }
+            if let sessionId = effectiveSessionID, let provider = effectiveProvider {
+                claimedSessions.insert(
+                    AIResumeOwnership.ClaimedSession(provider: provider, sessionId: sessionId)
+                )
+            }
 
             paneStates.append(SavedTerminalPaneState(
                 paneID: paneID.uuidString,
@@ -1547,7 +1551,7 @@ final class OverlayTabsModel {
         let selectedID = selectedTabID
         let maxLines = FeatureSettings.shared.restoredScrollbackLines
         var states: [SavedTabState] = []
-        var claimedSessionIds = Set<String>()
+        var claimedSessions = Set<AIResumeOwnership.ClaimedSession>()
 
         for (i, tab) in tabs.enumerated() {
             let terminalSessions = tab.splitController.terminalSessions
@@ -1571,7 +1575,7 @@ final class OverlayTabsModel {
                 for: tab,
                 maxLines: maxLines,
                 fallbackTabState: persistedRestoreFallbackStatesByTabID[tab.id],
-                claimedSessionIds: &claimedSessionIds
+                claimedSessions: &claimedSessions
             )
 
             let primaryDirectory = terminalSessions.first?.1.currentDirectory
@@ -1685,12 +1689,12 @@ final class OverlayTabsModel {
         // the closed-tab snapshot is built entirely from live session
         // state (the deferred-state branch above already handled the
         // case where the tab was closed before its restore ran).
-        var localClaimedSessionIds = Set<String>()
+        var localClaimedSessions = Set<AIResumeOwnership.ClaimedSession>()
         let paneStates = buildPaneStates(
             for: tab,
             maxLines: maxLines,
             fallbackTabState: nil,
-            claimedSessionIds: &localClaimedSessionIds
+            claimedSessions: &localClaimedSessions
         )
 
         let primaryDirectory = terminalSessions.first?.1.currentDirectory
