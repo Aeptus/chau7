@@ -74,10 +74,50 @@ enum RustDylib {
                 lastError = String(cString: dlerror())
             }
         }
-        if !candidates.isEmpty {
+        if !candidates.isEmpty, shouldLogLoadFailure() {
             stderrPrint("[\(label)] dlopen failed. Tried: \(candidates). Last error: \(lastError ?? "unknown")")
         }
         return nil
+    }
+
+    static func shouldLogLoadFailure(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        testClassIsLoaded: () -> Bool = {
+            NSClassFromString("XCTestCase") != nil || NSClassFromString("XCTest.XCTestCase") != nil
+        }
+    ) -> Bool {
+        if let override = boolOverride(environment["CHAU7_RUST_DYLIB_LOG_FAILURES"]) {
+            return override
+        }
+
+        if environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil {
+            return false
+        }
+
+        if environment["CI"] != nil || environment["GITHUB_ACTIONS"] != nil || environment["CODEX_CI"] != nil {
+            return false
+        }
+
+        if testClassIsLoaded() {
+            return false
+        }
+
+        return true
+    }
+
+    private static func boolOverride(_ raw: String?) -> Bool? {
+        guard let normalized = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !normalized.isEmpty else {
+            return nil
+        }
+
+        switch normalized {
+        case "1", "true", "yes", "on":
+            return true
+        case "0", "false", "no", "off":
+            return false
+        default:
+            return nil
+        }
     }
 
     private static func stderrPrint(_ message: String) {

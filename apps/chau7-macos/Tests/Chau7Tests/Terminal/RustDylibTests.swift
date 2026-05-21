@@ -68,4 +68,32 @@ final class RustDylibTests: XCTestCase {
 
         XCTAssertNil(result, "load must return nil when no candidate dlopens successfully")
     }
+
+    func testShouldLogLoadFailureDefaultsToTrueOutsideTestsAndCI() {
+        XCTAssertTrue(
+            RustDylib.shouldLogLoadFailure(environment: [:], testClassIsLoaded: { false }),
+            "app/runtime load failures should remain visible by default"
+        )
+    }
+
+    func testShouldLogLoadFailureSuppressesKnownTestAndCIContexts() {
+        XCTAssertFalse(
+            RustDylib.shouldLogLoadFailure(environment: ["XCTestConfigurationFilePath": "/tmp/test.xctest"], testClassIsLoaded: { false })
+        )
+        XCTAssertFalse(
+            RustDylib.shouldLogLoadFailure(environment: ["GITHUB_ACTIONS": "true"], testClassIsLoaded: { false })
+        )
+        XCTAssertFalse(
+            RustDylib.shouldLogLoadFailure(environment: [:], testClassIsLoaded: { true })
+        )
+    }
+
+    func testShouldLogLoadFailureHonorsExplicitOverride() {
+        XCTAssertTrue(
+            RustDylib.shouldLogLoadFailure(environment: ["CHAU7_RUST_DYLIB_LOG_FAILURES": "1", "GITHUB_ACTIONS": "true"], testClassIsLoaded: { true })
+        )
+        XCTAssertFalse(
+            RustDylib.shouldLogLoadFailure(environment: ["CHAU7_RUST_DYLIB_LOG_FAILURES": "false"], testClassIsLoaded: { false })
+        )
+    }
 }
