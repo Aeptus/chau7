@@ -173,6 +173,22 @@ final class ClaudeCodeMonitor {
             )
             return
         }
+        // FOREIGN-TOOL GUARD (defense in depth — the hook script also
+        // rejects these at write time, but events from before the fix
+        // landed on disk and any future CLI loading Claude plugins
+        // would slip past a write-side check on an older binary).
+        // Codex's `claude-plugins-official` plugins fire Claude-style
+        // hooks under a Codex session_id with a Codex transcript path
+        // (~/.codex/sessions/...). Drop anything whose transcript path
+        // isn't under Claude's own projects dir.
+        let trimmedTranscript = event.transcriptPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedTranscript.isEmpty,
+           !trimmedTranscript.contains("/.claude/") {
+            Log.trace(
+                "Claude event dropped (foreign transcript): session=\(event.shortSessionId) path=\(trimmedTranscript)"
+            )
+            return
+        }
         Log.trace("Claude event: type=\(event.type.rawValue) session=\(event.shortSessionId) tool=\(event.toolName)")
 
         // Update session state (dispatches to main internally)

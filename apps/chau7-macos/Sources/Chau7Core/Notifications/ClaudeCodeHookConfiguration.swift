@@ -70,6 +70,22 @@ public enum ClaudeCodeHookConfiguration {
             except Exception:
                 payload = {}
 
+            # FOREIGN-TOOL GUARD: Codex (and potentially other CLIs) now
+            # load the "claude-plugins-official" plugin set, which installs
+            # Claude-style hooks under ~/.claude/settings.json. When Codex
+            # fires PreToolUse/PostToolUse/etc., this hook runs with
+            # Codex's session_id and transcript_path under ~/.codex/. The
+            # event ends up tagged source=claude and a Codex UUID leaks
+            # into Chau7's Claude session table — which then collides at
+            # save time with the real Codex tab and wipes its resume
+            # metadata. Drop anything whose transcript path is not under
+            # Claude's projects directory.
+            transcript_path = payload.get("transcript_path") or ""
+            if transcript_path:
+                expanded = os.path.expanduser(transcript_path)
+                if "/.claude/" not in expanded:
+                    return
+
             hook = payload.get("hook_event_name", "")
             event_type = HOOK_TYPE_MAP.get(hook, "unknown")
 

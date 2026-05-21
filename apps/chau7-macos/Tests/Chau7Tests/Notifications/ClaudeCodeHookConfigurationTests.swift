@@ -24,6 +24,22 @@ final class ClaudeCodeHookConfigurationTests: XCTestCase {
         )
     }
 
+    func testHelperScriptDropsForeignToolTranscriptPaths() {
+        // Codex's claude-plugins-official plugins fire Claude-style hooks
+        // with a Codex session_id and a transcript_path under ~/.codex/.
+        // The hook must reject those — otherwise Codex's UUIDs leak into
+        // Chau7's Claude session table.
+        let script = ClaudeCodeHookConfiguration.helperScript(eventsFilePath: "~/.chau7/claude-events.jsonl")
+        XCTAssertTrue(
+            script.contains("transcript_path = payload.get(\"transcript_path\")"),
+            "Hook must inspect the transcript_path field"
+        )
+        XCTAssertTrue(
+            script.contains("\"/.claude/\" not in expanded"),
+            "Hook must reject events whose transcript path is not under Claude's projects dir"
+        )
+    }
+
     func testHelperScriptStillIncludesAllHookMappings() {
         let script = ClaudeCodeHookConfiguration.helperScript(eventsFilePath: "~/.chau7/claude-events.jsonl")
         for (hookName, eventType) in ClaudeCodeHookConfiguration.hookEvents {
