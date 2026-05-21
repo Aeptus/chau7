@@ -1186,6 +1186,48 @@ extension TerminalSessionModel {
         return String(data: output, encoding: .utf8) ?? text
     }
 
+    /// Detect a user-typed approval response and resolve the pending approval
+    /// on the owning runtime session. Without this, typing `y<enter>` at a
+    /// Claude permission prompt approves the action on the provider side but
+    /// the runtime stays parked in `.awaitingApproval` because no transition
+    /// fires for raw terminal input — the only out is `resolveApproval()` (an
+    /// MCP RPC the user never triggers) or the 30s timeout, which then loops
+    /// because the provider re-emits permission_request as soon as the runtime
+    /// recovers to ready.
+    ///
+    /// Matches only an exact `y`/`n`/`yes`/`no` (case-insensitive) line — not
+    /// substring — so prose containing those words doesn't false-trigger.
+    /// Codex's numbered-menu approvals (1/2/3) aren't covered yet; the same
+    /// timeout race exists for Codex sessions and is a follow-up.
+    private func tryResolvePendingApprovalFromInput(_ trimmedInput: String) {
+        guard let ownerTabID,
+              let session = RuntimeSessionManager.shared.sessionForTab(ownerTabID),
+              session.state == .awaitingApproval,
+              let pending = session.pendingApproval
+        else { return }
+
+        let approved: Bool
+        switch trimmedInput.lowercased() {
+        case "y", "yes":
+            approved = true
+        case "n", "no":
+            approved = false
+        default:
+            return
+        }
+
+        let resolved = session.resolveApproval(
+            id: pending.id,
+            approved: approved,
+            resolvedBy: "implicit_terminal_input"
+        )
+        if resolved {
+            Log.info(
+                "RuntimeSession \(session.id): approval implicitly resolved by user typing '\(trimmedInput)' (approved=\(approved))"
+            )
+        }
+    }
+
     private func processInputBuffer() {
         let normalized = inputBuffer.replacingOccurrences(of: "\r", with: "\n")
         let parts = normalized.components(separatedBy: "\n")
@@ -1239,6 +1281,7 @@ extension TerminalSessionModel {
         let sanitized = EscapeSequenceSanitizer.sanitize(line)
         let rawTrimmed = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
         notifyPromptInjectionSessionEventIfNeeded(for: rawTrimmed)
+        tryResolvePendingApprovalFromInput(rawTrimmed)
 
         let transformed = applyCTOPrefixIfNeeded(to: sanitized)
         let trimmed = transformed.trimmingCharacters(in: .whitespacesAndNewlines)
