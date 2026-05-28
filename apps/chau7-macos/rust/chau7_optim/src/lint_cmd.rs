@@ -4,6 +4,7 @@ use crate::utils::{package_manager_exec, truncate};
 use anyhow::{Context, Result};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::process::Command;
 
@@ -67,17 +68,13 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         "eslint" => {
             cmd.arg("-f").arg("json");
         }
-        "ruff" => {
+        "ruff" if !args.contains(&"--output-format".to_string()) => {
             // Force JSON output for ruff check
-            if !args.contains(&"--output-format".to_string()) {
-                cmd.arg("check").arg("--output-format=json");
-            }
+            cmd.arg("check").arg("--output-format=json");
         }
-        "pylint" => {
+        "pylint" if !args.contains(&"--output-format".to_string()) => {
             // Force JSON2 output for pylint
-            if !args.contains(&"--output-format".to_string()) {
-                cmd.arg("--output-format=json2");
-            }
+            cmd.arg("--output-format=json2");
         }
         "mypy" => {
             // mypy uses default text output (no special flags)
@@ -230,7 +227,7 @@ fn filter_eslint_json(output: &str) -> String {
         .filter(|r| !r.messages.is_empty())
         .map(|r| (r, r.messages.len()))
         .collect();
-    by_file.sort_by(|a, b| b.1.cmp(&a.1));
+    by_file.sort_by_key(|(_, message_count)| Reverse(*message_count));
 
     // Build output
     let mut result = String::new();

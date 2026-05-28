@@ -1,6 +1,7 @@
 use crate::tracking;
 use crate::utils::truncate;
 use anyhow::{Context, Result};
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::process::Command;
@@ -903,7 +904,7 @@ fn filter_cargo_clippy(output: &str) -> String {
 
     // Sort rules by frequency
     let mut rule_counts: Vec<_> = by_rule.iter().collect();
-    rule_counts.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    rule_counts.sort_by_key(|(_, locations)| Reverse(locations.len()));
 
     for (rule, locations) in rule_counts.iter().take(15) {
         result.push_str(&format!("  {} ({}x)\n", rule, locations.len()));

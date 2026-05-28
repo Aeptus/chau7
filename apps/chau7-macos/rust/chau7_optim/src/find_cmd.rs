@@ -96,29 +96,26 @@ fn parse_native_find_args(args: &[String]) -> Option<(String, String, usize, Str
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "-name" | "-iname" if i + 1 < args.len() => {
+                pattern = args[i + 1].clone();
+                i += 2;
+            }
             "-name" | "-iname" => {
-                if i + 1 < args.len() {
-                    pattern = args[i + 1].clone();
-                    i += 2;
-                } else {
-                    i += 1;
-                }
+                i += 1;
+            }
+            "-type" if i + 1 < args.len() => {
+                file_type = args[i + 1].clone();
+                i += 2;
             }
             "-type" => {
-                if i + 1 < args.len() {
-                    file_type = args[i + 1].clone();
-                    i += 2;
-                } else {
-                    i += 1;
-                }
+                i += 1;
+            }
+            "-maxdepth" | "-mindepth" if i + 1 < args.len() => {
+                // Skip these — our walker doesn't support them but don't fail
+                i += 2;
             }
             "-maxdepth" | "-mindepth" => {
-                // Skip these — our walker doesn't support them but don't fail
-                if i + 1 < args.len() {
-                    i += 2;
-                } else {
-                    i += 1;
-                }
+                i += 1;
             }
             arg if !arg.starts_with('-') => {
                 // Positional arg before flags = search path
@@ -145,21 +142,19 @@ fn parse_rtk_find_args(args: &[String]) -> (String, String, usize, String) {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "--max" | "-m" if i + 1 < args.len() => {
+                max_results = args[i + 1].parse().unwrap_or(50);
+                i += 2;
+            }
             "--max" | "-m" => {
-                if i + 1 < args.len() {
-                    max_results = args[i + 1].parse().unwrap_or(50);
-                    i += 2;
-                } else {
-                    i += 1;
-                }
+                i += 1;
+            }
+            "-t" | "--file-type" if i + 1 < args.len() => {
+                file_type = args[i + 1].clone();
+                i += 2;
             }
             "-t" | "--file-type" => {
-                if i + 1 < args.len() {
-                    file_type = args[i + 1].clone();
-                    i += 2;
-                } else {
-                    i += 1;
-                }
+                i += 1;
             }
             arg if !arg.starts_with('-') => {
                 match positional_idx {

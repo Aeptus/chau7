@@ -1925,28 +1925,16 @@ impl Chau7Terminal {
             bracketed_paste: bracketed_paste as u8,
             app_cursor: app_cursor as u8,
             poll_count,
-            avg_poll_time_us: if poll_count > 0 {
-                poll_time / poll_count
-            } else {
-                0
-            },
+            avg_poll_time_us: poll_time.checked_div(poll_count).unwrap_or(0),
             max_poll_time_us: self.metrics.max_poll_time_us.load(Ordering::Relaxed),
-            avg_grid_snapshot_time_us: if grid_count > 0 {
-                grid_time / grid_count
-            } else {
-                0
-            },
+            avg_grid_snapshot_time_us: grid_time.checked_div(grid_count).unwrap_or(0),
             max_grid_snapshot_time_us: self
                 .metrics
                 .max_grid_snapshot_time_us
                 .load(Ordering::Relaxed),
             activity_percent: self.adaptive_poller.activity_percent(),
             idle_polls,
-            avg_batch_size: if batch_count > 0 {
-                bytes_batched / batch_count
-            } else {
-                0
-            },
+            avg_batch_size: bytes_batched.checked_div(batch_count).unwrap_or(0),
             dirty_row_count: self.dirty_rows.dirty_count() as u32,
         }
     }

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -451,7 +452,7 @@ pub fn run(project: Option<&str>, since_days: u64, limit: usize, verbose: u8) ->
 
     // Sort by count descending
     let mut sorted: Vec<_> = unhandled.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.count.cmp(&a.1.count));
+    sorted.sort_by_key(|(_, bucket)| Reverse(bucket.count));
 
     // Print report
     println!("CTO Discover — Top Unhandled Commands");
@@ -465,11 +466,10 @@ pub fn run(project: Option<&str>, since_days: u64, limit: usize, verbose: u8) ->
     println!(
         "Already optimized: {} ({}%)",
         supported_count,
-        if total_commands > 0 {
-            supported_count * 100 / total_commands
-        } else {
-            0
-        }
+        supported_count
+            .checked_mul(100)
+            .and_then(|count| count.checked_div(total_commands))
+            .unwrap_or(0)
     );
     println!("Shell builtins/ignored: {}", ignored_count);
 

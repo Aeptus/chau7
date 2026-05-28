@@ -2,6 +2,7 @@ use crate::tracking;
 use crate::utils::truncate;
 use anyhow::{Context, Result};
 use regex::Regex;
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::process::Command;
 
@@ -154,7 +155,7 @@ fn filter_tsc_output(output: &str) -> String {
 
     // Files sorted by error count (most errors first)
     let mut files_sorted: Vec<_> = by_file.iter().collect();
-    files_sorted.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    files_sorted.sort_by_key(|(_, file_errors)| Reverse(file_errors.len()));
 
     // Show every error per file — no limits
     for (file, file_errors) in &files_sorted {
