@@ -20,6 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Validate release quality policy
+        run: pnpm quality:cloud-parity --include=quality-cloud-parity-release-only
+
       - name: Parse version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
@@ -204,7 +210,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          NOTES=$(./Scripts/extract-changelog "$VERSION")
+          NOTES=$(./scripts/extract-changelog "$VERSION")
           if [ -z "$NOTES" ]; then
             NOTES="See [CHANGELOG](https://github.com/aeptus/chau7/blob/main/apps/chau7-macos/docs/CHANGELOG.md) for details."
           fi

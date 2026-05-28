@@ -1,0 +1,4 @@
+#!/bin/sh
+
+pnpm --silent quality:postcommit >/dev/null 2>&1 || true
+

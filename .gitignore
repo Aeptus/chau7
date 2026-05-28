@@ -1,5 +1,6 @@
 .DS_Store
 .cache/
+.aeptus-cache/
 .chau7/plan.md
 .chau7/pre-commit-review.conf
 .chau7/sessions/
@@ -12,6 +13,7 @@ build/
 .seogeo-reports/
 .geo-results/
 docs/reports/
+logs/quality-*.log
 .swiftpm/
 /.playwright-mcp/
 /*.png

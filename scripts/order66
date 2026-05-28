@@ -22,7 +22,7 @@ fi
 
 usage() {
   cat <<'USAGE'
-Usage: ./Scripts/order66 <target> [args]
+Usage: ./scripts/order66 <target> [args]
 
 Targets:
   macos   Clean build and bundle the macOS app (delegates to apps/chau7-macos/Scripts/order66)
@@ -38,9 +38,9 @@ iOS env overrides:
   IOS_CLEAN=1   (set to 0 to skip clean)
 
 Examples:
-  ./Scripts/order66 macos
-  ./Scripts/order66 ios
-  ./Scripts/order66 all
+  ./scripts/order66 macos
+  ./scripts/order66 ios
+  ./scripts/order66 all
 USAGE
 }
 

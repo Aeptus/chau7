@@ -1,0 +1,19 @@
+{
+  "name": "chau7-quality",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.11.1",
+  "scripts": {
+    "hooks:install": "node scripts/git/install-hooks.mjs",
+    "quality:staged": "node scripts/git/run-staged-checks.mjs",
+    "quality:prepush": "node scripts/git/run-prepush-checks.mjs",
+    "quality:prepush:full": "node scripts/git/run-prepush-checks.mjs --full",
+    "quality:local": "node scripts/quality/runner.mjs --mode=local",
+    "quality:cloud-parity": "node scripts/quality/runner.mjs --mode=cloud-parity",
+    "quality:cache:status": "node scripts/quality/cache-cli.mjs status",
+    "quality:cache:clear": "node scripts/quality/cache-cli.mjs clear",
+    "quality:postcommit": "node scripts/quality/cache-cli.mjs prune",
+    "test": "node --test scripts/quality/tests/*.test.mjs"
+  }
+}
+

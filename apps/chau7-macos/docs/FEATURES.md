@@ -26,6 +26,7 @@ See your coding agents, know what they cost, steer them from the outside. A macO
 - [Environment Variables](#environment-variables)
 - [Migration](#migration)
 - [Architecture](#architecture)
+- [Quality Gates](#quality-gates)
 
 ---
 
@@ -460,7 +461,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 - JSON-RPC Unix socket API — control tabs, run commands, query history, manage snippets, modify settings.
 - Review automation is built from tab-first scripting primitives such as `create_tab`, `run_command`, `get_tab`, `send_input`, `submit_prompt`, `get_output`, `close_tab`, and `get_repo_events`.
-- Repo-local pre-commit review automation via `Scripts/pre-commit-review`, which creates a review tab, launches Codex, waits for the app to become interactive, sends the staged-diff prompt, validates and submits it, polls PTY output for the final structured JSON block, and prints findings in hook-friendly terminal output.
+- Repo-local pre-commit review automation via `scripts/pre-commit-review`, which creates a review tab, launches Codex, waits for the app to become interactive, sends the staged-diff prompt, validates and submits it, polls PTY output for the final structured JSON block, and prints findings in hook-friendly terminal output.
 - Repo-scoped event retrieval for automation via `get_repo_events`, which returns recent AI events with full stored messages plus filters for tab, type, producer, and session. The pre-commit reviewer now prefers this authoritative stored result path before falling back to terminal transcript scraping.
 - Per-repo pre-commit review policy via `.chau7/pre-commit-review.conf` with gate modes (`off`, `advisory`, `high`, `any`), timeout, backend, and model selection. The shipped default reviewer model is `gpt-5.3-codex`.
 - Optional verbose tracing for the hook via `--verbose` or `CHAU7_PRE_COMMIT_REVIEW_VERBOSE=1`, including per-step scripting timings and fallback decisions.
@@ -608,6 +609,16 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 - Import profiles from Terminal.app and iTerm2 (auto-detected).
 - Guided first-run setup.
 - Contextual power user tips.
+
+## Quality Gates
+
+- **Registry-driven hook policy** — `.husky/pre-commit` and `.husky/pre-push` only select `pnpm quality:staged` or `pnpm quality:prepush`; the gate contract lives in `scripts/quality/registry.mjs`.
+- **Affected-surface pre-push** — pre-push reads Git update lines, resolves changed files against the pushed remote SHA or a conservative fallback base, and automatically upgrades to `prepush-full` for high-impact infrastructure, dependency, config, generator, workflow, or shared-contract changes.
+- **Reproducible failures** — failed gates print stable ids, scope, wave, rerun commands, cache/attestation status, and per-gate log paths under `.aeptus-cache/quality/outputs/`.
+- **Content-sensitive cache** — cache keys include runner/registry/cache code, lockfiles, tool versions, gate inputs, changed file contents, relevant env vars, and untracked files inside declared input directories; failed gates are never cached.
+- **Security-first staged checks** — staged commits block high-signal secrets, unsafe dependency changes, Python exception/debug placeholders, JS/TS debug and unsafe DOM patterns, and legacy design/docs/source-policy violations before commit.
+- **Live dependency audits** — full-suite quality mode runs non-cacheable npm audits for tracked Node lockfiles at the repository's high-severity threshold, with a Python dependency audit gate registered for future `pyproject.toml` or `requirements*.txt` inputs.
+- **Registry-tested quality logic** — runner, registry, cache, impact, dirty-worktree, filtering, JSON output, and attestation behavior are covered by a `quality-runner-tests` gate.
 
 ## Architecture
 

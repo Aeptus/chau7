@@ -10,7 +10,7 @@
 
 ## Checklist
 
-- [ ] `./Scripts/ci-local-fast` passes (format + lint + build)
+- [ ] `pnpm quality:prepush` passes, or `pnpm quality:prepush:full` for high-impact changes
 - [ ] `swift test` passes (if Swift changes)
 - [ ] New tests added for new behavior
 - [ ] Documentation updated (README, FEATURES.md, CHANGELOG.md if user-facing)

@@ -1,4 +1,4 @@
-# Ruff config for Chau7 helper scripts in Scripts/.
+# Ruff config for Chau7 helper scripts in scripts/.
 # Scoped narrow: this repo is not a Python project, only the helper scripts.
 
 target-version = "py311"

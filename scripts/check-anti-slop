@@ -202,7 +202,7 @@ check_py_line() {
   if [[ "$content" =~ ^[[:space:]]*except[[:space:]]*: ]]; then
     report "$file" "$lineno" "py/bare-except" "$content"
   fi
-  # Intentionally no generic `print(` rule — CLI helper scripts in Scripts/
+  # Intentionally no generic `print(` rule — CLI helper scripts in scripts/
   # legitimately use print for user-facing output. Ruff catches real issues.
 }
 

@@ -170,7 +170,7 @@ ci_ruff_check_dir() {
   if ! command -v ruff >/dev/null 2>&1; then
     ci_fail "ruff is required. Install with 'brew install ruff'."
   fi
-  local config="$CI_REPO_ROOT/Scripts/ruff.toml"
+  local config="$CI_REPO_ROOT/scripts/ruff.toml"
   ci_run_in "$label" "$dir" ruff check --config "$config" .
   ci_run_in "$label format" "$dir" ruff format --config "$config" --check .
 }
@@ -181,10 +181,10 @@ ci_ruff_staged() {
     ci_fail "ruff is required. Install with 'brew install ruff'."
   fi
   local files
-  files="$(git -C "$CI_REPO_ROOT" diff --cached --name-only --diff-filter=ACMR -- 'Scripts/*.py' 2>/dev/null || true)"
+  files="$(git -C "$CI_REPO_ROOT" diff --cached --name-only --diff-filter=ACMR -- 'scripts/*.py' 2>/dev/null || true)"
   [[ -z "$files" ]] && return 0
   ci_section "$label"
-  local config="$CI_REPO_ROOT/Scripts/ruff.toml"
+  local config="$CI_REPO_ROOT/scripts/ruff.toml"
   local list=()
   while IFS= read -r f; do
     [[ -f "$CI_REPO_ROOT/$f" ]] && list+=("$CI_REPO_ROOT/$f")

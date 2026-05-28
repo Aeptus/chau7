@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Scoped TS check for services/chau7-relay.
 # Runs tsc --noEmit + prettier --check against the relay worker source.
-# Used by pre-commit (glob-scoped by lefthook) and pre-push (full).
+# Used by the registry-driven quality runner for scoped relay validation.
 
 set -euo pipefail
 

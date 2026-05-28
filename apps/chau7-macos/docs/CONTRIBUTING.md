@@ -16,5 +16,5 @@ Read this file only if you are already working inside `apps/chau7-macos` and nee
 
 - The Swift package declares the supported macOS version in [../Package.swift](../Package.swift).
 - Run `swift build` and `swift test` from `apps/chau7-macos`.
-- Use repo-root scripts in `../../../Scripts/` for hooks and CI entry points.
+- Use repo-root scripts in `../../../scripts/` for hooks and CI entry points.
 - Treat the docs in this folder as implementation references, not the canonical public onboarding path.

@@ -2,7 +2,7 @@
 
 Your coding agents are running. All of them. Across models, across windows, sometimes at 3 AM. Chau7 is the macOS terminal that notices they exist, tracks what they cost, and lets you steer from the outside. Named after a sock. We're not even sorry.
 
-[![CI](https://github.com/aeptus/chau7/actions/workflows/ci.yml/badge.svg)](https://github.com/aeptus/chau7/actions/workflows/ci.yml)
+[![Release](https://github.com/aeptus/chau7/actions/workflows/release.yml/badge.svg)](https://github.com/aeptus/chau7/actions/workflows/release.yml)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
 ## What it does
@@ -38,7 +38,7 @@ apps/
 services/
   chau7-relay/              # Cloudflare Workers relay
   chau7-remote/             # Go relay client for macOS
-Scripts/                    # Repo-level CI and build orchestration
+scripts/                    # Repo-level CI and build orchestration
 ```
 
 - [macOS app](apps/chau7-macos/README.md)
@@ -47,7 +47,7 @@ Scripts/                    # Repo-level CI and build orchestration
 - [Relay service](services/chau7-relay/README.md)
 - [Remote agent](services/chau7-remote/README.md)
 - [Remote protocol](services/chau7-remote/docs/PROTOCOL.md)
-- [Scripts reference](Scripts/README.md)
+- [Scripts reference](scripts/README.md)
 - [Feature inventory](apps/chau7-macos/docs/FEATURES.md)
 - [Documentation map](docs/README.md)
 
@@ -87,11 +87,11 @@ Requirements: macOS 14+, Xcode 26+. The Rust terminal backend and Go proxy are p
 ## Local CI
 
 ```bash
-brew install lefthook
-./Scripts/install-hooks
+corepack enable
+pnpm hooks:install
 ```
 
-`pre-commit` runs the fast gate (format + lint + build). `pre-push` runs the full gate (format + lint + build + test across Swift, Rust, Go, and the relay).
+`pre-commit` runs `pnpm quality:staged`. `pre-push` runs `pnpm quality:prepush`, which scopes to the affected integration surface and upgrades to full validation for high-impact changes.
 
 ## Rule #1
 

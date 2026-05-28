@@ -48,8 +48,8 @@ ci_run_in "Relay test" "services/chau7-relay" npm test
 ci_run_in "Relay build" "services/chau7-relay" npm run build
 "$SCRIPT_DIR/ci-local-relay-ts"
 
-ci_ruff_check_dir "Scripts" "Ruff (Scripts/)"
+ci_ruff_check_dir "scripts" "Ruff (scripts/)"
 ci_shellcheck_tracked "Shellcheck (all tracked .sh)"
-ci_run_in "Duplication (jscpd)" "." jscpd --config Scripts/.jscpd.json
+ci_run_in "Duplication (jscpd)" "." jscpd --config scripts/.jscpd.json
 
 ci_success "Full local CI passed."

@@ -15,7 +15,7 @@ git clone https://github.com/aeptus/chau7.git
 cd chau7
 
 # Install pre-commit hooks (format + lint + build gate)
-./Scripts/install-hooks
+./scripts/install-hooks
 
 # Enter the macOS app directory
 cd apps/chau7-macos
@@ -38,7 +38,7 @@ swift test
 | Xcode | 26+ (Swift 6+) | Swift build + test | Mac App Store |
 | SwiftFormat | latest | Pre-commit hook | `brew install swiftformat` |
 | SwiftLint | latest | Pre-commit hook | `brew install swiftlint` |
-| lefthook | any | Git hooks | `brew install lefthook` |
+| pnpm | 10.11+ | Git hooks and quality runner | `corepack enable` |
 | gitleaks | any | Pre-commit secret scan | `brew install gitleaks` |
 | shellcheck | any | Pre-commit shell lint | `brew install shellcheck` |
 | ruff | any | Pre-commit Python lint | `brew install ruff` |
@@ -50,15 +50,14 @@ swift test
 | Go | 1.25+ | Proxy and remote agent | `brew install go` |
 | Node.js | 22+ | Relay service | `brew install node` |
 
-The Rust terminal backend and Go proxy ship pre-built in the repo. You only need the Rust and Go toolchains if you're modifying those components. Swift, SwiftFormat, SwiftLint, lefthook, gitleaks, shellcheck, ruff, and golangci-lint are required for all contributors; periphery, cargo-deny, and jscpd are only required when running the full local CI (`./Scripts/ci-local`).
+The Rust terminal backend and Go proxy ship pre-built in the repo. You only need the Rust and Go toolchains if you're modifying those components. Swift, SwiftFormat, SwiftLint, gitleaks, shellcheck, ruff, and golangci-lint are required for all contributors; periphery, cargo-deny, and jscpd are only required when running the full local quality gate (`pnpm quality:prepush:full`).
 
 ### Bypassing a check
 
-Hooks use deterministic escape hatches so you can unblock yourself without reaching for `--no-verify`:
+Hooks use deterministic escape hatches so you can unblock yourself without reaching for `--no-verify`. The hook layer is `.husky/`; real policy lives in `scripts/quality/registry.mjs` and runs through `pnpm quality:*`.
 
 | Situation | Escape hatch |
 |---|---|
-| Whole hook system, one commit | `LEFTHOOK=0 git commit ...` |
 | Whole hook system, git fallback | `git commit --no-verify` |
 | Forbidden-file guard only | `CHAU7_SKIP_FORBIDDEN_CHECK=1 git commit ...` |
 | Anti-slop regex suite only | `CHAU7_SKIP_ANTISLOP=1 git commit ...` |
@@ -69,6 +68,19 @@ Hooks use deterministic escape hatches so you can unblock yourself without reach
 
 Any use of a bypass should be explained in the commit message. The whole point of the ratchet is that touched files ratchet up quality — bypassing defeats that.
 
+Quality runner reference:
+
+```bash
+pnpm quality:staged
+pnpm quality:prepush
+pnpm quality:prepush:full
+pnpm quality:local
+pnpm quality:cloud-parity
+pnpm quality:cache:status
+```
+
+See [docs/quality-gates.md](docs/quality-gates.md) for scope rules, full-suite triggers, cache behavior, attestation reuse, and failure reproduction.
+
 ## Code Style
 
 SwiftFormat and SwiftLint enforce style via pre-commit hooks. Rust uses `cargo fmt` + `cargo clippy`. Go uses `gofmt` + `go vet`. Don't fight the formatters. If a rule feels wrong, open an issue about the rule, not a PR that ignores it.
@@ -77,7 +89,7 @@ SwiftFormat and SwiftLint enforce style via pre-commit hooks. Rust uses `cargo f
 
 1. Fork and branch from `main`.
 2. Make your changes. One logical change per commit.
-3. Run `./Scripts/ci-local` from repo root before pushing. It runs everything the CI will run.
+3. Run `pnpm quality:prepush:full` from repo root before pushing high-impact changes. Normal pushes run `pnpm quality:prepush` automatically and upgrade to full when scoped validation is unsafe.
 4. Open a PR. Say what you changed and why.
 5. We'll review it. We might ask questions. That's not rejection, that's conversation.
 

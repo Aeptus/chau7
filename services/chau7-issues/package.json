@@ -13,7 +13,7 @@
     "cutover": "bash Scripts/cutover-from-legacy-relay.sh"
   },
   "devDependencies": {
-    "prettier": "^3.8.2",
-    "wrangler": "^4.81.1"
+    "prettier": "3.8.2",
+    "wrangler": "4.81.1"
   }
 }
