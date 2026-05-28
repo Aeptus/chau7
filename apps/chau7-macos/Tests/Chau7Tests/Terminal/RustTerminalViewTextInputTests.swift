@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import Carbon.HIToolbox
 #if !SWIFT_PACKAGE
 @testable import Chau7
 
@@ -33,6 +34,21 @@ final class RustTerminalViewTextInputTests: XCTestCase {
         XCTAssertFalse(
             view.shouldSuppressRawTextFallback(afterInputContextHandled: false),
             "Plain text keys still need the fallback path when NSTextInputContext does not consume the event"
+        )
+    }
+
+    func testGenerateSpecialKeySequenceTreatsKeypadEnterAsReturn() {
+        let view = RustTerminalView(frame: .zero)
+
+        XCTAssertEqual(
+            view.generateSpecialKeySequence(keyCode: UInt16(kVK_Return), modifiers: []),
+            [0x0D],
+            "Main Return should send carriage return"
+        )
+        XCTAssertEqual(
+            view.generateSpecialKeySequence(keyCode: UInt16(kVK_ANSI_KeypadEnter), modifiers: []),
+            [0x0D],
+            "Numeric keypad Enter should send carriage return"
         )
     }
 

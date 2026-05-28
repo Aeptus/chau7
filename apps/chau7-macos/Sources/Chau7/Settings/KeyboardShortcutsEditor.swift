@@ -319,7 +319,9 @@ final class ShortcutRecorderField: NSTextField {
         if modifiers.contains(.command) { modifierNames.append("cmd") }
 
         // Get the key
-        let key = chars.lowercased()
+        let key = KeyboardShortcuts.isReturnKeyCode(event.keyCode)
+            ? "enter"
+            : chars.lowercased()
 
         // Build display string
         var display: [String] = []

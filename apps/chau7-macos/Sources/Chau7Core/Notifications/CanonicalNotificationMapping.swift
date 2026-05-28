@@ -19,12 +19,18 @@ public enum NotificationSemanticMapping {
         notificationType: String? = nil,
         canonicalType: String?
     ) -> NotificationSemanticKind {
-        let primary = kind(rawType: rawType, notificationType: notificationType)
-        guard primary == .unknown,
-              let canonicalType else {
-            return primary
+        if let notificationType, let mapped = kind(forNotificationType: notificationType) {
+            return mapped
         }
-        return kind(rawType: canonicalType)
+
+        let rawKind = rawType.flatMap(kind(forRawType:)) ?? .unknown
+        if let canonicalType,
+           let canonicalKind = kind(forRawType: canonicalType),
+           rawKind == .unknown || rawTypeShouldYieldToCanonical(rawType) {
+            return canonicalKind
+        }
+
+        return rawKind
     }
 
     public static func kind(forNotificationType value: String) -> NotificationSemanticKind? {
@@ -76,6 +82,16 @@ public enum NotificationSemanticMapping {
             .split(whereSeparator: { $0.isWhitespace })
             .map(String.init)
             .joined(separator: "_")
+    }
+
+    private static func rawTypeShouldYieldToCanonical(_ rawType: String?) -> Bool {
+        guard let rawType else { return true }
+        switch normalize(rawType) {
+        case "notification", "idle":
+            return true
+        default:
+            return false
+        }
     }
 
     public static func isInputPromptLike(

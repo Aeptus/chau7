@@ -153,13 +153,14 @@ extension OverlayTabsModel {
     /// points so the multi-window restore path doesn't need to re-encode
     /// then re-decode JSON just to reuse this hydration logic.
     private static func hydrateRestorableTabs(from states: [SavedTabState], appModel: AppModel) -> RestorableTabsPayload? {
+        let hydratedStates = sanitizeRestoredAIResumeOwnership(states: states)
         let colors = TabColor.allCases
         var restoredTabs: [OverlayTab] = []
         var selectedID: UUID?
         var fallbackSelectedIndex: Int?
         var persistedStates: [SavedTabState] = []
 
-        for (i, state) in states.enumerated() {
+        for (i, state) in hydratedStates.enumerated() {
             if selectedID == nil, let selected = Self.validatedUUID(from: state.selectedTabID) {
                 selectedID = selected
             } else if state.selectedTabID != nil {
@@ -672,6 +673,7 @@ extension OverlayTabsModel {
                     directory: firstPane.directory,
                     scrollbackContent: firstPane.scrollbackContent,
                     aiResumeCommand: legacyCommand,
+                    aiResumeDirectory: firstPane.aiResumeDirectory,
                     aiProvider: firstPane.aiProvider ?? state.aiProvider,
                     aiSessionId: firstPane.aiSessionId ?? state.aiSessionId,
                     aiSessionIdSource: firstPane.aiSessionIdSource ?? state.aiSessionIdSource,
@@ -942,6 +944,11 @@ extension OverlayTabsModel {
                 sessionId: resolvedMetadata?.sessionId,
                 sessionIdSource: resolvedMetadata?.sessionIdSource
             )
+            let resolvedResumeDirectory = Self.resolveRestoreDirectoryForMetadata(
+                provider: resolvedMetadata?.provider,
+                sessionId: resolvedMetadata?.sessionId,
+                savedDirectory: paneState.directory
+            )
 
             Log.info(
                 """
@@ -974,6 +981,7 @@ extension OverlayTabsModel {
                 directory: paneState.directory,
                 scrollbackContent: paneState.scrollbackContent,
                 aiResumeCommand: resolvedCommand ?? Self.normalizedResumeCommand(paneState.aiResumeCommand),
+                aiResumeDirectory: resolvedResumeDirectory,
                 aiProvider: resolvedMetadata?.provider,
                 aiSessionId: resolvedMetadata?.sessionId,
                 aiSessionIdSource: resolvedMetadata?.sessionIdSource,

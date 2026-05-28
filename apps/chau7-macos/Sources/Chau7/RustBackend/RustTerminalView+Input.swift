@@ -7,7 +7,7 @@ import Chau7Core
 extension RustTerminalView {
 
     private func isReturnKey(_ keyCode: UInt16) -> Bool {
-        keyCode == UInt16(kVK_Return) || keyCode == UInt16(kVK_ANSI_KeypadEnter)
+        KeyboardShortcuts.isReturnKeyCode(keyCode)
     }
 
     func firstResponderDebugName() -> String {
@@ -336,7 +336,7 @@ extension RustTerminalView {
                 return csiSequence("Z") // Shift+Tab sends CSI Z (backtab)
             }
             return [0x09] // Regular tab
-        case kVK_Return:
+        case kVK_Return, kVK_ANSI_KeypadEnter:
             return [0x0D] // Carriage return
         case kVK_Delete: // Backspace key
             if hasControl {

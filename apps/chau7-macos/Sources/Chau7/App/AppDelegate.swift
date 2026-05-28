@@ -2676,7 +2676,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         let overlayModel = isOverlayWindow ? activeOverlayModel : nil
 
         if EnvVars.isEnabled(EnvVars.inputDiagnostics),
-           event.keyCode == UInt16(kVK_Return) || event.keyCode == UInt16(kVK_ANSI_KeypadEnter) {
+           KeyboardShortcuts.isReturnKeyCode(event.keyCode) {
             Log.info(
                 "AppDelegate: Return key observed by local monitor overlay=\(isOverlayWindow) " +
                     "firstResponder=\(responderDebugName(window.firstResponder)) " +

@@ -66,6 +66,42 @@ final class TerminalSessionModelTests: XCTestCase {
         )
     }
 
+    func testRestoreAIMetadataCoercesPersistedInteractiveStatusesToIdle() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        for persistedStatus in [CommandStatus.waitingForInput, .approvalRequired, .stuck] {
+            session.status = .running
+            session.restoreAIMetadata(
+                provider: "codex",
+                sessionId: "session-\(persistedStatus.rawValue)",
+                lastStatus: persistedStatus
+            )
+
+            XCTAssertEqual(
+                session.status,
+                .idle,
+                "Persisted \(persistedStatus.rawValue) must not revive as a live interactive state on restore"
+            )
+        }
+    }
+
+    func testRestoreAIMetadataKeepsPersistedNonInteractiveStatuses() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        for persistedStatus in [CommandStatus.idle, .done, .running, .exited] {
+            session.status = .idle
+            session.restoreAIMetadata(
+                provider: "codex",
+                sessionId: "session-\(persistedStatus.rawValue)",
+                lastStatus: persistedStatus
+            )
+
+            XCTAssertEqual(session.status, persistedStatus)
+        }
+    }
+
     // MARK: - Background Live Rendering
 
     func testShouldKeepLiveRenderingInBackgroundRequiresActiveAIApp() {
@@ -1677,6 +1713,21 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(environment["CHAU7_USER_HOME"], ShellLaunchEnvironment.userHome())
         XCTAssertEqual(environment["CHAU7_USER_ZDOTDIR"], ShellLaunchEnvironment.userZdotdir())
         XCTAssertEqual(environment["CHAU7_USER_XDG_CONFIG_HOME"], ShellLaunchEnvironment.userXDGConfigHome())
+    }
+
+    func testBuildEnvironmentIncludesUTF8LocaleHints() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let environment = Dictionary(
+            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry in
+                let parts = entry.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { return nil }
+                return (parts[0], parts[1])
+            }
+        )
+
+        XCTAssertTrue(environment["LANG"]?.lowercased().contains("utf") ?? false)
+        XCTAssertTrue(environment["LC_CTYPE"]?.lowercased().contains("utf") ?? false)
     }
 
     func testBuildEnvironmentUsesOwnerTabUUIDForChau7TabIDWhenAvailable() {

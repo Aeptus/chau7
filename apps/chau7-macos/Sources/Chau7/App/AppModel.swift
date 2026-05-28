@@ -1081,7 +1081,11 @@ final class AppModel {
         claudeCodeEvents.trimToLast(50)
 
         let directory = event.cwd.isEmpty ? nil : event.cwd
-        let runtimeTabID = exactClaudeTabID(sessionID: event.sessionId, directory: directory)
+        let runtimeTabID = authoritativeClaudeTabID(
+            sessionID: event.sessionId,
+            stampedTabID: event.tabID,
+            directory: directory
+        )
 
         // Claude Code emits the session's authoritative cwd on every hook
         // event. Push it onto the bound tab's session so the tab's tracked
@@ -1090,10 +1094,18 @@ final class AppModel {
         // Claude's TUI rather than at the shell prompt, since the TUI seizes
         // the alt screen and no `chpwd → OSC 7` round-trip happens.
         if let runtimeTabID, let directory {
+            let allowSessionIDAdoption = event.sessionId.isEmpty
+                ? true
+                : ClaudeSessionResolver.canAdoptSessionID(
+                    event.sessionId,
+                    transcriptPath: event.transcriptPath.isEmpty ? nil : event.transcriptPath,
+                    cwd: directory
+                )
             TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
                 tabID: runtimeTabID,
                 sessionID: event.sessionId.isEmpty ? nil : event.sessionId,
-                directory: directory
+                directory: directory,
+                allowSessionIDAdoption: allowSessionIDAdoption
             )
         }
 
@@ -1131,16 +1143,28 @@ final class AppModel {
         cancelPendingClaudeWaitingInputFallback(sessionID: session.id)
         syncClaudeCodeSessions()
         let directory = session.cwd.isEmpty ? nil : session.cwd
-        let resolvedTabID = exactClaudeTabID(sessionID: session.id, directory: directory)
+        let resolvedTabID = authoritativeClaudeTabID(
+            sessionID: session.id,
+            stampedTabID: session.tabID,
+            directory: directory
+        )
 
         // See note in `handleClaudeCodeMonitorEvent`: keep the bound tab's
         // `currentDirectory` in sync with Claude's session cwd, since the
         // host shell's chpwd hook can't fire for cd's typed inside the TUI.
         if let resolvedTabID, let directory {
+            let allowSessionIDAdoption = session.id.isEmpty
+                ? true
+                : ClaudeSessionResolver.canAdoptSessionID(
+                    session.id,
+                    transcriptPath: session.transcriptPath.isEmpty ? nil : session.transcriptPath,
+                    cwd: directory
+                )
             TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
                 tabID: resolvedTabID,
                 sessionID: session.id.isEmpty ? nil : session.id,
-                directory: directory
+                directory: directory,
+                allowSessionIDAdoption: allowSessionIDAdoption
             )
         }
 
@@ -1178,7 +1202,11 @@ final class AppModel {
             pendingClaudeWaitingInputFallbacks.removeValue(forKey: sessionID)
 
             let directory = event.cwd.isEmpty ? nil : event.cwd
-            let tabID = exactClaudeTabID(sessionID: sessionID, directory: directory)
+            let tabID = authoritativeClaudeTabID(
+                sessionID: sessionID,
+                stampedTabID: event.tabID,
+                directory: directory
+            )
             let location = event.projectName == "Unknown" ? "Claude" : event.projectName
             let fallbackEvent = AIEvent(
                 source: .claudeCode,
@@ -1212,6 +1240,18 @@ final class AppModel {
 
     private func exactClaudeTabID(sessionID: String, directory: String?) -> UUID? {
         RuntimeSessionManager.shared.exactClaudeTabID(sessionID: sessionID, cwd: directory)
+    }
+
+    private func authoritativeClaudeTabID(
+        sessionID: String,
+        stampedTabID: String,
+        directory: String?
+    ) -> UUID? {
+        let trimmed = stampedTabID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let explicit = UUID(uuidString: trimmed) {
+            return explicit
+        }
+        return exactClaudeTabID(sessionID: sessionID, directory: directory)
     }
 
     @ObservationIgnored private var pendingSyncWork: DispatchWorkItem?
@@ -1348,11 +1388,12 @@ final class AppModel {
         toolName: String,
         sessionID: String,
         directory: String?,
+        tabID explicitTabID: UUID? = nil,
         observedAt: Date,
         state: HistorySessionState?,
         reason: HistorySessionAdoptionRequest.Reason
     ) -> Bool {
-        let tabID = resolveTabForSession(
+        let tabID = explicitTabID ?? resolveTabForSession(
             toolName: toolName,
             sessionID: sessionID,
             directory: directory
@@ -1369,6 +1410,29 @@ final class AppModel {
             return false
         }
         return historySessionAdopter?(request) ?? false
+    }
+
+    @MainActor
+    @discardableResult
+    func adoptUnifiedEventSessionIdentityIfNeeded(_ event: AIEvent) -> Bool {
+        guard event.tabID != nil,
+              let sessionID = event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sessionID.isEmpty,
+              AIToolRegistry.resumeProviderKey(for: event.tool) != nil else {
+            return false
+        }
+
+        let directory = event.directory ?? historyEventDirectory(for: event.tool, sessionID: sessionID)
+        let observedAt = DateFormatters.iso8601.date(from: event.ts) ?? Date()
+        return adoptHistorySessionIdentity(
+            toolName: event.tool,
+            sessionID: sessionID,
+            directory: directory,
+            tabID: event.tabID,
+            observedAt: observedAt,
+            state: nil,
+            reason: .historyEntry
+        )
     }
 
     private func updateSessionStatus(
@@ -1520,6 +1584,7 @@ final class AppModel {
     @MainActor
     private func publishAcceptedUnifiedEventOnMain(_ acceptedEvent: NotificationIngress.AcceptedEvent) {
         let event = acceptedEvent.sharedEvent
+        adoptUnifiedEventSessionIdentityIfNeeded(event)
         Chau7ObservabilityService.shared.recordAIEvent(event)
         recentEvents.append(event)
         recentEvents.trimToLast(25)

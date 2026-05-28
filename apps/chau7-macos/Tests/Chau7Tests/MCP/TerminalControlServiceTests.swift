@@ -206,6 +206,28 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertFalse(TerminalControlService.shared.isToolAtPrompt(toolName: "Codex", sessionID: "session-active"))
     }
 
+    func testUpdateSessionDirectorySkipsSessionAdoptionWhenAdoptionIsNotAllowed() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.currentDirectory = "/tmp/aethyme"
+        session.gitRootPath = "/tmp/aethyme"
+        session.restoreAIMetadata(
+            provider: "claude",
+            sessionId: "d3da599e-f985-4eaf-a834-f9eb069d6802"
+        )
+
+        let updated = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: tab.id,
+            sessionID: "fc48a626-5528-403f-b7da-6e9386493643",
+            directory: "/tmp/aethyme/packages/aethyme",
+            allowSessionIDAdoption: false
+        )
+
+        XCTAssertTrue(updated)
+        XCTAssertEqual(session.currentDirectory, "/tmp/aethyme/packages/aethyme")
+        XCTAssertEqual(session.lastAISessionId, "d3da599e-f985-4eaf-a834-f9eb069d6802")
+    }
+
     func testRunCommandPrearmsAILoggingForKnownToolWithoutLaunchableLookup() throws {
         let tab = try XCTUnwrap(overlayModel.tabs.first)
         let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)

@@ -71,7 +71,7 @@ struct KeyBinding: Equatable {
         case "space":
             return event.keyCode == UInt16(kVK_Space)
         case "enter", "return":
-            return event.keyCode == UInt16(kVK_Return)
+            return KeyboardShortcuts.isReturnKeyCode(event.keyCode)
         case "backspace", "delete":
             return event.keyCode == UInt16(kVK_Delete)
         case "up":

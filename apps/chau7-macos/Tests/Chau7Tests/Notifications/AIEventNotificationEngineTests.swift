@@ -55,6 +55,21 @@ final class AIEventNotificationEngineTests: XCTestCase {
         }
     }
 
+    func testRepeatedAuthoritativeTerminalTurnDeliversAfterRepeatWindow() {
+        let engine = AIEventNotificationEngine(
+            sessionReconciler: AISessionEventReconciler(terminalRepeatWindow: 10)
+        )
+        let now = Date()
+        let first = event(type: "finished", sessionID: "session-1")
+        let nextTurn = event(type: "finished", sessionID: "session-1")
+
+        XCTAssertDelivered(engine.process(first, deliveryRequested: true, now: now), type: "finished")
+        XCTAssertDelivered(
+            engine.process(nextTurn, deliveryRequested: true, now: now.addingTimeInterval(11)),
+            type: "finished"
+        )
+    }
+
     func testDuplicateStateAcrossProducersReturnsAcceptedTimelineWithDroppedDelivery() {
         let engine = AIEventNotificationEngine()
         let now = Date()

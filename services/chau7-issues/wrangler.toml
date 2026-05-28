@@ -3,11 +3,9 @@ main = "src/worker.js"
 compatibility_date = "2024-10-01"
 
 # Custom domain: issues.chau7.sh
-# Set up via Cloudflare dashboard: Workers > chau7-issues > Settings > Domains & Routes > Add > Custom Domain
-# Or via wrangler: uncomment and set zone_name to your zone
-# [[routes]]
-# pattern = "issues.chau7.sh/*"
-# zone_name = "chau7.sh"
+# Attach the domain with Scripts/cutover-from-legacy-relay.sh after secrets are
+# installed. Keeping the route/domain out of static config prevents a bootstrap
+# deploy from moving production traffic to an unconfigured Worker.
 
 [[durable_objects.bindings]]
 name = "ISSUE_RATE_LIMIT"

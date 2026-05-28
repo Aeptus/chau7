@@ -378,7 +378,7 @@ private struct CommandPaletteSearchField: NSViewRepresentable {
                 onDownArrow?()
             case 53: // Escape
                 onEscape?()
-            case 36: // Return
+            case KeyboardShortcuts.returnKeyCode, KeyboardShortcuts.keypadEnterKeyCode:
                 onReturn?()
             default:
                 super.keyDown(with: event)

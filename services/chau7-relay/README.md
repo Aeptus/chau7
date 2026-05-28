@@ -43,10 +43,14 @@ npm test           # run tests
 | `APNS_KEY_ID` | APNs signing key ID |
 | `APNS_PRIVATE_KEY` | APNs P8 private key (PEM format) |
 
+Do not configure `GITHUB_ISSUE_PAT` or `GITHUB_ISSUE_REPO` here. Issue
+reporting is owned exclusively by `services/chau7-issues` and
+`issues.chau7.sh`.
+
 ## Custom Domain
 
 The relay should be exposed at `relay.chau7.sh`. Configure via Cloudflare dashboard:
-Workers > chau7-relay > Settings > Domains & Routes > Custom Domain.
+Workers > chau7-ios-relay > Settings > Domains & Routes > Custom Domain.
 
 ## Protocol
 

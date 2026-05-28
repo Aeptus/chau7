@@ -53,6 +53,85 @@ final class AISessionEventReconcilerTests: XCTestCase {
         )
     }
 
+    func testSuppressesImmediateDuplicateAuthoritativeTerminalState() {
+        let reconciler = AISessionEventReconciler(terminalRepeatWindow: 10)
+        let now = Date()
+        let first = acceptedEvent(
+            type: "finished",
+            kind: .taskFinished,
+            sessionID: "SESSION-1",
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+        let duplicate = acceptedEvent(
+            type: "finished",
+            kind: .taskFinished,
+            sessionID: "session-1",
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+
+        XCTAssertEqual(reconciler.reconcile(first, now: now), .emit(first))
+        switch reconciler.reconcile(duplicate, now: now.addingTimeInterval(1)) {
+        case .drop(let reason):
+            XCTAssertTrue(reason.contains("Duplicate terminal session state finished"))
+        case .emit:
+            XCTFail("Immediate duplicate terminal events should remain suppressed")
+        }
+    }
+
+    func testAllowsLaterAuthoritativeTerminalStateForSameLongLivedSession() {
+        let reconciler = AISessionEventReconciler(terminalRepeatWindow: 10)
+        let now = Date()
+        let first = acceptedEvent(
+            type: "finished",
+            kind: .taskFinished,
+            sessionID: "SESSION-1",
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+        let nextTurn = acceptedEvent(
+            type: "finished",
+            kind: .taskFinished,
+            sessionID: "session-1",
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+
+        XCTAssertEqual(reconciler.reconcile(first, now: now), .emit(first))
+        XCTAssertEqual(
+            reconciler.reconcile(nextTurn, now: now.addingTimeInterval(11)),
+            .emit(nextTurn)
+        )
+    }
+
+    func testSuppressesDelayedStrongerTerminalReplacementAsSameCompletion() {
+        let reconciler = AISessionEventReconciler(terminalRepeatWindow: 10)
+        let now = Date()
+        let fallback = acceptedEvent(
+            type: "finished",
+            kind: .taskFinished,
+            sessionID: "SESSION-1",
+            producer: "history_idle_monitor",
+            reliability: .fallback
+        )
+        let authoritative = acceptedEvent(
+            type: "finished",
+            kind: .taskFinished,
+            sessionID: "session-1",
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+
+        XCTAssertEqual(reconciler.reconcile(fallback, now: now), .emit(fallback))
+        switch reconciler.reconcile(authoritative, now: now.addingTimeInterval(11)) {
+        case .drop(let reason):
+            XCTAssertTrue(reason.contains("Updated stronger duplicate session state"))
+        case .emit:
+            XCTFail("Delayed stronger replacement should update state without re-notifying")
+        }
+    }
+
     func testSuppressesFallbackAttentionAfterTerminalState() {
         let reconciler = AISessionEventReconciler()
         let finished = acceptedEvent(

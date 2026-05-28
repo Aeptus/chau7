@@ -430,6 +430,16 @@ final class MetalTerminalRenderer: NSObject {
 
     // MARK: - Dynamic Glyph Rasterization
 
+    @discardableResult
+    func rasterizeGlyphForTesting(
+        _ string: String,
+        isWideHint: Bool = false,
+        bold: Bool = false,
+        italic: Bool = false
+    ) -> GlyphInfo? {
+        rasterizeGlyph(cluster: Data(string.utf8), isWideHint: isWideHint, bold: bold, italic: italic)
+    }
+
     /// Rasterizes a single grapheme cluster into the atlas. Returns the GlyphInfo, or nil
     /// if the atlas is full or the cluster is empty.
     ///
@@ -454,25 +464,17 @@ final class MetalTerminalRenderer: NSObject {
 
         let charStr = String(decoding: cluster, as: UTF8.self)
         guard !charStr.isEmpty else { return nil }
-        var unichars = [UniChar](charStr.utf16)
-        var glyphs = [CGGlyph](repeating: 0, count: unichars.count)
+        let drawFont = CTFontCreateForString(font, charStr as CFString, CFRangeMake(0, charStr.utf16.count))
+        let attrString = NSAttributedString(
+            string: charStr,
+            attributes: [.font: drawFont]
+        )
+        let line = CTLineCreateWithAttributedString(attrString)
+        let runs = Self.runs(from: line)
+        guard !runs.isEmpty else { return nil }
 
-        // Try the primary font first
-        var drawFont = font
-        let found = CTFontGetGlyphsForCharacters(font, &unichars, &glyphs, unichars.count)
-
-        // Font cascade fallback: if the primary font doesn't have this glyph
-        // (returns false or glyph ID 0 / .notdef), ask CoreText to find a font that does.
-        // For emoji and ZWJ sequences this is how we get Apple Color Emoji.
-        if !found || glyphs[0] == 0 {
-            let fallback = CTFontCreateForString(font, charStr as CFString, CFRangeMake(0, charStr.utf16.count))
-            CTFontGetGlyphsForCharacters(fallback, &unichars, &glyphs, unichars.count)
-            if glyphs[0] != 0 {
-                drawFont = fallback
-            }
-        }
-
-        let isColor = Self.isColorGlyph(font: drawFont, glyph: glyphs[0])
+        let colorGlyphCandidate = Self.prefersEmbeddedColorGlyph(for: charStr)
+            && Self.lineHasColorGlyphTableCandidate(runs)
 
         // Determine width: Rust's explicit hint takes precedence; fall back to
         // advance-based detection only when no hint was provided (single-byte
@@ -481,9 +483,8 @@ final class MetalTerminalRenderer: NSObject {
         if isWideHint {
             isWide = true
         } else {
-            var advanceSize = CGSize.zero
-            CTFontGetAdvancesForGlyphs(drawFont, .horizontal, &glyphs, &advanceSize, 1)
-            isWide = advanceSize.width > cellSize.width * 1.3
+            let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+            isWide = lineWidth > cellSize.width * 1.3
         }
 
         let slotWidth = isWide ? cellSize.width * 2 : cellSize.width
@@ -511,27 +512,26 @@ final class MetalTerminalRenderer: NSObject {
 
         packRowHeight = max(packRowHeight, slotHeight)
 
-        // Draw the cluster into the atlas slot.
-        //
-        // For monochrome glyphs we paint with white-opaque fill; the shader then
-        // multiplies the alpha mask by the per-instance foreground color.
-        //
-        // For color glyphs (Apple Color Emoji, sbix/COLR/CBDT) we DO NOT override
-        // the fill — CoreText writes the embedded RGBA bitmap directly. The shader
-        // detects this via the `colorGlyphFlag` instance bit and samples the texture
-        // as-is. Setting `shouldSmoothFonts = false` for color emoji avoids the
-        // subpixel hinting that distorts color bitmaps.
+        // Draw the cluster into the atlas slot. We always set a white fill so
+        // monochrome glyphs become alpha masks; color emoji fonts ignore the fill
+        // and write embedded RGBA pixels. After drawing, sample the slot to decide
+        // whether the shader should treat it as color data.
         context.saveGState()
-        if isColor {
+        if colorGlyphCandidate {
             context.setShouldSmoothFonts(false)
-        } else {
-            context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
         }
-        var boundingRect = CGRect.zero
-        CTFontGetBoundingRectsForGlyphs(drawFont, .horizontal, glyphs, &boundingRect, 1)
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
         let baselineY = CGFloat(atlasHeight) - packY - slotHeight + fontDescent
-        var position = CGPoint(x: packX, y: baselineY)
-        CTFontDrawGlyphs(drawFont, glyphs, &position, 1, context)
+        context.textPosition = CGPoint(x: packX, y: baselineY)
+        CTLineDraw(line, context)
+        let boundingRect = CTLineGetImageBounds(line, context)
+        let isColor = colorGlyphCandidate && Self.slotContainsColorPixels(
+            context: context,
+            x: Int(packX),
+            y: Int(packY),
+            width: Int(ceil(slotWidth)),
+            height: Int(ceil(slotHeight))
+        )
         context.restoreGState()
 
         // Diagnostic: check if box-drawing glyph produced visible pixels (trace-only)
@@ -655,40 +655,171 @@ final class MetalTerminalRenderer: NSObject {
 
     // MARK: - Color Glyph Detection
 
-    //
-    // Apple Color Emoji and other glyphs that ship pre-rendered RGBA bitmaps in
-    // their font (sbix / COLR / CBDT tables) must be drawn into the atlas as
-    // color pixels and shaded directly, instead of being treated as alpha masks
-    // and tinted by the per-instance foreground.
-    //
-    // This is called once per atlas miss — never on the hot draw path — so a few
-    // CT table probes are cheap relative to the rasterization that follows.
-    //
-    // TODO(USER-AUTHORED): implement this 5–10 line helper that decides whether
-    // `glyph` in `font` should be rasterized as RGBA color. Recommended approach:
-    //
-    //   1. Probe `CTFontCopyTable(font, kCTFontTableSbix, [])` and
-    //      `CTFontCopyTable(font, kCTFontTableCOLR, [])` (and optionally CBDT).
-    //   2. If neither table is present, the font has no color glyphs — return false
-    //      immediately.
-    //   3. If sbix/COLR is present, the font *can* hold color glyphs but specific
-    //      glyph IDs may still be monochrome. Apple Color Emoji has sbix for all
-    //      glyphs, so presence of sbix is a sufficient signal there. For COLR
-    //      fonts that mix mono and color (Symbols 2, etc.), you may need a per-
-    //      glyph check via `CTFontCopyTraits` or by sampling the rasterized
-    //      pixels — pick the trade-off that fits the call sites in this file.
-    //   4. Return true if the glyph should be drawn as color RGBA.
-    //
-    // The result is cached in `GlyphInfo.isColor` and threaded through to the
-    // fragment shader via `TerminalCell.colorGlyphFlag`.
-    private static func isColorGlyph(font: CTFont, glyph: CGGlyph) -> Bool {
-        // PLACEHOLDER — implement me.
-        // Returning `false` for every glyph keeps emoji rendering monochrome
-        // (current behavior), but the wiring through the atlas + shader is now
-        // ready for the real check.
-        _ = font
-        _ = glyph
+    private static let colorGlyphTableTags: [CTFontTableTag] = [
+        tableTag("sbix"),
+        tableTag("COLR"),
+        tableTag("CBDT"),
+        tableTag("CBLC"),
+        tableTag("SVG ")
+    ]
+
+    static func hasColorGlyphTables(font: CTFont) -> Bool {
+        colorGlyphTableTags.contains { tag in
+            CTFontCopyTable(font, tag, []) != nil
+        }
+    }
+
+    private static func runs(from line: CTLine) -> [CTRun] {
+        let rawRuns = CTLineGetGlyphRuns(line)
+        let runCount = CFArrayGetCount(rawRuns)
+        guard runCount > 0 else { return [] }
+
+        var runs: [CTRun] = []
+        runs.reserveCapacity(runCount)
+        for index in 0 ..< runCount {
+            let rawRun = CFArrayGetValueAtIndex(rawRuns, index)
+            let run = unsafeBitCast(rawRun, to: CTRun.self)
+            guard CFGetTypeID(run) == CTRunGetTypeID() else { continue }
+            runs.append(run)
+        }
+        return runs
+    }
+
+    private static func lineHasColorGlyphTableCandidate(_ runs: [CTRun]) -> Bool {
+        for run in runs {
+            let attrs = CTRunGetAttributes(run)
+            let key = Unmanaged.passUnretained(kCTFontAttributeName).toOpaque()
+            guard let rawFont = CFDictionaryGetValue(attrs, key) else { continue }
+            let font = unsafeBitCast(rawFont, to: CTFont.self)
+            guard CFGetTypeID(font) == CTFontGetTypeID() else { continue }
+            guard hasColorGlyphTables(font: font) else { continue }
+
+            let glyphCount = CTRunGetGlyphCount(run)
+            guard glyphCount > 0 else { continue }
+            var glyphs = [CGGlyph](repeating: 0, count: glyphCount)
+            CTRunGetGlyphs(run, CFRangeMake(0, 0), &glyphs)
+            if glyphs.contains(where: { $0 != 0 }) {
+                return true
+            }
+        }
         return false
+    }
+
+    private static func prefersEmbeddedColorGlyph(for string: String) -> Bool {
+        let scalars = string.unicodeScalars.map(\.value)
+
+        // Respect explicit presentation selectors first. Terminal TUIs often use
+        // emoji-capable symbols as text and color them with ANSI; only the emoji
+        // presentation should bypass ANSI foreground tinting.
+        if scalars.contains(0xFE0E) { return false }
+        if scalars.contains(0xFE0F) { return true }
+
+        return scalars.contains(where: isDefaultEmojiPresentationScalar)
+    }
+
+    private static func isDefaultEmojiPresentationScalar(_ scalar: UInt32) -> Bool {
+        if (0x1F000 ... 0x1FAFF).contains(scalar) {
+            return true
+        }
+
+        switch scalar {
+        case 0x231A ... 0x231B,
+             0x23E9 ... 0x23EC,
+             0x23F0,
+             0x23F3,
+             0x25FD ... 0x25FE,
+             0x2614 ... 0x2615,
+             0x2648 ... 0x2653,
+             0x267F,
+             0x2693,
+             0x26A1,
+             0x26AA ... 0x26AB,
+             0x26BD ... 0x26BE,
+             0x26C4 ... 0x26C5,
+             0x26CE,
+             0x26D4,
+             0x26EA,
+             0x26F2 ... 0x26F3,
+             0x26F5,
+             0x26FA,
+             0x26FD,
+             0x2705,
+             0x270A ... 0x270B,
+             0x2728,
+             0x274C,
+             0x274E,
+             0x2753 ... 0x2755,
+             0x2757,
+             0x2795 ... 0x2797,
+             0x27B0,
+             0x27BF:
+            return true
+        default:
+            return false
+        }
+    }
+
+    static func slotContainsColorPixels(
+        context: CGContext,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int
+    ) -> Bool {
+        guard let data = context.data else { return false }
+        return slotContainsColorPixels(
+            data: data,
+            bytesPerRow: context.bytesPerRow,
+            atlasWidth: context.width,
+            atlasHeight: context.height,
+            x: x,
+            y: y,
+            width: width,
+            height: height
+        )
+    }
+
+    static func slotContainsColorPixels(
+        data: UnsafeRawPointer,
+        bytesPerRow: Int,
+        atlasWidth: Int,
+        atlasHeight: Int,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int
+    ) -> Bool {
+        guard bytesPerRow > 0, atlasWidth > 0, atlasHeight > 0, width > 0, height > 0 else {
+            return false
+        }
+
+        let xStart = max(0, x)
+        let yStart = max(0, y)
+        let xEnd = min(x + width, min(atlasWidth, bytesPerRow / 4))
+        let yEnd = min(y + height, atlasHeight)
+        guard xStart < xEnd, yStart < yEnd else { return false }
+
+        let ptr = data.bindMemory(to: UInt8.self, capacity: atlasHeight * bytesPerRow)
+        for row in yStart ..< yEnd {
+            for col in xStart ..< xEnd {
+                let offset = row * bytesPerRow + col * 4
+                let red = Int(ptr[offset])
+                let green = Int(ptr[offset + 1])
+                let blue = Int(ptr[offset + 2])
+                let alpha = Int(ptr[offset + 3])
+                guard alpha > 8 else { continue }
+                if abs(red - green) > 3 || abs(red - blue) > 3 || abs(green - blue) > 3 {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private static func tableTag(_ raw: String) -> CTFontTableTag {
+        raw.utf8.reduce(CTFontTableTag(0)) { partial, byte in
+            (partial << 8) | CTFontTableTag(byte)
+        }
     }
 
     /// Try to form a ligature from consecutive cells. Returns nil if the font doesn't

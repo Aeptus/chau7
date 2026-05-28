@@ -20,6 +20,15 @@ enum CommandStatus: String, Codable {
     case approvalRequired // AI agent is blocked on an explicit approval decision
     case stuck // Running for too long without output
     case exited
+
+    var restoredFromPersistence: CommandStatus {
+        switch self {
+        case .waitingForInput, .approvalRequired, .stuck:
+            return .idle
+        case .idle, .done, .running, .exited:
+            return self
+        }
+    }
 }
 
 enum AISessionIdentitySource: String, Codable {
@@ -1059,6 +1068,10 @@ final class TerminalSessionModel {
     @ObservationIgnored var dirtyOutputRange: ClosedRange<Int>?
     @ObservationIgnored var outputLatencyFallbackWorkItem: DispatchWorkItem?
     @ObservationIgnored let outputLatencyFallbackSeconds: TimeInterval = 0.2
+    @ObservationIgnored var dangerousOutputHighlightBackoffUntil = Date.distantPast
+    @ObservationIgnored var lastDangerousOutputHighlightBackoffLogAt: Date?
+    @ObservationIgnored let dangerousOutputHighlightBackoffThresholdMs: Double = 500
+    @ObservationIgnored let dangerousOutputHighlightMaxBackoffSeconds: TimeInterval = 6
     @ObservationIgnored let aiTimingWindowSeconds: TimeInterval = 120
     @ObservationIgnored let remoteOutputQueue = DispatchQueue(label: "com.chau7.remoteOutput", qos: .utility)
     /// Queue for heavy output processing to avoid blocking main thread (Fix #6)
@@ -1067,6 +1080,9 @@ final class TerminalSessionModel {
     @ObservationIgnored var remoteOutputFlushWorkItem: DispatchWorkItem?
     @ObservationIgnored let remoteOutputFlushInterval: TimeInterval = 0.05
     @ObservationIgnored let remoteOutputMaxBufferBytes = 256 * 1024
+    @ObservationIgnored var pendingRemoteOutputTranscript = ""
+    @ObservationIgnored var remoteOutputTranscriptFlushWorkItem: DispatchWorkItem?
+    @ObservationIgnored let remoteOutputTranscriptFlushInterval: TimeInterval = 0.12
     @ObservationIgnored let remoteOutputBatchingEnabled: Bool = {
         if let raw = EnvVars.get(EnvVars.remoteOutputBatch) {
             let lowered = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -1242,6 +1258,7 @@ final class TerminalSessionModel {
         pendingAutomationSubmitWorkItem?.cancel()
         dangerousOutputHighlightWorkItem?.cancel()
         remoteOutputFlushWorkItem?.cancel()
+        remoteOutputTranscriptFlushWorkItem?.cancel()
     }
 
     // Process monitoring methods moved to TerminalSessionModel+ProcessMonitor.swift
@@ -1610,14 +1627,19 @@ final class TerminalSessionModel {
           [ -f "$CHAU7_USER_ZDOTDIR/.zprofile" ] && source "$CHAU7_USER_ZDOTDIR/.zprofile"
           [ -f "$CHAU7_USER_ZDOTDIR/.zlogin" ] && source "$CHAU7_USER_ZDOTDIR/.zlogin"
         fi
-        # Ensure Volta image node toolchains stay ahead of the legacy ~/.volta/bin shim.
+        # Ensure Codex's npm-managed Volta image bin stays ahead of the legacy ~/.volta/bin shim.
         path=("${(s/:/)PATH}")
         for _codex_image_bin in "$CHAU7_USER_HOME/.volta/tools/image/node/"*"/bin"(N); do
           [ -x "$_codex_image_bin/codex" ] && path=($_codex_image_bin $path)
         done
+        if command -v volta >/dev/null 2>&1; then
+          _codex_node_path="$(volta which node 2>/dev/null || true)"
+          _codex_node_bin="${_codex_node_path%/*}"
+          [ -n "$_codex_node_bin" ] && [ -x "$_codex_node_bin/codex" ] && path=($_codex_node_bin $path)
+        fi
         typeset -U path
         export PATH="${(j/:/)path}"
-        unset _codex_image_bin
+        unset _codex_image_bin _codex_node_path _codex_node_bin
         # Disable PROMPT_CR - prevents the 143 spaces + CRs before each prompt
         # that can cause visual artifacts in some terminals
         setopt NO_PROMPT_CR
@@ -2778,6 +2800,8 @@ final class TerminalSessionModel {
             self?.dangerousOutputHighlightWorkItem = nil
             self?.dangerousOutputHighlightLastRun = .distantPast
             self?.dangerousOutputCacheLastRefreshAt = .distantPast
+            self?.dangerousOutputHighlightBackoffUntil = .distantPast
+            self?.lastDangerousOutputHighlightBackoffLogAt = nil
             self?.scanLagSampleCount = 0
             self?.scanLagTotalMs = 0
             self?.scanLagDelayMs = nil
@@ -2914,6 +2938,8 @@ final class TerminalSessionModel {
         dict["COLORTERM"] = "truecolor"
 
         let current = ProcessInfo.processInfo.environment
+        dict.merge(ShellLaunchEnvironment.utf8LocaleEnvironment(environment: current)) { _, new in new }
+
         let ctoEnabled = FeatureSettings.shared.tokenOptimizationMode != .off
 
         dict["PATH"] = launchPATHValue()
@@ -3258,6 +3284,8 @@ final class TerminalSessionModel {
         dangerousOutputHighlightWorkItem = nil
         dangerousOutputHighlightLastRun = .distantPast
         dangerousOutputCacheLastRefreshAt = .distantPast
+        dangerousOutputHighlightBackoffUntil = .distantPast
+        lastDangerousOutputHighlightBackoffLogAt = nil
         scanLagSampleCount = 0
         scanLagTotalMs = 0
         scanLagDelayMs = nil

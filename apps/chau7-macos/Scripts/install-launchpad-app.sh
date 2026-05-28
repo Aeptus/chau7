@@ -12,7 +12,12 @@ DST_APP="/Applications/$APP_NAME.app"
 # sets its own (CHAU7_LOG_ROOT / CHAU7_LOG_NAME below) so we can forward
 # only the caller-provided ones to the launched app via `open --env`.
 CHAU7_OPEN_ENV=()
-for _v in "${!CHAU7_@}"; do CHAU7_OPEN_ENV+=(--env "$_v=${!_v}"); done
+while IFS='=' read -r _v _value; do
+  case "$_v" in
+    CHAU7_*) CHAU7_OPEN_ENV+=(--env "$_v=$_value") ;;
+  esac
+done < <(env)
+unset _v _value
 
 export CHAU7_LOG_ROOT="$ROOT_DIR"
 CHAU7_LOG_NAME="install-launchpad-app"
@@ -26,7 +31,7 @@ log_info "Build mode: $BUILD_MODE"
 log_info "Source app: $SRC_APP"
 log_info "Destination app: $DST_APP"
 log_info "Bundle identifier: com.chau7.app"
-log_info "Codesign identity: ${CHAU7_CODESIGN_IDENTITY:--}"
+log_info "Codesign identity: ${CHAU7_CODESIGN_IDENTITY:-auto}"
 
 RUNNING_CHAU7="$(
   ps -axo pid=,args= 2>/dev/null \
@@ -46,6 +51,7 @@ fi
 
 CHAU7_LOG_FILE="$LOG_FILE" CHAU7_LOG_SUMMARY=0 CHAU7_LOG_SUPPRESS_HEADER=1 \
   BUNDLE_IDENTIFIER="com.chau7.app" OPEN_AFTER_BUILD=0 BUILD_MODE="$BUILD_MODE" \
+  CHAU7_CODESIGN_PURPOSE="${CHAU7_CODESIGN_PURPOSE:-install}" \
   "$ROOT_DIR/Scripts/build-and-run.sh"
 
 run_cmd /usr/bin/ditto "$SRC_APP" "$DST_APP"

@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_MODE="${BUILD_MODE:-release}"
 OPEN_AFTER_BUILD="${OPEN_AFTER_BUILD:-1}"
 BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-com.chau7.app.dev}"
-CODESIGN_IDENTITY="${CHAU7_CODESIGN_IDENTITY:--}"
+CODESIGN_IDENTITY="${CHAU7_CODESIGN_IDENTITY:-auto}"
 USE_STABLE_ADHOC_REQUIREMENT="${USE_STABLE_ADHOC_REQUIREMENT:-1}"
 BIN_PATH="(not built)"
 APP_PATH="(not built)"
@@ -17,6 +17,8 @@ export CHAU7_LOG_NAME
 
 # shellcheck source=apps/chau7-macos/Scripts/logging.sh
 source "$ROOT_DIR/Scripts/logging.sh"
+# shellcheck source=apps/chau7-macos/Scripts/signing.sh
+source "$ROOT_DIR/Scripts/signing.sh"
 
 STATUS="success"
 LAST_STEP="init"
@@ -57,6 +59,13 @@ log_info "Open after build: $OPEN_AFTER_BUILD"
 log_info "Bundle identifier: $BUNDLE_IDENTIFIER"
 log_info "Codesign identity: $CODESIGN_IDENTITY"
 log_info "Stable ad-hoc requirement: $USE_STABLE_ADHOC_REQUIREMENT"
+
+BUILD_CODESIGN_PURPOSE="${CHAU7_CODESIGN_PURPOSE:-dev}"
+if [[ "$BUNDLE_IDENTIFIER" != *".dev" ]]; then
+  BUILD_CODESIGN_PURPOSE="${CHAU7_CODESIGN_PURPOSE:-release}"
+fi
+RESOLVED_CODESIGN_IDENTITY="$(chau7_resolve_codesign_identity "$BUILD_CODESIGN_PURPOSE")"
+log_info "Resolved codesign identity: $RESOLVED_CODESIGN_IDENTITY"
 
 if [[ "$BUNDLE_IDENTIFIER" == "com.chau7.app" ]]; then
   RUNNING_CHAU7="$(
@@ -123,7 +132,9 @@ if [[ ! -f "$BIN_PATH" ]]; then
 fi
 
 LAST_STEP="Bundle"
-CHAU7_LOG_FILE="$LOG_FILE" CHAU7_LOG_SUMMARY=0 CHAU7_LOG_SUPPRESS_HEADER=1 BUNDLE_IDENTIFIER="$BUNDLE_IDENTIFIER" "$ROOT_DIR/Scripts/build-app.sh" "$ROOT_DIR/.build/$BUILD_MODE" "$ROOT_DIR/build"
+CHAU7_LOG_FILE="$LOG_FILE" CHAU7_LOG_SUMMARY=0 CHAU7_LOG_SUPPRESS_HEADER=1 \
+  BUNDLE_IDENTIFIER="$BUNDLE_IDENTIFIER" CHAU7_CODESIGN_PURPOSE="$BUILD_CODESIGN_PURPOSE" \
+  "$ROOT_DIR/Scripts/build-app.sh" "$ROOT_DIR/.build/$BUILD_MODE" "$ROOT_DIR/build"
 
 APP_PATH="$ROOT_DIR/build/$APP_NAME.app"
 if [[ ! -d "$APP_PATH" ]]; then
@@ -132,35 +143,8 @@ else
   log_info "App bundle created at $APP_PATH"
 fi
 
-codesign_app() {
-  if [[ "$CODESIGN_IDENTITY" != "-" ]]; then
-    run_cmd codesign --force --deep --sign "$CODESIGN_IDENTITY" -i "$BUNDLE_IDENTIFIER" "$APP_PATH"
-    return
-  fi
-
-  if [[ "$USE_STABLE_ADHOC_REQUIREMENT" == "1" ]] && command -v csreq >/dev/null 2>&1; then
-    local req_file req_option
-    req_file="$(mktemp "${TMPDIR:-/tmp}/chau7-codesign-requirement.XXXXXX")"
-    req_option="-r=designated => identifier \"$BUNDLE_IDENTIFIER\""
-    run_cmd csreq "$req_option" -b "$req_file"
-    run_cmd codesign --force --deep --sign - -i "$BUNDLE_IDENTIFIER" -r "$req_file" "$APP_PATH"
-    run_cmd rm -f "$req_file"
-    log_ok "Applied stable ad-hoc designated requirement for $BUNDLE_IDENTIFIER"
-    return
-  fi
-
-  if [[ "$USE_STABLE_ADHOC_REQUIREMENT" == "1" ]]; then
-    log_warn "csreq not found; falling back to default ad-hoc signing (may trigger repeated TCC prompts on updates)."
-  fi
-  run_cmd codesign --force --deep --sign - -i "$BUNDLE_IDENTIFIER" "$APP_PATH"
-}
-
-if command -v codesign >/dev/null 2>&1; then
-  LAST_STEP="Codesign"
-  codesign_app
-else
-  log_warn "codesign not found; skipping ad-hoc signing."
-fi
+LAST_STEP="Codesign"
+log_info "App bundle signing completed by build-app.sh"
 
 if [[ "$OPEN_AFTER_BUILD" == "1" ]]; then
   LAST_STEP="Launch"

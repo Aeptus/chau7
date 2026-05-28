@@ -27,6 +27,8 @@ export CHAU7_LOG_NAME
 
 # shellcheck source=apps/chau7-macos/Scripts/logging.sh
 source "$ROOT_DIR/Scripts/logging.sh"
+# shellcheck source=apps/chau7-macos/Scripts/signing.sh
+source "$ROOT_DIR/Scripts/signing.sh"
 
 BIN="$BUILD_DIR/$APP_NAME"
 APP_DIR="$OUT_DIR/$APP_NAME.app"
@@ -232,10 +234,14 @@ else
     log_warn "MCP bridge source not found at $MCP_BRIDGE_SRC"
 fi
 
-# Ad-hoc codesign the app bundle so macOS doesn't SIGKILL on dlopen().
-# Without this, replacing the Rust dylib invalidates the kernel's cached
-# code signature, causing EXC_BAD_ACCESS (Code Signature Invalid) on launch.
-run_cmd codesign --force --sign - --deep "$APP_DIR"
-log_ok "Ad-hoc signed app bundle"
+if [[ "${CHAU7_SKIP_CODESIGN:-0}" == "1" ]]; then
+  log_warn "Skipping code signing (CHAU7_SKIP_CODESIGN=1)"
+else
+  CODESIGN_PURPOSE="${CHAU7_CODESIGN_PURPOSE:-release}"
+  if [[ "$BUNDLE_IDENTIFIER" == *".dev" ]]; then
+    CODESIGN_PURPOSE="${CHAU7_CODESIGN_PURPOSE:-dev}"
+  fi
+  chau7_codesign_app "$APP_DIR" "$BUNDLE_IDENTIFIER" "$CODESIGN_PURPOSE"
+fi
 
 log_ok "Built app bundle at $APP_DIR"

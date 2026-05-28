@@ -23,6 +23,7 @@ final class ClaudeCodeMonitor {
         let projectName: String
         let cwd: String // Full working directory path for matching to tabs
         let transcriptPath: String
+        var tabID: String // CHAU7_TAB_ID stamped by the hook for exact ownership
         var lastActivity: Date
         var state: SessionState
         var lastToolName: String? // Most recent tool being used
@@ -230,6 +231,10 @@ final class ClaudeCodeMonitor {
             if var session = self.activeSessions[sessionId] {
                 session.lastActivity = event.timestamp
                 session.state = self.stateForEvent(event.type)
+                let stampedTabID = event.tabID.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !stampedTabID.isEmpty {
+                    session.tabID = stampedTabID
+                }
                 if let tool = toolName {
                     session.lastToolName = tool
                 }
@@ -241,6 +246,7 @@ final class ClaudeCodeMonitor {
                     projectName: event.projectName,
                     cwd: event.cwd,
                     transcriptPath: event.transcriptPath,
+                    tabID: event.tabID.trimmingCharacters(in: .whitespacesAndNewlines),
                     lastActivity: event.timestamp,
                     state: self.stateForEvent(event.type)
                 )

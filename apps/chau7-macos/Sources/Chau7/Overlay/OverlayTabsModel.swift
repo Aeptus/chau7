@@ -388,6 +388,7 @@ struct SavedTerminalPaneState: Codable {
     let directory: String
     let scrollbackContent: String? // last N lines of terminal output
     let aiResumeCommand: String? // e.g. "claude --resume abc123"
+    let aiResumeDirectory: String?
     let aiProvider: String?
     let aiSessionId: String?
     let aiSessionIdSource: AISessionIdentitySource?
@@ -406,6 +407,7 @@ struct SavedTerminalPaneState: Codable {
         directory: String,
         scrollbackContent: String?,
         aiResumeCommand: String?,
+        aiResumeDirectory: String? = nil,
         aiProvider: String? = nil,
         aiSessionId: String? = nil,
         aiSessionIdSource: AISessionIdentitySource? = nil,
@@ -423,6 +425,7 @@ struct SavedTerminalPaneState: Codable {
         self.directory = directory
         self.scrollbackContent = scrollbackContent
         self.aiResumeCommand = aiResumeCommand
+        self.aiResumeDirectory = aiResumeDirectory
         self.aiProvider = aiProvider
         self.aiSessionId = aiSessionId
         self.aiSessionIdSource = aiSessionIdSource
@@ -451,27 +454,100 @@ extension SavedTerminalPaneState {
     /// Falls back to `directory` for non-codex tabs, missing/invalid codex
     /// metadata, or codex paths that no longer exist.
     var preferredRestoreDirectory: String {
+        resolvedPreferredRestoreDirectory()
+    }
+
+    func resolvedPreferredRestoreDirectory(
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String {
+        if let explicitDirectory = normalizedExistingDirectory(aiResumeDirectory, fileManager: fileManager) {
+            return explicitDirectory
+        }
+
+        for command in [aiResumeCommand, agentLaunchCommand] {
+            guard let metadata = SavedAIResumePayload.commandMetadata(command),
+                  let directory = restoreDirectory(
+                      provider: metadata.provider,
+                      sessionId: metadata.sessionId,
+                      savedDirectory: directory,
+                      fileManager: fileManager,
+                      environment: environment
+                  ) else {
+                continue
+            }
+            return directory
+        }
+
         guard let normalizedProvider = AIResumeParser.normalizeProviderName(aiProvider ?? ""),
-              normalizedProvider == "codex",
               let sessionId = aiSessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !sessionId.isEmpty,
-              let metadata = CodexSessionResolver.metadata(forSessionID: sessionId),
-              !metadata.cwd.isEmpty
+              !sessionId.isEmpty
         else {
             return directory
+        }
+
+        if let directory = restoreDirectory(
+            provider: normalizedProvider,
+            sessionId: sessionId,
+            savedDirectory: directory,
+            fileManager: fileManager,
+            environment: environment
+        ) {
+            return directory
+        }
+        return directory
+    }
+
+    private func restoreDirectory(
+        provider: String?,
+        sessionId: String?,
+        savedDirectory: String,
+        fileManager: FileManager,
+        environment: [String: String]
+    ) -> String? {
+        guard let normalizedProvider = AIResumeParser.normalizeProviderName(provider ?? ""),
+              let sessionId = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              AIResumeParser.isValidSessionId(sessionId) else {
+            return nil
+        }
+        if normalizedProvider == "claude",
+           let claudeDirectory = ClaudeSessionResolver.restoreDirectory(
+               forSessionID: sessionId,
+               savedDirectory: savedDirectory,
+               fileManager: fileManager,
+               environment: environment
+           ) {
+            if claudeDirectory != savedDirectory {
+                Log.info(
+                    "SavedTerminalPaneState: claude session=\(sessionId.prefix(8)) override directory \"\(savedDirectory)\" -> \"\(claudeDirectory)\""
+                )
+            }
+            return claudeDirectory
+        }
+        if normalizedProvider == "codex",
+           let metadata = CodexSessionResolver.metadata(forSessionID: sessionId),
+           let codexDirectory = normalizedExistingDirectory(metadata.cwd, fileManager: fileManager) {
+            if codexDirectory != savedDirectory {
+                Log.info(
+                    "SavedTerminalPaneState: codex session=\(sessionId.prefix(8)) override directory \"\(savedDirectory)\" -> \"\(codexDirectory)\""
+                )
+            }
+            return codexDirectory
+        }
+        return nil
+    }
+
+    private func normalizedExistingDirectory(_ value: String?, fileManager: FileManager) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
         }
         var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: metadata.cwd, isDirectory: &isDir),
-              isDir.boolValue
-        else {
-            return directory
+        guard fileManager.fileExists(atPath: trimmed, isDirectory: &isDir),
+              isDir.boolValue else {
+            return nil
         }
-        if metadata.cwd != directory {
-            Log.info(
-                "SavedTerminalPaneState: codex session=\(sessionId.prefix(8)) override directory \"\(directory)\" → \"\(metadata.cwd)\""
-            )
-        }
-        return metadata.cwd
+        return URL(fileURLWithPath: trimmed).standardized.path
     }
 }
 
@@ -656,6 +732,7 @@ extension SavedTerminalPaneState {
             directory: directory,
             scrollbackContent: scrollbackContent,
             aiResumeCommand: merged.command,
+            aiResumeDirectory: aiResumeDirectory ?? fallback.aiResumeDirectory,
             aiProvider: merged.provider,
             aiSessionId: merged.sessionId,
             aiSessionIdSource: merged.sessionIdSource,
@@ -1200,9 +1277,7 @@ final class OverlayTabsModel {
         } else {
             restoredPayload = restoreState ? Self.restoreSavedTabs(appModel: appModel) : nil
         }
-        let sanitizedRestoredStates = restoredPayload.map { payload in
-            Self.sanitizeRestoredAIResumeOwnership(states: payload.rawStates)
-        }
+        let restoredStates = restoredPayload?.rawStates
 
         if let restoredPayload {
             self.tabs = restoredPayload.tabs
@@ -1222,8 +1297,8 @@ final class OverlayTabsModel {
 
         // Apply persisted terminal state (scrollback + resume command) after the
         // instance is fully initialized.
-        if let sanitizedRestoredStates {
-            for (index, state) in sanitizedRestoredStates.enumerated() where index < tabs.count {
+        if let restoredStates {
+            for (index, state) in restoredStates.enumerated() where index < tabs.count {
                 let tab = tabs[index]
                 persistedRestoreFallbackStatesByTabID[tab.id] = state
                 if tab.id == selectedTabID {
@@ -1479,6 +1554,11 @@ final class OverlayTabsModel {
                 sessionId: effectiveSessionID,
                 sessionIdSource: effectiveSessionIDSource
             ) ?? Self.normalizedResumeCommand(fallbackPaneState?.aiResumeCommand)
+            let resumeDirectory = Self.resolveRestoreDirectoryForMetadata(
+                provider: effectiveProvider,
+                sessionId: effectiveSessionID,
+                savedDirectory: dir
+            )
             if let sessionId = effectiveSessionID, let provider = effectiveProvider {
                 claimedSessions.insert(
                     AIResumeOwnership.ClaimedSession(provider: provider, sessionId: sessionId)
@@ -1490,6 +1570,7 @@ final class OverlayTabsModel {
                 directory: dir,
                 scrollbackContent: scrollback,
                 aiResumeCommand: resumeCommand,
+                aiResumeDirectory: resumeDirectory,
                 aiProvider: effectiveProvider,
                 aiSessionId: effectiveSessionID,
                 aiSessionIdSource: effectiveSessionIDSource,

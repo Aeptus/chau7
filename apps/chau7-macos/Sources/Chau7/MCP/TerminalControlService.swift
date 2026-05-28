@@ -222,7 +222,8 @@ final class TerminalControlService {
     func updateSessionDirectoryAcrossWindows(
         tabID: UUID,
         sessionID: String?,
-        directory: String
+        directory: String,
+        allowSessionIDAdoption: Bool = true
     ) -> Bool {
         let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
@@ -239,7 +240,9 @@ final class TerminalControlService {
                 //   session differs   accept+adopt  refuse  (foreign event for
                 //                                              another tab)
                 // i.e. accept iff directory is related; on accept, adopt the
-                // new sessionID when it differs from the tab's live binding.
+                // new sessionID when it differs from the tab's live binding
+                // only if the event source has validated that the replacement
+                // identity is restorable.
                 let directoryIsRelated = !self.shouldRefuseCwdWriteAsForeign(
                     session: session,
                     newDirectory: trimmed
@@ -256,6 +259,21 @@ final class TerminalControlService {
                 if let sessionID,
                    let live = session.lastAISessionId,
                    live != sessionID {
+                    guard allowSessionIDAdoption else {
+                        Log.warn(
+                            "updateSessionDirectory: refusing session adoption without restorable transcript tab=\(tabID) " +
+                                "previous=\(live) new=\(sessionID) tabCwd=\(session.currentDirectory) " +
+                                "tabGitRoot=\(session.gitRootPath ?? "nil") eventCwd=\(trimmed)"
+                        )
+                        if session.currentDirectory != trimmed {
+                            Log.trace(
+                                "updateSessionDirectory: applying related cwd despite refused session adoption tab=\(tabID) " +
+                                    "session=\(sessionID) oldCwd=\(session.currentDirectory) newCwd=\(trimmed)"
+                            )
+                            session.updateCurrentDirectory(trimmed)
+                        }
+                        return true
+                    }
                     Log.info(
                         "updateSessionDirectory: adopting new session for tab=\(tabID) " +
                             "previous=\(live) new=\(sessionID) tabCwd=\(session.currentDirectory) " +
@@ -1391,8 +1409,11 @@ final class TerminalControlService {
             return false
         }
 
-        guard directoryRank != nil else {
-            return false
+        if directoryRank == nil {
+            guard request.tabID != nil,
+                  storedSessionId == nil else {
+                return false
+            }
         }
 
         if session.lastAISessionIdentitySource == .observed,

@@ -9,8 +9,9 @@ set -euo pipefail
 #   3. Rebuilds Swift in release mode
 #   4. Assembles app bundle
 #   5. Strips debug symbols from all binaries
-#   6. Ad-hoc codesigns
+#   6. Signs with Developer ID when available (ad-hoc fallback)
 #   7. Creates a styled drag-to-install DMG
+#   8. Optionally notarizes/staples the DMG
 #
 # Usage:
 #   ./Scripts/build-dist.sh                   # Apple Silicon only (default)
@@ -42,6 +43,17 @@ TEMP_DMG_PATH="$DIST_DIR/$DMG_BASENAME-temp.dmg"
 info()  { echo -e "\033[0;32m[DIST]\033[0m $1"; }
 warn()  { echo -e "\033[1;33m[DIST]\033[0m $1"; }
 error() { echo -e "\033[0;31m[DIST]\033[0m $1"; exit 1; }
+
+# shellcheck source=apps/chau7-macos/Scripts/signing.sh
+source "$ROOT_DIR/Scripts/signing.sh"
+
+DIST_CODESIGN_IDENTITY="$(chau7_resolve_codesign_identity release)"
+DIST_CODESIGN_KIND="$(chau7_codesign_identity_kind "$DIST_CODESIGN_IDENTITY")"
+info "Codesign identity: $DIST_CODESIGN_IDENTITY ($DIST_CODESIGN_KIND)"
+
+if [[ "${CHAU7_NOTARIZE:-0}" == "1" && "$DIST_CODESIGN_KIND" != "developer-id" ]]; then
+    error "CHAU7_NOTARIZE=1 requires a Developer ID Application identity."
+fi
 
 cleanup_dmg_mount() {
     local mount_point="${1:-}"
@@ -147,6 +159,7 @@ info "Swift build complete"
 # ── 4. Assemble app bundle ──
 info "Assembling app bundle..."
 CHAU7_LOG_SUPPRESS_HEADER=1 BUNDLE_IDENTIFIER="com.chau7.app" \
+    CHAU7_CODESIGN_PURPOSE="release" CHAU7_SKIP_CODESIGN=1 \
     "$ROOT_DIR/Scripts/build-app.sh" "$BUILD_DIR" "$DIST_DIR"
 
 if [[ -f "$REMOTE_AGENT_OUT" ]]; then
@@ -200,10 +213,9 @@ else
     info "No personal path leaks detected"
 fi
 
-# ── 7. Ad-hoc codesign ──
-info "Code signing..."
-codesign --force --sign - --deep "$APP_DIR"
-info "Ad-hoc signed"
+# ── 7. Code sign ──
+info "Code signing app bundle..."
+chau7_codesign_app "$APP_DIR" "com.chau7.app" "release"
 
 # ── 8. Create DMG with drag-to-install layout ──
 info "Preparing DMG contents..."
@@ -260,6 +272,16 @@ rm -f "$TEMP_DMG_PATH"
 
 rm -rf "$DMG_STAGING"
 
+if [[ "$DIST_CODESIGN_KIND" != "adhoc" ]]; then
+    info "Code signing DMG..."
+    chau7_codesign_artifact "$DMG_PATH" "release"
+fi
+
+if [[ "${CHAU7_NOTARIZE:-0}" == "1" ]]; then
+    info "Notarizing DMG..."
+    chau7_notarize_artifact "$DMG_PATH"
+fi
+
 DMG_SIZE=$(du -sh "$DMG_PATH" | cut -f1)
 info "Distribution ready: $DMG_PATH ($DMG_SIZE)"
 
@@ -277,7 +299,13 @@ echo "  $DMG_BASENAME.dmg ($DMG_SIZE) + .zip ($ZIP_SIZE) ready to share!"
 echo ""
 echo "  DMG: Drag Chau7.app to Applications."
 echo "  ZIP: Extract and move to Applications."
-echo "  If Gatekeeper blocks first launch, use Finder: Control-click -> Open."
+if [[ "$DIST_CODESIGN_KIND" == "developer-id" && "${CHAU7_NOTARIZE:-0}" == "1" ]]; then
+    echo "  Signed with Developer ID and notarized."
+elif [[ "$DIST_CODESIGN_KIND" == "adhoc" ]]; then
+    echo "  Ad-hoc signed fallback. Gatekeeper may require Finder: Control-click -> Open."
+else
+    echo "  Signed with $DIST_CODESIGN_IDENTITY. Not notarized."
+fi
 echo ""
 if ! $UNIVERSAL; then
     echo "  Apple Silicon only (arm64)."

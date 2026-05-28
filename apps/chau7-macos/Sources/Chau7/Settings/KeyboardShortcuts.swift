@@ -70,10 +70,18 @@ enum KeyboardShortcuts {
     static let escapeKeyCode: UInt16 = 53
     /// Tab key code
     static let tabKeyCode: UInt16 = 48
+    /// Return key code
+    static let returnKeyCode: UInt16 = 36
+    /// Numeric keypad Enter key code
+    static let keypadEnterKeyCode: UInt16 = 76
     /// Left arrow key code
     static let leftArrowKeyCode: UInt16 = 123
     /// Right arrow key code
     static let rightArrowKeyCode: UInt16 = 124
+
+    static func isReturnKeyCode(_ keyCode: UInt16) -> Bool {
+        keyCode == returnKeyCode || keyCode == keypadEnterKeyCode
+    }
 
     // MARK: - Character Constants
 

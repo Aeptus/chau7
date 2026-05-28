@@ -4,6 +4,8 @@ import AppKit
 import Chau7Core
 @testable import Chau7
 
+// swiftlint:disable type_body_length
+
 private func drainMainQueue() {
     RunLoop.main.run(until: Date().addingTimeInterval(0.05))
 }
@@ -32,6 +34,40 @@ final class OverlayTabsModelTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         try? FileManager.default.removeItem(at: tabStateBackupRootURL())
+    }
+
+    private func temporaryHomeDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Chau7Tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func createClaudeTranscript(home: URL, directory: String, sessionID: String) throws {
+        let normalizedDirectory = URL(fileURLWithPath: directory).standardized.path
+        let projectDirName = normalizedDirectory.replacingOccurrences(of: "/", with: "-")
+        let claudeDir = home.appendingPathComponent(".claude", isDirectory: true)
+        let projectDir = claudeDir
+            .appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent(projectDirName, isDirectory: true)
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+        _ = FileManager.default.createFile(
+            atPath: projectDir.appendingPathComponent("\(sessionID).jsonl").path,
+            contents: Data("[]\n".utf8)
+        )
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let historyURL = claudeDir.appendingPathComponent("history.jsonl")
+        let payload: [String: Any] = [
+            "display": "test",
+            "timestamp": 1,
+            "project": normalizedDirectory,
+            "sessionId": sessionID
+        ]
+        let line = try JSONSerialization.data(withJSONObject: payload)
+        var historyData = (try? Data(contentsOf: historyURL)) ?? Data()
+        historyData.append(line)
+        historyData.append(Data("\n".utf8))
+        try historyData.write(to: historyURL)
     }
 
     private func makeSavedTabState(title: String, directory: String) -> SavedTabState {
@@ -93,6 +129,7 @@ final class OverlayTabsModelTests: XCTestCase {
         // and the model starts with a single fresh tab.
         removePersistedWindowStateArtifacts()
         OverlayTabsModel.sessionFinders = [:]
+        ClaudeSessionResolver.clearCache()
         appModel = AppModel()
         model = OverlayTabsModel(appModel: appModel, restoreState: false)
         FeatureSettings.shared.recentRepoRoots = []
@@ -102,6 +139,7 @@ final class OverlayTabsModelTests: XCTestCase {
         model = nil
         appModel = nil
         OverlayTabsModel.sessionFinders = [:]
+        ClaudeSessionResolver.clearCache()
         removePersistedWindowStateArtifacts()
         FeatureSettings.shared.recentRepoRoots = []
         super.tearDown()
@@ -2029,7 +2067,7 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(sanitized[0].aiProvider, "codex")
         XCTAssertEqual(sanitized[0].aiSessionId, duplicateSessionID)
         XCTAssertEqual(sanitized[0].aiResumeCommand, "codex resume \(duplicateSessionID)")
-        XCTAssertEqual(sanitized[1].aiProvider, "claude")
+        XCTAssertNil(sanitized[1].aiProvider)
         XCTAssertNil(sanitized[1].aiSessionId)
         XCTAssertNil(sanitized[1].aiResumeCommand)
     }
@@ -2056,7 +2094,7 @@ final class OverlayTabsModelTests: XCTestCase {
                         paneID: UUID().uuidString,
                         directory: "/tmp/legacy-pane",
                         scrollbackContent: nil,
-                        aiResumeCommand: "claude --resume \(legacySessionID)",
+                        aiResumeCommand: "codex resume \(legacySessionID)",
                         aiProvider: nil,
                         aiSessionId: nil
                     )
@@ -2067,9 +2105,9 @@ final class OverlayTabsModelTests: XCTestCase {
         ]
 
         let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(states: states)
-        XCTAssertEqual(sanitized.first?.paneStates?.first?.aiProvider, "claude")
+        XCTAssertEqual(sanitized.first?.paneStates?.first?.aiProvider, "codex")
         XCTAssertEqual(sanitized.first?.paneStates?.first?.aiSessionId, legacySessionID)
-        XCTAssertEqual(sanitized.first?.paneStates?.first?.aiResumeCommand, "claude --resume \(legacySessionID)")
+        XCTAssertEqual(sanitized.first?.paneStates?.first?.aiResumeCommand, "codex resume \(legacySessionID)")
     }
 
     func testSanitizeRestoredAIResumeOwnershipPreservesLegacyTopLevelFallbackMetadata() {
@@ -2085,7 +2123,7 @@ final class OverlayTabsModelTests: XCTestCase {
                 selectedIndex: 0,
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
-                aiResumeCommand: "claude --resume \(legacySessionID)",
+                aiResumeCommand: "codex resume \(legacySessionID)",
                 aiProvider: nil,
                 aiSessionId: nil,
                 splitLayout: nil,
@@ -2106,9 +2144,148 @@ final class OverlayTabsModelTests: XCTestCase {
         ]
 
         let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(states: states)
-        XCTAssertEqual(sanitized.first?.aiProvider, "claude")
+        XCTAssertEqual(sanitized.first?.aiProvider, "codex")
         XCTAssertEqual(sanitized.first?.aiSessionId, legacySessionID)
-        XCTAssertEqual(sanitized.first?.aiResumeCommand, "claude --resume \(legacySessionID)")
+        XCTAssertEqual(sanitized.first?.aiResumeCommand, "codex resume \(legacySessionID)")
+    }
+
+    func testSanitizeRestoredAIResumeOwnershipUsesAgentLaunchResumeCommandWhenResumeCommandMissing() {
+        let sessionID = "019e0bd8-1367-7e53-97a5-3977e8d37c8a"
+        let paneID = UUID().uuidString
+        let states = [
+            SavedTabState(
+                tabID: UUID().uuidString,
+                selectedTabID: nil,
+                customTitle: "Debug",
+                color: TabColor.blue.rawValue,
+                directory: "/tmp/debug",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                aiProvider: nil,
+                aiSessionId: nil,
+                splitLayout: nil,
+                focusedPaneID: paneID,
+                paneStates: [
+                    SavedTerminalPaneState(
+                        paneID: paneID,
+                        directory: "/tmp/debug",
+                        scrollbackContent: nil,
+                        aiResumeCommand: nil,
+                        aiProvider: nil,
+                        aiSessionId: nil,
+                        agentLaunchCommand: "codex resume \(sessionID)"
+                    )
+                ],
+                createdAt: nil,
+                repoGroupID: nil
+            )
+        ]
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(states: states)
+        let pane = sanitized.first?.paneStates?.first
+
+        XCTAssertEqual(pane?.aiProvider, "codex")
+        XCTAssertEqual(pane?.aiSessionId, sessionID)
+        XCTAssertEqual(pane?.aiSessionIdSource, .explicit)
+        XCTAssertEqual(pane?.aiResumeCommand, "codex resume \(sessionID)")
+    }
+
+    func testSanitizeRestoredAIResumeOwnershipDropsClaudeUUIDWithoutTranscript() throws {
+        let home = try temporaryHomeDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sessionID = "019e0bd8-1367-7e53-97a5-3977e8d37c8a"
+        let paneID = UUID().uuidString
+        let state = SavedTabState(
+            tabID: UUID().uuidString,
+            selectedTabID: nil,
+            customTitle: "Legacy Cleaning",
+            color: TabColor.blue.rawValue,
+            directory: "/tmp/mockup",
+            selectedIndex: 0,
+            tokenOptOverride: nil,
+            scrollbackContent: nil,
+            aiResumeCommand: "claude --resume \(sessionID)",
+            aiProvider: "claude",
+            aiSessionId: sessionID,
+            aiSessionIdSource: .explicit,
+            splitLayout: nil,
+            focusedPaneID: paneID,
+            paneStates: [
+                SavedTerminalPaneState(
+                    paneID: paneID,
+                    directory: "/tmp/mockup",
+                    scrollbackContent: nil,
+                    aiResumeCommand: "claude --resume \(sessionID)",
+                    aiProvider: "claude",
+                    aiSessionId: sessionID,
+                    aiSessionIdSource: .explicit
+                )
+            ]
+        )
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
+            states: [state],
+            environment: ["CHAU7_HOME_ROOT": home.path]
+        )
+
+        XCTAssertNil(sanitized.first?.aiProvider)
+        XCTAssertNil(sanitized.first?.aiSessionId)
+        XCTAssertNil(sanitized.first?.aiResumeCommand)
+        XCTAssertNil(sanitized.first?.aiSessionIdSource)
+        XCTAssertNil(sanitized.first?.paneStates?.first?.aiProvider)
+        XCTAssertNil(sanitized.first?.paneStates?.first?.aiSessionId)
+        XCTAssertNil(sanitized.first?.paneStates?.first?.aiResumeCommand)
+        XCTAssertNil(sanitized.first?.paneStates?.first?.aiSessionIdSource)
+    }
+
+    func testSanitizeRestoredAIResumeOwnershipKeepsClaudeUUIDWithTranscript() throws {
+        let home = try temporaryHomeDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let directory = "/tmp/mockup"
+        let sessionID = "2de5f491-618a-4b57-a4d0-66e4586674c9"
+        try createClaudeTranscript(home: home, directory: directory, sessionID: sessionID)
+        let paneID = UUID().uuidString
+        let state = SavedTabState(
+            tabID: UUID().uuidString,
+            selectedTabID: nil,
+            customTitle: "Claude",
+            color: TabColor.blue.rawValue,
+            directory: directory,
+            selectedIndex: 0,
+            tokenOptOverride: nil,
+            scrollbackContent: nil,
+            aiResumeCommand: "claude --resume \(sessionID)",
+            aiProvider: "claude",
+            aiSessionId: sessionID,
+            aiSessionIdSource: .explicit,
+            splitLayout: nil,
+            focusedPaneID: paneID,
+            paneStates: [
+                SavedTerminalPaneState(
+                    paneID: paneID,
+                    directory: directory,
+                    scrollbackContent: nil,
+                    aiResumeCommand: "claude --resume \(sessionID)",
+                    aiProvider: "claude",
+                    aiSessionId: sessionID,
+                    aiSessionIdSource: .explicit
+                )
+            ]
+        )
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
+            states: [state],
+            environment: ["CHAU7_HOME_ROOT": home.path]
+        )
+
+        XCTAssertEqual(sanitized.first?.aiProvider, "claude")
+        XCTAssertEqual(sanitized.first?.aiSessionId, sessionID)
+        XCTAssertEqual(sanitized.first?.aiResumeCommand, "claude --resume \(sessionID)")
+        XCTAssertEqual(sanitized.first?.paneStates?.first?.aiProvider, "claude")
+        XCTAssertEqual(sanitized.first?.paneStates?.first?.aiSessionId, sessionID)
+        XCTAssertEqual(sanitized.first?.paneStates?.first?.aiResumeCommand, "claude --resume \(sessionID)")
     }
 
     func testBuildAIResumeCommandRejectsSyntheticSessionIdentity() {
@@ -2143,6 +2320,30 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(resolved?.sessionIdSource, .synthetic)
     }
 
+    func testResolveAIResumeMetadataFromSavedStateDropsClaudeUUIDWithoutTranscript() throws {
+        let home = try temporaryHomeDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sessionID = "019e0bd8-1367-7e53-97a5-3977e8d37c8a"
+        let paneState = SavedTerminalPaneState(
+            paneID: UUID().uuidString,
+            directory: "/tmp/mockup",
+            scrollbackContent: nil,
+            aiResumeCommand: "claude --resume \(sessionID)",
+            aiProvider: "claude",
+            aiSessionId: sessionID,
+            aiSessionIdSource: .explicit
+        )
+
+        let resolved = OverlayTabsModel.resolveAIResumeMetadataFromSavedState(
+            paneState: paneState,
+            fallbackAIProvider: nil,
+            fallbackAISessionId: nil,
+            environment: ["CHAU7_HOME_ROOT": home.path]
+        )
+
+        XCTAssertNil(resolved)
+    }
+
     func testSanitizeRestoredAIResumeOwnershipPreservesPaneMetadataFields() {
         let startedAt = Date(timeIntervalSince1970: 1234.0)
         let lastInputAt = Date(timeIntervalSince1970: 1235.0)
@@ -2151,8 +2352,8 @@ final class OverlayTabsModelTests: XCTestCase {
             paneID: UUID().uuidString,
             directory: "/tmp/persisted-pane",
             scrollbackContent: nil,
-            aiResumeCommand: "claude --resume persisted-001",
-            aiProvider: "claude",
+            aiResumeCommand: "codex resume persisted-001",
+            aiProvider: "codex",
             aiSessionId: "persisted-001",
             aiSessionIdSource: .observed,
             lastOutputAt: startedAt,
@@ -2160,7 +2361,7 @@ final class OverlayTabsModelTests: XCTestCase {
             knownRepoRoot: "/tmp",
             knownGitBranch: "main",
             lastStatus: .done,
-            agentLaunchCommand: "claude fix the bug",
+            agentLaunchCommand: "codex resume persisted-001",
             agentStartedAt: startedAt,
             lastExitCode: 0,
             lastExitAt: lastExitAt
@@ -2191,7 +2392,7 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(sanitizedPane.aiSessionIdSource, .observed)
         XCTAssertEqual(sanitizedPane.lastInputAt, lastInputAt)
         XCTAssertEqual(sanitizedPane.lastStatus, .done)
-        XCTAssertEqual(sanitizedPane.agentLaunchCommand, "claude fix the bug")
+        XCTAssertEqual(sanitizedPane.agentLaunchCommand, "codex resume persisted-001")
         XCTAssertEqual(sanitizedPane.agentStartedAt, startedAt)
         XCTAssertEqual(sanitizedPane.lastExitCode, 0)
         XCTAssertEqual(sanitizedPane.lastExitAt, lastExitAt)
@@ -2332,7 +2533,7 @@ final class OverlayTabsModelTests: XCTestCase {
             second: nil,
             textEditorPath: nil
         )
-        let resumeCommand = "claude --resume abc123"
+        let resumeCommand = "codex resume abc123"
 
         let paneState = SavedTerminalPaneState(
             paneID: paneID.uuidString,
@@ -2409,7 +2610,7 @@ final class OverlayTabsModelTests: XCTestCase {
             directory: "/tmp/meta-prefill",
             scrollbackContent: nil,
             aiResumeCommand: nil,
-            aiProvider: "claude",
+            aiProvider: "codex",
             aiSessionId: "meta-restore-001"
         )
 
@@ -2445,7 +2646,7 @@ final class OverlayTabsModelTests: XCTestCase {
 
         let readyExpectation = expectation(description: "restore from persisted AI metadata")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
-            XCTAssertEqual(capturedInputs, ["claude --resume meta-restore-001"])
+            XCTAssertEqual(capturedInputs, ["codex resume meta-restore-001"])
             readyExpectation.fulfill()
         }
         wait(for: [readyExpectation], timeout: 2.0)
@@ -2587,7 +2788,7 @@ final class OverlayTabsModelTests: XCTestCase {
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
                 aiResumeCommand: nil,
-                aiProvider: "claude",
+                aiProvider: "codex",
                 aiSessionId: "legacy-111",
                 splitLayout: firstSplit,
                 focusedPaneID: firstPaneID.uuidString,
@@ -2601,7 +2802,7 @@ final class OverlayTabsModelTests: XCTestCase {
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
                 aiResumeCommand: nil,
-                aiProvider: "claude",
+                aiProvider: "codex",
                 aiSessionId: "legacy-222",
                 splitLayout: secondSplit,
                 focusedPaneID: secondPaneID.uuidString,
@@ -2635,8 +2836,8 @@ final class OverlayTabsModelTests: XCTestCase {
         let expectationDone = expectation(description: "restore from legacy top-level metadata")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             let expected: Set = [
-                "claude --resume legacy-111",
-                "claude --resume legacy-222"
+                "codex resume legacy-111",
+                "codex resume legacy-222"
             ]
             XCTAssertEqual(Set(capturedInputs), expected)
             XCTAssertEqual(capturedInputs.count, 2)
@@ -2669,7 +2870,7 @@ final class OverlayTabsModelTests: XCTestCase {
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
                 aiResumeCommand: nil,
-                aiProvider: "claude",
+                aiProvider: "codex",
                 aiSessionId: "legacy-lifecycle-001",
                 aiSessionIdSource: .explicit,
                 splitLayout: split,
@@ -2685,7 +2886,7 @@ final class OverlayTabsModelTests: XCTestCase {
                 ],
                 lastInputAt: lastInputAt,
                 lastStatus: .done,
-                agentLaunchCommand: "claude --model opus",
+                agentLaunchCommand: "codex --model gpt-5.3-codex",
                 agentStartedAt: startedAt,
                 lastExitCode: 0,
                 lastExitAt: lastExitAt
@@ -2703,7 +2904,7 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(session.lastInputDate, lastInputAt)
         XCTAssertEqual(session.lastOutputDate, startedAt)
         XCTAssertEqual(session.status, .done)
-        XCTAssertEqual(session.lastAgentLaunchCommand, "claude --model opus")
+        XCTAssertEqual(session.lastAgentLaunchCommand, "codex --model gpt-5.3-codex")
         XCTAssertEqual(session.agentStartedAt, startedAt)
         XCTAssertEqual(session.lastExitCode, 0)
         XCTAssertEqual(session.lastExitAt, lastExitAt)
@@ -2899,7 +3100,7 @@ final class OverlayTabsModelTests: XCTestCase {
             paneID: secondaryPaneID.uuidString,
             directory: "/tmp/secondary",
             scrollbackContent: nil,
-            aiResumeCommand: "claude --resume fallback-001"
+            aiResumeCommand: "codex resume fallback-001"
         )
 
         storeSavedTabStates([
@@ -2947,7 +3148,7 @@ final class OverlayTabsModelTests: XCTestCase {
         let expectationDone = expectation(description: "resume command routed to secondary pane fallback target")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             XCTAssertEqual(capturedInputs.count, 1)
-            XCTAssertEqual(capturedInputs.first, "secondary:claude --resume fallback-001")
+            XCTAssertEqual(capturedInputs.first, "secondary:codex resume fallback-001")
             expectationDone.fulfill()
         }
         wait(for: [expectationDone], timeout: 2.0)
@@ -2986,7 +3187,7 @@ final class OverlayTabsModelTests: XCTestCase {
             paneID: focusedPaneID.uuidString,
             directory: "/tmp/focused-pane",
             scrollbackContent: nil,
-            aiResumeCommand: "claude --resume focused-001"
+            aiResumeCommand: "codex resume focused-001"
         )
         let secondaryPaneState = SavedTerminalPaneState(
             paneID: secondaryPaneID.uuidString,
@@ -3039,7 +3240,7 @@ final class OverlayTabsModelTests: XCTestCase {
         let expectationDone = expectation(description: "resume commands remain bound to owning panes")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             let expected: Set = [
-                "focused:claude --resume focused-001",
+                "focused:codex resume focused-001",
                 "secondary:codex resume secondary-001"
             ]
             XCTAssertEqual(Set(capturedInputs), expected)
@@ -3072,7 +3273,7 @@ final class OverlayTabsModelTests: XCTestCase {
             paneID: paneID.uuidString,
             directory: "/tmp/owned-pane",
             scrollbackContent: nil,
-            aiResumeCommand: "claude --resume owned-001"
+            aiResumeCommand: "codex resume owned-001"
         )
 
         storeSavedTabStates([
@@ -3477,4 +3678,5 @@ final class OverlayTabsModelUtilityTests: XCTestCase {
         )
     }
 }
+// swiftlint:enable type_body_length
 #endif

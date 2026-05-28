@@ -10,6 +10,15 @@ import XCTest
 /// because they exercise tab/session construction that depends on AppKit-bound
 /// types not visible across the SPM test boundary).
 final class TabStatePersistenceStaticTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        ClaudeSessionResolver.clearCache()
+    }
+
+    override func tearDown() {
+        ClaudeSessionResolver.clearCache()
+        super.tearDown()
+    }
 
     // MARK: - sanitizeRestoredAIResumeOwnership
 
@@ -86,6 +95,196 @@ final class TabStatePersistenceStaticTests: XCTestCase {
 
         XCTAssertNil(sanitized[0].aiSessionId)
         XCTAssertNil(sanitized[1].aiSessionId)
+    }
+
+    func testSanitizeDropsClaudeSessionWithoutTranscript() throws {
+        let home = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let deadSessionID = "fc48a626-5528-403f-b7da-6e9386493643"
+        let states = [
+            makeTopLevelState(
+                tabID: UUID(),
+                aiProvider: "claude",
+                aiSessionId: deadSessionID,
+                aiResumeCommand: "claude --resume \(deadSessionID)"
+            )
+        ]
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
+            states: states,
+            environment: ["CHAU7_HOME_ROOT": home.path]
+        )
+
+        XCTAssertNil(sanitized[0].aiProvider)
+        XCTAssertNil(sanitized[0].aiSessionId)
+        XCTAssertNil(sanitized[0].aiResumeCommand)
+    }
+
+    func testSanitizeFallsBackToClaudeAgentLaunchCommandWhenSavedSessionIsDead() throws {
+        let home = try temporaryDirectory()
+        let repoRoot = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: repoRoot)
+        }
+        let packageDirectory = repoRoot.appendingPathComponent("packages/aethyme", isDirectory: true)
+        try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
+        let deadSessionID = "fc48a626-5528-403f-b7da-6e9386493643"
+        let restoredSessionID = "d3da599e-f985-4eaf-a834-f9eb069d6802"
+        try createClaudeTranscript(home: home, projectDirectory: repoRoot, sessionID: restoredSessionID)
+        let paneID = UUID().uuidString
+        let state = SavedTabState(
+            tabID: UUID().uuidString,
+            selectedTabID: nil,
+            customTitle: "Redb",
+            color: TabColor.blue.rawValue,
+            directory: packageDirectory.path,
+            selectedIndex: nil,
+            tokenOptOverride: nil,
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            aiProvider: nil,
+            aiSessionId: nil,
+            splitLayout: nil,
+            focusedPaneID: paneID,
+            paneStates: [
+                SavedTerminalPaneState(
+                    paneID: paneID,
+                    directory: packageDirectory.path,
+                    scrollbackContent: nil,
+                    aiResumeCommand: "claude --resume \(deadSessionID)",
+                    aiProvider: "claude",
+                    aiSessionId: deadSessionID,
+                    aiSessionIdSource: .explicit,
+                    agentLaunchCommand: "claude --resume \(restoredSessionID)"
+                )
+            ]
+        )
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
+            states: [state],
+            environment: ["CHAU7_HOME_ROOT": home.path]
+        )
+        let pane = sanitized.first?.paneStates?.first
+
+        XCTAssertEqual(pane?.aiProvider, "claude")
+        XCTAssertEqual(pane?.aiSessionId, restoredSessionID)
+        XCTAssertEqual(pane?.aiResumeCommand, "claude --resume \(restoredSessionID)")
+        XCTAssertEqual(pane?.aiResumeDirectory, repoRoot.path)
+    }
+
+    func testResolveSavedClaudeMetadataUsesCommandOnlyAgentLaunchInRelatedProject() throws {
+        let home = try temporaryDirectory()
+        let repoRoot = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: repoRoot)
+        }
+        let packageDirectory = repoRoot.appendingPathComponent("packages/aethyme", isDirectory: true)
+        try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
+        let sessionID = "d3da599e-f985-4eaf-a834-f9eb069d6802"
+        try createClaudeTranscript(home: home, projectDirectory: repoRoot, sessionID: sessionID)
+        let paneState = SavedTerminalPaneState(
+            paneID: UUID().uuidString,
+            directory: packageDirectory.path,
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            aiProvider: nil,
+            aiSessionId: nil,
+            agentLaunchCommand: "claude --resume \(sessionID)"
+        )
+
+        let resolved = OverlayTabsModel.resolveAIResumeMetadataFromSavedState(
+            paneState: paneState,
+            fallbackAIProvider: nil,
+            fallbackAISessionId: nil,
+            environment: ["CHAU7_HOME_ROOT": home.path]
+        )
+
+        XCTAssertEqual(resolved?.provider, "claude")
+        XCTAssertEqual(resolved?.sessionId, sessionID)
+        XCTAssertEqual(resolved?.sessionIdSource, .explicit)
+    }
+
+    func testPreferredRestoreDirectoryUsesCommandOnlyAgentLaunchProjectRoot() throws {
+        let home = try temporaryDirectory()
+        let repoRoot = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: repoRoot)
+        }
+        let packageDirectory = repoRoot.appendingPathComponent("packages/aethyme", isDirectory: true)
+        try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
+        let sessionID = "d3da599e-f985-4eaf-a834-f9eb069d6802"
+        try createClaudeTranscript(home: home, projectDirectory: repoRoot, sessionID: sessionID)
+        let paneState = SavedTerminalPaneState(
+            paneID: UUID().uuidString,
+            directory: packageDirectory.path,
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            aiProvider: nil,
+            aiSessionId: nil,
+            agentLaunchCommand: "claude --resume \(sessionID)"
+        )
+
+        let directory = paneState.resolvedPreferredRestoreDirectory(
+            environment: ["CHAU7_HOME_ROOT": home.path]
+        )
+
+        XCTAssertEqual(directory, repoRoot.path)
+    }
+
+    func testSanitizeDropsClaudeSessionFromForeignProject() throws {
+        let home = try temporaryDirectory()
+        let aethymeRoot = try temporaryDirectory()
+        let chau7Root = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: aethymeRoot)
+            try? FileManager.default.removeItem(at: chau7Root)
+        }
+        let packageDirectory = aethymeRoot.appendingPathComponent("packages/aethyme", isDirectory: true)
+        try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
+        let foreignSessionID = "b074c722-cca4-4a08-a40d-b05df8622490d"
+        try createClaudeTranscript(home: home, projectDirectory: chau7Root, sessionID: foreignSessionID)
+        let paneID = UUID().uuidString
+        let state = SavedTabState(
+            tabID: UUID().uuidString,
+            selectedTabID: nil,
+            customTitle: "Eval",
+            color: TabColor.green.rawValue,
+            directory: packageDirectory.path,
+            selectedIndex: nil,
+            tokenOptOverride: nil,
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            aiProvider: nil,
+            aiSessionId: nil,
+            splitLayout: nil,
+            focusedPaneID: paneID,
+            paneStates: [
+                SavedTerminalPaneState(
+                    paneID: paneID,
+                    directory: packageDirectory.path,
+                    scrollbackContent: nil,
+                    aiResumeCommand: "claude --resume \(foreignSessionID)",
+                    aiProvider: "claude",
+                    aiSessionId: foreignSessionID,
+                    aiSessionIdSource: .explicit
+                )
+            ]
+        )
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
+            states: [state],
+            environment: ["CHAU7_HOME_ROOT": home.path]
+        )
+        let pane = sanitized.first?.paneStates?.first
+
+        XCTAssertNil(pane?.aiProvider)
+        XCTAssertNil(pane?.aiSessionId)
+        XCTAssertNil(pane?.aiResumeCommand)
+        XCTAssertNil(pane?.aiResumeDirectory)
     }
 
     // MARK: - normalizedResumeCommand / isSafeResumeCommand
@@ -192,5 +391,37 @@ final class TabStatePersistenceStaticTests: XCTestCase {
             focusedPaneID: nil,
             paneStates: nil
         )
+    }
+
+    private func temporaryDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Chau7StaticTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url.standardizedFileURL
+    }
+
+    private func createClaudeTranscript(home: URL, projectDirectory: URL, sessionID: String) throws {
+        let normalizedProject = projectDirectory.standardizedFileURL.path
+        let projectDirName = normalizedProject.replacingOccurrences(of: "/", with: "-")
+        let claudeDir = home.appendingPathComponent(".claude", isDirectory: true)
+        let projectDir = claudeDir
+            .appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent(projectDirName, isDirectory: true)
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+        try Data("{}\n".utf8).write(to: projectDir.appendingPathComponent("\(sessionID).jsonl"))
+
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let historyURL = claudeDir.appendingPathComponent("history.jsonl")
+        let payload: [String: Any] = [
+            "display": "test",
+            "timestamp": 1,
+            "project": normalizedProject,
+            "sessionId": sessionID
+        ]
+        let line = try JSONSerialization.data(withJSONObject: payload)
+        var historyData = (try? Data(contentsOf: historyURL)) ?? Data()
+        historyData.append(line)
+        historyData.append(Data("\n".utf8))
+        try historyData.write(to: historyURL)
     }
 }

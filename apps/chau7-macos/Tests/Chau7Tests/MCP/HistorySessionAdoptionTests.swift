@@ -133,6 +133,55 @@ final class HistorySessionAdoptionTests: XCTestCase {
         XCTAssertEqual(session.lastAISessionIdentitySource, .explicit)
     }
 
+    func testAdoptHistorySessionUsesExplicitTabIDWithoutDirectoryForEmptyIdentity() throws {
+        let tabID = overlayModel.selectedTabID
+        let session = try XCTUnwrap(overlayModel.tabs.first?.session)
+        session.currentDirectory = "/tmp/Mockup"
+
+        let request = try XCTUnwrap(HistorySessionAdoptionRequest(
+            toolName: "Codex",
+            sessionId: "019eaaab-1111-7222-8333-444455556666",
+            directory: nil,
+            tabID: tabID,
+            observedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            state: nil,
+            reason: .historyEntry
+        ))
+
+        XCTAssertTrue(TerminalControlService.shared.adoptHistorySession(request))
+        XCTAssertEqual(session.lastAIProvider, "codex")
+        XCTAssertEqual(session.lastAISessionId, "019eaaab-1111-7222-8333-444455556666")
+        XCTAssertEqual(session.lastAISessionIdentitySource, .observed)
+        XCTAssertEqual(session.lastAgentLaunchCommand, "codex resume 019eaaab-1111-7222-8333-444455556666")
+    }
+
+    func testUnifiedEventWithExplicitTabIDAdoptsResumeIdentity() throws {
+        let tabID = overlayModel.selectedTabID
+        let session = try XCTUnwrap(overlayModel.tabs.first?.session)
+        session.currentDirectory = "/tmp/Mockup"
+        appModel.historySessionAdopter = { request in
+            TerminalControlService.shared.adoptHistorySession(request)
+        }
+
+        let event = AIEvent(
+            source: .codex,
+            type: "finished",
+            tool: "Codex",
+            message: "Codex finished",
+            ts: DateFormatters.nowISO8601(),
+            tabID: tabID,
+            sessionID: "019eaaac-1111-7222-8333-444455556666",
+            producer: "test",
+            reliability: .authoritative
+        )
+
+        XCTAssertTrue(appModel.adoptUnifiedEventSessionIdentityIfNeeded(event))
+        XCTAssertEqual(session.lastAIProvider, "codex")
+        XCTAssertEqual(session.lastAISessionId, "019eaaac-1111-7222-8333-444455556666")
+        XCTAssertEqual(session.lastAISessionIdentitySource, .observed)
+        XCTAssertEqual(session.lastAgentLaunchCommand, "codex resume 019eaaac-1111-7222-8333-444455556666")
+    }
+
     func testInactiveHistoryDoesNotReplaceNewerObservedSession() throws {
         let tabID = overlayModel.selectedTabID
         let session = try XCTUnwrap(overlayModel.tabs.first?.session)

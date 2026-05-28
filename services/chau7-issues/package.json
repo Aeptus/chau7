@@ -9,7 +9,8 @@
     "format:check": "prettier --check 'src/**/*.{js,json}'",
     "format:write": "prettier --write 'src/**/*.{js,json}'",
     "build": "wrangler deploy --dry-run",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "cutover": "bash Scripts/cutover-from-legacy-relay.sh"
   },
   "devDependencies": {
     "prettier": "^3.8.2",

@@ -2926,7 +2926,7 @@ final class FeatureSettings {
         }
         self.dangerousOutputHighlightIdleDelayMs = defaults.object(forKey: Keys.dangerousOutputHighlightIdleDelayMs) as? Int ?? 500
         self.dangerousOutputHighlightMaxIntervalMs = defaults.object(forKey: Keys.dangerousOutputHighlightMaxIntervalMs) as? Int ?? 2000
-        self.dangerousOutputHighlightLowPowerEnabled = defaults.object(forKey: Keys.dangerousOutputHighlightLowPowerEnabled) as? Bool ?? false
+        self.dangerousOutputHighlightLowPowerEnabled = defaults.object(forKey: Keys.dangerousOutputHighlightLowPowerEnabled) as? Bool ?? true
         self.defaultStartDirectory = defaults.string(forKey: Keys.defaultStartDirectory) ?? home
 
         // API Analytics (default: disabled)
@@ -3658,7 +3658,7 @@ final class FeatureSettings {
         dangerousCommandProtectedProcessPatterns = Self.defaultDangerousProtectedProcessPatterns
         dangerousOutputHighlightIdleDelayMs = 500
         dangerousOutputHighlightMaxIntervalMs = 2000
-        dangerousOutputHighlightLowPowerEnabled = false
+        dangerousOutputHighlightLowPowerEnabled = true
         defaultStartDirectory = home
 
         // Tab Display
@@ -3781,7 +3781,7 @@ final class FeatureSettings {
         dangerousCommandProtectedProcessPatterns = Self.defaultDangerousProtectedProcessPatterns
         dangerousOutputHighlightIdleDelayMs = 500
         dangerousOutputHighlightMaxIntervalMs = 2000
-        dangerousOutputHighlightLowPowerEnabled = false
+        dangerousOutputHighlightLowPowerEnabled = true
         defaultStartDirectory = RuntimeIsolation.homePath()
         shellType = .system
         customShellPath = ""

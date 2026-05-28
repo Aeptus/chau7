@@ -207,7 +207,7 @@ extension TerminalSessionModel {
                 FeatureProfiler.shared.end(outputToken)
 
                 if let sanitizedOutputText {
-                    appendRemoteOutputTranscript(sanitizedOutputText)
+                    enqueueRemoteOutputTranscript(sanitizedOutputText)
                 }
 
                 if let exitCode = aiExitCode {
@@ -237,7 +237,9 @@ extension TerminalSessionModel {
                 }
 
                 // AI waiting detection
-                maybeDetectAIWaitingForInput(data)
+                if let outputText {
+                    maybeDetectAIWaitingForInput(outputText)
+                }
 
                 // Dev server detection
                 let devToken = FeatureProfiler.shared.begin(.devServerDetect, bytes: data.count)
@@ -259,6 +261,27 @@ extension TerminalSessionModel {
     private func appendRemoteOutputTranscript(_ sanitized: String) {
         guard !sanitized.isEmpty else { return }
         cachedRemoteOutputText = RemoteOutputTuning.trimRetainedText(cachedRemoteOutputText + sanitized)
+    }
+
+    private func enqueueRemoteOutputTranscript(_ sanitized: String) {
+        guard !sanitized.isEmpty else { return }
+        pendingRemoteOutputTranscript += sanitized
+        if pendingRemoteOutputTranscript.utf8.count > RemoteOutputTuning.maxRetainedBytes {
+            pendingRemoteOutputTranscript = RemoteOutputTuning.trimRetainedText(pendingRemoteOutputTranscript)
+        }
+        guard remoteOutputTranscriptFlushWorkItem == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.flushRemoteOutputTranscript()
+        }
+        remoteOutputTranscriptFlushWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + remoteOutputTranscriptFlushInterval, execute: work)
+    }
+
+    private func flushRemoteOutputTranscript() {
+        let transcript = pendingRemoteOutputTranscript
+        pendingRemoteOutputTranscript.removeAll(keepingCapacity: true)
+        remoteOutputTranscriptFlushWorkItem = nil
+        appendRemoteOutputTranscript(transcript)
     }
 
     private func maybeDetectDevServer(_ data: Data) {
@@ -285,11 +308,10 @@ extension TerminalSessionModel {
     }
 
     /// Detects when an AI agent is waiting for user input (prompts, permission requests, etc.)
-    private func maybeDetectAIWaitingForInput(_ data: Data) {
+    private func maybeDetectAIWaitingForInput(_ text: String) {
         guard activeAppName != nil else { return }
-        guard let text = String(data: data, encoding: .utf8) else { return }
 
-        let token = FeatureProfiler.shared.begin(.aiDetect, bytes: data.count, metadata: "wait-for-input")
+        let token = FeatureProfiler.shared.begin(.aiDetect, bytes: text.utf8.count, metadata: "wait-for-input")
         defer { FeatureProfiler.shared.end(token) }
 
         let approvalPatterns = [
@@ -1587,7 +1609,7 @@ extension TerminalSessionModel {
         }
         lastAgentLaunchCommand = launchCommand
         if let lastStatus {
-            status = lastStatus
+            status = lastStatus.restoredFromPersistence
         }
         self.lastExitCode = lastExitCode
         self.lastExitAt = lastExitAt
@@ -1780,9 +1802,13 @@ extension TerminalSessionModel {
         let (idleDelay, maxInterval) = dangerousOutputHighlightTiming()
         let now = Date()
         let sinceLastRun = now.timeIntervalSince(dangerousOutputHighlightLastRun)
-        let delay: TimeInterval = sinceLastRun >= maxInterval
+        var delay: TimeInterval = sinceLastRun >= maxInterval
             ? 0
             : idleDelay
+        let backoffRemaining = dangerousOutputHighlightBackoffUntil.timeIntervalSince(now)
+        if backoffRemaining > 0 {
+            delay = max(delay, backoffRemaining)
+        }
 
         dangerousOutputHighlightWorkItem?.cancel()
         let expectedFireAt = CFAbsoluteTimeGetCurrent() + delay
@@ -1804,6 +1830,11 @@ extension TerminalSessionModel {
                 thresholdMs: scanLagLogThresholdMs,
                 lastLoggedAt: &lastScanLagLogAt
             )
+            if applyDangerousOutputHighlightBackoffIfNeeded(congestionMs: congestionMs, now: Date()) {
+                let totalDurationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
+                WakeupProfiler.shared.record("danger.highlightWork", durationMs: totalDurationMs)
+                return
+            }
             let now = Date()
             let shouldRefreshCache = shouldRefreshDangerousOutputCache(now: now)
             if shouldRefreshCache {
@@ -1820,6 +1851,25 @@ extension TerminalSessionModel {
         }
         dangerousOutputHighlightWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func applyDangerousOutputHighlightBackoffIfNeeded(congestionMs: Double, now: Date) -> Bool {
+        guard congestionMs >= dangerousOutputHighlightBackoffThresholdMs else { return false }
+        let scaledBackoff = TimeInterval(congestionMs / 1000.0)
+        let backoffSeconds = min(dangerousOutputHighlightMaxBackoffSeconds, max(1.0, scaledBackoff))
+        let until = now.addingTimeInterval(backoffSeconds)
+        if until > dangerousOutputHighlightBackoffUntil {
+            dangerousOutputHighlightBackoffUntil = until
+        }
+        if lastDangerousOutputHighlightBackoffLogAt.map({ now.timeIntervalSince($0) >= latencyLogCooldownSeconds }) ?? true {
+            lastDangerousOutputHighlightBackoffLogAt = now
+            Log.info(
+                "Dangerous output highlight backoff: pausing best-effort output scan for " +
+                    "\(String(format: "%.1f", backoffSeconds))s after main-queue lag " +
+                    "\(Int(congestionMs.rounded()))ms"
+            )
+        }
+        return true
     }
 
     private func dangerousOutputHighlightTiming() -> (idleDelay: TimeInterval, maxInterval: TimeInterval) {
@@ -1846,8 +1896,11 @@ extension TerminalSessionModel {
 
     private func shouldUseLowPowerHighlights() -> Bool {
         guard WakeupControl.isEnabled(.lowPowerDangerousHighlights) else { return false }
-        guard FeatureSettings.shared.dangerousOutputHighlightLowPowerEnabled else { return false }
-        return outputBurstActive || isCpuSaturated()
+        return FeatureSettings.shared.dangerousOutputHighlightLowPowerEnabled
+            || outputBurstActive
+            || isCpuSaturated()
+            || CTOFlagManager.isFlagActive(sessionID: tabIdentifier)
+            || (scanLagAverageMs ?? scanLagDelayMs ?? 0) >= Int(scanLagLogThresholdMs)
     }
 
     private func shouldRefreshDangerousOutputCache(now: Date) -> Bool {

@@ -720,7 +720,7 @@ final class RuntimeSessionManager {
 
         if shouldSkipAdoptionByCooldown(cacheKey) { return nil }
 
-        let tabID = resolveAdoptionTabID(
+        let tabID = stampedClaudeTabID(from: event.tabID) ?? resolveAdoptionTabID(
             sessionID: normalizedClaudeSessionID,
             cwd: event.cwd,
             cacheKey: cacheKey
@@ -734,6 +734,14 @@ final class RuntimeSessionManager {
         }
         Log.info("RuntimeSessionManager: auto-adopted session \(session.id) for cwd=\(event.cwd)")
         return session
+    }
+
+    private func stampedClaudeTabID(from rawTabID: String) -> UUID? {
+        let trimmed = rawTabID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let tabID = UUID(uuidString: trimmed), tabExistsLocked(tabID) else {
+            return nil
+        }
+        return tabID
     }
 
     /// Resolves which tab to bind a hook-event session to using TabAttribution

@@ -53,6 +53,15 @@ final class CanonicalNotificationMappingTests: XCTestCase {
         )
     }
 
+    func testNotificationTypeTakesPrecedenceOverCanonicalType() {
+        let kind: NotificationSemanticKind = NotificationSemanticMapping.kind(
+            rawType: "notification",
+            notificationType: "permission_prompt",
+            canonicalType: "waiting_input"
+        )
+        XCTAssertEqual(kind, .permissionRequired)
+    }
+
     func testCanonicalTypeFallbackWhenRawTypeIsUnknown() {
         let kind: NotificationSemanticKind = NotificationSemanticMapping.kind(
             rawType: "provider_specific_waiting_payload",
@@ -60,6 +69,33 @@ final class CanonicalNotificationMappingTests: XCTestCase {
             canonicalType: "waiting_input"
         )
         XCTAssertEqual(kind, .waitingForInput)
+    }
+
+    func testCanonicalTypeOverridesGenericRawNotification() {
+        let kind: NotificationSemanticKind = NotificationSemanticMapping.kind(
+            rawType: "notification",
+            notificationType: nil,
+            canonicalType: "waiting_input"
+        )
+        XCTAssertEqual(kind, .waitingForInput)
+    }
+
+    func testCanonicalTypeOverridesGenericRawIdle() {
+        let kind: NotificationSemanticKind = NotificationSemanticMapping.kind(
+            rawType: "idle",
+            notificationType: nil,
+            canonicalType: "waiting_input"
+        )
+        XCTAssertEqual(kind, .waitingForInput)
+    }
+
+    func testSpecificRawTypeBeatsGenericCanonicalType() {
+        let kind: NotificationSemanticKind = NotificationSemanticMapping.kind(
+            rawType: "permission_request",
+            notificationType: nil,
+            canonicalType: "notification"
+        )
+        XCTAssertEqual(kind, .permissionRequired)
     }
 
     func testNormalize() {

@@ -237,6 +237,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - **Fixed-delay startup reveal** — Chau7 reveals restored windows after a short splash delay instead of waiting for the full restore queue to drain, matching the lighter release-era startup contract.
 - **Stabilized tab restore path** — restored scrollback replays through the shell again, with restore-artifact filtering preserved, to avoid post-relaunch history corruption while keeping fast visible startup.
 - Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
+- Emoji-aware glyph coloring renders real emoji with embedded color while keeping terminal UI symbols and box drawing tintable by ANSI foreground color in Metal.
 - International Option-key punctuation input preserved for programming characters like brackets and braces.
 - Kitty keyboard protocol (full progressive enhancement).
 - Inline images: iTerm2 (ESC ] 1337), Sixel, and Kitty image protocols.

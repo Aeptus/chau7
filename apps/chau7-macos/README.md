@@ -113,10 +113,14 @@ When ad-hoc signing is used, it now applies a stable designated requirement
 (`designated => identifier "<bundle-id>"`) so TCC permissions do not churn on every rebuild.
 The local build scripts also rebuild and bundle `chau7-remote` automatically so the remote
 helper stays in sync with app bundles.
+Code signing is auto-detected. Local dev builds prefer an `Apple Development:` certificate,
+installed/release builds prefer `Developer ID Application:`, and scripts fall back to
+stable ad-hoc signing when no Apple signing identity is installed.
 Override when needed:
 
 ```bash
 BUNDLE_IDENTIFIER=com.chau7.app ./Scripts/build-and-run.sh
+CHAU7_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./Scripts/build-and-run.sh
 ```
 
 ### Install / update the Launchpad app
@@ -130,9 +134,15 @@ To install the production Launchpad app (`com.chau7.app`) into `/Applications`:
 Note: this script refuses to replace `/Applications/Chau7.app` while it is running.
 Replacing a running app causes TCC code-requirement mismatches and repeated permission prompts.
 
+To force Developer ID signing for the Launchpad app:
+
+```bash
+CHAU7_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./Scripts/install-launchpad-app.sh
+```
+
 ### Share a pre-release DMG
 
-Before Apple Developer signing and notarization are set up, you can still build a clean testing DMG:
+Build a clean testing DMG:
 
 ```bash
 ./Scripts/build-dist.sh
@@ -144,6 +154,9 @@ This produces `apps/chau7-macos/dist/Chau7-AppleSilicon.dmg` with:
 - an `Applications` symlink
 - bundled legal notices inside the app
 
+When a `Developer ID Application:` identity is installed, the app bundle and DMG are signed
+with it automatically. Without one, the script falls back to stable ad-hoc app signing.
+
 If you explicitly want the larger mixed-architecture helper build, use:
 
 ```bash
@@ -152,13 +165,26 @@ If you explicitly want the larger mixed-architecture helper build, use:
 
 That produces `apps/chau7-macos/dist/Chau7-Universal.dmg`.
 
-Important limits for this pre-release package:
+Notarization is opt-in. First store Apple notary credentials in the keychain:
 
-- it is ad-hoc signed, not Developer ID signed
-- it is not notarized
-- first launch on another Mac may require Finder: Control-click `Chau7.app` -> `Open`
+```bash
+xcrun notarytool store-credentials chau7-notary --apple-id you@example.com --team-id TEAMID --password app-specific-password
+```
 
-Once Apple Developer signing is available, this DMG flow should be upgraded to Developer ID signing, notarization, and stapling.
+Then build, submit, wait, and staple:
+
+```bash
+CHAU7_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+CHAU7_NOTARY_PROFILE=chau7-notary \
+CHAU7_NOTARIZE=1 \
+./Scripts/build-dist.sh
+```
+
+Important limits:
+
+- ad-hoc fallback builds are not notarized
+- first launch after switching from ad-hoc to Apple signing may require macOS permissions once
+- first launch of an ad-hoc build on another Mac may require Finder: Control-click `Chau7.app` -> `Open`
 
 Optional: launch it after install:
 
@@ -271,6 +297,28 @@ Input lines are tagged as:
 ```
 [INPUT] your text
 ```
+
+### Codex update prompt in Terminal.app
+
+If Codex is installed through Volta, Terminal.app can resolve `codex` through
+`~/.volta/bin` before the npm-managed Node image bin. That leaves Terminal.app
+running a stale Volta package image even after Codex's update prompt updates the
+npm global package. Chau7's built-in terminal already repairs this PATH order at
+startup; for Terminal.app, install the same managed zsh startup block:
+
+```bash
+./Scripts/install-codex-terminal-path-fix.sh
+```
+
+Open a new Terminal.app window and verify:
+
+```bash
+command -v codex
+codex --version
+```
+
+The first command should point under `~/.volta/tools/image/node/.../bin/codex`,
+not `~/.volta/bin/codex`.
 
 TTY readability:
 - "Normalize terminal output" strips ANSI codes, handles backspaces, and removes control chars.

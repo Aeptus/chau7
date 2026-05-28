@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 #if !SWIFT_PACKAGE
 @testable import Chau7
 
@@ -197,6 +198,20 @@ final class KeybindingsManagerTests: XCTestCase {
         XCTAssertTrue(binding?.modifiers.contains(.shift) ?? false)
     }
 
+    func testEnterBindingMatchesReturnAndKeypadEnter() {
+        let binding = KeyBinding.parse("enter", action: .newTab)
+        XCTAssertNotNil(binding)
+
+        XCTAssertTrue(
+            binding?.matches(makeKeyEvent(keyCode: KeyboardShortcuts.returnKeyCode)) ?? false,
+            "Enter binding should match the main Return key"
+        )
+        XCTAssertTrue(
+            binding?.matches(makeKeyEvent(keyCode: KeyboardShortcuts.keypadEnterKeyCode)) ?? false,
+            "Enter binding should match the numeric keypad Enter key"
+        )
+    }
+
     // MARK: - KeyBinding.modifiers(from:)
 
     func testModifiersFromParts() {
@@ -351,6 +366,28 @@ final class KeybindingsManagerTests: XCTestCase {
             unknown,
             "Unknown action names should return the raw string"
         )
+    }
+
+    private func makeKeyEvent(
+        keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags = [],
+        characters: String = "\r"
+    ) -> NSEvent {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: characters,
+            charactersIgnoringModifiers: characters,
+            isARepeat: false,
+            keyCode: keyCode
+        ) else {
+            fatalError("Failed to create test key event")
+        }
+        return event
     }
 }
 

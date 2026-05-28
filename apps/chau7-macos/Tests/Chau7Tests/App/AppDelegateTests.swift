@@ -49,6 +49,25 @@ final class AppDelegateTests: XCTestCase {
         )
     }
 
+    func testReturnKeyCodes() {
+        XCTAssertEqual(
+            KeyboardShortcuts.returnKeyCode,
+            36,
+            "Return key code should match macOS virtual key code"
+        )
+        XCTAssertEqual(
+            KeyboardShortcuts.keypadEnterKeyCode,
+            76,
+            "Numeric keypad Enter key code should match macOS virtual key code"
+        )
+    }
+
+    func testReturnKeyCodePredicateIncludesKeypadEnter() {
+        XCTAssertTrue(KeyboardShortcuts.isReturnKeyCode(KeyboardShortcuts.returnKeyCode))
+        XCTAssertTrue(KeyboardShortcuts.isReturnKeyCode(KeyboardShortcuts.keypadEnterKeyCode))
+        XCTAssertFalse(KeyboardShortcuts.isReturnKeyCode(KeyboardShortcuts.tabKeyCode))
+    }
+
     func testArrowKeyCodes() {
         XCTAssertEqual(
             KeyboardShortcuts.leftArrowKeyCode,

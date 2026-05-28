@@ -300,22 +300,249 @@ extension OverlayTabsModel {
         )
     }
 
-    static func sanitizeRestoredAIResumeOwnership(states: [SavedTabState]) -> [SavedTabState] {
+    private struct RestoredResumeCandidate {
+        let provider: String
+        let sessionId: String
+        let sessionIdSource: AISessionIdentitySource?
+        let command: String?
+    }
+
+    private struct SanitizedRestoredResume {
+        let provider: String?
+        let sessionId: String?
+        let sessionIdSource: AISessionIdentitySource?
+        let command: String?
+        let resumeDirectory: String?
+    }
+
+    private static func appendCommandCandidate(
+        _ command: String?,
+        to candidates: inout [RestoredResumeCandidate]
+    ) {
+        guard let command = normalizedResumeCommand(command),
+              let metadata = AIResumeParser.extractMetadata(from: command) else {
+            return
+        }
+        candidates.append(RestoredResumeCandidate(
+            provider: metadata.provider,
+            sessionId: metadata.sessionId,
+            sessionIdSource: .explicit,
+            command: command
+        ))
+    }
+
+    private static func appendFieldCandidate(
+        provider: String?,
+        sessionId: String?,
+        source: AISessionIdentitySource?,
+        to candidates: inout [RestoredResumeCandidate]
+    ) {
+        guard let normalizedProvider = normalizedAIProvider(from: provider),
+              let normalizedSessionId = normalizePersistedAISessionId(sessionId, source: source) else {
+            return
+        }
+        candidates.append(RestoredResumeCandidate(
+            provider: normalizedProvider,
+            sessionId: normalizedSessionId,
+            sessionIdSource: source ?? .explicit,
+            command: nil
+        ))
+    }
+
+    private static func restoredResumeCandidates(
+        aiResumeCommand: String?,
+        agentLaunchCommand: String?,
+        aiProvider: String?,
+        aiSessionId: String?,
+        aiSessionIdSource: AISessionIdentitySource?,
+        fallbackAIProvider: String? = nil,
+        fallbackAISessionId: String? = nil,
+        fallbackAISessionIdSource: AISessionIdentitySource? = nil
+    ) -> [RestoredResumeCandidate] {
+        var candidates: [RestoredResumeCandidate] = []
+        appendCommandCandidate(aiResumeCommand, to: &candidates)
+        appendCommandCandidate(agentLaunchCommand, to: &candidates)
+        appendFieldCandidate(
+            provider: aiProvider,
+            sessionId: aiSessionId,
+            source: aiSessionIdSource,
+            to: &candidates
+        )
+        appendFieldCandidate(
+            provider: fallbackAIProvider,
+            sessionId: fallbackAISessionId,
+            source: fallbackAISessionIdSource,
+            to: &candidates
+        )
+
+        var seen = Set<String>()
+        return candidates.filter { candidate in
+            let key = "\(candidate.provider):\(candidate.sessionId)"
+            return seen.insert(key).inserted
+        }
+    }
+
+    private static func sanitizeRestoredResumeCandidate(
+        _ candidate: RestoredResumeCandidate,
+        directory: String,
+        claimedSessions: Set<AIResumeOwnership.ClaimedSession>,
+        fileManager: FileManager,
+        environment: [String: String]
+    ) -> SanitizedRestoredResume? {
+        let sanitized = AIResumeOwnership.sanitizeForPersistence(
+            provider: candidate.provider,
+            sessionId: candidate.sessionId,
+            claimedSessions: claimedSessions
+        )
+        guard let provider = sanitized.provider,
+              let sessionId = sanitized.sessionId else {
+            return nil
+        }
+
+        let resumeDirectory: String?
+        if provider == "claude" {
+            if candidate.sessionIdSource == .synthetic {
+                resumeDirectory = nil
+            } else {
+                guard restoredClaudeTranscriptExists(
+                    sessionId: sessionId,
+                    directory: directory,
+                    fileManager: fileManager,
+                    environment: environment
+                ) else {
+                    Log.warn(
+                        "sanitizeRestoredAIResumeOwnership: dropping unrestorable Claude metadata session=\(sessionId.prefix(8)) dir=\(directory)"
+                    )
+                    return nil
+                }
+                resumeDirectory = ClaudeSessionResolver.restoreDirectory(
+                    forSessionID: sessionId,
+                    savedDirectory: directory,
+                    fileManager: fileManager,
+                    environment: environment
+                )
+            }
+        } else {
+            resumeDirectory = nil
+        }
+
+        let command = buildAIResumeCommand(provider: provider, sessionId: sessionId)
+            ?? candidate.command
+        return SanitizedRestoredResume(
+            provider: provider,
+            sessionId: sessionId,
+            sessionIdSource: candidate.sessionIdSource,
+            command: command,
+            resumeDirectory: resumeDirectory
+        )
+    }
+
+    private static func sanitizeRestoredResumeCandidates(
+        _ candidates: [RestoredResumeCandidate],
+        directory: String,
+        claimedSessions: Set<AIResumeOwnership.ClaimedSession>,
+        fileManager: FileManager,
+        environment: [String: String]
+    ) -> SanitizedRestoredResume {
+        for candidate in candidates {
+            if let sanitized = sanitizeRestoredResumeCandidate(
+                candidate,
+                directory: directory,
+                claimedSessions: claimedSessions,
+                fileManager: fileManager,
+                environment: environment
+            ) {
+                return sanitized
+            }
+        }
+        return SanitizedRestoredResume(
+            provider: nil,
+            sessionId: nil,
+            sessionIdSource: nil,
+            command: nil,
+            resumeDirectory: nil
+        )
+    }
+
+    static func resolveRestoreDirectoryForMetadata(
+        provider: String?,
+        sessionId: String?,
+        savedDirectory: String,
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String? {
+        guard provider == "claude",
+              let sessionId else {
+            return nil
+        }
+        return ClaudeSessionResolver.restoreDirectory(
+            forSessionID: sessionId,
+            savedDirectory: savedDirectory,
+            fileManager: fileManager,
+            environment: environment
+        )
+    }
+
+    private static func validateRestoredClaudeMetadata(
+        provider: String,
+        sessionId: String,
+        sessionIdSource: AISessionIdentitySource?,
+        directory: String,
+        fileManager: FileManager,
+        environment: [String: String]
+    ) -> Bool {
+        guard provider == "claude" else { return true }
+        guard sessionIdSource != .synthetic else { return true }
+        guard restoredClaudeTranscriptExists(
+            sessionId: sessionId,
+            directory: directory,
+            fileManager: fileManager,
+            environment: environment
+        ) else {
+            Log.warn(
+                "sanitizeRestoredAIResumeOwnership: dropping unrestorable Claude metadata session=\(sessionId.prefix(8)) dir=\(directory)"
+            )
+            return false
+        }
+        return true
+    }
+
+    static func restoredClaudeTranscriptExists(
+        sessionId: String,
+        directory: String,
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
+        guard let normalizedSessionId = normalizeAISessionId(sessionId) else { return false }
+        return ClaudeSessionResolver.hasRestorableTranscript(
+            sessionId: normalizedSessionId,
+            savedDirectory: directory,
+            fileManager: fileManager,
+            environment: environment
+        )
+    }
+
+    static func sanitizeRestoredAIResumeOwnership(
+        states: [SavedTabState],
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [SavedTabState] {
         var claimedSessions = Set<AIResumeOwnership.ClaimedSession>()
 
         return states.map { state in
-            let originalTopLevelCommand = normalizedResumeCommand(state.aiResumeCommand)
             let sanitizedPaneStates = state.paneStates?.map { paneState -> SavedTerminalPaneState in
-                let commandMetadata = AIResumeParser.extractMetadata(
-                    from: paneState.aiResumeCommand ?? ""
-                )
-                let sanitizedPane = AIResumeOwnership.sanitizeForPersistence(
-                    provider: normalizedAIProvider(from: paneState.aiProvider) ?? commandMetadata?.provider,
-                    sessionId: normalizePersistedAISessionId(
-                        paneState.aiSessionId,
-                        source: paneState.aiSessionIdSource
-                    ) ?? commandMetadata?.sessionId,
-                    claimedSessions: claimedSessions
+                let sanitizedPane = sanitizeRestoredResumeCandidates(
+                    restoredResumeCandidates(
+                        aiResumeCommand: paneState.aiResumeCommand,
+                        agentLaunchCommand: paneState.agentLaunchCommand,
+                        aiProvider: paneState.aiProvider,
+                        aiSessionId: paneState.aiSessionId,
+                        aiSessionIdSource: paneState.aiSessionIdSource
+                    ),
+                    directory: paneState.directory,
+                    claimedSessions: claimedSessions,
+                    fileManager: fileManager,
+                    environment: environment
                 )
                 if let sessionId = sanitizedPane.sessionId, let provider = sanitizedPane.provider {
                     claimedSessions.insert(
@@ -323,20 +550,15 @@ extension OverlayTabsModel {
                     )
                 }
 
-                let sanitizedCommand = sanitizedResumeCommand(
-                    originalCommand: normalizedResumeCommand(paneState.aiResumeCommand),
-                    originalCommandMetadata: commandMetadata,
-                    sanitizedMetadata: sanitizedPane
-                )
-
                 return SavedTerminalPaneState(
                     paneID: paneState.paneID,
                     directory: paneState.directory,
                     scrollbackContent: paneState.scrollbackContent,
-                    aiResumeCommand: sanitizedCommand,
+                    aiResumeCommand: sanitizedPane.command,
+                    aiResumeDirectory: sanitizedPane.resumeDirectory,
                     aiProvider: sanitizedPane.provider,
                     aiSessionId: sanitizedPane.sessionId,
-                    aiSessionIdSource: sanitizedPane.sessionId == nil ? nil : paneState.aiSessionIdSource,
+                    aiSessionIdSource: sanitizedPane.sessionIdSource,
                     lastOutputAt: paneState.lastOutputAt,
                     lastInputAt: paneState.lastInputAt,
                     knownRepoRoot: paneState.knownRepoRoot,
@@ -349,27 +571,24 @@ extension OverlayTabsModel {
                 )
             }
 
-            let topLevelCommandMetadata = AIResumeParser.extractMetadata(
-                from: state.aiResumeCommand ?? ""
-            )
-            let sanitizedTopLevel = AIResumeOwnership.sanitizeForPersistence(
-                provider: normalizedAIProvider(from: state.aiProvider) ?? topLevelCommandMetadata?.provider,
-                sessionId: normalizePersistedAISessionId(
-                    state.aiSessionId,
-                    source: state.aiSessionIdSource
-                ) ?? topLevelCommandMetadata?.sessionId,
-                claimedSessions: claimedSessions
+            let sanitizedTopLevel = sanitizeRestoredResumeCandidates(
+                restoredResumeCandidates(
+                    aiResumeCommand: state.aiResumeCommand,
+                    agentLaunchCommand: state.agentLaunchCommand,
+                    aiProvider: state.aiProvider,
+                    aiSessionId: state.aiSessionId,
+                    aiSessionIdSource: state.aiSessionIdSource
+                ),
+                directory: state.directory,
+                claimedSessions: claimedSessions,
+                fileManager: fileManager,
+                environment: environment
             )
             if let sessionId = sanitizedTopLevel.sessionId, let provider = sanitizedTopLevel.provider {
                 claimedSessions.insert(
                     AIResumeOwnership.ClaimedSession(provider: provider, sessionId: sessionId)
                 )
             }
-            let sanitizedTopLevelCommand = sanitizedResumeCommand(
-                originalCommand: originalTopLevelCommand,
-                originalCommandMetadata: topLevelCommandMetadata,
-                sanitizedMetadata: sanitizedTopLevel
-            )
 
             return SavedTabState(
                 tabID: state.tabID,
@@ -380,10 +599,10 @@ extension OverlayTabsModel {
                 selectedIndex: state.selectedIndex,
                 tokenOptOverride: state.tokenOptOverride,
                 scrollbackContent: state.scrollbackContent,
-                aiResumeCommand: sanitizedTopLevelCommand,
+                aiResumeCommand: sanitizedTopLevel.command,
                 aiProvider: sanitizedTopLevel.provider,
                 aiSessionId: sanitizedTopLevel.sessionId,
-                aiSessionIdSource: sanitizedTopLevel.sessionId == nil ? nil : state.aiSessionIdSource,
+                aiSessionIdSource: sanitizedTopLevel.sessionIdSource,
                 splitLayout: state.splitLayout,
                 focusedPaneID: state.focusedPaneID,
                 paneStates: sanitizedPaneStates,
@@ -438,34 +657,6 @@ extension OverlayTabsModel {
             return nil
         }
         return trimmed
-    }
-
-    private static func sanitizedResumeCommand(
-        originalCommand: String?,
-        originalCommandMetadata: AIResumeParser.ResumeMetadata?,
-        sanitizedMetadata: AIResumeOwnership.Metadata
-    ) -> String? {
-        if let rebuilt = buildAIResumeCommand(
-            provider: sanitizedMetadata.provider,
-            sessionId: sanitizedMetadata.sessionId
-        ) {
-            return rebuilt
-        }
-
-        guard let originalCommand else { return nil }
-
-        // Preserve legacy command-only metadata until restore-time resolution can
-        // consume it. If sanitization removed the session identity because it was
-        // already claimed elsewhere, drop the command too so duplicates still clear.
-        if let originalCommandMetadata {
-            if sanitizedMetadata.provider == originalCommandMetadata.provider,
-               sanitizedMetadata.sessionId == originalCommandMetadata.sessionId {
-                return originalCommand
-            }
-            return nil
-        }
-
-        return originalCommand
     }
 
     /// Build a resume command for an AI session running in the given directory.
@@ -557,30 +748,38 @@ extension OverlayTabsModel {
         paneState: SavedTerminalPaneState,
         fallbackAIProvider: String?,
         fallbackAISessionId: String?,
-        fallbackAISessionIdSource: AISessionIdentitySource? = nil
+        fallbackAISessionIdSource: AISessionIdentitySource? = nil,
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> (provider: String, sessionId: String, sessionIdSource: AISessionIdentitySource?)? {
-        let commandMetadata = AIResumeParser.extractMetadata(
-            from: paneState.aiResumeCommand ?? ""
+        let candidates = restoredResumeCandidates(
+            aiResumeCommand: paneState.aiResumeCommand,
+            agentLaunchCommand: paneState.agentLaunchCommand,
+            aiProvider: paneState.aiProvider,
+            aiSessionId: paneState.aiSessionId,
+            aiSessionIdSource: paneState.aiSessionIdSource,
+            fallbackAIProvider: fallbackAIProvider,
+            fallbackAISessionId: fallbackAISessionId,
+            fallbackAISessionIdSource: fallbackAISessionIdSource
         )
-        let resolvedProvider = normalizedAIProvider(from: paneState.aiProvider)
-            ?? commandMetadata?.provider
-            ?? normalizedAIProvider(from: fallbackAIProvider)
-        let resolvedSource = paneState.aiSessionIdSource
-            ?? (paneState.aiSessionId != nil ? .explicit : nil)
-            ?? fallbackAISessionIdSource
-        let resolvedSessionId = normalizePersistedAISessionId(
-            paneState.aiSessionId,
-            source: resolvedSource
-        ) ?? commandMetadata?.sessionId
-            ?? normalizePersistedAISessionId(
-                fallbackAISessionId,
-                source: fallbackAISessionIdSource
+        for candidate in candidates {
+            guard validateRestoredClaudeMetadata(
+                provider: candidate.provider,
+                sessionId: candidate.sessionId,
+                sessionIdSource: candidate.sessionIdSource,
+                directory: paneState.directory,
+                fileManager: fileManager,
+                environment: environment
+            ) else {
+                continue
+            }
+            return (
+                provider: candidate.provider,
+                sessionId: candidate.sessionId,
+                sessionIdSource: candidate.sessionIdSource
             )
-
-        guard let resolvedProvider, let resolvedSessionId else {
-            return nil
         }
-        return (provider: resolvedProvider, sessionId: resolvedSessionId, sessionIdSource: resolvedSource)
+        return nil
     }
 
     static func normalizedResumeReferenceDate(_ value: Date) -> Date? {

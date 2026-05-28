@@ -5,7 +5,9 @@ import Foundation
 /// Provider hooks, terminal OSC notifications, history fallbacks, and terminal
 /// text heuristics can all describe the same underlying session transition.
 /// This reconciler consumes explicit `AIObservation` values and emits at most
-/// one user-facing notification per deterministic session state transition.
+/// one user-facing notification per deterministic session state transition,
+/// while still allowing later authoritative terminal turn completions from
+/// long-lived provider sessions.
 public final class AISessionEventReconciler {
     public enum Decision: Equatable, Sendable {
         case emit(NotificationIngress.AcceptedEvent)
@@ -29,14 +31,28 @@ public final class AISessionEventReconciler {
     private var recordsByKey: [String: SessionRecord] = [:]
     private var primaryKeyByAlias: [String: String] = [:]
     private let strongerReplacementWindow: TimeInterval
+    private let terminalRepeatWindow: TimeInterval
     private let retentionSeconds: TimeInterval
 
     public init(
         strongerReplacementWindow: TimeInterval = MonitoringSchedule.defaultCoalescingWindow,
+        terminalRepeatWindow: TimeInterval = 10,
         retentionSeconds: TimeInterval = 30 * 60
     ) {
         self.strongerReplacementWindow = strongerReplacementWindow
+        self.terminalRepeatWindow = terminalRepeatWindow
         self.retentionSeconds = retentionSeconds
+    }
+
+    public convenience init(
+        strongerReplacementWindow: TimeInterval = MonitoringSchedule.defaultCoalescingWindow,
+        retentionSeconds: TimeInterval
+    ) {
+        self.init(
+            strongerReplacementWindow: strongerReplacementWindow,
+            terminalRepeatWindow: 10,
+            retentionSeconds: retentionSeconds
+        )
     }
 
     public func reset() {
@@ -185,6 +201,15 @@ public final class AISessionEventReconciler {
         previous: SessionRecord,
         duplicateReason: String
     ) -> TransitionDecision {
+        if observation.strength == previous.strength,
+           shouldEmitRepeatedTerminalState(state: state, observation: observation, previous: previous) {
+            return .init(
+                emit: true,
+                updatesState: true,
+                reason: "repeated terminal session state \(state.rawValue)"
+            )
+        }
+
         guard observation.strength > previous.strength else {
             return .init(emit: false, updatesState: false, reason: duplicateReason)
         }
@@ -198,6 +223,19 @@ public final class AISessionEventReconciler {
             updatesState: true,
             reason: "Updated stronger duplicate session state \(state.rawValue) without re-notifying"
         )
+    }
+
+    private func shouldEmitRepeatedTerminalState(
+        state: AIObservationState,
+        observation: AIObservation,
+        previous: SessionRecord
+    ) -> Bool {
+        guard state.isTerminal else { return false }
+        guard observation.reliability == .authoritative else { return false }
+        guard observation.sourceClass == .providerHook || observation.sourceClass == .runtime else {
+            return false
+        }
+        return observation.timestamp.timeIntervalSince(previous.updatedAt) > terminalRepeatWindow
     }
 
     private func mergeAndPrimaryKey(for observation: AIObservation) -> String {
