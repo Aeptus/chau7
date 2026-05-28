@@ -514,24 +514,20 @@ final class MetalTerminalRenderer: NSObject {
 
         // Draw the cluster into the atlas slot. We always set a white fill so
         // monochrome glyphs become alpha masks; color emoji fonts ignore the fill
-        // and write embedded RGBA pixels. After drawing, sample the slot to decide
-        // whether the shader should treat it as color data.
+        // and write embedded RGBA pixels. Emoji-presentation candidates stay on
+        // the color path even when their embedded pixels are black, white, or gray.
         context.saveGState()
         if colorGlyphCandidate {
             context.setShouldSmoothFonts(false)
         }
         context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
         let baselineY = CGFloat(atlasHeight) - packY - slotHeight + fontDescent
-        context.textPosition = CGPoint(x: packX, y: baselineY)
+        let textPosition = CGPoint(x: packX, y: baselineY)
+        context.textPosition = textPosition
         CTLineDraw(line, context)
+        context.textPosition = textPosition
         let boundingRect = CTLineGetImageBounds(line, context)
-        let isColor = colorGlyphCandidate && Self.slotContainsColorPixels(
-            context: context,
-            x: Int(packX),
-            y: Int(packY),
-            width: Int(ceil(slotWidth)),
-            height: Int(ceil(slotHeight))
-        )
+        let glyphLocalBounds = boundingRect.offsetBy(dx: -textPosition.x, dy: -textPosition.y)
         context.restoreGState()
 
         // Diagnostic: check if box-drawing glyph produced visible pixels (trace-only)
@@ -576,10 +572,10 @@ final class MetalTerminalRenderer: NSObject {
 
         let info = GlyphInfo(
             textureRect: texRect,
-            bearing: CGPoint(x: boundingRect.origin.x, y: boundingRect.origin.y),
+            bearing: CGPoint(x: glyphLocalBounds.origin.x, y: glyphLocalBounds.origin.y),
             advance: slotWidth,
             isWide: isWide,
-            isColor: isColor
+            isColor: colorGlyphCandidate
         )
         glyphCache[key] = info
 

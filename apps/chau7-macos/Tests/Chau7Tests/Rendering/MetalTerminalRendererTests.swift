@@ -76,6 +76,16 @@ final class MetalTerminalRendererTests: XCTestCase {
         XCTAssertFalse(info.isColor)
     }
 
+    func testGlyphBearingDoesNotIncludeAtlasPackingPosition() throws {
+        let renderer = try makeRenderer()
+
+        let info = try XCTUnwrap(renderer.rasterizeGlyphForTesting("A"))
+        let expectedBounds = try localImageBounds(for: "A")
+
+        XCTAssertEqual(info.bearing.x, expectedBounds.origin.x, accuracy: 0.5)
+        XCTAssertEqual(info.bearing.y, expectedBounds.origin.y, accuracy: 0.5)
+    }
+
     func testTUISymbolRasterizationRemainsMonochromeMask() throws {
         let renderer = try makeRenderer()
         let symbols = ["─", "│", "╭", "╮", "╰", "╯", "✳", "✽", "⏺", "★", "⏵", "❯"]
@@ -116,6 +126,28 @@ final class MetalTerminalRendererTests: XCTestCase {
         XCTAssertTrue(info.isColor)
     }
 
+    func testAchromaticEmojiPresentationStillMarksColorGlyphWhenAvailable() throws {
+        let font = CTFontCreateWithName("Apple Color Emoji" as CFString, 13, nil)
+        let fullName = CTFontCopyFullName(font) as String
+
+        try XCTSkipUnless(
+            fullName.localizedCaseInsensitiveContains("Apple Color Emoji"),
+            "Apple Color Emoji is not available on this system"
+        )
+
+        let renderer = try makeRenderer()
+        let info = try XCTUnwrap(renderer.rasterizeGlyphForTesting("⚫️", isWideHint: true))
+
+        XCTAssertTrue(info.isColor)
+    }
+
+    func testTextPresentationSelectorKeepsEmojiCapableSymbolMonochrome() throws {
+        let renderer = try makeRenderer()
+        let info = try XCTUnwrap(renderer.rasterizeGlyphForTesting("⚫︎", isWideHint: true))
+
+        XCTAssertFalse(info.isColor)
+    }
+
     private func makeRenderer() throws -> MetalTerminalRenderer {
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw XCTSkip("Metal is not available on this system")
@@ -125,5 +157,29 @@ final class MetalTerminalRendererTests: XCTestCase {
         }
         renderer.setFont(nsFont: .monospacedSystemFont(ofSize: 13, weight: .regular))
         return renderer
+    }
+
+    private func localImageBounds(for string: String) throws -> CGRect {
+        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular) as CTFont
+        let drawFont = CTFontCreateForString(font, string as CFString, CFRangeMake(0, string.utf16.count))
+        let attrString = NSAttributedString(
+            string: string,
+            attributes: [.font: drawFont]
+        )
+        let line = CTLineCreateWithAttributedString(attrString)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let context = try XCTUnwrap(
+            CGContext(
+                data: nil,
+                width: 128,
+                height: 128,
+                bitsPerComponent: 8,
+                bytesPerRow: 128 * 4,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        )
+        context.textPosition = .zero
+        return CTLineGetImageBounds(line, context)
     }
 }
