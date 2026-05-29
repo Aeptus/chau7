@@ -66,7 +66,7 @@ Detection methods:
 - **Auto tab theming** — tabs adopt the brand color of the active AI agent.
 - **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.
 - **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
-- **AI event notifications** — finished, failed, permission, needs_validation, tool_complete, session_end, idle. Default policy: finished, failed, and permission. Noisier triggers available in settings.
+- **AI event notifications** — finished, failed, permission, needs_validation, tool_complete, session_end, idle. Default policy: finished, failed, and permission. Noisier triggers available in settings. Banners include repo/tab/directory context in the subtitle when available.
 - **Resilient waiting-input attention** — waiting-input and attention-required events keep persistent tab highlights even when duplicate suppression, rate limits, or disabled idle actions suppress the follow-up notification path.
 - **State-driven tab attention** — terminal session state is reduced through a pure policy so `waitingForInput` / `approvalRequired` tabs have a single source of truth independent of banner delivery. The overlay reconciler repairs missing highlights from live state without replaying native notifications, and `attentionReport` diagnostics expose state/style mismatches in snapshots and tab summaries.
 - **Terminal wait-pattern backstop** — terminal-side AI prompt detection emits lower-confidence attention events as soon as a TUI appears blocked, closing provider-hook delays while preserving authoritative hook precedence.
@@ -376,6 +376,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 ### Notifications
 
 - Native macOS desktop notifications for task completion, failures, permissions.
+- Notification subtitles show repo, tab, or directory context so concurrent agent sessions are easier to distinguish.
 - Dock badge and bounce (critical/non-critical).
 - Configurable sounds (Glass, Purr, etc.) with volume control.
 - Command idle detection with configurable threshold. Fires once per session, resets only on real user activity.

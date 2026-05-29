@@ -312,6 +312,33 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         return "\(prefix): \(suffix)"
     }
 
+    /// Returns a short routing context suitable for a native notification
+    /// subtitle. The title already carries the tool and state, so this keeps
+    /// project/tab identity visually separate and avoids duplicating obvious
+    /// values like `Tab: Claude` on a `Claude: Finished` notification.
+    public func notificationSubtitle(tabTitle: String? = nil, repoName: String? = nil) -> String {
+        let repo = firstNonEmpty(
+            repoName,
+            repoPath.map { URL(fileURLWithPath: $0).lastPathComponent }
+        )
+        let directoryName = repo == nil
+            ? cleanNotificationPart(directory.map { URL(fileURLWithPath: $0).lastPathComponent })
+            : nil
+        let tab = cleanNotificationPart(tabTitle)
+        let toolName = cleanNotificationPart(tool)
+
+        var parts: [String] = []
+        if let repo {
+            parts.append("\(LCore("aiEvent.subtitle.repo", "Repo")): \(repo)")
+        } else if let directoryName {
+            parts.append("\(LCore("aiEvent.subtitle.directory", "Dir")): \(directoryName)")
+        }
+        if let tab, !matchesNotificationPart(tab, repo), !matchesNotificationPart(tab, toolName) {
+            parts.append("\(LCore("aiEvent.subtitle.tab", "Tab")): \(tab)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
     /// Returns the notification body for this event.
     /// For known event types, an explicit `message` supplied by the producer
     /// takes precedence over the localized default. For unknown types, the
@@ -341,6 +368,28 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         default:
             return message.isEmpty ? type : "\(type): \(message)"
         }
+    }
+
+    private func firstNonEmpty(_ candidates: String?...) -> String? {
+        for candidate in candidates {
+            if let cleaned = cleanNotificationPart(candidate) {
+                return cleaned
+            }
+        }
+        return nil
+    }
+
+    private func cleanNotificationPart(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func matchesNotificationPart(_ lhs: String?, _ rhs: String?) -> Bool {
+        guard let lhs = cleanNotificationPart(lhs),
+              let rhs = cleanNotificationPart(rhs) else {
+            return false
+        }
+        return lhs.caseInsensitiveCompare(rhs) == .orderedSame
     }
 }
 

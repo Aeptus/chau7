@@ -131,6 +131,36 @@ final class AIEventNotificationTests: XCTestCase {
         XCTAssertEqual(event.notificationTitle(toolOverride: nil), "Aider: Waiting for input")
     }
 
+    // MARK: - notificationSubtitle
+
+    func testNotificationSubtitleIncludesRepoAndTabContext() {
+        let event = makeEvent(type: "finished", tool: "Codex")
+        XCTAssertEqual(
+            event.notificationSubtitle(tabTitle: "Mockup", repoName: "Chau7"),
+            "Repo: Chau7 · Tab: Mockup"
+        )
+    }
+
+    func testNotificationSubtitleDeduplicatesTabWhenItOnlyRepeatsTool() {
+        let event = makeEvent(type: "waiting_input", tool: "Claude")
+        XCTAssertEqual(
+            event.notificationSubtitle(tabTitle: "Claude", repoName: "Chau7"),
+            "Repo: Chau7"
+        )
+    }
+
+    func testNotificationSubtitleFallsBackToDirectoryName() {
+        let event = AIEvent(
+            source: .app,
+            type: "finished",
+            tool: "Codex",
+            message: "",
+            ts: "2025-01-14T12:00:00Z",
+            directory: "/Users/christophehenner/Downloads/Repositories/Chau7"
+        )
+        XCTAssertEqual(event.notificationSubtitle(), "Dir: Chau7")
+    }
+
     // MARK: - notificationBody
 
     func testNotificationBody_NeedsValidation_EmptyMessage() {

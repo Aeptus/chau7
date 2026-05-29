@@ -50,6 +50,49 @@ final class NotificationMultiWindowTests: XCTestCase {
         XCTAssertEqual(title, "Codex: Finished")
     }
 
+    func testNotificationSubtitleIncludesRepoAndTabContext() {
+        let event = AIEvent(
+            source: .codex,
+            type: "finished",
+            tool: "Codex",
+            message: "done",
+            ts: "2026-01-01T00:00:00Z"
+        )
+
+        XCTAssertEqual(
+            event.notificationSubtitle(tabTitle: "Mockup", repoName: "Chau7"),
+            "Repo: Chau7 · Tab: Mockup"
+        )
+    }
+
+    func testNotificationSubtitleDeduplicatesToolAndRepo() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "waiting_input",
+            tool: "Claude",
+            message: "",
+            ts: "2026-01-01T00:00:00Z"
+        )
+
+        XCTAssertEqual(
+            event.notificationSubtitle(tabTitle: "Claude", repoName: "Claude"),
+            "Repo: Claude"
+        )
+    }
+
+    func testNotificationSubtitleFallsBackToDirectoryName() {
+        let event = AIEvent(
+            source: .codex,
+            type: "finished",
+            tool: "Codex",
+            message: "done",
+            ts: "2026-01-01T00:00:00Z",
+            directory: "/Users/christophehenner/Downloads/Repositories/Chau7"
+        )
+
+        XCTAssertEqual(event.notificationSubtitle(), "Dir: Chau7")
+    }
+
     func testNotificationBodyForFinished() {
         let event = AIEvent(
             source: .codex,

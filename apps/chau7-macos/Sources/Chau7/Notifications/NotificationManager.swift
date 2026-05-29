@@ -693,35 +693,36 @@ final class NotificationManager {
     /// get the same reliability as default notifications.
     @discardableResult
     func dispatchActionNotification(title: String, body: String, for event: AIEvent) -> Bool {
-        dispatchNotification(title: title, body: body, for: event)
+        dispatchNotification(title: title, subtitle: notificationSubtitle(for: event), body: body, for: event)
     }
 
     @discardableResult
     private func showDefaultNotification(for event: AIEvent) -> Bool {
         let tabTitle = tabTitleProvider?(event.tabTarget)
         let repoName = repoNameProvider?(event.tabTarget)
-        let title = event.notificationTitle(toolOverride: tabTitle, repoName: repoName)
-        return dispatchNotification(title: title, body: event.notificationBody, for: event)
+        let title = event.notificationTitle(toolOverride: nil)
+        let subtitle = event.notificationSubtitle(tabTitle: tabTitle, repoName: repoName)
+        return dispatchNotification(title: title, subtitle: subtitle, body: event.notificationBody, for: event)
     }
 
     @discardableResult
-    private func dispatchNotification(title: String, body: String, for event: AIEvent) -> Bool {
+    private func dispatchNotification(title: String, subtitle: String = "", body: String, for event: AIEvent) -> Bool {
         guard !isIsolatedTestMode else {
             Log.info("Skipping notification dispatch in isolated test mode: \(title)")
             return false
         }
         if shouldUseNativeNotifications() {
-            tryNativeNotification(title: title, body: body, for: event)
+            tryNativeNotification(title: title, subtitle: subtitle, body: body, for: event)
             return true
         } else {
-            sendAppleScriptNotification(title: title, body: body)
+            sendAppleScriptNotification(title: title, subtitle: subtitle, body: body)
             return true
         }
     }
 
-    private func tryNativeNotification(title: String, body: String, for event: AIEvent) {
+    private func tryNativeNotification(title: String, subtitle: String, body: String, for event: AIEvent) {
         guard shouldUseNativeNotifications() else {
-            sendAppleScriptNotification(title: title, body: body)
+            sendAppleScriptNotification(title: title, subtitle: subtitle, body: body)
             return
         }
 
@@ -732,38 +733,39 @@ final class NotificationManager {
                     guard let self else { return }
                     self.cachedAuthorizationStatus = settings.authorizationStatus
                     self.hasCachedAuthorization = true
-                    self.handleAuthorizationResult(settings.authorizationStatus, title: title, body: body, for: event)
+                    self.handleAuthorizationResult(settings.authorizationStatus, title: title, subtitle: subtitle, body: body, for: event)
                 }
             }
             return
         }
 
-        handleAuthorizationResult(cachedAuthorizationStatus, title: title, body: body, for: event)
+        handleAuthorizationResult(cachedAuthorizationStatus, title: title, subtitle: subtitle, body: body, for: event)
     }
 
-    private func handleAuthorizationResult(_ status: UNAuthorizationStatus, title: String, body: String, for event: AIEvent) {
+    private func handleAuthorizationResult(_ status: UNAuthorizationStatus, title: String, subtitle: String, body: String, for event: AIEvent) {
         switch status {
         case .authorized, .provisional, .ephemeral:
             resetNativeNotificationState()
-            scheduleNativeNotification(title: title, body: body, for: event)
+            scheduleNativeNotification(title: title, subtitle: subtitle, body: body, for: event)
         case .denied:
             logAuthorizationOnce(status: .denied, message: "Native notifications denied, using AppleScript fallback")
             useNativeNotifications = false
-            sendAppleScriptNotification(title: title, body: body)
+            sendAppleScriptNotification(title: title, subtitle: subtitle, body: body)
         case .notDetermined:
             logAuthorizationOnce(status: .notDetermined, message: "Notification permission not determined, using AppleScript fallback")
-            sendAppleScriptNotification(title: title, body: body)
+            sendAppleScriptNotification(title: title, subtitle: subtitle, body: body)
         @unknown default:
             Log.warn("Unknown notification authorization status, trying AppleScript")
-            sendAppleScriptNotification(title: title, body: body)
+            sendAppleScriptNotification(title: title, subtitle: subtitle, body: body)
         }
     }
 
-    private func scheduleNativeNotification(title: String, body: String, for event: AIEvent) {
+    private func scheduleNativeNotification(title: String, subtitle: String, body: String, for event: AIEvent) {
         Log.info("Scheduling notification: type=\(event.type) tool=\(event.tool)")
 
         let content = UNMutableNotificationContent()
         content.title = title
+        content.subtitle = subtitle
         content.body = body
         content.sound = .default
 
@@ -780,12 +782,12 @@ final class NotificationManager {
                 return
             }
             DispatchQueue.main.async {
-                self?.handleNativeNotificationError(error, title: title, body: body)
+                self?.handleNativeNotificationError(error, title: title, subtitle: subtitle, body: body)
             }
         }
     }
 
-    private func handleNativeNotificationError(_ error: Error, title: String, body: String) {
+    private func handleNativeNotificationError(_ error: Error, title: String, subtitle: String, body: String) {
         nativeNotificationFailureCount += 1
         nativeNotificationErrorCooldownUntil = Date().addingTimeInterval(nextNativeCooldown())
         let cooldown = Int(nativeNotificationErrorCooldownUntil!.timeIntervalSinceNow.rounded(.up))
@@ -796,7 +798,7 @@ final class NotificationManager {
             Log.warn("Native notification error: \(error.localizedDescription) (failure #\(nativeNotificationFailureCount), cooldown=\(cooldown)s)")
         }
         Log.warn("Temporarily disabling native notifications for \(cooldown)s, falling back to AppleScript.")
-        sendAppleScriptNotification(title: title, body: body)
+        sendAppleScriptNotification(title: title, subtitle: subtitle, body: body)
     }
 
     private func shouldUseNativeNotifications() -> Bool {
@@ -832,8 +834,15 @@ final class NotificationManager {
         Log.info(message)
     }
 
+    private func notificationSubtitle(for event: AIEvent) -> String {
+        event.notificationSubtitle(
+            tabTitle: tabTitleProvider?(event.tabTarget),
+            repoName: repoNameProvider?(event.tabTarget)
+        )
+    }
+
     /// Send notification via AppleScript (works without code signing)
-    private func sendAppleScriptNotification(title: String, body: String) {
+    private func sendAppleScriptNotification(title: String, subtitle: String = "", body: String) {
         let escapedTitle = title
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
@@ -844,10 +853,22 @@ final class NotificationManager {
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\r", with: "")
+        let escapedSubtitle = subtitle
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: "")
 
-        let script = """
-        display notification "\(escapedBody)" with title "\(escapedTitle)" sound name "default"
-        """
+        let script: String
+        if escapedSubtitle.isEmpty {
+            script = """
+            display notification "\(escapedBody)" with title "\(escapedTitle)" sound name "default"
+            """
+        } else {
+            script = """
+            display notification "\(escapedBody)" with title "\(escapedTitle)" subtitle "\(escapedSubtitle)" sound name "default"
+            """
+        }
 
         DispatchQueue.global(qos: .userInitiated).async {
             var error: NSDictionary?
