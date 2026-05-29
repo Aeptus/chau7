@@ -85,6 +85,10 @@ protocol TerminalViewLike: NSView {
     /// Used for restoration paths that need to preserve color and text attributes.
     func getStyledBufferAsData() -> Data?
 
+    /// Returns a bounded ANSI-styled tail of the terminal buffer when available.
+    /// Restoration autosave uses this to avoid full scrollback exports.
+    func getStyledTailBufferAsData(maxLines: Int, maxBytes: Int) -> Data?
+
     /// Returns a structured visible-grid snapshot for high-fidelity remote rendering.
     /// Implementations may return nil when no structured snapshot is available.
     func captureRemoteGridSnapshotPayload() -> Data?
@@ -209,6 +213,10 @@ protocol TerminalViewLike: NSView {
 
 extension TerminalViewLike {
     func getStyledBufferAsData() -> Data? {
+        nil
+    }
+
+    func getStyledTailBufferAsData(maxLines _: Int, maxBytes _: Int) -> Data? {
         nil
     }
 

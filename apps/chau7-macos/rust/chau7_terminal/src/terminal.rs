@@ -1,7 +1,7 @@
 //! Core terminal emulator: Chau7Terminal struct, PTY management, and terminal operations.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
@@ -2004,6 +2004,163 @@ impl Chau7Terminal {
         result
     }
 
+    /// Get the tail of the terminal buffer with ANSI SGR styling.
+    ///
+    /// Restoration autosave only needs the last N logical lines, so this keeps
+    /// the exported string bounded at the Rust source instead of constructing a
+    /// multi-megabyte full-buffer string and trimming it later in Swift.
+    pub fn tail_buffer_ansi_text(&self, max_lines: usize, max_bytes: usize) -> String {
+        if max_lines == 0 || max_bytes == 0 {
+            return String::new();
+        }
+
+        let theme = self.theme_colors.read().clone();
+        let term = self.term.lock();
+        let grid = term.grid();
+        let screen_lines = grid.screen_lines() as i32;
+        let history = grid.history_size() as i32;
+
+        let mut tail: VecDeque<String> = VecDeque::new();
+        let mut tail_bytes = 0usize;
+        let first_row = -history;
+        let mut end_row = screen_lines - 1;
+        let mut wrapped_rows = 0usize;
+        let mut scanned_rows = 0usize;
+
+        while end_row >= first_row {
+            let mut start_row = end_row;
+            while start_row > first_row && Self::grid_line_wraps(grid, Line(start_row - 1)) {
+                start_row -= 1;
+            }
+
+            let mut current_line = String::new();
+            let mut current_style: Option<AnsiCellStyle> = None;
+            for row in start_row..=end_row {
+                let wraps = Self::grid_line_ansi_text(
+                    grid,
+                    Line(row),
+                    &theme,
+                    &mut current_style,
+                    &mut current_line,
+                );
+                if wraps {
+                    wrapped_rows += 1;
+                }
+            }
+            if current_style.is_some() {
+                current_line.push_str("\x1b[0m");
+            }
+
+            scanned_rows += (end_row - start_row + 1) as usize;
+            Self::push_front_bounded_tail_line(
+                &mut tail,
+                &mut tail_bytes,
+                current_line,
+                max_lines,
+                max_bytes,
+            );
+
+            if tail.len() >= max_lines || tail_bytes >= max_bytes {
+                break;
+            }
+            if start_row <= first_row {
+                break;
+            }
+            end_row = start_row - 1;
+        }
+
+        let result: String = tail.into_iter().collect();
+        debug!(
+            "[terminal-{}] tail_buffer_ansi_text exported {} chars / {} bytes after scanning {} of {} physical rows ({} wrapped rows, max_lines={}, max_bytes={})",
+            self.id,
+            result.chars().count(),
+            result.len(),
+            scanned_rows,
+            history + screen_lines,
+            wrapped_rows,
+            max_lines,
+            max_bytes
+        );
+        result
+    }
+
+    fn push_front_bounded_tail_line(
+        tail: &mut VecDeque<String>,
+        tail_bytes: &mut usize,
+        mut line: String,
+        max_lines: usize,
+        max_bytes: usize,
+    ) {
+        if !Self::ansi_line_has_visible_content(&line) {
+            return;
+        }
+
+        if line.len() > max_bytes {
+            line = Self::utf8_suffix_within_bytes(&line, max_bytes);
+        }
+
+        *tail_bytes += line.len();
+        tail.push_front(line);
+
+        while tail.len() > max_lines || *tail_bytes > max_bytes {
+            if let Some(removed) = tail.pop_front() {
+                *tail_bytes = tail_bytes.saturating_sub(removed.len());
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn utf8_suffix_within_bytes(text: &str, max_bytes: usize) -> String {
+        if text.len() <= max_bytes {
+            return text.to_string();
+        }
+        if max_bytes == 0 {
+            return String::new();
+        }
+
+        let mut start = text.len().saturating_sub(max_bytes);
+        while start < text.len() && !text.is_char_boundary(start) {
+            start += 1;
+        }
+        text[start..].to_string()
+    }
+
+    fn ansi_line_has_visible_content(line: &str) -> bool {
+        let mut chars = line.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\u{1b}' {
+                match chars.peek().copied() {
+                    Some('[') => {
+                        chars.next();
+                        for csi_ch in chars.by_ref() {
+                            if ('@'..='~').contains(&csi_ch) {
+                                break;
+                            }
+                        }
+                    }
+                    Some(']') => {
+                        chars.next();
+                        let mut previous_was_escape = false;
+                        for osc_ch in chars.by_ref() {
+                            if osc_ch == '\u{7}' || (previous_was_escape && osc_ch == '\\') {
+                                break;
+                            }
+                            previous_was_escape = osc_ch == '\u{1b}';
+                        }
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
+            if !ch.is_whitespace() {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Sample-rate grid invariant check, called every
     /// `INVARIANT_CHECK_PERIOD` `processor.advance` calls. Walks the
     /// visible viewport (not full scrollback — too expensive at this
@@ -2574,6 +2731,73 @@ mod tests {
             "Expected ANSI SGR truecolor styling in export, got: {:?}",
             ansi
         );
+    }
+
+    #[test]
+    fn test_tail_buffer_ansi_text_limits_logical_lines() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(40, 4, "", &[]).expect("Should create terminal");
+        term.inject_output(b"one\ntwo\nthree\nfour\nfive\n");
+
+        let tail = term.tail_buffer_ansi_text(2, 4096);
+
+        assert!(
+            !tail.contains("one"),
+            "Expected old line to be trimmed: {:?}",
+            tail
+        );
+        assert!(
+            !tail.contains("two"),
+            "Expected old line to be trimmed: {:?}",
+            tail
+        );
+        assert!(
+            tail.contains("four"),
+            "Expected recent line in tail: {:?}",
+            tail
+        );
+        assert!(
+            tail.contains("five"),
+            "Expected recent line in tail: {:?}",
+            tail
+        );
+    }
+
+    #[test]
+    fn test_tail_buffer_ansi_text_preserves_sgr_attributes() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(40, 4, "", &[]).expect("Should create terminal");
+        term.inject_output(b"plain\n\x1b[31mred tail\x1b[0m\n");
+
+        let tail = term.tail_buffer_ansi_text(1, 4096);
+
+        assert!(!tail.contains("plain"));
+        assert!(tail.contains("red tail"));
+        assert!(
+            tail.contains("\u{1b}[") && tail.contains("38;2;"),
+            "Expected ANSI SGR truecolor styling in tail export, got: {:?}",
+            tail
+        );
+    }
+
+    #[test]
+    fn test_tail_buffer_ansi_text_limits_bytes_on_char_boundary() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(80, 4, "", &[]).expect("Should create terminal");
+        term.inject_output("alpha beta gamma delta epsilon 😀\n".as_bytes());
+
+        let tail = term.tail_buffer_ansi_text(10, 32);
+
+        assert!(
+            tail.len() <= 32,
+            "Expected bounded tail to stay within max bytes, got {} bytes: {:?}",
+            tail.len(),
+            tail
+        );
+        assert!(tail.is_char_boundary(tail.len()));
     }
 
     #[test]

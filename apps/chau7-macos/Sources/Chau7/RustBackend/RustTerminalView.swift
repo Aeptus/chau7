@@ -577,6 +577,7 @@ final class RustTerminalFFI {
     private typealias FreeDebugStateFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
     private typealias GetFullBufferTextFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
     private typealias GetFullBufferAnsiTextFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
+    private typealias GetTailBufferAnsiTextFn = @convention(c) (OpaquePointer?, UInt, UInt) -> UnsafeMutablePointer<CChar>?
     private typealias ResetMetricsFn = @convention(c) (OpaquePointer?) -> Void
     // Terminal event functions (title, exit, PTY closed)
     private typealias GetPendingTitleFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
@@ -655,6 +656,7 @@ final class RustTerminalFFI {
         let freeDebugState: FreeDebugStateFn? // Optional - for debugging
         let getFullBufferText: GetFullBufferTextFn? // Optional - for debugging
         let getFullBufferAnsiText: GetFullBufferAnsiTextFn? // Optional - for styled restoration
+        let getTailBufferAnsiText: GetTailBufferAnsiTextFn? // Optional - for bounded styled restoration
         let resetMetrics: ResetMetricsFn? // Optional - for performance analysis
         // Terminal event functions (title, exit, PTY closed)
         let getPendingTitle: GetPendingTitleFn? // Optional - for terminal title updates
@@ -930,6 +932,11 @@ final class RustTerminalFFI {
             Log.info("RustTerminalFFI: get_full_buffer_ansi_text symbol not found (optional)")
         }
 
+        let getTailBufferAnsiTextSym = loadSymbol("chau7_terminal_get_tail_buffer_ansi_text")
+        if getTailBufferAnsiTextSym == nil {
+            Log.info("RustTerminalFFI: get_tail_buffer_ansi_text symbol not found (optional)")
+        }
+
         let resetMetricsSym = loadSymbol("chau7_terminal_reset_metrics")
         if resetMetricsSym == nil {
             Log.info("RustTerminalFFI: reset_metrics symbol not found (optional)")
@@ -1043,6 +1050,7 @@ final class RustTerminalFFI {
             freeDebugState: freeDebugStateSym.map { unsafeBitCast($0, to: FreeDebugStateFn.self) },
             getFullBufferText: getFullBufferTextSym.map { unsafeBitCast($0, to: GetFullBufferTextFn.self) },
             getFullBufferAnsiText: getFullBufferAnsiTextSym.map { unsafeBitCast($0, to: GetFullBufferAnsiTextFn.self) },
+            getTailBufferAnsiText: getTailBufferAnsiTextSym.map { unsafeBitCast($0, to: GetTailBufferAnsiTextFn.self) },
             resetMetrics: resetMetricsSym.map { unsafeBitCast($0, to: ResetMetricsFn.self) },
             getPendingTitle: getPendingTitleSym.map { unsafeBitCast($0, to: GetPendingTitleFn.self) },
             getPendingCwd: getPendingCwdSym.map { unsafeBitCast($0, to: GetPendingCwdFn.self) },
@@ -1793,6 +1801,30 @@ final class RustTerminalFFI {
 
         let text = String(cString: ptr)
         Log.trace("RustTerminalFFI[\(instanceId)]: fullBufferAnsiText - \(text.count) characters")
+        return text
+    }
+
+    /// Get a bounded ANSI-styled tail of the terminal buffer for restoration autosave.
+    func tailBufferAnsiText(maxLines: Int, maxBytes: Int) -> String? {
+        guard maxLines > 0, maxBytes > 0 else {
+            return ""
+        }
+        guard let getTailBufferAnsiTextFn = Self.functions?.getTailBufferAnsiText,
+              let freeStringFn = Self.functions?.freeString else {
+            Log.trace("RustTerminalFFI[\(instanceId)]: tailBufferAnsiText - Function not available")
+            return nil
+        }
+
+        guard let ptr = getTailBufferAnsiTextFn(terminal, UInt(maxLines), UInt(maxBytes)) else {
+            Log.trace("RustTerminalFFI[\(instanceId)]: tailBufferAnsiText - No text returned")
+            return nil
+        }
+        defer { freeStringFn(ptr) }
+
+        let text = String(cString: ptr)
+        Log.trace(
+            "RustTerminalFFI[\(instanceId)]: tailBufferAnsiText - \(text.count) characters / \(text.utf8.count) bytes"
+        )
         return text
     }
 
@@ -3384,6 +3416,14 @@ final class RustTerminalView: NSView {
     /// Returns the full terminal buffer (screen + scrollback) as ANSI-styled UTF-8 Data.
     func getStyledBufferAsData() -> Data? {
         guard let text = rustTerminal?.fullBufferAnsiText() else { return nil }
+        return text.data(using: .utf8)
+    }
+
+    /// Returns a bounded ANSI-styled terminal tail as UTF-8 Data.
+    func getStyledTailBufferAsData(maxLines: Int, maxBytes: Int) -> Data? {
+        guard let text = rustTerminal?.tailBufferAnsiText(maxLines: maxLines, maxBytes: maxBytes) else {
+            return nil
+        }
         return text.data(using: .utf8)
     }
 
