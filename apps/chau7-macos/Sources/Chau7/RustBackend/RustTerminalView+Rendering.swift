@@ -186,22 +186,11 @@ extension RustTerminalView {
 
             // Parse Chau7 shell integration markers before prompt/CWD handling so
             // downstream prompt detection can consume the reported exit status.
-            parseChau7Exit(from: outputData)
+            parseOSC9Events(from: outputData)
 
             // OSC 7 now handled by Rust ANSI parser via `getPendingCwd` above —
             // see processTerminalStateAfterPollLocked. Swift no longer scans
             // raw bytes for OSC 7, which closes the multi-view drain race.
-
-            // Parse OSC 9 chau7 shell integration reports (git branch + repo root)
-            // Format: ESC ] 9 ; chau7;branch=NAME BEL
-            //         ESC ] 9 ; chau7;repo-root=PATH BEL
-            parseChau7Branch(from: outputData)
-            parseChau7RepoRoot(from: outputData)
-
-            // Parse OSC 9 desktop notifications emitted by foreign programs
-            // (e.g. Codex CLI TUI). Format: ESC ] 9 ; <message> BEL where the
-            // message does NOT start with "chau7;" (those are handled above).
-            parseForeignDesktopNotifications(from: outputData)
 
             // Smart Scroll: Save state before feeding data to the renderer
             // If user had scrolled up and smart scroll is enabled, we'll restore their position
@@ -910,140 +899,28 @@ extension RustTerminalView {
         }
     }
 
-    // MARK: - OSC 9 chau7;... parsing
+    // MARK: - OSC 9 parsing
 
-    private static let branchMarkerPrefix = Array("\u{1b}]9;chau7;branch=".utf8)
-    private static let exitMarkerPrefix = Array("\u{1b}]9;chau7;exit=".utf8)
-    private static let repoRootMarkerPrefix = Array("\u{1b}]9;chau7;repo-root=".utf8)
-    private static let belTerminator: UInt8 = 0x07
+    func parseOSC9Events(from data: Data) {
+        let events = osc9Parser.ingest(data)
+        guard !events.isEmpty else { return }
 
-    /// Extract last command exit status from OSC 9;chau7;exit=CODE sequences.
-    func parseChau7Exit(from data: Data) {
-        parseChau7Marker(data: data, prefix: Self.exitMarkerPrefix) { [weak self] value in
-            guard let exitCode = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
-            self?.onExitStatusChanged?(exitCode)
-        }
-    }
-
-    /// Extract git branch name from OSC 9;chau7;branch=NAME sequences in terminal output.
-    /// The shell integration precmd hook emits this on every prompt when inside a git repo.
-    func parseChau7Branch(from data: Data) {
-        parseChau7Marker(data: data, prefix: Self.branchMarkerPrefix) { [weak self] value in
-            self?.onBranchChanged?(value)
-        }
-    }
-
-    /// Extract git repo root path from OSC 9;chau7;repo-root=PATH sequences.
-    /// Emitted by the shell integration precmd hook alongside the branch, so the app
-    /// learns the repo root even in protected directories where live git probing is blocked.
-    func parseChau7RepoRoot(from data: Data) {
-        parseChau7Marker(data: data, prefix: Self.repoRootMarkerPrefix) { [weak self] value in
-            self?.onRepoRootChanged?(value)
-        }
-    }
-
-    private static let osc9Prefix: [UInt8] = [0x1B, 0x5D, 0x39, 0x3B] // ESC ] 9 ;
-    private static let chau7PrefixWithinOsc9 = Array("chau7;".utf8)
-
-    /// Extract desktop-notification payloads from OSC 9 sequences emitted by programs
-    /// OTHER than Chau7's own shell integration. Format: `ESC ] 9 ; <message> BEL`.
-    ///
-    /// Messages that start with `chau7;` are produced by Chau7's shell hooks and are
-    /// handled by `parseChau7Branch` / `parseChau7RepoRoot`; this parser skips them.
-    /// The Codex CLI TUI is the main current source — it emits OSC 9 for every
-    /// notification kind (approval requested, user input requested, plan mode prompt,
-    /// elicitation requested, edit approval, agent turn complete) with a short
-    /// human-readable message as the payload.
-    func parseForeignDesktopNotifications(from data: Data) {
-        let bytes = Array(data)
-        let prefix = Self.osc9Prefix
-        let chau7Prefix = Self.chau7PrefixWithinOsc9
-        guard bytes.count > prefix.count else { return }
-
-        var i = 0
-        while i <= bytes.count - prefix.count {
-            var matched = true
-            for j in 0 ..< prefix.count {
-                if bytes[i + j] != prefix[j] {
-                    matched = false
-                    break
-                }
-            }
-            if !matched {
-                i += 1
-                continue
-            }
-
-            let start = i + prefix.count
-
-            // Skip our own chau7;KEY=VALUE payloads — those are handled elsewhere.
-            if start + chau7Prefix.count <= bytes.count {
-                var isChau7 = true
-                for j in 0 ..< chau7Prefix.count {
-                    if bytes[start + j] != chau7Prefix[j] {
-                        isChau7 = false
-                        break
-                    }
-                }
-                if isChau7 {
-                    i = start + chau7Prefix.count
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for event in events {
+                switch event {
+                case .chau7(key: "exit", value: let value):
+                    guard let exitCode = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) else { continue }
+                    onExitStatusChanged?(exitCode)
+                case .chau7(key: "branch", value: let value):
+                    onBranchChanged?(value)
+                case .chau7(key: "repo-root", value: let value):
+                    onRepoRootChanged?(value)
+                case .chau7:
                     continue
+                case .foreign(message: let message):
+                    onForeignDesktopNotification?(message)
                 }
-            }
-
-            // Find terminator: BEL (0x07) or ST (ESC \)
-            var end = start
-            while end < bytes.count, bytes[end] != Self.belTerminator {
-                if bytes[end] == 0x1B, end + 1 < bytes.count, bytes[end + 1] == 0x5C { break }
-                end += 1
-            }
-
-            if end > start, let message = String(bytes: bytes[start ..< end], encoding: .utf8) {
-                let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onForeignDesktopNotification?(trimmed)
-                    }
-                }
-            }
-            i = max(end + 1, i + 1)
-        }
-    }
-
-    /// Generic OSC 9 chau7;KEY=VALUE BEL parser. Scans `data` for every occurrence of
-    /// `prefix` (ending in `=`), captures the value up to the BEL or ESC\ terminator,
-    /// trims whitespace, and dispatches the non-empty result to `handler` on the main queue.
-    private func parseChau7Marker(data: Data, prefix: [UInt8], handler: @escaping (String) -> Void) {
-        let bytes = Array(data)
-        guard bytes.count > prefix.count else { return }
-
-        var i = 0
-        while i <= bytes.count - prefix.count {
-            var matched = true
-            for j in 0 ..< prefix.count {
-                if bytes[i + j] != prefix[j] {
-                    matched = false
-                    break
-                }
-            }
-            if matched {
-                let start = i + prefix.count
-                var end = start
-                while end < bytes.count, bytes[end] != Self.belTerminator {
-                    if bytes[end] == 0x1B, end + 1 < bytes.count, bytes[end + 1] == 0x5C { break }
-                    end += 1
-                }
-                if end > start, let value = String(bytes: bytes[start ..< end], encoding: .utf8) {
-                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
-                        DispatchQueue.main.async {
-                            handler(trimmed)
-                        }
-                    }
-                }
-                i = end + 1
-            } else {
-                i += 1
             }
         }
     }

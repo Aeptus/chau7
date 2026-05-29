@@ -2186,6 +2186,7 @@ final class RustTerminalView: NSView {
     /// agent turn complete). Classification by message prefix happens in
     /// `TerminalSessionModel.handleForeignDesktopNotification`.
     var onForeignDesktopNotification: ((String) -> Void)?
+    var osc9Parser = TerminalOSC9Parser()
 
     /// Callback when OSC 133 shell integration events arrive (prompt/command lifecycle)
     var onShellIntegrationEvent: ((ShellIntegrationEvent) -> Void)?
