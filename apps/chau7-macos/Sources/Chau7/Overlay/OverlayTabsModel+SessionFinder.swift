@@ -291,11 +291,7 @@ extension OverlayTabsModel {
             return nil
         }
 
-        return captureScrollback(
-            maxLines: maxLines,
-            styledData: { session.captureStyledRemoteSnapshot() },
-            fallbackData: { session.captureRemoteSnapshot() }
-        )
+        return session.captureRestorationScrollback(maxLines: maxLines)
     }
 
     static func captureScrollback(

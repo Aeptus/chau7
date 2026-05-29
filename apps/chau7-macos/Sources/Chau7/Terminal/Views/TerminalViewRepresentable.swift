@@ -239,6 +239,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
                 model?.shellStartupSlow = true
             }
             existingView.onBufferChanged = { [weak model, weak existingView] in
+                model?.noteRestorationScrollbackDirty()
                 model?.scheduleSearchRefresh()
                 model?.highlightView?.scheduleDisplay()
                 model?.recordOutputLatencyIfNeeded()
@@ -252,6 +253,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             }
             existingView.onFilePathClicked = onFilePathClicked
             existingView.onScrollbackCleared = { [weak model] in
+                model?.resetRestorationScrollbackCache()
                 model?.resetDangerousHighlights()
             }
             existingView.onScrollChanged = { [weak model] in
@@ -316,6 +318,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             model?.shellStartupSlow = true
         }
         view.onBufferChanged = { [weak model, weak view] in
+            model?.noteRestorationScrollbackDirty()
             model?.scheduleSearchRefresh()
             model?.highlightView?.scheduleDisplay()
             model?.recordOutputLatencyIfNeeded()
@@ -332,6 +335,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         }
         view.onFilePathClicked = onFilePathClicked
         view.onScrollbackCleared = { [weak model] in
+            model?.resetRestorationScrollbackCache()
             model?.resetDangerousHighlights()
         }
         view.dangerousRowTintsProvider = { [weak model] top, bottom in

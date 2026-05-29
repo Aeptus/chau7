@@ -137,6 +137,7 @@ extension TerminalSessionModel {
 
         // Light operations that need immediate execution (timing-sensitive)
         if !data.isEmpty {
+            noteRestorationScrollbackDirty()
             updateOutputBurstState(bytes: data.count, outputGap: outputGap, now: now)
             markOutputLatencyStart()
             markDirtyOutputRange(for: data)

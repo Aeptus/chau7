@@ -49,6 +49,20 @@ struct AgentIdentityRecord: Equatable {
     static let empty = AgentIdentityRecord(provider: nil, sessionId: nil, source: nil)
 }
 
+struct RestorationScrollbackCache {
+    let version: UInt64
+    let maxLines: Int
+    let maxBytes: Int
+    let content: String?
+}
+
+enum RestorationScrollbackCaptureOutcome: Equatable {
+    case disabled
+    case reused(bytes: Int)
+    case captured(bytes: Int)
+    case missing
+}
+
 enum RestoreBootstrapPhase: String {
     case inactive
     case replaying
@@ -1024,6 +1038,9 @@ final class TerminalSessionModel {
     @ObservationIgnored var cachedBufferData: Data? // Cached buffer data for search
     @ObservationIgnored var cachedRemoteOutputText = "" // Background-safe fallback when no live view is attached
     @ObservationIgnored var bufferNeedsRefresh = true // Flag to invalidate cache on output
+    @ObservationIgnored var restorationScrollbackVersion: UInt64 = 0
+    @ObservationIgnored var cachedRestorationScrollback: RestorationScrollbackCache?
+    @ObservationIgnored var lastRestorationScrollbackCaptureOutcome: RestorationScrollbackCaptureOutcome = .missing
     @ObservationIgnored var bufferLineCount = 0
     @ObservationIgnored var pendingInputLatencyAt: CFAbsoluteTime?
     @ObservationIgnored var inputLatencySampleCount = 0

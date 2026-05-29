@@ -1518,7 +1518,6 @@ final class OverlayTabsModel {
         var paneStates: [SavedTerminalPaneState] = []
         for (paneID, session) in terminalSessions {
             let dir = session.currentDirectory
-            let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
             let knownRepoIdentity = Self.persistedRepoIdentity(
                 for: session,
                 directory: dir,
@@ -1565,6 +1564,7 @@ final class OverlayTabsModel {
                 )
             }
 
+            let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
             paneStates.append(SavedTerminalPaneState(
                 paneID: paneID.uuidString,
                 directory: dir,

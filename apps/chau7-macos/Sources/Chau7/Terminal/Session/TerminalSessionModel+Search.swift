@@ -58,6 +58,83 @@ extension TerminalSessionModel {
         return data
     }
 
+    func captureStyledRemoteTailSnapshot(maxLines: Int, maxBytes: Int) -> Data? {
+        guard let view = activeTerminalView else { return nil }
+        return view.getStyledTailBufferAsData(maxLines: maxLines, maxBytes: maxBytes)
+    }
+
+    func noteRestorationScrollbackDirty() {
+        restorationScrollbackVersion &+= 1
+        cachedRestorationScrollback = nil
+        lastRestorationScrollbackCaptureOutcome = .missing
+    }
+
+    func resetRestorationScrollbackCache() {
+        noteRestorationScrollbackDirty()
+    }
+
+    func captureRestorationScrollback(
+        maxLines: Int,
+        maxBytes: Int = ScrollbackRestoreFilter.maxPersistedScrollbackBytes
+    ) -> String? {
+        guard maxLines > 0, maxBytes > 0 else {
+            lastRestorationScrollbackCaptureOutcome = .disabled
+            cachedRestorationScrollback = RestorationScrollbackCache(
+                version: restorationScrollbackVersion,
+                maxLines: maxLines,
+                maxBytes: maxBytes,
+                content: nil
+            )
+            return nil
+        }
+
+        if let cache = cachedRestorationScrollback,
+           cache.version == restorationScrollbackVersion,
+           cache.maxLines == maxLines,
+           cache.maxBytes == maxBytes {
+            lastRestorationScrollbackCaptureOutcome = cache.content.map { .reused(bytes: $0.utf8.count) } ?? .missing
+            return cache.content
+        }
+
+        let tailData = captureStyledRemoteTailSnapshot(maxLines: maxLines, maxBytes: maxBytes)
+        let restored = Self.captureRestorationScrollbackContent(
+            maxLines: maxLines,
+            tailData: tailData,
+            styledData: { captureStyledRemoteSnapshot() },
+            fallbackData: { captureRemoteSnapshot() }
+        )
+
+        cachedRestorationScrollback = RestorationScrollbackCache(
+            version: restorationScrollbackVersion,
+            maxLines: maxLines,
+            maxBytes: maxBytes,
+            content: restored
+        )
+        lastRestorationScrollbackCaptureOutcome = restored.map { .captured(bytes: $0.utf8.count) } ?? .missing
+        return restored
+    }
+
+    static func captureRestorationScrollbackContent(
+        maxLines: Int,
+        tailData: Data?,
+        styledData: () -> Data?,
+        fallbackData: () -> Data?
+    ) -> String? {
+        if let tailData {
+            return ScrollbackRestoreFilter.captureScrollback(
+                maxLines: maxLines,
+                styledData: { tailData },
+                fallbackData: { nil }
+            )
+        }
+
+        return ScrollbackRestoreFilter.captureScrollback(
+            maxLines: maxLines,
+            styledData: styledData,
+            fallbackData: fallbackData
+        )
+    }
+
     func captureRemoteGridSnapshot() -> Data? {
         activeTerminalView?.captureRemoteGridSnapshotPayload()
     }
