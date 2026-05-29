@@ -3362,7 +3362,8 @@ final class TerminalSessionModel {
     /// (live-refreshed or cached), falls back to identity store for cases
     /// where the model's branch is nil but the store has been updated since.
     var displayGitBranch: String? {
-        gitBranch ?? knownRepoIdentityForDisplay?.lastKnownBranch
+        GitBranchNamePolicy.displayName(from: gitBranch)
+            ?? GitBranchNamePolicy.displayName(from: knownRepoIdentityForDisplay?.lastKnownBranch)
     }
 
     // Latency telemetry methods moved to TerminalSessionModel+Telemetry.swift
@@ -3499,19 +3500,30 @@ final class TerminalSessionModel {
     /// in protected directories where the app cannot spawn git directly.
     /// Also keeps branch data fresh for live repos between refreshBranch() calls.
     func handleShellBranchReport(_ branch: String) {
+        let normalizedBranch = GitBranchNamePolicy.displayName(from: branch)
+        let preserveExistingBranch = !GitBranchNamePolicy.isDetachedHead(branch)
+
         // Bump generation so any pending refreshGitStatus completion (which
         // may have returned .blocked) doesn't clobber authoritative shell data.
         gitStatusGeneration &+= 1
 
-        let changed = gitBranch != branch
-        gitBranch = branch
-        repositoryModel?.branch = branch
+        let changed = gitBranch != normalizedBranch
+        gitBranch = normalizedBranch
+        repositoryModel?.branch = normalizedBranch
 
         // Persist to identity store so tab restore and other sessions can use it.
         if let root = gitRootPath ?? repositoryModel?.rootPath {
-            KnownRepoIdentityStore.shared.record(rootPath: root, branch: branch)
+            KnownRepoIdentityStore.shared.record(
+                rootPath: root,
+                branch: normalizedBranch,
+                preserveExistingBranch: preserveExistingBranch
+            )
         } else if let root = KnownRepoIdentityStore.shared.resolveRoot(forPath: currentDirectory) {
-            KnownRepoIdentityStore.shared.record(rootPath: root, branch: branch)
+            KnownRepoIdentityStore.shared.record(
+                rootPath: root,
+                branch: normalizedBranch,
+                preserveExistingBranch: preserveExistingBranch
+            )
         }
 
         // If we didn't know this was a git repo yet (e.g. first shell prompt
@@ -3527,7 +3539,7 @@ final class TerminalSessionModel {
         }
 
         if changed {
-            shellEventDetector.gitBranchChanged(to: branch)
+            shellEventDetector.gitBranchChanged(to: normalizedBranch)
         }
     }
 

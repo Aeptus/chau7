@@ -124,7 +124,9 @@ final class RepositoryCache {
             }
 
             let root = lines[0]
-            let branch = lines.count > 1 ? lines[1] : nil
+            let rawBranch = lines.count > 1 ? lines[1] : nil
+            let branch = GitBranchNamePolicy.displayName(from: rawBranch)
+            let preserveExistingBranch = !GitBranchNamePolicy.isDetachedHead(rawBranch)
             let canonicalRoot = URL(fileURLWithPath: root).standardized.path
 
             // Reuse existing model if already cached (race between concurrent resolves)
@@ -146,12 +148,20 @@ final class RepositoryCache {
                 // Load persisted metadata and record as recent repo (first discovery)
                 model.loadMetadata()
                 DispatchQueue.main.async {
-                    KnownRepoIdentityStore.shared.record(rootPath: canonicalRoot, branch: branch)
+                    KnownRepoIdentityStore.shared.record(
+                        rootPath: canonicalRoot,
+                        branch: branch,
+                        preserveExistingBranch: preserveExistingBranch
+                    )
                     self.recentRepoRecorder(canonicalRoot, branch)
                 }
             }
             resolvedRootsByPath[normalized] = canonicalRoot
-            KnownRepoIdentityStore.shared.record(rootPath: canonicalRoot, branch: branch)
+            KnownRepoIdentityStore.shared.record(
+                rootPath: canonicalRoot,
+                branch: branch,
+                preserveExistingBranch: preserveExistingBranch
+            )
 
             DispatchQueue.main.async { completion(.repository(model, access: access)) }
         }
@@ -170,6 +180,7 @@ final class RepositoryCache {
     func modelForShellReportedRoot(rootPath: String, branch: String?) -> RepositoryModel {
         dispatchPrecondition(condition: .onQueue(.main))
         let canonical = URL(fileURLWithPath: rootPath).standardized.path
+        let normalizedBranch = GitBranchNamePolicy.displayName(from: branch)
         let model = queue.sync {
             if let existing = models[canonical] {
                 return existing
@@ -177,7 +188,7 @@ final class RepositoryCache {
 
             let created = RepositoryModel(
                 rootPath: canonical,
-                branch: branch,
+                branch: normalizedBranch,
                 accessLevel: .cached,
                 gitRunner: gitRunner,
                 refreshDelay: refreshDelay
@@ -187,8 +198,8 @@ final class RepositoryCache {
             return created
         }
 
-        if let branch, model.branch != branch {
-            model.branch = branch
+        if let normalizedBranch, model.branch != normalizedBranch {
+            model.branch = normalizedBranch
         }
         return model
     }

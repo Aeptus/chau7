@@ -1,4 +1,5 @@
 import Foundation
+import Chau7Core
 
 /// Shared observable model for a single git repository.
 /// One instance per unique git root path, shared across all tabs in that repo.
@@ -56,7 +57,7 @@ final class RepositoryModel: Identifiable {
     @ObservationIgnored private static let gitQueue = DispatchQueue(label: "com.chau7.repository.git", qos: .utility)
     @ObservationIgnored private static let metadataQueue = DispatchQueue(label: "com.chau7.repository.metadata", qos: .utility)
     @ObservationIgnored private let gitRunner: ([String], String) -> String
-    @ObservationIgnored private let identityRecorder: (String, String?) -> Void
+    @ObservationIgnored private let identityRecorder: (String, String?, Bool) -> Void
     @ObservationIgnored private let refreshDelay: TimeInterval
 
     init(
@@ -64,14 +65,18 @@ final class RepositoryModel: Identifiable {
         branch: String? = nil,
         accessLevel: AccessLevel = .live,
         gitRunner: @escaping ([String], String) -> String = GitDiffTracker.runGit,
-        identityRecorder: @escaping (String, String?) -> Void = { rootPath, branch in
-            KnownRepoIdentityStore.shared.record(rootPath: rootPath, branch: branch)
+        identityRecorder: @escaping (String, String?, Bool) -> Void = { rootPath, branch, preserveExistingBranch in
+            KnownRepoIdentityStore.shared.record(
+                rootPath: rootPath,
+                branch: branch,
+                preserveExistingBranch: preserveExistingBranch
+            )
         },
         refreshDelay: TimeInterval = 0.1
     ) {
         self.id = rootPath
         self.rootPath = rootPath
-        self.branch = branch
+        self.branch = GitBranchNamePolicy.displayName(from: branch)
         self.accessLevel = accessLevel
         self.gitRunner = gitRunner
         self.identityRecorder = identityRecorder
@@ -89,12 +94,16 @@ final class RepositoryModel: Identifiable {
             refreshWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 let output = self?.gitRunner(["rev-parse", "--abbrev-ref", "HEAD"], root) ?? ""
-                let newBranch = output.isEmpty ? nil : output
+                let newBranch = GitBranchNamePolicy.displayName(from: output)
+                let preserveExistingBranch = !GitBranchNamePolicy.isDetachedHead(output)
                 DispatchQueue.main.async {
                     guard let self else { return }
-                    if self.branch != newBranch {
+                    let branchChanged = self.branch != newBranch
+                    if branchChanged {
                         self.branch = newBranch
-                        self.identityRecorder(root, newBranch)
+                    }
+                    if branchChanged || !preserveExistingBranch {
+                        self.identityRecorder(root, newBranch, preserveExistingBranch)
                     }
                 }
             }

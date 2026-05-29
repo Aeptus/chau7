@@ -764,6 +764,31 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(identity?.lastKnownBranch, "feature/x")
     }
 
+    func testHandleShellBranchReportClearsDetachedHeadSentinel() {
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
+        KnownRepoIdentityStore.shared.reset()
+
+        let appModel = AppModel()
+        let session = TerminalSessionModel(appModel: appModel)
+        let repoRoot = "/tmp/Downloads/Repositories/detached"
+        let model = RepositoryModel(rootPath: repoRoot, branch: "main", accessLevel: .cached)
+
+        KnownRepoIdentityStore.shared.record(rootPath: repoRoot, branch: "main")
+        session.repositoryModel = model
+        session.gitRootPath = repoRoot
+        session.gitBranch = "main"
+        session.isGitRepo = true
+        session.currentDirectory = repoRoot
+
+        session.handleShellBranchReport("HEAD")
+
+        XCTAssertNil(session.gitBranch)
+        XCTAssertNil(model.branch)
+        XCTAssertNil(session.displayGitBranch)
+        XCTAssertNil(KnownRepoIdentityStore.shared.identity(forRootPath: repoRoot)?.lastKnownBranch)
+    }
+
     func testShellRepoRootThenBranchFullyPopulatesState() {
         // Integration test: simulate the real OSC sequence ordering from the shell.
         // The app receives `repo-root=/path` first, then `branch=main` (order from

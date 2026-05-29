@@ -48,6 +48,22 @@ final class RepositoryCacheTests: XCTestCase {
         XCTAssertEqual(store.identity(forRootPath: "/repos/Chau7")?.lastKnownBranch, "main")
     }
 
+    func testKnownRepoIdentityStoreCanClearDetachedBranch() {
+        let suiteName = "KnownRepoIdentityStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let store = KnownRepoIdentityStore(defaults: defaults, bootstrapRoots: [])
+        store.record(rootPath: "/repos/Chau7", branch: "main")
+
+        store.record(rootPath: "/repos/Chau7", branch: "HEAD")
+        XCTAssertNil(store.identity(forRootPath: "/repos/Chau7")?.lastKnownBranch)
+
+        store.record(rootPath: "/repos/Chau7", branch: "main")
+        store.record(rootPath: "/repos/Chau7", branch: nil, preserveExistingBranch: false)
+
+        XCTAssertNil(store.identity(forRootPath: "/repos/Chau7")?.lastKnownBranch)
+    }
+
     func testKnownRepoIdentityStoreMergeRecentRootsPreservesExistingBranchMetadata() {
         let suiteName = "KnownRepoIdentityStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

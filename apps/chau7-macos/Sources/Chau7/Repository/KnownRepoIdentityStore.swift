@@ -41,8 +41,15 @@ final class KnownRepoIdentityStore {
         }
     }
 
-    func record(rootPath: String, branch: String? = nil, confirmedAt: Date = Date()) {
+    func record(
+        rootPath: String,
+        branch: String? = nil,
+        confirmedAt: Date = Date(),
+        preserveExistingBranch: Bool = true
+    ) {
         let normalized = URL(fileURLWithPath: rootPath).standardized.path
+        let normalizedBranch = GitBranchNamePolicy.displayName(from: branch)
+        let shouldPreserveExistingBranch = preserveExistingBranch && !GitBranchNamePolicy.isDetachedHead(branch)
         queue.sync {
             let previousBranch = identities.first(where: { $0.rootPath == normalized })?.lastKnownBranch
             identities.removeAll { $0.rootPath == normalized }
@@ -50,7 +57,7 @@ final class KnownRepoIdentityStore {
                 KnownRepoIdentity(
                     rootPath: normalized,
                     lastConfirmedAt: confirmedAt,
-                    lastKnownBranch: branch ?? previousBranch
+                    lastKnownBranch: normalizedBranch ?? (shouldPreserveExistingBranch ? previousBranch : nil)
                 ),
                 at: 0
             )
@@ -134,7 +141,7 @@ final class KnownRepoIdentityStore {
             KnownRepoIdentity(
                 rootPath: URL(fileURLWithPath: identity.rootPath).standardized.path,
                 lastConfirmedAt: identity.lastConfirmedAt,
-                lastKnownBranch: identity.lastKnownBranch?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                lastKnownBranch: GitBranchNamePolicy.displayName(from: identity.lastKnownBranch)
             )
         }
         queue.sync {
@@ -220,11 +227,5 @@ final class KnownRepoIdentityStore {
             seen.insert(identity.rootPath)
             return true
         }
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? {
-        isEmpty ? nil : self
     }
 }
