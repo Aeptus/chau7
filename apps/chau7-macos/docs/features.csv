@@ -7,6 +7,7 @@ Terminal Core,Rust Terminal Backend,"Custom terminal emulator written in Rust wi
 Tabs,Single Live Selected-Tab Surface,"Selected tabs now render through one live surface only; snapshot and cursor handoff overlays no longer stack on top of the live terminal during switches",Shipped,Yes
 Tabs,On-Demand Deferred Restore,"Non-selected restored tabs stay deferred until selected instead of auto-restoring and mutating visible tabs immediately after launch",Shipped,Yes
 Tabs,Identity-Only Background Restore,"Deferred background tabs hydrate provider/session facts for routing and titles without activating live AI render state, restoring command blocks, or queuing resume input until selected",Shipped,Yes
+Tabs,Repo-Scoped Branch Detection,"Shell-reported repo-root changes swap sessions onto the shared model for that root before applying branch updates, preventing branch labels from one repo leaking into another",Shipped,Yes
 Tabs,Selection-Aware Deferred Restore,"Background identity hydration backs off during rapid tab switching, prioritizes pending tabs nearest to the selected tab, and logs restore-stage timings plus RSS deltas for startup diagnostics",Shipped,Yes
 Terminal Core,Fixed-Delay Startup Reveal,"Reveal restored windows after a short splash delay instead of waiting for the full restore queue to drain",Shipped,Yes
 Terminal Core,Stabilized Scrollback Restore,"Restored scrollback is replayed through the shell again, with restore-artifact filtering preserved, to avoid fresh post-relaunch history corruption while keeping fast visible startup",Shipped,Yes

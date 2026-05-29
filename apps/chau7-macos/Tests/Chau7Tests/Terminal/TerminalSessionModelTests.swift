@@ -795,6 +795,39 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(identity?.lastKnownBranch, "main")
     }
 
+    func testShellRepoRootReportReplacesPreviousRepositoryModelBeforeBranchReport() throws {
+        let previousKnownIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer { KnownRepoIdentityStore.shared.restore(previousKnownIdentities) }
+        KnownRepoIdentityStore.shared.reset()
+
+        let appModel = AppModel()
+        let session = TerminalSessionModel(appModel: appModel)
+        let oldRoot = "/tmp/Downloads/Repositories/old"
+        let newRoot = "/tmp/Downloads/Repositories/new"
+        let oldModel = RepositoryModel(rootPath: oldRoot, branch: "main", accessLevel: .cached)
+
+        session.currentDirectory = newRoot
+        session.isGitRepo = true
+        session.gitRootPath = oldRoot
+        session.gitBranch = "main"
+        session.repositoryModel = oldModel
+
+        session.handleShellRepoRootReport(newRoot)
+
+        XCTAssertEqual(session.gitRootPath, newRoot)
+        XCTAssertNil(session.gitBranch, "Changing repo roots must not carry the old repo's branch forward")
+        let newModel = try XCTUnwrap(session.repositoryModel)
+        XCTAssertFalse(newModel === oldModel)
+        XCTAssertEqual(newModel.rootPath, newRoot)
+        XCTAssertNil(newModel.branch)
+
+        session.handleShellBranchReport("feature/new")
+
+        XCTAssertEqual(oldModel.branch, "main", "New repo branch reports must not mutate the previous shared model")
+        XCTAssertEqual(newModel.branch, "feature/new")
+        XCTAssertEqual(session.gitBranch, "feature/new")
+    }
+
     // MARK: - Foreign OSC 9 Notification Classification
 
     func testForeignNotification_execApprovalRequested_mapsToPermission() {

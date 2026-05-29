@@ -163,6 +163,36 @@ final class RepositoryCache {
         return queue.sync { models[canonical] }
     }
 
+    /// Returns the shared model for a shell-reported repository root, creating
+    /// a cached identity-only model when live git access has not resolved it yet.
+    /// Must be called from the main thread because an existing observable model's
+    /// branch may need to be updated before the caller attaches observers.
+    func modelForShellReportedRoot(rootPath: String, branch: String?) -> RepositoryModel {
+        dispatchPrecondition(condition: .onQueue(.main))
+        let canonical = URL(fileURLWithPath: rootPath).standardized.path
+        let model = queue.sync {
+            if let existing = models[canonical] {
+                return existing
+            }
+
+            let created = RepositoryModel(
+                rootPath: canonical,
+                branch: branch,
+                accessLevel: .cached,
+                gitRunner: gitRunner,
+                refreshDelay: refreshDelay
+            )
+            models[canonical] = created
+            resolvedRootsByPath[canonical] = canonical
+            return created
+        }
+
+        if let branch, model.branch != branch {
+            model.branch = branch
+        }
+        return model
+    }
+
     /// Promote a cached model to live access (e.g. after security-scoped bookmark grant).
     /// If the model was cached, it transitions to live and refreshes its git state.
     func promoteCachedModel(forRoot rootPath: String) {

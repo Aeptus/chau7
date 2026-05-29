@@ -3548,29 +3548,34 @@ final class TerminalSessionModel {
         // Cancel pending refreshGitStatus completions that would clobber our state.
         gitStatusGeneration &+= 1
 
+        let previousRoot = gitRootPath ?? repositoryModel?.rootPath
+        let previousBranch = gitBranch
+        let branchForReportedRoot = (previousRoot == nil || previousRoot == normalized) ? gitBranch : nil
         let changed = gitRootPath != normalized
         gitRootPath = normalized
+        gitBranch = branchForReportedRoot
         isGitRepo = true
 
         // Record identity immediately so subsequent tabs, restores, and settings
         // exports all have the root + whatever branch we currently know about.
-        KnownRepoIdentityStore.shared.record(rootPath: normalized, branch: gitBranch)
+        KnownRepoIdentityStore.shared.record(rootPath: normalized, branch: branchForReportedRoot)
 
-        // If resolveDetailed returned .blocked (no prior identity), we have no model.
-        // Create a cached one so the UI has a live object to observe. Shell branch
-        // reports will keep it fresh; promoteToLive() can upgrade it later.
-        if repositoryModel == nil {
-            let model = RepositoryModel(
-                rootPath: normalized,
-                branch: gitBranch,
-                accessLevel: .cached
-            )
+        let oldModel = repositoryModel
+        let model = RepositoryCache.shared.modelForShellReportedRoot(
+            rootPath: normalized,
+            branch: branchForReportedRoot
+        )
+        if model !== oldModel {
+            detachRepositoryBranchObserver(from: oldModel)
             repositoryModel = model
             attachRepositoryBranchObserver(to: model)
         }
 
         if changed {
             onGitRootPathChanged?(normalized)
+        }
+        if previousBranch != gitBranch {
+            shellEventDetector.gitBranchChanged(to: gitBranch)
         }
     }
 

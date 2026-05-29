@@ -254,6 +254,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - Show Changed Files (Cmd+Option+G): git diff snapshot per command shows which files were modified.
 - Idle tabs dropdown: tabs idle beyond a configurable threshold (default 10 min) are grouped into a compact chip in the tab bar.
 - Repository tab grouping: group tabs by git repo (Off/Auto/Manual). Shows inline repo-name tag chip with connecting line. Suppresses redundant repo path in tab titles, and inherited group membership auto-detaches when a tab moves to a different repo, including tabs opened directly at another directory.
+- Branch detection keeps one shared repository model per root and swaps models on shell-reported repo-root changes, preventing branch labels from one repo leaking into another after `cd`.
 - Split pane file preview: read-only viewer with syntax highlighting and image support (Cmd+Opt+P).
 - Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D).
 - `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (with confirmation).
