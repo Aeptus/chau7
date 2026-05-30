@@ -18,4 +18,4 @@ Terminal and AI session monitoring: event detection, conflict tracking, resource
 
 - `ConflictDetector.checkForConflicts()` called after each command finish (OSC 133 D)
 - Dev server port detection defers initial callback when port is nil
-- Shell events emit to `AppModel.recordEvent()` which feeds the notification pipeline
+- Shell events emit through `AIEventPublishing`, keeping detection logic decoupled from concrete `AppModel` state
