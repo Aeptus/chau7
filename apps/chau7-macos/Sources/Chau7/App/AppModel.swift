@@ -496,7 +496,7 @@ final class AppModel {
     // MARK: - App Event Emitter
 
     private func startAppEventEmitter() {
-        appEventEmitter = AppEventEmitter(appModel: self)
+        appEventEmitter = AppEventEmitter(eventPublisher: self)
         Log.info("App event emitter started")
     }
 

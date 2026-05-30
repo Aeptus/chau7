@@ -1148,7 +1148,7 @@ final class TerminalSessionModel {
     @ObservationIgnored let semanticDetector = SemanticOutputDetector()
     @ObservationIgnored let devServerMonitor = DevServerMonitor()
     @ObservationIgnored let processResourceMonitor = ProcessResourceMonitor()
-    @ObservationIgnored lazy var shellEventDetector = ShellEventDetector(appModel: appModel)
+    @ObservationIgnored lazy var shellEventDetector = ShellEventDetector(eventPublisher: appModel)
     @ObservationIgnored let gitDiffTracker = GitDiffTracker()
     static let osc7Prefix = Data([0x1B, 0x5D, 0x37, 0x3B])
     static let aiExitMarkerPrefix = Data("\u{001b}]9;chau7;exit=".utf8)

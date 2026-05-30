@@ -4,7 +4,7 @@ import Chau7Core
 /// Detects and emits shell-related events for the notification system.
 /// Handles: exit codes, output pattern matching, long-running commands, directory/git changes.
 final class ShellEventDetector {
-    private weak var appModel: AppModel?
+    private weak var eventPublisher: AIEventPublishing?
     private var config: ShellEventConfig {
         FeatureSettings.shared.shellEventConfig
     }
@@ -31,8 +31,8 @@ final class ShellEventDetector {
     private var lastPatternMatchTime: [UUID: Date] = [:]
     private let patternCooldownSeconds: TimeInterval = 5.0 // Min seconds between same pattern matches
 
-    init(appModel: AppModel?) {
-        self.appModel = appModel
+    init(eventPublisher: AIEventPublishing?) {
+        self.eventPublisher = eventPublisher
         recompilePatterns()
     }
 
@@ -240,14 +240,17 @@ final class ShellEventDetector {
         let dir = lastDirectory
         let tabID = ownerTabID
         DispatchQueue.main.async { [weak self] in
-            self?.appModel?.recordEvent(
+            self?.eventPublisher?.recordEvent(
                 source: .shell,
                 type: type,
                 tool: "Shell",
                 message: message,
                 notify: true,
                 directory: dir,
-                tabID: tabID
+                tabID: tabID,
+                sessionID: nil,
+                producer: nil,
+                reliability: nil
             )
         }
     }

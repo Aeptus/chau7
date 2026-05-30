@@ -4,7 +4,7 @@ import Chau7Core
 /// Emits app-level events for the notification system.
 /// Handles: scheduled events, inactivity detection, memory threshold monitoring.
 final class AppEventEmitter {
-    private weak var appModel: AppModel?
+    private weak var eventPublisher: AIEventPublishing?
     private var config: AppEventConfig {
         FeatureSettings.shared.appEventConfig
     }
@@ -22,8 +22,8 @@ final class AppEventEmitter {
 
     private var configObserver: Any?
 
-    init(appModel: AppModel?) {
-        self.appModel = appModel
+    init(eventPublisher: AIEventPublishing?) {
+        self.eventPublisher = eventPublisher
         setupTimers()
         observeConfigChanges()
     }
@@ -252,12 +252,17 @@ final class AppEventEmitter {
 
     private func emitEvent(type: String, message: String) {
         DispatchQueue.main.async { [weak self] in
-            self?.appModel?.recordEvent(
+            self?.eventPublisher?.recordEvent(
                 source: .app,
                 type: type,
                 tool: "App",
                 message: message,
-                notify: true
+                notify: true,
+                directory: nil,
+                tabID: nil,
+                sessionID: nil,
+                producer: nil,
+                reliability: nil
             )
         }
     }
