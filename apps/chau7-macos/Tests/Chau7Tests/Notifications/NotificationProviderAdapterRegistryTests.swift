@@ -318,6 +318,27 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(canonical.kind, .waitingForInput)
     }
 
+    func testGenericAdapterPreservesProviderRawTypeSpellingWhenRawTypeIsMissing() {
+        let event = AIEvent(
+            source: .runtime,
+            type: "agent-turn-complete",
+            tool: "Codex",
+            message: "Turn complete",
+            ts: "2026-04-01T00:00:00Z",
+            sessionID: "session-1",
+            producer: "runtime_session_manager",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(adapted, canonical) = decision else {
+            return XCTFail("Expected runtime event to canonicalize")
+        }
+
+        XCTAssertEqual(adapted.rawType, "agent-turn-complete")
+        XCTAssertEqual(canonical.kind, .taskFinished)
+    }
+
     func testCodexAgentTurnCompleteCanonicalizesToFinished() {
         let event = AIEvent(
             source: .codex,
@@ -448,6 +469,48 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         }
 
         XCTAssertTrue(reason.contains("missing routing identity"))
+    }
+
+    func testEventsLogWaitingInputCanRouteWithDirectoryOnly() {
+        let event = AIEvent(
+            source: .eventsLog,
+            type: "waiting_input",
+            tool: "Codex",
+            message: "Codex needs input",
+            ts: "2026-04-01T00:00:00Z",
+            directory: "/tmp/chau7",
+            producer: "external_events_log",
+            reliability: .fallback
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(adapted, canonical) = decision else {
+            return XCTFail("Expected events log event with directory identity to emit")
+        }
+
+        XCTAssertEqual(adapted.type, "waiting_input")
+        XCTAssertEqual(adapted.directory, "/tmp/chau7")
+        XCTAssertEqual(adapted.reliability, .fallback)
+        XCTAssertEqual(canonical.kind, .waitingForInput)
+    }
+
+    func testTerminalSessionWaitingInputDropsWithoutExactIdentity() {
+        let event = AIEvent(
+            source: .terminalSession,
+            type: "waiting_input",
+            tool: "Codex",
+            message: "Codex needs input",
+            ts: "2026-04-01T00:00:00Z",
+            producer: "terminal_session",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .drop(reason) = decision else {
+            return XCTFail("Expected terminal session event without exact identity to drop")
+        }
+
+        XCTAssertTrue(reason.contains("missing exact routing identity"))
     }
 
     func testShellCommandFailedPreservesTriggerTypeAndCanonicalizes() {

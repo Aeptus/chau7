@@ -80,21 +80,7 @@ public enum NotificationProviderAdapterRegistry {
     }
 
     private static func adaptGenericAIEvent(_ event: AIEvent) -> Decision {
-        let providerEvent = NotificationProviderEvent(event: event)
-        let kind = NotificationSemanticMapping.kind(
-            rawType: providerEvent.rawType,
-            notificationType: providerEvent.notificationType
-        )
-        guard kind != .unknown else {
-            return .drop(reason: "Unsupported generic AI raw event \(providerEvent.rawType ?? event.type)")
-        }
-        return emitCanonicalizedEvent(
-            event,
-            kind: kind,
-            preservedType: event.type,
-            rawType: providerEvent.rawType,
-            reliability: event.reliability
-        )
+        adaptMappedSourceEvent(event, policy: .genericAI)
     }
 
     private static func adaptCodexEvent(_ event: AIEvent) -> Decision {
@@ -102,157 +88,50 @@ public enum NotificationProviderAdapterRegistry {
     }
 
     private static func adaptTerminalSessionEvent(_ event: AIEvent) -> Decision {
-        let normalizedType = NotificationSemanticMapping.normalize(event.rawType ?? event.type)
-        let kind = NotificationSemanticMapping.kind(
-            rawType: normalizedType,
-            notificationType: event.notificationType
-        )
-
-        if kind == .unknown, normalizedType == "info" {
-            return emitCanonicalizedEvent(
-                event,
-                kind: .informational,
-                preservedType: event.type,
-                rawType: event.rawType ?? normalizedType,
-                reliability: .fallback
-            )
-        }
-
-        guard kind != .unknown else {
-            return .drop(reason: "Unsupported terminal session raw event \(normalizedType)")
-        }
-
-        guard event.tabID != nil || event.sessionID != nil else {
-            return .drop(reason: "Terminal session event \(normalizedType) missing exact routing identity")
-        }
-
-        return emitCanonicalizedEvent(
-            event,
-            kind: kind,
-            preservedType: event.type,
-            rawType: event.rawType ?? normalizedType,
-            reliability: .fallback
-        )
+        adaptMappedSourceEvent(event, policy: .terminalSession)
     }
 
     private static func adaptFallbackAIEvent(_ event: AIEvent) -> Decision {
-        let normalizedType = NotificationSemanticMapping.normalize(event.rawType ?? event.type)
-        let kind = NotificationSemanticMapping.kind(
-            rawType: normalizedType,
-            notificationType: event.notificationType
-        )
-
-        guard kind != .unknown else {
-            return .drop(reason: "Unsupported fallback AI raw event \(normalizedType)")
-        }
-
-        guard event.tabID != nil || event.sessionID != nil || event.directory != nil else {
-            return .drop(reason: "Fallback AI event \(normalizedType) missing routing identity")
-        }
-
-        return emitCanonicalizedEvent(
-            event,
-            kind: kind,
-            preservedType: event.type,
-            rawType: event.rawType ?? normalizedType,
-            reliability: .fallback
-        )
+        adaptMappedSourceEvent(event, policy: .fallbackAI)
     }
 
     private static func adaptShellEvent(_ event: AIEvent) -> Decision {
-        let normalizedType = NotificationSemanticMapping.normalize(event.rawType ?? event.type)
-        let kind: NotificationSemanticKind
-        switch normalizedType {
-        case "command_finished":
-            kind = .taskFinished
-        case "command_failed":
-            kind = .taskFailed
-        case "exit_code_match", "pattern_match", "long_running", "process_started", "process_ended", "directory_changed", "git_branch_changed", "other":
-            kind = .informational
-        default:
-            kind = .unknown
-        }
-
-        guard kind != .unknown else {
-            return .drop(reason: "Unsupported shell raw event \(normalizedType)")
-        }
-
-        return emitCanonicalizedEvent(
-            event,
-            kind: kind,
-            preservedType: event.type,
-            rawType: event.rawType ?? normalizedType,
-            reliability: event.reliability
-        )
+        adaptMappedSourceEvent(event, policy: .shell)
     }
 
     private static func adaptAppEvent(_ event: AIEvent) -> Decision {
-        let normalizedType = NotificationSemanticMapping.normalize(event.rawType ?? event.type)
-        let kind: NotificationSemanticKind
-        switch normalizedType {
-        case "update_available", "launch", "tab_opened", "tab_closed", "window_focused", "window_unfocused", "file_modified", "docker_event", "other":
-            kind = .informational
-        case "file_conflict", "memory_threshold":
-            kind = .attentionRequired
-        default:
-            kind = .unknown
-        }
-
-        guard kind != .unknown else {
-            return .drop(reason: "Unsupported app raw event \(normalizedType)")
-        }
-
-        return emitCanonicalizedEvent(
-            event,
-            kind: kind,
-            preservedType: event.type,
-            rawType: event.rawType ?? normalizedType,
-            reliability: event.reliability
-        )
+        adaptMappedSourceEvent(event, policy: .app)
     }
 
     private static func adaptAPIProxyEvent(_ event: AIEvent) -> Decision {
-        let normalizedType = NotificationSemanticMapping.normalize(event.rawType ?? event.type)
-        let kind: NotificationSemanticKind
-        switch normalizedType {
-        case "api_call":
-            kind = .informational
-        case "api_error", "error":
-            kind = .taskFailed
-        default:
-            kind = .unknown
-        }
-
-        guard kind != .unknown else {
-            return .drop(reason: "Unsupported API proxy raw event \(normalizedType)")
-        }
-
-        return emitCanonicalizedEvent(
-            event,
-            kind: kind,
-            preservedType: event.type,
-            rawType: event.rawType ?? normalizedType,
-            reliability: event.reliability
-        )
+        adaptMappedSourceEvent(event, policy: .apiProxy)
     }
 
     private static func adaptUnknownEvent(_ event: AIEvent) -> Decision {
+        adaptMappedSourceEvent(event, policy: .unknown)
+    }
+
+    private static func adaptMappedSourceEvent(
+        _ event: AIEvent,
+        policy: MappedSourceAdapterPolicy
+    ) -> Decision {
         let normalizedType = NotificationSemanticMapping.normalize(event.rawType ?? event.type)
-        let kind = NotificationSemanticMapping.kind(
-            rawType: normalizedType,
-            notificationType: event.notificationType
-        )
+        let kind = policy.kind(for: normalizedType, notificationType: event.notificationType)
 
         guard kind != .unknown else {
-            return .drop(reason: "Unsupported unknown-source raw event \(normalizedType)")
+            return .drop(reason: policy.unsupportedReason(for: normalizedType))
+        }
+
+        if let reason = policy.missingRoutingReason(for: event, normalizedType: normalizedType) {
+            return .drop(reason: reason)
         }
 
         return emitCanonicalizedEvent(
             event,
             kind: kind,
             preservedType: event.type,
-            rawType: event.rawType ?? normalizedType,
-            reliability: event.reliability
+            rawType: policy.emittedRawType(for: event, normalizedType: normalizedType),
+            reliability: policy.reliability(for: event)
         )
     }
 
@@ -274,6 +153,118 @@ public enum NotificationProviderAdapterRegistry {
             ),
             canonical: canonical
         )
+    }
+}
+
+private enum MappedSourceAdapterPolicy {
+    case genericAI
+    case terminalSession
+    case fallbackAI
+    case shell
+    case app
+    case apiProxy
+    case unknown
+
+    func kind(for normalizedType: String, notificationType: String?) -> NotificationSemanticKind {
+        switch self {
+        case .genericAI, .terminalSession, .fallbackAI, .unknown:
+            return NotificationSemanticMapping.kind(
+                rawType: normalizedType,
+                notificationType: notificationType
+            )
+
+        case .shell:
+            switch normalizedType {
+            case "command_finished":
+                return .taskFinished
+            case "command_failed":
+                return .taskFailed
+            case "exit_code_match", "pattern_match", "long_running", "process_started", "process_ended",
+                 "directory_changed", "git_branch_changed", "other":
+                return .informational
+            default:
+                return .unknown
+            }
+
+        case .app:
+            switch normalizedType {
+            case "update_available", "launch", "tab_opened", "tab_closed", "window_focused",
+                 "window_unfocused", "file_modified", "docker_event", "other":
+                return .informational
+            case "file_conflict", "memory_threshold":
+                return .attentionRequired
+            default:
+                return .unknown
+            }
+
+        case .apiProxy:
+            switch normalizedType {
+            case "api_call":
+                return .informational
+            case "api_error", "error":
+                return .taskFailed
+            default:
+                return .unknown
+            }
+        }
+    }
+
+    func missingRoutingReason(for event: AIEvent, normalizedType: String) -> String? {
+        switch self {
+        case .terminalSession:
+            guard event.tabID != nil || event.sessionID != nil else {
+                return "Terminal session event \(normalizedType) missing exact routing identity"
+            }
+            return nil
+        case .fallbackAI:
+            guard event.tabID != nil || event.sessionID != nil || event.directory != nil else {
+                return "Fallback AI event \(normalizedType) missing routing identity"
+            }
+            return nil
+        case .genericAI, .shell, .app, .apiProxy, .unknown:
+            return nil
+        }
+    }
+
+    func emittedRawType(for event: AIEvent, normalizedType: String) -> String? {
+        switch self {
+        case .genericAI:
+            return event.rawType ?? event.type
+        case .terminalSession, .fallbackAI, .shell, .app, .apiProxy, .unknown:
+            return event.rawType ?? normalizedType
+        }
+    }
+
+    func reliability(for event: AIEvent) -> AIEventReliability {
+        switch self {
+        case .terminalSession, .fallbackAI:
+            return .fallback
+        case .genericAI, .shell, .app, .apiProxy, .unknown:
+            return event.reliability
+        }
+    }
+
+    func unsupportedReason(for normalizedType: String) -> String {
+        "Unsupported \(unsupportedRawEventLabel) raw event \(normalizedType)"
+    }
+
+    private var unsupportedRawEventLabel: String {
+        switch self {
+        case .genericAI:
+            return "generic AI"
+        case .terminalSession:
+            return "terminal session"
+        case .fallbackAI:
+            return "fallback AI"
+        case .shell:
+            return "shell"
+        case .app:
+            return "app"
+        case .apiProxy:
+            return "API proxy"
+        case .unknown:
+            return "unknown-source"
+        }
     }
 }
 
