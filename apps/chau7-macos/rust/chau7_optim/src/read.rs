@@ -44,6 +44,45 @@ fn print_command_output(output: &str) {
     }
 }
 
+struct OptimizedRead {
+    output: String,
+    original_lines: usize,
+    filtered_lines: usize,
+}
+
+fn optimize_sliced_read(
+    sliced: &str,
+    lang: &Language,
+    level: FilterLevel,
+    max_lines: Option<usize>,
+    line_offset: usize,
+    line_numbers: bool,
+) -> OptimizedRead {
+    let filter = filter::get_filter(level);
+    let mut filtered = filter.filter(sliced, lang);
+    filtered = preserve_non_empty_output(sliced, filtered);
+
+    let original_lines = sliced.lines().count();
+    let filtered_lines = filtered.lines().count();
+
+    if let Some(max) = max_lines {
+        filtered = filter::smart_truncate(&filtered, max, lang);
+        filtered = preserve_non_empty_output(sliced, filtered);
+    }
+
+    let output = if line_numbers {
+        format_with_line_numbers(&filtered, line_offset)
+    } else {
+        filtered
+    };
+
+    OptimizedRead {
+        output,
+        original_lines,
+        filtered_lines,
+    }
+}
+
 pub fn run(
     file: &Path,
     level: FilterLevel,
@@ -82,42 +121,28 @@ pub fn run(
         eprintln!("Detected language: {:?}", lang);
     }
 
-    // Apply filter
-    let filter = filter::get_filter(level);
-    let mut filtered = filter.filter(&sliced, &lang);
-    filtered = preserve_non_empty_output(&sliced, filtered);
-
+    let optimized =
+        optimize_sliced_read(&sliced, &lang, level, max_lines, line_offset, line_numbers);
     if verbose > 0 {
-        let original_lines = sliced.lines().count();
-        let filtered_lines = filtered.lines().count();
-        let reduction = if original_lines > 0 {
-            ((original_lines - filtered_lines) as f64 / original_lines as f64) * 100.0
+        let reduction = if optimized.original_lines > 0 {
+            ((optimized.original_lines - optimized.filtered_lines) as f64
+                / optimized.original_lines as f64)
+                * 100.0
         } else {
             0.0
         };
         eprintln!(
             "Lines: {} -> {} ({:.1}% reduction)",
-            original_lines, filtered_lines, reduction
+            optimized.original_lines, optimized.filtered_lines, reduction
         );
     }
 
-    // Apply smart truncation if max_lines is set
-    if let Some(max) = max_lines {
-        filtered = filter::smart_truncate(&filtered, max, &lang);
-        filtered = preserve_non_empty_output(&sliced, filtered);
-    }
-
-    let rtk_output = if line_numbers {
-        format_with_line_numbers(&filtered, line_offset)
-    } else {
-        filtered.clone()
-    };
-    print_command_output(&rtk_output);
+    print_command_output(&optimized.output);
     timer.track(
         &format!("cat {}", file.display()),
         "rtk read",
         &sliced,
-        &rtk_output,
+        &optimized.output,
     );
     Ok(())
 }
@@ -160,39 +185,25 @@ pub fn run_stdin(
         eprintln!("Language: {:?} (stdin has no extension)", lang);
     }
 
-    // Apply filter
-    let filter = filter::get_filter(level);
-    let mut filtered = filter.filter(&sliced, &lang);
-    filtered = preserve_non_empty_output(&sliced, filtered);
-
+    let optimized =
+        optimize_sliced_read(&sliced, &lang, level, max_lines, line_offset, line_numbers);
     if verbose > 0 {
-        let original_lines = sliced.lines().count();
-        let filtered_lines = filtered.lines().count();
-        let reduction = if original_lines > 0 {
-            ((original_lines - filtered_lines) as f64 / original_lines as f64) * 100.0
+        let reduction = if optimized.original_lines > 0 {
+            ((optimized.original_lines - optimized.filtered_lines) as f64
+                / optimized.original_lines as f64)
+                * 100.0
         } else {
             0.0
         };
         eprintln!(
             "Lines: {} -> {} ({:.1}% reduction)",
-            original_lines, filtered_lines, reduction
+            optimized.original_lines, optimized.filtered_lines, reduction
         );
     }
 
-    // Apply smart truncation if max_lines is set
-    if let Some(max) = max_lines {
-        filtered = filter::smart_truncate(&filtered, max, &lang);
-        filtered = preserve_non_empty_output(&sliced, filtered);
-    }
+    print_command_output(&optimized.output);
 
-    let rtk_output = if line_numbers {
-        format_with_line_numbers(&filtered, line_offset)
-    } else {
-        filtered.clone()
-    };
-    print_command_output(&rtk_output);
-
-    timer.track("cat - (stdin)", "rtk read -", &sliced, &rtk_output);
+    timer.track("cat - (stdin)", "rtk read -", &sliced, &optimized.output);
     Ok(())
 }
 
@@ -316,6 +327,22 @@ fn main() {{
     fn test_preserve_non_empty_output_keeps_non_empty_optimization() {
         let result = preserve_non_empty_output("line1\nline2\n", "line1".to_string());
         assert_eq!(result, "line1");
+    }
+
+    #[test]
+    fn test_optimize_sliced_read_preserves_comment_only_content_with_line_numbers() {
+        let result = optimize_sliced_read(
+            "// important comment\n",
+            &Language::Rust,
+            FilterLevel::Minimal,
+            None,
+            7,
+            true,
+        );
+
+        assert_eq!(result.output, "7 │ // important comment\n");
+        assert_eq!(result.original_lines, 1);
+        assert_eq!(result.filtered_lines, 1);
     }
 
     #[test]
