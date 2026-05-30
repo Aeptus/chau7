@@ -110,6 +110,7 @@ AI Integration,AI Event Log Tailing,Real-time tailing of ~/.ai-events.log for AI
 AI Integration,PTY Output Logging,Capture raw terminal output for AI tool sessions (codex-pty and claude-pty logs),Shipped,No
 AI Integration,Codex Session Resolver,Maps Codex OpenAI capture sessions to working directories with LRU caching,Shipped,Yes
 AI Integration,Context Token Optimization (CTO),Monitor and optimize LLM API token usage in real time — per tab or globally,Shipped,Yes
+AI Integration,CTO Non-Empty Read Guard,"chau7-optim read preserves original output when filtering would collapse a non-empty file, stdin payload, or selected range to empty output, preventing optimized read commands from looking broken",Shipped,Yes
 AI Integration,CTO Runtime Monitor,"Real-time CTO metrics: decision counts, mode changes, deferred operations, health assessment",Shipped,Yes
 AI Integration,CTO Flag Manager,Manages per-tab CTO flag files that AI tools read to adjust context behavior,Shipped,Yes
 API Analytics,Asynchronous Completed-Run Extraction,"Codex and other OpenAI-family telemetry runs finalize immediately at run end, then backfill richer transcript and tool-call content asynchronously when provider extraction completes",Shipped,Yes

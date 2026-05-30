@@ -26,6 +26,24 @@ fn apply_start_line(content: &str, start_line: Option<usize>) -> (String, usize)
     }
 }
 
+/// Never let token optimization turn a non-empty command result into an
+/// empty-looking one. Comment-only files, .gitignore files, or heavily
+/// filtered snippets still carry signal for agents.
+fn preserve_non_empty_output(original: &str, optimized: String) -> String {
+    if !original.is_empty() && optimized.trim().is_empty() {
+        original.to_string()
+    } else {
+        optimized
+    }
+}
+
+fn print_command_output(output: &str) {
+    print!("{}", output);
+    if !output.ends_with('\n') {
+        println!();
+    }
+}
+
 pub fn run(
     file: &Path,
     level: FilterLevel,
@@ -67,6 +85,7 @@ pub fn run(
     // Apply filter
     let filter = filter::get_filter(level);
     let mut filtered = filter.filter(&sliced, &lang);
+    filtered = preserve_non_empty_output(&sliced, filtered);
 
     if verbose > 0 {
         let original_lines = sliced.lines().count();
@@ -85,6 +104,7 @@ pub fn run(
     // Apply smart truncation if max_lines is set
     if let Some(max) = max_lines {
         filtered = filter::smart_truncate(&filtered, max, &lang);
+        filtered = preserve_non_empty_output(&sliced, filtered);
     }
 
     let rtk_output = if line_numbers {
@@ -92,7 +112,7 @@ pub fn run(
     } else {
         filtered.clone()
     };
-    println!("{}", rtk_output);
+    print_command_output(&rtk_output);
     timer.track(
         &format!("cat {}", file.display()),
         "rtk read",
@@ -143,6 +163,7 @@ pub fn run_stdin(
     // Apply filter
     let filter = filter::get_filter(level);
     let mut filtered = filter.filter(&sliced, &lang);
+    filtered = preserve_non_empty_output(&sliced, filtered);
 
     if verbose > 0 {
         let original_lines = sliced.lines().count();
@@ -161,6 +182,7 @@ pub fn run_stdin(
     // Apply smart truncation if max_lines is set
     if let Some(max) = max_lines {
         filtered = filter::smart_truncate(&filtered, max, &lang);
+        filtered = preserve_non_empty_output(&sliced, filtered);
     }
 
     let rtk_output = if line_numbers {
@@ -168,7 +190,7 @@ pub fn run_stdin(
     } else {
         filtered.clone()
     };
-    println!("{}", rtk_output);
+    print_command_output(&rtk_output);
 
     timer.track("cat - (stdin)", "rtk read -", &sliced, &rtk_output);
     Ok(())
@@ -274,6 +296,26 @@ fn main() {{
         let content = "first\nsecond";
         let result = format_with_line_numbers(content, 1);
         assert_eq!(result, "1 │ first\n2 │ second\n");
+    }
+
+    #[test]
+    fn test_preserve_non_empty_output_keeps_comment_only_content() {
+        let original = "# important ignore rule\n*.secret\n";
+        let optimized = String::new();
+        let result = preserve_non_empty_output(original, optimized);
+        assert_eq!(result, original);
+    }
+
+    #[test]
+    fn test_preserve_non_empty_output_allows_true_empty_ranges() {
+        let result = preserve_non_empty_output("", String::new());
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_preserve_non_empty_output_keeps_non_empty_optimization() {
+        let result = preserve_non_empty_output("line1\nline2\n", "line1".to_string());
+        assert_eq!(result, "line1");
     }
 
     #[test]

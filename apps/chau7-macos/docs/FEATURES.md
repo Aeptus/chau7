@@ -94,6 +94,7 @@ Built-in token optimizer (`chau7_optim`, forked from [RTK](https://github.com/rt
 - MCP-controllable via `tab_set_cto`.
 - Ultra-compact mode for maximum savings.
 - Token savings tracking with daily/weekly/monthly graphs.
+- Non-empty read guard: `chau7-optim read` preserves original output if filtering would make a non-empty file, stdin payload, or selected range look empty, so optimized `cat`/read-style commands do not masquerade as broken shell output.
 
 Supported commands (46 parsers):
 
