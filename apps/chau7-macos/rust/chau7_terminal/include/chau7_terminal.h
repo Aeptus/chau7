@@ -253,6 +253,10 @@ typedef struct DebugState {
      */
     uint8_t bracketed_paste;
     /*
+     Is alternate screen active (u8 for FFI safety)
+     */
+    uint8_t alternate_screen;
+    /*
      Is application cursor mode (u8 for FFI safety)
      */
     uint8_t app_cursor;
@@ -671,6 +675,14 @@ uint32_t chau7_terminal_display_offset(struct Chau7Terminal *term);
  - `term` must be a valid pointer
  */
 bool chau7_terminal_is_bracketed_paste_mode(struct Chau7Terminal *term);
+
+/*
+ Check if alternate screen mode is active
+
+ # Safety
+ - `term` must be a valid pointer
+ */
+bool chau7_terminal_is_alternate_screen_active(struct Chau7Terminal *term);
 
 /*
  Check if application cursor mode (DECCKM) is enabled

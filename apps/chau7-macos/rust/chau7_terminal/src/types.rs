@@ -157,6 +157,8 @@ pub struct DebugState {
     pub mouse_mode: u32,
     /// Is bracketed paste mode (u8 for FFI safety)
     pub bracketed_paste: u8,
+    /// Is alternate screen active (u8 for FFI safety)
+    pub alternate_screen: u8,
     /// Is application cursor mode (u8 for FFI safety)
     pub app_cursor: u8,
     /// Poll count

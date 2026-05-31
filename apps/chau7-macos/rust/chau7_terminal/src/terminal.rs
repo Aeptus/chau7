@@ -1818,6 +1818,22 @@ impl Chau7Terminal {
         enabled
     }
 
+    /// Check if the terminal is currently rendering the alternate screen.
+    ///
+    /// Full-screen TUI programs (vim, less, Claude/Codex/Gemini-style agents,
+    /// etc.) usually draw here instead of the normal scrollback-producing
+    /// screen. Exposing this as a terminal fact lets higher layers decide how
+    /// to route scroll input without hardcoding provider names.
+    pub fn is_alternate_screen_active(&self) -> bool {
+        let term = self.term.lock();
+        let active = term.mode().contains(TermMode::ALT_SCREEN);
+        trace!(
+            "[terminal-{}] is_alternate_screen_active: {}",
+            self.id, active
+        );
+        active
+    }
+
     /// Check if a bell event has occurred since the last check, and clear the flag
     #[must_use]
     pub fn check_bell(&self) -> bool {
@@ -1896,6 +1912,7 @@ impl Chau7Terminal {
         let cursor_col = cursor.column.0 as u16;
         let cursor_row = cursor.line.0 as u16;
         let bracketed_paste = mode.contains(TermMode::BRACKETED_PASTE);
+        let alternate_screen = mode.contains(TermMode::ALT_SCREEN);
         let app_cursor = mode.contains(TermMode::APP_CURSOR);
         drop(term);
 
@@ -1923,6 +1940,7 @@ impl Chau7Terminal {
             has_selection: has_selection as u8,
             mouse_mode: self.mouse_mode(),
             bracketed_paste: bracketed_paste as u8,
+            alternate_screen: alternate_screen as u8,
             app_cursor: app_cursor as u8,
             poll_count,
             avg_poll_time_us: poll_time.checked_div(poll_count).unwrap_or(0),
@@ -2997,12 +3015,15 @@ mod tests {
         );
 
         // Switch to alternate screen and write content
+        assert!(!term.is_alternate_screen_active());
         term.inject_output(b"\x1b[?1049h");
+        assert!(term.is_alternate_screen_active());
         term.inject_output(b"\x1b[HAlt Screen");
 
         // Switch back — main screen content should be restored.
         // The alternate screen content ("Alt Screen") is discarded.
         term.inject_output(b"\x1b[?1049l");
+        assert!(!term.is_alternate_screen_active());
         let after = row_text(&term, 0);
         assert!(
             after.contains("Main Screen"),

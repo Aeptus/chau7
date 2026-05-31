@@ -996,6 +996,25 @@ pub unsafe extern "C" fn chau7_terminal_is_bracketed_paste_mode(term: *mut Chau7
     }
 }
 
+/// Check if alternate screen mode is active
+///
+/// # Safety
+/// - `term` must be a valid pointer
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_is_alternate_screen_active(
+    term: *mut Chau7Terminal,
+) -> bool {
+    unsafe {
+        trace!("chau7_terminal_is_alternate_screen_active({:p})", term);
+        if term.is_null() {
+            warn!("chau7_terminal_is_alternate_screen_active: term is null");
+            return false;
+        }
+        let terminal = &*term;
+        terminal.is_alternate_screen_active()
+    }
+}
+
 /// Check if application cursor mode (DECCKM) is enabled
 ///
 /// # Safety

@@ -239,6 +239,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 ## Terminal Core
 
 - **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
+- **Terminal runtime facts** — Rust exposes alternate-screen state through FFI/debug snapshots so Swift can reason about TUI surfaces generically instead of matching individual providers.
 - **Fixed-delay startup reveal** — Chau7 reveals restored windows after a short splash delay instead of waiting for the full restore queue to drain, matching the lighter release-era startup contract.
 - **Stabilized tab restore path** — restored scrollback replays through the shell again, with restore-artifact filtering preserved, to avoid post-relaunch history corruption while keeping fast visible startup.
 - Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
