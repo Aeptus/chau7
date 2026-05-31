@@ -9,6 +9,7 @@ Terminal Core,Rust Terminal Backend,"Custom terminal emulator written in Rust wi
 Terminal Core,Terminal Runtime Facts,"Rust exposes alternate-screen state through FFI and debug snapshots so Swift can handle full-screen TUI surfaces without provider-specific heuristics",Shipped,Yes
 Terminal Core,Generic TUI Scroll Policy,"Pure Chau7Core policy routes scroll input to shell scrollback, mouse-aware TUI apps, or transcript history based on terminal runtime state",Shipped,Yes
 Terminal Core,Per-Tab Transcript Capture,"Each terminal session keeps a bounded PTY transcript ring with command-boundary backfill so late AI detection can seed accurate session logs",Shipped,Yes
+Terminal Core,TUI Transcript Overlay,"Alternate-screen TUIs without normal scrollback can show recent transcript history on scroll-up while mouse-reporting TUIs keep receiving wheel events",Shipped,Yes
 Tabs,Single Live Selected-Tab Surface,"Selected tabs now render through one live surface only; snapshot and cursor handoff overlays no longer stack on top of the live terminal during switches",Shipped,Yes
 Tabs,On-Demand Deferred Restore,"Non-selected restored tabs stay deferred until selected instead of auto-restoring and mutating visible tabs immediately after launch",Shipped,Yes
 Tabs,Identity-Only Background Restore,"Deferred background tabs hydrate provider/session facts for routing and titles without activating live AI render state, restoring command blocks, or queuing resume input until selected",Shipped,Yes

@@ -961,20 +961,24 @@ final class TerminalControlService {
     }
 
     private func encodedPTYLogOutput(tabID: String, lines: Int) -> String {
-        let result: (path: String?, error: String?) = onMain {
+        let result: (path: String?, transcriptData: Data?, error: String?) = onMain {
             guard let (_, session) = self.resolveTab(tabID) else {
-                return (nil, self.jsonError("Tab not found: \(tabID)"))
+                return (nil, nil, self.jsonError("Tab not found: \(tabID)"))
             }
             session.syncCurrentPTYLog()
-            return (session.currentPTYLogPath(), nil)
+            return (
+                session.currentPTYLogPath(),
+                session.currentTranscriptTailData(maxBytes: 1_024_000),
+                nil
+            )
         }
         if let error = result.error { return error }
-        guard let path = result.path else {
-            return jsonError("No PTY log available for tab \(tabID). The tab may not have run an AI tool.")
-        }
         let outputTabID = canonicalControlPlaneTabID(tabID)
 
-        guard let text = TelemetryRecorder.readPTYLogTail(path: path) else {
+        let text = result.path.flatMap { TelemetryRecorder.readPTYLogTail(path: $0) }
+            ?? result.transcriptData.flatMap(Self.normalizedTranscriptText)
+
+        guard let text else {
             return encodeAny(["tab_id": outputTabID, "output": "", "lines": 0, "source": "pty_log"])
         }
 
@@ -996,6 +1000,13 @@ final class TerminalControlService {
             "lines": outputLines.count,
             "source": "pty_log"
         ])
+    }
+
+    private static func normalizedTranscriptText(from data: Data) -> String? {
+        let raw = String(decoding: data, as: UTF8.self)
+        let normalized = TerminalNormalizer.normalize(raw)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
     }
 
     /// Formats buffer data into the standard tab_output response.

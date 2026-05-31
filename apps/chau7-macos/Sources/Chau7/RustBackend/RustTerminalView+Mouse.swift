@@ -501,29 +501,25 @@ extension RustTerminalView {
             // Scroll needs to animate at full rate on ProMotion displays.
             snapToFastPolling()
 
-            // Mouse reporting mode: forward scroll to the terminal program
-            if isMouseReportingEnabled() {
-                let deltaY = event.scrollingDeltaY
-                // Ignore tiny scrolls to avoid flooding the terminal
-                if abs(deltaY) > 0.5 {
-                    sendScrollEvent(deltaY: deltaY, at: location, modifiers: event.modifierFlags)
-                    return nil // Consume event when mouse reporting
-                }
-                return event
-            }
-
-            // Normal mode: scrollback navigation.
-            // RustTerminalView is a plain NSView (not NSScrollView), so scroll events
-            // would just pass through unhandled. We handle them here directly.
             let deltaY = event.scrollingDeltaY
-            if abs(deltaY) > 0.5 {
-                let lines = max(1, Int(abs(deltaY) / 3.0))
-                if deltaY > 0 {
-                    scrollUp(lines: lines)
+            switch TerminalScrollPolicy.action(
+                deltaY: Double(deltaY),
+                state: terminalRuntimeStateForScroll()
+            ) {
+            case .ignore:
+                return event
+            case .forwardToApplication:
+                sendScrollEvent(deltaY: deltaY, at: location, modifiers: event.modifierFlags)
+                return nil
+            case .transcript(let lines):
+                showTranscriptOverlayAndScroll(lines: lines)
+                return nil
+            case .scrollback(let signedLines):
+                if signedLines > 0 {
+                    scrollUp(lines: signedLines)
                 } else {
-                    scrollDown(lines: lines)
+                    scrollDown(lines: abs(signedLines))
                 }
-
                 // If actively selecting, extend the selection to track the scroll.
                 // This lets users scroll-wheel to extend selection beyond the viewport.
                 if isSelecting, let rust = rustTerminal {
@@ -535,7 +531,6 @@ extension RustTerminalView {
 
                 return nil // Consume the event
             }
-            return event
         }
 
         // General key event monitor - intercept ALL key events when terminal is active
@@ -551,6 +546,10 @@ extension RustTerminalView {
                 )
             }
             guard inTerminal else { return event }
+
+            if transcriptOverlayController?.isVisible == true {
+                hideTranscriptOverlay()
+            }
 
             // Let snippet and history monitors handle their specific keys first
             // (they run before this and return nil to consume)

@@ -297,10 +297,10 @@ final class TerminalSessionModel {
         didSet {
             guard liveAgentName != oldValue else { return }
             recalculateCTOFlag()
-            // Propagate the live TUI signal to the view so its render-phase
-            // handler can short-circuit ScrollbackMemoryManager's flush/reload
-            // paths, which corrupt active TUI surfaces (see manager docs).
-            activeRustTerminalView?.hostsAITUI = liveAgentName != nil
+            // Propagate the live TUI hint to the view. Rust's alternate-screen
+            // flag remains the generic source of truth; this closes the short
+            // window before a newly detected agent flips terminal modes.
+            activeRustTerminalView?.hostsTUIApp = liveAgentName != nil
             onSessionStateChanged?()
             postRuntimeReadinessChange(source: "live_agent")
             NotificationCenter.default.post(

@@ -66,6 +66,9 @@ enum TerminalDiagnostics {
         let cellSize = view.renderCellSize
         let cursor = view.rustTerminal?.cursorPosition
         let displayOffset = view.rustTerminal?.displayOffset ?? 0
+        let alternateScreenActive = view.rustTerminal?.isAlternateScreenActive() ?? false
+        let mouseReportingActive = view.isMouseReportingEnabled()
+        let transcriptAvailable = view.transcriptTextProvider?(4096) != nil
         output += "[terminal]\n"
         output += "  cols × rows: \(view.renderCols) × \(view.renderRows)\n"
         output += "  cellWidth × cellHeight: \(cellSize.width) × \(cellSize.height)\n"
@@ -77,6 +80,9 @@ enum TerminalDiagnostics {
         }
         output += "  scrollbackHistorySize: \(view.cachedScrollbackRows)\n"
         output += "  displayOffset: \(displayOffset) (>0 = scrolled up into history)\n"
+        output += "  alternateScreenActive: \(alternateScreenActive)\n"
+        output += "  mouseReportingActive: \(mouseReportingActive)\n"
+        output += "  transcriptAvailable: \(transcriptAvailable)\n"
         output += "  isInteractive: \(view.persistentTabID != nil)\n"
         output += "\n"
 

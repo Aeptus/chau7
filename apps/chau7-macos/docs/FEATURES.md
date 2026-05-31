@@ -242,6 +242,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - **Terminal runtime facts** — Rust exposes alternate-screen state through FFI/debug snapshots so Swift can reason about TUI surfaces generically instead of matching individual providers.
 - **Generic TUI scroll policy** — a pure Chau7Core policy routes scrolls to normal scrollback, mouse-aware TUI apps, or transcript history based on runtime terminal state.
 - **Per-tab transcript capture** — each terminal session keeps a bounded PTY transcript ring with command-boundary backfill so late AI detection can still seed accurate session logs.
+- **TUI transcript overlay** — alternate-screen TUIs without normal scrollback can show recent transcript history on scroll-up, while mouse-reporting TUIs keep receiving wheel events.
 - **Fixed-delay startup reveal** — Chau7 reveals restored windows after a short splash delay instead of waiting for the full restore queue to drain, matching the lighter release-era startup contract.
 - **Stabilized tab restore path** — restored scrollback replays through the shell again, with restore-artifact filtering preserved, to avoid post-relaunch history corruption while keeping fast visible startup.
 - Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.

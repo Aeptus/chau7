@@ -564,6 +564,8 @@ final class RustTerminalFFI {
     private typealias DisplayOffsetFn = @convention(c) (OpaquePointer?) -> UInt32
     /// Bracketed paste mode query (for proper paste handling in vim, zsh, etc.)
     private typealias IsBracketedPasteModeFn = @convention(c) (OpaquePointer?) -> Bool
+    /// Alternate screen mode query (full-screen TUIs)
+    private typealias IsAlternateScreenActiveFn = @convention(c) (OpaquePointer?) -> Bool
     /// Bell event checking (for audio/visual bell feedback)
     private typealias CheckBellFn = @convention(c) (OpaquePointer?) -> Bool
     // Mouse mode query (for context menu gating and mouse reporting)
@@ -643,6 +645,8 @@ final class RustTerminalFFI {
         let displayOffset: DisplayOffsetFn? // Optional - older libraries may not have this
         /// Bracketed paste mode query
         let isBracketedPasteMode: IsBracketedPasteModeFn? // Optional - older libraries may not have this
+        /// Alternate screen mode query
+        let isAlternateScreenActive: IsAlternateScreenActiveFn? // Optional - older libraries may not have this
         /// Bell event checking
         let checkBell: CheckBellFn? // Optional - older libraries may not have this
         // Mouse mode query (for context menu gating)
@@ -882,6 +886,12 @@ final class RustTerminalFFI {
             Log.info("RustTerminalFFI: isBracketedPasteMode symbol not found (optional)")
         }
 
+        // Alternate screen mode query (for full-screen TUIs)
+        let isAlternateScreenActiveSym = loadSymbol("chau7_terminal_is_alternate_screen_active")
+        if isAlternateScreenActiveSym == nil {
+            Log.info("RustTerminalFFI: isAlternateScreenActive symbol not found (optional)")
+        }
+
         // Bell event checking (for audio/visual bell feedback)
         let checkBellSym = loadSymbol("chau7_terminal_check_bell")
         if checkBellSym == nil {
@@ -1041,6 +1051,7 @@ final class RustTerminalFFI {
             replayBuffer: replayBufferSym.map { unsafeBitCast($0, to: ReplayBufferFn.self) },
             displayOffset: displayOffsetSym.map { unsafeBitCast($0, to: DisplayOffsetFn.self) },
             isBracketedPasteMode: isBracketedPasteModeSym.map { unsafeBitCast($0, to: IsBracketedPasteModeFn.self) },
+            isAlternateScreenActive: isAlternateScreenActiveSym.map { unsafeBitCast($0, to: IsAlternateScreenActiveFn.self) },
             checkBell: checkBellSym.map { unsafeBitCast($0, to: CheckBellFn.self) },
             getMouseMode: getMouseModeSym.map { unsafeBitCast($0, to: GetMouseModeFn.self) },
             isMouseReportingActive: isMouseReportingActiveSym.map { unsafeBitCast($0, to: IsMouseReportingActiveFn.self) },
@@ -1646,6 +1657,18 @@ final class RustTerminalFFI {
         return active
     }
 
+    /// Check if alternate screen mode is active.
+    /// Full-screen TUIs render here instead of producing normal scrollback.
+    func isAlternateScreenActive() -> Bool {
+        guard let isAlternateScreenActiveFn = Self.functions?.isAlternateScreenActive else {
+            Log.trace("RustTerminalFFI[\(instanceId)]: isAlternateScreenActive - Function not available, returning false")
+            return false
+        }
+        let active = isAlternateScreenActiveFn(terminal)
+        Log.trace("RustTerminalFFI[\(instanceId)]: isAlternateScreenActive = \(active)")
+        return active
+    }
+
     /// Check if application cursor mode (DECCKM) is enabled.
     /// When enabled, arrow keys send SS3 sequences (ESC O A/B/C/D) instead of CSI (ESC [ A/B/C/D).
     /// This is typically set by vim, less, tmux, etc.
@@ -1690,6 +1713,7 @@ final class RustTerminalFFI {
         let hasSelection: UInt8 // 0 = false, 1 = true
         let mouseMode: UInt32
         let bracketedPaste: UInt8 // 0 = false, 1 = true
+        let alternateScreen: UInt8 // 0 = false, 1 = true
         let appCursor: UInt8 // 0 = false, 1 = true
         let pollCount: UInt64
         let avgPollTimeUs: UInt64
@@ -1710,7 +1734,7 @@ final class RustTerminalFFI {
               I/O: sent=\(bytesSent) bytes, received=\(bytesReceived) bytes
               Uptime: \(uptimeMs)ms
               State: gridDirty=\(gridDirty != 0), running=\(running != 0), hasSelection=\(hasSelection != 0)
-              Modes: mouseMode=\(mouseMode), bracketedPaste=\(bracketedPaste != 0), appCursor=\(appCursor != 0)
+              Modes: mouseMode=\(mouseMode), bracketedPaste=\(bracketedPaste != 0), alternateScreen=\(alternateScreen != 0), appCursor=\(appCursor != 0)
               Perf: polls=\(pollCount), avgPoll=\(avgPollTimeUs)µs, maxPoll=\(maxPollTimeUs)µs
                     avgSnapshot=\(avgGridSnapshotTimeUs)µs, maxSnapshot=\(maxGridSnapshotTimeUs)µs
                     activity=\(activityPercent)%, idlePolls=\(idlePolls), avgBatch=\(avgBatchSize)B, dirtyRows=\(dirtyRowCount)
@@ -1750,6 +1774,7 @@ final class RustTerminalFFI {
             hasSelection: state.has_selection,
             mouseMode: state.mouse_mode,
             bracketedPaste: state.bracketed_paste,
+            alternateScreen: state.alternate_screen,
             appCursor: state.app_cursor,
             pollCount: state.poll_count,
             avgPollTimeUs: state.avg_poll_time_us,
@@ -2083,6 +2108,7 @@ struct RustDebugState {
     let has_selection: UInt8
     let mouse_mode: UInt32
     let bracketed_paste: UInt8
+    let alternate_screen: UInt8
     let app_cursor: UInt8
     let poll_count: UInt64
     let avg_poll_time_us: UInt64
@@ -2235,12 +2261,10 @@ final class RustTerminalView: NSView {
     /// Whether to enable mouse reporting to the PTY
     var allowMouseReporting = false
 
-    /// Set when the live process-tree resolver sees a known TUI agent (Claude
-    /// Code, Codex, Aider, …) running under this view's shell. Used to
-    /// short-circuit `ScrollbackMemoryManager` flush/reload — flattening the
-    /// TUI surface to plain text and re-pouring it on reveal destroys the
-    /// application's UI invariants (see `applyRenderPhase`).
-    var hostsAITUI = false
+    /// Set when the live process-tree resolver sees a known TUI app running
+    /// under this view's shell. Rust's alternate-screen flag is the generic
+    /// signal; this hint covers the detection window before the app flips modes.
+    var hostsTUIApp = false
 
     /// Whether to notify of update changes (for suspended state)
     var notifyUpdateChanges = true {
@@ -2287,6 +2311,9 @@ final class RustTerminalView: NSView {
 
     /// Overlay container for tips and inline images (non-interactive)
     var overlayContainer: PassthroughView!
+
+    var transcriptTextProvider: ((Int) -> String?)?
+    var transcriptOverlayController: TerminalTranscriptOverlayController?
 
     /// Tip overlay view (power user tip)
     var tipOverlayView: NSView?
@@ -2653,6 +2680,10 @@ final class RustTerminalView: NSView {
         addSubview(overlayContainer)
         Log.trace("RustTerminalView[\(viewId)]: setupViews - Overlay container added")
 
+        let transcriptOverlayController = TerminalTranscriptOverlayController()
+        transcriptOverlayController.attach(to: overlayContainer)
+        self.transcriptOverlayController = transcriptOverlayController
+
         registerDragTypes()
 
         Log.info("RustTerminalView[\(viewId)]: setupViews - Views setup complete (terminal not yet started)")
@@ -2943,6 +2974,7 @@ final class RustTerminalView: NSView {
         let geometry = currentRenderGeometry
         gridView?.frame = geometry.surfaceFrame
         overlayContainer?.frame = geometry.surfaceFrame
+        transcriptOverlayController?.layout(in: overlayContainer?.bounds ?? geometry.surfaceFrame)
         if isMetalRenderingActive || notifyUpdateChanges {
             logInitialRenderSurfaceReportIfNeeded(reason: "layout-initial")
         }
@@ -3168,7 +3200,7 @@ final class RustTerminalView: NSView {
                 rustFFI: rustTerminal,
                 from: previousPhase,
                 to: phase,
-                hostsTUIApp: hostsAITUI
+                hostsTUIApp: hostsTUIApp || (rustTerminal?.isAlternateScreenActive() ?? false)
             )
             TabGraphicsMemoryManager.shared.handlePhaseTransition(
                 tabID: resolvedTabID,

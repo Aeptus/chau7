@@ -235,6 +235,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.onOutput = { [weak model] data in
                 model?.handleOutput(data)
             }
+            existingView.transcriptTextProvider = { [weak model] maxBytes in
+                model?.currentTranscriptTailText(maxBytes: maxBytes)
+            }
             existingView.onShellStartupSlow = { [weak model] in
                 model?.shellStartupSlow = true
             }
@@ -261,6 +264,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             }
             existingView.tabIdentifier = model.tabIdentifier
             existingView.persistentTabID = model.ownerTabID?.uuidString
+            existingView.hostsTUIApp = model.liveAgentName != nil
             existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
             existingView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
             existingView.installHistoryKeyMonitor()
@@ -314,6 +318,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.onOutput = { [weak model] data in
             model?.handleOutput(data)
         }
+        view.transcriptTextProvider = { [weak model] maxBytes in
+            model?.currentTranscriptTailText(maxBytes: maxBytes)
+        }
         view.onShellStartupSlow = { [weak model] in
             model?.shellStartupSlow = true
         }
@@ -342,6 +349,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             model?.dangerousRowTints(top: top, bottom: bottom) ?? [:]
         }
         view.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
+        view.hostsTUIApp = model.liveAgentName != nil
         view.liveEligibilityReasonForProfiling = liveEligibilitySummary()
         view.installHistoryKeyMonitor()
 
@@ -389,6 +397,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     func updateNSView(_ container: UnifiedTerminalContainerView, context: Context) {
         guard let nsView = container.rustTerminalView else { return }
         nsView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
+        nsView.hostsTUIApp = model.liveAgentName != nil
         let transition = context.coordinator.consumeRenderPhaseTransition(to: renderPhase)
         let keepsVisibleSurface = renderPhase.keepsVisibleSurface
         let allowsLivePresentation = renderPhase.allowsLivePresentation
