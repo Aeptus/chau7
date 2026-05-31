@@ -129,6 +129,8 @@ extension TerminalSessionModel {
     func handleOutput(_ data: Data) {
         if shellStartupSlow { shellStartupSlow = false }
 
+        terminalTranscriptCapture.append(data)
+
         // Fix #6: Split output processing - light work inline, heavy work on background queue
         let outputToken = FeatureProfiler.shared.begin(.outputProcessing, bytes: data.count)
         let now = Date()
@@ -461,6 +463,10 @@ extension TerminalSessionModel {
             lastPTYLogPath = logPath
             let trimmedCommand = commandLine.flatMap { SensitiveInputGuard.sanitizedCommandForPersistence($0) }
             aiLogContext = AILogContext(toolName: toolName, commandLine: trimmedCommand, logPath: logPath)
+            let transcriptBackfill = terminalTranscriptCapture.dataSinceBoundary()
+            if !transcriptBackfill.isEmpty {
+                aiLogSession?.recordOutputSync(transcriptBackfill)
+            }
             aiLogPrefixBuffer.removeAll(keepingCapacity: true)
             noteAgentLaunch(toolName: toolName, commandLine: trimmedCommand)
 
@@ -484,6 +490,20 @@ extension TerminalSessionModel {
         aiLogQueue.sync {
             aiLogContext?.logPath ?? lastPTYLogPath
         }
+    }
+
+    func currentTranscriptTailData(maxBytes: Int = 1_024_000) -> Data? {
+        let data = terminalTranscriptCapture.tailData(maxBytes: maxBytes)
+        return data.isEmpty ? nil : data
+    }
+
+    func currentTranscriptTailText(maxBytes: Int = 1_024_000) -> String? {
+        guard let data = currentTranscriptTailData(maxBytes: maxBytes) else { return nil }
+
+        let raw = String(decoding: data, as: UTF8.self)
+        let normalized = TerminalNormalizer.normalize(raw)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
     }
 
     func syncCurrentPTYLog() {
@@ -1096,7 +1116,7 @@ extension TerminalSessionModel {
 
         activeAppName = app
         updateLastDetectedApp(app)
-        startAILoggingIfNeeded(toolName: app, commandLine: nil)
+        startAILoggingIfNeeded(toolName: app, commandLine: pendingCommandLine)
 
         let runtimeSession = ownerTabID.flatMap { RuntimeSessionManager.shared.sessionForTab($0) }
         var taskMetadata = runtimeSession?.config.taskMetadata ?? [:]
@@ -1364,6 +1384,7 @@ extension TerminalSessionModel {
 
         let persistedCommand = SensitiveInputGuard.sanitizedCommandForPersistence(trimmed)
         pendingCommandLine = persistedCommand
+        terminalTranscriptCapture.markCommandBoundary()
 
         // When the shell sends OSC 133 markers, it handles the command lifecycle
         // authoritatively — skip the heuristic echo-based detection.

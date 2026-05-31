@@ -1168,6 +1168,7 @@ final class TerminalSessionModel {
     @ObservationIgnored var aiLogSession: AITerminalLogSession?
     @ObservationIgnored var aiLogContext: AILogContext?
     @ObservationIgnored var aiLogPrefixBuffer = Data()
+    @ObservationIgnored let terminalTranscriptCapture = TerminalTranscriptCapture()
 
     /// Path to the most recent AI session's PTY log. Preserved after the session ends
     /// so MCP tools (tab_output source=pty_log, tab_last_response) can read it.
