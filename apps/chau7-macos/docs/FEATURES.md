@@ -34,7 +34,7 @@ See your coding agents, know what they cost, steer them from the outside. A macO
 
 ### Auto-Detection
 
-Chau7 recognizes AI CLIs the moment they launch — no configuration required:
+Chau7 recognizes AI CLIs the moment they launch — no configuration required. The detection engine uses a combination of process-tree signals and terminal output scanning with strictly tuned patterns to minimize false positives:
 
 - **Claude** (claude, claude-code, claude-cli)
 - **Codex** (codex, codex-cli, codex-pty)

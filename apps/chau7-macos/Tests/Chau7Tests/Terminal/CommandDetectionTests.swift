@@ -35,6 +35,9 @@ final class CommandDetectionTests: XCTestCase {
     func testDetectGemini() {
         XCTAssertEqual(CommandDetection.detectApp(from: "gemini"), "Gemini")
         XCTAssertEqual(CommandDetection.detectApp(from: "gemini-cli"), "Gemini")
+        XCTAssertEqual(CommandDetection.detectApp(from: "npx -y @google/gemini-cli@latest"), "Gemini")
+        XCTAssertEqual(CommandDetection.detectApp(from: "npm exec @google/gemini-cli"), "Gemini")
+        XCTAssertEqual(CommandDetection.detectApp(from: "pnpm dlx @google/gemini-cli"), "Gemini")
     }
 
     func testDetectChatGPT() {
@@ -177,6 +180,11 @@ final class CommandDetectionTests: XCTestCase {
         XCTAssertEqual(CommandDetection.detectApp(from: "pnpm claude"), "Claude")
     }
 
+    func testPackageRunnerVersionSuffixNormalization() {
+        XCTAssertEqual(CommandDetection.detectApp(from: "npx claude@latest"), "Claude")
+        XCTAssertEqual(CommandDetection.detectApp(from: "bunx codex@0.50.0"), "Codex")
+    }
+
     func testDetectLaunchableAppRequiresExecutable() throws {
         try withExecutable(named: "gemini") { directory, _ in
             XCTAssertEqual(
@@ -235,12 +243,13 @@ final class CommandDetectionTests: XCTestCase {
     func testDetectGeminiFromOutput() {
         XCTAssertEqual(CommandDetection.detectAppFromOutput("Google AI Studio"), "Gemini")
         XCTAssertEqual(CommandDetection.detectAppFromOutput("Using Gemini Pro model"), "Gemini")
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("Welcome to Gemini"), "Gemini")
     }
 
     func testDetectChatGPTFromOutput() {
         XCTAssertEqual(CommandDetection.detectAppFromOutput("ChatGPT CLI v1.0"), "ChatGPT")
-        XCTAssertEqual(CommandDetection.detectAppFromOutput("Visit openai.com"), "ChatGPT")
-        XCTAssertEqual(CommandDetection.detectAppFromOutput("CHATGPT is ready"), "ChatGPT")
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("Visit openai.com/v1 for more"), "ChatGPT")
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("chatgpt v1.2.3"), "ChatGPT")
     }
 
     func testDetectCopilotFromOutput() {

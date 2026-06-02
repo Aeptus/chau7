@@ -133,19 +133,20 @@ public enum AIToolRegistry {
             commandNames: ["gemini", "gemini-cli", "gemini-pty"],
             outputPatterns: [
                 "google ai studio", "gemini pro", "gemini.google",
-                "google gemini", "gemini cli"
+                "google gemini", "gemini cli", "welcome to gemini"
             ],
             resumeProviderKey: nil,
             resumeFormat: nil,
             logoAssetName: "gemini-logo",
             tabColorName: "blue",
-            eventSourceRawValue: "gemini"
+            eventSourceRawValue: "gemini",
+            usesTerminalUIHeuristics: true
         ),
         // — ChatGPT (OpenAI) —
         AIToolDefinition(
             displayName: "ChatGPT",
             commandNames: ["chatgpt", "chatgpt-cli", "gpt", "gpt-cli", "openai"],
-            outputPatterns: ["chatgpt", "openai.com/", "openai.com"],
+            outputPatterns: ["chatgpt cli", "chatgpt v", "openai.com/v1", "openai.com/v1/chat"],
             resumeProviderKey: nil,
             resumeFormat: nil,
             logoAssetName: "chatgpt-logo",
