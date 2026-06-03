@@ -1311,20 +1311,33 @@ private final class OverlayBlurView: NSVisualEffectView {
         lastSavedWindowStates = allWindows
         lastSavedWindowStatesAt = Date()
 
+        var splitBundleFingerprintData: Data?
+
         // Write window 0 to the legacy key so the primary model can restore it
         // even if the multi-window payload is unavailable.
         if let firstWindowStates = allWindows.first,
            let data = Persist.encodeLogged(firstWindowStates, context: "window0.tabState") {
+            splitBundleFingerprintData = data
             UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
         }
         // Write all windows to multi-window key
         if allWindows.count > 1 {
             let multiState = SavedMultiWindowState(windows: allWindows)
             if let data = Persist.encodeLogged(multiState, context: "multiWindow.tabState") {
+                splitBundleFingerprintData = data
                 UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
             }
         } else {
             UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        }
+        do {
+            _ = try TabRestoreBundleStore.persistCurrentBundle(
+                windowStates: allWindows,
+                reason: reason,
+                sourceData: splitBundleFingerprintData
+            )
+        } catch {
+            Log.warn("Failed to persist split tab restore bundle [\(reason.rawValue)]: \(error)")
         }
         // Flush to disk immediately — UserDefaults coalesces writes and the
         // process may exit before the next automatic sync.

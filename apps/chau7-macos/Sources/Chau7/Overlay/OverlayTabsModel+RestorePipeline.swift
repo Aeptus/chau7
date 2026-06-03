@@ -443,6 +443,7 @@ extension OverlayTabsModel {
     static func clearPersistedWindowState() {
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        try? TabRestoreBundleStore.clearCurrentBundle()
         if let root = tabStateBackupRootURL(),
            FileManager.default.fileExists(atPath: root.path) {
             let archive = root.appendingPathComponent("archive", isDirectory: true)

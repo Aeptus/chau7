@@ -86,6 +86,7 @@ Detection methods:
 - **Single Live Selected-Tab Surface** — selected tabs now render through one live surface only; the old snapshot/cursor handoff no longer stacks on top of the live terminal during tab switches.
 - **On-Demand Deferred Restore** — non-selected restored tabs stay deferred until the user selects them, instead of auto-restoring and mutating visible tabs immediately after launch.
 - **Identity-only background restore** — deferred background tabs hydrate provider/session facts for routing and titles without activating AI live-render state, restoring command blocks, or queuing resume input until selected.
+- **Integrity-checked restore sidecar** — tab autosave also writes a split restore bundle with identity/layout/AI resume fields in a compact manifest and heavier scrollback/context data in SHA-256-verified sidecar files.
 
 ### Context Token Optimization (CTO)
 
