@@ -52,10 +52,12 @@ final class ClaudeCodeContentProvider: RunContentProvider {
         var state = ClaudeTranscriptUsageParser.State()
 
         for file in jsonlFiles.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-            guard let data = try? Data(contentsOf: file),
-                  let text = String(data: data, encoding: .utf8) else { continue }
+            guard let reading = BoundedTranscriptReader.read(at: file) else { continue }
+            if let originalBytes = reading.truncatedFromBytes {
+                Log.warn("ClaudeCodeContentProvider: transcript \(file.lastPathComponent) is \(originalBytes / 1_048_576)MB; parsed last \(BoundedTranscriptReader.defaultMaxBytes / 1_048_576)MB to avoid OOM")
+            }
             ClaudeTranscriptUsageParser.ingest(
-                jsonl: text,
+                jsonl: reading.text,
                 runID: runID,
                 startedAt: startedAt,
                 endedAt: endedAt,

@@ -31,6 +31,11 @@ public struct TelemetryRun: Codable, Identifiable, Sendable {
     public var rawTranscriptRef: String?
     public var parentRunID: String?
     public var errorMessage: String?
+    /// When transcript repair last attempted this (immutable, ended) run.
+    /// Non-nil means "already attempted" — the repair sweep skips it so it
+    /// doesn't re-read/re-parse the same transcript every cycle when metrics
+    /// can't be derived (no pricing, unparseable/oversized transcript, etc.).
+    public var transcriptRepairAttemptedAt: Date?
 
     public init(
         id: String = UUID().uuidString,
@@ -60,7 +65,8 @@ public struct TelemetryRun: Codable, Identifiable, Sendable {
         metadata: [String: String] = [:],
         rawTranscriptRef: String? = nil,
         parentRunID: String? = nil,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        transcriptRepairAttemptedAt: Date? = nil
     ) {
         self.id = id
         self.sessionID = sessionID
@@ -106,6 +112,7 @@ public struct TelemetryRun: Codable, Identifiable, Sendable {
         self.rawTranscriptRef = rawTranscriptRef
         self.parentRunID = parentRunID
         self.errorMessage = errorMessage
+        self.transcriptRepairAttemptedAt = transcriptRepairAttemptedAt
     }
 
     public var tokenUsage: TokenUsage {

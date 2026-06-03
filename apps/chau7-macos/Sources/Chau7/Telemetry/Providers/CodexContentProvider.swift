@@ -51,10 +51,12 @@ final class CodexContentProvider: RunContentProvider {
             return nil
         }
 
-        guard let data = try? Data(contentsOf: file),
-              let text = String(data: data, encoding: .utf8) else { return nil }
+        guard let reading = BoundedTranscriptReader.read(at: file) else { return nil }
+        if let originalBytes = reading.truncatedFromBytes {
+            Log.warn("CodexContentProvider: rollout \(file.lastPathComponent) is \(originalBytes / 1_048_576)MB; parsed last \(BoundedTranscriptReader.defaultMaxBytes / 1_048_576)MB to avoid OOM")
+        }
 
-        let parsed = CodexRolloutParser.parse(jsonl: text, runID: runID, startedAt: startedAt, endedAt: endedAt)
+        let parsed = CodexRolloutParser.parse(jsonl: reading.text, runID: runID, startedAt: startedAt, endedAt: endedAt)
         guard !parsed.turns.isEmpty || parsed.tokenUsage.hasAnyTokens else { return nil }
         let estimatedCost = ModelPricingTable.estimatedCostUSD(for: parsed.tokenUsage, modelID: parsed.model, providerHint: providerName)
 

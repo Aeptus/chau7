@@ -19,6 +19,26 @@ final class TelemetryRepairServiceTests: XCTestCase {
         XCTAssertTrue(TelemetryRepairService.needsTranscriptRepair(run))
     }
 
+    func testDoesNotNeedTranscriptRepairOnceAttempted() {
+        // Same shape as the fallback-Claude run that DOES need repair, but with
+        // a prior repair attempt stamped — it must not be re-selected, otherwise
+        // un-derivable runs loop through the sweep forever.
+        let run = TelemetryRun(
+            id: "run-1",
+            sessionID: "session-1",
+            provider: "claude",
+            cwd: "/tmp/chau7",
+            startedAt: Date(timeIntervalSince1970: 1_765_000_000),
+            endedAt: Date(timeIntervalSince1970: 1_765_000_100),
+            costSource: .unavailable,
+            costState: .missing,
+            rawTranscriptRef: "pty_log",
+            transcriptRepairAttemptedAt: Date(timeIntervalSince1970: 1_765_000_200)
+        )
+
+        XCTAssertFalse(TelemetryRepairService.needsTranscriptRepair(run))
+    }
+
     func testDoesNotNeedTranscriptRepairWithoutSessionID() {
         let run = TelemetryRun(
             id: "run-2",

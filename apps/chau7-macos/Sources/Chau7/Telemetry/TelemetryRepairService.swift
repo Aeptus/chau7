@@ -29,6 +29,12 @@ final class TelemetryRepairService {
 
     static func needsTranscriptRepair(_ run: TelemetryRun) -> Bool {
         guard run.endedAt != nil else { return false }
+        // Already attempted: an ended run's transcript is immutable, so one
+        // best-effort attempt is authoritative. Without this, runs whose metrics
+        // can't be derived (no pricing → cost_source 'unavailable', oversized or
+        // unparseable transcript) match the predicate forever and get re-read
+        // and re-parsed on every sweep.
+        guard run.transcriptRepairAttemptedAt == nil else { return false }
         let hasSessionID = !(run.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         guard hasSessionID else {
             return false
@@ -71,13 +77,18 @@ final class TelemetryRepairService {
         for var run in runs {
             report.inspectedRuns += 1
 
-            switch rebuildRun(&run, invalidateOnFailure: invalidateOnFailure) {
-            case .rebuilt:
-                report.rebuiltRuns += 1
-            case .invalidated:
-                report.invalidatedRuns += 1
-            case .skipped:
-                report.skippedRuns += 1
+            // Each rebuild may read and parse a large JSONL transcript, spawning
+            // transient buffers and autoreleased JSON objects. Drain them between
+            // runs so peak memory tracks a single run, not the whole batch.
+            autoreleasepool {
+                switch rebuildRun(&run, invalidateOnFailure: invalidateOnFailure) {
+                case .rebuilt:
+                    report.rebuiltRuns += 1
+                case .invalidated:
+                    report.invalidatedRuns += 1
+                case .skipped:
+                    report.skippedRuns += 1
+                }
             }
         }
 
@@ -94,6 +105,13 @@ final class TelemetryRepairService {
         guard let provider = providers.first(where: { $0.canHandle(provider: run.provider) }) else {
             return .skipped
         }
+
+        // Stamp the attempt up front so every outcome (success, invalidation, or
+        // a missing/unparseable transcript) marks the run as attempted — it must
+        // not be re-selected by the sweep regardless of how this turns out.
+        let attemptedAt = Date()
+        store.markTranscriptRepairAttempted(run.id, at: attemptedAt)
+        run.transcriptRepairAttemptedAt = attemptedAt
 
         guard let content = provider.extractContent(
             runID: run.id,

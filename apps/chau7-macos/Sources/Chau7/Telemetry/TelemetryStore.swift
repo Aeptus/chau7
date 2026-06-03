@@ -339,7 +339,7 @@ final class TelemetryStore {
     }
 
     /// Current migration target. Bump this when adding new migrations.
-    private static let currentSchemaVersion = 2
+    private static let currentSchemaVersion = 3
 
     private func schemaVersion() -> Int {
         guard let db else { return 0 }
@@ -454,6 +454,14 @@ final class TelemetryStore {
             )
 
             setSchemaVersion(2)
+        }
+
+        // Version 2 → 3: mark when transcript repair was last attempted so the
+        // repair sweep stops re-reading/re-parsing the same immutable transcript
+        // every cycle when its metrics can't be derived.
+        if version < 3 {
+            ensureColumn(table: "runs", name: "transcript_repair_attempted_at", definition: "TEXT")
+            setSchemaVersion(3)
         }
     }
 
@@ -1219,6 +1227,24 @@ final class TelemetryStore {
         }
     }
 
+    /// Records that transcript repair was attempted for `runID`. Ended-run
+    /// transcripts are immutable, so a single attempt is authoritative — this
+    /// stamp lets the repair sweep skip the run instead of re-reading and
+    /// re-parsing its transcript every cycle when metrics can't be derived
+    /// (no model pricing, oversized/unparseable rollout, etc.).
+    func markTranscriptRepairAttempted(_ runID: String, at date: Date) {
+        queue.sync {
+            guard let db else { return }
+            let sql = "UPDATE runs SET transcript_repair_attempted_at = ? WHERE run_id = ?"
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, Self.isoString(from: date))
+            bindText(stmt, 2, runID)
+            sqlite3_step(stmt)
+        }
+    }
+
     private func deleteChildren(table: String, runID: String) {
         guard let db else { return }
         let sql = "DELETE FROM \(table) WHERE run_id = ?"
@@ -1427,6 +1453,7 @@ final class TelemetryStore {
             AND session_id IS NOT NULL AND TRIM(session_id) != ''
             AND (lower(provider) LIKE '%claude%' OR lower(provider) LIKE '%anthropic%'
                  OR lower(provider) LIKE '%codex%' OR lower(provider) LIKE '%openai%')
+            AND transcript_repair_attempted_at IS NULL
             AND (raw_transcript_ref IS NULL
                  OR raw_transcript_ref IN ('pty_log', 'terminal_buffer')
                  OR token_usage_state = 'missing'
@@ -2082,7 +2109,8 @@ final class TelemetryStore {
             metadata: Self.decodeJSON(colByName(stmt, "metadata", map)) ?? [:],
             rawTranscriptRef: colByName(stmt, "raw_transcript_ref", map),
             parentRunID: colByName(stmt, "parent_run_id", map),
-            errorMessage: colByName(stmt, "error_message", map)
+            errorMessage: colByName(stmt, "error_message", map),
+            transcriptRepairAttemptedAt: colByName(stmt, "transcript_repair_attempted_at", map).flatMap { Self.isoDate(from: $0) }
         )
     }
 
