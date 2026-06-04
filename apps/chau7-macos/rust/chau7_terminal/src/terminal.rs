@@ -33,6 +33,8 @@ use crate::types::{
 
 /// Static counter for terminal IDs (for logging)
 static TERMINAL_COUNTER: AtomicU64 = AtomicU64::new(0);
+pub const POLL_EVENT_GRID_CHANGED: u32 = 1 << 0;
+pub const POLL_EVENT_METADATA_CHANGED: u32 = 1 << 1;
 
 /// Type alias for the clipboard load formatter function.
 type ClipboardLoadFormatter = Arc<dyn Fn(&str) -> String + Sync + Send>;
@@ -108,6 +110,69 @@ fn is_suppressed_terminal_noise_line(line: &[u8]) -> bool {
     } else {
         false
     }
+}
+
+fn is_metadata_only_terminal_data(data: &[u8]) -> bool {
+    let mut index = 0usize;
+    let mut saw_metadata = false;
+
+    while index < data.len() {
+        match data[index] {
+            // BEL outside an OSC sequence triggers terminal feedback, but it
+            // does not mutate the visible grid.
+            0x07 => {
+                saw_metadata = true;
+                index += 1;
+            }
+            0x1B if index + 1 < data.len() && data[index + 1] == b']' => {
+                let Some((command_end, sequence_end)) = parse_complete_osc_sequence(data, index)
+                else {
+                    return false;
+                };
+                if !is_non_rendering_osc_command(&data[(index + 2)..command_end]) {
+                    return false;
+                }
+                saw_metadata = true;
+                index = sequence_end;
+            }
+            _ => return false,
+        }
+    }
+
+    saw_metadata
+}
+
+fn parse_complete_osc_sequence(data: &[u8], start: usize) -> Option<(usize, usize)> {
+    debug_assert!(start + 1 < data.len());
+    debug_assert_eq!(data[start], 0x1B);
+    debug_assert_eq!(data[start + 1], b']');
+
+    let mut command_end = None;
+    let mut index = start + 2;
+    while index < data.len() {
+        match data[index] {
+            b';' if command_end.is_none() => {
+                command_end = Some(index);
+            }
+            0x07 => {
+                return Some((command_end.unwrap_or(index), index + 1));
+            }
+            0x1B if index + 1 < data.len() && data[index + 1] == b'\\' => {
+                return Some((command_end.unwrap_or(index), index + 2));
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+
+    None
+}
+
+fn is_non_rendering_osc_command(command: &[u8]) -> bool {
+    matches!(
+        command,
+        b"0" | b"1" | b"2" | b"7" | b"8" | b"52" | b"133" | b"633"
+    )
 }
 
 // ============================================================================
@@ -813,10 +878,10 @@ impl Chau7Terminal {
         self.grid_dirty.store(true, Ordering::Release);
     }
 
-    /// Poll for new data from PTY, process it, and return whether grid changed.
+    /// Poll for new data from PTY, process it, and return event flags.
     /// Raw output bytes are stored in `last_output` for retrieval via `get_last_output()`.
     #[must_use]
-    pub fn poll(&self, timeout_ms: u32) -> bool {
+    pub fn poll_events(&self, timeout_ms: u32) -> u32 {
         let poll_start = Instant::now();
 
         // Adaptive polling: use suggested timeout or caller's timeout (whichever is shorter)
@@ -829,6 +894,7 @@ impl Chau7Terminal {
 
         let timeout = Duration::from_millis(effective_timeout as u64);
         let mut had_data = false;
+        let mut had_renderable_data = false;
         let mut bytes_this_poll = 0usize;
 
         // Accumulate all data locally, then lock last_output once at the end
@@ -841,15 +907,17 @@ impl Chau7Terminal {
                     bytes_this_poll += data.len();
                     let visible_data = filter_terminal_output_noise(&data);
                     if !visible_data.is_empty() {
+                        let renderable = !is_metadata_only_terminal_data(visible_data.as_ref());
                         local_output.extend_from_slice(visible_data.as_ref());
                         self.process_pty_data(visible_data.as_ref());
                         had_data = true;
+                        had_renderable_data |= renderable;
                     }
                 }
                 Ok(PtyMessage::Closed) => {
                     info!("[terminal-{}] PTY closed message received in poll", self.id);
                     self.pty_closed.store(true, Ordering::Release);
-                    return false;
+                    return POLL_EVENT_METADATA_CHANGED;
                 }
                 Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
                     trace!("[terminal-{}] poll timeout (no data)", self.id);
@@ -867,9 +935,11 @@ impl Chau7Terminal {
                         bytes_this_poll += data.len();
                         let visible_data = filter_terminal_output_noise(&data);
                         if !visible_data.is_empty() {
+                            let renderable = !is_metadata_only_terminal_data(visible_data.as_ref());
                             local_output.extend_from_slice(visible_data.as_ref());
                             self.process_pty_data(visible_data.as_ref());
                             had_data = true;
+                            had_renderable_data |= renderable;
                         }
                     }
                     Ok(PtyMessage::Closed) => {
@@ -977,9 +1047,16 @@ impl Chau7Terminal {
                 "[terminal-{}] poll: processed {} bytes",
                 self.id, bytes_this_poll
             );
-            self.grid_dirty.store(true, Ordering::Release);
+            if had_renderable_data {
+                self.grid_dirty.store(true, Ordering::Release);
+                self.dirty_rows.mark_all_dirty();
+            } else {
+                trace!(
+                    "[terminal-{}] poll: processed metadata-only terminal events",
+                    self.id
+                );
+            }
             self.adaptive_poller.record_activity(bytes_this_poll);
-            self.dirty_rows.mark_all_dirty();
             self.metrics
                 .bytes_batched
                 .fetch_add(bytes_this_poll as u64, Ordering::Relaxed);
@@ -990,6 +1067,13 @@ impl Chau7Terminal {
         }
 
         let was_dirty = self.grid_dirty.swap(false, Ordering::AcqRel);
+        let mut event_flags = 0u32;
+        if was_dirty {
+            event_flags |= POLL_EVENT_GRID_CHANGED;
+        }
+        if event_count > 0 || (had_data && !had_renderable_data) {
+            event_flags |= POLL_EVENT_METADATA_CHANGED;
+        }
 
         // Track performance metrics
         let poll_time_us = poll_start.elapsed().as_micros() as u64;
@@ -1005,13 +1089,21 @@ impl Chau7Terminal {
         }
 
         trace!(
-            "[terminal-{}] poll returning: {} (took {}µs, activity={}%)",
+            "[terminal-{}] poll returning: flags={} dirty={} (took {}µs, activity={}%)",
             self.id,
+            event_flags,
             was_dirty,
             poll_time_us,
             self.adaptive_poller.activity_percent()
         );
-        was_dirty
+        event_flags
+    }
+
+    /// Poll for new data from PTY, process it, and return whether grid changed.
+    /// Kept for callers that have not migrated to `poll_events`.
+    #[must_use]
+    pub fn poll(&self, timeout_ms: u32) -> bool {
+        self.poll_events(timeout_ms) & POLL_EVENT_GRID_CHANGED != 0
     }
 
     /// Scan a chunk of PTY bytes for OSC 7 (current working directory) and
@@ -2590,6 +2682,36 @@ mod tests {
         let input = b"echo codex(67690) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.\n";
         let filtered = filter_terminal_output_noise(input);
         assert_eq!(filtered.as_ref(), input);
+    }
+
+    #[test]
+    fn treats_title_osc_as_metadata_only() {
+        assert!(is_metadata_only_terminal_data(b"\x1b]0;Mockup\x07"));
+        assert!(is_metadata_only_terminal_data(b"\x1b]2;Mockup\x1b\\"));
+    }
+
+    #[test]
+    fn treats_multiple_metadata_osc_sequences_as_metadata_only() {
+        let input = b"\x1b]0;Mockup\x07\x1b]7;file://host/tmp\x07\x1b]133;A\x07";
+        assert!(is_metadata_only_terminal_data(input));
+    }
+
+    #[test]
+    fn treats_bell_as_metadata_only() {
+        assert!(is_metadata_only_terminal_data(b"\x07"));
+    }
+
+    #[test]
+    fn treats_text_mixed_with_title_as_renderable() {
+        assert!(!is_metadata_only_terminal_data(b"\x1b]0;Mockup\x07hello"));
+    }
+
+    #[test]
+    fn treats_incomplete_or_unknown_osc_as_renderable() {
+        assert!(!is_metadata_only_terminal_data(b"\x1b]0;Mockup"));
+        assert!(!is_metadata_only_terminal_data(
+            b"\x1b]4;1;rgb:00/00/00\x07"
+        ));
     }
 
     #[test]

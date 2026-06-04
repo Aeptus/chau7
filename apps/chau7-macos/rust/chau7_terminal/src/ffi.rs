@@ -11,7 +11,7 @@ use log::{debug, error, info, trace, warn};
 
 use crate::graphics;
 use crate::pool::get_cell_buffer_pool;
-use crate::terminal::Chau7Terminal;
+use crate::terminal::{Chau7Terminal, POLL_EVENT_GRID_CHANGED, POLL_EVENT_METADATA_CHANGED};
 use crate::types::*;
 
 // ============================================================================
@@ -710,6 +710,43 @@ pub unsafe extern "C" fn chau7_terminal_poll(term: *mut Chau7Terminal, timeout_m
         let terminal = &*term;
         terminal.poll(timeout_ms)
     }
+}
+
+/// Poll for new data from PTY and process it.
+///
+/// Returns a bitmask:
+/// - bit 0: visible grid changed and should be redrawn
+/// - bit 1: metadata changed (title, cwd, clipboard, bell, lifecycle)
+///
+/// # Safety
+/// - `term` must be a valid pointer
+#[unsafe(no_mangle)]
+#[must_use]
+pub unsafe extern "C" fn chau7_terminal_poll_events(
+    term: *mut Chau7Terminal,
+    timeout_ms: u32,
+) -> u32 {
+    unsafe {
+        trace!("chau7_terminal_poll_events({:p}, {})", term, timeout_ms);
+        if term.is_null() {
+            warn!("chau7_terminal_poll_events: term is null");
+            return 0;
+        }
+        let terminal = &*term;
+        terminal.poll_events(timeout_ms)
+    }
+}
+
+#[unsafe(no_mangle)]
+#[must_use]
+pub extern "C" fn chau7_terminal_poll_event_grid_changed_flag() -> u32 {
+    POLL_EVENT_GRID_CHANGED
+}
+
+#[unsafe(no_mangle)]
+#[must_use]
+pub extern "C" fn chau7_terminal_poll_event_metadata_changed_flag() -> u32 {
+    POLL_EVENT_METADATA_CHANGED
 }
 
 /// Get raw output bytes from the last poll

@@ -18,6 +18,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#define POLL_EVENT_GRID_CHANGED (1 << 0)
+
+#define POLL_EVENT_METADATA_CHANGED (1 << 1)
+
 /*
  Flags for cell attributes (bold, italic, underline, etc.)
  */
@@ -575,6 +579,22 @@ void chau7_terminal_cursor_position(struct Chau7Terminal *term, uint16_t *col, u
  - `term` must be a valid pointer
  */
 bool chau7_terminal_poll(struct Chau7Terminal *term, uint32_t timeout_ms);
+
+/*
+ Poll for new data from PTY and process it.
+
+ Returns a bitmask:
+ - bit 0: visible grid changed and should be redrawn
+ - bit 1: metadata changed (title, cwd, clipboard, bell, lifecycle)
+
+ # Safety
+ - `term` must be a valid pointer
+ */
+uint32_t chau7_terminal_poll_events(struct Chau7Terminal *term, uint32_t timeout_ms);
+
+uint32_t chau7_terminal_poll_event_grid_changed_flag(void);
+
+uint32_t chau7_terminal_poll_event_metadata_changed_flag(void);
 
 /*
  Get raw output bytes from the last poll
