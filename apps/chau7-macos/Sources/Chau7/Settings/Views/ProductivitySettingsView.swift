@@ -259,6 +259,12 @@ private struct PermissionsStatusSection: View {
                 detail: notificationDetail
             )
 
+            permissionRow(
+                title: L("settings.productivity.permissions.fullDiskAccess", "Full Disk Access"),
+                status: fullDiskAccessStatusLabel,
+                detail: fullDiskAccessDetail
+            )
+
             ForEach(permissionCenter.protectedSnapshots, id: \.root) { snapshot in
                 permissionRow(
                     title: displayName(for: snapshot.root),
@@ -284,6 +290,25 @@ private struct PermissionsStatusSection: View {
             return L("settings.productivity.permissions.notifications.unavailable", "Notifications require the bundled app.")
         case .unknown:
             return L("settings.productivity.permissions.notifications.unknown", "Notification status could not be determined.")
+        }
+    }
+
+    private var fullDiskAccessStatusLabel: String {
+        switch permissionCenter.fullDiskAccessStatus {
+        case .granted: return L("settings.productivity.permissions.fda.granted", "Granted")
+        case .denied: return L("settings.productivity.permissions.fda.denied", "Denied")
+        case .indeterminate: return L("settings.productivity.permissions.fda.unknown", "Unknown")
+        }
+    }
+
+    private var fullDiskAccessDetail: String {
+        switch permissionCenter.fullDiskAccessStatus {
+        case .granted:
+            return L("settings.productivity.permissions.fda.granted.detail", "Child processes (codex, claude, shells) can reach protected folders like ~/Downloads.")
+        case .denied:
+            return L("settings.productivity.permissions.fda.denied.detail", "Commands in protected folders fail with \"Operation not permitted\". Re-enable Full Disk Access for Chau7 in System Settings.")
+        case .indeterminate:
+            return L("settings.productivity.permissions.fda.unknown.detail", "Full Disk Access status could not be determined.")
         }
     }
 
