@@ -51,8 +51,11 @@ extension RustTerminalView {
     private func drainPTYAndProcessTerminalState(rust: RustTerminalFFI) -> Bool {
         terminalPollAccessLock.lock()
         defer { terminalPollAccessLock.unlock() }
-        let changed = rust.poll(timeout: 0)
-        return processTerminalStateAfterPollLocked(rust: rust, changed: changed)
+        let flags = rust.pollEvents(timeout: 0)
+        return processTerminalStateAfterPollLocked(
+            rust: rust,
+            changed: flags.contains(.gridChanged)
+        )
     }
 
     @discardableResult
@@ -81,14 +84,19 @@ extension RustTerminalView {
 
         // Check for terminal title changes (OSC 0/1/2)
         if let title = rust.getPendingTitle() {
-            // Rate-limit: only log when the title actually changes (spinner animations
-            // like ⠂/⠐/✳ trigger ~1 update/sec, producing 10K+ log entries/day)
-            if title != lastLoggedTitle {
-                Log.trace("RustTerminalView[\(viewId)]: Terminal title changed to \"\(title)\"")
-                lastLoggedTitle = title
-            }
-            DispatchQueue.main.async { [weak self] in
-                self?.onTitleChanged?(title)
+            let stableTitle = TerminalTitleChurnPolicy.stableDisplayTitle(from: title)
+            if TerminalTitleChurnPolicy.shouldDeliverTitle(
+                title,
+                lastDeliveredTitle: lastDeliveredTerminalTitle
+            ) {
+                lastDeliveredTerminalTitle = stableTitle
+                if stableTitle != lastLoggedTitle {
+                    Log.trace("RustTerminalView[\(viewId)]: Terminal title changed to \"\(stableTitle)\"")
+                    lastLoggedTitle = stableTitle
+                }
+                DispatchQueue.main.async { [weak self] in
+                    self?.onTitleChanged?(stableTitle)
+                }
             }
         }
 

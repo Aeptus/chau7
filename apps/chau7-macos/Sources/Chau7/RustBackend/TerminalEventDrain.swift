@@ -3,12 +3,12 @@ import Foundation
 /// Event-driven PTY drain for the active (selected) terminal.
 ///
 /// Replaces the free-running CVDisplayLink with a blocking-poll loop:
-/// - Calls `rust.poll(timeout:)` which blocks until PTY data arrives or timeout
-/// - On data: dispatches processing + rendering to main thread
+/// - Calls `rust.pollEvents(timeout:)` which blocks until PTY data arrives or timeout
+/// - On data: dispatches metadata processing and, when needed, rendering to main
 /// - On timeout: loops silently (near-zero CPU)
 ///
-/// Only one instance should be active at a time (the selected tab).
-/// Background tabs use `BackgroundTerminalDrainService` instead.
+/// One instance may be active per live presentation surface. Background tabs
+/// use `BackgroundTerminalDrainService` instead.
 final class TerminalEventDrain {
 
     /// Interval (ms) for the blocking poll. The thread sleeps in the kernel
@@ -20,7 +20,7 @@ final class TerminalEventDrain {
     private var thread: Thread?
     private var cancelled = false
 
-    /// Coalesce gate: when output is heavy, `rust.poll(timeout:)` returns
+    /// Coalesce gate: when output is heavy, `rust.pollEvents(timeout:)` returns
     /// immediately and the loop spins, producing 100+ `DispatchQueue.main.async`
     /// calls per second. The main queue saturates with redundant
     /// `handleEventDrainData` work and user input dispatches queue behind it,
@@ -29,11 +29,12 @@ final class TerminalEventDrain {
     ///
     /// Cap concurrency at one in-flight handler. While the handler is on the
     /// main queue, additional drain wakes drop their dispatch. The in-flight
-    /// handler's non-blocking `rust.poll(timeout: 0)` at the top of
+    /// handler's non-blocking `rust.pollEvents(timeout: 0)` at the top of
     /// `handleEventDrainData` picks up everything that arrived since the
     /// drain's blocking poll returned, so no data is lost.
     private let coalesceLock = NSLock()
     private var hasInFlightHandler = false
+    private var pendingFlags = TerminalPollEventFlags()
 
     /// Start draining PTY events for the given terminal view.
     /// Stops any previous drain first.
@@ -82,38 +83,60 @@ final class TerminalEventDrain {
             // Block until the Rust pty-reader has processed new PTY data,
             // or the timeout elapses. This is the key efficiency win:
             // the thread sleeps in the kernel with zero CPU when idle.
-            let changed = rust.poll(timeout: Self.pollTimeoutMs)
+            let flags = rust.pollEvents(timeout: Self.pollTimeoutMs)
 
             guard !cancelled else { return }
 
-            if changed {
-                dispatchHandlerIfNotInFlight(view: view)
+            if !flags.isEmpty {
+                dispatchHandlerIfNotInFlight(view: view, flags: flags)
             }
         }
         Log.trace("TerminalEventDrain[\(viewId)]: cancelled, exiting")
     }
 
-    /// Dispatches `view.handleEventDrainData()` to the main queue if no
+    /// Dispatches `view.handleEventDrainData(drainGridChanged:)` to the main queue if no
     /// previous dispatch is still in flight; otherwise drops this wake.
     /// Pure coalescence — see `coalesceLock` doc for the rationale.
-    private func dispatchHandlerIfNotInFlight(view: RustTerminalView) {
+    private func dispatchHandlerIfNotInFlight(view: RustTerminalView, flags: TerminalPollEventFlags) {
         coalesceLock.lock()
         let alreadyInFlight = hasInFlightHandler
         if !alreadyInFlight {
             hasInFlightHandler = true
+        } else {
+            pendingFlags.formUnion(flags)
         }
         coalesceLock.unlock()
 
         guard !alreadyInFlight else { return }
 
+        runHandler(view: view, flags: flags)
+    }
+
+    private func runHandler(view: RustTerminalView, flags: TerminalPollEventFlags) {
         DispatchQueue.main.async { [weak self, weak view] in
-            defer {
-                self?.coalesceLock.lock()
-                self?.hasInFlightHandler = false
-                self?.coalesceLock.unlock()
+            guard let self else { return }
+            guard let view, !view.isBeingDeallocated else {
+                self.finishHandler(view: nil)
+                return
             }
-            guard let view, !view.isBeingDeallocated else { return }
-            view.handleEventDrainData()
+            view.handleEventDrainData(drainGridChanged: flags.contains(.gridChanged))
+            self.finishHandler(view: view)
+        }
+    }
+
+    private func finishHandler(view: RustTerminalView?) {
+        coalesceLock.lock()
+        let followUpFlags = !cancelled && view != nil ? pendingFlags : TerminalPollEventFlags()
+        if !followUpFlags.isEmpty {
+            pendingFlags = []
+        } else {
+            hasInFlightHandler = false
+            pendingFlags = []
+        }
+        coalesceLock.unlock()
+
+        if !followUpFlags.isEmpty, let view {
+            runHandler(view: view, flags: followUpFlags)
         }
     }
 }

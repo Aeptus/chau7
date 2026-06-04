@@ -63,12 +63,13 @@ final class BackgroundTerminalDrainService {
 
             // Poll non-blocking on the background queue.
             view.terminalPollAccessLock.lock()
-            let changed = rust.poll(timeout: 0)
+            let flags = rust.pollEvents(timeout: 0)
 
-            guard changed else {
+            guard !flags.isEmpty else {
                 view.terminalPollAccessLock.unlock()
                 continue
             }
+            let gridChanged = flags.contains(.gridChanged)
 
             // Release the lock before dispatching to main — holding it across
             // main.sync would deadlock if a queued pollAndSync is waiting for
@@ -80,8 +81,10 @@ final class BackgroundTerminalDrainService {
                 guard let view, let rust = view.rustTerminal else { return }
                 view.terminalPollAccessLock.lock()
                 defer { view.terminalPollAccessLock.unlock() }
-                _ = view.processTerminalStateAfterPollLocked(rust: rust, changed: true)
-                view.onBufferChanged?()
+                _ = view.processTerminalStateAfterPollLocked(rust: rust, changed: gridChanged)
+                if gridChanged {
+                    view.onBufferChanged?()
+                }
             }
         }
     }
