@@ -208,10 +208,11 @@ final class AIToolRegistryTests: XCTestCase {
 
     // MARK: - usesTerminalUIHeuristics (W3.7)
 
-    func testUsesTerminalUIHeuristicsTrueForClaudeAndCodexVariants() {
+    func testUsesTerminalUIHeuristicsTrueForTUIAgentVariants() {
         let positives = [
             "Claude", "Claude Code", "CLAUDE",
-            "Codex", "Codex CLI", "codex"
+            "Codex", "Codex CLI", "codex",
+            "Gemini", "Gemini CLI", "gemini"
         ]
         for name in positives {
             XCTAssertTrue(
@@ -227,7 +228,6 @@ final class AIToolRegistryTests: XCTestCase {
         XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: "Aider"))
         XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: "Copilot"))
         XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: "ChatGPT"))
-        XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: "Gemini"))
         XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: ""))
         XCTAssertFalse(AIToolRegistry.usesTerminalUIHeuristics(forName: "random-shell"))
     }
@@ -239,6 +239,6 @@ final class AIToolRegistryTests: XCTestCase {
             .filter(\.usesTerminalUIHeuristics)
             .map(\.displayName)
             .sorted()
-        XCTAssertEqual(flagged, ["Claude", "Codex"])
+        XCTAssertEqual(flagged, ["Claude", "Codex", "Gemini"])
     }
 }

@@ -176,11 +176,8 @@ public enum CommandDetection {
             }
         }
 
-        // Special case: npx/bunx with AI packages
-        if normalized == "npx" || normalized == "bunx" || normalized == "pnpm" {
-            if let aiApp = findSubcommand(tokens: tokens, after: normalized, looking: Array(appNameMap.keys)) {
-                return appNameMap[aiApp]
-            }
+        if let aiApp = detectJavaScriptPackageRunnerTool(tokens: tokens, launcher: normalized) {
+            return aiApp
         }
 
         return nil
@@ -213,10 +210,8 @@ public enum CommandDetection {
             }
         }
 
-        if normalized == "npx" || normalized == "bunx" || normalized == "pnpm" {
-            if let aiApp = findSubcommand(tokens: tokens, after: normalized, looking: Array(appNameMap.keys)) {
-                return appNameMap[aiApp]
-            }
+        if let aiApp = detectJavaScriptPackageRunnerTool(tokens: tokens, launcher: normalized) {
+            return aiApp
         }
 
         return nil
@@ -472,7 +467,7 @@ public enum CommandDetection {
         let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
         let pathComponent = (trimmed as NSString).lastPathComponent
         let baseName = (pathComponent as NSString).deletingPathExtension
-        return baseName.lowercased()
+        return stripPackageVersionSuffix(from: baseName).lowercased()
     }
 
     /// Checks if a token is an environment variable assignment
@@ -575,6 +570,43 @@ public enum CommandDetection {
         return nil
     }
 
+    static func detectJavaScriptPackageRunnerTool(tokens: [String], launcher: String) -> String? {
+        guard let cmdIndex = tokens.firstIndex(where: { normalizeToken($0) == launcher }) else { return nil }
+
+        let directLaunchers: Set<String> = ["npx", "bunx", "pnpm"]
+        let execLaunchers: Set<String> = ["npm", "pnpm", "yarn", "bun"]
+        let execVerbs: Set<String> = ["exec", "dlx", "x"]
+        guard directLaunchers.contains(launcher) || execLaunchers.contains(launcher) else {
+            return nil
+        }
+
+        var canInspectPackage = directLaunchers.contains(launcher)
+        var index = cmdIndex + 1
+        while index < tokens.count {
+            let token = tokens[index]
+            if token == "--" {
+                index += 1
+                continue
+            }
+            if token.hasPrefix("-") {
+                index += 1
+                continue
+            }
+
+            let normalized = normalizeToken(token)
+            if execLaunchers.contains(launcher), execVerbs.contains(normalized) {
+                canInspectPackage = true
+                index += 1
+                continue
+            }
+
+            guard canInspectPackage else { return nil }
+            return appNameMap[normalized]
+        }
+
+        return nil
+    }
+
     private static func pathDirectories(from searchPath: String?, currentDirectory: String) -> [String] {
         let fallback = ProcessInfo.processInfo.environment["PATH"] ?? ""
         let rawPath = (searchPath?.isEmpty == false ? searchPath : fallback) ?? ""
@@ -630,6 +662,14 @@ public enum CommandDetection {
             return false
         }
         return FileManager.default.isExecutableFile(atPath: path)
+    }
+
+    private static func stripPackageVersionSuffix(from value: String) -> String {
+        guard let atIndex = value.lastIndex(of: "@"),
+              atIndex != value.startIndex else {
+            return value
+        }
+        return String(value[..<atIndex])
     }
 }
 

@@ -60,7 +60,19 @@ final class InteractivePromptDetectorTests: XCTestCase {
         2. No
         """
 
-        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Gemini"))
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Aider"))
+    }
+
+    func testDetectsGeminiPrompt() throws {
+        let transcript = """
+        Do you want to proceed?
+        1. Yes
+        2. No
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Gemini"))
+        XCTAssertEqual(prompt.prompt, "Do you want to proceed?")
+        XCTAssertEqual(prompt.options.map(\.label), ["Yes", "No"])
     }
 
     func testFallbackDetectsFreeTextPromptForUnsupportedTool() throws {
