@@ -57,6 +57,10 @@ CHAU7_LOG_FILE="$LOG_FILE" CHAU7_LOG_SUMMARY=0 CHAU7_LOG_SUPPRESS_HEADER=1 \
 run_cmd /usr/bin/ditto "$SRC_APP" "$DST_APP"
 run_cmd codesign -d -vvv "$DST_APP"
 
+# Warn (non-fatally) if the signature drifted in a way that would orphan TCC
+# grants such as Full Disk Access. See docs/FULL_DISK_ACCESS.md.
+"$ROOT_DIR/Scripts/check-signing.sh" "$DST_APP" || true
+
 if [[ "$OPEN_AFTER_INSTALL" == "1" ]]; then
   if [[ ${#CHAU7_OPEN_ENV[@]} -gt 0 ]]; then
     run_cmd open "${CHAU7_OPEN_ENV[@]}" "$DST_APP"
