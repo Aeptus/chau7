@@ -41,7 +41,7 @@ public enum FullDiskAccessProbe {
     public static let defaultCanaries: [String] = [
         "Library/Application Support/com.apple.TCC/TCC.db",
         "Library/Safari/Bookmarks.plist",
-        "Library/Cookies/Cookies.binarycookies",
+        "Library/Cookies/Cookies.binarycookies"
     ]
 
     /// Determines Full Disk Access status from the given canaries.

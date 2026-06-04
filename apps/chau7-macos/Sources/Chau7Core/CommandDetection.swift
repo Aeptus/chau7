@@ -573,9 +573,9 @@ public enum CommandDetection {
     static func detectJavaScriptPackageRunnerTool(tokens: [String], launcher: String) -> String? {
         guard let cmdIndex = tokens.firstIndex(where: { normalizeToken($0) == launcher }) else { return nil }
 
-        let directLaunchers: Set<String> = ["npx", "bunx", "pnpm"]
-        let execLaunchers: Set<String> = ["npm", "pnpm", "yarn", "bun"]
-        let execVerbs: Set<String> = ["exec", "dlx", "x"]
+        let directLaunchers: Set = ["npx", "bunx", "pnpm"]
+        let execLaunchers: Set = ["npm", "pnpm", "yarn", "bun"]
+        let execVerbs: Set = ["exec", "dlx", "x"]
         guard directLaunchers.contains(launcher) || execLaunchers.contains(launcher) else {
             return nil
         }

@@ -46,7 +46,7 @@ final class TabRestoreBundleStoreTests: XCTestCase {
 
         let tabContext = try readContext(
             TabRestoreContext.self,
-            ref: try XCTUnwrap(manifest.contextRef),
+            ref: XCTUnwrap(manifest.contextRef),
             rootURL: root
         )
         XCTAssertEqual(tabContext.scrollbackContent, "legacy top scrollback")
@@ -54,7 +54,7 @@ final class TabRestoreBundleStoreTests: XCTestCase {
 
         let paneContext = try readContext(
             PaneRestoreContext.self,
-            ref: try XCTUnwrap(paneIdentity.contextRef),
+            ref: XCTUnwrap(paneIdentity.contextRef),
             rootURL: root
         )
         XCTAssertEqual(paneContext.scrollbackContent, "heavy pane output")

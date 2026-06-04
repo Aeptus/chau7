@@ -306,7 +306,10 @@ private struct PermissionsStatusSection: View {
         case .granted:
             return L("settings.productivity.permissions.fda.granted.detail", "Child processes (codex, claude, shells) can reach protected folders like ~/Downloads.")
         case .denied:
-            return L("settings.productivity.permissions.fda.denied.detail", "Commands in protected folders fail with \"Operation not permitted\". Re-enable Full Disk Access for Chau7 in System Settings.")
+            return L(
+                "settings.productivity.permissions.fda.denied.detail",
+                "Commands in protected folders fail with \"Operation not permitted\". Re-enable Full Disk Access for Chau7 in System Settings."
+            )
         case .indeterminate:
             return L("settings.productivity.permissions.fda.unknown.detail", "Full Disk Access status could not be determined.")
         }

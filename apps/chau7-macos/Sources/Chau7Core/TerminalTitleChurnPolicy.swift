@@ -26,7 +26,7 @@ public enum TerminalTitleChurnPolicy {
 
     private static func isSpinnerScalar(_ scalar: Unicode.Scalar) -> Bool {
         let value = scalar.value
-        if (0x2800...0x28FF).contains(value) {
+        if (0x2800 ... 0x28FF).contains(value) {
             return true
         }
 

@@ -2,8 +2,10 @@ import XCTest
 @testable import Chau7Core
 
 final class FullDiskAccessProbeTests: XCTestCase {
-    private func evaluate(_ results: [String: FullDiskAccessProbe.AccessResult],
-                          canaries: [String]) -> FullDiskAccessProbe.Status {
+    private func evaluate(
+        _ results: [String: FullDiskAccessProbe.AccessResult],
+        canaries: [String]
+    ) -> FullDiskAccessProbe.Status {
         FullDiskAccessProbe.evaluate(home: "/Users/test", canaries: canaries) { path in
             // path is "/Users/test/<relative>"; key the map by the relative tail.
             let relative = String(path.dropFirst("/Users/test/".count))

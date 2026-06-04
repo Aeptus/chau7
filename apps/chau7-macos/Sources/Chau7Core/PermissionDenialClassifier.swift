@@ -28,9 +28,9 @@ public enum PermissionDenialClassifier {
     /// (POSIX, Rust/codex, Node, Swift). All matched case-insensitively.
     public static let denialMarkers: [String] = [
         "operation not permitted",
-        "os error 1",   // Rust std::io EPERM (codex)
+        "os error 1", // Rust std::io EPERM (codex)
         "eperm",
-        "errno 1",
+        "errno 1"
     ]
 
     public static func classify(output: String, cwd: String, protectedRoots: [String]) -> Verdict {
@@ -56,7 +56,9 @@ public enum PermissionDenialClassifier {
 
     private static func normalized(_ path: String) -> String {
         var p = path.trimmingCharacters(in: .whitespacesAndNewlines)
-        while p.count > 1 && p.hasSuffix("/") { p.removeLast() }
+        while p.count > 1, p.hasSuffix("/") {
+            p.removeLast()
+        }
         return p
     }
 }

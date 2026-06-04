@@ -52,7 +52,7 @@ final class AttachedSessionNoteTests: XCTestCase {
         )
     }
 
-    func testNewSidePanelAttachesSessionNoteAndAutosaves() throws {
+    func testNewSidePanelAttachesSessionNoteAndAutosaves() {
         let appModel = AppModel()
         let controller = SplitPaneController(appModel: appModel)
         let tabID = UUID()
@@ -125,7 +125,7 @@ final class AttachedSessionNoteTests: XCTestCase {
         )
     }
 
-    func testUntitledSidePanelAttachesWhenRepoRootArrivesLater() throws {
+    func testUntitledSidePanelAttachesWhenRepoRootArrivesLater() {
         let appModel = AppModel()
         let controller = SplitPaneController(appModel: appModel)
         let tabID = UUID()

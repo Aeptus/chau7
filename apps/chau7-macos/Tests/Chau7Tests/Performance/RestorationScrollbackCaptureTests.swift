@@ -50,8 +50,12 @@ final class RestorationScrollbackCaptureTests: XCTestCase {
         let restored = TerminalSessionModel.captureRestorationScrollbackContent(
             maxLines: 2,
             tailData: Data("old\nnewer\nnewest\n".utf8),
-            styledData: { XCTFail("Tail snapshot should avoid full styled capture"); return nil },
-            fallbackData: { XCTFail("Tail snapshot should avoid plain fallback capture"); return nil }
+            styledData: { XCTFail("Tail snapshot should avoid full styled capture")
+                return nil
+            },
+            fallbackData: { XCTFail("Tail snapshot should avoid plain fallback capture")
+                return nil
+            }
         )
 
         XCTAssertEqual(restored, "newer\nnewest")

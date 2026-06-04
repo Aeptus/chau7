@@ -116,11 +116,11 @@ final class TerminalEventDrain {
         DispatchQueue.main.async { [weak self, weak view] in
             guard let self else { return }
             guard let view, !view.isBeingDeallocated else {
-                self.finishHandler(view: nil)
+                finishHandler(view: nil)
                 return
             }
             view.handleEventDrainData(drainGridChanged: flags.contains(.gridChanged))
-            self.finishHandler(view: view)
+            finishHandler(view: view)
         }
     }
 

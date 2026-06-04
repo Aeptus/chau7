@@ -118,13 +118,17 @@ final class FullDiskAccessGuard {
     }
 
     private var deniedDetail: String {
-        L("permissions.fda.detail",
-          "Terminal commands and AI agents (codex, claude) running in protected folders like ~/Downloads will fail with \"Operation not permitted\". This usually follows a rebuild or re-sign of Chau7. Re-enable Full Disk Access for Chau7 to fix it.")
+        L(
+            "permissions.fda.detail",
+            "Terminal commands and AI agents (codex, claude) running in protected folders like ~/Downloads will fail with \"Operation not permitted\". This usually follows a rebuild or re-sign of Chau7. Re-enable Full Disk Access for Chau7 to fix it."
+        )
     }
 
     private func childDeniedDetail(root: String) -> String {
-        L("permissions.fda.childDetail",
-          "A command just failed with \"Operation not permitted\" in \(root). That is Chau7's Full Disk Access, not a bug in the CLI. Re-enable Full Disk Access for Chau7 to fix it.")
+        L(
+            "permissions.fda.childDetail",
+            "A command just failed with \"Operation not permitted\" in \(root). That is Chau7's Full Disk Access, not a bug in the CLI. Re-enable Full Disk Access for Chau7 to fix it."
+        )
     }
 
     /// Opens System Settings directly to the Full Disk Access pane.

@@ -41,7 +41,7 @@ public enum TerminalScrollAction: Equatable, Sendable {
 }
 
 public enum TerminalScrollPolicy {
-    public static let minimumUsefulDelta: Double = 0.5
+    public static let minimumUsefulDelta = 0.5
 
     public static func action(
         deltaY: Double,

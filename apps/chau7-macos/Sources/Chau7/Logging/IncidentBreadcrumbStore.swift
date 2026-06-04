@@ -405,8 +405,8 @@ final class IncidentBreadcrumbStore {
     }()
 }
 
-private extension Dictionary where Key == String, Value == String {
+private extension [String: String] {
     func mapKeys(_ transform: (String) -> String) -> [String: String] {
-        Dictionary<String, String>(uniqueKeysWithValues: map { (transform($0.key), $0.value) })
+        [String: String](uniqueKeysWithValues: map { (transform($0.key), $0.value) })
     }
 }

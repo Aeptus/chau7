@@ -9,7 +9,7 @@ public struct TerminalOSC9Parser {
     private static let osc9Prefix: [UInt8] = [0x1B, 0x5D, 0x39, 0x3B]
     private static let chau7Prefix = Array("chau7;".utf8)
     private static let belTerminator: UInt8 = 0x07
-    private static let maxBufferedBytes = 65_536
+    private static let maxBufferedBytes = 65536
 
     private var buffer: [UInt8] = []
 

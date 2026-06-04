@@ -1335,7 +1335,11 @@ final class RustTerminalFFI {
         }
         let grid = rawGrid.assumingMemoryBound(to: RustGridSnapshot.self)
         let snapshot = grid.pointee
-        Log.traceThrottled("rust-terminal-grid-\(instanceId)", interval: 5.0, "RustTerminalFFI[\(instanceId)]: getGrid - Got snapshot \(snapshot.cols)x\(snapshot.rows), scrollback=\(snapshot.scrollback_rows), offset=\(snapshot.display_offset)")
+        Log.traceThrottled(
+            "rust-terminal-grid-\(instanceId)",
+            interval: 5.0,
+            "RustTerminalFFI[\(instanceId)]: getGrid - Got snapshot \(snapshot.cols)x\(snapshot.rows), scrollback=\(snapshot.scrollback_rows), offset=\(snapshot.display_offset)"
+        )
         return (grid, {
             Log.traceThrottled("rust-terminal-grid-free", interval: 5.0, "RustTerminalFFI[?]: getGrid - Freeing grid snapshot")
             fns.freeGrid(rawGrid)
@@ -1512,9 +1516,17 @@ final class RustTerminalFFI {
 
         if shouldLog {
             if changed {
-                Log.traceThrottled("rust-terminal-poll-\(instanceId)", interval: 5.0, "RustTerminalFFI[\(instanceId)]: poll - Grid CHANGED flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)")
+                Log.traceThrottled(
+                    "rust-terminal-poll-\(instanceId)",
+                    interval: 5.0,
+                    "RustTerminalFFI[\(instanceId)]: poll - Grid CHANGED flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)"
+                )
             } else if hasMetadata {
-                Log.traceThrottled("rust-terminal-poll-\(instanceId)", interval: 5.0, "RustTerminalFFI[\(instanceId)]: poll - Metadata changed flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)")
+                Log.traceThrottled(
+                    "rust-terminal-poll-\(instanceId)",
+                    interval: 5.0,
+                    "RustTerminalFFI[\(instanceId)]: poll - Metadata changed flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)"
+                )
             } else {
                 Log.trace("RustTerminalFFI[\(instanceId)]: poll - Status check (poll #\(Self.pollCounter))")
             }

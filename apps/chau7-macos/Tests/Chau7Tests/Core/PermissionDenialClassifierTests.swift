@@ -46,7 +46,8 @@ final class PermissionDenialClassifierTests: XCTestCase {
     func testSiblingDirectoryIsNotConsideredUnderRoot() {
         // "/Users/me/Downloads2" must not match root "/Users/me/Downloads".
         XCTAssertNil(PermissionDenialClassifier.protectedRoot(
-            for: "/Users/me/Downloads2/x", in: roots))
+            for: "/Users/me/Downloads2/x", in: roots
+        ))
     }
 
     func testRootItselfMatches() {
@@ -59,7 +60,8 @@ final class PermissionDenialClassifierTests: XCTestCase {
     func testTrailingSlashesNormalized() {
         XCTAssertEqual(
             PermissionDenialClassifier.protectedRoot(
-                for: "/Users/me/Downloads/", in: ["/Users/me/Downloads///"]),
+                for: "/Users/me/Downloads/", in: ["/Users/me/Downloads///"]
+            ),
             "/Users/me/Downloads///"
         )
     }

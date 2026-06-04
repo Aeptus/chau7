@@ -29,7 +29,7 @@ final class BoundedTranscriptReaderTests: XCTestCase {
 
     func testTruncatesToTailAndDropsPartialLeadingRecord() throws {
         // 1000 records, each a complete 10-char "lineNNNNNN" + newline (11 bytes).
-        let lines = (0..<1000).map { String(format: "line%06d", $0) }
+        let lines = (0 ..< 1000).map { String(format: "line%06d", $0) }
         let body = lines.joined(separator: "\n") + "\n"
         let url = try write(body)
         let total = body.utf8.count
@@ -52,7 +52,7 @@ final class BoundedTranscriptReaderTests: XCTestCase {
     func testTailRemainsValidWhenSeekLandsMidMultibyteCharacter() throws {
         // Pad with a multibyte char so a byte-offset seek can land mid-sequence;
         // lenient decoding + leading-record drop must still yield clean records.
-        let lines = (0..<200).map { "ré\(String(format: "%04d", $0))" }
+        let lines = (0 ..< 200).map { "ré\(String(format: "%04d", $0))" }
         let body = lines.joined(separator: "\n") + "\n"
         let url = try write(body)
         let reading = try XCTUnwrap(BoundedTranscriptReader.read(at: url, maxBytes: 33))
@@ -65,7 +65,7 @@ final class BoundedTranscriptReaderTests: XCTestCase {
     }
 
     func testFileSizeReportsBytes() throws {
-        XCTAssertEqual(BoundedTranscriptReader.fileSize(at: try write("abcde").path), 5)
+        XCTAssertEqual(try BoundedTranscriptReader.fileSize(at: write("abcde").path), 5)
         XCTAssertEqual(BoundedTranscriptReader.fileSize(at: "/no/such/path"), 0)
     }
 }

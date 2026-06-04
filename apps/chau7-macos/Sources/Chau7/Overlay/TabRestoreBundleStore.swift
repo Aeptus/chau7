@@ -464,8 +464,8 @@ enum TabRestoreBundleStore {
         )
     }
 
-    private static func writeContextIfNeeded<T: Encodable>(
-        _ context: T,
+    private static func writeContextIfNeeded(
+        _ context: some Encodable,
         hasContent: Bool,
         relativePath: String,
         bundleRootURL: URL,
@@ -502,7 +502,7 @@ enum TabRestoreBundleStore {
         return try? decoder.decode(type, from: data)
     }
 
-    private static func writeJSON<T: Encodable>(_ value: T, to url: URL) throws {
+    private static func writeJSON(_ value: some Encodable, to url: URL) throws {
         let data = try encoder.encode(value)
         try data.write(to: url, options: .atomic)
     }
