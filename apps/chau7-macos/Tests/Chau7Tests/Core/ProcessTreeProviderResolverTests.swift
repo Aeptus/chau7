@@ -83,10 +83,59 @@ final class ProcessTreeProviderResolverTests: XCTestCase {
     }
 
     func testWrapperLeafIsUnmatched() {
-        // Claude installed via npm global; comm shows as "node" — documented limitation.
+        // Interpreter-only process rows remain unmatched when argv is unavailable.
         let snapshot = ProcessTreeProviderResolver.Snapshot(
             childrenOf: [100: [101]],
             commOf: [100: "zsh", 101: "node"]
+        )
+        XCTAssertNil(
+            ProcessTreeProviderResolver.resolve(shellPid: 100, snapshot: snapshot)
+        )
+    }
+
+    func testNodeWrapperArgMatchesGemini() {
+        let snapshot = ProcessTreeProviderResolver.Snapshot(
+            childrenOf: [100: [101]],
+            commOf: [100: "zsh", 101: "node"],
+            argsOf: [
+                101: "node /Users/christophehenner/.volta/tools/image/node/25.7.0/bin/gemini"
+            ]
+        )
+        XCTAssertEqual(
+            ProcessTreeProviderResolver.resolve(shellPid: 100, snapshot: snapshot),
+            "Gemini"
+        )
+    }
+
+    func testNestedVoltaNodeWrapperArgMatchesGemini() {
+        let snapshot = ProcessTreeProviderResolver.Snapshot(
+            childrenOf: [
+                100: [101],
+                101: [102]
+            ],
+            commOf: [
+                100: "zsh",
+                101: "node",
+                102: "/Users/christophehenner/.volta/tools/image/node/25.7.0/bin/node"
+            ],
+            argsOf: [
+                101: "node /Users/christophehenner/.volta/tools/image/node/25.7.0/bin/gemini",
+                102: "/Users/christophehenner/.volta/tools/image/node/25.7.0/bin/node --max-old-space-size=8192 /Users/christophehenner/.volta/tools/image/node/25.7.0/bin/gemini"
+            ]
+        )
+        XCTAssertEqual(
+            ProcessTreeProviderResolver.resolve(shellPid: 100, snapshot: snapshot),
+            "Gemini"
+        )
+    }
+
+    func testArgvDoesNotMatchPlainOptionValue() {
+        let snapshot = ProcessTreeProviderResolver.Snapshot(
+            childrenOf: [100: [101]],
+            commOf: [100: "zsh", 101: "python3"],
+            argsOf: [
+                101: "python3 eval.py --model gemini"
+            ]
         )
         XCTAssertNil(
             ProcessTreeProviderResolver.resolve(shellPid: 100, snapshot: snapshot)
@@ -145,13 +194,20 @@ final class ProcessTreeProviderResolverTests: XCTestCase {
     }
 
     func testCaptureSnapshotUsesInjectedRunner() {
-        let fixture = """
+        let commFixture = """
           100     1 zsh
           101   100 claude
         """
-        let snapshot = ProcessTreeProviderResolver.captureSnapshot { _, _ in fixture }
+        let argsFixture = """
+          100     1 zsh
+          101   100 claude --resume abc
+        """
+        let snapshot = ProcessTreeProviderResolver.captureSnapshot { _, args in
+            args.joined(separator: " ").contains("args") ? argsFixture : commFixture
+        }
         XCTAssertNotNil(snapshot)
         XCTAssertEqual(snapshot?.commOf[101], "claude")
+        XCTAssertEqual(snapshot?.argsOf[101], "claude --resume abc")
     }
 
     func testCaptureSnapshotReturnsNilWhenRunnerFails() {
