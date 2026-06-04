@@ -108,6 +108,7 @@ extension OverlayTabsModel {
 
     private func reconcileAutoRepoGroup(tabID: UUID, preferredRoot: String?) {
         guard let idx = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+        tabs[idx].splitController.attachUntitledSessionNoteEditorsIfPossible()
         if FeatureSettings.shared.repoGroupingMode == .auto {
             // KnownRepoRootResolver only returns the existing preferred
             // root when the new cwd is actually inside it, so this

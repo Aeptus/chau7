@@ -52,6 +52,107 @@ final class AttachedSessionNoteTests: XCTestCase {
         )
     }
 
+    func testNewSidePanelAttachesSessionNoteAndAutosaves() throws {
+        let appModel = AppModel()
+        let controller = SplitPaneController(appModel: appModel)
+        let tabID = UUID()
+        controller.ownerTabID = tabID
+
+        let repoRoot = makeTemporaryDirectory(named: "attached-note-autosave")
+        defer { try? FileManager.default.removeItem(at: repoRoot) }
+
+        guard let session = controller.terminalSessions.first?.1 else {
+            XCTFail("Expected terminal session")
+            return
+        }
+        session.updateCurrentDirectory(repoRoot.path)
+        session.handleShellRepoRootReport(repoRoot.path)
+
+        controller.splitWithTextEditor(direction: .horizontal)
+        guard let editor = controller.root.findFirstEditor() else {
+            XCTFail("Expected text editor")
+            return
+        }
+
+        let expectedPath = SessionNoteAttachmentLocator.filePath(repoRoot: repoRoot.path, tabID: tabID)
+        waitUntil {
+            editor.filePath == expectedPath && !editor.isLoading
+        }
+
+        XCTAssertTrue(editor.isAutoSaveEnabled)
+        editor.updateContent("autosaved side panel note\n")
+
+        waitUntil(timeout: 4.0) {
+            (try? String(contentsOfFile: expectedPath, encoding: .utf8)) == "autosaved side panel note\n"
+        }
+        XCTAssertFalse(editor.isDirty)
+    }
+
+    func testClosingSidePanelFlushesDirtyAttachedNote() throws {
+        let appModel = AppModel()
+        let controller = SplitPaneController(appModel: appModel)
+        let tabID = UUID()
+        controller.ownerTabID = tabID
+
+        let repoRoot = makeTemporaryDirectory(named: "attached-note-close-flush")
+        defer { try? FileManager.default.removeItem(at: repoRoot) }
+
+        guard let session = controller.terminalSessions.first?.1 else {
+            XCTFail("Expected terminal session")
+            return
+        }
+        session.updateCurrentDirectory(repoRoot.path)
+        session.handleShellRepoRootReport(repoRoot.path)
+
+        controller.splitWithTextEditor(direction: .horizontal)
+        guard let editor = controller.root.findFirstEditor() else {
+            XCTFail("Expected text editor")
+            return
+        }
+
+        let expectedPath = SessionNoteAttachmentLocator.filePath(repoRoot: repoRoot.path, tabID: tabID)
+        waitUntil {
+            editor.filePath == expectedPath && !editor.isLoading
+        }
+
+        editor.updateContent("closed before debounce\n")
+        controller.toggleTextEditor()
+
+        XCTAssertNil(controller.root.findFirstEditor())
+        XCTAssertEqual(
+            try String(contentsOfFile: expectedPath, encoding: .utf8),
+            "closed before debounce\n"
+        )
+    }
+
+    func testUntitledSidePanelAttachesWhenRepoRootArrivesLater() throws {
+        let appModel = AppModel()
+        let controller = SplitPaneController(appModel: appModel)
+        let tabID = UUID()
+        controller.ownerTabID = tabID
+
+        controller.splitWithTextEditor(direction: .horizontal)
+        guard let editor = controller.root.findFirstEditor(),
+              let session = controller.terminalSessions.first?.1 else {
+            XCTFail("Expected editor and terminal session")
+            return
+        }
+        XCTAssertNil(editor.filePath)
+
+        let repoRoot = makeTemporaryDirectory(named: "attached-note-late-root")
+        defer { try? FileManager.default.removeItem(at: repoRoot) }
+
+        session.updateCurrentDirectory(repoRoot.path)
+        session.handleShellRepoRootReport(repoRoot.path)
+        controller.attachUntitledSessionNoteEditorsIfPossible()
+
+        let expectedPath = SessionNoteAttachmentLocator.filePath(repoRoot: repoRoot.path, tabID: tabID)
+        waitUntil {
+            editor.filePath == expectedPath && !editor.isLoading
+        }
+        XCTAssertTrue(editor.isAutoSaveEnabled)
+    }
+
     func testSameTabUsesDifferentSessionNotesPerRepo() throws {
         let appModel = AppModel()
         let controller = SplitPaneController(appModel: appModel)

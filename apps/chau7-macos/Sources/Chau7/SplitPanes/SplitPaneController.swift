@@ -1379,6 +1379,7 @@ final class SplitPaneController {
             if let repo = root.findFirstRepositoryPane() {
                 repo.tabID = ownerTabID
             }
+            attachUntitledSessionNoteEditorsIfPossible()
         }
     }
 
@@ -1576,9 +1577,22 @@ final class SplitPaneController {
 
     private func resolvedTextEditorFilePath(_ filePath: String?) -> String? {
         guard let filePath else {
-            return existingAttachedSessionNotePath
+            return preparedAttachedSessionNotePath()
         }
         return filePath
+    }
+
+    private func preparedAttachedSessionNotePath() -> String? {
+        guard let path = attachedSessionNotePath else { return nil }
+        ensureSessionNoteFileExists(at: path)
+        return path
+    }
+
+    func attachUntitledSessionNoteEditorsIfPossible() {
+        guard let notePath = preparedAttachedSessionNotePath() else { return }
+        for editor in root.allEditors where editor.filePath == nil {
+            editor.loadFile(at: notePath)
+        }
     }
 
     @discardableResult
@@ -1801,8 +1815,14 @@ final class SplitPaneController {
             }
             return (node, nil)
 
-        case .textEditor(let id, _),
-             .filePreview(let id, _),
+        case .textEditor(let id, let editor):
+            if id == targetID {
+                flushEditorBeforeClosing(editor)
+                return (nil, nil)
+            }
+            return (node, nil)
+
+        case .filePreview(let id, _),
              .diffViewer(let id, _),
              .repositoryPane(let id, _),
              .dashboard(let id, _):
@@ -1833,6 +1853,15 @@ final class SplitPaneController {
             }
             // Both removed (shouldn't happen normally)
             return (nil, nil)
+        }
+    }
+
+    private func flushEditorBeforeClosing(_ editor: TextEditorModel) {
+        guard editor.isDirty else { return }
+        if editor.filePath != nil {
+            _ = editor.save()
+        } else {
+            _ = editor.saveUntitledIfPossible()
         }
     }
 
