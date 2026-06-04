@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-17
+
 ### Added
 - **Grapheme-Cluster-Aware Terminal Model**: The Rust→Swift FFI snapshot now ships UTF-8 grapheme cluster bytes alongside the cell array, so ZWJ emoji (`👨🏽‍💻`), regional-indicator flags (`🇫🇷`), VS16 emoji presentation (`❤️ ✈️`), and NFD-decomposed sequences (`e + ́` → `é`) all survive end-to-end instead of being truncated to their first codepoint. Cell layout (`width`, `continuation`) is now explicit from Rust's `WIDE_CHAR` / `WIDE_CHAR_SPACER` flags — the Metal renderer no longer probes glyph advance to decide cell span, and wide glyphs tile correctly across two cells. NFC normalization runs in the snapshot loop via the `unicode-normalization` crate, so decomposed and precomposed forms share one atlas slot. The Metal glyph atlas is re-keyed by cluster bytes (`Data`) instead of codepoint; multi-codepoint clusters share a single atlas slot. The fragment shader gains a `colorGlyphFlag` (bit 12) branch that samples color-bitmap atlas slots (sbix / COLR / CBDT) directly as RGBA, with the per-glyph detection helper (`isColorGlyph`) left as a focused follow-up. Remote-snapshot wire format bumped CHG1 v1 → CHG2 v2 to carry the cluster buffer; iOS playback updated to match.
 
