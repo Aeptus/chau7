@@ -23,10 +23,12 @@ DIST_DIR="$ROOT_DIR/dist"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
 UNIVERSAL=false
+BUILD_PKG=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --universal) UNIVERSAL=true; shift ;;
+        --pkg) BUILD_PKG=true; shift ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -39,6 +41,7 @@ fi
 
 DMG_PATH="$DIST_DIR/$DMG_BASENAME.dmg"
 TEMP_DMG_PATH="$DIST_DIR/$DMG_BASENAME-temp.dmg"
+PKG_PATH="$DIST_DIR/$DMG_BASENAME.pkg"
 
 info()  { echo -e "\033[0;32m[DIST]\033[0m $1"; }
 warn()  { echo -e "\033[1;33m[DIST]\033[0m $1"; }
@@ -216,6 +219,44 @@ fi
 # ── 7. Code sign ──
 info "Code signing app bundle..."
 chau7_codesign_app "$APP_DIR" "com.chau7.app" "release"
+
+# ── 8 (alt). Build a signed/notarized .pkg installer instead of a DMG ──
+if $BUILD_PKG; then
+    info "Building installer package..."
+    rm -f "$PKG_PATH"
+
+    # .pkg requires a "Developer ID Installer" identity (distinct from the
+    # "Developer ID Application" identity used for the app/DMG).
+    INSTALLER_IDENTITY="${CHAU7_INSTALLER_IDENTITY:-$(security find-identity -v 2>/dev/null | grep -m1 'Developer ID Installer' | sed -E 's/.*"(.*)"/\1/')}"
+
+    if [[ -n "$INSTALLER_IDENTITY" ]]; then
+        info "Signing installer with: $INSTALLER_IDENTITY"
+        productbuild --component "$APP_DIR" /Applications --sign "$INSTALLER_IDENTITY" "$PKG_PATH"
+    else
+        warn "No 'Developer ID Installer' identity found — building UNSIGNED pkg (won't notarize)."
+        productbuild --component "$APP_DIR" /Applications "$PKG_PATH"
+    fi
+
+    if [[ "${CHAU7_NOTARIZE:-0}" == "1" ]]; then
+        info "Notarizing pkg..."
+        chau7_notarize_artifact "$PKG_PATH"
+    fi
+
+    PKG_SIZE=$(du -sh "$PKG_PATH" | cut -f1)
+    info "Installer package ready: $PKG_PATH ($PKG_SIZE)"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  $DMG_BASENAME.pkg ($PKG_SIZE) ready."
+    if [[ -n "$INSTALLER_IDENTITY" && "${CHAU7_NOTARIZE:-0}" == "1" ]]; then
+        echo "  Signed with Developer ID Installer and notarized."
+    elif [[ -n "$INSTALLER_IDENTITY" ]]; then
+        echo "  Signed with $INSTALLER_IDENTITY. Not notarized (set CHAU7_NOTARIZE=1 + CHAU7_NOTARY_PROFILE)."
+    else
+        echo "  UNSIGNED. Gatekeeper will block install."
+    fi
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    exit 0
+fi
 
 # ── 8. Create DMG with drag-to-install layout ──
 info "Preparing DMG contents..."
