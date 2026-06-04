@@ -487,6 +487,9 @@ final class AppModel {
         UsageMonitor.shared.configureWarningHandler { [weak self] event in
             self?.publishUnifiedEvent(event, notify: true)
         }
+        if Bundle.main.bundleIdentifier != nil, !RuntimeIsolation.isIsolatedTestMode() {
+            FullDiskAccessGuard.shared.start()
+        }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             ConflictDetector.shared.configure(appModel: self)
