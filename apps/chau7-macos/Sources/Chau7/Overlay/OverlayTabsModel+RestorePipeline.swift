@@ -46,40 +46,47 @@ extension OverlayTabsModel {
     }
 
     static func estimatedRestorePayloadBytes(for state: SavedTabState) -> Int {
-        func byteCount(_ value: String?) -> Int {
-            value?.utf8.count ?? 0
-        }
-
         var total = 0
-        total += byteCount(state.tabID)
-        total += byteCount(state.selectedTabID)
-        total += byteCount(state.customTitle)
-        total += byteCount(state.color)
-        total += byteCount(state.directory)
-        total += byteCount(state.tokenOptOverride)
-        total += byteCount(state.scrollbackContent)
-        total += byteCount(state.aiResumeCommand)
-        total += byteCount(state.aiProvider)
-        total += byteCount(state.aiSessionId)
-        total += byteCount(state.focusedPaneID)
-        total += byteCount(state.createdAt)
-        total += byteCount(state.repoGroupID)
-        total += byteCount(state.knownRepoRoot)
-        total += byteCount(state.knownGitBranch)
-        total += byteCount(state.agentLaunchCommand)
+        total += stringPayloadBytes(state.tabID)
+        total += stringPayloadBytes(state.selectedTabID)
+        total += stringPayloadBytes(state.customTitle)
+        total += stringPayloadBytes(state.color)
+        total += stringPayloadBytes(state.directory)
+        total += stringPayloadBytes(state.tokenOptOverride)
+        total += stringPayloadBytes(state.scrollbackContent)
+        total += stringPayloadBytes(state.aiResumeCommand)
+        total += stringPayloadBytes(state.aiProvider)
+        total += stringPayloadBytes(state.aiSessionId)
+        total += stringPayloadBytes(state.focusedPaneID)
+        total += stringPayloadBytes(state.createdAt)
+        total += stringPayloadBytes(state.repoGroupID)
+        total += stringPayloadBytes(state.knownRepoRoot)
+        total += stringPayloadBytes(state.knownGitBranch)
+        total += stringPayloadBytes(state.agentLaunchCommand)
         total += state.previewSnapshotPNGData?.count ?? 0
         for pane in state.paneStates ?? [] {
-            total += byteCount(pane.paneID)
-            total += byteCount(pane.directory)
-            total += byteCount(pane.scrollbackContent)
-            total += byteCount(pane.aiResumeCommand)
-            total += byteCount(pane.aiProvider)
-            total += byteCount(pane.aiSessionId)
-            total += byteCount(pane.knownRepoRoot)
-            total += byteCount(pane.knownGitBranch)
-            total += byteCount(pane.agentLaunchCommand)
+            total += estimatedRestorePayloadBytes(for: pane)
         }
         return total
+    }
+
+    static func estimatedRestorePayloadBytes(for pane: SavedTerminalPaneState) -> Int {
+        var total = 0
+        total += stringPayloadBytes(pane.paneID)
+        total += stringPayloadBytes(pane.directory)
+        total += stringPayloadBytes(pane.scrollbackContent)
+        total += stringPayloadBytes(pane.aiResumeCommand)
+        total += stringPayloadBytes(pane.aiResumeDirectory)
+        total += stringPayloadBytes(pane.aiProvider)
+        total += stringPayloadBytes(pane.aiSessionId)
+        total += stringPayloadBytes(pane.knownRepoRoot)
+        total += stringPayloadBytes(pane.knownGitBranch)
+        total += stringPayloadBytes(pane.agentLaunchCommand)
+        return total
+    }
+
+    private static func stringPayloadBytes(_ value: String?) -> Int {
+        value?.utf8.count ?? 0
     }
 
     /// Restore the primary window from the first saved window entry.
