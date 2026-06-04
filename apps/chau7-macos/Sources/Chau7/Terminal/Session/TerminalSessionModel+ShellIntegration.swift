@@ -547,6 +547,8 @@ extension TerminalSessionModel {
         commandFinishedNotified = true
         promptSeenForPendingCommand = true
 
+        detectFullDiskAccessDenial(exitCode: exitCode)
+
         // Synchronized access to AI log state
         aiLogQueue.sync {
             guard mode == .normal else {
@@ -719,6 +721,26 @@ extension TerminalSessionModel {
         activeAppName = aiDetection.currentApp // nil after prompt return
         // finishAILogging is idempotent and has internal synchronization
         finishAILogging(exitCode: nil)
+    }
+
+    /// When a command fails, check whether its output looks like a macOS Full
+    /// Disk Access denial (EPERM in a protected folder) and, if so, route it to
+    /// `FullDiskAccessGuard` so the user gets a Chau7-level, fixable message
+    /// instead of a cryptic "Operation not permitted" attributed to the CLI.
+    /// Cheap: only on a failing command, only the bounded output tail, and
+    /// two-factor gated by `PermissionDenialClassifier`.
+    private func detectFullDiskAccessDenial(exitCode: Int?) {
+        guard let exitCode, exitCode != 0 else { return }
+        let tail = terminalTranscriptCapture.tailData(maxBytes: 16 * 1024)
+        guard !tail.isEmpty else { return }
+        let verdict = PermissionDenialClassifier.classify(
+            output: String(decoding: tail, as: UTF8.self),
+            cwd: currentDirectory,
+            protectedRoots: ProtectedPathPolicy.protectedRootsList()
+        )
+        if verdict.isFullDiskAccessDenial, let root = verdict.protectedRoot {
+            FullDiskAccessGuard.shared.reportChildDenial(protectedRoot: root)
+        }
     }
 
     func handleShellExitStatusReport(_ exitCode: Int) {
