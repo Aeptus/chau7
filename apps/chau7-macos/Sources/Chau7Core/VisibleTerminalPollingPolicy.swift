@@ -60,13 +60,10 @@ public enum VisibleTerminalPollingPolicy {
         // `phase` was `.active` and the user was watching streaming output
         // on it.
         //
-        // The original concern ("avoid multiplying full-grid sync work
-        // across windows") is moot for eventDrain: the drain thread blocks
-        // in `rust.poll(timeout:)` and burns near-zero CPU when the PTY is
-        // idle. It only wakes when there's actually something to render —
-        // exactly when the user wants live updates. Multiple visible
-        // windows running eventDrain is cheaper than the periodic 1 Hz
-        // backgroundDrain timer they'd otherwise share.
+        // EventDrain keeps the PTY responsive without a free-running render
+        // timer. The drain may wake for metadata-only terminal events, so the
+        // Rust/Swift poll pipeline must classify those separately and avoid
+        // turning title/CWD churn into full-grid render invalidations.
         //
         // Non-selected tabs still hit `allowsLivePresentation == false`
         // (their phase is `.warm`) and stay on backgroundDrain, so the

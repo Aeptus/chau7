@@ -527,6 +527,13 @@ final class PassthroughView: NSView {
 // MARK: - Rust Terminal FFI Wrapper
 
 /// Swift wrapper for the Rust terminal library loaded via dlopen
+struct TerminalPollEventFlags: OptionSet {
+    let rawValue: UInt32
+
+    static let gridChanged = TerminalPollEventFlags(rawValue: 1 << 0)
+    static let metadataChanged = TerminalPollEventFlags(rawValue: 1 << 1)
+}
+
 final class RustTerminalFFI {
     // Function types matching chau7_terminal.h
     private typealias CreateFn = @convention(c) (UInt16, UInt16, UnsafePointer<CChar>?) -> OpaquePointer?
@@ -549,6 +556,7 @@ final class RustTerminalFFI {
     private typealias FreeStringFn = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
     private typealias CursorPositionFn = @convention(c) (OpaquePointer?, UnsafeMutablePointer<UInt16>?, UnsafeMutablePointer<UInt16>?) -> Void
     private typealias PollFn = @convention(c) (OpaquePointer?, UInt32) -> Bool
+    private typealias PollEventsFn = @convention(c) (OpaquePointer?, UInt32) -> UInt32
     private typealias SetColorsFn = @convention(c) (OpaquePointer?, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UnsafePointer<UInt8>?) -> Void
     private typealias ClearScrollbackFn = @convention(c) (OpaquePointer?) -> Void
     // FFI types for raw output retrieval from the Rust terminal
@@ -631,6 +639,7 @@ final class RustTerminalFFI {
         let freeString: FreeStringFn
         let cursorPosition: CursorPositionFn
         let poll: PollFn
+        let pollEvents: PollEventsFn?
         let setColors: SetColorsFn? // Optional - older libraries may not have this
         let clearScrollback: ClearScrollbackFn? // Optional - older libraries may not have this
         // Raw output retrieval functions (for shell integration and output detection)
@@ -815,6 +824,11 @@ final class RustTerminalFFI {
         }
 
         // Optional symbols - may not be present in older library versions
+        let pollEventsSym = loadSymbol("chau7_terminal_poll_events")
+        if pollEventsSym == nil {
+            Log.info("RustTerminalFFI: poll_events symbol not found (optional, falling back to grid-only poll)")
+        }
+
         let createWithEnvSym = loadSymbol("chau7_terminal_create_with_env")
         if createWithEnvSym == nil {
             Log.info("RustTerminalFFI: createWithEnv symbol not found (optional)")
@@ -1042,6 +1056,7 @@ final class RustTerminalFFI {
             freeString: unsafeBitCast(freeStringSym, to: FreeStringFn.self),
             cursorPosition: unsafeBitCast(cursorPositionSym, to: CursorPositionFn.self),
             poll: unsafeBitCast(pollSym, to: PollFn.self),
+            pollEvents: pollEventsSym.map { unsafeBitCast($0, to: PollEventsFn.self) },
             setColors: setColorsSym.map { unsafeBitCast($0, to: SetColorsFn.self) },
             clearScrollback: clearScrollbackSym.map { unsafeBitCast($0, to: ClearScrollbackFn.self) },
             getLastOutput: getLastOutputSym.map { unsafeBitCast($0, to: GetLastOutputFn.self) },
@@ -1320,9 +1335,9 @@ final class RustTerminalFFI {
         }
         let grid = rawGrid.assumingMemoryBound(to: RustGridSnapshot.self)
         let snapshot = grid.pointee
-        Log.trace("RustTerminalFFI[\(instanceId)]: getGrid - Got snapshot \(snapshot.cols)x\(snapshot.rows), scrollback=\(snapshot.scrollback_rows), offset=\(snapshot.display_offset)")
+        Log.traceThrottled("rust-terminal-grid-\(instanceId)", interval: 5.0, "RustTerminalFFI[\(instanceId)]: getGrid - Got snapshot \(snapshot.cols)x\(snapshot.rows), scrollback=\(snapshot.scrollback_rows), offset=\(snapshot.display_offset)")
         return (grid, {
-            Log.trace("RustTerminalFFI[?]: getGrid - Freeing grid snapshot")
+            Log.traceThrottled("rust-terminal-grid-free", interval: 5.0, "RustTerminalFFI[?]: getGrid - Freeing grid snapshot")
             fns.freeGrid(rawGrid)
         })
     }
@@ -1468,7 +1483,7 @@ final class RustTerminalFFI {
         var col: UInt16 = 0
         var row: UInt16 = 0
         Self.functions?.cursorPosition(terminal, &col, &row)
-        Log.trace("RustTerminalFFI[\(instanceId)]: cursorPosition = (\(col), \(row))")
+        Log.traceThrottled("rust-terminal-cursor-\(instanceId)", interval: 5.0, "RustTerminalFFI[\(instanceId)]: cursorPosition = (\(col), \(row))")
         return (col, row)
     }
 
@@ -1476,24 +1491,41 @@ final class RustTerminalFFI {
     private static var pollCounter: UInt64 = 0
     private static var lastPollLogTime: CFAbsoluteTime = 0
 
-    func poll(timeout: UInt32 = 0) -> Bool {
-        let changed = Self.functions?.poll(terminal, timeout) ?? false
+    func pollEvents(timeout: UInt32 = 0) -> TerminalPollEventFlags {
+        let rawFlags: UInt32
+        if let pollEvents = Self.functions?.pollEvents {
+            rawFlags = pollEvents(terminal, timeout)
+        } else if Self.functions?.poll(terminal, timeout) == true {
+            rawFlags = TerminalPollEventFlags.gridChanged.rawValue
+        } else {
+            rawFlags = 0
+        }
+
+        let flags = TerminalPollEventFlags(rawValue: rawFlags)
+        let changed = flags.contains(.gridChanged)
+        let hasMetadata = flags.contains(.metadataChanged)
 
         // Rate-limit logging for poll (it's called 60x/second)
         Self.pollCounter += 1
         let now = CFAbsoluteTimeGetCurrent()
-        let shouldLog = changed || (now - Self.lastPollLogTime > 5.0) // Log every 5s or on change
+        let shouldLog = changed || hasMetadata || (now - Self.lastPollLogTime > 5.0) // Log every 5s or on change
 
         if shouldLog {
             if changed {
-                Log.trace("RustTerminalFFI[\(instanceId)]: poll - Grid CHANGED (poll #\(Self.pollCounter), timeout=\(timeout)ms)")
+                Log.traceThrottled("rust-terminal-poll-\(instanceId)", interval: 5.0, "RustTerminalFFI[\(instanceId)]: poll - Grid CHANGED flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)")
+            } else if hasMetadata {
+                Log.traceThrottled("rust-terminal-poll-\(instanceId)", interval: 5.0, "RustTerminalFFI[\(instanceId)]: poll - Metadata changed flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)")
             } else {
                 Log.trace("RustTerminalFFI[\(instanceId)]: poll - Status check (poll #\(Self.pollCounter))")
             }
             Self.lastPollLogTime = now
         }
 
-        return changed
+        return flags
+    }
+
+    func poll(timeout: UInt32 = 0) -> Bool {
+        pollEvents(timeout: timeout).contains(.gridChanged)
     }
 
     /// Set theme colors for rendering
@@ -1692,7 +1724,7 @@ final class RustTerminalFFI {
             return 0
         }
         let pid = getShellPidFn(terminal)
-        Log.trace("RustTerminalFFI[\(instanceId)]: shellPid = \(pid)")
+        Log.traceThrottled("rust-terminal-shell-pid-\(instanceId)", interval: 30.0, "RustTerminalFFI[\(instanceId)]: shellPid = \(pid)")
         return pid_t(pid)
     }
 
@@ -1878,7 +1910,7 @@ final class RustTerminalFFI {
         }
         defer { freeStringFn(cstr) }
         let title = String(cString: cstr)
-        Log.trace("RustTerminalFFI[\(instanceId)]: getPendingTitle = \"\(title)\"")
+        Log.traceThrottled("rust-terminal-title-\(instanceId)", interval: 5.0, "RustTerminalFFI[\(instanceId)]: getPendingTitle = \"\(title)\"")
         return title
     }
 
@@ -2617,6 +2649,7 @@ final class RustTerminalView: NSView {
 
     /// Last logged title (for rate-limiting OSC title change logs)
     var lastLoggedTitle = ""
+    var lastDeliveredTerminalTitle: String?
 
     override init(frame frameRect: NSRect) {
         Self.viewCounter += 1
@@ -3259,7 +3292,7 @@ final class RustTerminalView: NSView {
 
     /// Called by `TerminalEventDrain` on the main thread when PTY data arrives.
     /// Processes terminal state and triggers rendering.
-    func handleEventDrainData() {
+    func handleEventDrainData(drainGridChanged: Bool) {
         guard !isBeingDeallocated else { return }
         guard let rust = rustTerminal else { return }
 
@@ -3267,8 +3300,11 @@ final class RustTerminalView: NSView {
         // Re-poll non-blocking to pick up any data that arrived since the
         // event drain's blocking poll returned. This also processes pending
         // events (titles, clipboard, shell integration).
-        let changed = rust.poll(timeout: 0)
-        let result = processTerminalStateAfterPollLocked(rust: rust, changed: changed || true)
+        let followUpFlags = rust.pollEvents(timeout: 0)
+        let result = processTerminalStateAfterPollLocked(
+            rust: rust,
+            changed: drainGridChanged || followUpFlags.contains(.gridChanged)
+        )
         terminalPollAccessLock.unlock()
 
         guard notifyUpdateChanges else {

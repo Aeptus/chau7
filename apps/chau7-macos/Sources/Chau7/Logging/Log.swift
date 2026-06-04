@@ -16,6 +16,16 @@ enum Log {
     private static var isConfigured = false
     private static var filePathValue = ""
     private static var writeCount = 0
+    private static let traceThrottleLock = NSLock()
+    private static var traceThrottleLastEmit: [String: CFAbsoluteTime] = [:]
+    /// Bounds for `traceThrottleLastEmit`. Keys are per-terminal-instance
+    /// (e.g. "rust-terminal-grid-<instanceId>"), so without eviction the map
+    /// grows by ~one set per tab for the entire process lifetime — closed-tab
+    /// keys are never touched again and would leak. When the map exceeds the
+    /// cap we drop keys not emitted within the staleness window, so the size
+    /// tracks *live* emitters rather than every tab ever opened.
+    private static let traceThrottleMaxKeys = 512
+    private static let traceThrottleStaleness: TimeInterval = 600
     private static let maxLogBytes: Int = {
         if let raw = EnvVars.get(EnvVars.logMaxBytes),
            let value = Int(raw), value > 0 {
@@ -93,6 +103,30 @@ enum Log {
     static func trace(_ message: String) {
         guard isTraceEnabled else { return }
         emit(level: "TRACE", message: message)
+    }
+
+    static func traceThrottled(
+        _ key: String,
+        interval: TimeInterval,
+        _ message: @autoclosure () -> String
+    ) {
+        guard isTraceEnabled else { return }
+        let now = CFAbsoluteTimeGetCurrent()
+        traceThrottleLock.lock()
+        let lastEmit = traceThrottleLastEmit[key] ?? 0
+        let shouldEmit = now - lastEmit >= interval
+        if shouldEmit {
+            traceThrottleLastEmit[key] = now
+            if traceThrottleLastEmit.count > Self.traceThrottleMaxKeys {
+                let cutoff = now - Self.traceThrottleStaleness
+                traceThrottleLastEmit = traceThrottleLastEmit.filter { $0.value >= cutoff }
+            }
+        }
+        traceThrottleLock.unlock()
+
+        if shouldEmit {
+            emit(level: "TRACE", message: message())
+        }
     }
 
     // MARK: - Wakeup Tracking
