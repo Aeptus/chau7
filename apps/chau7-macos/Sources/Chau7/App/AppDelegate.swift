@@ -83,6 +83,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
         Log.info("AppDelegate did finish launching.")
+        IncidentBreadcrumbStore.shared.reportPreviousCriticalMemoryPressureIfNeeded()
         didFinishLaunching = true
         Chau7ObservabilityService.shared.recordEvent(type: "app_launched", subsystem: "app_lifecycle")
         Chau7ObservabilityService.shared.recordEvent(type: "build_activated", subsystem: "app_lifecycle")
@@ -1311,12 +1312,15 @@ private final class OverlayBlurView: NSVisualEffectView {
         lastSavedWindowStates = allWindows
         lastSavedWindowStatesAt = Date()
 
+        var legacyPayloadBytes = 0
+        var multiWindowPayloadBytes = 0
         var splitBundleFingerprintData: Data?
 
         // Write window 0 to the legacy key so the primary model can restore it
         // even if the multi-window payload is unavailable.
         if let firstWindowStates = allWindows.first,
            let data = Persist.encodeLogged(firstWindowStates, context: "window0.tabState") {
+            legacyPayloadBytes = data.count
             splitBundleFingerprintData = data
             UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
         }
@@ -1324,6 +1328,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         if allWindows.count > 1 {
             let multiState = SavedMultiWindowState(windows: allWindows)
             if let data = Persist.encodeLogged(multiState, context: "multiWindow.tabState") {
+                multiWindowPayloadBytes = data.count
                 splitBundleFingerprintData = data
                 UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
             }
@@ -1339,6 +1344,12 @@ private final class OverlayBlurView: NSVisualEffectView {
         } catch {
             Log.warn("Failed to persist split tab restore bundle [\(reason.rawValue)]: \(error)")
         }
+        recordRestorePayloadBreadcrumb(
+            allWindows,
+            reason: reason,
+            legacyPayloadBytes: legacyPayloadBytes,
+            multiWindowPayloadBytes: multiWindowPayloadBytes
+        )
         // Flush to disk immediately — UserDefaults coalesces writes and the
         // process may exit before the next automatic sync.
         if reason == .termination {
@@ -1366,6 +1377,60 @@ private final class OverlayBlurView: NSVisualEffectView {
             return
         }
         persistWindowStates(allWindows, reason: reason)
+    }
+
+    private func recordRestorePayloadBreadcrumb(
+        _ allWindows: [[SavedTabState]],
+        reason: TabStateSaveReason,
+        legacyPayloadBytes: Int,
+        multiWindowPayloadBytes: Int
+    ) {
+        var tabCount = 0
+        var paneCount = 0
+        var largestTabPayloadBytes = 0
+        var largestTabID: String?
+        var largestTabTitle: String?
+        var largestPanePayloadBytes = 0
+        var largestPaneID: String?
+        var largestPaneDirectory: String?
+
+        for window in allWindows {
+            tabCount += window.count
+            for state in window {
+                for pane in state.paneStates ?? [] {
+                    paneCount += 1
+                    let panePayloadBytes = OverlayTabsModel.estimatedRestorePayloadBytes(for: pane)
+                    if panePayloadBytes > largestPanePayloadBytes {
+                        largestPanePayloadBytes = panePayloadBytes
+                        largestPaneID = pane.paneID
+                        largestPaneDirectory = pane.directory
+                    }
+                }
+                let payloadBytes = OverlayTabsModel.estimatedRestorePayloadBytes(for: state)
+                if payloadBytes > largestTabPayloadBytes {
+                    largestTabPayloadBytes = payloadBytes
+                    largestTabID = state.tabID
+                    largestTabTitle = state.customTitle ?? state.directory
+                }
+            }
+        }
+
+        IncidentBreadcrumbStore.shared.recordRestorePayloadSnapshot(
+            RestorePayloadBreadcrumbSnapshot(
+                reason: reason.rawValue,
+                windowCount: allWindows.count,
+                tabCount: tabCount,
+                paneCount: paneCount,
+                legacyPayloadBytes: legacyPayloadBytes,
+                multiWindowPayloadBytes: multiWindowPayloadBytes,
+                largestTabPayloadBytes: largestTabPayloadBytes,
+                largestTabID: largestTabID,
+                largestTabTitle: largestTabTitle,
+                largestPanePayloadBytes: largestPanePayloadBytes,
+                largestPaneID: largestPaneID,
+                largestPaneDirectory: largestPaneDirectory
+            )
+        )
     }
 
     // MARK: - Tab Move Between Windows

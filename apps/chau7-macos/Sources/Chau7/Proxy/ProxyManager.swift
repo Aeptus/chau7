@@ -351,6 +351,7 @@ final class ProxyManager {
             }
 
             let message = String(content)
+            IncidentBreadcrumbStore.shared.recordProxyOutputIfHighWater(message)
             switch level {
             case .error:
                 logger.error("\(message, privacy: .public)")

@@ -61,11 +61,23 @@ final class MemoryPressureResponder {
             stateLock.lock()
             lastCriticalAt = Date()
             stateLock.unlock()
+            IncidentBreadcrumbStore.shared.recordMemoryPressure(
+                level: .critical,
+                residentBytes: usedBytes,
+                physicalBytes: physicalBytes,
+                synchronously: true
+            )
             Log.warn(
                 "MemoryPressureResponder: CRITICAL pressure " +
                     "(process rss=\(usedBytes / (1024 * 1024))MB, \(ratioPercent)% of \(physicalBytes / (1024 * 1024))MB physical)"
             )
         } else if data.contains(.warning) {
+            IncidentBreadcrumbStore.shared.recordMemoryPressure(
+                level: .warning,
+                residentBytes: usedBytes,
+                physicalBytes: physicalBytes,
+                synchronously: false
+            )
             Log.info(
                 "MemoryPressureResponder: warning pressure " +
                     "(process rss=\(usedBytes / (1024 * 1024))MB, \(ratioPercent)% of \(physicalBytes / (1024 * 1024))MB physical)"
