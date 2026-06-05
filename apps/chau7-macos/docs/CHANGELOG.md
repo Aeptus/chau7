@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Proxy High-Water Breadcrumb No Longer Floods**: The `proxy_request_high_water` incident breadcrumb fired on nearly every AI turn — request bodies grow a few KB per turn as conversation context accumulates, so a strictly-greater high-water gate tripped constantly (~90 `warning` entries/day). It now requires a material step over the prior mark and is recorded at `info` severity: it is diagnostic context correlated against memory-pressure incidents, not a warning condition.
+
 ## [0.3.0] - 2026-06-04
 
 ### Added

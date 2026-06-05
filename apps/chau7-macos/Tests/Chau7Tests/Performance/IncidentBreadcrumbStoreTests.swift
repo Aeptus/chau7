@@ -136,6 +136,34 @@ final class IncidentBreadcrumbStoreTests: XCTestCase {
         XCTAssertEqual(OverlayTabsModel.estimatedRestorePayloadBytes(for: pane), expected)
     }
 
+    func testProxyHighWaterStepScalesWithCurrentMark() {
+        // Floor: never below half the 512 KB threshold.
+        XCTAssertEqual(IncidentBreadcrumbStore.highWaterStepBytes(current: 0), 256 * 1024)
+        XCTAssertEqual(IncidentBreadcrumbStore.highWaterStepBytes(current: 500_000), 256 * 1024)
+        // Above the floor it tracks a quarter of the current mark.
+        XCTAssertEqual(IncidentBreadcrumbStore.highWaterStepBytes(current: 4_000_000), 1_000_000)
+    }
+
+    func testProxyHighWaterFiresOnMaterialJumpAndSuppressesSmallSteps() {
+        let store = makeStore()
+        func record(_ reqLen: Int) {
+            store.recordProxyOutputIfHighWater(
+                "anthropic /v1/messages: no tokens extracted (reqLen=\(reqLen), respLen=10)"
+            )
+        }
+
+        record(600_000) // first request over the floor → fires
+        record(620_000) // +20 KB: below the step over 600 KB → suppressed
+        record(2_000_000) // material jump → fires
+
+        let breadcrumbs = store.recentBreadcrumbs()
+        XCTAssertEqual(breadcrumbs.count, 2)
+        XCTAssertEqual(breadcrumbs.map(\.kind), [.proxyRequestHighWater, .proxyRequestHighWater])
+        // De-noised: high-water is diagnostic context, not a warning condition.
+        XCTAssertTrue(breadcrumbs.allSatisfy { $0.severity == .info })
+        XCTAssertEqual(breadcrumbs.last?.metadata["requestBytes"], "2000000")
+    }
+
     private func snapshot(totalBytes: Int) -> RestorePayloadBreadcrumbSnapshot {
         RestorePayloadBreadcrumbSnapshot(
             reason: "autosave",

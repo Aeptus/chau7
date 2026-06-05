@@ -238,13 +238,19 @@ final class IncidentBreadcrumbStore {
             return
         }
         perform(synchronously: false) {
-            guard requestBytes > self.proxyRequestHighWaterBytes else { return }
+            // AI request bodies grow a few KB per conversation turn, so a plain
+            // strictly-greater gate fires on nearly every turn. Require a material
+            // step over the prior high-water so the breadcrumb flags genuine jumps,
+            // not the normal upward slope. This is diagnostic context (correlated
+            // against memory-pressure incidents), not a warning condition.
+            let step = Self.highWaterStepBytes(current: self.proxyRequestHighWaterBytes)
+            guard requestBytes > self.proxyRequestHighWaterBytes + step else { return }
             self.proxyRequestHighWaterBytes = requestBytes
             let breadcrumb = IncidentBreadcrumb(
                 id: self.makeID(),
                 timestamp: self.now(),
                 kind: .proxyRequestHighWater,
-                severity: .warning,
+                severity: .info,
                 message: "Large AI proxy request observed",
                 metadata: [
                     "requestBytes": "\(requestBytes)",
@@ -303,6 +309,14 @@ final class IncidentBreadcrumbStore {
         let digits = suffix.prefix { $0.isNumber }
         guard !digits.isEmpty else { return nil }
         return Int(digits)
+    }
+
+    /// Minimum jump over the prior high-water mark before a new proxy-request
+    /// breadcrumb is worth recording. Scales with the current mark (¼) but never
+    /// drops below half the floor, so growth stays loggable without firing on the
+    /// few-KB-per-turn slope of an accumulating conversation.
+    static func highWaterStepBytes(current: Int) -> Int {
+        max(proxyRequestHighWaterThresholdBytes / 2, current / 4)
     }
 
     private func perform(synchronously: Bool, _ work: @escaping () -> Void) {
