@@ -213,24 +213,95 @@ final class ProcessTreeProviderResolverTests: XCTestCase {
         XCTAssertNil(ProcessTreeProviderResolver.resolve(shellPid: -1, snapshot: snapshot))
     }
 
-    func testCaptureSnapshotUsesInjectedRunner() {
-        let commFixture = """
-          100     1 zsh
-          101   100 claude
-        """
+    // MARK: - Snapshot building
+
+    func testBuildSnapshotFoldsRows() {
+        let rows = [
+            ProcessTreeProviderResolver.ProcessRow(pid: 100, ppid: 1, command: "zsh", argv: nil),
+            ProcessTreeProviderResolver.ProcessRow(pid: 101, ppid: 100, command: "node", argv: "node /x/gemini"),
+            ProcessTreeProviderResolver.ProcessRow(pid: 102, ppid: 100, command: "claude", argv: nil)
+        ]
+        let snapshot = ProcessTreeProviderResolver.buildSnapshot(rows: rows)
+        XCTAssertEqual(snapshot.childrenOf[100]?.sorted(), [101, 102])
+        XCTAssertEqual(snapshot.commOf[101], "node")
+        XCTAssertEqual(snapshot.argsOf[101], "node /x/gemini")
+        XCTAssertEqual(snapshot.commOf[102], "claude")
+        XCTAssertNil(snapshot.argsOf[102]) // no argv → not stored
+    }
+
+    // MARK: - captureSnapshot (native primary, ps fallback)
+
+    func testCaptureSnapshotPrefersNativeRowsOverPS() {
+        let rows = [
+            ProcessTreeProviderResolver.ProcessRow(pid: 100, ppid: 1, command: "zsh", argv: nil),
+            ProcessTreeProviderResolver.ProcessRow(pid: 101, ppid: 100, command: "codex", argv: nil)
+        ]
+        let snapshot = ProcessTreeProviderResolver.captureSnapshot(
+            rowProvider: { rows },
+            runner: { _, _ in "999 1 should-not-run" }
+        )
+        XCTAssertEqual(snapshot?.commOf[101], "codex")
+        XCTAssertNil(snapshot?.commOf[999], "ps fallback must be skipped when native rows exist")
+    }
+
+    func testCaptureSnapshotFallsBackToPSWhenNativeEmpty() {
         let argsFixture = """
           100     1 zsh
           101   100 claude --resume abc
         """
-        let snapshot = ProcessTreeProviderResolver.captureSnapshot { _, args in
-            args.joined(separator: " ").contains("args") ? argsFixture : commFixture
-        }
+        let snapshot = ProcessTreeProviderResolver.captureSnapshot(
+            rowProvider: { nil },
+            runner: { _, _ in argsFixture }
+        )
         XCTAssertNotNil(snapshot)
         XCTAssertEqual(snapshot?.commOf[101], "claude")
         XCTAssertEqual(snapshot?.argsOf[101], "claude --resume abc")
     }
 
-    func testCaptureSnapshotReturnsNilWhenRunnerFails() {
-        XCTAssertNil(ProcessTreeProviderResolver.captureSnapshot { _, _ in nil })
+    func testCaptureSnapshotReturnsNilWhenNativeAndPSFail() {
+        XCTAssertNil(
+            ProcessTreeProviderResolver.captureSnapshot(rowProvider: { nil }, runner: { _, _ in nil })
+        )
+    }
+
+    // MARK: - KERN_PROCARGS2 decoding
+
+    func testParseProcArgsReconstructsCommandLine() {
+        // KERN_PROCARGS2 layout: Int32 argc, exec path + NUL, NUL padding, argc argv strings.
+        var raw: [UInt8] = []
+        var argc: Int32 = 2
+        withUnsafeBytes(of: &argc) { raw.append(contentsOf: $0) }
+        raw.append(contentsOf: Array("/usr/local/bin/node".utf8))
+        raw.append(0)
+        raw.append(0)
+        raw.append(0) // padding before argv[0]
+        raw.append(contentsOf: Array("node".utf8))
+        raw.append(0)
+        raw.append(contentsOf: Array("/Users/x/.volta/bin/gemini".utf8))
+        raw.append(0)
+        raw.append(contentsOf: Array("PATH=/usr/bin".utf8))
+        raw.append(0) // env (ignored)
+
+        XCTAssertEqual(
+            ProcessTreeProviderResolver.parseProcArgs(raw),
+            "node /Users/x/.volta/bin/gemini"
+        )
+    }
+
+    func testParseProcArgsRejectsMalformedBuffer() {
+        XCTAssertNil(ProcessTreeProviderResolver.parseProcArgs([1, 2])) // shorter than Int32 argc
+        XCTAssertNil(ProcessTreeProviderResolver.parseProcArgs([0, 0, 0, 0])) // argc == 0
+    }
+
+    // MARK: - Native enumeration (integration)
+
+    func testNativeRowsIncludesCurrentProcess() {
+        guard let rows = ProcessTreeProviderResolver.nativeRows() else {
+            return XCTFail("native enumeration returned nil")
+        }
+        let current = rows.first { $0.pid == getpid() }
+        XCTAssertNotNil(current, "current process should appear in the native snapshot")
+        XCTAssertEqual(current?.ppid, getppid())
+        XCTAssertFalse(current?.command.isEmpty ?? true)
     }
 }

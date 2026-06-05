@@ -1,4 +1,5 @@
 #if os(macOS)
+import Darwin
 import Foundation
 
 /// Live resolution of "which AI tool is currently running in this shell" from the OS process tree.
@@ -11,8 +12,8 @@ import Foundation
 /// known AI tool via `AIToolRegistry.commandNameMap`, and return its display name.
 public enum ProcessTreeProviderResolver {
 
-    /// Structured adjacency + process identity maps from shared `ps` snapshots.
-    /// Callers that resolve many shells per tick share one snapshot to amortize the shell-out.
+    /// Structured adjacency + process identity maps from a single process-table snapshot.
+    /// Callers that resolve many shells per tick share one snapshot to amortize enumeration.
     public struct Snapshot: Sendable {
         public let childrenOf: [pid_t: [pid_t]]
         public let commOf: [pid_t: String]
@@ -23,6 +24,16 @@ public enum ProcessTreeProviderResolver {
             self.commOf = commOf
             self.argsOf = argsOf
         }
+    }
+
+    /// One process-table entry: pid, parent pid, the command name (`comm`/argv[0]),
+    /// and the full argv when it was worth fetching. Native enumeration only fetches
+    /// argv for interpreter processes; the `ps` fallback fills it for every row.
+    struct ProcessRow: Equatable {
+        let pid: pid_t
+        let ppid: pid_t
+        let command: String
+        let argv: String?
     }
 
     /// Basenames skipped during matching — shells, multiplexers, jump-hosts, and common
@@ -36,12 +47,29 @@ public enum ProcessTreeProviderResolver {
         "ps"
     ])
 
-    /// Shells out to `ps -axo pid,ppid,args` **once** and parses it into a `Snapshot`.
-    /// A single `args` scan supplies the whole tree: argv[0]'s basename is the command
-    /// identity (untruncated, unlike `ps comm`'s 16-char `p_comm`), and the full argv lets
-    /// the resolver unwrap interpreter-hosted tools (e.g. `node …/gemini`). Returns nil if
-    /// the subprocess fails; callers should treat nil as "no live signal available".
-    public static func captureSnapshot(runner: (String, [String]) -> String? = defaultRunner) -> Snapshot? {
+    /// Interpreter basenames whose real tool lives in argv (e.g. `node …/gemini`).
+    /// Native enumeration fetches argv only for these — every other process is matched
+    /// by its command name alone, so the common case avoids a per-PID `sysctl`.
+    static let argvNeededBasenames = Set<String>([
+        "node", "python", "python3", "ruby", "npx"
+    ])
+
+    /// Captures the live process tree without spawning a subprocess: it enumerates the
+    /// process table via libproc and reads argv (only for interpreters) via `sysctl`.
+    /// Falls back to a single `ps -axo pid,ppid,args` scan if native enumeration yields
+    /// nothing. Returns nil when both fail; callers treat nil as "no live signal available".
+    public static func captureSnapshot() -> Snapshot? {
+        captureSnapshot(rowProvider: nativeRows, runner: defaultRunner)
+    }
+
+    /// Test seam: inject the native row provider and/or the `ps` fallback runner.
+    static func captureSnapshot(
+        rowProvider: () -> [ProcessRow]?,
+        runner: (String, [String]) -> String?
+    ) -> Snapshot? {
+        if let rows = rowProvider(), !rows.isEmpty {
+            return buildSnapshot(rows: rows)
+        }
         guard let output = runner("/bin/ps", ["-axo", "pid,ppid,args"]) else {
             return nil
         }
@@ -77,26 +105,43 @@ public enum ProcessTreeProviderResolver {
         return bestMatch?.name
     }
 
-    // MARK: - Parsing
+    // MARK: - Snapshot building
 
-    /// Parses `ps -axo pid,ppid,args` output into adjacency + identity maps in one pass.
-    /// `commOf` holds argv[0] (possibly a full path); `matchProcess` takes its basename,
-    /// so the parser stays free of path/basename policy.
-    static func parse(psArgsOutput: String) -> Snapshot {
+    /// Folds process rows into the adjacency + identity maps the resolver walks. Shared by
+    /// native enumeration and the `ps` fallback so both produce identical `Snapshot` shapes.
+    static func buildSnapshot(rows: [ProcessRow]) -> Snapshot {
         var childrenOf: [pid_t: [pid_t]] = [:]
         var commOf: [pid_t: String] = [:]
         var argsOf: [pid_t: String] = [:]
 
-        for line in psArgsOutput.split(separator: "\n") {
-            guard let row = parseRow(line) else { continue }
+        for row in rows {
             childrenOf[row.ppid, default: []].append(row.pid)
-            argsOf[row.pid] = row.rest
-            if let argv0 = row.rest.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true).first {
-                commOf[row.pid] = String(argv0)
+            commOf[row.pid] = row.command
+            if let argv = row.argv, !argv.isEmpty {
+                argsOf[row.pid] = argv
             }
         }
 
         return Snapshot(childrenOf: childrenOf, commOf: commOf, argsOf: argsOf)
+    }
+
+    // MARK: - `ps` fallback parsing
+
+    /// Parses `ps -axo pid,ppid,args` text into a `Snapshot` (subprocess fallback path).
+    static func parse(psArgsOutput: String) -> Snapshot {
+        buildSnapshot(rows: psRows(psArgsOutput))
+    }
+
+    /// Splits `ps -axo pid,ppid,args` text into rows. `command` is argv[0] (possibly a
+    /// full path); `matchProcess` takes its basename, so parsing stays path-policy-free.
+    private static func psRows(_ psArgsOutput: String) -> [ProcessRow] {
+        psArgsOutput.split(separator: "\n").compactMap { line in
+            guard let row = parseRow(line) else { return nil }
+            let argv0 = row.rest
+                .split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+                .first.map(String.init) ?? row.rest
+            return ProcessRow(pid: row.pid, ppid: row.ppid, command: argv0, argv: row.rest)
+        }
     }
 
     /// Parses one `ps` row of the form `<pid> <ppid> <rest…>`. Returns nil for
@@ -184,7 +229,93 @@ public enum ProcessTreeProviderResolver {
             || token.contains(".bin")
     }
 
-    /// Default subprocess runner. Kept internal so tests can inject deterministic fixtures.
+    // MARK: - Native enumeration (libproc + sysctl)
+
+    /// Enumerates the live process table via libproc — no subprocess. argv is fetched via
+    /// `KERN_PROCARGS2` only for interpreter processes (`argvNeededBasenames`), since every
+    /// other tool is identified by command name alone. Returns nil if enumeration fails,
+    /// so `captureSnapshot` falls back to `ps`.
+    static func nativeRows() -> [ProcessRow]? {
+        let pidCount = proc_listallpids(nil, 0)
+        guard pidCount > 0 else { return nil }
+        // Headroom: the process set can grow between the count and the fill call.
+        let capacity = Int(pidCount) + 64
+        var pids = [pid_t](repeating: 0, count: capacity)
+        let filled = proc_listallpids(&pids, Int32(capacity * MemoryLayout<pid_t>.stride))
+        guard filled > 0 else { return nil }
+
+        var rows: [ProcessRow] = []
+        rows.reserveCapacity(Int(filled))
+        for index in 0 ..< min(Int(filled), pids.count) {
+            let pid = pids[index]
+            guard pid > 0 else { continue }
+            var info = proc_bsdshortinfo()
+            let infoSize = Int32(MemoryLayout<proc_bsdshortinfo>.stride)
+            guard proc_pidinfo(pid, PROC_PIDT_SHORTBSDINFO, 0, &info, infoSize) == infoSize else {
+                continue
+            }
+            let command = withUnsafeBytes(of: info.pbsi_comm) { buffer in
+                String(decoding: buffer.prefix { $0 != 0 }, as: UTF8.self)
+            }
+            let ppid = pid_t(bitPattern: info.pbsi_ppid)
+            let argv = argvNeededBasenames.contains(command.lowercased()) ? processArgv(pid: pid) : nil
+            rows.append(ProcessRow(pid: pid, ppid: ppid, command: command, argv: argv))
+        }
+        return rows.isEmpty ? nil : rows
+    }
+
+    /// Reads a process's full command line via `KERN_PROCARGS2`. Same-uid processes are
+    /// readable; others may fail (returns nil) — acceptable, as we only need argv for the
+    /// user's own interpreter children.
+    static func processArgv(pid: pid_t) -> String? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
+        if buffer.count > size { buffer.removeLast(buffer.count - size) }
+        return parseProcArgs(buffer)
+    }
+
+    /// Decodes a `KERN_PROCARGS2` buffer into the space-joined argv (≈ `ps args`).
+    /// Layout: `Int32 argc`, the NUL-terminated exec path, NUL padding, then `argc`
+    /// NUL-terminated argv strings, then the environment (ignored).
+    static func parseProcArgs(_ raw: [UInt8]) -> String? {
+        let intSize = MemoryLayout<Int32>.size
+        guard raw.count > intSize else { return nil }
+        let argc = raw.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) }
+        guard argc > 0 else { return nil }
+
+        var index = intSize
+        // Skip the exec-path string...
+        while index < raw.count, raw[index] != 0 {
+            index += 1
+        }
+        // ...and the NUL padding before argv[0].
+        while index < raw.count, raw[index] == 0 {
+            index += 1
+        }
+
+        var args: [String] = []
+        var current: [UInt8] = []
+        while index < raw.count, args.count < Int(argc) {
+            let byte = raw[index]
+            index += 1
+            if byte == 0 {
+                args.append(String(decoding: current, as: UTF8.self))
+                current.removeAll(keepingCapacity: true)
+            } else {
+                current.append(byte)
+            }
+        }
+        guard !args.isEmpty else { return nil }
+        return args.joined(separator: " ")
+    }
+
+    // MARK: - Subprocess fallback
+
+    /// `ps` runner used only when native enumeration fails. Kept internal so tests can
+    /// inject deterministic fixtures.
     public static let defaultRunner: (String, [String]) -> String? = { path, args in
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
