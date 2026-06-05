@@ -36,22 +36,16 @@ public enum ProcessTreeProviderResolver {
         "ps"
     ])
 
-    /// Shells out to `ps -axo pid,ppid,comm` plus `ps -axo pid,ppid,args` and parses them
-    /// into a `Snapshot`. Returns nil
-    /// if the subprocess fails; callers should treat nil as "no live signal available".
+    /// Shells out to `ps -axo pid,ppid,args` **once** and parses it into a `Snapshot`.
+    /// A single `args` scan supplies the whole tree: argv[0]'s basename is the command
+    /// identity (untruncated, unlike `ps comm`'s 16-char `p_comm`), and the full argv lets
+    /// the resolver unwrap interpreter-hosted tools (e.g. `node …/gemini`). Returns nil if
+    /// the subprocess fails; callers should treat nil as "no live signal available".
     public static func captureSnapshot(runner: (String, [String]) -> String? = defaultRunner) -> Snapshot? {
-        guard let commOutput = runner("/bin/ps", ["-axo", "pid,ppid,comm"]) else {
+        guard let output = runner("/bin/ps", ["-axo", "pid,ppid,args"]) else {
             return nil
         }
-        let commSnapshot = parse(psOutput: commOutput)
-        guard let argsOutput = runner("/bin/ps", ["-axo", "pid,ppid,args"]) else {
-            return commSnapshot
-        }
-        return Snapshot(
-            childrenOf: commSnapshot.childrenOf,
-            commOf: commSnapshot.commOf,
-            argsOf: parseArgs(psOutput: argsOutput)
-        )
+        return parse(psArgsOutput: output)
     }
 
     /// Walks descendants of `shellPid` (BFS) and returns the deepest match against
@@ -85,42 +79,37 @@ public enum ProcessTreeProviderResolver {
 
     // MARK: - Parsing
 
-    static func parse(psOutput: String) -> Snapshot {
+    /// Parses `ps -axo pid,ppid,args` output into adjacency + identity maps in one pass.
+    /// `commOf` holds argv[0] (possibly a full path); `matchProcess` takes its basename,
+    /// so the parser stays free of path/basename policy.
+    static func parse(psArgsOutput: String) -> Snapshot {
         var childrenOf: [pid_t: [pid_t]] = [:]
         var commOf: [pid_t: String] = [:]
-
-        for line in psOutput.split(separator: "\n") {
-            let cols = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
-            guard cols.count >= 3,
-                  let pid = Int32(cols[0].trimmingCharacters(in: .whitespaces)),
-                  let ppid = Int32(cols[1].trimmingCharacters(in: .whitespaces)) else {
-                continue
-            }
-            let comm = String(cols[2]).trimmingCharacters(in: .whitespaces)
-            commOf[pid] = comm
-            childrenOf[ppid, default: []].append(pid)
-        }
-
-        return Snapshot(childrenOf: childrenOf, commOf: commOf)
-    }
-
-    static func parseArgs(psOutput: String) -> [pid_t: String] {
         var argsOf: [pid_t: String] = [:]
 
-        for line in psOutput.split(separator: "\n") {
-            let cols = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
-            guard cols.count >= 3,
-                  let pid = Int32(cols[0].trimmingCharacters(in: .whitespaces)),
-                  Int32(cols[1].trimmingCharacters(in: .whitespaces)) != nil else {
-                continue
-            }
-            let args = String(cols[2]).trimmingCharacters(in: .whitespaces)
-            if !args.isEmpty {
-                argsOf[pid] = args
+        for line in psArgsOutput.split(separator: "\n") {
+            guard let row = parseRow(line) else { continue }
+            childrenOf[row.ppid, default: []].append(row.pid)
+            argsOf[row.pid] = row.rest
+            if let argv0 = row.rest.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true).first {
+                commOf[row.pid] = String(argv0)
             }
         }
 
-        return argsOf
+        return Snapshot(childrenOf: childrenOf, commOf: commOf, argsOf: argsOf)
+    }
+
+    /// Parses one `ps` row of the form `<pid> <ppid> <rest…>`. Returns nil for
+    /// header/garbage rows where pid/ppid aren't integers. Shared by any `ps` column
+    /// layout whose first two columns are pid and ppid.
+    private static func parseRow(_ line: Substring) -> (pid: pid_t, ppid: pid_t, rest: String)? {
+        let cols = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+        guard cols.count >= 3,
+              let pid = Int32(cols[0].trimmingCharacters(in: .whitespaces)),
+              let ppid = Int32(cols[1].trimmingCharacters(in: .whitespaces)) else {
+            return nil
+        }
+        return (pid, ppid, String(cols[2]).trimmingCharacters(in: .whitespaces))
     }
 
     static func matchProcess(comm: String?, args: String?) -> String? {

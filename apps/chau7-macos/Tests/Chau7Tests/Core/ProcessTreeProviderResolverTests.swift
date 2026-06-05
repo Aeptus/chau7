@@ -11,7 +11,7 @@ final class ProcessTreeProviderResolverTests: XCTestCase {
           101   100 claude
           102   100 vim
         """
-        let snapshot = ProcessTreeProviderResolver.parse(psOutput: output)
+        let snapshot = ProcessTreeProviderResolver.parse(psArgsOutput: output)
         XCTAssertEqual(snapshot.childrenOf[100]?.sorted(), [101, 102])
         XCTAssertEqual(snapshot.commOf[101], "claude")
         XCTAssertEqual(snapshot.commOf[102], "vim")
@@ -24,9 +24,29 @@ final class ProcessTreeProviderResolverTests: XCTestCase {
         garbage line
           101   100 claude
         """
-        let snapshot = ProcessTreeProviderResolver.parse(psOutput: output)
+        let snapshot = ProcessTreeProviderResolver.parse(psArgsOutput: output)
         XCTAssertEqual(snapshot.commOf[100], "zsh")
         XCTAssertEqual(snapshot.commOf[101], "claude")
+    }
+
+    func testParseArgsExtractsCommandPathAndFullArgv() {
+        // A single `ps -axo pid,ppid,args` scan must yield argv[0] (as comm) and the
+        // full argv, so interpreter wrappers stay resolvable from one capture.
+        let output = """
+          100     1 -zsh
+          101   100 /usr/local/bin/claude --resume abc
+          102   100 node /Users/x/app/server.js
+        """
+        let snapshot = ProcessTreeProviderResolver.parse(psArgsOutput: output)
+        XCTAssertEqual(snapshot.childrenOf[100]?.sorted(), [101, 102])
+        XCTAssertEqual(snapshot.commOf[101], "/usr/local/bin/claude")
+        XCTAssertEqual(snapshot.argsOf[101], "/usr/local/bin/claude --resume abc")
+        XCTAssertEqual(snapshot.commOf[102], "node")
+        XCTAssertEqual(snapshot.argsOf[102], "node /Users/x/app/server.js")
+        XCTAssertEqual(
+            ProcessTreeProviderResolver.resolve(shellPid: 100, snapshot: snapshot),
+            "Claude"
+        )
     }
 
     // MARK: - Resolve
