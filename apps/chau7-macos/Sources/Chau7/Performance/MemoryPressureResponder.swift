@@ -1,16 +1,12 @@
 import Foundation
 
-/// Listens to macOS memory pressure notifications and logs them so we can
-/// correlate memory spikes with user-visible behavior. The actual reclamation
-/// is delegated to ScrollbackMemoryManager, which already flushes hidden tabs
-/// on phase transition — the pressure signal is a secondary hint that we
-/// should be more aggressive about demoting marginal tabs.
+/// Listens to macOS memory pressure notifications, records a breadcrumb for
+/// correlation, and drives actual reclamation through `MemoryPressureCoordinator`,
+/// which broadcasts to every registered `MemoryReclaimable` cache.
 ///
-/// On `.warning`: log the event. Hidden-tab scrollback reclamation handles the
-/// safe cases; visible tabs keep their configured history.
-///
-/// On `.critical`: log prominently. If we add an explicit "demote all
-/// non-active tabs" action later, this is where it will hook in.
+/// On `.warning`: shed cheap, fully-regenerable memory (e.g. trim transcript rings).
+/// On `.critical`: release reclaimable memory aggressively, and treat the signal as
+/// a short-lived hint to skip best-effort output work (see `shouldShedBestEffortOutputWork`).
 final class MemoryPressureResponder {
     static let shared = MemoryPressureResponder()
 
@@ -61,26 +57,32 @@ final class MemoryPressureResponder {
             stateLock.lock()
             lastCriticalAt = Date()
             stateLock.unlock()
+            let reclaimed = MemoryPressureCoordinator.shared.reclaim(.critical)
             IncidentBreadcrumbStore.shared.recordMemoryPressure(
                 level: .critical,
                 residentBytes: usedBytes,
                 physicalBytes: physicalBytes,
+                reclaimedBytes: reclaimed,
                 synchronously: true
             )
             Log.warn(
                 "MemoryPressureResponder: CRITICAL pressure " +
-                    "(process rss=\(usedBytes / (1024 * 1024))MB, \(ratioPercent)% of \(physicalBytes / (1024 * 1024))MB physical)"
+                    "(process rss=\(usedBytes / (1024 * 1024))MB, \(ratioPercent)% of \(physicalBytes / (1024 * 1024))MB physical, " +
+                    "reclaimed=\(reclaimed / (1024 * 1024))MB)"
             )
         } else if data.contains(.warning) {
+            let reclaimed = MemoryPressureCoordinator.shared.reclaim(.warning)
             IncidentBreadcrumbStore.shared.recordMemoryPressure(
                 level: .warning,
                 residentBytes: usedBytes,
                 physicalBytes: physicalBytes,
+                reclaimedBytes: reclaimed,
                 synchronously: false
             )
             Log.info(
                 "MemoryPressureResponder: warning pressure " +
-                    "(process rss=\(usedBytes / (1024 * 1024))MB, \(ratioPercent)% of \(physicalBytes / (1024 * 1024))MB physical)"
+                    "(process rss=\(usedBytes / (1024 * 1024))MB, \(ratioPercent)% of \(physicalBytes / (1024 * 1024))MB physical, " +
+                    "reclaimed=\(reclaimed / (1024 * 1024))MB)"
             )
         }
     }

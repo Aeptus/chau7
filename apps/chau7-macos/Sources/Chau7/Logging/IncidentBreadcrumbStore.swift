@@ -188,6 +188,7 @@ final class IncidentBreadcrumbStore {
         level: IncidentBreadcrumb.Severity,
         residentBytes: UInt64,
         physicalBytes: UInt64,
+        reclaimedBytes: Int? = nil,
         synchronously: Bool
     ) {
         perform(synchronously: synchronously) {
@@ -219,6 +220,10 @@ final class IncidentBreadcrumbStore {
                 metadata.merge(snapshot.metadata.mapKeys { "restore.\($0)" }) { current, _ in current }
             }
             metadata["proxyRequestHighWaterBytes"] = "\(self.proxyRequestHighWaterBytes)"
+            if let reclaimedBytes, reclaimedBytes > 0 {
+                metadata["reclaimedBytes"] = "\(reclaimedBytes)"
+                metadata["reclaimedMB"] = "\(reclaimedBytes / (1024 * 1024))"
+            }
 
             let breadcrumb = IncidentBreadcrumb(
                 id: self.makeID(),

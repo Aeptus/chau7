@@ -466,39 +466,6 @@ extension LogEnhanced {
     }
 }
 
-// MARK: - Memory Pressure Monitoring
-
-final class MemoryPressureMonitor {
-    static let shared = MemoryPressureMonitor()
-
-    private var source: DispatchSourceMemoryPressure?
-
-    private init() {}
-
-    func start() {
-        source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
-        source?.setEventHandler { [weak self] in
-            self?.handleMemoryPressure()
-        }
-        source?.resume()
-        LogEnhanced.info(.memory, "Memory pressure monitoring started")
-    }
-
-    func stop() {
-        source?.cancel()
-        source = nil
-    }
-
-    private func handleMemoryPressure() {
-        guard let source = source else { return }
-        let event = source.data
-
-        let state = LogEnhanced.captureStateSnapshot(reason: "memory_pressure")
-
-        if event.contains(.critical) {
-            LogEnhanced.error(.memory, "CRITICAL memory pressure", metadata: state)
-        } else if event.contains(.warning) {
-            LogEnhanced.warn(.memory, "Memory pressure warning", metadata: state)
-        }
-    }
-}
+// Note: live memory-pressure handling is in MemoryPressureResponder +
+// MemoryPressureCoordinator (Performance/). The previous never-started
+// MemoryPressureMonitor here was dead code and has been removed.
