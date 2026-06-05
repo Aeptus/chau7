@@ -1509,28 +1509,32 @@ final class RustTerminalFFI {
         let changed = flags.contains(.gridChanged)
         let hasMetadata = flags.contains(.metadataChanged)
 
-        // Rate-limit logging for poll (it's called 60x/second)
-        Self.pollCounter += 1
-        let now = CFAbsoluteTimeGetCurrent()
-        let shouldLog = changed || hasMetadata || (now - Self.lastPollLogTime > 5.0) // Log every 5s or on change
-
-        if shouldLog {
-            if changed {
-                Log.traceThrottled(
-                    "rust-terminal-poll-\(instanceId)",
-                    interval: 5.0,
-                    "RustTerminalFFI[\(instanceId)]: poll - Grid CHANGED flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)"
-                )
-            } else if hasMetadata {
-                Log.traceThrottled(
-                    "rust-terminal-poll-\(instanceId)",
-                    interval: 5.0,
-                    "RustTerminalFFI[\(instanceId)]: poll - Metadata changed flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)"
-                )
-            } else {
-                Log.trace("RustTerminalFFI[\(instanceId)]: poll - Status check (poll #\(Self.pollCounter))")
+        // All poll logging is trace-only, and this is the hot drain path (called up to
+        // 60×/s per terminal). Skip the counter/clock bookkeeping entirely when trace is
+        // disabled so a release build does no per-poll work here. `isTraceEnabled` is a
+        // cached `static let`, so the guard is a single bool load.
+        if Log.isTraceEnabled {
+            Self.pollCounter += 1
+            let now = CFAbsoluteTimeGetCurrent()
+            let shouldLog = changed || hasMetadata || (now - Self.lastPollLogTime > 5.0) // every 5s or on change
+            if shouldLog {
+                if changed {
+                    Log.traceThrottled(
+                        "rust-terminal-poll-\(instanceId)",
+                        interval: 5.0,
+                        "RustTerminalFFI[\(instanceId)]: poll - Grid CHANGED flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)"
+                    )
+                } else if hasMetadata {
+                    Log.traceThrottled(
+                        "rust-terminal-poll-\(instanceId)",
+                        interval: 5.0,
+                        "RustTerminalFFI[\(instanceId)]: poll - Metadata changed flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)"
+                    )
+                } else {
+                    Log.trace("RustTerminalFFI[\(instanceId)]: poll - Status check (poll #\(Self.pollCounter))")
+                }
+                Self.lastPollLogTime = now
             }
-            Self.lastPollLogTime = now
         }
 
         return flags

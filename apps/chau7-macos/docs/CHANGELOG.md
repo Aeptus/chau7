@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Process-Tree Scan Halved**: The live AI-tool process-tree snapshot ran two full `ps` scans every 1.5s (`pid,ppid,comm` and `pid,ppid,args`); the second was added with argv-based detection and doubled the spawn rate, making the scanner the app's top CPU consumer. A single `ps -axo pid,ppid,args` scan now supplies the whole tree — argv[0]'s basename is the (untruncated) command identity and the full argv still unwraps interpreter-hosted tools like `node …/gemini` — halving subprocess spawns on the hot path. Row parsing is shared between the comm/args layouts.
+- **Terminal Poll Skips Trace Bookkeeping in Release**: `RustTerminalFFI.pollEvents` runs on the background-drain hot path (up to 60×/s per terminal) and unconditionally did per-poll counter/clock bookkeeping for trace logging even when trace was disabled. That work is now gated behind `Log.isTraceEnabled` (a cached `static let`), so a release build does no per-poll logging work.
 
 ### Fixed
 - **Proxy High-Water Breadcrumb No Longer Floods**: The `proxy_request_high_water` incident breadcrumb fired on nearly every AI turn — request bodies grow a few KB per turn as conversation context accumulates, so a strictly-greater high-water gate tripped constantly (~90 `warning` entries/day). It now requires a material step over the prior mark and is recorded at `info` severity: it is diagnostic context correlated against memory-pressure incidents, not a warning condition.
