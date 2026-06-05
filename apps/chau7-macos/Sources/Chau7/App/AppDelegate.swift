@@ -1316,23 +1316,33 @@ private final class OverlayBlurView: NSVisualEffectView {
         var multiWindowPayloadBytes = 0
         var splitBundleFingerprintData: Data?
 
-        // Write window 0 to the legacy key so the primary model can restore it
-        // even if the multi-window payload is unavailable.
+        // The file-based restore bundle (below) is the primary store: it keeps multi-MB
+        // scrollback in integrity-checked sidecar files instead of the prefs plist. We only
+        // mirror the full state into UserDefaults at termination, as a one-version
+        // downgrade-safety copy. Writing multi-MB blobs to UserDefaults on every 30s
+        // autosave re-serialized the entire preferences domain on the main thread (the
+        // source of the recurring large-restore-payload breadcrumb); the encode is still
+        // done here to feed the bundle fingerprint, but the costly `set`/flush is skipped.
+        let mirrorToUserDefaults = (reason == .termination)
+
         if let firstWindowStates = allWindows.first,
            let data = Persist.encodeLogged(firstWindowStates, context: "window0.tabState") {
-            legacyPayloadBytes = data.count
             splitBundleFingerprintData = data
-            UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
+            if mirrorToUserDefaults {
+                legacyPayloadBytes = data.count
+                UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
+            }
         }
-        // Write all windows to multi-window key
         if allWindows.count > 1 {
             let multiState = SavedMultiWindowState(windows: allWindows)
             if let data = Persist.encodeLogged(multiState, context: "multiWindow.tabState") {
-                multiWindowPayloadBytes = data.count
                 splitBundleFingerprintData = data
-                UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
+                if mirrorToUserDefaults {
+                    multiWindowPayloadBytes = data.count
+                    UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
+                }
             }
-        } else {
+        } else if mirrorToUserDefaults {
             UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         }
         do {
@@ -1722,7 +1732,11 @@ private final class OverlayBlurView: NSVisualEffectView {
             from: UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
             context: "multiWindow.restore"
         )
-        if let multiState, multiState.windows.count > 1 {
+        if let bundleWindows = TabRestoreBundleStore.loadCurrentWindowStates(), bundleWindows.count > 1 {
+            // Primary: the file-based restore bundle (windows beyond the first).
+            restoredWindows = Array(bundleWindows.dropFirst())
+            restoreSource = "restore bundle"
+        } else if let multiState, multiState.windows.count > 1 {
             restoredWindows = Array(multiState.windows.dropFirst())
             restoreSource = "user defaults"
             // Keep this until the next real save replaces it. Clearing during

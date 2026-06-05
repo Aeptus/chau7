@@ -152,6 +152,26 @@ final class TabRestoreBundleStoreTests: XCTestCase {
         XCTAssertNil(TabRestoreBundleStore.loadCurrentWindowStates(rootURL: root))
     }
 
+    func testLoadCurrentWindowStatesRoundTripsMultipleWindows() throws {
+        let root = try temporaryRoot()
+        let state = makeSavedTabState()
+
+        _ = try XCTUnwrap(try TabRestoreBundleStore.persistCurrentBundle(
+            windowStates: [[state], [state]],
+            reason: .autosave,
+            sourceData: Data("multi-window-v1".utf8),
+            rootURL: root,
+            now: Date(timeIntervalSince1970: 1_800_000_000)
+        ))
+
+        // The additional-windows restore path takes windows.dropFirst(), so every
+        // window must round-trip in order through the file bundle.
+        let restored = try XCTUnwrap(TabRestoreBundleStore.loadCurrentWindowStates(rootURL: root))
+        XCTAssertEqual(restored.count, 2)
+        XCTAssertEqual(restored[0].first?.scrollbackContent, state.scrollbackContent)
+        XCTAssertEqual(restored[1].first?.paneStates?.first?.scrollbackContent, "heavy pane output")
+    }
+
     private func makeSavedTabState() -> SavedTabState {
         let tabID = "11111111-1111-1111-1111-111111111111"
         let paneID = "22222222-2222-2222-2222-222222222222"

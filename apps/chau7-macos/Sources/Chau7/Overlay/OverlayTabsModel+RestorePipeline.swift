@@ -91,10 +91,24 @@ extension OverlayTabsModel {
 
     /// Restore the primary window from the first saved window entry.
     /// Preference order:
-    /// 1. Multi-window state key → first saved window
-    /// 2. Legacy single-window key
-    /// 3. Latest backup payloads
+    /// 1. File-based restore bundle → first saved window
+    /// 2. Multi-window state key → first saved window
+    /// 3. Legacy single-window key
+    /// 4. Latest backup payloads
     static func restoreSavedTabs(appModel: AppModel) -> RestorableTabsPayload? {
+        // Primary: the file-based restore bundle keeps multi-MB scrollback in
+        // integrity-checked sidecars. The load is all-or-nothing (a corrupt sidecar
+        // yields nil), so any failure falls through to the UserDefaults/backup chain.
+        if let bundleWindows = TabRestoreBundleStore.loadCurrentWindowStates(),
+           let primaryWindowStates = bundleWindows.first,
+           !primaryWindowStates.isEmpty {
+            let mergedWindows = mergedWindowStatesWithBackupFallbacks(baseWindows: bundleWindows)
+            return decodeRestorableTabs(
+                fromStates: mergedWindows.first ?? primaryWindowStates,
+                appModel: appModel
+            )
+        }
+
         let multiData = UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey)
         if let multiState = Persist.decodeLogged(
             SavedMultiWindowState.self,
