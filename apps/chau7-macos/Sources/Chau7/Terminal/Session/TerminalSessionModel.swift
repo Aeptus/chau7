@@ -1476,6 +1476,10 @@ final class TerminalSessionModel {
             case .promptStart:
                 handlePromptDetected()
             case .commandStart:
+                // A command just launched; its child (e.g. claude) isn't exec'd yet,
+                // so the immediate refresh above usually misses it. Burst a few short
+                // delayed captures so tab chrome catches it within a few hundred ms.
+                ProcessTreeSnapshotService.shared.scheduleLaunchSettleRefresh()
                 isAtPrompt = false
                 status = .running
                 hasPendingCommand = true
