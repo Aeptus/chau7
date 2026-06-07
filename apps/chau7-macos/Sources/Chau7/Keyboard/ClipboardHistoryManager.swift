@@ -95,7 +95,11 @@ final class ClipboardHistoryManager {
         timer.schedule(deadline: .now() + interval, repeating: interval, leeway: leeway)
         timer.setEventHandler { [weak self] in
             Log.wakeup("clipboard")
-            self?.checkClipboard()
+            // NSPasteboard is not thread-safe and must be read on the main thread.
+            // Reading it from this background utility queue races AppKit's pasteboard
+            // type cache and crashes in objc_msgSend (EXC_BAD_ACCESS). Marshal the
+            // whole poll to main; the changeCount guard keeps it cheap.
+            DispatchQueue.main.async { self?.checkClipboard() }
         }
         timer.resume()
         pollTimer = timer
@@ -106,6 +110,8 @@ final class ClipboardHistoryManager {
         pollTimer = nil
     }
 
+    /// Polls the system pasteboard for new text. Must run on the main thread —
+    /// `NSPasteboard` is not thread-safe (the timer handler dispatches here).
     private func checkClipboard() {
         let pasteboard = NSPasteboard.general
         let currentCount = pasteboard.changeCount
@@ -120,9 +126,8 @@ final class ClipboardHistoryManager {
 
         guard let text = pasteboard.string(forType: .string), !text.isEmpty else { return }
 
-        DispatchQueue.main.async { [weak self] in
-            self?.addItem(text)
-        }
+        // Already on the main thread; `addItem` mutates the observable `items`.
+        addItem(text)
     }
 
     private func addItem(_ text: String) {
