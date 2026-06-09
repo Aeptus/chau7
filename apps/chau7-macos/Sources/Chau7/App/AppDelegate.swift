@@ -1329,42 +1329,39 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         var legacyPayloadBytes = 0
         var multiWindowPayloadBytes = 0
-        var splitBundleFingerprintData: Data?
 
-        // The file-based restore bundle (below) is the primary store: it keeps multi-MB
-        // scrollback in integrity-checked sidecar files instead of the prefs plist. We only
-        // mirror the full state into UserDefaults at termination, as a one-version
-        // downgrade-safety copy. Writing multi-MB blobs to UserDefaults on every 30s
-        // autosave re-serialized the entire preferences domain on the main thread (the
-        // source of the recurring large-restore-payload breadcrumb); the encode is still
-        // done here to feed the bundle fingerprint, but the costly `set`/flush is skipped.
-        let mirrorToUserDefaults = (reason == .termination)
+        // The file-based restore bundle (below) is the full primary source: it keeps
+        // multi-MB scrollback in integrity-checked sidecar files instead of the prefs
+        // plist. UserDefaults holds a *scrollback-stripped* index — written on EVERY
+        // autosave (not just at termination) — so the restore fallback stays fresh even
+        // on an unclean quit. Regression fix: a termination-only UserDefaults write could
+        // leave a stale index that dropped recently-created tabs (and whole additional
+        // windows) when the bundle didn't cover them. The stripped index is small (KB,
+        // not MB), so this restores pre-bundle freshness without the plist-bloat that
+        // motivated moving the heavy payloads out.
+        let indexWindows = allWindows.map { window in window.map(\.strippedForRestoreIndex) }
 
-        if let firstWindowStates = allWindows.first,
-           let data = Persist.encodeLogged(firstWindowStates, context: "window0.tabState") {
-            splitBundleFingerprintData = data
-            if mirrorToUserDefaults {
-                legacyPayloadBytes = data.count
-                UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
-            }
+        if let firstWindow = indexWindows.first,
+           let data = Persist.encodeLogged(firstWindow, context: "window0.tabState") {
+            legacyPayloadBytes = data.count
+            UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
         }
-        if allWindows.count > 1 {
-            let multiState = SavedMultiWindowState(windows: allWindows)
+        if indexWindows.count > 1 {
+            let multiState = SavedMultiWindowState(windows: indexWindows)
             if let data = Persist.encodeLogged(multiState, context: "multiWindow.tabState") {
-                splitBundleFingerprintData = data
-                if mirrorToUserDefaults {
-                    multiWindowPayloadBytes = data.count
-                    UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
-                }
+                multiWindowPayloadBytes = data.count
+                UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
             }
-        } else if mirrorToUserDefaults {
+        } else {
             UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         }
         do {
+            // sourceData nil → the bundle fingerprints from the full state (incl.
+            // scrollback) so sidecars re-flush when only scrollback changes.
             _ = try TabRestoreBundleStore.persistCurrentBundle(
                 windowStates: allWindows,
                 reason: reason,
-                sourceData: splitBundleFingerprintData
+                sourceData: nil
             )
         } catch {
             Log.warn("Failed to persist split tab restore bundle [\(reason.rawValue)]: \(error)")
