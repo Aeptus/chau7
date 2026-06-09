@@ -23,6 +23,70 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         XCTAssertTrue(decision.isInteractive)
     }
 
+    func testNonSelectedTabIsWarmWithoutMemoryPressure() {
+        let decision = TabRenderLifecyclePolicy.decide(
+            TabRenderLifecycleInput(
+                isSelectedTab: false,
+                isInputPriorityWindow: false,
+                isWindowVisibleForRendering: true,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: true,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true,
+                isUnderMemoryPressure: false
+            )
+        )
+        XCTAssertEqual(decision.phase, .warm)
+    }
+
+    func testNonSelectedTabDemotesToHiddenUnderMemoryPressure() {
+        // Under pressure, non-selected tabs go `.hidden` so ScrollbackMemoryManager
+        // flushes their scrollback to disk (reloaded on re-selection) instead of
+        // hoarding it in RAM — the bulk of the footprint in many-tab sessions.
+        let decision = TabRenderLifecyclePolicy.decide(
+            TabRenderLifecycleInput(
+                isSelectedTab: false,
+                isInputPriorityWindow: false,
+                isWindowVisibleForRendering: true,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: true,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true,
+                isUnderMemoryPressure: true
+            )
+        )
+        XCTAssertEqual(decision.phase, .hidden)
+    }
+
+    func testSelectedTabStaysActiveUnderMemoryPressure() {
+        // Pressure only demotes NON-selected tabs; the tab the user is in is untouched.
+        let decision = TabRenderLifecyclePolicy.decide(
+            TabRenderLifecycleInput(
+                isSelectedTab: true,
+                isInputPriorityWindow: true,
+                isWindowVisibleForRendering: true,
+                isPreviousLiveTab: false,
+                isPrewarming: false,
+                hasBackgroundActivity: true,
+                isRenderSuspensionEnabled: true,
+                isStartupRestoreActive: false,
+                hasPendingRestoreBootstrap: false,
+                isMCPControlled: false,
+                hasAttachedTerminalView: true,
+                isUnderMemoryPressure: true
+            )
+        )
+        XCTAssertEqual(decision.phase, .active)
+    }
+
     func testSelectedVisibleBackgroundWindowWithActivityStaysActive() {
         // W3.18 policy: a selected tab in a visible-but-not-key window
         // stays in `.active` when the session is actively producing output

@@ -118,6 +118,21 @@ private final class OverlayBlurView: NSVisualEffectView {
         purgeLargePTYLogs()
         UsageMonitor.shared.start()
         MemoryPressureResponder.shared.start()
+        // Under memory pressure, re-evaluate the render lifecycle so non-selected
+        // tabs demote to `.hidden` and flush their scrollback to disk.
+        NotificationCenter.default.addObserver(
+            forName: .chau7MemoryPressureChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            // Delivered on the main queue, so it is safe to touch main-actor state.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                for host in self.overlayHosts {
+                    host.model.invalidateRenderLifecycle(reason: "memoryPressure")
+                }
+            }
+        }
 
         // Strip env vars from parent process that would confuse nested CLI tools.
         // When Chau7 is launched from within a Claude Code session (e.g. via

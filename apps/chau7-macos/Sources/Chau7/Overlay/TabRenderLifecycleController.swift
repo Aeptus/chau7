@@ -11,6 +11,7 @@ final class TabRenderLifecycleController {
         let restoreBootstrapTabIDs: Set<UUID>
         let isRenderSuspensionEnabled: Bool
         let isStartupRestoreActive: Bool
+        let isUnderMemoryPressure: Bool
     }
 
     struct TabDescriptor {
@@ -36,7 +37,8 @@ final class TabRenderLifecycleController {
                 isStartupRestoreActive: snapshot.isStartupRestoreActive,
                 hasPendingRestoreBootstrap: snapshot.restoreBootstrapTabIDs.contains(descriptor.id),
                 isMCPControlled: descriptor.isMCPControlled,
-                hasAttachedTerminalView: descriptor.hasAttachedTerminalView
+                hasAttachedTerminalView: descriptor.hasAttachedTerminalView,
+                isUnderMemoryPressure: snapshot.isUnderMemoryPressure
             )
         )
     }

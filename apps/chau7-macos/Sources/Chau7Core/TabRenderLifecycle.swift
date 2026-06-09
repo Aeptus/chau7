@@ -31,6 +31,9 @@ public struct TabRenderLifecycleInput: Equatable, Sendable {
     public let hasPendingRestoreBootstrap: Bool
     public let isMCPControlled: Bool
     public let hasAttachedTerminalView: Bool
+    /// When the app is under sustained memory pressure, non-selected tabs are
+    /// demoted to `.hidden` (flushing scrollback to disk) instead of held `.warm`.
+    public let isUnderMemoryPressure: Bool
 
     public init(
         isSelectedTab: Bool,
@@ -43,7 +46,8 @@ public struct TabRenderLifecycleInput: Equatable, Sendable {
         isStartupRestoreActive: Bool,
         hasPendingRestoreBootstrap: Bool,
         isMCPControlled: Bool,
-        hasAttachedTerminalView: Bool
+        hasAttachedTerminalView: Bool,
+        isUnderMemoryPressure: Bool = false
     ) {
         self.isSelectedTab = isSelectedTab
         self.isInputPriorityWindow = isInputPriorityWindow
@@ -56,6 +60,7 @@ public struct TabRenderLifecycleInput: Equatable, Sendable {
         self.hasPendingRestoreBootstrap = hasPendingRestoreBootstrap
         self.isMCPControlled = isMCPControlled
         self.hasAttachedTerminalView = hasAttachedTerminalView
+        self.isUnderMemoryPressure = isUnderMemoryPressure
     }
 }
 
@@ -111,6 +116,16 @@ public enum TabRenderLifecyclePolicy {
         // Non-selected tabs: warm (not hidden) so views stay unhidden in the
         // hierarchy but don't drive active rendering. The shared background
         // drain service handles PTY draining; no per-tab polling needed.
+        //
+        // Exception: under sustained memory pressure, demote to `.hidden`. In
+        // many-tab sessions non-selected tabs are the bulk of the footprint
+        // because they otherwise never reach `.hidden`, so their scrollback is
+        // never flushed. `.hidden` lets ScrollbackMemoryManager flush scrollback
+        // to disk and shrink the ring (reloaded on re-selection). The PTY keeps
+        // draining regardless of phase, so background activity is unaffected.
+        if input.isUnderMemoryPressure {
+            return .hidden
+        }
         return .warm
     }
 

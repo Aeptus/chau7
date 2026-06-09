@@ -62,7 +62,8 @@ extension OverlayTabsModel {
             prewarmingTabIDs: prewarmingTabIDs,
             restoreBootstrapTabIDs: restoreBootstrapTabIDs,
             isRenderSuspensionEnabled: isRenderSuspensionEnabled,
-            isStartupRestoreActive: isStartupRestoreActive
+            isStartupRestoreActive: isStartupRestoreActive,
+            isUnderMemoryPressure: MemoryPressureResponder.shared.isUnderMemoryPressure()
         )
     }
 

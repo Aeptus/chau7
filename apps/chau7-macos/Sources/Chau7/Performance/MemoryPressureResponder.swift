@@ -15,6 +15,8 @@ final class MemoryPressureResponder {
     private let stateLock = NSLock()
     private var lastCriticalAt: Date?
     private let criticalSuppressionWindow: TimeInterval = 30
+    private var lastPressureAt: Date?
+    private let memoryPressureWindow: TimeInterval = 90
 
     private init() {}
 
@@ -48,10 +50,32 @@ final class MemoryPressureResponder {
         return now.timeIntervalSince(lastCriticalAt) < criticalSuppressionWindow
     }
 
+    /// True while the app has seen OS memory pressure (warning or critical) recently.
+    /// Biases the render-lifecycle policy toward demoting non-selected tabs to `.hidden`
+    /// so their scrollback is flushed to disk. Under sustained pressure the OS re-fires
+    /// every few minutes, refreshing the window; when pressure ends, this clears and
+    /// tabs are restored to `.warm` on the next lifecycle re-evaluation.
+    func isUnderMemoryPressure(now: Date = Date()) -> Bool {
+        stateLock.lock()
+        let lastPressureAt = lastPressureAt
+        stateLock.unlock()
+        guard let lastPressureAt else { return false }
+        return now.timeIntervalSince(lastPressureAt) < memoryPressureWindow
+    }
+
     private func handleEvent(_ data: DispatchSource.MemoryPressureEvent) {
         let physicalBytes = UInt64(ProcessInfo.processInfo.physicalMemory)
         let usedBytes = reportedResidentBytes()
         let ratioPercent = physicalBytes > 0 ? Int((Double(usedBytes) / Double(physicalBytes)) * 100) : -1
+
+        if data.contains(.warning) || data.contains(.critical) {
+            stateLock.lock()
+            lastPressureAt = Date()
+            stateLock.unlock()
+            // Wake render-lifecycle observers so non-selected tabs demote and flush
+            // their scrollback while pressure persists.
+            NotificationCenter.default.post(name: .chau7MemoryPressureChanged, object: nil)
+        }
 
         if data.contains(.critical) {
             stateLock.lock()
@@ -98,4 +122,10 @@ final class MemoryPressureResponder {
         guard result == KERN_SUCCESS else { return 0 }
         return info.phys_footprint
     }
+}
+
+extension Notification.Name {
+    /// Posted when the app enters (or re-confirms) OS memory pressure. Observers
+    /// re-evaluate the render lifecycle so non-selected tabs flush their scrollback.
+    static let chau7MemoryPressureChanged = Notification.Name("com.chau7.memoryPressureChanged")
 }
