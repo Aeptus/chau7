@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-09
+
 ### Changed
 - **Process-Tree Scan Goes Native (No Subprocess)**: The live AI-tool process-tree snapshot used to shell out to `ps` on a 1.5s timer — and a second `ps` scan added with argv-based detection had doubled the spawn rate, making the scanner the app's top CPU consumer in a live sample. The snapshot now enumerates the process table in-process via libproc (`proc_listallpids` + `proc_pidinfo`) and reads argv via `KERN_PROCARGS2` only for interpreter processes (`node`/`python`/`ruby`/`npx`), eliminating the recurring `ps` fork/exec entirely. A single `ps -axo pid,ppid,args` scan remains as a fallback if native enumeration ever fails, and a shared `buildSnapshot` keeps both paths producing identical results.
 - **Terminal Poll Skips Trace Bookkeeping in Release**: `RustTerminalFFI.pollEvents` runs on the background-drain hot path (up to 60×/s per terminal) and unconditionally did per-poll counter/clock bookkeeping for trace logging even when trace was disabled. That work is now gated behind `Log.isTraceEnabled` (a cached `static let`), so a release build does no per-poll logging work.
