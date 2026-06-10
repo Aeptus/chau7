@@ -331,6 +331,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Arbitrary nesting via binary tree layout controller.
 - Persisted split-pane trees carry a schema version, so a future Chau7 build that adds a new pane kind can't silently mis-decode through an older binary — older code surfaces a clear error and falls back to a default layout instead.
 - Modal dialogs (close-confirm, Save As) and main-queue polling are injected through `Dialogs` and `MainScheduler` protocols, so the entire close-time decision path and the markdown runbook sequential runner are unit-driveable end-to-end without an AppKit modal loop or real sleeps.
+- Each side-panel leaf (`TerminalPane`, `TextEditorPane`, `FilePreviewPane`, `DiffViewerPane`, `RepositoryPane`, `DashboardPane`) conforms to a single `PaneNode` protocol that owns its `kind`, `hasUnsavedWork`, and `dispose()` contract — adding a new pane kind no longer touches every traversal helper across the tree.
 - Built-in text editor in split panes (`Cmd+Opt+E`) — syntax highlighting, line numbers, bracket matching (`()`, `[]`, `{}`, `<>` — UTF-16 in-place scan, no per-keystroke array allocation), auto-indent, scroll-to-line, find/replace.
 - Repo-scoped session notes for the split text editor: untitled panes can save directly to `.chau7/sessions/<tab-id>/note.md` inside the active repository, and reopen the matching note for whichever repo the tab is currently in.
 - Click-to-copy document name in the editor pane header.
