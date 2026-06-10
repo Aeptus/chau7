@@ -658,6 +658,12 @@ final class TextEditorModel: Identifiable {
     @ObservationIgnored
     var untitledSaveHandler: ((TextEditorModel) -> Bool)?
 
+    /// Main-queue scheduling abstraction used by the markdown runbook
+    /// sequencer. Tests can swap a virtual-time scheduler to drive the
+    /// poll loop deterministically; production keeps the default.
+    @ObservationIgnored
+    var mainScheduler: MainScheduler = SystemMainScheduler()
+
     /// The file name for display
     var fileName: String {
         if let path = filePath {
@@ -890,35 +896,19 @@ final class TextEditorModel: Identifiable {
         guard index < blocks.count else { return }
         let block = blocks[index]
         send("\(block.code)\n", block.line)
-        waitForMarkdownBlockSettlement(
-            blocks: blocks,
-            index: index,
-            send: send,
-            attemptsRemaining: 240
-        )
-    }
-
-    private func waitForMarkdownBlockSettlement(
-        blocks: [(line: Int, code: String)],
-        index: Int,
-        send: @escaping (String, Int) -> Void,
-        attemptsRemaining: Int
-    ) {
-        let block = blocks[index]
-        switch codeBlockState(for: block.code, lineNumber: block.line) {
-        case .succeeded, .failed:
-            sendNextMarkdownBlock(blocks: blocks, index: index + 1, send: send)
-        case .running, .none:
-            guard attemptsRemaining > 0 else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-                self?.waitForMarkdownBlockSettlement(
-                    blocks: blocks,
-                    index: index,
-                    send: send,
-                    attemptsRemaining: attemptsRemaining - 1
-                )
+        Polling.untilTrue(
+            on: mainScheduler,
+            predicate: { [weak self] in
+                guard let self else { return true } // cancelled — let chain unwind
+                switch codeBlockState(for: block.code, lineNumber: block.line) {
+                case .succeeded, .failed: return true
+                case .running, .none: return false
+                }
+            },
+            onSettled: { [weak self] in
+                self?.sendNextMarkdownBlock(blocks: blocks, index: index + 1, send: send)
             }
-        }
+        )
     }
 
     func markCodeBlockQueued(_ code: String, lineNumber: Int, tabID: String) {
@@ -1563,6 +1553,17 @@ final class SplitPaneController {
     @ObservationIgnored
     private weak var appModel: AppModel?
 
+    /// Modal dialogs (close-confirm, Save As) are injected so headless tests
+    /// can drive the close-time decision path without spinning AppKit.
+    @ObservationIgnored
+    private let dialogs: Dialogs
+
+    /// Main-queue scheduling abstraction used by the markdown runbook
+    /// sequencer and the deferred-append polling so virtual-time tests can
+    /// step those loops without sleeping.
+    @ObservationIgnored
+    private let mainScheduler: MainScheduler
+
     /// The owning tab's UUID, propagated to new terminal sessions so events
     /// carry a deterministic tabID for the TabResolver fast-path.
     @ObservationIgnored
@@ -1624,8 +1625,14 @@ final class SplitPaneController {
         }
     }
 
-    init(appModel: AppModel) {
+    init(
+        appModel: AppModel,
+        dialogs: Dialogs = SystemDialogs(),
+        mainScheduler: MainScheduler = SystemMainScheduler()
+    ) {
         self.appModel = appModel
+        self.dialogs = dialogs
+        self.mainScheduler = mainScheduler
         let session = TerminalSessionModel(appModel: appModel)
         let id = UUID()
         self.root = .terminal(id: id, session: session)
@@ -1635,8 +1642,15 @@ final class SplitPaneController {
     }
 
     /// Initialize with an existing terminal session
-    init(appModel: AppModel, session: TerminalSessionModel) {
+    init(
+        appModel: AppModel,
+        session: TerminalSessionModel,
+        dialogs: Dialogs = SystemDialogs(),
+        mainScheduler: MainScheduler = SystemMainScheduler()
+    ) {
         self.appModel = appModel
+        self.dialogs = dialogs
+        self.mainScheduler = mainScheduler
         let id = UUID()
         self.root = .terminal(id: id, session: session)
         self.focusedPaneID = id
@@ -1644,8 +1658,16 @@ final class SplitPaneController {
         configureTerminalSession(session)
     }
 
-    init(appModel: AppModel, root: SplitNode, focusedPaneID: UUID? = nil) {
+    init(
+        appModel: AppModel,
+        root: SplitNode,
+        focusedPaneID: UUID? = nil,
+        dialogs: Dialogs = SystemDialogs(),
+        mainScheduler: MainScheduler = SystemMainScheduler()
+    ) {
         self.appModel = appModel
+        self.dialogs = dialogs
+        self.mainScheduler = mainScheduler
         self.root = root
         if let focusedPaneID, root.allPaneIDs.contains(focusedPaneID) {
             self.focusedPaneID = focusedPaneID
@@ -2022,16 +2044,8 @@ final class SplitPaneController {
     /// the caller should proceed with the close (saved or explicitly discarded),
     /// false on cancel or on a failed Save As that the user did not complete.
     private func confirmCloseDirtyEditor(_ editor: TextEditorModel) -> Bool {
-        let alert = NSAlert()
-        alert.messageText = L("alert.closeEditor.title", "Save changes?")
-        alert.informativeText = L("alert.closeEditor.message", "Your changes will be lost if you don't save them.")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: L("button.save", "Save"))
-        alert.addButton(withTitle: L("button.dontSave", "Don't Save"))
-        alert.addButton(withTitle: L("button.cancel", "Cancel"))
-
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
+        switch dialogs.confirmCloseDirtyEditor() {
+        case .save:
             if editor.filePath != nil {
                 return editor.save()
             }
@@ -2039,23 +2053,22 @@ final class SplitPaneController {
                 return true
             }
             return runSaveAsPanel(for: editor)
-        case .alertSecondButtonReturn:
+        case .dontSave:
             // Don't Save: explicitly discard pending edits so downstream code
             // (autosave debounce, restore-on-relaunch) doesn't resurrect them.
             editor.discardPendingChanges()
             return true
-        default:
+        case .cancel:
             return false
         }
     }
 
     private func runSaveAsPanel(for editor: TextEditorModel) -> Bool {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.plainText]
-        panel.canCreateDirectories = true
-        panel.nameFieldStringValue = L("editor.defaultFilename", "untitled.txt")
-        guard panel.runModal() == .OK, let url = panel.url else { return false }
-        return editor.saveAs(to: url.path)
+        let defaultName = L("editor.defaultFilename", "untitled.txt")
+        guard let chosenPath = dialogs.runSaveAsPanel(defaultName: defaultName) else {
+            return false
+        }
+        return editor.saveAs(to: chosenPath)
     }
 
     private func removeNode(_ node: SplitNode, targetID: UUID) -> (node: SplitNode?, siblingID: UUID?) {
@@ -2257,27 +2270,15 @@ final class SplitPaneController {
     /// settles. After a short timeout we append anyway — losing the user's
     /// selection because we waited for a load that never resolved would be
     /// worse than appending into the in-memory buffer.
-    private func appendTextAfterEditorLoad(
-        _ editor: TextEditorModel,
-        text: String,
-        attemptsRemaining: Int = 40
-    ) {
-        if !editor.isLoading {
-            editor.appendText(text)
-            return
-        }
-        guard attemptsRemaining > 0 else {
-            editor.appendText(text)
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak editor] in
-            guard let self, let editor else { return }
-            appendTextAfterEditorLoad(
-                editor,
-                text: text,
-                attemptsRemaining: attemptsRemaining - 1
-            )
-        }
+    private func appendTextAfterEditorLoad(_ editor: TextEditorModel, text: String) {
+        Polling.untilTrue(
+            on: mainScheduler,
+            every: 0.05,
+            attempts: 40,
+            predicate: { [weak editor] in editor?.isLoading == false },
+            onSettled: { [weak editor] in editor?.appendText(text) },
+            onTimeout: { [weak editor] in editor?.appendText(text) }
+        )
     }
 
     /// Checks if there's a text editor open
