@@ -354,9 +354,10 @@ struct TextEditorPaneView: View {
                     }
                 }
 
-                // Close button
+                // Close button — actual save/discard prompt lives on the
+                // controller so this and ⌃⌘W share one decision path.
                 Button {
-                    attemptClose()
+                    onClose()
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .semibold))
@@ -454,53 +455,6 @@ struct TextEditorPaneView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             editor.saveAs(to: url.path)
-        }
-    }
-
-    private func attemptClose() {
-        // If content is dirty and not empty, prompt to save
-        if editor.isDirty, !editor.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let alert = NSAlert()
-            alert.messageText = L("alert.closeEditor.title", "Save changes?")
-            alert.informativeText = L("alert.closeEditor.message", "Your changes will be lost if you don't save them.")
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: L("button.save", "Save"))
-            alert.addButton(withTitle: L("button.dontSave", "Don't Save"))
-            alert.addButton(withTitle: L("button.cancel", "Cancel"))
-
-            let response = alert.runModal()
-            switch response {
-            case .alertFirstButtonReturn:
-                // Save
-                if editor.filePath != nil {
-                    editor.save()
-                    onClose()
-                } else if editor.saveUntitledIfPossible() {
-                    onClose()
-                } else {
-                    // Need to save as first
-                    let panel = NSSavePanel()
-                    panel.allowedContentTypes = [.plainText]
-                    panel.canCreateDirectories = true
-                    panel.nameFieldStringValue = L("editor.defaultFilename", "untitled.txt")
-
-                    if panel.runModal() == .OK, let url = panel.url {
-                        if editor.saveAs(to: url.path) {
-                            onClose()
-                        }
-                    }
-                    // If save was cancelled, don't close
-                }
-            case .alertSecondButtonReturn:
-                // Don't save - just close
-                onClose()
-            default:
-                // Cancel - do nothing
-                break
-            }
-        } else {
-            // Content is clean or empty - close directly
-            onClose()
         }
     }
 }

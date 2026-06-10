@@ -744,6 +744,24 @@ final class TextEditorModel: Identifiable {
         loadFile(at: path, scrollToLine: nil)
     }
 
+    /// Drop unsaved edits, restoring the editor to the last persisted file
+    /// content if known. Used by the close-pane "Don't Save" path so the
+    /// autosave debounce timer can't resurrect the discarded edits, and so
+    /// any restore-on-relaunch path sees a clean editor.
+    func discardPendingChanges() {
+        autoSaveWorkItem?.cancel()
+        autoSaveWorkItem = nil
+        isDirty = false
+        hasSaveConflict = false
+        hasExternalChangeConflict = false
+        externalConflictMessage = nil
+        if let path = filePath,
+           let diskContent = try? String(contentsOfFile: path, encoding: .utf8) {
+            content = diskContent
+            loadedContentHash = Self.contentHash(diskContent)
+        }
+    }
+
     func toggleCheckbox(lineNumber: Int) {
         guard let path = filePath, !isDirty else {
             updateContent(toggleCheckboxInContent(content, lineNumber: lineNumber))
@@ -1789,10 +1807,29 @@ final class SplitPaneController {
         closePane(id: focusedPaneID)
     }
 
-    /// Closes a specific pane by ID
+    /// Closes a specific pane by ID. For a dirty text editor that the user did
+    /// not opt into auto-save for, prompts to save/discard/cancel — Cancel
+    /// aborts the close. Auto-save-enabled editors (session notes, plan.md)
+    /// flush silently on close because the user has already opted into
+    /// continuous saving; suppressing the prompt for those files preserves
+    /// the type-and-⌃⌘W flow that `.chau7/sessions/<tab>/note.md` relies on.
+    /// This is the single source of truth for close-time save decisions; the
+    /// per-view close button and the ⌃⌘W menu both flow through here.
     func closePane(id: UUID) {
         // Don't close if it's the only pane
         guard root.allPaneIDs.count > 1 else { return }
+
+        if let editor = root.findEditor(id: id), editor.isDirty {
+            if editor.isAutoSaveEnabled {
+                if editor.filePath != nil {
+                    _ = editor.save()
+                } else {
+                    _ = editor.saveUntitledIfPossible()
+                }
+            } else {
+                guard confirmCloseDirtyEditor(editor) else { return }
+            }
+        }
 
         let result = removeNode(root, targetID: id)
         if let newRoot = result.node {
@@ -1806,6 +1843,46 @@ final class SplitPaneController {
         }
     }
 
+    /// Run the save/discard/cancel dialog for a dirty editor. Returns true when
+    /// the caller should proceed with the close (saved or explicitly discarded),
+    /// false on cancel or on a failed Save As that the user did not complete.
+    private func confirmCloseDirtyEditor(_ editor: TextEditorModel) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = L("alert.closeEditor.title", "Save changes?")
+        alert.informativeText = L("alert.closeEditor.message", "Your changes will be lost if you don't save them.")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L("button.save", "Save"))
+        alert.addButton(withTitle: L("button.dontSave", "Don't Save"))
+        alert.addButton(withTitle: L("button.cancel", "Cancel"))
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            if editor.filePath != nil {
+                return editor.save()
+            }
+            if editor.saveUntitledIfPossible() {
+                return true
+            }
+            return runSaveAsPanel(for: editor)
+        case .alertSecondButtonReturn:
+            // Don't Save: explicitly discard pending edits so downstream code
+            // (autosave debounce, restore-on-relaunch) doesn't resurrect them.
+            editor.discardPendingChanges()
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func runSaveAsPanel(for editor: TextEditorModel) -> Bool {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = L("editor.defaultFilename", "untitled.txt")
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
+        return editor.saveAs(to: url.path)
+    }
+
     private func removeNode(_ node: SplitNode, targetID: UUID) -> (node: SplitNode?, siblingID: UUID?) {
         switch node {
         case .terminal(let id, let session):
@@ -1815,9 +1892,11 @@ final class SplitPaneController {
             }
             return (node, nil)
 
-        case .textEditor(let id, let editor):
+        case .textEditor(let id, _):
             if id == targetID {
-                flushEditorBeforeClosing(editor)
+                // The close-time save/discard decision is made by `closePane`
+                // before it ever reaches this case, so there is nothing more
+                // to do here than drop the node from the tree.
                 return (nil, nil)
             }
             return (node, nil)
@@ -1853,15 +1932,6 @@ final class SplitPaneController {
             }
             // Both removed (shouldn't happen normally)
             return (nil, nil)
-        }
-    }
-
-    private func flushEditorBeforeClosing(_ editor: TextEditorModel) {
-        guard editor.isDirty else { return }
-        if editor.filePath != nil {
-            _ = editor.save()
-        } else {
-            _ = editor.saveUntitledIfPossible()
         }
     }
 
