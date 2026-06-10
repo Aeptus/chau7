@@ -794,6 +794,64 @@ final class TextEditorModel: Identifiable {
         }
     }
 
+    /// Send a list of markdown code blocks to the terminal one at a time,
+    /// waiting for each to settle (succeed or fail) before sending the next.
+    /// `send` is responsible for actually forwarding the block to the shell
+    /// and calling `markCodeBlockQueued` (typically via
+    /// `SplitPaneController.sendCommandToTerminal`); this method only
+    /// orchestrates the queue, so it stays composable with the existing
+    /// per-block run path.
+    ///
+    /// If a block never reports a terminal state (e.g. no shell session is
+    /// attached, or the user clears the runbook) the runner gives up after
+    /// ~60s on that block and stops the whole sequence — the user can press
+    /// Run All again or run remaining blocks individually.
+    func runMarkdownBlocksSequentially(
+        _ blocks: [(line: Int, code: String)],
+        send: @escaping (String, Int) -> Void
+    ) {
+        sendNextMarkdownBlock(blocks: blocks, index: 0, send: send)
+    }
+
+    private func sendNextMarkdownBlock(
+        blocks: [(line: Int, code: String)],
+        index: Int,
+        send: @escaping (String, Int) -> Void
+    ) {
+        guard index < blocks.count else { return }
+        let block = blocks[index]
+        send("\(block.code)\n", block.line)
+        waitForMarkdownBlockSettlement(
+            blocks: blocks,
+            index: index,
+            send: send,
+            attemptsRemaining: 240
+        )
+    }
+
+    private func waitForMarkdownBlockSettlement(
+        blocks: [(line: Int, code: String)],
+        index: Int,
+        send: @escaping (String, Int) -> Void,
+        attemptsRemaining: Int
+    ) {
+        let block = blocks[index]
+        switch codeBlockState(for: block.code, lineNumber: block.line) {
+        case .succeeded, .failed:
+            sendNextMarkdownBlock(blocks: blocks, index: index + 1, send: send)
+        case .running, .none:
+            guard attemptsRemaining > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.waitForMarkdownBlockSettlement(
+                    blocks: blocks,
+                    index: index,
+                    send: send,
+                    attemptsRemaining: attemptsRemaining - 1
+                )
+            }
+        }
+    }
+
     func markCodeBlockQueued(_ code: String, lineNumber: Int, tabID: String) {
         let key = Self.runbookCodeBlockKey(for: code, lineNumber: lineNumber)
         codeBlockRunStates[key] = .running

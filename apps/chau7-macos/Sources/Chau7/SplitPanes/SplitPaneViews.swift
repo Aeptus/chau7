@@ -334,17 +334,7 @@ struct TextEditorPaneView: View {
 
                     if isMarkdownMode, onRunCommand != nil {
                         Button {
-                            let blocks = parseMarkdown(editor.content)
-                                .compactMap { s -> (Int, String)? in
-                                    if case .codeBlock(_, let code, let lineNumber) = s.kind { return (lineNumber, code) }
-                                    return nil
-                                }
-                            // Stagger block execution so the shell processes each sequentially
-                            for (i, block) in blocks.enumerated() {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.5) { [onRunCommand, editor] in
-                                    onRunCommand?("\(block.1)\n", block.0, editor)
-                                }
-                            }
+                            runAllMarkdownBlocks()
                         } label: {
                             Label(L("pane.runAll", "Run All"), systemImage: "play.fill")
                                 .font(.system(size: 10))
@@ -382,18 +372,7 @@ struct TextEditorPaneView: View {
                     onRunBlock: { code, lineNumber in
                         onRunCommand?("\(code)\n", lineNumber, editor)
                     },
-                    onRunAll: { [onRunCommand, editor] in
-                        let blocks = parseMarkdown(editor.content)
-                            .compactMap { section -> (Int, String)? in
-                                if case .codeBlock(_, let code, let lineNumber) = section.kind { return (lineNumber, code) }
-                                return nil
-                            }
-                        for (i, block) in blocks.enumerated() {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.5) {
-                                onRunCommand?("\(block.1)\n", block.0, editor)
-                            }
-                        }
-                    },
+                    onRunAll: { runAllMarkdownBlocks() },
                     codeBlockState: { code, lineNumber in
                         editor.codeBlockState(for: code, lineNumber: lineNumber)
                     },
@@ -455,6 +434,24 @@ struct TextEditorPaneView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             editor.saveAs(to: url.path)
+        }
+    }
+
+    /// Send every fenced code block to the terminal one at a time, waiting
+    /// for each to settle before sending the next. The previous behaviour
+    /// fired all blocks with a fixed 0.5s stagger, which paste-bombed the
+    /// shell when an early block took longer than 0.5s — interleaving
+    /// commands and leading to out-of-order execution.
+    private func runAllMarkdownBlocks() {
+        guard let send = onRunCommand else { return }
+        let blocks = parseMarkdown(editor.content).compactMap { section -> (line: Int, code: String)? in
+            if case .codeBlock(_, let code, let lineNumber) = section.kind {
+                return (line: lineNumber, code: code)
+            }
+            return nil
+        }
+        editor.runMarkdownBlocksSequentially(blocks) { [editor] command, lineNumber in
+            send(command, lineNumber, editor)
         }
     }
 }
