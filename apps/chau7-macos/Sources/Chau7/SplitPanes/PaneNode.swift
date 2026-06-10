@@ -31,6 +31,13 @@ protocol PaneNode: AnyObject {
     /// Called when the pane is dropped from the tree. Terminal panes close
     /// their PTY session here; most panes need nothing. Default is no-op.
     func dispose()
+
+    /// Pane-owned serialization. The tree's `savedRepresentation` just asks
+    /// each leaf to describe itself; adding a new pane kind no longer
+    /// touches a central encode switch. The decode side still routes
+    /// through `SplitNode.fromSavedNode` because it needs a factory tied to
+    /// the persisted `kind` tag — Phase 6 will lift that into a registry.
+    func savedRepresentation() -> SavedSplitNode
 }
 
 extension PaneNode {
@@ -56,6 +63,15 @@ final class TerminalPane: PaneNode {
     func dispose() {
         session.closeSession()
     }
+
+    func savedRepresentation() -> SavedSplitNode {
+        SavedSplitNode(
+            kind: .terminal,
+            id: id.uuidString,
+            direction: nil, ratio: nil, first: nil, second: nil,
+            textEditorPath: nil
+        )
+    }
 }
 
 // MARK: - Text Editor Pane
@@ -74,6 +90,15 @@ final class TextEditorPane: PaneNode {
         self.id = id
         self.editor = editor
     }
+
+    func savedRepresentation() -> SavedSplitNode {
+        SavedSplitNode(
+            kind: .textEditor,
+            id: id.uuidString,
+            direction: nil, ratio: nil, first: nil, second: nil,
+            textEditorPath: editor.filePath
+        )
+    }
 }
 
 // MARK: - File Preview Pane
@@ -90,6 +115,16 @@ final class FilePreviewPane: PaneNode {
         self.id = id
         self.preview = preview
     }
+
+    func savedRepresentation() -> SavedSplitNode {
+        SavedSplitNode(
+            kind: .filePreview,
+            id: id.uuidString,
+            direction: nil, ratio: nil, first: nil, second: nil,
+            textEditorPath: nil,
+            previewFilePath: preview.filePath
+        )
+    }
 }
 
 // MARK: - Diff Viewer Pane
@@ -104,6 +139,18 @@ final class DiffViewerPane: PaneNode {
     init(id: UUID = UUID(), diff: DiffViewerModel) {
         self.id = id
         self.diff = diff
+    }
+
+    func savedRepresentation() -> SavedSplitNode {
+        SavedSplitNode(
+            kind: .diffViewer,
+            id: id.uuidString,
+            direction: nil, ratio: nil, first: nil, second: nil,
+            textEditorPath: nil,
+            diffFilePath: diff.filePath,
+            diffDirectory: diff.directory,
+            diffMode: diff.diffMode.rawValue
+        )
     }
 }
 
@@ -121,6 +168,16 @@ final class RepositoryPane: PaneNode {
         self.id = id
         self.repo = repo
     }
+
+    func savedRepresentation() -> SavedSplitNode {
+        SavedSplitNode(
+            kind: .repositoryPane,
+            id: id.uuidString,
+            direction: nil, ratio: nil, first: nil, second: nil,
+            textEditorPath: nil,
+            repoDirectory: repo.directory
+        )
+    }
 }
 
 // MARK: - Dashboard Pane
@@ -135,5 +192,15 @@ final class DashboardPane: PaneNode {
     init(id: UUID = UUID(), dashboard: AgentDashboardModel) {
         self.id = id
         self.dashboard = dashboard
+    }
+
+    func savedRepresentation() -> SavedSplitNode {
+        SavedSplitNode(
+            kind: .dashboard,
+            id: id.uuidString,
+            direction: nil, ratio: nil, first: nil, second: nil,
+            textEditorPath: nil,
+            dashboardRepoGroupID: dashboard.repoGroupID
+        )
     }
 }

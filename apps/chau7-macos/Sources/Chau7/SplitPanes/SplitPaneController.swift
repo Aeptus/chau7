@@ -240,13 +240,13 @@ indirect enum SplitNode: Identifiable {
 
     // MARK: - Persistence (kind-dispatched)
 
-    /// Returns a persistence-safe snapshot of this node. Phase 1c will
-    /// push the per-kind serialization onto each PaneNode so adding a
-    /// new pane kind no longer touches this switch.
+    /// Returns a persistence-safe snapshot of this node. Each leaf serializes
+    /// itself via `PaneNode.savedRepresentation()`, so a new pane kind adds
+    /// one conformer method instead of editing a central switch.
     var savedRepresentation: SavedSplitNode {
         switch self {
         case .leaf(let pane):
-            return Self.savedRepresentation(for: pane)
+            return pane.savedRepresentation()
         case .split(let id, let direction, let first, let second, let ratio):
             return SavedSplitNode(
                 kind: .split,
@@ -255,69 +255,6 @@ indirect enum SplitNode: Identifiable {
                 ratio: Double(ratio),
                 first: first.savedRepresentation,
                 second: second.savedRepresentation,
-                textEditorPath: nil
-            )
-        }
-    }
-
-    private static func savedRepresentation(for pane: any PaneNode) -> SavedSplitNode {
-        switch pane {
-        case let p as TerminalPane:
-            return SavedSplitNode(
-                kind: .terminal,
-                id: p.id.uuidString,
-                direction: nil, ratio: nil, first: nil, second: nil,
-                textEditorPath: nil
-            )
-        case let p as TextEditorPane:
-            return SavedSplitNode(
-                kind: .textEditor,
-                id: p.id.uuidString,
-                direction: nil, ratio: nil, first: nil, second: nil,
-                textEditorPath: p.editor.filePath
-            )
-        case let p as FilePreviewPane:
-            return SavedSplitNode(
-                kind: .filePreview,
-                id: p.id.uuidString,
-                direction: nil, ratio: nil, first: nil, second: nil,
-                textEditorPath: nil,
-                previewFilePath: p.preview.filePath
-            )
-        case let p as DiffViewerPane:
-            return SavedSplitNode(
-                kind: .diffViewer,
-                id: p.id.uuidString,
-                direction: nil, ratio: nil, first: nil, second: nil,
-                textEditorPath: nil,
-                diffFilePath: p.diff.filePath,
-                diffDirectory: p.diff.directory,
-                diffMode: p.diff.diffMode.rawValue
-            )
-        case let p as RepositoryPane:
-            return SavedSplitNode(
-                kind: .repositoryPane,
-                id: p.id.uuidString,
-                direction: nil, ratio: nil, first: nil, second: nil,
-                textEditorPath: nil,
-                repoDirectory: p.repo.directory
-            )
-        case let p as DashboardPane:
-            return SavedSplitNode(
-                kind: .dashboard,
-                id: p.id.uuidString,
-                direction: nil, ratio: nil, first: nil, second: nil,
-                textEditorPath: nil,
-                dashboardRepoGroupID: p.dashboard.repoGroupID
-            )
-        default:
-            // Unknown pane kind — shouldn't happen since the protocol is
-            // module-private; emit a terminal placeholder so the tree
-            // still round-trips structurally rather than crashing.
-            return SavedSplitNode(
-                kind: .terminal,
-                id: pane.id.uuidString,
-                direction: nil, ratio: nil, first: nil, second: nil,
                 textEditorPath: nil
             )
         }

@@ -70,7 +70,6 @@ final class SplitNodeVisitorTests: XCTestCase {
     }
 
     func testFindLeafReturnsLeftmostMatchInOrder() {
-        let appModel = makeAppModel()
         let (e1, _, editor1) = makeEditorLeaf("first")
         let (e2, _, _) = makeEditorLeaf("second")
         let root = makeSplit(e1, e2)
@@ -149,5 +148,15 @@ private final class CountingPane: PaneNode {
 
     func dispose() {
         counter.count += 1
+    }
+
+    func savedRepresentation() -> SavedSplitNode {
+        // Test-only stub — the visitor tests never persist this tree.
+        SavedSplitNode(
+            kind: .terminal,
+            id: id.uuidString,
+            direction: nil, ratio: nil, first: nil, second: nil,
+            textEditorPath: nil
+        )
     }
 }
