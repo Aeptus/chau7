@@ -179,7 +179,9 @@ struct OverlayTab: Identifiable, Equatable {
 
     /// Whether this tab is a multi-agent dashboard (no terminal).
     var isDashboard: Bool {
-        if case .dashboard = splitController.root { return true }
+        if case .leaf(let pane) = splitController.root, pane is DashboardPane {
+            return true
+        }
         return false
     }
 

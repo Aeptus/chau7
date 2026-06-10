@@ -46,57 +46,8 @@ struct SplitNodeView: View {
 
     var body: some View {
         switch node {
-        case .terminal(let id, let session):
-            TerminalPaneView(
-                id: id,
-                session: session,
-                renderPhase: renderPhase,
-                isInteractive: isInteractive,
-                onFocus: { onFocus(id) },
-                onFilePathClicked: onFilePathClicked
-            )
-
-        case .textEditor(let id, let editor):
-            TextEditorPaneView(
-                id: id,
-                editor: editor,
-                onFocus: { onFocus(id) },
-                onClose: { onClosePane(id) },
-                onRunCommand: onRunCommand
-            )
-
-        case .filePreview(let id, let preview):
-            FilePreviewPaneView(
-                id: id,
-                preview: preview,
-                onFocus: { onFocus(id) },
-                onClose: { onClosePane(id) }
-            )
-
-        case .diffViewer(let id, let diff):
-            DiffViewerPaneView(
-                id: id,
-                diff: diff,
-                onFocus: { onFocus(id) },
-                onClose: { onClosePane(id) }
-            )
-
-        case .repositoryPane(let id, let repo):
-            RepositoryPaneView(
-                id: id,
-                repo: repo,
-                onFocus: { onFocus(id) },
-                onClose: { onClosePane(id) },
-                onFileClicked: { path, dir in
-                    let absolutePath = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: dir)).path
-                    onFilePathClicked?(absolutePath, nil, nil)
-                }
-            )
-
-        case .dashboard(_, let dashboard):
-            AgentDashboardView(model: dashboard) { path in
-                onFilePathClicked?(path, nil, nil)
-            }
+        case .leaf(let pane):
+            leafView(for: pane)
 
         case .split(let splitID, let direction, let first, let second, let ratio):
             SplitContainerView(
@@ -114,6 +65,69 @@ struct SplitNodeView: View {
                 onFilePathClicked: onFilePathClicked,
                 onRunCommand: onRunCommand
             )
+        }
+    }
+
+    /// Dispatches on the concrete pane type. Adding a new pane kind means
+    /// adding one case here and one PaneNode conformer — the traversal
+    /// helpers stay untouched.
+    @ViewBuilder
+    private func leafView(for pane: any PaneNode) -> some View {
+        switch pane {
+        case let p as TerminalPane:
+            TerminalPaneView(
+                id: p.id,
+                session: p.session,
+                renderPhase: renderPhase,
+                isInteractive: isInteractive,
+                onFocus: { onFocus(p.id) },
+                onFilePathClicked: onFilePathClicked
+            )
+
+        case let p as TextEditorPane:
+            TextEditorPaneView(
+                id: p.id,
+                editor: p.editor,
+                onFocus: { onFocus(p.id) },
+                onClose: { onClosePane(p.id) },
+                onRunCommand: onRunCommand
+            )
+
+        case let p as FilePreviewPane:
+            FilePreviewPaneView(
+                id: p.id,
+                preview: p.preview,
+                onFocus: { onFocus(p.id) },
+                onClose: { onClosePane(p.id) }
+            )
+
+        case let p as DiffViewerPane:
+            DiffViewerPaneView(
+                id: p.id,
+                diff: p.diff,
+                onFocus: { onFocus(p.id) },
+                onClose: { onClosePane(p.id) }
+            )
+
+        case let p as RepositoryPane:
+            RepositoryPaneView(
+                id: p.id,
+                repo: p.repo,
+                onFocus: { onFocus(p.id) },
+                onClose: { onClosePane(p.id) },
+                onFileClicked: { path, dir in
+                    let absolutePath = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: dir)).path
+                    onFilePathClicked?(absolutePath, nil, nil)
+                }
+            )
+
+        case let p as DashboardPane:
+            AgentDashboardView(model: p.dashboard) { path in
+                onFilePathClicked?(path, nil, nil)
+            }
+
+        default:
+            EmptyView()
         }
     }
 }

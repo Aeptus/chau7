@@ -13,12 +13,12 @@ final class SplitNodeTests: XCTestCase {
 
     private func makeTerminalNode(id: UUID = UUID(), appModel: AppModel) -> SplitNode {
         let session = TerminalSessionModel(appModel: appModel)
-        return .terminal(id: id, session: session)
+        return .leaf(TerminalPane(id: id, session: session))
     }
 
     private func makeEditorNode(id: UUID = UUID()) -> SplitNode {
         let editor = TextEditorModel()
-        return .textEditor(id: id, editor: editor)
+        return .leaf(TextEditorPane(id: id, editor: editor))
     }
 
     // MARK: - Terminal Node
