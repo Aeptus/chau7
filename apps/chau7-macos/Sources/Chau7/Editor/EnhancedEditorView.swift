@@ -22,6 +22,11 @@ struct EnhancedEditorView: NSViewRepresentable {
     let language: EditorLanguage
     let config: EditorConfig
     let onSave: (() -> Void)?
+    /// Optional 1-based line to scroll into view. Callers should clear the
+    /// source value via `onScrollHandled` once consumed so the request fires
+    /// exactly once per change.
+    var scrollToLine: Int?
+    var onScrollHandled: (() -> Void)?
 
     func makeNSView(context: Context) -> EditorScrollView {
         let scrollView = EditorScrollView()
@@ -73,12 +78,19 @@ struct EnhancedEditorView: NSViewRepresentable {
         let textView = scrollView.editorTextView
         if textView.string != text {
             let savedRange = textView.selectedRange()
+            let savedVisibleRect = textView.visibleRect
             textView.string = text
             context.coordinator.applySyntaxHighlighting()
-            // Restore selection if valid
-            if savedRange.location + savedRange.length <= textView.string.count {
+            // Restore selection and scroll position when still valid
+            let utf16Length = (text as NSString).length
+            if savedRange.location + savedRange.length <= utf16Length {
                 textView.setSelectedRange(savedRange)
             }
+            textView.scrollToVisible(savedVisibleRect)
+        }
+        if let line = scrollToLine, line > 0 {
+            context.coordinator.scrollToLine(line)
+            onScrollHandled?()
         }
     }
 
@@ -165,11 +177,11 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
     func applySyntaxHighlighting() {
         guard let textView = textView else { return }
         let text = textView.string
-        let lang = parent.language
 
         guard !text.isEmpty else { return }
 
         let storage = textView.textStorage!
+        let fullRange = NSRange(location: 0, length: (text as NSString).length)
         storage.beginEditing()
 
         // Reset to default style
@@ -177,14 +189,11 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
             .font: NSFont.monospacedSystemFont(ofSize: CGFloat(parent.config.fontSize), weight: .regular),
             .foregroundColor: NSColor.textColor
         ]
-        storage.setAttributes(defaultAttrs, range: NSRange(location: 0, length: text.count))
+        storage.setAttributes(defaultAttrs, range: fullRange)
 
         // Apply language-specific highlighting rules
-        for rule in lang.highlightingRules {
-            guard let regex = try? NSRegularExpression(pattern: rule.pattern, options: rule.options) else {
-                continue
-            }
-            let matches = regex.matches(in: text, range: NSRange(location: 0, length: text.count))
+        for rule in parent.language.compiledRules() {
+            let matches = rule.regex.matches(in: text, range: fullRange)
             for match in matches {
                 storage.addAttribute(.foregroundColor, value: rule.color, range: match.range)
                 if rule.isBold {
@@ -201,6 +210,32 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
         }
 
         storage.endEditing()
+    }
+
+    // MARK: - Scroll to Line
+
+    func scrollToLine(_ targetLine: Int) {
+        guard let textView else { return }
+        let nsText = textView.string as NSString
+        var currentLine = 1
+        var lineStart = 0
+        var index = 0
+        while index < nsText.length {
+            if currentLine == targetLine {
+                lineStart = index
+                break
+            }
+            if nsText.character(at: index) == 0x0A {
+                currentLine += 1
+            }
+            index += 1
+        }
+        if currentLine < targetLine {
+            lineStart = nsText.length
+        }
+        let range = NSRange(location: lineStart, length: 0)
+        textView.scrollRangeToVisible(range)
+        textView.setSelectedRange(range)
     }
 
     // MARK: - Auto-Indent

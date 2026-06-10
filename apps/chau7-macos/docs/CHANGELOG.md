@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Side-Panel Editor Actually Has Its IDE Features**: The text editor opened from the side panel (⌥⌘E) was wired to a bare `NSTextView` instead of `EnhancedEditorView`, so users got no line numbers, no syntax highlighting, no bracket matching, no auto-indent, and no go-to-line — despite all of those being implemented and listed as shipped. The side panel now uses `EnhancedEditorView`, language is detected from the file extension, scroll-to-line on file open works through a new `scrollToLine`/`onScrollHandled` plumbing, and per-language regex sets are compiled once and cached so highlighting is cheap on every keystroke. A latent `String.count`/UTF-16 range bug in the highlighter that would silently skip parts of documents with non-BMP characters is fixed at the same time.
+
 ## [0.3.1] - 2026-06-09
 
 ### Changed

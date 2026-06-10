@@ -217,4 +217,37 @@ struct EditorLanguage: Identifiable {
         let ext = (filename as NSString).pathExtension.lowercased()
         return allLanguages.first { $0.extensions.contains(ext) } ?? .plainText
     }
+
+    // MARK: - Compiled rules
+
+    /// Regex-compiled mirror of a `HighlightRule`, ready to apply.
+    struct CompiledRule {
+        let regex: NSRegularExpression
+        let color: NSColor
+        let isBold: Bool
+    }
+
+    /// Returns the compiled highlighting rules for this language, compiled on
+    /// first access and cached per-language so the editor doesn't pay the
+    /// regex-compile cost on every keystroke. Rules with invalid patterns are
+    /// dropped (a `Log.error` would be ideal but this type lives outside the
+    /// app-logging module).
+    func compiledRules() -> [CompiledRule] {
+        Self.cacheQueue.sync {
+            if let cached = Self.compiledRulesCache[id] {
+                return cached
+            }
+            let compiled = highlightingRules.compactMap { rule -> CompiledRule? in
+                guard let regex = try? NSRegularExpression(pattern: rule.pattern, options: rule.options) else {
+                    return nil
+                }
+                return CompiledRule(regex: regex, color: rule.color, isBold: rule.isBold)
+            }
+            Self.compiledRulesCache[id] = compiled
+            return compiled
+        }
+    }
+
+    private static var compiledRulesCache: [String: [CompiledRule]] = [:]
+    private static let cacheQueue = DispatchQueue(label: "com.chau7.editor.language.cache")
 }

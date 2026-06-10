@@ -225,10 +225,16 @@ struct TextEditorPaneView: View {
     @State private var showFilePicker = false
     @State private var isMarkdownMode = false
     @State private var showCopiedToast = false
+    @State private var editorSelectedRange = NSRange(location: 0, length: 0)
+    @State private var editorConfig = EditorConfig.load()
 
     private var isMarkdownFile: Bool {
         guard let filePath = editor.filePath?.lowercased() else { return false }
         return filePath.hasSuffix(".md") || filePath.hasSuffix(".markdown")
+    }
+
+    private var editorLanguage: EditorLanguage {
+        EditorLanguage.detect(from: editor.fileName)
     }
 
     var body: some View {
@@ -398,14 +404,18 @@ struct TextEditorPaneView: View {
                     }
                 )
             } else {
-                TextEditorContent(
+                EnhancedEditorView(
                     text: Binding(
                         get: { editor.content },
                         set: { editor.updateContent($0) }
                     ),
-                    editor: editor
+                    selectedRange: $editorSelectedRange,
+                    language: editorLanguage,
+                    config: editorConfig,
+                    onSave: { _ = editor.save() },
+                    scrollToLine: editor.scrollToLine,
+                    onScrollHandled: { editor.scrollToLine = nil }
                 )
-                .font(.system(size: 12, design: .monospaced))
             }
         }
         .contentShape(Rectangle())
@@ -491,115 +501,6 @@ struct TextEditorPaneView: View {
         } else {
             // Content is clean or empty - close directly
             onClose()
-        }
-    }
-}
-
-// MARK: - Text Editor Content (NSTextView wrapper for better performance)
-
-struct TextEditorContent: NSViewRepresentable {
-    @Binding var text: String
-    var editor: TextEditorModel
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
-        guard let textView = scrollView.documentView as? NSTextView else {
-            Log.error("TextEditorContent: documentView is not NSTextView")
-            return scrollView
-        }
-
-        textView.isEditable = true
-        textView.isSelectable = true
-        textView.allowsUndo = true
-        textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        textView.backgroundColor = NSColor.textBackgroundColor
-        textView.textColor = NSColor.textColor
-        textView.delegate = context.coordinator
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticTextReplacementEnabled = false
-
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? NSTextView else { return }
-        if textView.string != text {
-            // Preserve selection and scroll position
-            let selectedRanges = textView.selectedRanges
-            let visibleRect = textView.visibleRect
-            textView.string = text
-            textView.selectedRanges = selectedRanges
-            textView.scrollToVisible(visibleRect)
-        }
-
-        // F03: Handle scroll-to-line request
-        // Note: scrollToLine is set only after content loads (see TextEditorModel.loadFile)
-        if let line = editor.scrollToLine {
-            scrollToLine(line, in: textView)
-            // Clear synchronously to prevent re-triggering
-            // This is safe because we're already on main thread in updateNSView
-            editor.scrollToLine = nil
-        }
-    }
-
-    /// Scrolls the text view to show the specified line number (1-based)
-    private func scrollToLine(_ lineNumber: Int, in textView: NSTextView) {
-        let text = textView.string as NSString
-        var currentLine = 1
-        var lineStart = 0
-
-        // Find the character index at the start of the target line
-        for i in 0 ..< text.length {
-            if currentLine == lineNumber {
-                lineStart = i
-                break
-            }
-            if text.character(at: i) == 0x0A { // newline
-                currentLine += 1
-            }
-        }
-
-        // If we didn't find the line, scroll to end
-        if currentLine < lineNumber {
-            lineStart = text.length
-        }
-
-        // Create a range at the line start and scroll to it
-        let range = NSRange(location: lineStart, length: 0)
-        textView.scrollRangeToVisible(range)
-        textView.setSelectedRange(range)
-        Log.info("Scrolled editor to line \(lineNumber)")
-    }
-
-    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
-        // Clear the undo stack to prevent use-after-free when the NSTextView
-        // is deallocated but NSUndoManager still holds references to it.
-        if let textView = scrollView.documentView as? NSTextView {
-            textView.undoManager?.removeAllActions()
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: TextEditorContent
-
-        init(_ parent: TextEditorContent) {
-            self.parent = parent
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
-                let preview = textView.string.suffix(12)
-                Log.info(
-                    "TextEditorContent: textDidChange length=\(textView.string.count) tail='\(preview)'"
-                )
-            }
-            parent.text = textView.string
         }
     }
 }
