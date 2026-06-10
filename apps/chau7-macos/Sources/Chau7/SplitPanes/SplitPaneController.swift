@@ -2114,12 +2114,52 @@ final class SplitPaneController {
 
     // MARK: - Text Editor Operations
 
-    /// Appends selected text from terminal to the first text editor
+    /// Appends selected text from the terminal to the side text editor,
+    /// opening one if none exists. ⇧⌥⌘E used to log a warning and do nothing
+    /// when no editor was open, which made the shortcut feel broken — the
+    /// implicit mental model is "send selection to editor", so we now create
+    /// the editor on demand. The new editor attaches to the tab-scoped
+    /// session note (when a repo root is known) via the existing untitled
+    /// auto-attach plumbing, so the appended selection lands somewhere
+    /// durable instead of being thrown away on tab close.
     func appendSelectionToEditor(_ text: String) {
         if let editor = root.findFirstEditor() {
             editor.appendText(text)
-        } else {
-            Log.warn("No text editor pane open to append to")
+            return
+        }
+        splitWithTextEditor(direction: .horizontal)
+        guard let editor = root.findFirstEditor() else {
+            Log.warn("Failed to open text editor for selection append")
+            return
+        }
+        appendTextAfterEditorLoad(editor, text: text)
+    }
+
+    /// The freshly created editor may still be loading its attached session
+    /// note off the background queue, so we defer the append until the load
+    /// settles. After a short timeout we append anyway — losing the user's
+    /// selection because we waited for a load that never resolved would be
+    /// worse than appending into the in-memory buffer.
+    private func appendTextAfterEditorLoad(
+        _ editor: TextEditorModel,
+        text: String,
+        attemptsRemaining: Int = 40
+    ) {
+        if !editor.isLoading {
+            editor.appendText(text)
+            return
+        }
+        guard attemptsRemaining > 0 else {
+            editor.appendText(text)
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak editor] in
+            guard let self, let editor else { return }
+            appendTextAfterEditorLoad(
+                editor,
+                text: text,
+                attemptsRemaining: attemptsRemaining - 1
+            )
         }
     }
 

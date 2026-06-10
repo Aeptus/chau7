@@ -332,6 +332,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Repo-scoped session notes for the split text editor: untitled panes can save directly to `.chau7/sessions/<tab-id>/note.md` inside the active repository, and reopen the matching note for whichever repo the tab is currently in.
 - Click-to-copy document name in the editor pane header.
 - Multi-language syntax: HTML, CSS, JavaScript, Python, and more.
+- Append terminal selection to editor (`Shift+Cmd+Opt+E`) — selecting text in the terminal and hitting the shortcut appends it to the side editor; if no editor pane is open, one is opened on demand so the shortcut never silently fails.
 - Repository pane (`Cmd+Opt+B`): full git UI — stage, commit (⌘Enter), branch, push/pull, stash, history with search. Session-aware: shows only agent-touched files with diff stats when an AI is active, resets after push. Ahead/behind indicator, hover tooltips, conventional commit chips.
 
 ### Windows

@@ -207,6 +207,7 @@ Split Panes,Repository Pane,"Full git UI in a split pane (⌘⌥B) — session-a
 Split Panes,Click-to-Copy Document Name,"Click the file name in the editor pane header to copy it to the clipboard",Shipped,No
 Split Panes,Multi-Language Syntax,"Syntax highlighting for HTML, CSS, JavaScript, Python, and more",Shipped,No
 Split Panes,Terminal + Editor Side-by-Side,Edit code and run it in the same window — no app switching,Shipped,Yes
+Split Panes,Append Terminal Selection To Editor,"⇧⌥⌘E appends the current terminal selection to the side editor; opens the editor on demand if none is open so the shortcut never silently no-ops",Shipped,No
 Window Management,Overlay / Floating Terminal,Floating terminal layer on top of all other apps with blur background — always accessible,Shipped,Yes
 Window Management,Dropdown Terminal (Quake-Style),Ctrl+` to summon a dropdown terminal from anywhere — configurable height,Shipped,No
 Window Management,Multiple Windows,Cmd+N for multiple independent terminal windows,Shipped,No
