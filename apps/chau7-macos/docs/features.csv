@@ -328,7 +328,7 @@ Window,Floating Window Mode,Keep terminal above other apps — .floating window 
 Terminal,Cursor Blink Rate,Configurable blink interval (0.3–2.0s) and custom cursor color (hex),Shipped,No
 Terminal,Whole-Word Search,Terminal search toggle wraps query in word boundary anchors,Shipped,No
 Terminal,Visual Bell + Rate Limiting,Screen flash on bell with configurable minimum interval between triggers,Shipped,No
-Editor,Angle Bracket Matching,"Match <> pairs and jump-to-matching-bracket",Shipped,No
+Editor,Angle Bracket Matching,"Match (), [], {}, <> pairs with jump-to-matching-bracket; scan walks NSString UTF-16 in place so cursor moves don't materialise a Character array per keystroke",Shipped,No
 Editor,Relative/Hybrid Line Numbers,"Absolute, relative, or hybrid line numbers with dynamic gutter width",Shipped,No
 Profiles,Context-Aware Auto-Switch,Auto-switch settings profile on directory change based on configured rules,Shipped,No
 Settings,Keybindings JSON Export/Import,Standalone export/import for keybindings separate from full settings,Shipped,No

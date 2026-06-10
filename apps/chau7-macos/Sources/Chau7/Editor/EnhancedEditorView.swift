@@ -277,8 +277,30 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
 
     // MARK: - Bracket Matching
 
-    private static let openBracketPairs: [Character: Character] = ["(": ")", "[": "]", "{": "}", "<": ">"]
-    private static let closeBracketPairs: [Character: Character] = [")": "(", "]": "[", "}": "{", ">": "<"]
+    /// All callers pass single-scalar ASCII bracket literals so a scalar
+    /// always exists, but we still defensively default to NUL on the
+    /// impossible branch to keep the lint clean and avoid a force-unwrap.
+    private static func toUnichar(_ c: Character) -> unichar {
+        guard let scalar = c.unicodeScalars.first else { return 0 }
+        return unichar(scalar.value)
+    }
+
+    /// Pairs are keyed on UTF-16 code units so we can match directly against
+    /// `NSString.character(at:)` — the previous `[Character: Character]`
+    /// implementation forced a full `Array(text)` materialisation on every
+    /// keystroke just to do the lookup.
+    private static let openBracketPairs: [unichar: unichar] = [
+        toUnichar("("): toUnichar(")"),
+        toUnichar("["): toUnichar("]"),
+        toUnichar("{"): toUnichar("}"),
+        toUnichar("<"): toUnichar(">")
+    ]
+    private static let closeBracketPairs: [unichar: unichar] = [
+        toUnichar(")"): toUnichar("("),
+        toUnichar("]"): toUnichar("["),
+        toUnichar("}"): toUnichar("{"),
+        toUnichar(">"): toUnichar("<")
+    ]
 
     private func highlightMatchingBracket(_ textView: NSTextView) {
         if let matchPos = matchingBracketPosition(in: textView) {
@@ -289,40 +311,43 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
     /// Resolve the matching-bracket position for the character under the
     /// caret in `textView`, scanning forward for openers and backward for
     /// closers. Returns nil if the caret isn't on a bracket character or
-    /// no balanced match exists.
+    /// no balanced match exists. Indexes are UTF-16 code units throughout
+    /// to match `NSTextView.selectedRange()` semantics.
     private func matchingBracketPosition(in textView: NSTextView) -> Int? {
-        let text = textView.string
+        let nsText = textView.string as NSString
         let pos = textView.selectedRange().location
-        guard pos < text.count else { return nil }
-        let char = text[text.index(text.startIndex, offsetBy: pos)]
+        guard pos >= 0, pos < nsText.length else { return nil }
+        let char = nsText.character(at: pos)
         if let closing = Self.openBracketPairs[char] {
-            return findMatchingBracketForward(in: text, from: pos, open: char, close: closing)
+            return Self.findMatchingBracketForward(in: nsText, from: pos, open: char, close: closing)
         }
         if let opening = Self.closeBracketPairs[char] {
-            return findMatchingBracketBackward(in: text, from: pos, open: opening, close: char)
+            return Self.findMatchingBracketBackward(in: nsText, from: pos, open: opening, close: char)
         }
         return nil
     }
 
     /// Search forward from the given position to find the matching closing bracket.
-    private func findMatchingBracketForward(in text: String, from pos: Int, open: Character, close: Character) -> Int? {
-        let chars = Array(text)
+    /// Pure scan, exposed for direct unit testing.
+    static func findMatchingBracketForward(in text: NSString, from pos: Int, open: unichar, close: unichar) -> Int? {
         var depth = 0
-        for i in pos ..< chars.count {
-            if chars[i] == open { depth += 1 }
-            if chars[i] == close { depth -= 1 }
+        for i in pos ..< text.length {
+            let c = text.character(at: i)
+            if c == open { depth += 1 }
+            if c == close { depth -= 1 }
             if depth == 0, i != pos { return i }
         }
         return nil
     }
 
     /// Search backward from the given position to find the matching opening bracket.
-    private func findMatchingBracketBackward(in text: String, from pos: Int, open: Character, close: Character) -> Int? {
-        let chars = Array(text)
+    /// Pure scan, exposed for direct unit testing.
+    static func findMatchingBracketBackward(in text: NSString, from pos: Int, open: unichar, close: unichar) -> Int? {
         var depth = 0
         for i in stride(from: pos, through: 0, by: -1) {
-            if chars[i] == close { depth += 1 }
-            if chars[i] == open { depth -= 1 }
+            let c = text.character(at: i)
+            if c == close { depth += 1 }
+            if c == open { depth -= 1 }
             if depth == 0, i != pos { return i }
         }
         return nil
