@@ -308,6 +308,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | **Background window render backpressure** | Only the key window owns live selected-tab presentation; visible selected tabs in main-but-not-key or otherwise non-input-priority windows keep a retained passive surface and drain through the shared background path instead of driving full live Metal sync |
 | **Adaptive render-loop throttling** | Active tab drops to ~10 Hz after idle, snaps back instantly on PTY data or user input — cuts wakeups and CPU on idle AI sessions |
 | **Configurable active-tab refresh cap** | Display Native / 60 Hz / 30 Hz picker lets users trade scroll fluidity for battery; default follows the screen's native refresh |
+| **LRU-backed syntax-highlight cache** | Terminal-output highlighter uses `NSCache` (bounded LRU with cost-based eviction and an OS-pressure hook) instead of a dictionary with order-unspecified prefix eviction, so hot lines stay cached on busy streams |
 
 ## Tabs, Panes & Windows
 
