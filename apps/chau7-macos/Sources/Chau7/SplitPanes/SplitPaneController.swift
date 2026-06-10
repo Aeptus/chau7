@@ -1212,6 +1212,20 @@ enum DiffLineType {
     case hunkHeader(String)
 }
 
+/// What the parser learned about the diff beyond the hunk content. Lets the
+/// empty-state UI explain *why* there are no hunks instead of always
+/// claiming "no changes" for files that are actually binary or renamed.
+enum DiffSummary: Equatable {
+    /// Normal textual diff (hunks may or may not be present).
+    case content
+    /// Git reported `Binary files a/foo and b/foo differ` — no textual hunks.
+    case binary
+    /// Git reported `rename from`/`rename to` lines; if textual hunks also
+    /// appear in the diff (rename + edit) they're still parsed normally and
+    /// the summary just adds the rename context.
+    case renamed(from: String, to: String)
+}
+
 /// A parsed hunk from unified diff output
 struct DiffHunk: Identifiable {
     let id = UUID()
@@ -1238,6 +1252,9 @@ final class DiffViewerModel: Identifiable {
     var rawDiff = ""
     var additions = 0
     var deletions = 0
+    /// What the parser detected outside the hunk lines (binary, rename, or
+    /// plain content). Drives the empty-state UI when there are no hunks.
+    var summary: DiffSummary = .content
     var protectedAccessSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
         root: nil,
         isProtectedPath: false,
@@ -1312,6 +1329,7 @@ final class DiffViewerModel: Identifiable {
         hunks = parsed.hunks
         additions = parsed.additions
         deletions = parsed.deletions
+        summary = parsed.summary
         diffMode = effectiveMode
         isLoading = false
         Log.info("Loaded diff: \(file) (\(parsed.hunks.count) hunks, +\(parsed.additions)/-\(parsed.deletions))")
@@ -1408,10 +1426,13 @@ final class DiffViewerModel: Identifiable {
         let hunks: [DiffHunk]
         let additions: Int
         let deletions: Int
+        let summary: DiffSummary
     }
 
     static func parseUnifiedDiff(_ raw: String) -> ParseResult {
-        guard !raw.isEmpty else { return ParseResult(hunks: [], additions: 0, deletions: 0) }
+        guard !raw.isEmpty else {
+            return ParseResult(hunks: [], additions: 0, deletions: 0, summary: .content)
+        }
 
         var hunks: [DiffHunk] = []
         var currentLines: [DiffLineType] = []
@@ -1419,6 +1440,9 @@ final class DiffViewerModel: Identifiable {
         var oldStart = 0, oldCount = 0, newStart = 0, newCount = 0
         var totalAdditions = 0, totalDeletions = 0
         var inHunk = false
+        var isBinary = false
+        var renameFrom: String?
+        var renameTo: String?
 
         for line in raw.components(separatedBy: "\n") {
             if line.hasPrefix("@@") {
@@ -1455,8 +1479,18 @@ final class DiffViewerModel: Identifiable {
                 } else if line.hasPrefix("\\") {
                     // "\ No newline at end of file" — skip
                 }
+            } else {
+                // Pre-hunk header lines from `git diff`: detect binary and
+                // rename markers so the empty-state UI can explain *why*
+                // there are no hunks instead of just showing "no changes".
+                if line.hasPrefix("Binary files ") || line.hasPrefix("GIT binary patch") {
+                    isBinary = true
+                } else if line.hasPrefix("rename from ") {
+                    renameFrom = String(line.dropFirst("rename from ".count))
+                } else if line.hasPrefix("rename to ") {
+                    renameTo = String(line.dropFirst("rename to ".count))
+                }
             }
-            // Skip diff header lines (diff --git, index, ---, +++)
         }
 
         // Flush last hunk
@@ -1469,7 +1503,21 @@ final class DiffViewerModel: Identifiable {
             ))
         }
 
-        return ParseResult(hunks: hunks, additions: totalAdditions, deletions: totalDeletions)
+        let summary: DiffSummary
+        if isBinary {
+            summary = .binary
+        } else if let from = renameFrom, let to = renameTo {
+            summary = .renamed(from: from, to: to)
+        } else {
+            summary = .content
+        }
+
+        return ParseResult(
+            hunks: hunks,
+            additions: totalAdditions,
+            deletions: totalDeletions,
+            summary: summary
+        )
     }
 
     private static func parseHunkHeader(_ header: String) -> (oldStart: Int, oldCount: Int, newStart: Int, newCount: Int) {

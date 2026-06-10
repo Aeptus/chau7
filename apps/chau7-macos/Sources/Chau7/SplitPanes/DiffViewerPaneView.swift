@@ -32,26 +32,63 @@ struct DiffViewerPaneView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if diff.hunks.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.title)
-                        .foregroundStyle(.green)
-                    Text(L("splitPane.diff.noChanges", "No changes"))
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                    Text(diff.diffMode == .workingTree
-                        ? L("splitPane.diff.noWorkingChanges", "Working tree is clean for this file")
-                        : L("splitPane.diff.noStagedChanges", "No staged changes for this file"))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                emptyState(for: diff.summary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 UnifiedDiffContent(hunks: diff.hunks)
             }
         }
         .contentShape(Rectangle())
         .onTapGesture { onFocus() }
+    }
+
+    /// Empty-state body — explains *why* there are no hunks. Binary and
+    /// rename-only diffs used to be indistinguishable from "no changes",
+    /// which made the diff viewer feel broken on a rename or a PNG change.
+    @ViewBuilder
+    private func emptyState(for summary: DiffSummary) -> some View {
+        switch summary {
+        case .binary:
+            VStack(spacing: 8) {
+                Image(systemName: "doc.fill")
+                    .font(.title)
+                    .foregroundStyle(.secondary)
+                Text(L("splitPane.diff.binary", "Binary file"))
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                Text(L("splitPane.diff.binaryHelp", "Git reports the file changed but cannot show a textual diff."))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+            }
+        case .renamed(let from, let to):
+            VStack(spacing: 8) {
+                Image(systemName: "arrow.right.circle")
+                    .font(.title)
+                    .foregroundStyle(.secondary)
+                Text(L("splitPane.diff.renamed", "File renamed"))
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                Text("\(from) → \(to)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+            }
+        case .content:
+            VStack(spacing: 8) {
+                Image(systemName: "checkmark.circle")
+                    .font(.title)
+                    .foregroundStyle(.green)
+                Text(L("splitPane.diff.noChanges", "No changes"))
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                Text(diff.diffMode == .workingTree
+                    ? L("splitPane.diff.noWorkingChanges", "Working tree is clean for this file")
+                    : L("splitPane.diff.noStagedChanges", "No staged changes for this file"))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
     }
 
     private var diffHeader: some View {

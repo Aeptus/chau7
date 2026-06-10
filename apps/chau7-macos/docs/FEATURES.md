@@ -268,7 +268,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - Branch, repo-root, exit, and foreign notification OSC 9 messages are buffered across PTY chunks before dispatch, so startup metadata survives split terminal reads.
 - Detached HEAD is treated as a no-branch state instead of a branch named `HEAD`, and cached branch identity is cleared when the shell reports the detached sentinel.
 - Split pane file preview: read-only viewer with syntax highlighting and image support (Cmd+Opt+P).
-- Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D).
+- Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D). Binary changes and pure renames show a dedicated empty-state explaining *why* there are no hunks instead of a misleading "no changes" panel.
 - `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (with confirmation).
 - Default start directory and optional startup commands.
 - Copy on select, Option+click cursor positioning, paste escaping.
