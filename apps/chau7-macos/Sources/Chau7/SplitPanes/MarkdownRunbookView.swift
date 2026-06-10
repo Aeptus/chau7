@@ -13,8 +13,20 @@ struct MarkdownRunbookView: View {
     var onToggleCheckbox: ((Int) -> Void)?
     var onContentChange: ((String) -> Void)?
 
+    /// Cached parse output keyed by content. `body` runs on every code-block
+    /// state change (e.g. running → succeeded recolouring borders) so a
+    /// computed-every-time parse re-walks the full markdown on each tick —
+    /// expensive for long runbooks. We refresh the cache via `.task(id:)`
+    /// whenever the underlying content actually changes.
+    @State private var cachedContent: String?
+    @State private var cachedSections: [MarkdownSection] = []
+
     private var sections: [MarkdownSection] {
-        parseMarkdown(content)
+        if cachedContent == content { return cachedSections }
+        // Cold path on first render — `.task(id: content)` will populate the
+        // cache after this frame so all later renders for the same content
+        // hit the fast path.
+        return parseMarkdown(content)
     }
 
     var body: some View {
@@ -54,6 +66,13 @@ struct MarkdownRunbookView: View {
             .padding()
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .task(id: content) {
+            // `.task(id:)` fires once per distinct content value, including
+            // on initial appearance, so the cache is correct after the first
+            // frame and stays correct across the user's keystrokes.
+            cachedSections = parseMarkdown(content)
+            cachedContent = content
+        }
     }
 
     private func codeBlockView(language: String?, code: String, lineNumber: Int) -> some View {
