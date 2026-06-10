@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`SavedSplitNode` Snapshots Carry A Schema Version**: Persisted split-pane trees had no version field, so a future Chau7 binary that adds a new pane kind (e.g. a notebook pane) would silently round-trip a snapshot through an older binary that mis-decoded the unknown parts. `SavedSplitNode` now writes `version` (currently 1) and refuses to decode snapshots with a version newer than the running binary supports — the upstream restore caller falls back to a default layout instead of silently mis-shaping the tree. Pre-versioned snapshots already on disk decode as version 1 with no migration needed.
 - **Diff Viewer Explains Empty Hunks On Binary And Rename Diffs**: The unified-diff parser dropped `Binary files differ`, `rename from`, and `rename to` markers on the floor, so binary changes and pure renames rendered as a green-checkmark "No changes" panel even though git was clearly reporting a change. `DiffViewerModel.parseUnifiedDiff` now returns a `DiffSummary` (`.content` / `.binary` / `.renamed(from:to:)`), and the empty-state panel in the diff pane reads the summary to show "Binary file" or "File renamed: old → new" instead of pretending nothing happened.
 
+### Changed
+- **Repository Pane Types Split Out Into Their Own File**: The supporting value types backing the Repository pane (`FileStatus`, `FileChangeType`, `CommitEntry`, `StashEntry`, `BranchDetail`, `DiffStat`, `TurnSummaryInfo`) used to live at the end of the 1000-line `RepositoryPaneModel.swift`. They're now in `RepositoryPaneTypes.swift`, a no-behavior-change scaffolding step toward separating Status / Commit / History into their own `@Observable` sub-states so a history-search bump doesn't invalidate the status section. The structural `@Observable` split is intentionally a follow-up — the model and view both need to move together for it to be safe.
+
 ## [0.3.1] - 2026-06-09
 
 ### Changed
