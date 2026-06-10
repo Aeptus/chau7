@@ -329,6 +329,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 - Horizontal (`Cmd+Opt+H`) and vertical (`Cmd+Opt+V`) splits with draggable dividers.
 - Arbitrary nesting via binary tree layout controller.
+- Persisted split-pane trees carry a schema version, so a future Chau7 build that adds a new pane kind can't silently mis-decode through an older binary — older code surfaces a clear error and falls back to a default layout instead.
 - Built-in text editor in split panes (`Cmd+Opt+E`) — syntax highlighting, line numbers, bracket matching (`()`, `[]`, `{}`, `<>` — UTF-16 in-place scan, no per-keystroke array allocation), auto-indent, scroll-to-line, find/replace.
 - Repo-scoped session notes for the split text editor: untitled panes can save directly to `.chau7/sessions/<tab-id>/note.md` inside the active repository, and reopen the matching note for whichever repo the tab is currently in.
 - Click-to-copy document name in the editor pane header.

@@ -16,6 +16,14 @@ enum SavedSplitNodeKind: String, Codable {
 }
 
 final class SavedSplitNode: Codable, Equatable {
+    /// Schema version of this persisted split tree. Bump when a new pane
+    /// kind is added or a field's interpretation changes so old binaries
+    /// reading a newer snapshot fail loudly (the caller substitutes a
+    /// default layout) instead of silently decoding the parts they
+    /// understand and dropping the rest.
+    static let currentVersion = 1
+
+    let version: Int
     let kind: SavedSplitNodeKind
     let id: String
     let direction: SplitDirection?
@@ -31,6 +39,7 @@ final class SavedSplitNode: Codable, Equatable {
     let dashboardRepoGroupID: String?
 
     init(
+        version: Int = SavedSplitNode.currentVersion,
         kind: SavedSplitNodeKind,
         id: String,
         direction: SplitDirection?,
@@ -45,6 +54,7 @@ final class SavedSplitNode: Codable, Equatable {
         repoDirectory: String? = nil,
         dashboardRepoGroupID: String? = nil
     ) {
+        self.version = version
         self.kind = kind
         self.id = id
         self.direction = direction
@@ -60,8 +70,67 @@ final class SavedSplitNode: Codable, Equatable {
         self.dashboardRepoGroupID = dashboardRepoGroupID
     }
 
+    enum CodingKeys: String, CodingKey {
+        case version, kind, id, direction, ratio, first, second
+        case textEditorPath, previewFilePath, diffFilePath, diffDirectory, diffMode
+        case repoDirectory, dashboardRepoGroupID
+    }
+
+    convenience init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Pre-versioned snapshots (everything currently on disk) are read
+        // as version 1; future bumps will fail loudly on snapshots written
+        // by a newer binary.
+        let version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        if version > SavedSplitNode.currentVersion {
+            throw DecodingError.dataCorruptedError(
+                forKey: .version,
+                in: container,
+                debugDescription:
+                    "SavedSplitNode version \(version) is newer than supported version " +
+                    "\(SavedSplitNode.currentVersion); falling back to a default layout."
+            )
+        }
+
+        self.init(
+            version: version,
+            kind: try container.decode(SavedSplitNodeKind.self, forKey: .kind),
+            id: try container.decode(String.self, forKey: .id),
+            direction: try container.decodeIfPresent(SplitDirection.self, forKey: .direction),
+            ratio: try container.decodeIfPresent(Double.self, forKey: .ratio),
+            first: try container.decodeIfPresent(SavedSplitNode.self, forKey: .first),
+            second: try container.decodeIfPresent(SavedSplitNode.self, forKey: .second),
+            textEditorPath: try container.decodeIfPresent(String.self, forKey: .textEditorPath),
+            previewFilePath: try container.decodeIfPresent(String.self, forKey: .previewFilePath),
+            diffFilePath: try container.decodeIfPresent(String.self, forKey: .diffFilePath),
+            diffDirectory: try container.decodeIfPresent(String.self, forKey: .diffDirectory),
+            diffMode: try container.decodeIfPresent(String.self, forKey: .diffMode),
+            repoDirectory: try container.decodeIfPresent(String.self, forKey: .repoDirectory),
+            dashboardRepoGroupID: try container.decodeIfPresent(String.self, forKey: .dashboardRepoGroupID)
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(version, forKey: .version)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(direction, forKey: .direction)
+        try container.encodeIfPresent(ratio, forKey: .ratio)
+        try container.encodeIfPresent(first, forKey: .first)
+        try container.encodeIfPresent(second, forKey: .second)
+        try container.encodeIfPresent(textEditorPath, forKey: .textEditorPath)
+        try container.encodeIfPresent(previewFilePath, forKey: .previewFilePath)
+        try container.encodeIfPresent(diffFilePath, forKey: .diffFilePath)
+        try container.encodeIfPresent(diffDirectory, forKey: .diffDirectory)
+        try container.encodeIfPresent(diffMode, forKey: .diffMode)
+        try container.encodeIfPresent(repoDirectory, forKey: .repoDirectory)
+        try container.encodeIfPresent(dashboardRepoGroupID, forKey: .dashboardRepoGroupID)
+    }
+
     static func == (lhs: SavedSplitNode, rhs: SavedSplitNode) -> Bool {
-        lhs.kind == rhs.kind &&
+        lhs.version == rhs.version &&
+            lhs.kind == rhs.kind &&
             lhs.id == rhs.id &&
             lhs.direction == rhs.direction &&
             lhs.ratio == rhs.ratio &&

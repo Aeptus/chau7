@@ -202,6 +202,7 @@ Tab Management,Background Tab Suspension,Inactive tabs suspend rendering after c
 Split Panes,Horizontal Split,Cmd+Opt+H — split side-by-side with draggable dividers,Shipped,No
 Split Panes,Vertical Split,Cmd+Opt+V — stack panes vertically,Shipped,No
 Split Panes,Nested Splits,Arbitrary nesting depth via binary tree layout controller,Shipped,No
+Split Panes,Versioned Restore Snapshots,"Persisted split-pane trees carry a schema version so future binaries can add pane kinds without older code silently mis-decoding snapshots; pre-versioned snapshots read as version 1 with no migration",Shipped,No
 Split Panes,Built-in Text Editor,"Full editor in a split pane (⌘⌥E) — syntax highlighting, line numbers, bracket matching, auto-indent, scroll-to-line, find/replace",Shipped,Yes
 Split Panes,Repo-Scoped Session Notes,"Untitled side text panes can save directly to .chau7/sessions/<tab-id>/note.md inside the active repository and reopen the matching note for the tab's current repo on restore",Shipped,Yes
 Split Panes,Repository Pane,"Full git UI in a split pane (⌘⌥B) — session-aware: shows agent-touched files with diff stats when AI active, resets after push. Stage/unstage, commit (⌘Enter), branch, push/pull, stash, history with search, conflict resolution, ahead/behind, hover tooltips, commit chips. Prompts for protected-folder access only when a live git action is requested.",Shipped,Yes
