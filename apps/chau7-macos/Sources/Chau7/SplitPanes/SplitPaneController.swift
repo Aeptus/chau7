@@ -1563,20 +1563,18 @@ final class SplitPaneController {
         )
     }
 
-    var attachedSessionNotePath: String? {
-        guard let repoRoot = currentRepoRootForSessionNote(),
-              let ownerTabID else {
+    /// Builds a `SessionNoteCoordinator` for the current tab and repo, or
+    /// nil when either piece is missing (no tabID assigned, or no terminal
+    /// session has reported a git root yet).
+    private func sessionNoteCoordinator() -> SessionNoteCoordinator? {
+        guard let tabID = ownerTabID, let repoRoot = currentRepoRootForSessionNote() else {
             return nil
         }
-        return SessionNoteAttachmentLocator.filePath(repoRoot: repoRoot, tabID: ownerTabID)
+        return SessionNoteCoordinator(tabID: tabID, repoRoot: repoRoot)
     }
 
-    private var existingAttachedSessionNotePath: String? {
-        guard let path = attachedSessionNotePath,
-              FileManager.default.fileExists(atPath: path) else {
-            return nil
-        }
-        return path
+    var attachedSessionNotePath: String? {
+        sessionNoteCoordinator()?.attachedNotePath
     }
 
     private func currentRepoRootForSessionNote() -> String? {
@@ -1594,28 +1592,13 @@ final class SplitPaneController {
         return nil
     }
 
-    private func ensureSessionNoteFileExists(at path: String) {
-        let url = URL(fileURLWithPath: path)
-        FileOperations.createDirectory(at: url.deletingLastPathComponent())
-        guard !FileManager.default.fileExists(atPath: url.path) else { return }
-        _ = FileOperations.writeString("", to: url.path)
-    }
-
     private func resolvedTextEditorFilePath(_ filePath: String?) -> String? {
-        guard let filePath else {
-            return preparedAttachedSessionNotePath()
-        }
-        return filePath
-    }
-
-    private func preparedAttachedSessionNotePath() -> String? {
-        guard let path = attachedSessionNotePath else { return nil }
-        ensureSessionNoteFileExists(at: path)
-        return path
+        if let filePath { return filePath }
+        return sessionNoteCoordinator()?.prepareNoteFile()
     }
 
     func attachUntitledSessionNoteEditorsIfPossible() {
-        guard let notePath = preparedAttachedSessionNotePath() else { return }
+        guard let notePath = sessionNoteCoordinator()?.prepareNoteFile() else { return }
         for editor in root.allEditors where editor.filePath == nil {
             editor.loadFile(at: notePath)
         }
@@ -1623,19 +1606,13 @@ final class SplitPaneController {
 
     @discardableResult
     private func saveUntitledEditorToAttachedSessionNote(_ editor: TextEditorModel) -> Bool {
-        guard let repoRoot = currentRepoRootForSessionNote(),
-              let ownerTabID else {
-            return false
-        }
-
-        let path = SessionNoteAttachmentLocator.filePath(repoRoot: repoRoot, tabID: ownerTabID)
-        ensureSessionNoteFileExists(at: path)
+        guard let path = sessionNoteCoordinator()?.prepareNoteFile() else { return false }
         return editor.saveAs(to: path)
     }
 
     func restoreAttachedSessionNoteIfNeeded() {
         guard root.firstPaneID(ofType: .textEditor) == nil,
-              let notePath = existingAttachedSessionNotePath else {
+              let notePath = sessionNoteCoordinator()?.existingNotePath else {
             return
         }
         let preservedFocus = focusedPaneID
@@ -1830,7 +1807,8 @@ final class SplitPaneController {
                     _ = editor.saveUntitledIfPossible()
                 }
             } else {
-                guard confirmCloseDirtyEditor(editor) else { return }
+                let confirmer = PaneCloseConfirmer(dialogs: dialogs)
+                if confirmer.confirmCloseDirty(editor) == .abort { return }
             }
         }
 
@@ -1844,37 +1822,6 @@ final class SplitPaneController {
                 }
             }
         }
-    }
-
-    /// Run the save/discard/cancel dialog for a dirty editor. Returns true when
-    /// the caller should proceed with the close (saved or explicitly discarded),
-    /// false on cancel or on a failed Save As that the user did not complete.
-    private func confirmCloseDirtyEditor(_ editor: TextEditorModel) -> Bool {
-        switch dialogs.confirmCloseDirtyEditor() {
-        case .save:
-            if editor.filePath != nil {
-                return editor.save()
-            }
-            if editor.saveUntitledIfPossible() {
-                return true
-            }
-            return runSaveAsPanel(for: editor)
-        case .dontSave:
-            // Don't Save: explicitly discard pending edits so downstream code
-            // (autosave debounce, restore-on-relaunch) doesn't resurrect them.
-            editor.discardPendingChanges()
-            return true
-        case .cancel:
-            return false
-        }
-    }
-
-    private func runSaveAsPanel(for editor: TextEditorModel) -> Bool {
-        let defaultName = L("editor.defaultFilename", "untitled.txt")
-        guard let chosenPath = dialogs.runSaveAsPanel(defaultName: defaultName) else {
-            return false
-        }
-        return editor.saveAs(to: chosenPath)
     }
 
     private func removeNode(_ node: SplitNode, targetID: UUID) -> (node: SplitNode?, siblingID: UUID?) {
