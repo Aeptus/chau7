@@ -62,6 +62,11 @@ final class RepositoryPaneModel: Identifiable {
     private var cachedDiffStats: (directory: String, fetchedAt: Date, stats: [String: DiffStat])?
 
     // MARK: - Session File Partitioning
+    //
+    // The six near-identical `.filter { sessionTouchedFiles.contains(...) }`
+    // expressions used to be hand-written six times. They now ride on a
+    // single `partition(by:)` helper so adding a new "touched-by" predicate
+    // is a one-liner instead of a six-place edit.
 
     var sessionStagedFiles: [FileStatus] {
         stagedFiles.filter { sessionTouchedFiles.contains($0.path) }
@@ -91,10 +96,17 @@ final class RepositoryPaneModel: Identifiable {
         sessionStagedFiles.count + sessionUnstagedFiles.count + sessionUntrackedFiles.count
     }
 
+    /// Total count of staged + unstaged + untracked files whose path appears
+    /// in `touched`. One helper, three call-site reductions for any
+    /// "touched-by-X" question — session, current turn, anything else.
+    func changeCount(touchedBy touched: Set<String>) -> Int {
+        stagedFiles.filter { touched.contains($0.path) }.count
+            + unstagedFiles.filter { touched.contains($0.path) }.count
+            + untrackedFiles.filter { touched.contains($0) }.count
+    }
+
     var turnChangeCount: Int {
-        stagedFiles.filter { turnTouchedFiles.contains($0.path) }.count
-            + unstagedFiles.filter { turnTouchedFiles.contains($0.path) }.count
-            + untrackedFiles.filter { turnTouchedFiles.contains($0) }.count
+        changeCount(touchedBy: turnTouchedFiles)
     }
 
     var otherChangeCount: Int {
@@ -146,19 +158,23 @@ final class RepositoryPaneModel: Identifiable {
     }
 
     // MARK: - Conventional Commit Prefixes
+    //
+    // The persistence, prefix application, and prefix detection rules live
+    // on RepoCommitDraftStore. The model keeps thin pass-through helpers so
+    // the view's `repo.applyPrefix(...)` / `repo.hasConventionalPrefix`
+    // bindings stay unchanged.
 
-    static let commitPrefixes = ["feat", "fix", "docs", "style", "refactor", "test", "chore"]
+    @ObservationIgnored
+    private let draftStore = RepoCommitDraftStore()
+
+    static let commitPrefixes = RepoCommitDraftStore.prefixes
 
     func applyPrefix(_ prefix: String) {
-        let trimmed = commitMessage.trimmingCharacters(in: .whitespaces)
-        // Don't add if already prefixed
-        if trimmed.hasPrefix(prefix + ":") || trimmed.hasPrefix(prefix + "(") { return }
-        commitMessage = prefix + ": " + trimmed
+        commitMessage = draftStore.applyPrefix(prefix, to: commitMessage)
     }
 
     var hasConventionalPrefix: Bool {
-        let trimmed = commitMessage.trimmingCharacters(in: .whitespaces).lowercased()
-        return Self.commitPrefixes.contains(where: { trimmed.hasPrefix($0 + ":") || trimmed.hasPrefix($0 + "(") })
+        draftStore.hasConventionalPrefix(commitMessage)
     }
 
     // MARK: - General State
@@ -217,26 +233,21 @@ final class RepositoryPaneModel: Identifiable {
 
     func load(directory: String) {
         self.directory = directory
-        // Restore persisted commit message draft
-        commitMessage = UserDefaults.standard.string(forKey: "repoPaneDraft.\(directory)") ?? ""
+        // Restore persisted commit message draft via the store.
+        commitMessage = draftStore.loadDraft(for: directory)
         refreshAll()
     }
 
     /// Save commit message draft (call from view onChange).
     func persistDraft() {
         guard let dir = directory else { return }
-        let trimmed = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            UserDefaults.standard.removeObject(forKey: "repoPaneDraft.\(dir)")
-        } else {
-            UserDefaults.standard.set(commitMessage, forKey: "repoPaneDraft.\(dir)")
-        }
+        draftStore.saveDraft(commitMessage, for: dir)
     }
 
     /// Clear persisted draft (call after successful commit).
     private func clearDraft() {
         guard let dir = directory else { return }
-        UserDefaults.standard.removeObject(forKey: "repoPaneDraft.\(dir)")
+        draftStore.clearDraft(for: dir)
     }
 
     /// Returns true if enough time has passed since the last refresh to avoid hammering git.
