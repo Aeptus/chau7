@@ -21,6 +21,79 @@ enum NotificationActionRuntime {
     static let processKillGracePeriod: TimeInterval = 3.0
 }
 
+/// Synchronously runs a process, draining stdout/stderr into a log line
+/// on non-zero exits. Pure function — safe to call from any thread.
+/// Used by every "shell-out" action that doesn't need streaming output
+/// (docker, kubernetes, git-commit). Returns true on exit code 0.
+@discardableResult
+func runProcessSync(
+    executable: String,
+    arguments: [String],
+    currentDirectory: String? = nil,
+    label: String
+) -> Bool {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = arguments
+
+    if let currentDirectory {
+        process.currentDirectoryURL = URL(fileURLWithPath: currentDirectory)
+    }
+
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+
+    do {
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            Log.warn("Action \(label): Exit code \(process.terminationStatus), output: \(output.prefix(200))")
+            return false
+        }
+        return true
+    } catch {
+        Log.error("Action \(label): Failed: \(error.localizedDescription)")
+        return false
+    }
+}
+
+/// Dispatches `runProcessSync` on a background queue. Non-blocking
+/// helper for actions that fire-and-forget a single shell command.
+func runProcessAsync(
+    executable: String,
+    arguments: [String],
+    label: String,
+    currentDirectory: String? = nil
+) {
+    DispatchQueue.global(qos: .userInitiated).async {
+        _ = runProcessSync(
+            executable: executable,
+            arguments: arguments,
+            currentDirectory: currentDirectory,
+            label: label
+        )
+    }
+}
+
+/// Atomically open-or-create + append data via `fopen "a"`. Used by the
+/// log-time + write-to-file actions so each line lands as a single
+/// atomic write to a fresh fd, without TOCTOU between exists-check and
+/// write.
+func appendToFile(atPath path: String, data: Data) throws {
+    guard let fp = fopen(path, "a") else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [
+            NSLocalizedDescriptionKey: "Cannot open file for appending: \(path)"
+        ])
+    }
+    defer { fclose(fp) }
+    data.withUnsafeBytes { bytes in
+        guard let base = bytes.baseAddress else { return }
+        _ = fwrite(base, 1, bytes.count, fp)
+    }
+}
+
 /// Process termination helper. Pulled out as a free function so it can be
 /// called from both the @MainActor executor and nonisolated background
 /// queues.
