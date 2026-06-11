@@ -51,26 +51,22 @@ final class NotificationActionExecutor {
     // MARK: - Dependencies (injected from app)
 
     /// Strong reference is safe — the adapter holds only weak refs to the actual UI objects.
-    var delegate: NotificationActionDelegate?
+    var delegate: NotificationActionDelegate? {
+        didSet { styleCoordinator.delegate = delegate }
+    }
 
     // MARK: - Time Tracking State
 
     private var activeTimers: [String: Date] = [:]
 
-    // MARK: - Tab Style Auto-Clear Tracking
-
-    /// Tracks pending auto-clear work items per tab ID to allow cancellation.
-    /// Keyed by tab UUID (not tool name) so timers for different tabs running the same tool don't collide.
-    /// All access must be on the main queue.
-    private var pendingStyleClears: [UUID: DispatchWorkItem] = [:]
-    private var pendingStyleRetries: [UUID: PendingStyleRetry] = [:]
-
-    private struct PendingStyleRetry {
-        let eventID: UUID
-        let tabID: UUID
-        let sessionID: String?
-        let workItem: DispatchWorkItem
-    }
+    // MARK: - Tab Style Coordinator
+    //
+    // The styleTab state machine (live-tab lookup, deferred retry,
+    // auto-clear timers, redundant re-apply suppression) lives on its own
+    // type so the executor's action dispatch stays a clean switch and the
+    // ~250-line styleTab path is testable without the rest of the
+    // executor in the picture.
+    private let styleCoordinator = StyleTabCoordinator()
 
     /// Held to prevent the flash window from being deallocated during animation
     private var flashWindow: NSWindow?
@@ -90,30 +86,11 @@ final class NotificationActionExecutor {
     }
 
     func cancelPendingStyleWork(tabID: UUID? = nil, sessionID: String? = nil) {
-        let normalizedSessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if let tabID {
-            pendingStyleClears.removeValue(forKey: tabID)?.cancel()
-            lastAppliedPreset.removeValue(forKey: tabID)
-        }
-
-        let retryIDs = pendingStyleRetries.compactMap { eventID, retry -> UUID? in
-            let matchesTab = tabID.map { retry.tabID == $0 } ?? false
-            let matchesSession = normalizedSessionID.map { retry.sessionID == $0 } ?? false
-            return (matchesTab || matchesSession) ? eventID : nil
-        }
-
-        for eventID in retryIDs {
-            pendingStyleRetries.removeValue(forKey: eventID)?.workItem.cancel()
-        }
+        styleCoordinator.cancelPendingWork(tabID: tabID, sessionID: sessionID)
     }
 
     func resetForTesting() {
-        pendingStyleClears.values.forEach { $0.cancel() }
-        pendingStyleRetries.values.forEach { $0.workItem.cancel() }
-        pendingStyleClears.removeAll()
-        pendingStyleRetries.removeAll()
-        lastAppliedPreset.removeAll()
+        styleCoordinator.reset()
         activeTimers.removeAll()
         delegate = nil
     }
@@ -341,264 +318,8 @@ final class NotificationActionExecutor {
         return report
     }
 
-    /// Tracks the last style preset applied per tab to avoid redundant re-applies.
-    private var lastAppliedPreset: [UUID: String] = [:]
-    private static let styleRetryDelay: TimeInterval = 0.2
-
     private func executeStyleTab(_ ctx: ActionContext) -> ExecutionReport {
-        let stylePreset = ctx.configValue("style") ?? "waiting"
-        let config = ctx.config.config // Pass all config to handler
-        let autoClearSeconds = ctx.configInt("autoClearSeconds", default: 0)
-        var report = ExecutionReport()
-
-        // All pendingStyleClears access and delegate calls on main queue
-        guard let tabID = ctx.event.tabID else {
-            let note = "styleTab missing explicit tabID"
-            Log.warn("Action styleTab: Missing explicit tabID for event \(ctx.event.id.uuidString)")
-            report.recordFailure(note)
-            return report
-        }
-
-        // Suppress redundant style re-applies: if the tab already has this style
-        // and an auto-clear timer is running, don't re-set and restart the timer.
-        // This prevents idle re-notifications from resetting the 30s clear countdown.
-        if stylePreset != "clear",
-           lastAppliedPreset[tabID] == stylePreset,
-           pendingStyleClears[tabID] != nil {
-            Log.trace("Skipping redundant style '\(stylePreset)' for tab \(tabID)")
-            report.recordSuccess(.styleTab)
-            return report
-        }
-
-        let resolvedTabID = resolveLiveStyleTabID(
-            event: ctx.event,
-            explicitTabID: tabID,
-            preset: stylePreset,
-            config: config
-        )
-
-        // Key timers by resolved tab ID so different tabs running the same tool don't collide
-        guard let resolvedTabID else {
-            if scheduleDeferredStyleRetryIfNeeded(
-                event: ctx.event,
-                explicitTabID: tabID,
-                preset: stylePreset,
-                config: config,
-                autoClearSeconds: autoClearSeconds
-            ) {
-                report.recordSuccess(.styleTab)
-                report.notes.append("styleTab deferred retry scheduled for explicit tabID \(tabID.uuidString)")
-                return report
-            }
-            let note = "styleTab failed for explicit tabID \(tabID.uuidString)"
-            if delegate?.tabExists(tabID: tabID) == false {
-                Log.info(
-                    "Action styleTab: skipped missing explicit tabID \(tabID) for event \(ctx.event.id.uuidString)"
-                )
-            } else {
-                Log.warn("Action styleTab: Explicit tabID not found across windows for event \(ctx.event.id.uuidString)")
-            }
-            report.recordFailure(note)
-            return report
-        }
-
-        applyResolvedStyle(
-            resolvedTabID,
-            preset: stylePreset,
-            autoClearSeconds: autoClearSeconds,
-            event: ctx.event
-        )
-        report.recordSuccess(.styleTab)
-        return report
-    }
-
-    private func applyResolvedStyle(
-        _ resolvedTabID: UUID,
-        preset stylePreset: String,
-        autoClearSeconds: Int,
-        event: AIEvent
-    ) {
-        if stylePreset == "clear" {
-            lastAppliedPreset.removeValue(forKey: resolvedTabID)
-        } else {
-            lastAppliedPreset[resolvedTabID] = stylePreset
-        }
-
-        // Cancel any pending auto-clear for this specific tab
-        pendingStyleClears[resolvedTabID]?.cancel()
-        pendingStyleClears.removeValue(forKey: resolvedTabID)
-
-        if autoClearSeconds > 0 {
-            let workItem = DispatchWorkItem { [weak self] in
-                self?.pendingStyleClears.removeValue(forKey: resolvedTabID)
-                self?.lastAppliedPreset.removeValue(forKey: resolvedTabID)
-                guard let self,
-                      let autoClearTabID = resolveAutoClearTabID(originalTabID: resolvedTabID, event: event)
-                else {
-                    Log.debug(
-                        "Action styleTab: skipped auto-clear for missing tab \(resolvedTabID) event=\(event.id.uuidString)"
-                    )
-                    return
-                }
-                _ = delegate?.styleTab(tabID: autoClearTabID, preset: "clear", config: [:])
-            }
-            pendingStyleClears[resolvedTabID] = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(autoClearSeconds), execute: workItem)
-        }
-    }
-
-    private func scheduleDeferredStyleRetryIfNeeded(
-        event: AIEvent,
-        explicitTabID: UUID,
-        preset: String,
-        config: [String: String],
-        autoClearSeconds: Int
-    ) -> Bool {
-        guard let recoveredTabID = recoverableStyleTabID(event: event, explicitTabID: explicitTabID) else {
-            return false
-        }
-
-        Log.info(
-            "Action styleTab: scheduling deferred retry for stale tab \(explicitTabID) recoveredTabID=\(recoveredTabID) event=\(event.id.uuidString)"
-        )
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            pendingStyleRetries.removeValue(forKey: event.id)
-            guard let recoveredTabID = resolveLiveStyleTabID(
-                event: event,
-                explicitTabID: explicitTabID,
-                preset: preset,
-                config: config
-            ) else {
-                Log.warn(
-                    "Action styleTab: deferred retry failed for explicit tabID \(explicitTabID) event=\(event.id.uuidString)"
-                )
-                return
-            }
-            applyResolvedStyle(
-                recoveredTabID,
-                preset: preset,
-                autoClearSeconds: autoClearSeconds,
-                event: event
-            )
-            Log.info(
-                "Action styleTab: deferred retry succeeded for explicit tabID \(explicitTabID) recoveredTabID=\(recoveredTabID) event=\(event.id.uuidString)"
-            )
-        }
-        pendingStyleRetries[event.id] = PendingStyleRetry(
-            eventID: event.id,
-            tabID: explicitTabID,
-            sessionID: event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
-            workItem: workItem
-        )
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.styleRetryDelay, execute: workItem)
-        return true
-    }
-
-    private func recoverableStyleTabID(event: AIEvent, explicitTabID: UUID) -> UUID? {
-        guard let sessionID = event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !sessionID.isEmpty else {
-            return nil
-        }
-
-        let exactTarget = TabTarget(
-            tool: event.tool,
-            directory: event.directory,
-            tabID: nil,
-            sessionID: sessionID
-        )
-
-        guard let recoveredTabID = delegate?.resolveExactTab(target: exactTarget),
-              recoveredTabID != explicitTabID,
-              delegate?.tabExists(tabID: recoveredTabID) == true else {
-            return nil
-        }
-
-        return recoveredTabID
-    }
-
-    private func resolveAutoClearTabID(originalTabID: UUID, event: AIEvent) -> UUID? {
-        let resolved = Self.resolveAutoClearTabID(
-            originalTabID: originalTabID,
-            event: event,
-            tabExists: { [weak delegate] tabID in
-                delegate?.tabExists(tabID: tabID) == true
-            },
-            resolveExactTab: { [weak delegate] target in
-                delegate?.resolveExactTab(target: target)
-            }
-        )
-
-        if let resolved, resolved != originalTabID, let sessionID = event.sessionID {
-            Log.info(
-                "Action styleTab: recovered auto-clear target \(originalTabID) via exact session \(sessionID) -> \(resolved)"
-            )
-        }
-        return resolved
-    }
-
-    static func resolveAutoClearTabID(
-        originalTabID: UUID,
-        event: AIEvent,
-        tabExists: (UUID) -> Bool,
-        resolveExactTab: (TabTarget) -> UUID?
-    ) -> UUID? {
-        if tabExists(originalTabID) {
-            return originalTabID
-        }
-
-        guard let sessionID = event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !sessionID.isEmpty else {
-            return nil
-        }
-
-        let exactTarget = TabTarget(
-            tool: event.tool,
-            directory: event.directory,
-            tabID: nil,
-            sessionID: sessionID
-        )
-
-        guard let recoveredTabID = resolveExactTab(exactTarget),
-              tabExists(recoveredTabID) else {
-            return nil
-        }
-
-        return recoveredTabID
-    }
-
-    private func resolveLiveStyleTabID(
-        event: AIEvent,
-        explicitTabID: UUID,
-        preset: String,
-        config: [String: String]
-    ) -> UUID? {
-        if delegate?.tabExists(tabID: explicitTabID) != false,
-           let resolved = delegate?.styleTab(tabID: explicitTabID, preset: preset, config: config) {
-            return resolved
-        }
-
-        guard let sessionID = event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !sessionID.isEmpty else {
-            return nil
-        }
-
-        let exactTarget = TabTarget(
-            tool: event.tool,
-            directory: event.directory,
-            tabID: nil,
-            sessionID: sessionID
-        )
-
-        guard let recoveredTabID = delegate?.resolveExactTab(target: exactTarget),
-              recoveredTabID != explicitTabID else {
-            return nil
-        }
-
-        Log.info(
-            "Action styleTab: recovered stale tabID \(explicitTabID) via exact session \(sessionID) -> \(recoveredTabID)"
-        )
-        return delegate?.styleTab(tabID: recoveredTabID, preset: preset, config: config)
+        styleCoordinator.apply(event: ctx.event, config: ctx.config)
     }
 
     // MARK: - Automation Actions

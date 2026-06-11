@@ -150,7 +150,7 @@ final class NotificationActionExecutorTests: XCTestCase {
             reliability: .authoritative
         )
 
-        let resolved = NotificationActionExecutor.resolveAutoClearTabID(
+        let resolved = StyleTabCoordinator.resolveAutoClearTabID(
             originalTabID: staleTabID,
             event: event,
             tabExists: { $0 == recoveredTabID },
@@ -174,7 +174,7 @@ final class NotificationActionExecutorTests: XCTestCase {
             reliability: .authoritative
         )
 
-        let resolved = NotificationActionExecutor.resolveAutoClearTabID(
+        let resolved = StyleTabCoordinator.resolveAutoClearTabID(
             originalTabID: staleTabID,
             event: event,
             tabExists: { _ in false },

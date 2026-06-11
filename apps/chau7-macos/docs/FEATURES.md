@@ -413,7 +413,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Dock badge and bounce (critical/non-critical).
 - Configurable sounds (Glass, Purr, etc.) with volume control.
 - Command idle detection with configurable threshold. Fires once per session, resets only on real user activity.
-- Auto tab styling on events with auto-clear timeout. Deduplicates redundant re-applies, clears persistent approval styling as soon as the approval is resolved, and can highlight every affected tab for file conflicts.
+- Auto tab styling on events with auto-clear timeout. Deduplicates redundant re-applies, clears persistent approval styling as soon as the approval is resolved, and can highlight every affected tab for file conflicts. The live-tab lookup, deferred-retry scheduler, auto-clear timer, and redundant re-apply suppression all live on a dedicated `StyleTabCoordinator` so the path is unit-testable in isolation.
 - Visual bell mode (screen flash), combinable with audible bell.
 - Bell rate limiting with configurable minimum interval, scoped per trigger and tab/session/directory identity.
 - Rate limiting and per-trigger enable/disable.
