@@ -112,12 +112,15 @@ final class RepositoryPaneModel: Identifiable {
     }
 
     // MARK: - Branch State
-
-    var currentBranch: String?
-    var branches: [String] = []
-    var remoteBranches: [String] = []
-    var branchDetails: [String: BranchDetail] = [:]
-    var aheadBehind: (ahead: Int, behind: Int)?
+    //
+    // currentBranch / branches / remoteBranches / branchDetails / aheadBehind
+    // moved to a dedicated `RepoBranchState` @Observable accessed as
+    // `repo.branchState`. A branch-list refresh no longer fans invalidations
+    // out to status / history / commit through the outer model. (Named
+    // `branchState` rather than `branch` because `branch` could read like a
+    // single-branch noun and the per-section pattern is to use the section
+    // word as the property name.)
+    var branchState = RepoBranchState()
 
     // MARK: - File Status
     //
@@ -319,15 +322,15 @@ final class RepositoryPaneModel: Identifiable {
             }
 
             DispatchQueue.main.async {
-                self.currentBranch = branch.isEmpty ? nil : branch
+                self.branchState.currentBranch = branch.isEmpty ? nil : branch
                 self.status.stagedFiles = parsed.staged
                 self.status.unstagedFiles = parsed.unstaged
                 self.status.untrackedFiles = parsed.untracked
                 self.status.conflictedFiles = parsed.conflicted
-                self.branches = parsedBranches
-                self.branchDetails = parsedDetails
-                self.remoteBranches = parsedRemoteBranches
-                self.aheadBehind = parsedAheadBehind
+                self.branchState.branches = parsedBranches
+                self.branchState.branchDetails = parsedDetails
+                self.branchState.remoteBranches = parsedRemoteBranches
+                self.branchState.aheadBehind = parsedAheadBehind
                 self.history.commits = parsedCommits
                 self.history.stashes = parsedStashes
                 self.status.diffStats = parsedDiffStats
@@ -371,11 +374,11 @@ final class RepositoryPaneModel: Identifiable {
             let ab = gitRunner(["rev-list", "--count", "--left-right", "@{upstream}...HEAD"], dir)
             let (parsedBranches, parsedDetails) = Self.parseBranchesVerbose(local)
             DispatchQueue.main.async {
-                self.currentBranch = branch.isEmpty ? nil : branch
-                self.branches = parsedBranches
-                self.branchDetails = parsedDetails
-                self.remoteBranches = Self.parseRemoteBranches(remote)
-                self.aheadBehind = Self.parseAheadBehind(ab)
+                self.branchState.currentBranch = branch.isEmpty ? nil : branch
+                self.branchState.branches = parsedBranches
+                self.branchState.branchDetails = parsedDetails
+                self.branchState.remoteBranches = Self.parseRemoteBranches(remote)
+                self.branchState.aheadBehind = Self.parseAheadBehind(ab)
             }
         }
     }

@@ -83,7 +83,7 @@ struct RepositoryPaneView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 
-            if let branch = repo.currentBranch {
+            if let branch = repo.branchState.currentBranch {
                 Button {
                     showBranchPicker.toggle()
                 } label: {
@@ -100,7 +100,7 @@ struct RepositoryPaneView: View {
                     branchPickerPopover
                 }
 
-                if let ab = repo.aheadBehind, ab.ahead > 0 || ab.behind > 0 {
+                if let ab = repo.branchState.aheadBehind, ab.ahead > 0 || ab.behind > 0 {
                     HStack(spacing: 2) {
                         if ab.ahead > 0 {
                             Text("↑\(ab.ahead)")
@@ -113,7 +113,7 @@ struct RepositoryPaneView: View {
                                 .foregroundStyle(.orange)
                         }
                     }
-                    .help(L("repo.aheadBehind.help", "↑ commits ahead of remote, ↓ commits behind"))
+                    .help(L("repo.branchState.aheadBehind.help", "↑ commits ahead of remote, ↓ commits behind"))
                 }
             }
 
@@ -738,7 +738,7 @@ struct RepositoryPaneView: View {
     // MARK: - Branches Section
 
     private var branchesSection: some View {
-        collapsibleSection(title: L("repo.section.branches", "Branches"), count: repo.branches.count, isExpanded: $branchesExpanded) {
+        collapsibleSection(title: L("repo.section.branches", "Branches"), count: repo.branchState.branches.count, isExpanded: $branchesExpanded) {
             VStack(alignment: .leading, spacing: 4) {
                 // Create branch
                 HStack(spacing: 4) {
@@ -756,19 +756,19 @@ struct RepositoryPaneView: View {
                 }
 
                 // Branch list
-                ForEach(repo.branches, id: \.self) { branch in
+                ForEach(repo.branchState.branches, id: \.self) { branch in
                     HStack(spacing: 6) {
-                        Image(systemName: branch == repo.currentBranch ? "circle.fill" : "circle")
+                        Image(systemName: branch == repo.branchState.currentBranch ? "circle.fill" : "circle")
                             .font(.system(size: 6))
-                            .foregroundStyle(branch == repo.currentBranch ? .green : .secondary)
+                            .foregroundStyle(branch == repo.branchState.currentBranch ? .green : .secondary)
 
                         Text(branch)
-                            .font(.system(size: 10, weight: branch == repo.currentBranch ? .semibold : .regular))
+                            .font(.system(size: 10, weight: branch == repo.branchState.currentBranch ? .semibold : .regular))
                             .lineLimit(1)
 
                         Spacer()
 
-                        if branch != repo.currentBranch {
+                        if branch != repo.branchState.currentBranch {
                             Button(L("repo.switchBranch", "Switch")) { repo.switchBranch(branch) }
                                 .font(.system(size: 9))
                                 .buttonStyle(.plain)
@@ -781,7 +781,7 @@ struct RepositoryPaneView: View {
                         }
                     }
                     .padding(.vertical, 1)
-                    .help(repo.branchDetails[branch]?.hoverText ?? branch)
+                    .help(repo.branchState.branchDetails[branch]?.hoverText ?? branch)
                 }
 
                 Divider().padding(.vertical, 4)
@@ -818,7 +818,7 @@ struct RepositoryPaneView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .padding(.bottom, 4)
 
-            ForEach(repo.branches, id: \.self) { branch in
+            ForEach(repo.branchState.branches, id: \.self) { branch in
                 Button {
                     repo.switchBranch(branch)
                     showBranchPicker = false
@@ -827,7 +827,7 @@ struct RepositoryPaneView: View {
                         Text(branch)
                             .font(.system(size: 11))
                         Spacer()
-                        if branch == repo.currentBranch {
+                        if branch == repo.branchState.currentBranch {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 10))
                         }
