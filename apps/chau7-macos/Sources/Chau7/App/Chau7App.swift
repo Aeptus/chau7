@@ -26,15 +26,11 @@ struct Chau7App: App {
         let model = AppModel()
         _model = State(wrappedValue: model)
         let overlayModel = OverlayTabsModel(appModel: model)
-        // All resolvers search ALL windows via TerminalControlService.allTabs,
-        // not just window 0's overlayModel. Without this, notifications for tabs
-        // in window 1+ never get titles, repo names, or tab IDs resolved.
-        NotificationManager.shared.tabTitleProvider = { target in
-            TerminalControlService.shared.tabTitle(for: target)
-        }
-        NotificationManager.shared.repoNameProvider = { target in
-            TerminalControlService.shared.repoName(for: target)
-        }
+        // Inject one host for tab titles, repo names, active-tab checks,
+        // and tab routing. All five previously-separate closures used to
+        // route to TerminalControlService anyway; the explicit protocol
+        // injection collapses them into a single line.
+        NotificationManager.shared.setHost(TerminalControlService.shared)
         model.tabIDResolver = { target in
             TerminalControlService.shared.resolveTabID(for: target)
         }
@@ -47,19 +43,6 @@ struct Chau7App: App {
             overlayModel: overlayModel,
             statusBar: StatusBarController.shared
         )
-
-        // Wire activeTabChecker so onlyWhenTabInactive condition works
-        NotificationManager.shared.activeTabChecker = { target in
-            TerminalControlService.shared.isActiveTab(target)
-        }
-
-        // Wire tabResolver so external events get tabID filled in
-        NotificationManager.shared.tabResolver = { target in
-            TerminalControlService.shared.resolveTabID(for: target)
-        }
-        NotificationManager.shared.strictTabResolver = { target in
-            TerminalControlService.shared.resolveTabID(for: target, strictSession: true)
-        }
 
         _overlayModel = State(wrappedValue: overlayModel)
         _ = SnippetManager.shared

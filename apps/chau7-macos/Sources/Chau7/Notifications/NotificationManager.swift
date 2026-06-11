@@ -19,25 +19,26 @@ final class NotificationManager {
     private let nativeNotificationBaseCooldown: TimeInterval = 15
     private let nativeNotificationMaxCooldown: TimeInterval = 300
 
-    var tabTitleProvider: ((TabTarget) -> String?)?
-    var repoNameProvider: ((TabTarget) -> String?)?
+    /// Source of truth for tab metadata, active-tab checks, and tab
+    /// routing. One injection point replaces the five separate closure
+    /// properties (tabTitleProvider, repoNameProvider, activeTabChecker,
+    /// tabResolver, strictTabResolver) the manager used to expose. The
+    /// app wires this once at startup via `setHost(_:)`; tests can pass
+    /// a stub conformer for routing decisions.
+    private weak var host: NotificationDeliveryHost?
 
     /// Rate limiter — prevents notification spam from burst events
     let rateLimiter = NotificationRateLimiter()
     /// Audit trail of fired (and rate-limited) notifications
     let history = NotificationHistory()
 
-    /// Injectable check: returns true if the given target's tab is currently selected.
-    var activeTabChecker: ((TabTarget) -> Bool)?
-
-    /// Injectable resolver: maps a TabTarget to the owning tab's UUID.
-    /// Used to fill in missing tabIDs on events from external sources (e.g. Claude Code hooks).
-    /// Wired through `TerminalControlService` so normal routing uses the
-    /// session index before falling back to recovery matching.
-    var tabResolver: ((TabTarget) -> UUID?)?
-    /// Strict resolver for authoritative events that must never fall back to
-    /// brand/title/directory heuristics.
-    var strictTabResolver: ((TabTarget) -> UUID?)?
+    /// Wire the host the manager will consult for tab title / repo name
+    /// / active-tab / routing answers. Calling with `nil` clears the
+    /// host (used by tests to isolate the manager from the live terminal
+    /// stack).
+    func setHost(_ host: NotificationDeliveryHost?) {
+        self.host = host
+    }
 
     // MARK: - Focus/DND State (push-based)
 
@@ -272,10 +273,17 @@ final class NotificationManager {
         let ns = FeatureSettings.shared.notificationSettings
         var preparedEvent: AIEvent
         var resolutionMethod: String
+        // NotificationEventPreparation expects a closure surface; wrap
+        // the host's tab resolver so the Core helper stays oblivious to
+        // NotificationDeliveryHost (Core can't import from the app
+        // layer).
+        let preparationResolver: ((TabTarget) -> UUID?)? = host.map { h in
+            { [weak h] target in h?.notificationResolveTab(target) }
+        }
         switch NotificationEventPreparation.prepare(
             event,
             triggerState: ns.triggerState,
-            tabResolver: tabResolver
+            tabResolver: preparationResolver
         ) {
         case .drop(let reason):
             Log.info("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
@@ -288,7 +296,7 @@ final class NotificationManager {
 
         if NotificationDeliverySemantics.requiresAuthoritativeRouting(preparedEvent),
            preparedEvent.tabID == nil,
-           let resolvedTabID = strictTabResolver?(preparedEvent.tabTarget) {
+           let resolvedTabID = host?.notificationResolveTabStrictly(preparedEvent.tabTarget) {
             preparedEvent = preparedEvent.resolvingTabID(resolvedTabID)
             resolutionMethod = "resolved_via_strict_session"
         }
@@ -361,7 +369,7 @@ final class NotificationManager {
             groupActionBindings: ns.groupActionBindings,
             isFocusModeActive: isFocusModeActive,
             isAppActive: NSApp.isActive,
-            isToolTabActive: activeTabChecker?(preparedEvent.tabTarget) ?? false
+            isToolTabActive: host?.notificationIsActiveTab(preparedEvent.tabTarget) ?? false
         )
 
         let decision = NotificationPipeline.evaluate(input)
@@ -620,8 +628,8 @@ final class NotificationManager {
 
     @discardableResult
     private func showDefaultNotification(for event: AIEvent) -> Bool {
-        let tabTitle = tabTitleProvider?(event.tabTarget)
-        let repoName = repoNameProvider?(event.tabTarget)
+        let tabTitle = host?.notificationTabTitle(for: event.tabTarget)
+        let repoName = host?.notificationRepoName(for: event.tabTarget)
         let title = event.notificationTitle(toolOverride: nil)
         let subtitle = event.notificationSubtitle(tabTitle: tabTitle, repoName: repoName)
         return dispatchNotification(title: title, subtitle: subtitle, body: event.notificationBody, for: event)
@@ -758,8 +766,8 @@ final class NotificationManager {
 
     private func notificationSubtitle(for event: AIEvent) -> String {
         event.notificationSubtitle(
-            tabTitle: tabTitleProvider?(event.tabTarget),
-            repoName: repoNameProvider?(event.tabTarget)
+            tabTitle: host?.notificationTabTitle(for: event.tabTarget),
+            repoName: host?.notificationRepoName(for: event.tabTarget)
         )
     }
 
