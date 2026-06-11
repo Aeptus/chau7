@@ -354,12 +354,15 @@ final class NotificationActionExecutor {
         do {
             try process.run()
 
-            // Set up timeout
+            // Timeout escalation: SIGTERM first, then SIGKILL after the
+            // grace period. The previous implementation only called
+            // process.terminate() and walked away — a script that traps
+            // SIGTERM (or is blocked on uninterruptible I/O) would
+            // ignore that and hang past the user's timeout.
             DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(timeout)) {
-                if process.isRunning {
-                    Log.warn("Action runScript: Timeout after \(timeout)s, terminating")
-                    process.terminate()
-                }
+                guard process.isRunning else { return }
+                Log.warn("Action runScript: Timeout after \(timeout)s, terminating")
+                ProcessRunner.terminate(process, label: "Action runScript")
             }
 
             // Non-blocking — terminationHandler fires on completion
@@ -497,7 +500,7 @@ final class NotificationActionExecutor {
             request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
         }
 
-        URLSession.shared.dataTask(with: request) { _, response, error in
+        NotificationActionHTTP.session.dataTask(with: request) { _, response, error in
             if let error = error {
                 Log.error("Action webhook: Failed: \(error.localizedDescription)")
             } else if let httpResponse = response as? HTTPURLResponse {
@@ -540,7 +543,7 @@ final class NotificationActionExecutor {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
-        URLSession.shared.dataTask(with: request) { _, _, error in
+        NotificationActionHTTP.session.dataTask(with: request) { _, _, error in
             if let error = error {
                 Log.error("Action sendSlack: Failed: \(error.localizedDescription)")
             } else {
@@ -577,7 +580,7 @@ final class NotificationActionExecutor {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
-        URLSession.shared.dataTask(with: request) { _, _, error in
+        NotificationActionHTTP.session.dataTask(with: request) { _, _, error in
             if let error = error {
                 Log.error("Action sendDiscord: Failed: \(error.localizedDescription)")
             } else {

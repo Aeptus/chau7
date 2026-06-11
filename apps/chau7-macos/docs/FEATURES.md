@@ -419,6 +419,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Rate limiting and per-trigger enable/disable.
 - Authoritative-routing retry, post-close suppression, fallback-shadow suppression, and repeat suppression all run through one `NotificationDeliveryPolicy` per-step verdict (`pass` / `drop` / `scheduleRetry`) so the manager's `processEvent` stays a thin orchestrator.
 - Per-repo event filtering and notification routing key off the `AIEvent.repoPath` field; explicit-tab rebinds round-trip every field via `AIEvent.replacingTabID(_:)` so `repoPath` survives even when the session-resolver corrects an explicit tab ID to a different one.
+- Action `runScript` enforces its configured timeout with SIGTERM → SIGKILL escalation via a shared `ProcessRunner` so trap-immune or I/O-blocked scripts can't hang past the timeout.
+- Webhook / Slack / Discord notification actions use a dedicated ephemeral `URLSession` (15s request timeout, 30s resource timeout, no cookie storage) instead of `URLSession.shared`, so bad endpoints fail fast and can't pollute the shared cookie jar.
 - Tab highlights for all user-facing event types: permission, waiting_input, finished, failed, idle, tool_failed, response_failed, elicitation, attention_required, error, context_limit.
 - Process exit confirmation on Cmd+Q with running process name listing.
 - Isolated test mode disables notification-center integration to keep side effects out of the test app.
