@@ -92,56 +92,40 @@ struct DiffViewerPaneView: View {
     }
 
     private var diffHeader: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.left.arrow.right")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-
-            Text(diff.fileName)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-
-            if diff.additions > 0 || diff.deletions > 0 {
-                HStack(spacing: 4) {
-                    Text("+\(diff.additions)")
-                        .foregroundStyle(.green)
-                    Text("-\(diff.deletions)")
-                        .foregroundStyle(.red)
+        PaneHeaderBar(
+            icon: "arrow.left.arrow.right",
+            title: diff.fileName,
+            closeHelp: L("splitPane.diff.close", "Close Diff"),
+            onClose: onClose,
+            titleAccessory: {
+                if diff.additions > 0 || diff.deletions > 0 {
+                    HStack(spacing: 4) {
+                        Text("+\(diff.additions)")
+                            .foregroundStyle(.green)
+                        Text("-\(diff.deletions)")
+                            .foregroundStyle(.red)
+                    }
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
                 }
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-            }
+            },
+            trailing: {
+                Picker("", selection: $diff.diffMode) {
+                    Text(L("splitPane.diff.working", "Working")).tag(DiffMode.workingTree)
+                    Text(L("splitPane.diff.staged", "Staged")).tag(DiffMode.staged)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 140)
+                .onChange(of: diff.diffMode) { diff.refresh() }
 
-            Spacer()
-
-            // Mode toggle
-            Picker("", selection: $diff.diffMode) {
-                Text(L("splitPane.diff.working", "Working")).tag(DiffMode.workingTree)
-                Text(L("splitPane.diff.staged", "Staged")).tag(DiffMode.staged)
+                Button { diff.refresh() } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(L("splitPane.diff.refresh", "Refresh Diff"))
             }
-            .pickerStyle(.segmented)
-            .frame(width: 140)
-            .onChange(of: diff.diffMode) { diff.refresh() }
-
-            Button { diff.refresh() } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(L("splitPane.diff.refresh", "Refresh Diff"))
-
-            Button { onClose() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(L("splitPane.diff.close", "Close Diff"))
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(Color(nsColor: .controlBackgroundColor))
+        )
     }
 }
 
