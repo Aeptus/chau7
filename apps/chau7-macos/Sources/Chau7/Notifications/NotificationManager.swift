@@ -5,8 +5,12 @@ import Chau7Core
 
 @MainActor
 final class NotificationManager {
-    static let shared = NotificationManager()
     private let isIsolatedTestMode = RuntimeIsolation.isIsolatedTestMode()
+
+    /// Action executor injected by `NotificationServices` at
+    /// construction. Used for the action-dispatch calls inside the
+    /// manager that used to reach into a separate singleton.
+    private let executor: NotificationActionExecutor
 
     /// Tracks whether UNUserNotificationCenter is available and authorized
     private var useNativeNotifications = true
@@ -57,7 +61,8 @@ final class NotificationManager {
     private let deliveryPolicy = NotificationDeliveryPolicy()
     private let eventEngine = AIEventNotificationEngine()
 
-    private init() {
+    init(executor: NotificationActionExecutor) {
+        self.executor = executor
         guard !isIsolatedTestMode else {
             self.useNativeNotifications = false
             return
@@ -419,7 +424,7 @@ final class NotificationManager {
                 deliveryPolicy.forgetRetryCount(preparedEvent.id)
                 return
             }
-            let report = NotificationActionExecutor.shared.execute(actions: actions, for: preparedEvent)
+            let report = executor.execute(actions: actions, for: preparedEvent)
             let actionNames = report.successfulActions
             Log.info(
                 "Notification delivery executed style-only actions: id=\(preparedEvent.id.uuidString) trigger=\(baseRateLimitKey) actions=\(actionNames.joined(separator: ", ")) notes=\(report.notes.joined(separator: " | "))"
@@ -450,7 +455,7 @@ final class NotificationManager {
             var aggregateReport = NotificationActionExecutor.ExecutionReport()
             if !partition.nonTabScoped.isEmpty {
                 aggregateReport.append(
-                    NotificationActionExecutor.shared.execute(actions: partition.nonTabScoped, for: preparedEvent)
+                    executor.execute(actions: partition.nonTabScoped, for: preparedEvent)
                 )
             }
 
@@ -474,7 +479,7 @@ final class NotificationManager {
                     return
                 }
                 aggregateReport.append(
-                    NotificationActionExecutor.shared.execute(actions: partition.tabScoped, for: preparedEvent)
+                    executor.execute(actions: partition.tabScoped, for: preparedEvent)
                 )
             }
 
@@ -484,7 +489,7 @@ final class NotificationManager {
             ) {
                 if preparedEvent.tabID != nil {
                     aggregateReport.append(
-                        NotificationActionExecutor.shared.execute(actions: [supplementalStyleAction], for: preparedEvent)
+                        executor.execute(actions: [supplementalStyleAction], for: preparedEvent)
                     )
                 } else {
                     let reason = "Skipped supplemental style action without explicit tabID"
@@ -582,7 +587,7 @@ final class NotificationManager {
             history.appendNote(eventID: event.id, note: reason)
             return false
         }
-        let report = NotificationActionExecutor.shared.execute(actions: [action], for: event)
+        let report = executor.execute(actions: [action], for: event)
         for note in report.notes {
             history.appendNote(eventID: event.id, note: note)
         }
@@ -604,7 +609,7 @@ final class NotificationManager {
             return
         }
 
-        NotificationActionExecutor.shared.cancelPendingStyleWork(
+        executor.cancelPendingStyleWork(
             tabID: tabID,
             sessionID: event.sessionID
         )

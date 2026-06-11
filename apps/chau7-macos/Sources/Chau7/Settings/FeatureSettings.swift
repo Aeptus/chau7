@@ -1152,9 +1152,16 @@ final class FeatureSettings {
             // Sync rate limiter if config changed
             if notificationSettings.rateLimitConfig != oldValue.rateLimitConfig {
                 let newConfig = notificationSettings.rateLimitConfig
-                DispatchQueue.main.async {
-                    NotificationManager.shared.rateLimiter.config = newConfig
-                    NotificationManager.shared.rateLimiter.reset()
+                DispatchQueue.main.async { @MainActor in
+                    // Route through the composition root rather than a
+                    // direct singleton dereference. The slot is
+                    // populated by AppModel.init at app startup; in
+                    // tests that don't construct AppModel the rate
+                    // limiter sync becomes a no-op.
+                    if let services = NotificationServices.current {
+                        services.manager.rateLimiter.config = newConfig
+                        services.manager.rateLimiter.reset()
+                    }
                 }
             }
         }

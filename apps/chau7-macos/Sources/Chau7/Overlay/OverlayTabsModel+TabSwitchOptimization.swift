@@ -333,7 +333,7 @@ extension OverlayTabsModel {
             guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
             let aiSessionID = tabs[idx].session?.effectiveAISessionId
             MainActor.assumeIsolated {
-                NotificationActionExecutor.shared.cancelPendingStyleWork(tabID: id, sessionID: aiSessionID)
+                NotificationServices.current?.executor.cancelPendingStyleWork(tabID: id, sessionID: aiSessionID)
             }
 
             // Clean up per-tab state before replacing.
@@ -402,7 +402,7 @@ extension OverlayTabsModel {
         captureClosedTabSnapshot(tab: tabs[index], at: initialIndex)
         let aiSessionID = tabs[index].session?.effectiveAISessionId
         MainActor.assumeIsolated {
-            NotificationActionExecutor.shared.cancelPendingStyleWork(tabID: id, sessionID: aiSessionID)
+            NotificationServices.current?.executor.cancelPendingStyleWork(tabID: id, sessionID: aiSessionID)
         }
 
         // Clean up per-tab command history (keyed on ownerTabID so it survives

@@ -1860,14 +1860,14 @@ private struct NotificationHistoryTabView: View {
 
     private func refreshHistory() {
         Task { @MainActor in
-            entries = NotificationManager.shared.history.recent(limit: 100)
+            entries = NotificationServices.current?.manager.history.recent(limit: 100) ?? []
             refreshToken = UUID()
         }
     }
 
     private func clearHistory() {
         Task { @MainActor in
-            NotificationManager.shared.history.clear()
+            NotificationServices.current?.manager.history.clear()
             entries = []
             refreshToken = UUID()
         }

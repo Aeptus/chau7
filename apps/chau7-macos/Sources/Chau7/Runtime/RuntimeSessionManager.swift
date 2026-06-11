@@ -987,7 +987,7 @@ final class RuntimeSessionManager {
             reliability: .authoritative
         )
         Task { @MainActor in
-            NotificationManager.shared.notify(for: event)
+            NotificationServices.current?.manager.notify(for: event)
         }
     }
 
@@ -1190,7 +1190,7 @@ final class RuntimeSessionManager {
         lock.unlock()
 
         Task { @MainActor in
-            NotificationActionExecutor.shared.cancelPendingStyleWork(
+            NotificationServices.current?.executor.cancelPendingStyleWork(
                 tabID: session.tabID,
                 sessionID: externalSessionID
             )

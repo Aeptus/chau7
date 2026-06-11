@@ -14,7 +14,7 @@ struct ShowNotificationActionHandler: NotificationActionHandler {
         let title = customTitle.isEmpty ? payload.event.notificationTitle(toolOverride: nil) : customTitle
         let body = customBody.isEmpty ? payload.event.notificationBody : customBody
         var report = NotificationActionExecutor.ExecutionReport()
-        if environment.dispatchActionNotification(title, body, payload.event) {
+        if environment.dispatchActionNotification(title: title, body: body, for: payload.event) {
             report.recordSuccess(.showNotification)
         } else {
             report.recordFailure("showNotification failed to dispatch")

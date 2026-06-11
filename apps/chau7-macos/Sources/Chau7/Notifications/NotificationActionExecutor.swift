@@ -35,7 +35,6 @@ import Chau7Core
 /// `supportedActionTypes`, and add a registry entry. No edits here.
 @MainActor
 final class NotificationActionExecutor {
-    static let shared = NotificationActionExecutor()
 
     struct ExecutionReport: Equatable {
         var successfulActions: [String] = []
@@ -77,6 +76,17 @@ final class NotificationActionExecutor {
         }
     }
 
+    /// Set by `NotificationServices` immediately after construction.
+    /// Forwards to `environment.publisher` so handlers reach the
+    /// publisher through the environment they already receive. Held
+    /// weakly because the manager owns the executor transitively via
+    /// NotificationServices — a strong reference here would create a
+    /// retain cycle.
+    var publisher: NotificationPublishing? {
+        get { environment.publisher }
+        set { environment.publisher = newValue }
+    }
+
     // MARK: - Owned collaborators
 
     /// Owns the styleTab state machine. Exposed so
@@ -92,14 +102,8 @@ final class NotificationActionExecutor {
     private let environment: ActionEnvironment
     private let actionRegistry: NotificationActionRegistry
 
-    private init() {
-        let coordinator = styleCoordinator
-        let env = ActionEnvironment(
-            styleCoordinator: coordinator,
-            dispatchActionNotification: { title, body, event in
-                NotificationManager.shared.dispatchActionNotification(title: title, body: body, for: event)
-            }
-        )
+    init() {
+        let env = ActionEnvironment(styleCoordinator: styleCoordinator)
         self.environment = env
         // Build the registry from the canonical list, swapping in the
         // typed time-tracking handler so it's shared with the executor's

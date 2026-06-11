@@ -59,19 +59,26 @@ final class NotificationActionExecutorTests: XCTestCase {
         )
     }
 
+    /// Each test gets a fresh executor — Phase C eliminated the shared
+    /// singleton in favor of `NotificationServices` composition. Tests
+    /// construct one directly so they don't need to spin up an
+    /// AppModel.
+    private var executor: NotificationActionExecutor!
+
     override func setUp() {
         super.setUp()
-        NotificationActionExecutor.shared.resetForTesting()
+        executor = NotificationActionExecutor()
     }
 
     override func tearDown() {
-        NotificationActionExecutor.shared.resetForTesting()
+        executor?.resetForTesting()
+        executor = nil
         super.tearDown()
     }
 
     func testStyleActionReportsFailureWhenDelegateCannotResolveExplicitTab() {
         let delegate = MockDelegate()
-        let executor = NotificationActionExecutor.shared
+        let executor = self.executor!
         executor.delegate = delegate
 
         let report = executor.execute(
@@ -86,7 +93,7 @@ final class NotificationActionExecutorTests: XCTestCase {
 
     func testStyleActionReportsSuccessWhenDelegateStylesExplicitTab() {
         let delegate = MockDelegate()
-        let executor = NotificationActionExecutor.shared
+        let executor = self.executor!
         let tabID = UUID()
         delegate.styleResult = tabID
         executor.delegate = delegate
@@ -103,7 +110,7 @@ final class NotificationActionExecutorTests: XCTestCase {
 
     func testStyleActionRecoversStaleExplicitTabViaExactSessionResolution() {
         let delegate = MockDelegate()
-        let executor = NotificationActionExecutor.shared
+        let executor = self.executor!
         let staleTabID = UUID()
         let recoveredTabID = UUID()
         delegate.styleCallResults = [nil, recoveredTabID]
@@ -186,7 +193,7 @@ final class NotificationActionExecutorTests: XCTestCase {
 
     func testStyleActionSchedulesDeferredRetryForRecoverableStaleTab() {
         let delegate = MockDelegate()
-        let executor = NotificationActionExecutor.shared
+        let executor = self.executor!
         let staleTabID = UUID()
         let recoveredTabID = UUID()
         delegate.styleCallResults = [nil, recoveredTabID]
@@ -223,7 +230,7 @@ final class NotificationActionExecutorTests: XCTestCase {
 
     func testStyleActionDoesNotScheduleDeferredRetryWhenStaleTabCannotBeRecovered() {
         let delegate = MockDelegate()
-        let executor = NotificationActionExecutor.shared
+        let executor = self.executor!
         let staleTabID = UUID()
         delegate.styleResult = nil
         delegate.existingTabs = []
@@ -252,7 +259,7 @@ final class NotificationActionExecutorTests: XCTestCase {
 
     func testCancelPendingStyleWorkCancelsDeferredRetryForSession() {
         let delegate = MockDelegate()
-        let executor = NotificationActionExecutor.shared
+        let executor = self.executor!
         let staleTabID = UUID()
         let recoveredTabID = UUID()
         delegate.styleCallResults = [nil, recoveredTabID]
@@ -290,7 +297,7 @@ final class NotificationActionExecutorTests: XCTestCase {
 
     func testBadgeActionReportsFailureWhenDelegateCannotResolveExplicitTab() {
         let delegate = MockDelegate()
-        let executor = NotificationActionExecutor.shared
+        let executor = self.executor!
         executor.delegate = delegate
 
         let report = executor.execute(

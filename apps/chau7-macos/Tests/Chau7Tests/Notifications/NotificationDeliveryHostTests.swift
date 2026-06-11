@@ -59,7 +59,7 @@ final class NotificationDeliveryHostTests: XCTestCase {
         // Drives the StubHost through every protocol method to confirm
         // the call counters increment independently — pins the stub
         // itself as a usable substitute in future per-test isolation
-        // work (without ever spinning up NotificationManager.shared,
+        // work (without ever spinning up NotificationServices.current,
         // which the SwiftPM test process can't reliably construct
         // outside isolated-test mode).
         let host = StubHost()

@@ -91,11 +91,17 @@ struct ActionPayload {
 
 /// Long-lived collaborators a handler may need. Constructed once by the
 /// executor and passed verbatim into every `handler.execute(...)` call.
-/// Owns nothing; just routes references. `delegate` is mutated on the
-/// executor's `didSet` so handlers always see the live UI delegate.
+/// Owns nothing; just routes references. `delegate` and `publisher`
+/// are mutated by the executor / `NotificationServices` post-
+/// construction so handlers always see the live wiring.
 @MainActor
 final class ActionEnvironment {
     weak var delegate: NotificationActionDelegate?
+
+    /// Set by `NotificationServices` immediately after construction so
+    /// the showNotification handler can route through the manager's
+    /// full authorization + AppleScript fallback chain.
+    weak var publisher: NotificationPublishing?
 
     /// Owns the styleTab state machine. `StyleTabActionHandler` reads
     /// through this to apply styles; `NotificationManager` reads
@@ -103,18 +109,17 @@ final class ActionEnvironment {
     /// assertion.
     let styleCoordinator: StyleTabCoordinator
 
-    /// Routes a `.showNotification` action's payload through the
-    /// manager's full authorization + AppleScript fallback chain. The
-    /// closure abstracts the manager so handlers don't reach into
-    /// `NotificationManager.shared` directly (which would block Phase
-    /// B's constructor-injection work).
-    let dispatchActionNotification: (_ title: String, _ body: String, _ event: AIEvent) -> Bool
-
-    init(
-        styleCoordinator: StyleTabCoordinator,
-        dispatchActionNotification: @escaping (_ title: String, _ body: String, _ event: AIEvent) -> Bool
-    ) {
+    init(styleCoordinator: StyleTabCoordinator) {
         self.styleCoordinator = styleCoordinator
-        self.dispatchActionNotification = dispatchActionNotification
+    }
+
+    /// Convenience used by the showNotification handler — equivalent to
+    /// `publisher?.dispatchActionNotification(...) ?? false` but keeps
+    /// the handler readable. Returns false if the publisher isn't
+    /// wired yet (test code that constructs an environment without a
+    /// services bundle).
+    @discardableResult
+    func dispatchActionNotification(title: String, body: String, for event: AIEvent) -> Bool {
+        publisher?.dispatchActionNotification(title: title, body: body, for: event) ?? false
     }
 }

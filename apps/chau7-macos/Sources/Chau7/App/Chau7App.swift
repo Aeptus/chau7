@@ -23,14 +23,20 @@ struct Chau7App: App {
         // Pre-initialize shell integration BEFORE creating any tabs
         TerminalSessionModel.preInitialize()
 
-        let model = AppModel()
+        // Composition root: construct the notification services and
+        // inject into AppModel, then populate the service-locator slot
+        // for view-layer callsites that can't easily thread an explicit
+        // reference.
+        let notifications = NotificationServices()
+        NotificationServices.current = notifications
+        let model = AppModel(notifications: notifications)
         _model = State(wrappedValue: model)
         let overlayModel = OverlayTabsModel(appModel: model)
         // Inject one host for tab titles, repo names, active-tab checks,
         // and tab routing. All five previously-separate closures used to
         // route to TerminalControlService anyway; the explicit protocol
         // injection collapses them into a single line.
-        NotificationManager.shared.setHost(TerminalControlService.shared)
+        notifications.manager.setHost(TerminalControlService.shared)
         model.tabIDResolver = { target in
             TerminalControlService.shared.resolveTabID(for: target)
         }
@@ -39,7 +45,7 @@ struct Chau7App: App {
         }
 
         // Wire notification system — single delegate replaces 5 separate closures
-        NotificationActionExecutor.shared.delegate = NotificationActionAdapter(
+        notifications.executor.delegate = NotificationActionAdapter(
             overlayModel: overlayModel,
             statusBar: StatusBarController.shared
         )

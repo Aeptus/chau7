@@ -364,7 +364,17 @@ final class AppModel {
         static let claudeHistoryPath = "claudeHistoryPath"
     }
 
-    init() {
+    /// Composition root for the notification system — owns the
+    /// `NotificationManager` + `NotificationActionExecutor` instances
+    /// that used to be `.shared` singletons. Optional because tests
+    /// construct `AppModel()` without spinning up the full notification
+    /// stack; production code (`Chau7App.init`) injects a real
+    /// `NotificationServices` and AppModel-routed producers
+    /// (recordEvent, etc.) publish through it.
+    let notifications: NotificationServices?
+
+    init(notifications: NotificationServices? = nil) {
+        self.notifications = notifications
         Log.configure()
         let defaults = UserDefaults.standard
         let home = RuntimeIsolation.homeDirectory()
@@ -697,7 +707,7 @@ final class AppModel {
             )
             DispatchQueue.main.async {
                 guard let self else { return }
-                NotificationManager.shared.updateAuthorizationStatus(settings.authorizationStatus)
+                self.notifications?.manager.updateAuthorizationStatus(settings.authorizationStatus)
                 self.notificationPermissionState = permissionState
                 self.notificationStatus = permissionState.localizedLabel
                 self.notificationSettingsSnapshot = snapshot
@@ -849,7 +859,7 @@ final class AppModel {
             producer: "app_model_test",
             reliability: .authoritative
         )
-        Task { @MainActor in NotificationManager.shared.notify(for: event) }
+        Task { @MainActor in self.notifications?.manager.notify(for: event) }
     }
 
     func recordEvent(
@@ -1574,7 +1584,7 @@ final class AppModel {
 
     @MainActor
     private func publishUnifiedEventOnMain(_ event: AIEvent, notify: Bool) {
-        guard let acceptedEvent = NotificationManager.shared.processUnifiedEvent(
+        guard let acceptedEvent = notifications?.manager.processUnifiedEvent(
             event,
             deliveryRequested: notify
         ) else {
