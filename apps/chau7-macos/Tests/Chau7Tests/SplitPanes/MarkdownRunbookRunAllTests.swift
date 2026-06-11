@@ -22,11 +22,11 @@ final class MarkdownRunbookRunAllTests: XCTestCase {
             sent.append((command, lineNumber))
             // Mirror what `markCodeBlockQueued` does inline — flip the
             // block to `.running` so the runner knows it's in flight.
-            let key = TextEditorModel.RunbookCodeBlockKey(
+            let key = RunbookCodeBlockKey(
                 lineNumber: lineNumber,
                 normalizedCommand: command.trimmingCharacters(in: .whitespacesAndNewlines)
             )
-            model.codeBlockRunStates[key] = .running
+            model.runbook.codeBlockRunStates[key] = .running
         }
 
         // First block fires synchronously; the next two are gated.
@@ -78,11 +78,11 @@ final class MarkdownRunbookRunAllTests: XCTestCase {
         to state: RunbookCodeBlockState,
         model: TextEditorModel
     ) {
-        let key = TextEditorModel.RunbookCodeBlockKey(
+        let key = RunbookCodeBlockKey(
             lineNumber: line,
             normalizedCommand: command
         )
-        model.codeBlockRunStates[key] = state
+        model.runbook.codeBlockRunStates[key] = state
     }
 
     private func spin(_ seconds: TimeInterval) {

@@ -430,14 +430,15 @@ extension SplitNode {
 
 // MARK: - Text Editor Model
 
-/// Model for a text editor pane
+/// Model for a text editor pane. Owns the file buffer, dirty/conflict
+/// tracking, autosave debounce, and external-change detection. The
+/// runbook-code-block state machine and sequential runner live on a
+/// dedicated `RunbookCodeBlockTracker` exposed as `runbook`; the
+/// `markCodeBlockQueued` / `codeBlockState` / `runMarkdownBlocksSequentially`
+/// methods stay on the model as thin delegates for backwards compat with
+/// existing view code.
 @Observable
 final class TextEditorModel: Identifiable {
-    struct RunbookCodeBlockKey: Hashable {
-        let lineNumber: Int
-        let normalizedCommand: String
-    }
-
     let id = UUID()
 
     var content = ""
@@ -451,7 +452,11 @@ final class TextEditorModel: Identifiable {
     var externalConflictMessage: String?
     var isAutoSaveEnabled = false
     var scrollToLine: Int? // F03: Line to scroll to after loading (set after content loads)
-    var codeBlockRunStates: [RunbookCodeBlockKey: RunbookCodeBlockState] = [:]
+
+    /// Runbook code-block state machine + sequential runner. Exposed so the
+    /// SwiftUI runbook view can observe state transitions directly without
+    /// going through TextEditorModel.
+    let runbook = RunbookCodeBlockTracker()
 
     /// Pending line to scroll to after next load completes
     @ObservationIgnored
@@ -461,9 +466,7 @@ final class TextEditorModel: Identifiable {
     @ObservationIgnored
     private var loadingToken: UUID?
     @ObservationIgnored
-    private var autoSaveWorkItem: DispatchWorkItem?
-    @ObservationIgnored
-    private var autoSaveClearWorkItem: DispatchWorkItem?
+    private let autoSaver = EditorAutoSaver()
     @ObservationIgnored
     private var fileMonitor: FileMonitor?
     @ObservationIgnored
@@ -471,17 +474,7 @@ final class TextEditorModel: Identifiable {
     @ObservationIgnored
     private var isApplyingExternalReload = false
     @ObservationIgnored
-    private var pendingRunbookPollWorkItems: [RunbookCodeBlockKey: DispatchWorkItem] = [:]
-    @ObservationIgnored
-    private var runbookExecutionGenerations: [RunbookCodeBlockKey: Int] = [:]
-    @ObservationIgnored
     var untitledSaveHandler: ((TextEditorModel) -> Bool)?
-
-    /// Main-queue scheduling abstraction used by the markdown runbook
-    /// sequencer. Tests can swap a virtual-time scheduler to drive the
-    /// poll loop deterministically; production keeps the default.
-    @ObservationIgnored
-    var mainScheduler: MainScheduler = SystemMainScheduler()
 
     /// The file name for display
     var fileName: String {
@@ -643,8 +636,7 @@ final class TextEditorModel: Identifiable {
     /// autosave debounce timer can't resurrect the discarded edits, and so
     /// any restore-on-relaunch path sees a clean editor.
     func discardPendingChanges() {
-        autoSaveWorkItem?.cancel()
-        autoSaveWorkItem = nil
+        autoSaver.cancelPendingSave()
         isDirty = false
         hasSaveConflict = false
         hasExternalChangeConflict = false
@@ -688,87 +680,39 @@ final class TextEditorModel: Identifiable {
         }
     }
 
-    /// Send a list of markdown code blocks to the terminal one at a time,
-    /// waiting for each to settle (succeed or fail) before sending the next.
-    /// `send` is responsible for actually forwarding the block to the shell
-    /// and calling `markCodeBlockQueued` (typically via
-    /// `SplitPaneController.sendCommandToTerminal`); this method only
-    /// orchestrates the queue, so it stays composable with the existing
-    /// per-block run path.
-    ///
-    /// If a block never reports a terminal state (e.g. no shell session is
-    /// attached, or the user clears the runbook) the runner gives up after
-    /// ~60s on that block and stops the whole sequence — the user can press
-    /// Run All again or run remaining blocks individually.
+    /// Delegates to `runbook.runMarkdownBlocksSequentially`. Kept on the
+    /// model so existing view code (`editor.runMarkdownBlocksSequentially(...)`)
+    /// continues to compile after the runbook extraction.
     func runMarkdownBlocksSequentially(
         _ blocks: [(line: Int, code: String)],
         send: @escaping (String, Int) -> Void
     ) {
-        sendNextMarkdownBlock(blocks: blocks, index: 0, send: send)
+        runbook.runMarkdownBlocksSequentially(blocks, send: send)
     }
 
-    private func sendNextMarkdownBlock(
-        blocks: [(line: Int, code: String)],
-        index: Int,
-        send: @escaping (String, Int) -> Void
-    ) {
-        guard index < blocks.count else { return }
-        let block = blocks[index]
-        send("\(block.code)\n", block.line)
-        Polling.untilTrue(
-            on: mainScheduler,
-            predicate: { [weak self] in
-                guard let self else { return true } // cancelled — let chain unwind
-                switch codeBlockState(for: block.code, lineNumber: block.line) {
-                case .succeeded, .failed: return true
-                case .running, .none: return false
-                }
-            },
-            onSettled: { [weak self] in
-                self?.sendNextMarkdownBlock(blocks: blocks, index: index + 1, send: send)
-            }
-        )
-    }
-
+    /// Delegates to `runbook.markCodeBlockQueued`.
     func markCodeBlockQueued(_ code: String, lineNumber: Int, tabID: String) {
-        let key = Self.runbookCodeBlockKey(for: code, lineNumber: lineNumber)
-        codeBlockRunStates[key] = .running
-        pendingRunbookPollWorkItems[key]?.cancel()
-        let generation = (runbookExecutionGenerations[key] ?? 0) + 1
-        runbookExecutionGenerations[key] = generation
-        let submittedAt = Date()
-        pollForCommandCompletion(
-            command: code,
-            key: key,
-            generation: generation,
-            tabID: tabID,
-            submittedAt: submittedAt,
-            attemptsRemaining: 120
-        )
+        runbook.markCodeBlockQueued(code, lineNumber: lineNumber, tabID: tabID)
     }
 
+    /// Delegates to `runbook.codeBlockState`.
     func codeBlockState(for code: String, lineNumber: Int) -> RunbookCodeBlockState? {
-        codeBlockRunStates[Self.runbookCodeBlockKey(for: code, lineNumber: lineNumber)]
+        runbook.codeBlockState(for: code, lineNumber: lineNumber)
     }
 
     deinit {
-        autoSaveWorkItem?.cancel()
-        autoSaveClearWorkItem?.cancel()
         stopWatchingCurrentFile()
-        for workItem in pendingRunbookPollWorkItems.values {
-            workItem.cancel()
-        }
+        // Autosave + runbook work items are owned by their respective
+        // helpers (`autoSaver`, `runbook`) and cancelled in their own
+        // deinits when the model drops the last reference.
     }
 
     private func scheduleAutoSaveIfNeeded() {
         guard isAutoSaveEnabled, filePath != nil else { return }
-        autoSaveWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
+        autoSaver.scheduleSave { [weak self] in
             guard let self, isDirty else { return }
             _ = save()
         }
-        autoSaveWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: workItem)
     }
 
     private func startWatchingCurrentFile() {
@@ -820,72 +764,16 @@ final class TextEditorModel: Identifiable {
 
     private func setAutoSaveStatusMessage(_ message: String?) {
         autoSaveStatusMessage = message
-        autoSaveClearWorkItem?.cancel()
+        autoSaver.cancelStatusClear()
         guard message != nil else { return }
-        let workItem = DispatchWorkItem { [weak self] in
+        autoSaver.scheduleStatusClear { [weak self] in
             self?.autoSaveStatusMessage = nil
         }
-        autoSaveClearWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
-    }
-
-    private func pollForCommandCompletion(
-        command: String,
-        key: RunbookCodeBlockKey,
-        generation: Int,
-        tabID: String,
-        submittedAt: Date,
-        attemptsRemaining: Int
-    ) {
-        guard attemptsRemaining > 0 else {
-            codeBlockRunStates[key] = .failed
-            pendingRunbookPollWorkItems.removeValue(forKey: key)
-            return
-        }
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            let block = MainActor.assumeIsolated {
-                CommandBlockManager.shared.blocksForTab(tabID)
-            }.reversed().first { candidate in
-                candidate.startTime >= submittedAt.addingTimeInterval(-1)
-                    && Self.normalizedRunbookKey(for: candidate.command) == key.normalizedCommand
-            }
-            guard runbookExecutionGenerations[key] == generation else {
-                pendingRunbookPollWorkItems.removeValue(forKey: key)
-                return
-            }
-            if let block, !block.isRunning {
-                codeBlockRunStates[key] = block.isSuccess ? .succeeded : .failed
-                pendingRunbookPollWorkItems.removeValue(forKey: key)
-                return
-            }
-            pollForCommandCompletion(
-                command: command,
-                key: key,
-                generation: generation,
-                tabID: tabID,
-                submittedAt: submittedAt,
-                attemptsRemaining: attemptsRemaining - 1
-            )
-        }
-        pendingRunbookPollWorkItems[key] = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
     }
 
     private static func contentHash(_ content: String) -> String {
         let digest = SHA256.hash(data: Data(content.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
-    }
-
-    private static func normalizedRunbookKey(for command: String) -> String {
-        command.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func runbookCodeBlockKey(for command: String, lineNumber: Int) -> RunbookCodeBlockKey {
-        RunbookCodeBlockKey(
-            lineNumber: lineNumber,
-            normalizedCommand: normalizedRunbookKey(for: command)
-        )
     }
 
     private static func shouldAutoEnableAutoSave(for path: String) -> Bool {
@@ -901,12 +789,6 @@ final class TextEditorModel: Identifiable {
         }
         return false
     }
-}
-
-enum RunbookCodeBlockState {
-    case running
-    case succeeded
-    case failed
 }
 
 // MARK: - File Preview Model
