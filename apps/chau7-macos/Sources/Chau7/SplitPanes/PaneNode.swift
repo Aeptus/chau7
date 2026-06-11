@@ -1,4 +1,5 @@
 import Foundation
+import Chau7Core
 
 // MARK: - PaneNode Protocol
 //
@@ -72,6 +73,32 @@ final class TerminalPane: PaneNode {
             textEditorPath: nil
         )
     }
+
+    /// Reconstructs a `TerminalPane` from its persisted form. Seeds the
+    /// fresh session with the restored repo identity, working directory,
+    /// and AI provider hint from `paneStates` so the tab title resolves
+    /// to "Codex" / "Claude" / etc. on first render rather than waiting
+    /// for the deferred per-tab restore.
+    static func makeFromSaved(_ node: SavedSplitNode, context: PaneFactoryContext) -> TerminalPane {
+        let resolvedID = UUID(uuidString: node.id) ?? UUID()
+        let session = TerminalSessionModel(appModel: context.appModel)
+        if let state = context.paneStates[resolvedID] {
+            if let knownRepoRoot = OverlayTabsModel.normalizedSavedRepoField(state.knownRepoRoot) {
+                KnownRepoIdentityStore.shared.record(
+                    rootPath: knownRepoRoot,
+                    branch: OverlayTabsModel.normalizedSavedRepoField(state.knownGitBranch)
+                )
+            }
+            let restoreDirectory = state.preferredRestoreDirectory
+            if !restoreDirectory.isEmpty {
+                session.updateCurrentDirectory(restoreDirectory)
+            }
+            if let normalized = AIResumeParser.normalizeProviderName(state.aiProvider ?? "") {
+                session.lastAIProvider = normalized
+            }
+        }
+        return TerminalPane(id: resolvedID, session: session)
+    }
 }
 
 // MARK: - Text Editor Pane
@@ -99,6 +126,18 @@ final class TextEditorPane: PaneNode {
             textEditorPath: editor.filePath
         )
     }
+
+    /// Reconstructs a `TextEditorPane` from its persisted form, loading
+    /// the file when a path was recorded.
+    static func makeFromSaved(_ node: SavedSplitNode, context: PaneFactoryContext) -> TextEditorPane {
+        let resolvedID = UUID(uuidString: node.id) ?? UUID()
+        let editor = TextEditorModel()
+        if let path = node.textEditorPath,
+           !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            editor.loadFile(at: path)
+        }
+        return TextEditorPane(id: resolvedID, editor: editor)
+    }
 }
 
 // MARK: - File Preview Pane
@@ -124,6 +163,18 @@ final class FilePreviewPane: PaneNode {
             textEditorPath: nil,
             previewFilePath: preview.filePath
         )
+    }
+
+    /// Reconstructs a `FilePreviewPane` from its persisted form, loading
+    /// the previewed file when a path was recorded.
+    static func makeFromSaved(_ node: SavedSplitNode, context: PaneFactoryContext) -> FilePreviewPane {
+        let resolvedID = UUID(uuidString: node.id) ?? UUID()
+        let preview = FilePreviewModel()
+        if let path = node.previewFilePath,
+           !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            preview.loadFile(at: path)
+        }
+        return FilePreviewPane(id: resolvedID, preview: preview)
     }
 }
 
@@ -152,6 +203,20 @@ final class DiffViewerPane: PaneNode {
             diffMode: diff.diffMode.rawValue
         )
     }
+
+    /// Reconstructs a `DiffViewerPane` from its persisted form, kicking
+    /// off the diff load when the file path and directory were both
+    /// recorded.
+    static func makeFromSaved(_ node: SavedSplitNode, context: PaneFactoryContext) -> DiffViewerPane {
+        let resolvedID = UUID(uuidString: node.id) ?? UUID()
+        let diff = DiffViewerModel()
+        if let file = node.diffFilePath, let dir = node.diffDirectory,
+           !file.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let mode = node.diffMode.flatMap(DiffMode.init(rawValue:)) ?? .workingTree
+            diff.loadDiff(file: file, in: dir, mode: mode)
+        }
+        return DiffViewerPane(id: resolvedID, diff: diff)
+    }
 }
 
 // MARK: - Repository Pane
@@ -178,6 +243,18 @@ final class RepositoryPane: PaneNode {
             repoDirectory: repo.directory
         )
     }
+
+    /// Reconstructs a `RepositoryPane` from its persisted form, kicking
+    /// off the repo load when a directory was recorded.
+    static func makeFromSaved(_ node: SavedSplitNode, context: PaneFactoryContext) -> RepositoryPane {
+        let resolvedID = UUID(uuidString: node.id) ?? UUID()
+        let repo = RepositoryPaneModel()
+        if let dir = node.repoDirectory,
+           !dir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            repo.load(directory: dir)
+        }
+        return RepositoryPane(id: resolvedID, repo: repo)
+    }
 }
 
 // MARK: - Dashboard Pane
@@ -202,5 +279,15 @@ final class DashboardPane: PaneNode {
             textEditorPath: nil,
             dashboardRepoGroupID: dashboard.repoGroupID
         )
+    }
+
+    /// Reconstructs a `DashboardPane` from its persisted form. An empty
+    /// `repoGroupID` is a valid initial state (the dashboard renders an
+    /// empty agent list rather than crashing).
+    static func makeFromSaved(_ node: SavedSplitNode, context: PaneFactoryContext) -> DashboardPane {
+        let resolvedID = UUID(uuidString: node.id) ?? UUID()
+        let repoGroupID = node.dashboardRepoGroupID ?? ""
+        let dashboard = AgentDashboardModel(repoGroupID: repoGroupID)
+        return DashboardPane(id: resolvedID, dashboard: dashboard)
     }
 }

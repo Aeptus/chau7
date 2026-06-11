@@ -270,80 +270,21 @@ extension SplitNode {
         return fromSavedNode(node, appModel: appModel, paneStates: [:])
     }
 
-    /// Reconstructs a split tree from persisted data.
+    /// Reconstructs a split tree from persisted data. Routes leaf
+    /// reconstruction through `PaneFactoryRegistry`, so adding a new pane
+    /// kind is a registry entry + a `makeFromSaved` static — no edits
+    /// required to this function.
     static func fromSavedNode(
         _ node: SavedSplitNode,
         appModel: AppModel,
         paneStates: [UUID: SavedTerminalPaneState]
     ) -> SplitNode {
         let resolvedID = UUID(uuidString: node.id) ?? UUID()
+        let context = PaneFactoryContext(appModel: appModel, paneStates: paneStates)
 
-        switch node.kind {
-        case .terminal:
-            let session = TerminalSessionModel(appModel: appModel)
-            if let state = paneStates[resolvedID] {
-                if let knownRepoRoot = OverlayTabsModel.normalizedSavedRepoField(state.knownRepoRoot) {
-                    KnownRepoIdentityStore.shared.record(
-                        rootPath: knownRepoRoot,
-                        branch: OverlayTabsModel.normalizedSavedRepoField(state.knownGitBranch)
-                    )
-                }
-                let restoreDirectory = state.preferredRestoreDirectory
-                if !restoreDirectory.isEmpty {
-                    session.updateCurrentDirectory(restoreDirectory)
-                }
-                // Eagerly seed the AI provider so the tab title shows
-                // "Codex"/"Claude"/etc. on first render — without this, the
-                // provider-driven fallback in `aiDisplayAppName` returns nil
-                // until the deferred per-tab `restoreTabState` runs (which
-                // only fires for the currently-selected tab at launch, plus
-                // each tab the user subsequently clicks). Setting just
-                // `lastAIProvider` is enough: the `Self.displayName(
-                // fromProvider:)` branch lights up the correct name, and
-                // the later full `restoreAIMetadata` call overwrites with
-                // the same value + fills in `activeAppName`.
-                if let normalized = AIResumeParser.normalizeProviderName(state.aiProvider ?? "") {
-                    session.lastAIProvider = normalized
-                }
-            }
-            return .leaf(TerminalPane(id: resolvedID, session: session))
-        case .textEditor:
-            let editor = TextEditorModel()
-            if let path = node.textEditorPath,
-               !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                editor.loadFile(at: path)
-            }
-            return .leaf(TextEditorPane(id: resolvedID, editor: editor))
-        case .filePreview:
-            let preview = FilePreviewModel()
-            if let path = node.previewFilePath,
-               !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                preview.loadFile(at: path)
-            }
-            return .leaf(FilePreviewPane(id: resolvedID, preview: preview))
-        case .diffViewer:
-            let diff = DiffViewerModel()
-            if let file = node.diffFilePath, let dir = node.diffDirectory,
-               !file.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                let mode = node.diffMode.flatMap(DiffMode.init(rawValue:)) ?? .workingTree
-                diff.loadDiff(file: file, in: dir, mode: mode)
-            }
-            return .leaf(DiffViewerPane(id: resolvedID, diff: diff))
-        case .repositoryPane:
-            let repo = RepositoryPaneModel()
-            if let dir = node.repoDirectory,
-               !dir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                repo.load(directory: dir)
-            }
-            return .leaf(RepositoryPane(id: resolvedID, repo: repo))
-        case .dashboard:
-            let repoGroupID = node.dashboardRepoGroupID ?? ""
-            let dashboard = AgentDashboardModel(repoGroupID: repoGroupID)
-            return .leaf(DashboardPane(id: resolvedID, dashboard: dashboard))
-        case .split:
+        if node.kind == .split {
             guard let firstSaved = node.first, let secondSaved = node.second else {
-                let fallback = TerminalSessionModel(appModel: appModel)
-                return .leaf(TerminalPane(id: resolvedID, session: fallback))
+                return fallbackLeaf(id: resolvedID, context: context)
             }
             return .split(
                 id: resolvedID,
@@ -353,6 +294,21 @@ extension SplitNode {
                 ratio: CGFloat(node.ratio ?? 0.5)
             )
         }
+
+        guard let paneType = node.kind.paneType,
+              let factory = PaneFactoryRegistry.factories[paneType] else {
+            return fallbackLeaf(id: resolvedID, context: context)
+        }
+        return .leaf(factory(node, context))
+    }
+
+    /// Emergency fallback when a snapshot is malformed (e.g. a `.split`
+    /// node without children, or a `kind` that has no registered
+    /// factory). Returns a fresh terminal pane so the tree still has a
+    /// shape rather than crashing the restore.
+    private static func fallbackLeaf(id: UUID, context: PaneFactoryContext) -> SplitNode {
+        let session = TerminalSessionModel(appModel: context.appModel)
+        return .leaf(TerminalPane(id: id, session: session))
     }
 }
 
