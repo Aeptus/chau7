@@ -180,8 +180,8 @@ final class RepositoryPaneModelTests: XCTestCase {
             gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
         )
         model.directory = "/tmp/test"
-        model.commitMessage = "   "
-        model.commit()
+        model.commit.message = "   "
+        model.performCommit()
         XCTAssertNotNil(model.lastError)
         XCTAssertEqual(model.lastError, "Commit message cannot be empty.")
     }
@@ -258,9 +258,9 @@ final class RepositoryPaneModelTests: XCTestCase {
             gitRunner: { _, _ in "" },
             gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
         )
-        model.commitMessage = "add login"
+        model.commit.message = "add login"
         model.applyPrefix("feat")
-        XCTAssertEqual(model.commitMessage, "feat: add login")
+        XCTAssertEqual(model.commit.message, "feat: add login")
     }
 
     func testApplyPrefixDoesNotDouble() {
@@ -268,9 +268,9 @@ final class RepositoryPaneModelTests: XCTestCase {
             gitRunner: { _, _ in "" },
             gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
         )
-        model.commitMessage = "feat: add login"
+        model.commit.message = "feat: add login"
         model.applyPrefix("feat")
-        XCTAssertEqual(model.commitMessage, "feat: add login")
+        XCTAssertEqual(model.commit.message, "feat: add login")
     }
 
     func testHasConventionalPrefix() {
@@ -278,9 +278,9 @@ final class RepositoryPaneModelTests: XCTestCase {
             gitRunner: { _, _ in "" },
             gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
         )
-        model.commitMessage = "fix: crash on launch"
+        model.commit.message = "fix: crash on launch"
         XCTAssertTrue(model.hasConventionalPrefix)
-        model.commitMessage = "just a message"
+        model.commit.message = "just a message"
         XCTAssertFalse(model.hasConventionalPrefix)
     }
 

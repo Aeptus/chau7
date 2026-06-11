@@ -67,7 +67,7 @@ struct RepositoryPaneView: View {
                 repo.refreshAll()
             }
         }
-        .onChange(of: repo.commitMessage) {
+        .onChange(of: repo.commit.message) {
             draftPersistWork?.cancel()
             let work = DispatchWorkItem { [weak repo] in repo?.persistDraft() }
             draftPersistWork = work
@@ -529,7 +529,7 @@ struct RepositoryPaneView: View {
                     }
                 }
 
-                TextEditor(text: $repo.commitMessage)
+                TextEditor(text: $repo.commit.message)
                     .font(.system(size: 11))
                     .frame(minHeight: 40, maxHeight: 80)
                     .scrollContentBackground(.hidden)
@@ -541,7 +541,7 @@ struct RepositoryPaneView: View {
                             .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
                     )
                     .overlay(alignment: .topLeading) {
-                        if repo.commitMessage.isEmpty {
+                        if repo.commit.message.isEmpty {
                             Text(L("placeholder.commitMessage", "Commit message..."))
                                 .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
@@ -552,7 +552,7 @@ struct RepositoryPaneView: View {
                     }
 
                 HStack {
-                    Toggle(L("repo.amend", "Amend"), isOn: $repo.isAmend)
+                    Toggle(L("repo.amend", "Amend"), isOn: $repo.commit.isAmend)
                         .toggleStyle(.checkbox)
                         .font(.system(size: 10))
 
@@ -571,15 +571,15 @@ struct RepositoryPaneView: View {
                     Spacer()
 
                     Button {
-                        repo.commit()
+                        repo.performCommit()
                     } label: {
                         Text(repo.stagedFiles.isEmpty
                             ? L("repo.commit", "Commit")
                             : String(format: L("repo.commitStaged", "Commit (%d staged)"), repo.stagedFiles.count))
                             .font(.system(size: 10, weight: .medium))
                     }
-                    .disabled(repo.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        || (repo.stagedFiles.isEmpty && !repo.isAmend))
+                    .disabled(repo.commit.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || (repo.stagedFiles.isEmpty && !repo.commit.isAmend))
                     .keyboardShortcut(.return, modifiers: .command)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)

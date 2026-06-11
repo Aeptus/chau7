@@ -129,9 +129,15 @@ final class RepositoryPaneModel: Identifiable {
     var conflictedFiles: [String] = []
 
     // MARK: - Commit
-
-    var commitMessage = ""
-    var isAmend = false
+    //
+    // In-flight commit message + amend flag move to a dedicated
+    // `RepoCommitDraft` @Observable accessed as `repo.commit`. SwiftUI
+    // observation is per-object so typing in the composer no longer
+    // invalidates status / history / branches through the outer model.
+    // Declared `var` (not `let`) so SwiftUI's `Bindable` can synthesize
+    // a writable ReferenceWritableKeyPath for the TextEditor's two-way
+    // binding; the value is never reassigned in practice.
+    var commit = RepoCommitDraft()
 
     // MARK: - History
     //
@@ -157,11 +163,11 @@ final class RepositoryPaneModel: Identifiable {
     static let commitPrefixes = RepoCommitDraftStore.prefixes
 
     func applyPrefix(_ prefix: String) {
-        commitMessage = draftStore.applyPrefix(prefix, to: commitMessage)
+        commit.message = draftStore.applyPrefix(prefix, to: commit.message)
     }
 
     var hasConventionalPrefix: Bool {
-        draftStore.hasConventionalPrefix(commitMessage)
+        draftStore.hasConventionalPrefix(commit.message)
     }
 
     // MARK: - General State
@@ -221,14 +227,14 @@ final class RepositoryPaneModel: Identifiable {
     func load(directory: String) {
         self.directory = directory
         // Restore persisted commit message draft via the store.
-        commitMessage = draftStore.loadDraft(for: directory)
+        commit.message = draftStore.loadDraft(for: directory)
         refreshAll()
     }
 
     /// Save commit message draft (call from view onChange).
     func persistDraft() {
         guard let dir = directory else { return }
-        draftStore.saveDraft(commitMessage, for: dir)
+        draftStore.saveDraft(commit.message, for: dir)
     }
 
     /// Clear persisted draft (call after successful commit).
@@ -527,18 +533,22 @@ final class RepositoryPaneModel: Identifiable {
 
     // MARK: - Write Operations: Commit
 
-    func commit() {
-        let message = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Run `git commit`. Renamed from `commit()` (verb) to `performCommit()`
+    /// when the per-section `RepoCommitDraft` observable claimed the
+    /// `commit` property name; the verb function and the noun property
+    /// can't coexist on the same type in Swift.
+    func performCommit() {
+        let message = commit.message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else {
             lastError = "Commit message cannot be empty."
             return
         }
         var args = ["commit", "-m", message]
-        if isAmend { args.append("--amend") }
+        if commit.isAmend { args.append("--amend") }
 
         runWriteOp(args: args, label: "Committing...") { [weak self] in
-            self?.commitMessage = ""
-            self?.isAmend = false
+            self?.commit.message = ""
+            self?.commit.isAmend = false
             self?.clearDraft()
             self?.refreshStatus()
             self?.refreshCommitLog()
