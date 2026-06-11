@@ -366,19 +366,12 @@ struct TextEditorPaneView: View {
                 MarkdownRunbookView(
                     content: editor.content,
                     fileName: editor.fileName,
-                    onRunBlock: { code, lineNumber in
-                        onRunCommand?("\(code)\n", lineNumber, editor)
-                    },
-                    onRunAll: { runAllMarkdownBlocks() },
-                    codeBlockState: { code, lineNumber in
-                        editor.codeBlockState(for: code, lineNumber: lineNumber)
-                    },
-                    onToggleCheckbox: { lineNumber in
-                        editor.toggleCheckbox(lineNumber: lineNumber)
-                    },
-                    onContentChange: { newContent in
-                        editor.updateContent(newContent)
-                    }
+                    host: RunbookHostAdapter(
+                        editor: editor,
+                        sendCommand: { command, lineNumber in
+                            onRunCommand?(command, lineNumber, editor)
+                        }
+                    )
                 )
             } else {
                 EnhancedEditorView(

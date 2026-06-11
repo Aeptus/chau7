@@ -7,11 +7,11 @@ import Chau7Core
 struct MarkdownRunbookView: View {
     let content: String
     let fileName: String
-    let onRunBlock: (String, Int) -> Void
-    let onRunAll: () -> Void
-    var codeBlockState: ((String, Int) -> RunbookCodeBlockState?)?
-    var onToggleCheckbox: ((Int) -> Void)?
-    var onContentChange: ((String) -> Void)?
+    /// Single bundled surface the runbook needs from its host (the editor
+    /// model). Replaces what used to be five separate closure parameters
+    /// (`onRunBlock`, `onRunAll`, `codeBlockState`, `onToggleCheckbox`,
+    /// `onContentChange`) the caller had to wire individually.
+    let host: any RunbookHost
 
     /// Cached parse output keyed by content. `body` runs on every code-block
     /// state change (e.g. running → succeeded recolouring borders) so a
@@ -76,7 +76,7 @@ struct MarkdownRunbookView: View {
     }
 
     private func codeBlockView(language: String?, code: String, lineNumber: Int) -> some View {
-        let state = codeBlockState?(code, lineNumber)
+        let state = host.codeBlockState(for: code, lineNumber: lineNumber)
         let borderColor: Color = switch state {
         case .running: .orange
         case .succeeded: .green
@@ -97,7 +97,7 @@ struct MarkdownRunbookView: View {
                 }
                 Spacer()
                 Button {
-                    onRunBlock(code, lineNumber)
+                    host.runBlock(code, lineNumber: lineNumber)
                 } label: {
                     Label(L("pane.run", "Run"), systemImage: "play.fill")
                         .font(.system(size: 11))
@@ -126,12 +126,7 @@ struct MarkdownRunbookView: View {
     private func checkboxItemView(checked: Bool, text: String, lineNumber: Int) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Button {
-                if let onToggleCheckbox {
-                    onToggleCheckbox(lineNumber)
-                } else {
-                    let newContent = toggleCheckboxInContent(content, lineNumber: lineNumber)
-                    onContentChange?(newContent)
-                }
+                host.toggleCheckbox(lineNumber: lineNumber)
             } label: {
                 Image(systemName: checked ? "checkmark.square.fill" : "square")
                     .foregroundStyle(checked ? Color.accentColor : .secondary)
