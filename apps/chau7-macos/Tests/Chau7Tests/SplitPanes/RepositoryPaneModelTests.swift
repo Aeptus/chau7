@@ -344,11 +344,11 @@ final class RepositoryPaneModelTests: XCTestCase {
             gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
         )
         // Simulate git status
-        model.stagedFiles = [
+        model.status.stagedFiles = [
             FileStatus(path: "src/main.swift", changeType: .modified, indexStatus: "M", workTreeStatus: " "),
             FileStatus(path: "package.json", changeType: .modified, indexStatus: "M", workTreeStatus: " ")
         ]
-        model.unstagedFiles = [
+        model.status.unstagedFiles = [
             FileStatus(path: "tests/test.swift", changeType: .modified, indexStatus: " ", workTreeStatus: "M")
         ]
         // Simulate agent touched files
@@ -479,10 +479,10 @@ final class RepositoryPaneModelTests: XCTestCase {
         model.refreshStatus()
 
         wait(for: [gitCalled], timeout: 1.0)
-        waitUntil(timeout: 1.0) { !model.unstagedFiles.isEmpty }
+        waitUntil(timeout: 1.0) { !model.status.unstagedFiles.isEmpty }
 
         XCTAssertEqual(requestedAction, "refresh repository status")
-        XCTAssertEqual(model.unstagedFiles.map(\.path), ["src/main.swift"])
+        XCTAssertEqual(model.status.unstagedFiles.map(\.path), ["src/main.swift"])
         XCTAssertTrue(model.protectedAccessSnapshot.canProbeLive)
         XCTAssertNil(model.lastError)
     }

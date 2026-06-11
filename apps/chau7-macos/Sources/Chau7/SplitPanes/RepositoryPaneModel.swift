@@ -50,8 +50,6 @@ final class RepositoryPaneModel: Identifiable {
     var sessionFileTimeline: [String: [FileTouchRecord]] = [:]
     /// Files touched partitioned by turn ID.
     var sessionFilesByTurn: [String: Set<String>] = [:]
-    /// Per-file diff stats: additions and deletions.
-    var diffStats: [String: DiffStat] = [:]
     /// Turn summary for display.
     var turnSummary: TurnSummaryInfo?
 
@@ -69,27 +67,27 @@ final class RepositoryPaneModel: Identifiable {
     // is a one-liner instead of a six-place edit.
 
     var sessionStagedFiles: [FileStatus] {
-        stagedFiles.filter { sessionTouchedFiles.contains($0.path) }
+        status.stagedFiles.filter { sessionTouchedFiles.contains($0.path) }
     }
 
     var sessionUnstagedFiles: [FileStatus] {
-        unstagedFiles.filter { sessionTouchedFiles.contains($0.path) }
+        status.unstagedFiles.filter { sessionTouchedFiles.contains($0.path) }
     }
 
     var sessionUntrackedFiles: [String] {
-        untrackedFiles.filter { sessionTouchedFiles.contains($0) }
+        status.untrackedFiles.filter { sessionTouchedFiles.contains($0) }
     }
 
     var otherStagedFiles: [FileStatus] {
-        stagedFiles.filter { !sessionTouchedFiles.contains($0.path) }
+        status.stagedFiles.filter { !sessionTouchedFiles.contains($0.path) }
     }
 
     var otherUnstagedFiles: [FileStatus] {
-        unstagedFiles.filter { !sessionTouchedFiles.contains($0.path) }
+        status.unstagedFiles.filter { !sessionTouchedFiles.contains($0.path) }
     }
 
     var otherUntrackedFiles: [String] {
-        untrackedFiles.filter { !sessionTouchedFiles.contains($0) }
+        status.untrackedFiles.filter { !sessionTouchedFiles.contains($0) }
     }
 
     var sessionChangeCount: Int {
@@ -100,9 +98,9 @@ final class RepositoryPaneModel: Identifiable {
     /// in `touched`. One helper, three call-site reductions for any
     /// "touched-by-X" question — session, current turn, anything else.
     func changeCount(touchedBy touched: Set<String>) -> Int {
-        stagedFiles.filter { touched.contains($0.path) }.count
-            + unstagedFiles.filter { touched.contains($0.path) }.count
-            + untrackedFiles.filter { touched.contains($0) }.count
+        status.stagedFiles.filter { touched.contains($0.path) }.count
+            + status.unstagedFiles.filter { touched.contains($0.path) }.count
+            + status.untrackedFiles.filter { touched.contains($0) }.count
     }
 
     var turnChangeCount: Int {
@@ -122,11 +120,13 @@ final class RepositoryPaneModel: Identifiable {
     var aheadBehind: (ahead: Int, behind: Int)?
 
     // MARK: - File Status
-
-    var stagedFiles: [FileStatus] = []
-    var unstagedFiles: [FileStatus] = []
-    var untrackedFiles: [String] = []
-    var conflictedFiles: [String] = []
+    //
+    // Staged / unstaged / untracked / conflicted file lists + per-file
+    // diff stats moved to a dedicated `RepoStatusState` @Observable
+    // accessed as `repo.status`. A porcelain refresh that bumps the file
+    // lists no longer invalidates history / commit / branches through
+    // the outer model.
+    var status = RepoStatusState()
 
     // MARK: - Commit
     //
@@ -320,17 +320,17 @@ final class RepositoryPaneModel: Identifiable {
 
             DispatchQueue.main.async {
                 self.currentBranch = branch.isEmpty ? nil : branch
-                self.stagedFiles = parsed.staged
-                self.unstagedFiles = parsed.unstaged
-                self.untrackedFiles = parsed.untracked
-                self.conflictedFiles = parsed.conflicted
+                self.status.stagedFiles = parsed.staged
+                self.status.unstagedFiles = parsed.unstaged
+                self.status.untrackedFiles = parsed.untracked
+                self.status.conflictedFiles = parsed.conflicted
                 self.branches = parsedBranches
                 self.branchDetails = parsedDetails
                 self.remoteBranches = parsedRemoteBranches
                 self.aheadBehind = parsedAheadBehind
                 self.history.commits = parsedCommits
                 self.history.stashes = parsedStashes
-                self.diffStats = parsedDiffStats
+                self.status.diffStats = parsedDiffStats
                 self.sessionTouchedFiles = sessionFiles
                 self.turnTouchedFiles = turnFiles
                 self.sessionFileActions = fileActions
@@ -353,10 +353,10 @@ final class RepositoryPaneModel: Identifiable {
             let output = gitRunner(["status", "--porcelain"], dir)
             let parsed = Self.parseStatus(output)
             DispatchQueue.main.async {
-                self.stagedFiles = parsed.staged
-                self.unstagedFiles = parsed.unstaged
-                self.untrackedFiles = parsed.untracked
-                self.conflictedFiles = parsed.conflicted
+                self.status.stagedFiles = parsed.staged
+                self.status.unstagedFiles = parsed.unstaged
+                self.status.untrackedFiles = parsed.untracked
+                self.status.conflictedFiles = parsed.conflicted
             }
         }
     }

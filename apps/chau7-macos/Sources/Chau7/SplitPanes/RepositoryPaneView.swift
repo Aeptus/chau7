@@ -234,30 +234,30 @@ struct RepositoryPaneView: View {
     private var changesSection: some View {
         collapsibleSection(title: L("repo.section.changes", "Changes"), count: changeCount, isExpanded: $changesExpanded) {
             VStack(alignment: .leading, spacing: 2) {
-                if !repo.conflictedFiles.isEmpty {
+                if !repo.status.conflictedFiles.isEmpty {
                     sectionLabel(L("repo.section.conflicts", "CONFLICTS"), color: .red)
-                    ForEach(repo.conflictedFiles, id: \.self) { file in
+                    ForEach(repo.status.conflictedFiles, id: \.self) { file in
                         conflictRow(file)
                     }
                 }
 
-                if !repo.stagedFiles.isEmpty {
+                if !repo.status.stagedFiles.isEmpty {
                     sectionLabel(L("repo.section.staged", "STAGED"), color: .green)
-                    ForEach(repo.stagedFiles) { file in
+                    ForEach(repo.status.stagedFiles) { file in
                         fileRow(file, staged: true)
                     }
                 }
 
-                if !repo.unstagedFiles.isEmpty {
+                if !repo.status.unstagedFiles.isEmpty {
                     sectionLabel(L("repo.section.modified", "MODIFIED"), color: .orange)
-                    ForEach(repo.unstagedFiles) { file in
+                    ForEach(repo.status.unstagedFiles) { file in
                         fileRow(file, staged: false)
                     }
                 }
 
-                if !repo.untrackedFiles.isEmpty {
+                if !repo.status.untrackedFiles.isEmpty {
                     sectionLabel(L("repo.section.untracked", "UNTRACKED"), color: .secondary)
-                    ForEach(repo.untrackedFiles, id: \.self) { file in
+                    ForEach(repo.status.untrackedFiles, id: \.self) { file in
                         untrackedRow(file)
                     }
                 }
@@ -269,7 +269,7 @@ struct RepositoryPaneView: View {
                             .buttonStyle(.plain)
                             .foregroundStyle(.blue)
 
-                        if !repo.stagedFiles.isEmpty {
+                        if !repo.status.stagedFiles.isEmpty {
                             Button(L("repo.unstageAll", "Unstage All")) { repo.unstageAll() }
                                 .font(.system(size: 10))
                                 .buttonStyle(.plain)
@@ -290,7 +290,7 @@ struct RepositoryPaneView: View {
     }
 
     private var changeCount: Int {
-        repo.stagedFiles.count + repo.unstagedFiles.count + repo.untrackedFiles.count + repo.conflictedFiles.count
+        repo.status.stagedFiles.count + repo.status.unstagedFiles.count + repo.status.untrackedFiles.count + repo.status.conflictedFiles.count
     }
 
     // MARK: - Session Changes Section
@@ -461,7 +461,7 @@ struct RepositoryPaneView: View {
             Spacer()
 
             // Diff stats
-            if let stat = repo.diffStats[file.path] {
+            if let stat = repo.status.diffStats[file.path] {
                 HStack(spacing: 2) {
                     if stat.additions > 0 {
                         Text("+\(stat.additions)")
@@ -573,13 +573,13 @@ struct RepositoryPaneView: View {
                     Button {
                         repo.performCommit()
                     } label: {
-                        Text(repo.stagedFiles.isEmpty
+                        Text(repo.status.stagedFiles.isEmpty
                             ? L("repo.commit", "Commit")
-                            : String(format: L("repo.commitStaged", "Commit (%d staged)"), repo.stagedFiles.count))
+                            : String(format: L("repo.commitStaged", "Commit (%d staged)"), repo.status.stagedFiles.count))
                             .font(.system(size: 10, weight: .medium))
                     }
                     .disabled(repo.commit.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        || (repo.stagedFiles.isEmpty && !repo.commit.isAmend))
+                        || (repo.status.stagedFiles.isEmpty && !repo.commit.isAmend))
                     .keyboardShortcut(.return, modifiers: .command)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
