@@ -192,4 +192,38 @@ final class NotificationEventPreparationTests: XCTestCase {
             XCTFail("Expected fallback explicit-tab event to keep explicit tab")
         }
     }
+
+    func testPrepareRebindingAuthoritativeExplicitTabPreservesRepoPath() {
+        // Regression: the prior hand-rolled AIEvent reconstruction inside
+        // rebindAuthoritativeExplicitTabIfNeeded was silently dropping
+        // repoPath. Now that rebind routes through event.replacingTabID,
+        // repoPath round-trips. Per-repo event filtering downstream
+        // depends on this.
+        let staleExplicitTabID = UUID()
+        let correctedTabID = UUID()
+        let event = AIEvent(
+            source: .codex,
+            type: "finished",
+            tool: "Codex",
+            message: "done",
+            ts: "2026-06-10T00:00:00Z",
+            directory: "/Users/me/projects/Chau7/apps/chau7-macos",
+            repoPath: "/Users/me/projects/Chau7",
+            tabID: staleExplicitTabID,
+            sessionID: "thread_42",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationEventPreparation.prepare(event, triggerState: NotificationTriggerState()) { _ in
+            correctedTabID
+        }
+
+        guard case .proceed(let prepared) = decision else {
+            XCTFail("Expected proceed for authoritative explicit-tab rebind")
+            return
+        }
+        XCTAssertEqual(prepared.event.tabID, correctedTabID, "tab must be rebound")
+        XCTAssertEqual(prepared.event.repoPath, "/Users/me/projects/Chau7", "repoPath must survive rebind")
+        XCTAssertEqual(prepared.resolutionMethod, "explicit_tab_corrected_via_session")
+    }
 }

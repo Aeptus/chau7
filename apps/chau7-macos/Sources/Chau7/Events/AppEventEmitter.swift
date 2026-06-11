@@ -22,8 +22,16 @@ final class AppEventEmitter {
 
     private var configObserver: Any?
 
+    /// Last `AppEventConfig` we configured timers for. Used to filter the
+    /// raw `UserDefaults.didChangeNotification` (which fires on EVERY
+    /// preference change in the app) down to "the appEventConfig actually
+    /// changed" — avoids tearing down and rebuilding all the timers on
+    /// every unrelated settings write.
+    private var lastObservedConfig: AppEventConfig
+
     init(eventPublisher: AIEventPublishing?) {
         self.eventPublisher = eventPublisher
+        self.lastObservedConfig = FeatureSettings.shared.appEventConfig
         setupTimers()
         observeConfigChanges()
     }
@@ -31,14 +39,16 @@ final class AppEventEmitter {
     // MARK: - Configuration
 
     private func observeConfigChanges() {
-        // Observe changes to appEventConfig
         configObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            // Reconfigure timers when settings change
-            self?.setupTimers()
+            guard let self else { return }
+            let nextConfig = self.config
+            guard nextConfig != self.lastObservedConfig else { return }
+            self.lastObservedConfig = nextConfig
+            self.setupTimers()
         }
     }
 

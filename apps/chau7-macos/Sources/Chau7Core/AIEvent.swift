@@ -221,9 +221,21 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
     }
 
     /// Returns a copy with `tabID` filled in, if it was previously nil.
+    /// Use `replacingTabID(_:)` when you need to overwrite an existing
+    /// tabID (the "explicit-tab rebound via session" path in
+    /// `NotificationEventPreparation`).
     public func resolvingTabID(_ tabID: UUID?) -> AIEvent {
         guard let tabID, self.tabID == nil else { return self }
-        return AIEvent(
+        return replacingTabID(tabID)
+    }
+
+    /// Returns a copy with `tabID` unconditionally replaced. Distinct
+    /// from `resolvingTabID(_:)` which preserves an existing tabID; this
+    /// is the helper to use when correcting a wrong explicit tab routing.
+    /// Preserves every other field — notably `repoPath`, which a
+    /// hand-rolled re-construction is easy to forget.
+    public func replacingTabID(_ newTabID: UUID) -> AIEvent {
+        AIEvent(
             id: id,
             source: source,
             type: type,
@@ -235,7 +247,7 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
             ts: ts,
             directory: directory,
             repoPath: repoPath,
-            tabID: tabID,
+            tabID: newTabID,
             sessionID: sessionID,
             producer: producer,
             reliability: reliability
