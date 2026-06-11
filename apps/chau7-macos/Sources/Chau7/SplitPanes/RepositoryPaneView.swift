@@ -32,7 +32,7 @@ struct RepositoryPaneView: View {
 
             if repo.isLoading, repo.history.commits.isEmpty {
                 loadingView
-            } else if repo.isSessionMode {
+            } else if repo.session.isSessionMode {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         errorBanner
@@ -117,7 +117,7 @@ struct RepositoryPaneView: View {
                 }
             }
 
-            if repo.isSessionMode, let summary = repo.turnSummary {
+            if repo.session.isSessionMode, let summary = repo.session.turnSummary {
                 HStack(spacing: 3) {
                     Circle()
                         .fill(sessionStateColor(summary.sessionState))
@@ -136,17 +136,17 @@ struct RepositoryPaneView: View {
             Spacer()
 
             // Session/Git mode toggle
-            if repo.turnSummary != nil {
+            if repo.session.turnSummary != nil {
                 Button {
-                    repo.forceGitMode.toggle()
-                    repo.isSessionMode = !repo.forceGitMode
+                    repo.session.forceGitMode.toggle()
+                    repo.session.isSessionMode = !repo.session.forceGitMode
                 } label: {
-                    Text(repo.isSessionMode ? L("repo.switchToGit", "Git") : L("repo.switchToSession", "Session"))
+                    Text(repo.session.isSessionMode ? L("repo.switchToGit", "Git") : L("repo.switchToSession", "Session"))
                         .font(.system(size: 9))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.blue)
-                .help(repo.isSessionMode ? L("repo.switchToGit.help", "Switch to full git view") : L("repo.switchToSession.help", "Switch to session view"))
+                .help(repo.session.isSessionMode ? L("repo.switchToGit.help", "Switch to full git view") : L("repo.switchToSession.help", "Switch to session view"))
             }
 
             Button {
@@ -364,7 +364,7 @@ struct RepositoryPaneView: View {
 
     private var turnSummarySection: some View {
         collapsibleSection(title: L("repo.section.turnSummary", "Turn Summary"), isExpanded: $turnSummaryExpanded) {
-            if let summary = repo.turnSummary {
+            if let summary = repo.session.turnSummary {
                 VStack(alignment: .leading, spacing: 4) {
                     // Tools used
                     if !summary.toolsUsed.isEmpty {
@@ -556,7 +556,7 @@ struct RepositoryPaneView: View {
                         .toggleStyle(.checkbox)
                         .font(.system(size: 10))
 
-                    if repo.isSessionMode {
+                    if repo.session.isSessionMode {
                         Button {
                             repo.askAgentForCommitMessage()
                         } label: {

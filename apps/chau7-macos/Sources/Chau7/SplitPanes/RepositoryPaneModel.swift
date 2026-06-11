@@ -35,23 +35,12 @@ final class RepositoryPaneModel: Identifiable {
     var tabID: UUID?
 
     // MARK: - Session Mode
-
-    /// Whether the pane is in session-aware mode (agent active/recent).
-    var isSessionMode = false
-    /// Manual override to force full git mode.
-    var forceGitMode = false
-    /// Files the agent touched across all turns (accumulated from journal).
-    var sessionTouchedFiles: Set<String> = []
-    /// Files the agent touched in the current turn.
-    var turnTouchedFiles: Set<String> = []
-    /// Per-file action set derived from tool journaling and command fallbacks.
-    var sessionFileActions: [String: Set<FileTrackingAction>] = [:]
-    /// Per-file timeline of touches across turns.
-    var sessionFileTimeline: [String: [FileTouchRecord]] = [:]
-    /// Files touched partitioned by turn ID.
-    var sessionFilesByTurn: [String: Set<String>] = [:]
-    /// Turn summary for display.
-    var turnSummary: TurnSummaryInfo?
+    //
+    // Session-awareness state moves to a dedicated `RepoSessionState`
+    // @Observable accessed as `repo.session`. An EventJournal-driven
+    // session refresh no longer fans invalidations out to status / history
+    // / commit / branches through the outer model.
+    var session = RepoSessionState()
 
     /// Tracks files across turns by reading the EventJournal.
     @ObservationIgnored
@@ -61,33 +50,33 @@ final class RepositoryPaneModel: Identifiable {
 
     // MARK: - Session File Partitioning
     //
-    // The six near-identical `.filter { sessionTouchedFiles.contains(...) }`
+    // The six near-identical `.filter { session.sessionTouchedFiles.contains(...) }`
     // expressions used to be hand-written six times. They now ride on a
     // single `partition(by:)` helper so adding a new "touched-by" predicate
     // is a one-liner instead of a six-place edit.
 
     var sessionStagedFiles: [FileStatus] {
-        status.stagedFiles.filter { sessionTouchedFiles.contains($0.path) }
+        status.stagedFiles.filter { session.sessionTouchedFiles.contains($0.path) }
     }
 
     var sessionUnstagedFiles: [FileStatus] {
-        status.unstagedFiles.filter { sessionTouchedFiles.contains($0.path) }
+        status.unstagedFiles.filter { session.sessionTouchedFiles.contains($0.path) }
     }
 
     var sessionUntrackedFiles: [String] {
-        status.untrackedFiles.filter { sessionTouchedFiles.contains($0) }
+        status.untrackedFiles.filter { session.sessionTouchedFiles.contains($0) }
     }
 
     var otherStagedFiles: [FileStatus] {
-        status.stagedFiles.filter { !sessionTouchedFiles.contains($0.path) }
+        status.stagedFiles.filter { !session.sessionTouchedFiles.contains($0.path) }
     }
 
     var otherUnstagedFiles: [FileStatus] {
-        status.unstagedFiles.filter { !sessionTouchedFiles.contains($0.path) }
+        status.unstagedFiles.filter { !session.sessionTouchedFiles.contains($0.path) }
     }
 
     var otherUntrackedFiles: [String] {
-        status.untrackedFiles.filter { !sessionTouchedFiles.contains($0) }
+        status.untrackedFiles.filter { !session.sessionTouchedFiles.contains($0) }
     }
 
     var sessionChangeCount: Int {
@@ -104,7 +93,7 @@ final class RepositoryPaneModel: Identifiable {
     }
 
     var turnChangeCount: Int {
-        changeCount(touchedBy: turnTouchedFiles)
+        changeCount(touchedBy: session.turnTouchedFiles)
     }
 
     var otherChangeCount: Int {
@@ -334,13 +323,13 @@ final class RepositoryPaneModel: Identifiable {
                 self.history.commits = parsedCommits
                 self.history.stashes = parsedStashes
                 self.status.diffStats = parsedDiffStats
-                self.sessionTouchedFiles = sessionFiles
-                self.turnTouchedFiles = turnFiles
-                self.sessionFileActions = fileActions
-                self.sessionFileTimeline = fileTimeline
-                self.sessionFilesByTurn = filesByTurn
-                self.turnSummary = summary
-                self.isSessionMode = hasSession && !self.forceGitMode
+                self.session.sessionTouchedFiles = sessionFiles
+                self.session.turnTouchedFiles = turnFiles
+                self.session.sessionFileActions = fileActions
+                self.session.sessionFileTimeline = fileTimeline
+                self.session.sessionFilesByTurn = filesByTurn
+                self.session.turnSummary = summary
+                self.session.isSessionMode = hasSession && !self.session.forceGitMode
                 self.isLoading = false
                 self.lastRefreshDate = Date()
             }
@@ -442,8 +431,8 @@ final class RepositoryPaneModel: Identifiable {
     /// Reset session tracking — call after push ships the work.
     func resetSessionTracking() {
         sessionTracker.reset()
-        sessionTouchedFiles = []
-        turnSummary = nil
+        session.sessionTouchedFiles = []
+        session.turnSummary = nil
     }
 
     /// Build turn summary from a RuntimeSession.

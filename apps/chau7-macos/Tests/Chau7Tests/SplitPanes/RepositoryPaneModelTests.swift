@@ -352,7 +352,7 @@ final class RepositoryPaneModelTests: XCTestCase {
             FileStatus(path: "tests/test.swift", changeType: .modified, indexStatus: " ", workTreeStatus: "M")
         ]
         // Simulate agent touched files
-        model.sessionTouchedFiles = ["src/main.swift", "tests/test.swift"]
+        model.session.sessionTouchedFiles = ["src/main.swift", "tests/test.swift"]
 
         XCTAssertEqual(model.sessionStagedFiles.count, 1)
         XCTAssertEqual(model.sessionStagedFiles[0].path, "src/main.swift")
@@ -394,8 +394,8 @@ final class RepositoryPaneModelTests: XCTestCase {
             gitRunner: { _, _ in "" },
             gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
         )
-        model.sessionTouchedFiles = ["a.swift", "b.swift"]
-        model.turnSummary = TurnSummaryInfo(
+        model.session.sessionTouchedFiles = ["a.swift", "b.swift"]
+        model.session.turnSummary = TurnSummaryInfo(
             turnCount: 1, toolsUsed: [:], totalTokens: 0,
             inputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0,
             costEstimateUSD: nil, averageTokensPerTurn: nil, activeDuration: nil, exitReason: nil,
@@ -404,8 +404,8 @@ final class RepositoryPaneModelTests: XCTestCase {
 
         model.resetSessionTracking()
 
-        XCTAssertTrue(model.sessionTouchedFiles.isEmpty)
-        XCTAssertNil(model.turnSummary)
+        XCTAssertTrue(model.session.sessionTouchedFiles.isEmpty)
+        XCTAssertNil(model.session.turnSummary)
     }
 
     func testBuildTurnSummaryUsesCompletedTurnSnapshotWhenSessionIsIdle() throws {
