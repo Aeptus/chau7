@@ -236,125 +236,108 @@ struct TextEditorPaneView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header bar
-            HStack(spacing: 8) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
-                Text(editor.fileName)
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
-                    .onTapGesture {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(editor.fileName, forType: .string)
-                        withAnimation(.easeInOut(duration: 0.15)) { showCopiedToast = true }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                            withAnimation(.easeInOut(duration: 0.3)) { showCopiedToast = false }
+            PaneHeaderBar(
+                icon: "doc.text",
+                onClose: onClose,
+                title: {
+                    Text(editor.fileName)
+                        .font(.system(size: 11, weight: .medium))
+                        .lineLimit(1)
+                        .onTapGesture {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(editor.fileName, forType: .string)
+                            withAnimation(.easeInOut(duration: 0.15)) { showCopiedToast = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                withAnimation(.easeInOut(duration: 0.3)) { showCopiedToast = false }
+                            }
                         }
-                    }
-                    .help(L("Copy file name", "Copy file name"))
-
-                if showCopiedToast {
-                    Text(L("pane.copied", "Copied"))
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .transition(.opacity)
-                }
-
-                if editor.isAutoSaveEnabled, let autoSaveStatusMessage = editor.autoSaveStatusMessage {
-                    Text(autoSaveStatusMessage)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.secondary)
-                } else if editor.isDirty {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 6, height: 6)
-                }
-
-                if editor.hasExternalChangeConflict {
-                    Button {
-                        editor.reloadFromDisk()
-                    } label: {
-                        Text(L("editor.reloadPrompt", "Reload?"))
+                        .help(L("Copy file name", "Copy file name"))
+                },
+                titleAccessory: {
+                    if showCopiedToast {
+                        Text(L("pane.copied", "Copied"))
                             .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.secondary)
+                            .transition(.opacity)
                     }
-                    .buttonStyle(.plain)
-                    .help(editor.externalConflictMessage ?? L("editor.externalChangeConflict", "File changed externally. Reload?"))
-                }
 
-                if isMarkdownFile, editor.planProgress.total > 0 {
-                    Text("\(editor.planProgress.checked)/\(editor.planProgress.total)")
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .help(L("editor.planProgress", "Completed tasks"))
-                }
-
-                Spacer()
-
-                // Open file button
-                Button {
-                    showFilePicker = true
-                } label: {
-                    Image(systemName: "folder")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .help(L("Open File", "Open File"))
-
-                // Save button
-                Button {
-                    if editor.filePath != nil {
-                        editor.save()
-                    } else if !editor.saveUntitledIfPossible() {
-                        saveAs()
+                    if editor.isAutoSaveEnabled, let autoSaveStatusMessage = editor.autoSaveStatusMessage {
+                        Text(autoSaveStatusMessage)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    } else if editor.isDirty {
+                        Circle()
+                            .fill(Color.orange)
+                            .frame(width: 6, height: 6)
                     }
-                } label: {
-                    Image(systemName: "square.and.arrow.down")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .disabled(!editor.isDirty && editor.filePath != nil)
-                .help(L("Save", "Save"))
 
-                // Markdown toggle (only shown for .md files)
-                if isMarkdownFile {
-                    Button {
-                        isMarkdownMode.toggle()
-                    } label: {
-                        Image(systemName: isMarkdownMode ? "doc.plaintext" : "doc.richtext")
+                    if editor.hasExternalChangeConflict {
+                        Button {
+                            editor.reloadFromDisk()
+                        } label: {
+                            Text(L("editor.reloadPrompt", "Reload?"))
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.orange)
+                        }
+                        .buttonStyle(.plain)
+                        .help(editor.externalConflictMessage ?? L("editor.externalChangeConflict", "File changed externally. Reload?"))
+                    }
+
+                    if isMarkdownFile, editor.planProgress.total > 0 {
+                        Text("\(editor.planProgress.checked)/\(editor.planProgress.total)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .help(L("editor.planProgress", "Completed tasks"))
+                    }
+                },
+                trailing: {
+                    // Open file
+                    Button { showFilePicker = true } label: {
+                        Image(systemName: "folder")
                             .font(.system(size: 11))
                     }
                     .buttonStyle(.plain)
-                    .help(isMarkdownMode ? L("pane.showSource", "Show Source") : L("pane.showRunbook", "Show Runbook"))
+                    .help(L("Open File", "Open File"))
 
-                    if isMarkdownMode, onRunCommand != nil {
-                        Button {
-                            runAllMarkdownBlocks()
-                        } label: {
-                            Label(L("pane.runAll", "Run All"), systemImage: "play.fill")
-                                .font(.system(size: 10))
+                    // Save
+                    Button {
+                        if editor.filePath != nil {
+                            editor.save()
+                        } else if !editor.saveUntitledIfPossible() {
+                            saveAs()
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!editor.isDirty && editor.filePath != nil)
+                    .help(L("Save", "Save"))
+
+                    // Markdown toggle (only for .md files)
+                    if isMarkdownFile {
+                        Button {
+                            isMarkdownMode.toggle()
+                        } label: {
+                            Image(systemName: isMarkdownMode ? "doc.plaintext" : "doc.richtext")
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.plain)
+                        .help(isMarkdownMode ? L("pane.showSource", "Show Source") : L("pane.showRunbook", "Show Runbook"))
+
+                        if isMarkdownMode, onRunCommand != nil {
+                            Button {
+                                runAllMarkdownBlocks()
+                            } label: {
+                                Label(L("pane.runAll", "Run All"), systemImage: "play.fill")
+                                    .font(.system(size: 10))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                        }
                     }
                 }
-
-                // Close button — actual save/discard prompt lives on the
-                // controller so this and ⌃⌘W share one decision path.
-                Button {
-                    onClose()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                .help(L("Close Pane", "Close Pane"))
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color(nsColor: .controlBackgroundColor))
+            )
 
             Divider()
 

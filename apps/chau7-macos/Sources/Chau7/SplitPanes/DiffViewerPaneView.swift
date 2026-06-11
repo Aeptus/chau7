@@ -94,9 +94,9 @@ struct DiffViewerPaneView: View {
     private var diffHeader: some View {
         PaneHeaderBar(
             icon: "arrow.left.arrow.right",
-            title: diff.fileName,
             closeHelp: L("splitPane.diff.close", "Close Diff"),
             onClose: onClose,
+            title: { PaneHeaderTitle(diff.fileName) },
             titleAccessory: {
                 if diff.additions > 0 || diff.deletions > 0 {
                     HStack(spacing: 4) {

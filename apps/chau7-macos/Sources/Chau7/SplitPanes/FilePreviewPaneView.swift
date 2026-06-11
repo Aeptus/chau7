@@ -15,9 +15,9 @@ struct FilePreviewPaneView: View {
         VStack(spacing: 0) {
             PaneHeaderBar(
                 icon: "eye",
-                title: preview.fileName,
                 closeHelp: L("splitPane.preview.close", "Close Preview"),
                 onClose: onClose,
+                title: { PaneHeaderTitle(preview.fileName) },
                 titleAccessory: {
                     // File-type icon (right after the title) shows the
                     // OS-derived icon for the preview's content type.

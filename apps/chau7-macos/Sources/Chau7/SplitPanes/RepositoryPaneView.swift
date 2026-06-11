@@ -78,28 +78,29 @@ struct RepositoryPaneView: View {
     // MARK: - Header Bar
 
     private var headerBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-
-            if let branch = repo.branchState.currentBranch {
-                Button {
-                    showBranchPicker.toggle()
-                } label: {
-                    HStack(spacing: 3) {
-                        Text(branch)
-                            .font(.system(size: 11, weight: .semibold))
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 8))
+        PaneHeaderBar(
+            icon: "arrow.triangle.branch",
+            onClose: onClose,
+            title: {
+                if let branch = repo.branchState.currentBranch {
+                    Button {
+                        showBranchPicker.toggle()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(branch)
+                                .font(.system(size: 11, weight: .semibold))
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showBranchPicker) {
+                        branchPickerPopover
                     }
                 }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showBranchPicker) {
-                    branchPickerPopover
-                }
-
+            },
+            titleAccessory: {
                 if let ab = repo.branchState.aheadBehind, ab.ahead > 0 || ab.behind > 0 {
                     HStack(spacing: 2) {
                         if ab.ahead > 0 {
@@ -115,62 +116,49 @@ struct RepositoryPaneView: View {
                     }
                     .help(L("repo.branchState.aheadBehind.help", "↑ commits ahead of remote, ↓ commits behind"))
                 }
-            }
 
-            if repo.session.isSessionMode, let summary = repo.session.turnSummary {
-                HStack(spacing: 3) {
-                    Circle()
-                        .fill(sessionStateColor(summary.sessionState))
-                        .frame(width: 6, height: 6)
-                    Text(summary.backendName.capitalized)
-                        .font(.system(size: 9, weight: .medium))
+                if repo.session.isSessionMode, let summary = repo.session.turnSummary {
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(sessionStateColor(summary.sessionState))
+                            .frame(width: 6, height: 6)
+                        Text(summary.backendName.capitalized)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                } else if repo.branchState.currentBranch != nil {
+                    Text(repo.repoName)
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-            } else {
-                Text(repo.repoName)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            },
+            trailing: {
+                // Session/Git mode toggle
+                if repo.session.turnSummary != nil {
+                    Button {
+                        repo.session.forceGitMode.toggle()
+                        repo.session.isSessionMode = !repo.session.forceGitMode
+                    } label: {
+                        Text(repo.session.isSessionMode ? L("repo.switchToGit", "Git") : L("repo.switchToSession", "Session"))
+                            .font(.system(size: 9))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.blue)
+                    .help(repo.session.isSessionMode ? L("repo.switchToGit.help", "Switch to full git view") : L("repo.switchToSession.help", "Switch to session view"))
+                }
 
-            Spacer()
-
-            // Session/Git mode toggle
-            if repo.session.turnSummary != nil {
                 Button {
-                    repo.session.forceGitMode.toggle()
-                    repo.session.isSessionMode = !repo.session.forceGitMode
+                    repo.refreshAll()
                 } label: {
-                    Text(repo.session.isSessionMode ? L("repo.switchToGit", "Git") : L("repo.switchToSession", "Session"))
-                        .font(.system(size: 9))
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.blue)
-                .help(repo.session.isSessionMode ? L("repo.switchToGit.help", "Switch to full git view") : L("repo.switchToSession.help", "Switch to session view"))
+                .disabled(repo.isLoading)
+                .help(L("Refresh", "Refresh"))
             }
-
-            Button {
-                repo.refreshAll()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11))
-            }
-            .buttonStyle(.plain)
-            .disabled(repo.isLoading)
-            .help(L("Refresh", "Refresh"))
-
-            Button {
-                onClose()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .buttonStyle(.plain)
-            .help(L("Close Pane", "Close Pane"))
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color(nsColor: .controlBackgroundColor))
+        )
     }
 
     // MARK: - Loading
