@@ -15,21 +15,19 @@ struct SplitPaneView: View {
             node: controller.root,
             focusedID: controller.focusedPaneID,
             renderPhase: renderPhase,
-            isInteractive: isInteractive,
-            onFocus: { id in
-                controller.setFocusedPane(id)
-            },
+            isInteractive: isInteractive
+        )
+        .environment(\.paneEnvironment, PaneEnvironment(
+            onFocus: { id in controller.setFocusedPane(id) },
             onUpdateRatio: { splitID, newRatio in
                 controller.updateRatio(splitID: splitID, newRatio: newRatio)
             },
-            onClosePane: { id in
-                controller.closePane(id: id)
-            },
+            onClosePane: { id in controller.closePane(id: id) },
             onFilePathClicked: controller.onFilePathClicked,
             onRunCommand: { [weak controller] command, lineNumber, editor in
                 controller?.sendCommandToTerminal(command, sourceEditor: editor, sourceLineNumber: lineNumber)
             }
-        )
+        ))
     }
 }
 
@@ -38,11 +36,8 @@ struct SplitNodeView: View {
     let focusedID: UUID
     let renderPhase: TabRenderPhase
     let isInteractive: Bool
-    let onFocus: (UUID) -> Void
-    let onUpdateRatio: (UUID, CGFloat) -> Void
-    let onClosePane: (UUID) -> Void
-    var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
-    var onRunCommand: ((String, Int?, TextEditorModel?) -> Void)? // Markdown runbook: send command to terminal
+
+    @Environment(\.paneEnvironment) private var env
 
     var body: some View {
         switch node {
@@ -58,12 +53,7 @@ struct SplitNodeView: View {
                 modelRatio: ratio,
                 focusedID: focusedID,
                 renderPhase: renderPhase,
-                isInteractive: isInteractive,
-                onFocus: onFocus,
-                onUpdateRatio: onUpdateRatio,
-                onClosePane: onClosePane,
-                onFilePathClicked: onFilePathClicked,
-                onRunCommand: onRunCommand
+                isInteractive: isInteractive
             )
         }
     }
@@ -80,50 +70,50 @@ struct SplitNodeView: View {
                 session: p.session,
                 renderPhase: renderPhase,
                 isInteractive: isInteractive,
-                onFocus: { onFocus(p.id) },
-                onFilePathClicked: onFilePathClicked
+                onFocus: { env?.onFocus(p.id) },
+                onFilePathClicked: env?.onFilePathClicked
             )
 
         case let p as TextEditorPane:
             TextEditorPaneView(
                 id: p.id,
                 editor: p.editor,
-                onFocus: { onFocus(p.id) },
-                onClose: { onClosePane(p.id) },
-                onRunCommand: onRunCommand
+                onFocus: { env?.onFocus(p.id) },
+                onClose: { env?.onClosePane(p.id) },
+                onRunCommand: env?.onRunCommand
             )
 
         case let p as FilePreviewPane:
             FilePreviewPaneView(
                 id: p.id,
                 preview: p.preview,
-                onFocus: { onFocus(p.id) },
-                onClose: { onClosePane(p.id) }
+                onFocus: { env?.onFocus(p.id) },
+                onClose: { env?.onClosePane(p.id) }
             )
 
         case let p as DiffViewerPane:
             DiffViewerPaneView(
                 id: p.id,
                 diff: p.diff,
-                onFocus: { onFocus(p.id) },
-                onClose: { onClosePane(p.id) }
+                onFocus: { env?.onFocus(p.id) },
+                onClose: { env?.onClosePane(p.id) }
             )
 
         case let p as RepositoryPane:
             RepositoryPaneView(
                 id: p.id,
                 repo: p.repo,
-                onFocus: { onFocus(p.id) },
-                onClose: { onClosePane(p.id) },
+                onFocus: { env?.onFocus(p.id) },
+                onClose: { env?.onClosePane(p.id) },
                 onFileClicked: { path, dir in
                     let absolutePath = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: dir)).path
-                    onFilePathClicked?(absolutePath, nil, nil)
+                    env?.onFilePathClicked?(absolutePath, nil, nil)
                 }
             )
 
         case let p as DashboardPane:
             AgentDashboardView(model: p.dashboard) { path in
-                onFilePathClicked?(path, nil, nil)
+                env?.onFilePathClicked?(path, nil, nil)
             }
 
         default:
@@ -132,7 +122,9 @@ struct SplitNodeView: View {
     }
 }
 
-/// Separate view for split container to hold @State for smooth dragging
+/// Separate view for split container to hold @State for smooth dragging.
+/// Reads `onUpdateRatio` from `@Environment(\.paneEnvironment)` instead of
+/// taking it as an init parameter.
 struct SplitContainerView: View {
     let splitID: UUID
     let direction: SplitDirection
@@ -142,12 +134,8 @@ struct SplitContainerView: View {
     let focusedID: UUID
     let renderPhase: TabRenderPhase
     let isInteractive: Bool
-    let onFocus: (UUID) -> Void
-    let onUpdateRatio: (UUID, CGFloat) -> Void
-    let onClosePane: (UUID) -> Void
-    var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
-    var onRunCommand: ((String, Int?, TextEditorModel?) -> Void)? // Markdown runbook
 
+    @Environment(\.paneEnvironment) private var env
     @State private var liveRatio: CGFloat = 0.5
 
     var body: some View {
@@ -162,7 +150,7 @@ struct SplitContainerView: View {
                 baseRatio: modelRatio,
                 totalSize: totalSize,
                 onDragEnd: { newRatio in
-                    onUpdateRatio(splitID, newRatio)
+                    env?.onUpdateRatio(splitID, newRatio)
                 }
             )
 
@@ -193,12 +181,7 @@ struct SplitContainerView: View {
             node: node,
             focusedID: focusedID,
             renderPhase: renderPhase,
-            isInteractive: isInteractive,
-            onFocus: onFocus,
-            onUpdateRatio: onUpdateRatio,
-            onClosePane: onClosePane,
-            onFilePathClicked: onFilePathClicked,
-            onRunCommand: onRunCommand
+            isInteractive: isInteractive
         )
     }
 }
