@@ -1,4 +1,3 @@
-#if !SWIFT_PACKAGE
 import XCTest
 @testable import Chau7
 import Chau7Core
@@ -25,7 +24,7 @@ final class NotificationActionExecutorTests: XCTestCase {
             if !styleCallResults.isEmpty {
                 return styleCallResults.removeFirst()
             }
-            styleResult
+            return styleResult
         }
 
         func tabExists(tabID: UUID) -> Bool {
@@ -96,6 +95,13 @@ final class NotificationActionExecutorTests: XCTestCase {
         let executor = self.executor!
         let tabID = UUID()
         delegate.styleResult = tabID
+        // The styleTab path gates the inline delegate call on
+        // `tabExists`. Populating existingTabs is required for the
+        // "this tab is live, just style it" success path — without it,
+        // resolveLiveStyleTabID skips the inline call and falls through
+        // to session recovery (which fails for events without a sessionID
+        // and turns the action into a failure).
+        delegate.existingTabs = [tabID]
         executor.delegate = delegate
 
         let report = executor.execute(
@@ -309,4 +315,3 @@ final class NotificationActionExecutorTests: XCTestCase {
         XCTAssertTrue(report.notes.contains { $0.contains("badgeTab failed") })
     }
 }
-#endif

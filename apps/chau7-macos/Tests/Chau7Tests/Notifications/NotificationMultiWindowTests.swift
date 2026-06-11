@@ -2,8 +2,6 @@ import XCTest
 @testable import Chau7
 @testable import Chau7Core
 
-#if !SWIFT_PACKAGE
-
 @MainActor
 final class NotificationMultiWindowTests: XCTestCase {
 
@@ -115,5 +113,3 @@ final class NotificationMultiWindowTests: XCTestCase {
         XCTAssertEqual(event.notificationBody, "Done.")
     }
 }
-
-#endif

@@ -1,11 +1,10 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 import Chau7Core
 
 @MainActor
 final class NotificationHistoryTests: XCTestCase {
-    func testHistoryTracksDeliveryLifecycle() {
+    func testHistoryTracksDeliveryLifecycle() throws {
         let history = NotificationHistory(maxEntries: 10)
         let event = AIEvent(
             source: .runtime,
@@ -48,4 +47,3 @@ final class NotificationHistoryTests: XCTestCase {
         XCTAssertTrue(entry.notes.contains("notificationType:idle_prompt"))
     }
 }
-#endif
