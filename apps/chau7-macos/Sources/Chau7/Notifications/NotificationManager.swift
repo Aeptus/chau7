@@ -49,11 +49,11 @@ final class NotificationManager {
     private var pendingNotifications: [String: AIEvent] = [:]
     private var pendingNotificationOrder: [String] = []
     private var pendingNotificationFlushWorkItem: DispatchWorkItem?
-    private var routingRetryCounts: [UUID: Int] = [:]
-    private var recentAuthoritativeEvents: [String: Date] = [:]
-    private var recentRepeatedAttentionEvents: [String: Date] = [:]
-    private var recentClosedSessionEvents: [String: Date] = [:]
-    private let authoritativeRetryDelays: [TimeInterval] = [0.05, 0.15, 0.5]
+    /// Owns the four time-windowed delivery-policy maps
+    /// (authoritative-event tracking, repeat suppression, post-close
+    /// suppression, routing retry counters). The manager asks the policy
+    /// for a verdict at each step and handles the side effects.
+    private let deliveryPolicy = NotificationDeliveryPolicy()
     private let eventEngine = AIEventNotificationEngine()
 
     private init() {
@@ -267,7 +267,7 @@ final class NotificationManager {
 
     /// All processing on main actor — delegates decision to pure pipeline, then executes.
     private func processEvent(_ event: AIEvent) {
-        pruneAuthoritativeEvents()
+        deliveryPolicy.pruneExpired()
 
         let ns = FeatureSettings.shared.notificationSettings
         var preparedEvent: AIEvent
@@ -301,67 +301,56 @@ final class NotificationManager {
         )
         history.markPrepared(event: preparedEvent, resolutionMethod: resolutionMethod)
 
-        registerClosedIdentityIfNeeded(preparedEvent)
+        deliveryPolicy.registerClosedIdentityIfNeeded(preparedEvent)
         clearResolvedInteractiveAttentionIfNeeded(for: preparedEvent)
 
-        if NotificationDeliverySemantics.requiresAuthoritativeRouting(preparedEvent),
-           preparedEvent.tabID == nil {
-            if scheduleRoutingRetryIfNeeded(for: preparedEvent) {
-                return
-            }
-            let attempts = routingRetryCounts[preparedEvent.id] ?? authoritativeRetryDelays.count
-            if NotificationDeliverySemantics.shouldDropAfterRoutingFailure(
-                preparedEvent,
-                retryAttempts: attempts,
-                maxRetryAttempts: authoritativeRetryDelays.count
-            ) {
-                let reason = NotificationDeliverySemantics.unresolvedRoutingDropReason(
-                    for: preparedEvent,
-                    retryAttempts: attempts,
-                    maxRetryAttempts: authoritativeRetryDelays.count
-                )
-                Log.warn("\(reason) (tool=\(preparedEvent.tool) session=\(preparedEvent.sessionID ?? "nil"))")
+        // Run the four delivery-policy verdicts in order. Each can either
+        // pass, drop the event with a reason, or (only authoritative
+        // routing) schedule a retry.
+        let policySteps: [(name: String, verdict: NotificationDeliveryPolicy.Verdict)] = [
+            ("routing", deliveryPolicy.attemptAuthoritativeRoutingRetry(preparedEvent)),
+            ("postClose", deliveryPolicy.attemptPostCloseSuppression(preparedEvent)),
+            ("fallbackShadow", deliveryPolicy.attemptFallbackShadowSuppression(preparedEvent))
+        ]
+        for step in policySteps {
+            switch step.verdict {
+            case .pass:
+                continue
+            case .drop(let reason):
+                if step.name == "routing" {
+                    Log.warn("\(reason) (tool=\(preparedEvent.tool) session=\(preparedEvent.sessionID ?? "nil"))")
+                } else {
+                    Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
+                }
                 history.markDropped(eventID: preparedEvent.id, reason: reason)
-                routingRetryCounts.removeValue(forKey: preparedEvent.id)
+                return
+            case .scheduleRetry(let delay, let attempt):
+                history.markRetryScheduled(
+                    eventID: preparedEvent.id,
+                    attempt: attempt,
+                    reason: "authoritative event missing exact tab route"
+                )
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    self?.enqueueEvent(preparedEvent)
+                }
                 return
             }
-        }
-
-        if NotificationDeliverySemantics.shouldSuppressAfterClose(
-            preparedEvent,
-            recentlyClosedEvents: recentClosedSessionEvents
-        ) {
-            let reason = "Suppressed stale post-close notification for an already-finished session"
-            Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
-            history.markDropped(eventID: preparedEvent.id, reason: reason)
-            routingRetryCounts.removeValue(forKey: preparedEvent.id)
-            return
-        }
-
-        if NotificationDeliverySemantics.shouldSuppressAsFallback(
-            preparedEvent,
-            authoritativeEvents: recentAuthoritativeEvents
-        ) {
-            let reason = "Suppressed fallback event shadowed by authoritative delivery"
-            Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
-            history.markDropped(eventID: preparedEvent.id, reason: reason)
-            return
         }
 
         assertInteractiveAttentionIfNeeded(for: preparedEvent)
 
-        if NotificationDeliverySemantics.shouldSuppressRepeat(
-            preparedEvent,
-            recentRepeatEvents: recentRepeatedAttentionEvents
-        ) {
-            let reason = "Suppressed repeated interactive-attention notification for unchanged session state"
+        switch deliveryPolicy.attemptRepeatSuppression(preparedEvent) {
+        case .pass:
+            break
+        case .drop(let reason):
             Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
             history.markDropped(eventID: preparedEvent.id, reason: reason)
-            routingRetryCounts.removeValue(forKey: preparedEvent.id)
             return
+        case .scheduleRetry:
+            assertionFailure("repeat suppression must not schedule retries")
         }
 
-        registerAuthoritativeEventIfNeeded(preparedEvent)
+        deliveryPolicy.registerAuthoritativeEventIfNeeded(preparedEvent)
 
         let input = NotificationPipeline.Input(
             event: preparedEvent,
@@ -381,7 +370,7 @@ final class NotificationManager {
         case .drop(let reason):
             Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
             history.markDropped(eventID: preparedEvent.id, reason: reason)
-            routingRetryCounts.removeValue(forKey: preparedEvent.id)
+            deliveryPolicy.forgetRetryCount(preparedEvent.id)
 
         case .fireDefault(let triggerId):
             guard let keys = consumeRateLimitOrDropEvent(triggerId: triggerId, event: preparedEvent) else {
@@ -407,8 +396,8 @@ final class NotificationManager {
                 didStyleTab: didStyleTab
             )
             history.markCompleted(eventID: preparedEvent.id)
-            registerRepeatSuppressionIfNeeded(preparedEvent)
-            routingRetryCounts.removeValue(forKey: preparedEvent.id)
+            deliveryPolicy.registerRepeatSuppressionIfNeeded(preparedEvent)
+            deliveryPolicy.forgetRetryCount(preparedEvent.id)
 
         case .fireStyleOnly(let triggerId, let actions):
             guard let keys = consumeRateLimitOrDropEvent(triggerId: triggerId, event: preparedEvent) else {
@@ -419,7 +408,7 @@ final class NotificationManager {
                 let reason = "Style-only notification delivery requires explicit tabID"
                 Log.warn("\(reason) id=\(preparedEvent.id.uuidString) type=\(preparedEvent.type) tool=\(preparedEvent.tool)")
                 history.markDropped(eventID: preparedEvent.id, triggerId: baseRateLimitKey, reason: reason)
-                routingRetryCounts.removeValue(forKey: preparedEvent.id)
+                deliveryPolicy.forgetRetryCount(preparedEvent.id)
                 return
             }
             let report = NotificationActionExecutor.shared.execute(actions: actions, for: preparedEvent)
@@ -438,15 +427,15 @@ final class NotificationManager {
                 didStyleTab: report.didStyleTab
             )
             history.markCompleted(eventID: preparedEvent.id)
-            registerRepeatSuppressionIfNeeded(preparedEvent)
-            routingRetryCounts.removeValue(forKey: preparedEvent.id)
+            deliveryPolicy.registerRepeatSuppressionIfNeeded(preparedEvent)
+            deliveryPolicy.forgetRetryCount(preparedEvent.id)
 
         case .fireActions(let triggerId, let actions):
             let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: triggerId, event: preparedEvent)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
                 Log.info("Rate limited: \(triggerId) for tool=\(preparedEvent.tool)")
                 history.markRateLimited(eventID: preparedEvent.id, triggerId: triggerId)
-                routingRetryCounts.removeValue(forKey: preparedEvent.id)
+                deliveryPolicy.forgetRetryCount(preparedEvent.id)
                 return
             }
             let partition = NotificationActionRequirements.partitionByResolvedTabRequirement(actions)
@@ -473,7 +462,7 @@ final class NotificationManager {
                         didStyleTab: false
                     )
                     history.markCompleted(eventID: preparedEvent.id)
-                    routingRetryCounts.removeValue(forKey: preparedEvent.id)
+                    deliveryPolicy.forgetRetryCount(preparedEvent.id)
                     return
                 }
                 aggregateReport.append(
@@ -509,8 +498,8 @@ final class NotificationManager {
                 didStyleTab: aggregateReport.didStyleTab
             )
             history.markCompleted(eventID: preparedEvent.id)
-            registerRepeatSuppressionIfNeeded(preparedEvent)
-            routingRetryCounts.removeValue(forKey: preparedEvent.id)
+            deliveryPolicy.registerRepeatSuppressionIfNeeded(preparedEvent)
+            deliveryPolicy.forgetRetryCount(preparedEvent.id)
         }
     }
 
@@ -527,77 +516,10 @@ final class NotificationManager {
         guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
             Log.info("Rate limited: \(rateLimitKey) for tool=\(event.tool)")
             history.markRateLimited(eventID: event.id, triggerId: baseRateLimitKey)
-            routingRetryCounts.removeValue(forKey: event.id)
+            deliveryPolicy.forgetRetryCount(event.id)
             return nil
         }
         return (rateLimitKey, baseRateLimitKey)
-    }
-
-    private func scheduleRoutingRetryIfNeeded(for event: AIEvent) -> Bool {
-        let attempts = routingRetryCounts[event.id] ?? 0
-        guard attempts < authoritativeRetryDelays.count,
-              event.sessionID != nil || event.directory != nil else {
-            return false
-        }
-
-        let nextAttempt = attempts + 1
-        routingRetryCounts[event.id] = nextAttempt
-        history.markRetryScheduled(
-            eventID: event.id,
-            attempt: nextAttempt,
-            reason: "authoritative event missing exact tab route"
-        )
-
-        let delay = authoritativeRetryDelays[attempts]
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.enqueueEvent(event)
-        }
-        return true
-    }
-
-    private func registerAuthoritativeEventIfNeeded(_ event: AIEvent) {
-        guard event.reliability == .authoritative else {
-            return
-        }
-        let now = Date()
-        for key in NotificationDeliverySemantics.authorityKeys(for: event) {
-            recentAuthoritativeEvents[key] = now
-        }
-        routingRetryCounts.removeValue(forKey: event.id)
-    }
-
-    private func pruneAuthoritativeEvents(now: Date = Date()) {
-        recentAuthoritativeEvents = recentAuthoritativeEvents.filter {
-            now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.authorityRetentionSeconds
-        }
-        recentRepeatedAttentionEvents = recentRepeatedAttentionEvents.filter {
-            now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.repeatedAttentionSuppressionSeconds
-        }
-        recentClosedSessionEvents = recentClosedSessionEvents.filter {
-            now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.closedSessionSuppressionSeconds
-        }
-        // Cap routing retry entries: any event that exhausted its retries
-        // but was never cleaned up (e.g., dropped before reaching processEvent)
-        // will linger. Remove entries that exceeded the max retry count.
-        if routingRetryCounts.count > 100 {
-            routingRetryCounts = routingRetryCounts.filter { $0.value < authoritativeRetryDelays.count }
-        }
-    }
-
-    private func registerRepeatSuppressionIfNeeded(_ event: AIEvent, now: Date = Date()) {
-        guard let key = NotificationDeliverySemantics.repeatSuppressionKey(for: event) else {
-            return
-        }
-        recentRepeatedAttentionEvents[key] = now
-    }
-
-    private func registerClosedIdentityIfNeeded(_ event: AIEvent, now: Date = Date()) {
-        guard NotificationDeliverySemantics.shouldRegisterClosedIdentity(event) else {
-            return
-        }
-        for key in NotificationDeliverySemantics.closedIdentityKeys(for: event) {
-            recentClosedSessionEvents[key] = now
-        }
     }
 
     private func clearResolvedInteractiveAttentionIfNeeded(for event: AIEvent) {
