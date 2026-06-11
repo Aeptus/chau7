@@ -30,7 +30,7 @@ struct RepositoryPaneView: View {
             headerBar
             Divider()
 
-            if repo.isLoading, repo.commits.isEmpty {
+            if repo.isLoading, repo.history.commits.isEmpty {
                 loadingView
             } else if repo.isSessionMode {
                 ScrollView {
@@ -592,19 +592,19 @@ struct RepositoryPaneView: View {
     // MARK: - History Section
 
     private var historySection: some View {
-        collapsibleSection(title: L("repo.section.history", "History"), count: repo.commits.count, isExpanded: $historyExpanded) {
+        collapsibleSection(title: L("repo.section.history", "History"), count: repo.history.commits.count, isExpanded: $historyExpanded) {
             VStack(alignment: .leading, spacing: 4) {
                 // Search bar
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 9))
                         .foregroundStyle(.tertiary)
-                    TextField(L("placeholder.searchCommits", "Search commits..."), text: $repo.historySearchText)
+                    TextField(L("placeholder.searchCommits", "Search commits..."), text: $repo.history.historySearchText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 10))
-                    if !repo.historySearchText.isEmpty {
+                    if !repo.history.historySearchText.isEmpty {
                         Button {
-                            repo.historySearchText = ""
+                            repo.history.historySearchText = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 9))
@@ -625,7 +625,7 @@ struct RepositoryPaneView: View {
                         .transition(.opacity)
                 }
 
-                ForEach(repo.filteredCommits) { commit in
+                ForEach(repo.history.filteredCommits) { commit in
                     HStack(spacing: 6) {
                         Text(commit.shortHash)
                             .font(.system(size: 9, design: .monospaced))
@@ -684,7 +684,7 @@ struct RepositoryPaneView: View {
     // MARK: - Stash Section
 
     private var stashSection: some View {
-        collapsibleSection(title: L("repo.section.stash", "Stash"), count: repo.stashes.count, isExpanded: $stashExpanded) {
+        collapsibleSection(title: L("repo.section.stash", "Stash"), count: repo.history.stashes.count, isExpanded: $stashExpanded) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
                     TextField(L("placeholder.stashMessage", "Stash message (optional)"), text: $stashMessage)
@@ -699,7 +699,7 @@ struct RepositoryPaneView: View {
                     .controlSize(.small)
                 }
 
-                ForEach(repo.stashes) { stash in
+                ForEach(repo.history.stashes) { stash in
                     HStack(spacing: 6) {
                         Text("stash@{\(stash.index)}")
                             .font(.system(size: 9, design: .monospaced))
@@ -725,7 +725,7 @@ struct RepositoryPaneView: View {
                     .help(stash.hoverText)
                 }
 
-                if repo.stashes.isEmpty {
+                if repo.history.stashes.isEmpty {
                     Text(L("repo.noStashes", "No stashes"))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)

@@ -134,28 +134,15 @@ final class RepositoryPaneModel: Identifiable {
     var isAmend = false
 
     // MARK: - History
-
-    var commits: [CommitEntry] = []
-    @ObservationIgnored
-    var commitLogLimit = 50
-
-    // MARK: - Stash
-
-    var stashes: [StashEntry] = []
-
-    // MARK: - History Search
-
-    var historySearchText = ""
-
-    var filteredCommits: [CommitEntry] {
-        guard !historySearchText.isEmpty else { return commits }
-        let query = historySearchText.lowercased()
-        return commits.filter {
-            $0.message.lowercased().contains(query)
-                || $0.author.lowercased().contains(query)
-                || $0.shortHash.lowercased().contains(query)
-        }
-    }
+    //
+    // Commit log, stash list, and search text moved to a dedicated
+    // `RepoHistoryState` @Observable so a search-text bump no longer
+    // invalidates the status / commit-composer sections. Declared `var`
+    // (not `let`) so SwiftUI's `Bindable` can synthesize a writable
+    // ReferenceWritableKeyPath through `repo.history.historySearchText`
+    // for the search field's two-way binding; the value is never
+    // reassigned in practice.
+    var history = RepoHistoryState()
 
     // MARK: - Conventional Commit Prefixes
     //
@@ -258,7 +245,7 @@ final class RepositoryPaneModel: Identifiable {
 
     func refreshAll() {
         guard let dir = prepareLiveGitAccess(actionDescription: "load live Git data") else { return }
-        let limit = commitLogLimit // capture before dispatch
+        let limit = history.commitLogLimit // capture before dispatch
         DispatchQueue.main.async { [weak self] in
             self?.isLoading = true
             self?.lastError = nil
@@ -335,8 +322,8 @@ final class RepositoryPaneModel: Identifiable {
                 self.branchDetails = parsedDetails
                 self.remoteBranches = parsedRemoteBranches
                 self.aheadBehind = parsedAheadBehind
-                self.commits = parsedCommits
-                self.stashes = parsedStashes
+                self.history.commits = parsedCommits
+                self.history.stashes = parsedStashes
                 self.diffStats = parsedDiffStats
                 self.sessionTouchedFiles = sessionFiles
                 self.turnTouchedFiles = turnFiles
@@ -389,7 +376,7 @@ final class RepositoryPaneModel: Identifiable {
 
     func refreshCommitLog() {
         guard let dir = prepareLiveGitAccess(actionDescription: "load commit history") else { return }
-        let limit = commitLogLimit
+        let limit = history.commitLogLimit
         loadQueue.async { [weak self] in
             guard let self else { return }
             let output = gitRunner([
@@ -398,13 +385,13 @@ final class RepositoryPaneModel: Identifiable {
             ], dir)
             let commits = Self.parseCommitLog(output)
             DispatchQueue.main.async {
-                self.commits = commits
+                self.history.commits = commits
             }
         }
     }
 
     func loadMoreCommits() {
-        commitLogLimit += 50
+        history.commitLogLimit += 50
         refreshCommitLog()
     }
 
@@ -415,7 +402,7 @@ final class RepositoryPaneModel: Identifiable {
             let output = gitRunner(["stash", "list"], dir)
             let stashes = Self.parseStashList(output)
             DispatchQueue.main.async {
-                self.stashes = stashes
+                self.history.stashes = stashes
             }
         }
     }

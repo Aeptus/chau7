@@ -304,19 +304,19 @@ final class RepositoryPaneModelTests: XCTestCase {
         2026-03-31T10:00:00Z
         """
         // Manually set commits (bypassing async)
-        model.commits = RepositoryPaneModel.parseCommitLog(logOutput)
-        XCTAssertEqual(model.filteredCommits.count, 2)
+        model.history.commits = RepositoryPaneModel.parseCommitLog(logOutput)
+        XCTAssertEqual(model.history.filteredCommits.count, 2)
 
-        model.historySearchText = "login"
-        XCTAssertEqual(model.filteredCommits.count, 1)
-        XCTAssertEqual(model.filteredCommits[0].message, "Fix login bug")
+        model.history.historySearchText = "login"
+        XCTAssertEqual(model.history.filteredCommits.count, 1)
+        XCTAssertEqual(model.history.filteredCommits[0].message, "Fix login bug")
 
-        model.historySearchText = "jane"
-        XCTAssertEqual(model.filteredCommits.count, 1)
-        XCTAssertEqual(model.filteredCommits[0].author, "Jane Smith")
+        model.history.historySearchText = "jane"
+        XCTAssertEqual(model.history.filteredCommits.count, 1)
+        XCTAssertEqual(model.history.filteredCommits[0].author, "Jane Smith")
 
-        model.historySearchText = ""
-        XCTAssertEqual(model.filteredCommits.count, 2)
+        model.history.historySearchText = ""
+        XCTAssertEqual(model.history.filteredCommits.count, 2)
     }
 
     // MARK: - Diff Stats Parsing
