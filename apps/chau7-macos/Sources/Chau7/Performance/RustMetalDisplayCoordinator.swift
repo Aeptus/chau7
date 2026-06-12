@@ -125,6 +125,17 @@ final class RustMetalDisplayCoordinator: NSObject {
 
         super.init()
 
+        // A GPU-failed frame already consumed its render request; without a
+        // forced full-refresh redraw the view would strand on a stale frame
+        // until the next PTY change.
+        renderer.onCommandBufferError = { [weak self] in
+            guard let self else { return }
+            Log.warn("RustMetalDisplayCoordinator: GPU frame failed; forcing full-refresh redraw")
+            tripleBuffer.markFullRefresh()
+            requestSyncRender()
+            scheduleDisplay()
+        }
+
         metalView.isPaused = true
         // enableSetNeedsDisplay = true lets us mark the view dirty via
         // needsDisplay. Core Animation coalesces multiple marks within one

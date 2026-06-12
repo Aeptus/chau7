@@ -477,3 +477,4 @@ history_store_queue_confined_counts,macos,history,history store mutators are que
 icloud_settings_freshness_guard,macos,settings,iCloud settings sync applies only strictly-newer timestamped blobs refuses newer format versions and preserves local values for absent fields,shipped
 bash_rcfile_and_spawn_cwd,macos,terminal,interactive bash gets --rcfile shell integration and all shells spawn in their intended working directory via FFI launch arguments,shipped
 ffi_input_clamping_and_pool_resilience,macos,terminal,FFI selection coordinates clamp to grid bounds and PTY reader-pool spawn failure fails terminal creation cleanly instead of aborting,shipped
+metal_inflight_gate_and_gpu_error_recovery,macos,performance,Metal frames are gated one-in-flight so CPU buffer writes never race the GPU and command-buffer errors force a full-refresh redraw,shipped

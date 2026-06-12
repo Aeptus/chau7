@@ -120,6 +120,17 @@ final class MetalTerminalRenderer: NSObject {
     private var instanceBuffer: MTLBuffer!
     private var uniformBuffer: MTLBuffer!
     private var vertexBuffer: MTLBuffer!
+
+    /// Admits one frame's GPU work at a time so the CPU never rewrites the
+    /// shared instance/uniform buffers or atlas while a committed frame is
+    /// still reading them. Signaled by the command buffer's completed handler.
+    private let inflightGate = DispatchSemaphore(value: 1)
+
+    /// Invoked on main when a committed command buffer completes with
+    /// `.error` (GPU fault, device lost, discarded submission). The owner
+    /// should request a full-refresh redraw — the dropped frame already
+    /// consumed its render request.
+    var onCommandBufferError: (() -> Void)?
     private var instanceCapacity = 50000
 
     // MARK: - Glyph Atlas (Dynamic)
@@ -1003,6 +1014,23 @@ final class MetalTerminalRenderer: NSObject {
         let renderStartedAt = CFAbsoluteTimeGetCurrent()
         guard let commandBuffer = commandQueue.makeCommandBuffer() else { return false }
 
+        // GPU in-flight gate: the instance/uniform buffers and the glyph atlas
+        // are single (not ringed) so the CPU-side dirty-row incremental update
+        // model works — which means the CPU must never rewrite them while a
+        // previously committed frame is still reading them on the GPU.
+        // The gate admits one frame at a time; the completed handler releases
+        // it. Terminal frames are sub-millisecond on the GPU and draws are
+        // vsync-coalesced, so by the next draw the previous frame has long
+        // completed — the timeout only trips if the GPU wedges.
+        guard inflightGate.wait(timeout: .now() + .milliseconds(100)) == .success else {
+            Log.warn("MetalRenderer: previous frame still in flight after 100ms; skipping frame")
+            return false
+        }
+        var committed = false
+        defer {
+            if !committed { inflightGate.signal() }
+        }
+
         let cells = UnsafeBufferPointer(buffer.cells)
         let clusters = buffer.clusters
         let requestedCellCount = min(cells.count, max(0, rows * cols))
@@ -1069,8 +1097,21 @@ final class MetalTerminalRenderer: NSObject {
 
         encoder.endEncoding()
 
-        if let onCompleted {
-            commandBuffer.addCompletedHandler { _ in
+        let gate = inflightGate
+        let errorCallback = onCommandBufferError
+        commandBuffer.addCompletedHandler { buffer in
+            gate.signal()
+            // A GPU fault / device-lost / discarded submission silently drops
+            // the frame; without observing it the request generation is marked
+            // complete and the view strands on a stale frame.
+            if buffer.status == .error {
+                let description = buffer.error.map(String.init(describing:)) ?? "unknown error"
+                Log.error("MetalRenderer: command buffer failed: \(description)")
+                DispatchQueue.main.async {
+                    errorCallback?()
+                }
+            }
+            if let onCompleted {
                 DispatchQueue.main.async {
                     onCompleted()
                 }
@@ -1078,6 +1119,7 @@ final class MetalTerminalRenderer: NSObject {
         }
         commandBuffer.present(drawable)
         commandBuffer.commit()
+        committed = true
         let renderDurationMs = (CFAbsoluteTimeGetCurrent() - renderStartedAt) * 1000.0
         FeatureProfiler.shared.record(feature: .metalDrawStage, durationMs: renderDurationMs)
         return true
