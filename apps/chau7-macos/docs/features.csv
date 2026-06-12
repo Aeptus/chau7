@@ -482,3 +482,4 @@ glyph_atlas_slot_clipping,macos,performance,glyph and ligature rasterization cli
 display_scale_change_handling,macos,performance,backing-property changes reconfigure the glyph atlas scale and force a redraw so cross-display drags render crisply without a tab switch,shipped
 occlusion_aware_rendering,macos,performance,fully covered windows demote to the 1Hz background drain and re-expose forces an immediate grid sync,shipped
 pty_hup_tail_drain,macos,terminal,the reader pool drains all kernel-buffered PTY output after HUP before signalling closed so fast-exiting commands never lose tail output,shipped
+pty_resize_lock_free,macos,terminal,PTY resize ioctls TIOCSWINSZ on a dup-d fd instead of taking the writer mutex so window drags never stall behind a backpressured write,shipped

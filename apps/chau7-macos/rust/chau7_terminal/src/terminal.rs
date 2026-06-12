@@ -896,18 +896,56 @@ impl Chau7Terminal {
         self.cols.store(cols, Ordering::Relaxed);
         self.rows.store(rows, Ordering::Relaxed);
 
-        // Resize PTY
-        let pty_size = PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        };
-        if let Some(handle) = self.pty_handle.lock().as_ref() {
-            if let Err(e) = handle.resize(pty_size) {
-                error!("[terminal-{}] Failed to resize PTY: {}", self.id, e);
+        // Resize the PTY without taking the pty_handle mutex: send_bytes and
+        // the PtyWrite path hold that mutex during a *blocking* write_all
+        // when the child stops reading stdin — resize is called synchronously
+        // from the UI thread (window drag) and must never stall behind a
+        // backpressured write. The dup'd echo_fd ioctls TIOCSWINSZ directly,
+        // the same lock-free pattern echo detection uses for tcgetattr.
+        let mut pty_resized = false;
+        let echo_fd = self.echo_fd.load(Ordering::Acquire);
+        if echo_fd >= 0 {
+            let winsize = libc::winsize {
+                ws_row: rows,
+                ws_col: cols,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            };
+            let rc = unsafe { libc::ioctl(echo_fd, libc::TIOCSWINSZ, &winsize) };
+            if rc == 0 {
+                pty_resized = true;
+                debug!("[terminal-{}] PTY resized via TIOCSWINSZ", self.id);
             } else {
-                debug!("[terminal-{}] PTY resized successfully", self.id);
+                error!(
+                    "[terminal-{}] TIOCSWINSZ failed: {}",
+                    self.id,
+                    std::io::Error::last_os_error()
+                );
+            }
+        }
+        if !pty_resized {
+            // Fallback (no dup'd fd): use the handle, but never block behind
+            // a backpressured write — a missed PTY resize self-corrects on
+            // the next layout pass.
+            let pty_size = PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            };
+            if let Some(guard) = self.pty_handle.try_lock() {
+                if let Some(handle) = guard.as_ref() {
+                    if let Err(e) = handle.resize(pty_size) {
+                        error!("[terminal-{}] Failed to resize PTY: {}", self.id, e);
+                    } else {
+                        debug!("[terminal-{}] PTY resized successfully", self.id);
+                    }
+                }
+            } else {
+                warn!(
+                    "[terminal-{}] PTY writer busy; skipping PTY winsize update this pass",
+                    self.id
+                );
             }
         }
 
