@@ -27,17 +27,33 @@ final class AgentDashboardModel: Identifiable {
 
     // MARK: - Internal Tracking
 
+    /// Serial queue owning all refresh-side state below. The poll timer fires
+    /// here, and every other entry point (commit actions, start/stop) hops
+    /// onto it before touching trackers/cursors — unsynchronized Dictionary
+    /// mutation across threads is memory-unsafe.
+    @ObservationIgnored private let refreshQueue = DispatchQueue(label: "com.chau7.agent-dashboard.refresh", qos: .userInitiated)
+
+    // Confined to refreshQueue:
     @ObservationIgnored private var fileTrackers: [String: SessionFilesTracker] = [:]
     @ObservationIgnored private let fleetFileIndex = FleetFileIndex()
     @ObservationIgnored private var journalCursors: [String: UInt64] = [:]
-    @ObservationIgnored private var refreshTimer: DispatchSourceTimer?
-    @ObservationIgnored private var sessionCosts: [String: Double] = [:] // sessionID -> accumulated cost
-    @ObservationIgnored private let costLock = NSLock()
-    @ObservationIgnored private var apiCallObserver: Any?
-    @ObservationIgnored private var currentPollInterval: TimeInterval = 2
+    @ObservationIgnored private var currentPollInterval: TimeInterval = AgentDashboardModel.initialPollInterval
     @ObservationIgnored private var pollCount = 0
     @ObservationIgnored private var lastCompanionPlanHash: String?
+    @ObservationIgnored private var lastCompanionPlanPath: String?
+    @ObservationIgnored private var lastDetectedPlanFilesSorted: [String] = []
+
+    // Confined to the main thread:
+    @ObservationIgnored private var refreshTimer: DispatchSourceTimer?
+    @ObservationIgnored private var apiCallObserver: Any?
+
+    // Cross-thread (lock-protected):
+    @ObservationIgnored private var sessionCosts: [String: Double] = [:] // sessionID -> accumulated cost
+    @ObservationIgnored private let costLock = NSLock()
+
     @ObservationIgnored private let sessionController: AgentDashboardSessionControlling
+
+    private static let initialPollInterval: TimeInterval = 2
 
     var repoName: String {
         URL(fileURLWithPath: repoGroupID).lastPathComponent
@@ -65,10 +81,14 @@ final class AgentDashboardModel: Identifiable {
 
     func startPolling() {
         guard refreshTimer == nil else { return }
-        refreshCompanionPlan(trackerValues: Array(fileTrackers.values), sessionIDs: [])
-        refresh()
-        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
-        timer.schedule(deadline: .now() + currentPollInterval, repeating: currentPollInterval)
+        refreshQueue.async { [weak self] in
+            guard let self else { return }
+            self.currentPollInterval = Self.initialPollInterval
+            self.refreshCompanionPlan(trackerValues: Array(self.fileTrackers.values), sessionIDs: [])
+            self.refresh()
+        }
+        let timer = DispatchSource.makeTimerSource(queue: refreshQueue)
+        timer.schedule(deadline: .now() + Self.initialPollInterval, repeating: Self.initialPollInterval)
         timer.setEventHandler { [weak self] in
             self?.refresh()
         }
@@ -203,9 +223,12 @@ final class AgentDashboardModel: Identifiable {
         } else {
             desiredInterval = 10
         }
-        if desiredInterval != currentPollInterval, let timer = refreshTimer {
+        if desiredInterval != currentPollInterval {
             currentPollInterval = desiredInterval
-            timer.schedule(deadline: .now() + desiredInterval, repeating: desiredInterval)
+            // refreshTimer is main-confined; only the reschedule hops over.
+            DispatchQueue.main.async { [weak self] in
+                self?.refreshTimer?.schedule(deadline: .now() + desiredInterval, repeating: desiredInterval)
+            }
         }
 
         // Periodic health check (every 5th poll cycle)
@@ -263,15 +286,20 @@ final class AgentDashboardModel: Identifiable {
             return
         }
         let contentHash = String(content.hashValue)
-        guard contentHash != lastCompanionPlanHash || companionPlanPath != preferredPath || detectedPlanFiles.sorted() != Array(touchedPlanFiles).sorted() else {
+        let sortedPlanFiles = Array(touchedPlanFiles).sorted()
+        // Compare against queue-confined shadows, not the main-mutated
+        // observable properties (reading those here would race main writes).
+        guard contentHash != lastCompanionPlanHash || lastCompanionPlanPath != preferredPath || lastDetectedPlanFilesSorted != sortedPlanFiles else {
             return
         }
         let progress = computePlanProgress(from: content)
         lastCompanionPlanHash = contentHash
+        lastCompanionPlanPath = preferredPath
+        lastDetectedPlanFilesSorted = sortedPlanFiles
         DispatchQueue.main.async { [weak self] in
             self?.companionPlanPath = preferredPath
             self?.companionPlanProgress = progress
-            self?.detectedPlanFiles = Array(touchedPlanFiles).sorted()
+            self?.detectedPlanFiles = sortedPlanFiles
             self?.companionPlanLastLoadedAt = Date()
         }
     }
@@ -379,24 +407,33 @@ final class AgentDashboardModel: Identifiable {
             return
         }
 
-        // Collect all files from all trackers
-        var allFiles: Set<String> = []
-        for tracker in fileTrackers.values {
-            allFiles.formUnion(tracker.touchedFiles)
-        }
-        guard !allFiles.isEmpty else {
-            commitError = "No files touched by agents."
-            return
-        }
-
         isCommitting = true
         commitError = nil
         commitSuccess = false
 
         let dir = repoGroupID
-        let files = allFiles.sorted()
         let msg = message
 
+        // Trackers are refreshQueue-confined; snapshot the file set there.
+        refreshQueue.async { [weak self] in
+            guard let self else { return }
+            var allFiles: Set<String> = []
+            for tracker in self.fileTrackers.values {
+                allFiles.formUnion(tracker.touchedFiles)
+            }
+            guard !allFiles.isEmpty else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.isCommitting = false
+                    self?.commitError = "No files touched by agents."
+                }
+                return
+            }
+            let files = allFiles.sorted()
+            self.runCommitAll(files: files, message: msg, dir: dir)
+        }
+    }
+
+    private func runCommitAll(files: [String], message msg: String, dir: String) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             // Stage
             var stageArgs = ["add", "--"]
@@ -412,13 +449,17 @@ final class AgentDashboardModel: Identifiable {
 
             // Commit
             let commitResult = GitDiffTracker.runGitWithStatus(args: ["commit", "-m", msg], in: dir)
+            // Clear trackers on their owning queue — work is shipped
+            if commitResult.succeeded {
+                self?.refreshQueue.async { [weak self] in
+                    self?.fileTrackers.values.forEach { $0.reset() }
+                }
+            }
             DispatchQueue.main.async {
                 self?.isCommitting = false
                 if commitResult.succeeded {
                     self?.commitSuccess = true
                     self?.commitMessage = "chore: agent batch commit"
-                    // Clear trackers — work is shipped
-                    self?.fileTrackers.values.forEach { $0.reset() }
                     // Auto-dismiss success message after 3 seconds
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
                         self?.commitSuccess = false
@@ -432,21 +473,24 @@ final class AgentDashboardModel: Identifiable {
 
     /// Commit only one agent's touched files.
     func commitAgent(sessionID: String, message: String) {
-        guard let tracker = fileTrackers[sessionID] else { return }
-        let files = tracker.touchedFiles.sorted()
-        guard !files.isEmpty else { return }
-
         let dir = repoGroupID
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var args = ["add", "--"]
-            args.append(contentsOf: files)
-            let stageResult = GitDiffTracker.runGitWithStatus(args: args, in: dir)
-            guard stageResult.succeeded else { return }
+        // Trackers are refreshQueue-confined; snapshot the file list there.
+        refreshQueue.async { [weak self] in
+            guard let self, let tracker = self.fileTrackers[sessionID] else { return }
+            let files = tracker.touchedFiles.sorted()
+            guard !files.isEmpty else { return }
 
-            let commitResult = GitDiffTracker.runGitWithStatus(args: ["commit", "-m", message], in: dir)
-            if commitResult.succeeded {
-                DispatchQueue.main.async {
-                    self?.fileTrackers[sessionID]?.reset()
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                var args = ["add", "--"]
+                args.append(contentsOf: files)
+                let stageResult = GitDiffTracker.runGitWithStatus(args: args, in: dir)
+                guard stageResult.succeeded else { return }
+
+                let commitResult = GitDiffTracker.runGitWithStatus(args: ["commit", "-m", message], in: dir)
+                if commitResult.succeeded {
+                    self?.refreshQueue.async { [weak self] in
+                        self?.fileTrackers[sessionID]?.reset()
+                    }
                 }
             }
         }

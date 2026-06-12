@@ -465,3 +465,4 @@ Terminal Core,Dangerous Output Command Context,"Rendered-output risk highlightin
 Remote,iPhone Approval Polling and Push Setup,"Remote iPhone app derives approval polling from relay base URLs, cleans up approval background tasks safely, requests standard notification permissions, and tracks explicit push entitlements plus iOS 18 deployment settings in the project",Shipped,Yes
 ffi_resize_shared_reference,macos,terminal,FFI resize binds a shared reference with atomic dimensions so main-thread resize cannot alias concurrent drain-thread polls,shipped
 ffi_env_marshalling_owned_cstrings,macos,terminal,terminal creation duplicates env keys/values into C-owned buffers freed after the FFI call instead of escaping closure-scoped pointers,shipped
+agent_dashboard_queue_confined_state,macos,dashboard,agent dashboard tracker and cursor state is confined to a serial refresh queue so poll cycles and commit actions cannot race main-thread mutations,shipped
