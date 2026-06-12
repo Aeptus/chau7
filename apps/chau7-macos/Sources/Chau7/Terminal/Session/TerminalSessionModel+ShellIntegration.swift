@@ -1325,7 +1325,7 @@ extension TerminalSessionModel {
         let tabID = ownerTabID?.uuidString ?? tabIdentifier
         let sessionID = proxyCorrelationSessionID
         MainActor.assumeIsolated {
-            _ = ProxyManager.shared.recordPromptInjectionSessionEvent(
+            ProxyManager.shared.recordPromptInjectionSessionEvent(
                 event,
                 sessionID: sessionID,
                 tabID: tabID

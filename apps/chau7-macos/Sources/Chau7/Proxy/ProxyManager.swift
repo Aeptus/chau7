@@ -785,13 +785,13 @@ final class ProxyManager {
         _ event: PromptInjectionSessionEvent,
         sessionID: String,
         tabID: String
-    ) -> Bool {
-        guard isRunning else { return false }
-        guard !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+    ) {
+        guard isRunning else { return }
+        guard !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
         guard let url = apiURL(path: "/injection/session-event") else {
             logger.error("Invalid proxy URL for prompt injection session event")
-            return false
+            return
         }
 
         struct SessionEventRequest: Encodable {
@@ -819,33 +819,23 @@ final class ProxyManager {
                     tabID: tabID
                 )
             )
-
-            let semaphore = DispatchSemaphore(value: 0)
-            var success = false
-            var requestError: Error?
-
-            let task = URLSession.shared.dataTask(with: request) { _, response, error in
-                requestError = error
-                if let httpResponse = response as? HTTPURLResponse {
-                    success = (200 ..< 300).contains(httpResponse.statusCode)
-                }
-                semaphore.signal()
-            }
-            task.resume()
-
-            if semaphore.wait(timeout: .now() + 0.75) == .timedOut {
-                task.cancel()
-                logger.warning("Timed out recording prompt injection session event")
-                return false
-            }
-            if let requestError {
-                logger.warning("Failed to record prompt injection session event: \(requestError.localizedDescription)")
-                return false
-            }
-            return success
         } catch {
-            logger.warning("Failed to record prompt injection session event: \(error.localizedDescription)")
-            return false
+            logger.warning("Failed to encode prompt injection session event: \(error.localizedDescription)")
+            return
+        }
+
+        // Fire-and-forget: this runs on the user-typing path (@MainActor), and
+        // no caller consumes the outcome — blocking main on a local HTTP
+        // round-trip froze input for up to 750ms when the proxy was slow.
+        Task.detached(priority: .utility) { [logger] in
+            do {
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
+                    logger.warning("Prompt injection session event rejected: HTTP \(http.statusCode)")
+                }
+            } catch {
+                logger.warning("Failed to record prompt injection session event: \(error.localizedDescription)")
+            }
         }
     }
 

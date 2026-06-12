@@ -126,6 +126,7 @@ Supported commands (46 parsers):
 - **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
 - **Baseline estimator** — calculate token savings from context caching.
 - **Analytics dashboard** — command stats, error rates, API usage, and timing. Adaptive polling (2s active, 5s idle, 10s no agents), proxy health monitoring, timeline pagination, and per-agent cost display with cache/reasoning token breakdown. Poll-cycle tracker state is confined to a serial refresh queue so commit actions and live polling can never race each other's bookkeeping.
+- **Non-blocking session-event reporting** — prompt-injection session events post to the proxy asynchronously; a slow or wedged proxy can never freeze typing while the app waits for the local HTTP round-trip.
 - **Background completion extraction for Codex/OpenAI runs** — run-end finalization no longer waits on heavy transcript extraction for OpenAI-family sessions. Completed rows are persisted immediately, then richer turns and tool calls are backfilled asynchronously when extraction finishes.
 - **Recent proxy call context** — recent API calls in the Debug Console include local hour, repo name, and endpoint context for faster investigation.
 - **Repo-level aggregated metrics** — per-repository stats (commands, success rate, AI runs, tokens, cost, providers, top tools) in Debug Console, Data Explorer, and hover card.
