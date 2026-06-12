@@ -99,7 +99,11 @@ extension OverlayTabsModel {
         // Primary: the file-based restore bundle keeps multi-MB scrollback in
         // integrity-checked sidecars. The load is all-or-nothing (a corrupt sidecar
         // yields nil), so any failure falls through to the UserDefaults/backup chain.
-        if let bundleWindows = TabRestoreBundleStore.loadCurrentWindowStates(),
+        // Freshest-wins: if the bundle's save token no longer matches the index's
+        // (bundle writes failed while the index kept saving), the bundle is a
+        // stale session — skip it rather than resurrect old tabs.
+        if bundleIsCurrentRestoreSource(),
+           let bundleWindows = TabRestoreBundleStore.loadCurrentWindowStates(),
            let primaryWindowStates = bundleWindows.first,
            !primaryWindowStates.isEmpty {
             let mergedWindows = mergedWindowStatesWithBackupFallbacks(baseWindows: bundleWindows)
@@ -149,6 +153,19 @@ extension OverlayTabsModel {
         }
 
         return restoreSavedTabsFromBackups(appModel: appModel)
+    }
+
+    /// Freshest-wins arbitration between the file bundle and the UserDefaults
+    /// restore index. Shared by the primary-window restore and
+    /// `AppDelegate.restoreAdditionalWindows` so both resolve the same source.
+    static func bundleIsCurrentRestoreSource() -> Bool {
+        let indexToken = UserDefaults.standard.string(forKey: SavedTabState.restoreIndexSaveTokenKey)
+        let bundleToken = TabRestoreBundleStore.loadEnvelope()?.saveToken
+        let isCurrent = RestoreSourceArbiter.bundleIsCurrent(bundleToken: bundleToken, indexToken: indexToken)
+        if !isCurrent {
+            Log.warn("restore: bundle save token \(bundleToken ?? "<none>") lags index token \(indexToken ?? "<none>"); preferring the fresher UserDefaults index")
+        }
+        return isCurrent
     }
 
     /// Decode from pre-decoded states (multi-window restore — avoids UserDefaults round-trip).
@@ -474,6 +491,7 @@ extension OverlayTabsModel {
     static func clearPersistedWindowState() {
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: SavedTabState.restoreIndexSaveTokenKey)
         try? TabRestoreBundleStore.clearCurrentBundle()
         if let root = tabStateBackupRootURL(),
            FileManager.default.fileExists(atPath: root.path) {

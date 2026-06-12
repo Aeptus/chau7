@@ -95,18 +95,38 @@ struct TabRestoreBundleEnvelope: Codable, Equatable {
     let reason: String
     let sourceFingerprint: String
     let windows: [[TabRestoreManifest]]
+    /// Token of the save cycle this bundle belongs to. The UserDefaults
+    /// restore index stamps the same token on every save, so restore can tell
+    /// whether the bundle still reflects the latest save (token equality)
+    /// even though unchanged-content saves skip rewriting the sidecars.
+    /// Optional: manifests written before this field decode as nil.
+    let saveToken: String?
 
     init(
         savedAt: Date,
         reason: TabStateSaveReason,
         sourceFingerprint: String,
-        windows: [[TabRestoreManifest]]
+        windows: [[TabRestoreManifest]],
+        saveToken: String? = nil
     ) {
         self.schemaVersion = 1
         self.savedAt = savedAt
         self.reason = reason.rawValue
         self.sourceFingerprint = sourceFingerprint
         self.windows = windows
+        self.saveToken = saveToken
+    }
+
+    /// Copy carrying a refreshed save token + timestamp; used when an
+    /// unchanged-content save skips rewriting sidecars but must still mark
+    /// the bundle as belonging to the latest save cycle.
+    init(refreshing existing: TabRestoreBundleEnvelope, savedAt: Date, saveToken: String?) {
+        self.schemaVersion = existing.schemaVersion
+        self.savedAt = savedAt
+        self.reason = existing.reason
+        self.sourceFingerprint = existing.sourceFingerprint
+        self.windows = existing.windows
+        self.saveToken = saveToken
     }
 }
 
@@ -127,6 +147,7 @@ enum TabRestoreBundleStore {
         windowStates: [[SavedTabState]],
         reason: TabStateSaveReason,
         sourceData: Data?,
+        saveToken: String? = nil,
         rootURL: URL = defaultRootURL(),
         fileManager: FileManager = .default,
         now: Date = Date()
@@ -141,6 +162,14 @@ enum TabRestoreBundleStore {
         if sourceFingerprint == lastPersistedSourceFingerprint,
            fileManager.fileExists(atPath: currentURL.appendingPathComponent(manifestFileName).path),
            let existing = loadEnvelope(rootURL: rootURL, fileManager: fileManager) {
+            // Content unchanged — skip the sidecar rewrite, but stamp the new
+            // save token onto the manifest so the freshness arbiter knows this
+            // bundle still belongs to the latest save cycle.
+            if let saveToken, existing.saveToken != saveToken {
+                let refreshed = TabRestoreBundleEnvelope(refreshing: existing, savedAt: now, saveToken: saveToken)
+                try writeJSON(refreshed, to: currentURL.appendingPathComponent(manifestFileName))
+                return refreshed
+            }
             return existing
         }
 
@@ -156,7 +185,8 @@ enum TabRestoreBundleStore {
                 sourceFingerprint: sourceFingerprint,
                 bundleRootURL: tempURL,
                 fileManager: fileManager,
-                now: now
+                now: now,
+                saveToken: saveToken
             )
             try writeJSON(envelope, to: tempURL.appendingPathComponent(manifestFileName))
 
@@ -216,7 +246,8 @@ enum TabRestoreBundleStore {
         sourceFingerprint: String,
         bundleRootURL: URL,
         fileManager: FileManager,
-        now: Date
+        now: Date,
+        saveToken: String? = nil
     ) throws -> TabRestoreBundleEnvelope {
         let windows = try windowStates.enumerated().map { windowIndex, states in
             try states.enumerated().map { tabIndex, state in
@@ -233,7 +264,8 @@ enum TabRestoreBundleStore {
             savedAt: now,
             reason: reason,
             sourceFingerprint: sourceFingerprint,
-            windows: windows
+            windows: windows,
+            saveToken: saveToken
         )
     }
 

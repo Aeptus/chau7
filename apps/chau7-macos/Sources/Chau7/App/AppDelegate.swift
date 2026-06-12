@@ -1363,10 +1363,18 @@ private final class OverlayBlurView: NSVisualEffectView {
         // motivated moving the heavy payloads out.
         let indexWindows = allWindows.map { window in window.map(\.strippedForRestoreIndex) }
 
+        // One token per save cycle, stamped on the index AND the bundle
+        // manifest. At restore, token equality tells whether the bundle still
+        // reflects the latest save (see RestoreSourceArbiter) — a bundle that
+        // silently failed to write for hours must not beat a fresh index.
+        let saveToken = UUID().uuidString
+        var indexWriteSucceeded = false
+
         if let firstWindow = indexWindows.first,
            let data = Persist.encodeLogged(firstWindow, context: "window0.tabState") {
             legacyPayloadBytes = data.count
             UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
+            indexWriteSucceeded = true
         }
         if indexWindows.count > 1 {
             let multiState = SavedMultiWindowState(windows: indexWindows)
@@ -1377,13 +1385,17 @@ private final class OverlayBlurView: NSVisualEffectView {
         } else {
             UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         }
+        if indexWriteSucceeded {
+            UserDefaults.standard.set(saveToken, forKey: SavedTabState.restoreIndexSaveTokenKey)
+        }
         do {
             // sourceData nil → the bundle fingerprints from the full state (incl.
             // scrollback) so sidecars re-flush when only scrollback changes.
             _ = try TabRestoreBundleStore.persistCurrentBundle(
                 windowStates: allWindows,
                 reason: reason,
-                sourceData: nil
+                sourceData: nil,
+                saveToken: indexWriteSucceeded ? saveToken : nil
             )
         } catch {
             Log.warn("Failed to persist split tab restore bundle [\(reason.rawValue)]: \(error)")
@@ -1766,8 +1778,11 @@ private final class OverlayBlurView: NSVisualEffectView {
             from: UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
             context: "multiWindow.restore"
         )
-        if let bundleWindows = TabRestoreBundleStore.loadCurrentWindowStates(), bundleWindows.count > 1 {
+        if OverlayTabsModel.bundleIsCurrentRestoreSource(),
+           let bundleWindows = TabRestoreBundleStore.loadCurrentWindowStates(), bundleWindows.count > 1 {
             // Primary: the file-based restore bundle (windows beyond the first).
+            // Same freshest-wins arbitration as the primary-window restore so
+            // window 0 and windows 1..N come from one consistent source.
             restoredWindows = Array(bundleWindows.dropFirst())
             restoreSource = "restore bundle"
         } else if let multiState, multiState.windows.count > 1 {

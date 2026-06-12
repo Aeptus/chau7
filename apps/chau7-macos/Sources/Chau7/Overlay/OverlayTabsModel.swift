@@ -790,6 +790,10 @@ struct SavedTabState: Codable {
     let previewSnapshotPNGData: Data?
 
     static let userDefaultsKey = "com.chau7.savedTabState"
+    /// Token of the save cycle that produced the current restore index.
+    /// Matched against the bundle manifest's `saveToken` at restore so the
+    /// freshest source wins (see `RestoreSourceArbiter`).
+    static let restoreIndexSaveTokenKey = "com.chau7.savedTabState.saveToken"
 
     init(
         tabID: String? = nil,

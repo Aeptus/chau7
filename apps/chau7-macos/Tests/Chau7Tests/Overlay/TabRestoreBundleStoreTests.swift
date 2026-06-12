@@ -134,6 +134,41 @@ final class TabRestoreBundleStoreTests: XCTestCase {
         XCTAssertEqual(second.reason, TabStateSaveReason.autosave.rawValue)
     }
 
+    func testUnchangedContentSaveStillRefreshesSaveToken() throws {
+        // Content-unchanged saves skip rewriting sidecars, but the manifest
+        // must adopt the new save token — otherwise the freshness arbiter
+        // would wrongly conclude the bundle missed the latest save cycle.
+        let root = try temporaryRoot()
+        let state = makeSavedTabState()
+        let sourceData = Data("stable-legacy-payload".utf8)
+
+        let first = try XCTUnwrap(try TabRestoreBundleStore.persistCurrentBundle(
+            windowStates: [[state]],
+            reason: .autosave,
+            sourceData: sourceData,
+            saveToken: "save-1",
+            rootURL: root,
+            now: Date(timeIntervalSince1970: 1_800_000_000)
+        ))
+        XCTAssertEqual(first.saveToken, "save-1")
+
+        let second = try XCTUnwrap(try TabRestoreBundleStore.persistCurrentBundle(
+            windowStates: [[state]],
+            reason: .autosave,
+            sourceData: sourceData,
+            saveToken: "save-2",
+            rootURL: root,
+            now: Date(timeIntervalSince1970: 1_800_000_900)
+        ))
+        XCTAssertEqual(second.saveToken, "save-2")
+
+        // The refreshed token must be durable in the manifest on disk, and
+        // the sidecar content must still load.
+        let reloaded = try XCTUnwrap(TabRestoreBundleStore.loadEnvelope(rootURL: root))
+        XCTAssertEqual(reloaded.saveToken, "save-2")
+        XCTAssertNotNil(TabRestoreBundleStore.loadCurrentWindowStates(rootURL: root))
+    }
+
     func testClearCurrentBundleRemovesSidecar() throws {
         let root = try temporaryRoot()
 
