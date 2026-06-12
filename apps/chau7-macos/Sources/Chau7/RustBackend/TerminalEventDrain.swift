@@ -17,8 +17,15 @@ final class TerminalEventDrain {
     /// against minimal kernel scheduling overhead.
     private static let pollTimeoutMs: UInt32 = 200
 
+    /// Guards `thread` and `generation`. The old design used a plain
+    /// `cancelled` Bool written on main and read on the drain thread —
+    /// formally UB — and `start()`'s `stop(); cancelled = false` sequence
+    /// could resurrect an old runloop still inside its final blocking poll.
+    /// Each run now captures its generation; bumping the counter (start or
+    /// stop) invalidates every previous loop without any shared flag reset.
+    private let stateLock = NSLock()
     private var thread: Thread?
-    private var cancelled = false
+    private var generation: UInt64 = 0
 
     /// Coalesce gate: when output is heavy, `rust.pollEvents(timeout:)` returns
     /// immediately and the loop spins, producing 100+ `DispatchQueue.main.async`
@@ -39,37 +46,48 @@ final class TerminalEventDrain {
     /// Start draining PTY events for the given terminal view.
     /// Stops any previous drain first.
     func start(for view: RustTerminalView) {
-        stop()
-        cancelled = false
-
         let viewId = view.viewId
+
+        stateLock.lock()
+        generation += 1
+        let myGeneration = generation
         let thread = Thread { [weak self, weak view] in
-            self?.runLoop(view: view, viewId: viewId)
+            self?.runLoop(view: view, viewId: viewId, generation: myGeneration)
         }
         thread.qualityOfService = .userInitiated
         thread.name = "com.chau7.terminal-event-drain-\(viewId)"
-        thread.start()
         self.thread = thread
+        stateLock.unlock()
 
+        thread.start()
         Log.info("TerminalEventDrain: started for view \(viewId)")
     }
 
     /// Stop the drain loop. Safe to call multiple times.
     func stop() {
-        guard thread != nil else { return }
-        cancelled = true
+        stateLock.lock()
+        generation += 1
         thread = nil
+        stateLock.unlock()
     }
 
     /// Whether the drain is currently running.
     var isRunning: Bool {
-        thread != nil && !cancelled
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return thread != nil
     }
 
     // MARK: - Private
 
-    private func runLoop(view: RustTerminalView?, viewId: UInt64) {
-        while !cancelled {
+    private func isCurrent(_ gen: UInt64) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return generation == gen
+    }
+
+    private func runLoop(view: RustTerminalView?, viewId: UInt64, generation: UInt64) {
+        while isCurrent(generation) {
             guard let view = view, !view.isBeingDeallocated else {
                 Log.trace("TerminalEventDrain[\(viewId)]: view gone, exiting")
                 return
@@ -85,7 +103,7 @@ final class TerminalEventDrain {
             // the thread sleeps in the kernel with zero CPU when idle.
             let flags = rust.pollEvents(timeout: Self.pollTimeoutMs)
 
-            guard !cancelled else { return }
+            guard isCurrent(generation) else { return }
 
             if !flags.isEmpty {
                 dispatchHandlerIfNotInFlight(view: view, flags: flags)
@@ -126,7 +144,7 @@ final class TerminalEventDrain {
 
     private func finishHandler(view: RustTerminalView?) {
         coalesceLock.lock()
-        let followUpFlags = !cancelled && view != nil ? pendingFlags : TerminalPollEventFlags()
+        let followUpFlags = isRunning && view != nil ? pendingFlags : TerminalPollEventFlags()
         if !followUpFlags.isEmpty {
             pendingFlags = []
         } else {

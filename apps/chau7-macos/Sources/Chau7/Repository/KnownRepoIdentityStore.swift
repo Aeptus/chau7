@@ -173,6 +173,13 @@ final class KnownRepoIdentityStore {
     }
 
     func reset() {
+        // Cancel any pending debounced persist: a record() just before reset
+        // would otherwise fire ≤500ms later, snapshot the now-empty array,
+        // and re-create the key the user explicitly cleared.
+        persistDebounceLock.lock()
+        persistDebounceWork?.cancel()
+        persistDebounceWork = nil
+        persistDebounceLock.unlock()
         queue.sync {
             identities = []
             defaults.removeObject(forKey: Keys.identities)

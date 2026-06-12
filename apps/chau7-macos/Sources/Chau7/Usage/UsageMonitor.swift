@@ -149,6 +149,11 @@ final class UsageMonitor {
         let snapshotsPath = Self.snapshotsFilePath
         let claudeSettingsPath = RuntimeIsolation.pathInHome(".claude/settings.json")
         let claudeHelperPath = RuntimeIsolation.pathInHome(".chau7/bin/\(ClaudeCodeStatusLineConfiguration.helperName)")
+        // Snapshot main-mutated observables before hopping off-main (same
+        // pattern as refreshLatencySection) — reading them inside the global
+        // block raced UI writes.
+        let latencyTimeRange = selectedLatencyTimeRange
+        let currentLatencyProvider = selectedLatencyProvider
 
         DispatchQueue.global(qos: .utility).async {
             if claudeStatusLineEnabled {
@@ -173,8 +178,8 @@ final class UsageMonitor {
                     .map { ($0.provider.lowercased(), $0) },
                 uniquingKeysWith: { first, _ in first }
             )
-            let latencySamples = self.loadLatencySamples(for: self.selectedLatencyTimeRange)
-            let activitySamples = self.loadActivitySamples(for: self.selectedLatencyTimeRange)
+            let latencySamples = self.loadLatencySamples(for: latencyTimeRange)
+            let activitySamples = self.loadActivitySamples(for: latencyTimeRange)
             let interactionCounts = Dictionary(
                 grouping: activitySamples,
                 by: { $0.provider.lowercased() }
@@ -184,7 +189,7 @@ final class UsageMonitor {
                 activitySamples: activitySamples
             )
             let selectedLatencyProvider = self.resolveSelectedLatencyProvider(
-                current: self.selectedLatencyProvider,
+                current: currentLatencyProvider,
                 available: latencyProviders.map(\.provider)
             )
             let latencyDashboard = selectedLatencyProvider.flatMap { provider in

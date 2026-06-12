@@ -79,6 +79,7 @@ Detection methods:
 - **Notification delivery ledger** — lifecycle tracking for debugging: coalescing, retry scheduling, drop reasons, and real UI outcomes.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
 - **Codex session resolver** — maps Codex sessions to working directories with LRU caching.
+- **Generation-tokened event drain** — drain runloops capture a generation at start; any start/stop invalidates older loops, and the log sink, deallocation flags, and poll diagnostics are lock-guarded.
 - **Queue-confined monitors** — dev-server detection, file tailers, shell-event detection, the shared process-tree snapshotter, and the remote IPC server each confine mutable state to one owning queue, so UI calls can never race their timers.
 - **Retry-not-give-up watchdogs** — file monitors re-arm with backoff after delete/replace, tailers re-arm on rename with bounded per-tick reads, and the terminal dylib loader retries after a cooldown instead of disabling terminals until relaunch.
 - **Pane-owned AI restore** — split tabs restore resume commands from each saved terminal pane’s own metadata instead of inferring ownership from whichever pane is focused after layout rebuild.

@@ -494,3 +494,4 @@ chau7_parse_acceleration_restored,macos,terminal,the accidentally-deleted Rust a
 ffi_abi_handshake_and_layout_probes,macos,terminal,the dylib exports an ABI version and struct sizeof probes verified before symbol binding plus an end-to-end integration test against the built dylib,shipped
 local_release_hygiene,macos,build,versions derive from git tags with loud failure pinned rust toolchain inside-out signing without --deep and a guard against new dead test gates,shipped
 persist_convention_sweep,macos,persistence,remaining silent try? failures across settings ssh remote telemetry and injection paths now log via the Persist helpers,shipped
+small_race_tail_closed,macos,concurrency,log sink event-drain generations deallocation flag poll diagnostics usage snapshot and reset-persist races are lock-guarded or generation-tokened,shipped

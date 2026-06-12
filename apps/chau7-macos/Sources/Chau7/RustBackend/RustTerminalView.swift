@@ -1600,6 +1600,10 @@ final class RustTerminalFFI {
     }
 
     /// Poll for PTY data. Returns true if grid changed.
+    /// Trace-only diagnostics, but mutated from both the event-drain thread
+    /// and the background drain queue — lock for strictness (taken only when
+    /// trace logging is enabled).
+    private static let pollDiagnosticsLock = NSLock()
     private static var pollCounter: UInt64 = 0
     private static var lastPollLogTime: CFAbsoluteTime = 0
 
@@ -1622,26 +1626,31 @@ final class RustTerminalFFI {
         // disabled so a release build does no per-poll work here. `isTraceEnabled` is a
         // cached `static let`, so the guard is a single bool load.
         if Log.isTraceEnabled {
-            Self.pollCounter += 1
             let now = CFAbsoluteTimeGetCurrent()
+            Self.pollDiagnosticsLock.lock()
+            Self.pollCounter += 1
+            let pollNumber = Self.pollCounter
             let shouldLog = changed || hasMetadata || (now - Self.lastPollLogTime > 5.0) // every 5s or on change
+            if shouldLog {
+                Self.lastPollLogTime = now
+            }
+            Self.pollDiagnosticsLock.unlock()
             if shouldLog {
                 if changed {
                     Log.traceThrottled(
                         "rust-terminal-poll-\(instanceId)",
                         interval: 5.0,
-                        "RustTerminalFFI[\(instanceId)]: poll - Grid CHANGED flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)"
+                        "RustTerminalFFI[\(instanceId)]: poll - Grid CHANGED flags=\(rawFlags) (poll #\(pollNumber), timeout=\(timeout)ms)"
                     )
                 } else if hasMetadata {
                     Log.traceThrottled(
                         "rust-terminal-poll-\(instanceId)",
                         interval: 5.0,
-                        "RustTerminalFFI[\(instanceId)]: poll - Metadata changed flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)"
+                        "RustTerminalFFI[\(instanceId)]: poll - Metadata changed flags=\(rawFlags) (poll #\(pollNumber), timeout=\(timeout)ms)"
                     )
                 } else {
-                    Log.trace("RustTerminalFFI[\(instanceId)]: poll - Status check (poll #\(Self.pollCounter))")
+                    Log.trace("RustTerminalFFI[\(instanceId)]: poll - Status check (poll #\(pollNumber))")
                 }
-                Self.lastPollLogTime = now
             }
         }
 
@@ -2629,8 +2638,24 @@ final class RustTerminalView: NSView {
 
     // MARK: - Lifecycle State
 
-    /// Flag to prevent event drain callbacks from accessing deallocated view
-    var isBeingDeallocated = false
+    /// Flag to prevent event drain callbacks from accessing deallocated view.
+    /// Lock-guarded: written in deinit/teardown on main, read on the drain
+    /// thread — a plain Bool there is formally a data race.
+    var isBeingDeallocated: Bool {
+        get {
+            Self.deallocationFlagLock.lock()
+            defer { Self.deallocationFlagLock.unlock() }
+            return _isBeingDeallocated
+        }
+        set {
+            Self.deallocationFlagLock.lock()
+            defer { Self.deallocationFlagLock.unlock() }
+            _isBeingDeallocated = newValue
+        }
+    }
+
+    private static let deallocationFlagLock = NSLock()
+    private var _isBeingDeallocated = false
 
     /// Returns true when the PTY echo is likely disabled (password prompt detected).
     /// Exposes the termios-derived echo state for history filtering. The
