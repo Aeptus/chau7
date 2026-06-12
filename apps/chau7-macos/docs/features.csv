@@ -488,3 +488,4 @@ monitor_subsystem_queue_confinement,macos,monitoring,dev-server file-tailer shel
 watchdog_retry_discipline,macos,monitoring,file monitors re-arm after delete-replace with backoff the tailer re-arms on rename with bounded reads and the dylib loader retries after cooldown,shipped
 memory_reclamation_wiring,macos,performance,pinned per-tab snapshots buffer duplicates and search caches now clear on demotion close and OS pressure with a startup sweep of orphaned scrollback caches,shipped
 window_level_gpu_volatility,macos,performance,GPU atlas and buffers of fully invisible windows go volatile under critical pressure with reclaim-safe rebuild on the next draw,shipped
+self_imposed_footprint_ceiling,macos,performance,the app polls its own footprint against a 4-12GB ceiling and synthesizes memory pressure before the OS signal arrives,shipped

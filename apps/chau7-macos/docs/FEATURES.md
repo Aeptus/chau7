@@ -303,6 +303,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Occlusion-aware rendering: fully covered windows stop live grid syncs and GPU presents (1Hz background drain), with an immediate refresh on re-expose.
 - Wired memory reclamation: tab snapshots, scrollback-line duplicates, and search buffers clear on tab close, on `.hidden` demotion, and under OS memory pressure; orphaned scrollback cache files are swept at startup.
 - Window-level GPU volatility: under critical pressure the glyph atlas and Metal buffers of fully invisible windows become OS-reclaimable, with reclaim-safe rebuild (including the static vertex quad) on the window's next draw.
+- Self-imposed footprint ceiling: the app polls its own memory footprint against a quarter-of-RAM ceiling (clamped 4-12GB) and proactively flushes non-selected tabs' scrollback before the OS pressure signal would ever arrive.
 
 | Layer | What It Does |
 | --- | --- |
