@@ -242,6 +242,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 - **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
 - **Thread-safe FFI resize** — `chau7_terminal_resize` binds a shared reference (dimensions stored atomically), so a main-thread resize can never alias the drain threads' concurrent poll access.
+- **Owned C-string env marshalling** — terminal creation duplicates environment keys/values into C-owned buffers freed after the FFI call, so the spawned shell's environment never depends on Swift buffer pointers outliving their guaranteed scope.
 - **Terminal runtime facts** — Rust exposes alternate-screen state through FFI/debug snapshots so Swift can reason about TUI surfaces generically instead of matching individual providers.
 - **Generic TUI scroll policy** — a pure Chau7Core policy routes scrolls to normal scrollback, mouse-aware TUI apps, or transcript history based on runtime terminal state.
 - **Per-tab transcript capture** — each terminal session keeps a bounded PTY transcript ring with command-boundary backfill so late AI detection can still seed accurate session logs.

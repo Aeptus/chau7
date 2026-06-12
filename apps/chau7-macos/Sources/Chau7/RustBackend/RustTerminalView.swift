@@ -1163,21 +1163,21 @@ final class RustTerminalFFI {
         if let createWithEnv = fns.createWithEnv, !environment.isEmpty {
             Log.trace("RustTerminalFFI[\(instanceId)]: Using createWithEnv with \(environment.count) environment variables")
 
-            // Prepare C string arrays for environment
+            // Duplicate each key/value into C-allocated NUL-terminated buffers
+            // whose lifetime explicitly spans the createWithEnv call. Pointers
+            // obtained inside withUnsafeBufferPointer must not escape the
+            // closure, so collecting baseAddresses that way would be UB.
             var keys: [UnsafePointer<CChar>?] = []
             var values: [UnsafePointer<CChar>?] = []
-            var keyData: [ContiguousArray<CChar>] = []
-            var valueData: [ContiguousArray<CChar>] = []
-
+            keys.reserveCapacity(environment.count)
+            values.reserveCapacity(environment.count)
             for (key, value) in environment {
-                keyData.append(ContiguousArray(key.utf8CString))
-                valueData.append(ContiguousArray(value.utf8CString))
+                keys.append(UnsafePointer(strdup(key)))
+                values.append(UnsafePointer(strdup(value)))
             }
-
-            // Get pointers to the data
-            for i in 0 ..< keyData.count {
-                keys.append(keyData[i].withUnsafeBufferPointer { $0.baseAddress })
-                values.append(valueData[i].withUnsafeBufferPointer { $0.baseAddress })
+            defer {
+                keys.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+                values.forEach { free(UnsafeMutablePointer(mutating: $0)) }
             }
 
             // Call with environment
