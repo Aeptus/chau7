@@ -204,6 +204,10 @@ final class RemoteControlManager {
         let relayURL = FeatureSettings.shared.remoteRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
         env["CHAU7_RELAY_URL"] = relayURL
         env["CHAU7_MAC_NAME"] = Host.current().localizedName ?? "Mac"
+        // Parent-death detection: an orphaned agent would reconnect to the
+        // relaunched app's single-client IPC socket and fight the fresh agent
+        // for the one client slot, plus duplicate its identity on the relay.
+        env["CHAU7_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         process.environment = env
 
         let outputPipe = Pipe()

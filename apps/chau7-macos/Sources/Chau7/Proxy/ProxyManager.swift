@@ -67,6 +67,9 @@ final class ProxyManager {
     // MARK: - Private Properties
 
     @ObservationIgnored private var process: Process?
+    /// Restart-backoff bookkeeping for the unexpected-exit auto-restart.
+    @ObservationIgnored private var restartAttempts = 0
+    @ObservationIgnored private var processStartedAt: Date?
     @ObservationIgnored private var outputPipe: Pipe?
     @ObservationIgnored private var errorPipe: Pipe?
     @ObservationIgnored private var isStopping = false
@@ -229,6 +232,9 @@ final class ProxyManager {
         env["CHAU7_TLS_PORT"] = String(port + 1)
         env["CHAU7_TLS_CERT"] = tlsCertPath.path
         env["CHAU7_TLS_KEY"] = tlsKeyPath.path
+        // Parent-death detection: the proxy exits when this app dies, so an
+        // orphan can never hold the port against the relaunched app.
+        env["CHAU7_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         process.environment = env
 
         // Setup pipes for output
@@ -271,10 +277,20 @@ final class ProxyManager {
                         object: ProxyStatusEvent.stopped(error: error)
                     )
 
-                    // Auto-restart after unexpected termination (e.g. killed by agent)
+                    // Auto-restart with exponential backoff. A fixed 2s retry
+                    // forever turned a persistent failure (port held, bad
+                    // config) into a 2s crash loop; backoff caps at 60s and
+                    // never gives up (watchdogs retry, not quit) — the
+                    // attempt counter resets after a healthy >60s run.
+                    if let startedAt = self.processStartedAt,
+                       Date().timeIntervalSince(startedAt) > 60 {
+                        self.restartAttempts = 0
+                    }
+                    self.restartAttempts += 1
+                    let delay = min(pow(2.0, Double(self.restartAttempts)), 60.0)
                     let restartPort = self.port
-                    self.logger.info("Auto-restarting proxy in 2s...")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                    self.logger.info("Auto-restarting proxy in \(delay, privacy: .public)s (attempt \(self.restartAttempts, privacy: .public))...")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                         guard let self, !self.isRunning, !self.isStopping else { return }
                         start(port: restartPort)
                     }
@@ -292,6 +308,7 @@ final class ProxyManager {
         do {
             try process.run()
             self.process = process
+            self.processStartedAt = Date()
             isRunning = true
             lastError = nil
 

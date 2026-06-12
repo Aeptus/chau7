@@ -123,6 +123,7 @@ Supported commands (46 parsers):
 ## API Analytics & Token Tracking
 
 - **TLS/WSS proxy** — Go-based `chau7-proxy` intercepts API calls to Claude, OpenAI (Codex), Gemini, Anthropic with TLS and WebSocket support.
+- **Orphan-proof helpers** — chau7-proxy and chau7-remote exit when the parent app dies (no port-holding orphans after a crash), and the proxy's auto-restart backs off exponentially instead of crash-looping every 2 seconds.
 - **Token counting & cost calculation** — full token breakdown per call: input, output, cache creation, cache read, and reasoning tokens. Accurate cost calculation using provider-specific cache pricing (Anthropic 0.1x/1.25x, OpenAI 0.5x). Fallback estimation when extraction fails.
 - **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
 - **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
