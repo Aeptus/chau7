@@ -302,6 +302,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Display-scale awareness: moving a window between Retina and non-Retina displays reconfigures the glyph atlas at the new backing scale and redraws immediately.
 - Occlusion-aware rendering: fully covered windows stop live grid syncs and GPU presents (1Hz background drain), with an immediate refresh on re-expose.
 - Wired memory reclamation: tab snapshots, scrollback-line duplicates, and search buffers clear on tab close, on `.hidden` demotion, and under OS memory pressure; orphaned scrollback cache files are swept at startup.
+- Window-level GPU volatility: under critical pressure the glyph atlas and Metal buffers of fully invisible windows become OS-reclaimable, with reclaim-safe rebuild (including the static vertex quad) on the window's next draw.
 
 | Layer | What It Does |
 | --- | --- |

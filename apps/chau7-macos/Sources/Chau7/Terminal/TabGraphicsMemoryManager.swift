@@ -8,26 +8,20 @@ protocol TabSnapshotReleaser: AnyObject {
     func releaseSnapshots(forTabID tabID: UUID, tier: TabGraphicsMemoryManager.ReleaseTier)
 }
 
-/// Flips Metal texture/buffer purgeable state on phase transitions. Implemented
-/// by RustMetalDisplayCoordinator. The OS may reclaim `.volatile` resources
-/// under memory pressure; on promotion back to non-volatile, the implementation
-/// detects reclamation and rebuilds.
-protocol TabMetalVolatility: AnyObject {
-    func setTexturesVolatile(_ volatile: Bool)
-}
-
-/// Releases per-tab graphics memory (CG image bitmaps and Metal textures) as
-/// tabs transition through TabRenderPhase. Works alongside
-/// ScrollbackMemoryManager, which handles the text-data side.
+/// Releases per-tab graphics memory (CG image bitmaps) as tabs transition
+/// through TabRenderPhase. Works alongside ScrollbackMemoryManager, which
+/// handles the text-data side.
 ///
 /// The RustTerminalView hooks `applyRenderPhase` to notify this manager of
 /// every phase delta. The manager converts the new phase into a ReleaseTier
-/// and routes the work to two registered delegates:
-///   - `snapshotReleaser` (OverlayTabsModel) — clears NSImage properties
-///   - per-tab `metalVolatility` (RustMetalDisplayCoordinator) — flips
-///     MTLPurgeableState on its textures and buffers
+/// and routes the work to the registered snapshot releasers (OverlayTabsModel
+/// per window), which clear NSImage properties.
 ///
-/// This keeps the Rust-view layer decoupled from both model and renderer.
+/// GPU purgeable-state volatility is NOT handled here: the Metal coordinator
+/// is shared per window, so per-tab volatility registration was wrong-grained
+/// (a background tab demoting would have marked the *active* tab's atlas
+/// volatile mid-render). Window-level volatility is driven by
+/// `TerminalMemoryReclaimer` under critical pressure instead.
 final class TabGraphicsMemoryManager {
     static let shared = TabGraphicsMemoryManager()
 
@@ -42,7 +36,6 @@ final class TabGraphicsMemoryManager {
 
     private let registryLock = NSLock()
     private var snapshotReleasers: [WeakSnapshotBox] = []
-    private var metalProviders: [UUID: WeakMetalBox] = [:]
 
     private init() {}
 
@@ -62,18 +55,6 @@ final class TabGraphicsMemoryManager {
     func removeSnapshotReleaser(_ releaser: TabSnapshotReleaser) {
         registryLock.lock()
         snapshotReleasers.removeAll { $0.value == nil || $0.value === releaser }
-        registryLock.unlock()
-    }
-
-    func register(metalVolatility: TabMetalVolatility, forTabID tabID: UUID) {
-        registryLock.lock()
-        metalProviders[tabID] = WeakMetalBox(value: metalVolatility)
-        registryLock.unlock()
-    }
-
-    func unregister(forTabID tabID: UUID) {
-        registryLock.lock()
-        metalProviders.removeValue(forKey: tabID)
         registryLock.unlock()
     }
 
@@ -105,35 +86,14 @@ final class TabGraphicsMemoryManager {
                 }
             }
         }
-
-        let shouldBeVolatile = (newPhase == .warm || newPhase == .hidden)
-        let wasVolatile = (oldPhase == .warm || oldPhase == .hidden)
-        if shouldBeVolatile != wasVolatile, let provider = metalVolatility(for: tabID) {
-            DispatchQueue.main.async {
-                provider.setTexturesVolatile(shouldBeVolatile)
-            }
-        }
     }
 
     // MARK: - Internal
-
-    private func metalVolatility(for tabID: UUID) -> TabMetalVolatility? {
-        registryLock.lock()
-        defer { registryLock.unlock() }
-        return metalProviders[tabID]?.value
-    }
 
     private func currentSnapshotReleasers() -> [TabSnapshotReleaser] {
         registryLock.lock()
         defer { registryLock.unlock() }
         return snapshotReleasers.compactMap(\.value)
-    }
-
-    private final class WeakMetalBox {
-        weak var value: TabMetalVolatility?
-        init(value: TabMetalVolatility?) {
-            self.value = value
-        }
     }
 
     private final class WeakSnapshotBox {

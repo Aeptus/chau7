@@ -1591,10 +1591,34 @@ final class MetalTerminalRenderer: NSObject {
     ///   re-rasterize).
     func setAtlasPurgeableState(_ state: MTLPurgeableState) -> MTLPurgeableState {
         let atlasPrior = glyphAtlas?.setPurgeableState(state) ?? .keepCurrent
-        _ = instanceBuffer?.setPurgeableState(state)
-        _ = uniformBuffer?.setPurgeableState(state)
-        _ = vertexBuffer?.setPurgeableState(state)
-        return atlasPrior
+        let instancePrior = instanceBuffer?.setPurgeableState(state) ?? .keepCurrent
+        let uniformPrior = uniformBuffer?.setPurgeableState(state) ?? .keepCurrent
+        let vertexPrior = vertexBuffer?.setPurgeableState(state) ?? .keepCurrent
+
+        guard state == .nonVolatile else { return atlasPrior }
+
+        // The vertex quad is written once at init and never rebuilt by the
+        // draw path — if the OS reclaimed it, every instance would render
+        // garbage forever. Rewrite it in place.
+        if vertexPrior == .empty {
+            rewriteVertexQuad()
+        }
+        // Report reclamation if ANY resource was emptied — checking only the
+        // atlas left a reclaimed instance/uniform buffer rendering stale rows
+        // undetected.
+        let anyReclaimed = [atlasPrior, instancePrior, uniformPrior, vertexPrior].contains(.empty)
+        return anyReclaimed ? .empty : atlasPrior
+    }
+
+    /// Rewrites the static unit-quad vertices (see `setupBuffers`).
+    private func rewriteVertexQuad() {
+        let vertices: [SIMD2<Float>] = [
+            SIMD2(0, 0), SIMD2(1, 0), SIMD2(0, 1), SIMD2(1, 1)
+        ]
+        vertices.withUnsafeBytes { bytes in
+            guard let base = bytes.baseAddress, let buffer = vertexBuffer else { return }
+            buffer.contents().copyMemory(from: base, byteCount: min(bytes.count, buffer.length))
+        }
     }
 
     /// Drops the CPU-side glyph and ligature caches. Next draw will re-rasterize
