@@ -2846,6 +2846,47 @@ mod tests {
     }
 
     #[test]
+    fn hup_drains_tail_output_burst_from_short_lived_command() {
+        // A child that writes a large final burst and exits immediately
+        // leaves data in the kernel PTY buffer when POLLHUP fires. The pool
+        // must drain it all before latching closed — pre-fix, only one read
+        // happened per cycle and the tail was silently lost.
+        let term = Chau7Terminal::new_with_launch(
+            80,
+            24,
+            "/bin/sh",
+            &[],
+            &[
+                "-c".to_string(),
+                "head -c 65536 /dev/zero | tr '\\0' X; echo; echo CHAU7_TAIL_END".to_string(),
+            ],
+            None,
+        )
+        .expect("short-lived burst terminal");
+
+        let mut combined = String::new();
+        for _ in 0..200 {
+            let _ = term.poll(50);
+            let chunk = std::mem::take(&mut *term.last_output.lock());
+            combined.push_str(&String::from_utf8_lossy(&chunk));
+            if combined.contains("CHAU7_TAIL_END") {
+                break;
+            }
+        }
+
+        assert!(
+            combined.contains("CHAU7_TAIL_END"),
+            "tail marker lost after HUP (received {} bytes)",
+            combined.len()
+        );
+        let x_count = combined.matches('X').count();
+        assert!(
+            x_count >= 65536,
+            "burst truncated: only {x_count}/65536 payload bytes arrived"
+        );
+    }
+
+    #[test]
     fn resize_is_safe_against_concurrent_shared_access() {
         // resize takes &self so the UI thread can call it while drain threads
         // hold &self for poll/debug_state; exercise that interleaving.

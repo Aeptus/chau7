@@ -226,9 +226,7 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
             pollfds.clear();
             fd_list.clear();
             for (&fd, entry) in s.entries.iter_mut() {
-                if entry.closed.load(Ordering::Acquire) {
-                    continue;
-                }
+                let is_closed = entry.closed.load(Ordering::Acquire);
                 if !entry.retained.is_empty() {
                     let data = std::mem::take(&mut entry.retained);
                     match entry.sender.try_send(PtyMessage::Data(data)) {
@@ -239,6 +237,11 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                                 "SharedPtyReaderPool: drained retained buffer for terminal {}",
                                 entry.terminal_id
                             );
+                            // A closed entry was waiting on this flush before
+                            // signalling Closed (data must arrive first).
+                            if is_closed {
+                                let _ = entry.sender.try_send(PtyMessage::Closed);
+                            }
                         }
                         Err(crossbeam_channel::TrySendError::Full(PtyMessage::Data(buf))) => {
                             // Still full — put the bytes back and skip.
@@ -248,6 +251,9 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                         Err(crossbeam_channel::TrySendError::Full(_)) => continue,
                         Err(crossbeam_channel::TrySendError::Disconnected(_)) => continue,
                     }
+                }
+                if is_closed {
+                    continue;
                 }
                 pollfds.push(libc::pollfd {
                     fd,
@@ -376,8 +382,53 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                         "SharedPtyReaderPool: HUP/ERR on terminal {} (fd={})",
                         entry.terminal_id, fd
                     );
+                    // macOS PTYs return kernel-buffered data after HUP, and
+                    // the POLLIN branch above read at most one chunk this
+                    // cycle. A short-lived command's final burst can exceed
+                    // that — drain the remainder before latching closed or
+                    // the tail output is silently lost.
+                    const MAX_HUP_DRAIN_BYTES: usize = 4 * 1024 * 1024;
+                    let mut drained_total = 0usize;
+                    let mut disconnected = false;
+                    while drained_total < MAX_HUP_DRAIN_BYTES {
+                        let bytes_read = unsafe {
+                            libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len())
+                        };
+                        if bytes_read <= 0 {
+                            break;
+                        }
+                        drained_total += bytes_read as usize;
+                        let data = buf[..bytes_read as usize].to_vec();
+                        if entry.retained.is_empty() {
+                            match entry.sender.try_send(PtyMessage::Data(data)) {
+                                Ok(()) => {}
+                                Err(crossbeam_channel::TrySendError::Full(PtyMessage::Data(
+                                    chunk,
+                                ))) => entry.retained = chunk,
+                                Err(crossbeam_channel::TrySendError::Full(_)) => {}
+                                Err(crossbeam_channel::TrySendError::Disconnected(_)) => {
+                                    disconnected = true;
+                                    break;
+                                }
+                            }
+                        } else {
+                            // Consumer is behind — accumulate; the pollfd
+                            // rebuild flushes retained bytes (then Closed).
+                            entry.retained.extend_from_slice(&data);
+                        }
+                    }
+                    if drained_total > 0 {
+                        info!(
+                            "SharedPtyReaderPool: drained {} tail byte(s) after HUP for terminal {}",
+                            drained_total, entry.terminal_id
+                        );
+                    }
                     entry.closed.store(true, Ordering::Release);
-                    let _ = entry.sender.try_send(PtyMessage::Closed);
+                    // Closed must arrive after all data; with retained bytes
+                    // pending, the rebuild loop sends it post-flush.
+                    if entry.retained.is_empty() || disconnected {
+                        let _ = entry.sender.try_send(PtyMessage::Closed);
+                    }
                 }
             }
         }
