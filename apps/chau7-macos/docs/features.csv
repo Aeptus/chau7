@@ -480,3 +480,4 @@ ffi_input_clamping_and_pool_resilience,macos,terminal,FFI selection coordinates 
 metal_inflight_gate_and_gpu_error_recovery,macos,performance,Metal frames are gated one-in-flight so CPU buffer writes never race the GPU and command-buffer errors force a full-refresh redraw,shipped
 glyph_atlas_slot_clipping,macos,performance,glyph and ligature rasterization clip to their atlas slot so overhanging glyphs cannot corrupt neighboring cached glyphs,shipped
 display_scale_change_handling,macos,performance,backing-property changes reconfigure the glyph atlas scale and force a redraw so cross-display drags render crisply without a tab switch,shipped
+occlusion_aware_rendering,macos,performance,fully covered windows demote to the 1Hz background drain and re-expose forces an immediate grid sync,shipped

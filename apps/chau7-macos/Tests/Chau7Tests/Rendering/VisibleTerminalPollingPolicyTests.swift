@@ -20,6 +20,47 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
         )
     }
 
+    func testOccludedWindowDropsToBackgroundDrain() {
+        // isVisible stays true for fully covered windows; rendering up to
+        // ~15fps for pixels nobody sees burns CPU/battery for nothing.
+        XCTAssertEqual(
+            VisibleTerminalPollingPolicy.mode(
+                for: VisibleTerminalPollingContext(
+                    isTerminalStarted: true,
+                    notifyUpdateChanges: true,
+                    isShellBootstrapPending: false,
+                    allowsLivePresentation: true,
+                    isHidden: false,
+                    hasVisibleWindow: true,
+                    isWindowMiniaturized: false,
+                    isWindowOccluded: true,
+                    isInteractive: true
+                )
+            ),
+            .backgroundDrain
+        )
+    }
+
+    func testShellBootstrapOverridesOcclusion() {
+        // First-output detection must stay fast even if the window is covered.
+        XCTAssertEqual(
+            VisibleTerminalPollingPolicy.mode(
+                for: VisibleTerminalPollingContext(
+                    isTerminalStarted: true,
+                    notifyUpdateChanges: true,
+                    isShellBootstrapPending: true,
+                    allowsLivePresentation: true,
+                    isHidden: false,
+                    hasVisibleWindow: true,
+                    isWindowMiniaturized: false,
+                    isWindowOccluded: true,
+                    isInteractive: true
+                )
+            ),
+            .eventDrain
+        )
+    }
+
     func testVisibleNonInteractiveTabAlsoUsesEventDrain() {
         // A selected tab on a visible-but-not-key window (the dual-monitor
         // case where the user is working on screen A while Chau7 streams

@@ -294,6 +294,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - GPU in-flight gating: shared Metal buffers and the glyph atlas are never rewritten while a committed frame is still reading them, and GPU-failed frames force a full-refresh redraw instead of stranding the view on stale content.
 - Slot-clipped glyph rasterization: overhanging glyphs (combining marks, italic overhang, ligature swashes, emoji fallbacks) cannot paint into neighboring atlas slots and corrupt cached glyphs.
 - Display-scale awareness: moving a window between Retina and non-Retina displays reconfigures the glyph atlas at the new backing scale and redraws immediately.
+- Occlusion-aware rendering: fully covered windows stop live grid syncs and GPU presents (1Hz background drain), with an immediate refresh on re-expose.
 
 | Layer | What It Does |
 | --- | --- |
