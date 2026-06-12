@@ -426,6 +426,8 @@ final class IncidentBreadcrumbStore {
 
 private extension [String: String] {
     func mapKeys(_ transform: (String) -> String) -> [String: String] {
-        [String: String](uniqueKeysWithValues: map { (transform($0.key), $0.value) })
+        // First-wins uniquing: a transform may map two source keys to the same
+        // output key; diagnostics must not crash over that.
+        [String: String](map { (transform($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
     }
 }

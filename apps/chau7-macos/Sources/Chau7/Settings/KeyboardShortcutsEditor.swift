@@ -37,9 +37,14 @@ struct KeyboardShortcutsEditorView: View {
     }
 
     private var conflictsByAction: [String: [KeyboardShortcut]] {
-        Dictionary(uniqueKeysWithValues: settings.customShortcuts.map { shortcut in
-            (shortcut.action, settings.shortcutConflicts(for: shortcut))
-        })
+        // First-wins uniquing: customShortcuts is persisted, and a duplicate
+        // action entry from older data must not crash the settings UI.
+        Dictionary(
+            settings.customShortcuts.map { shortcut in
+                (shortcut.action, settings.shortcutConflicts(for: shortcut))
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
     }
 
     var body: some View {

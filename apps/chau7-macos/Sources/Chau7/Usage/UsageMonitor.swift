@@ -165,10 +165,13 @@ final class UsageMonitor {
             let latestByProvider = Dictionary(grouping: snapshots, by: { $0.provider.lowercased() }).compactMapValues { group in
                 group.max(by: { $0.capturedAt < $1.capturedAt })
             }
+            // First-wins uniquing: lowercasing can collapse two provider rows
+            // ("OpenAI"/"openai") into one key; don't crash the usage refresh.
             let recentConsumption = Dictionary(
-                uniqueKeysWithValues: TelemetryStore.shared
+                TelemetryStore.shared
                     .consumptionPerProvider(after: cutoff)
-                    .map { ($0.provider.lowercased(), $0) }
+                    .map { ($0.provider.lowercased(), $0) },
+                uniquingKeysWith: { first, _ in first }
             )
             let latencySamples = self.loadLatencySamples(for: self.selectedLatencyTimeRange)
             let activitySamples = self.loadActivitySamples(for: self.selectedLatencyTimeRange)

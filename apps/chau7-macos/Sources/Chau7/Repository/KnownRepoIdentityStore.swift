@@ -27,7 +27,9 @@ final class KnownRepoIdentityStore {
         self.defaults = defaults
         if let data = defaults.data(forKey: Keys.identities),
            let decoded = try? JSONDecoder().decode([KnownRepoIdentity].self, from: data) {
-            self.identities = decoded
+            // Dedup on load: downstream code maps identities by rootPath, so a
+            // corrupt/merged persisted array must not break the uniqueness invariant.
+            self.identities = Array(Self.deduplicated(decoded).prefix(Self.maxIdentities))
         } else {
             let roots = bootstrapRoots ?? FeatureSettings.shared.recentRepoRoots
             self.identities = roots.map {
@@ -115,7 +117,7 @@ final class KnownRepoIdentityStore {
     func mergeRecentRoots(_ roots: [String]) {
         let normalizedRoots = Self.normalizedUniqueRoots(from: roots)
         queue.sync {
-            let existingByRoot = Dictionary(uniqueKeysWithValues: identities.map { ($0.rootPath, $0) })
+            let existingByRoot = Dictionary(identities.map { ($0.rootPath, $0) }, uniquingKeysWith: { first, _ in first })
             var merged: [KnownRepoIdentity] = normalizedRoots.map { root in
                 existingByRoot[root] ?? KnownRepoIdentity(
                     rootPath: root,

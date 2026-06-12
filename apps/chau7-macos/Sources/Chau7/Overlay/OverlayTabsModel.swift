@@ -887,8 +887,11 @@ extension SavedTabState {
 
         let mergedPaneStates: [SavedTerminalPaneState]?
         if let paneStates {
+            // First-wins uniquing: paneStates come from decoded disk backups, so a
+            // corrupt/merged backup with duplicate paneIDs must not crash restore.
             let fallbackByPaneID = Dictionary(
-                uniqueKeysWithValues: (fallback.paneStates ?? []).map { ($0.paneID, $0) }
+                (fallback.paneStates ?? []).map { ($0.paneID, $0) },
+                uniquingKeysWith: { first, _ in first }
             )
             mergedPaneStates = paneStates.map { pane in
                 pane.mergedAIResumePayload(with: fallbackByPaneID[pane.paneID])

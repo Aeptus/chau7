@@ -599,7 +599,9 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
             // Preferred path: use real geometry from SwiftUI preferences
             let globalPoint = window?.convertPoint(toScreen: convert(point, to: nil)) ?? point
             let globalX = globalPoint.x
-            let tabIDsByUUID = Dictionary(uniqueKeysWithValues: model.tabs.map { ($0.id, $0) })
+            // First-wins uniquing: a bad restore could briefly leave duplicate tab
+            // UUIDs in the model; hit-testing must not crash on that state.
+            let tabIDsByUUID = Dictionary(model.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             for frame in frames {
                 if globalX >= frame.minX, globalX <= frame.maxX {
                     return tabIDsByUUID[frame.tabID]

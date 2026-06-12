@@ -467,3 +467,4 @@ ffi_resize_shared_reference,macos,terminal,FFI resize binds a shared reference w
 ffi_env_marshalling_owned_cstrings,macos,terminal,terminal creation duplicates env keys/values into C-owned buffers freed after the FFI call instead of escaping closure-scoped pointers,shipped
 agent_dashboard_queue_confined_state,macos,dashboard,agent dashboard tracker and cursor state is confined to a serial refresh queue so poll cycles and commit actions cannot race main-thread mutations,shipped
 proxy_session_event_fire_and_forget,macos,proxy,prompt-injection session events post to the proxy asynchronously instead of blocking the main thread on a semaphore,shipped
+persisted_dictionary_first_wins_uniquing,macos,persistence,dictionary builds over persisted or transformable keys use first-wins uniquing so duplicate keys in stored data degrade gracefully instead of crashing,shipped
