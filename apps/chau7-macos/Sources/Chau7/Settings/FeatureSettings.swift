@@ -3297,10 +3297,19 @@ final class FeatureSettings {
         var ctoPrefix = ""
         var ctoTabOverrides = [String: Bool]()
         var exportVersion = 1
+        /// When this blob was exported. Drives the iCloud freshness guard so
+        /// an old device's blob can never clobber newer local settings.
+        /// Optional: pre-timestamp exports decode as nil.
+        var exportedAt: Date?
     }
 
+    /// Highest export format this build can apply. Imports with a newer
+    /// version are refused rather than partially decoded-and-resaved (which
+    /// would silently destroy fields this build doesn't know about).
+    static let maxSupportedSettingsExportVersion = 1
+
     func exportSettings() -> Data? {
-        let exportable = ExportableSettings(
+        var exportable = ExportableSettings(
             fontFamily: fontFamily,
             fontSize: fontSize,
             defaultZoomPercent: defaultZoomPercent,
@@ -3411,6 +3420,7 @@ final class FeatureSettings {
             ctoPrefix: ctoPrefix,
             ctoTabOverrides: ctoTabOverrides
         )
+        exportable.exportedAt = Date()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return JSONOperations.encode(exportable, context: "settings export")
@@ -3419,6 +3429,10 @@ final class FeatureSettings {
     func importSettings(from data: Data) -> Bool {
         guard let imported = JSONOperations.decode(ExportableSettings.self, from: data, context: "settings import") else {
             Log.error("Failed to import settings: invalid data format")
+            return false
+        }
+        guard imported.exportVersion <= Self.maxSupportedSettingsExportVersion else {
+            Log.error("Refusing settings import: export version \(imported.exportVersion) is newer than supported \(Self.maxSupportedSettingsExportVersion)")
             return false
         }
 
@@ -3447,18 +3461,19 @@ final class FeatureSettings {
             triggerState: importedTriggerState,
             filters: Self.legacyNotificationFilters(from: importedTriggerState),
             triggerActionBindings: imported.triggerActionBindings ?? notificationSettings.triggerActionBindings,
-            rateLimitConfig: imported.notificationRateLimitConfig ?? .default,
-            triggerConditions: imported.triggerConditions ?? [:],
+            rateLimitConfig: imported.notificationRateLimitConfig ?? notificationSettings.rateLimitConfig,
+            triggerConditions: imported.triggerConditions ?? notificationSettings.triggerConditions,
             groupActionBindings: imported.groupActionBindings ?? notificationSettings.groupActionBindings,
             groupConditions: imported.groupConditions ?? notificationSettings.groupConditions
         )
         findCaseSensitiveDefault = imported.findCaseSensitiveDefault ?? false
         findRegexDefault = imported.findRegexDefault ?? false
+        // Fields absent from the payload keep their current local value —
+        // resetting to hardcoded defaults let an older export wipe settings
+        // it never knew about.
         if let behaviorRaw = imported.lastTabCloseBehavior,
            let behavior = LastTabCloseBehavior(rawValue: behaviorRaw) {
             lastTabCloseBehavior = behavior
-        } else {
-            lastTabCloseBehavior = .keepWindow
         }
         newTabPosition = imported.newTabPosition ?? "end"
         newTabsUseCurrentDirectory = imported.newTabsUseCurrentDirectory ?? true
@@ -3467,15 +3482,11 @@ final class FeatureSettings {
         if let themeRaw = imported.appTheme,
            let theme = AppTheme(rawValue: themeRaw) {
             appTheme = theme
-        } else {
-            appTheme = .system
         }
         launchAtLogin = imported.launchAtLogin ?? launchAtLogin
         if let langRaw = imported.appLanguage,
            let lang = AppLanguage(rawValue: langRaw) {
             appLanguage = lang
-        } else {
-            appLanguage = .system
         }
         windowOpacity = imported.windowOpacity
         cursorStyle = imported.cursorStyle
@@ -3489,18 +3500,14 @@ final class FeatureSettings {
             dangerousCommandHighlightScope = scope
         } else if let enabled = imported.isDangerousCommandHighlightEnabled {
             dangerousCommandHighlightScope = enabled ? .allOutputs : .none
-        } else {
-            dangerousCommandHighlightScope = .allOutputs
         }
-        dangerousCommandPatterns = imported.dangerousCommandPatterns ?? Self.defaultDangerousCommandPatterns
-        dangerousCommandProtectChau7Enabled = imported.dangerousCommandProtectChau7Enabled ?? true
+        dangerousCommandPatterns = imported.dangerousCommandPatterns ?? dangerousCommandPatterns
+        dangerousCommandProtectChau7Enabled = imported.dangerousCommandProtectChau7Enabled ?? dangerousCommandProtectChau7Enabled
         if let raw = imported.dangerousCommandProtectChau7Level,
            let level = DangerousCommandProtectionLevel(rawValue: raw) {
             dangerousCommandProtectChau7Level = level
-        } else {
-            dangerousCommandProtectChau7Level = .blocking
         }
-        dangerousCommandProtectedProcessPatterns = imported.dangerousCommandProtectedProcessPatterns ?? Self.defaultDangerousProtectedProcessPatterns
+        dangerousCommandProtectedProcessPatterns = imported.dangerousCommandProtectedProcessPatterns ?? dangerousCommandProtectedProcessPatterns
         if let idleDelay = imported.dangerousOutputHighlightIdleDelayMs {
             dangerousOutputHighlightIdleDelayMs = idleDelay
         }
@@ -3543,16 +3550,12 @@ final class FeatureSettings {
         if let handlerRaw = imported.urlHandler,
            let handler = URLHandler(rawValue: handlerRaw) {
             urlHandler = handler
-        } else {
-            urlHandler = .system
         }
         if let rateCapRaw = imported.activePollingRateCap,
            let rateCap = ActivePollingRateCap(rawValue: rateCapRaw) {
             activePollingRateCap = rateCap
-        } else {
-            activePollingRateCap = .displayNative
         }
-        customAIDetectionRules = imported.customAIDetectionRules ?? []
+        customAIDetectionRules = imported.customAIDetectionRules ?? customAIDetectionRules
         isBroadcastEnabled = imported.isBroadcastEnabled
         isClipboardHistoryEnabled = imported.isClipboardHistoryEnabled
         clipboardHistoryMaxItems = imported.clipboardHistoryMaxItems
@@ -3860,6 +3863,21 @@ final class FeatureSettings {
 
     @ObservationIgnored private var iCloudSyncWorkItem: DispatchWorkItem?
     @ObservationIgnored private let iCloudSyncDebounceInterval: TimeInterval = 2.0 // 2 seconds debounce
+    /// `exportedAt` of the last settings blob this Mac pushed to or applied
+    /// from iCloud (epoch seconds). The freshness guard refuses blobs that
+    /// aren't strictly newer, so an old device can't clobber newer settings.
+    private static let lastSyncedSettingsExportedAtKey = "icloud.settings.lastSyncedExportedAt"
+
+    private func recordSyncedSettingsTimestamp(_ date: Date) {
+        UserDefaults.standard.set(date.timeIntervalSince1970, forKey: Self.lastSyncedSettingsExportedAtKey)
+    }
+
+    private func pushSettingsToiCloud(_ data: Data, label: String) {
+        NSUbiquitousKeyValueStore.default.set(data, forKey: iCloudKey)
+        NSUbiquitousKeyValueStore.default.synchronize()
+        recordSyncedSettingsTimestamp(Date())
+        Log.info("Settings synced to iCloud (\(label))")
+    }
 
     func syncToiCloud() {
         guard !RuntimeIsolation.isIsolatedTestMode() else { return }
@@ -3872,9 +3890,7 @@ final class FeatureSettings {
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, iCloudSyncEnabled else { return }
             guard let data = exportSettings() else { return }
-            NSUbiquitousKeyValueStore.default.set(data, forKey: iCloudKey)
-            NSUbiquitousKeyValueStore.default.synchronize()
-            Log.info("Settings synced to iCloud (debounced)")
+            pushSettingsToiCloud(data, label: "debounced")
         }
 
         iCloudSyncWorkItem = workItem
@@ -3887,9 +3903,7 @@ final class FeatureSettings {
         guard iCloudSyncEnabled else { return }
         iCloudSyncWorkItem?.cancel()
         guard let data = exportSettings() else { return }
-        NSUbiquitousKeyValueStore.default.set(data, forKey: iCloudKey)
-        NSUbiquitousKeyValueStore.default.synchronize()
-        Log.info("Settings force synced to iCloud")
+        pushSettingsToiCloud(data, label: "forced")
     }
 
     func syncFromiCloud() {
@@ -3899,8 +3913,27 @@ final class FeatureSettings {
             Log.info("No iCloud settings found")
             return
         }
+        // Freshness guard: whole-blob last-writer-wins with no comparison let
+        // an old device's blob silently clobber newer local settings. Apply
+        // only blobs strictly newer than what this Mac last pushed/applied.
+        if let incoming = JSONOperations.decode(ExportableSettings.self, from: data, context: "settings iCloud peek"),
+           let incomingExportedAt = incoming.exportedAt {
+            let lastSynced = UserDefaults.standard.double(forKey: Self.lastSyncedSettingsExportedAtKey)
+            if lastSynced > 0, incomingExportedAt.timeIntervalSince1970 <= lastSynced {
+                Log.info("Skipping iCloud settings import: incoming export is not newer than the last synced state")
+                return
+            }
+            if importSettings(from: data) {
+                recordSyncedSettingsTimestamp(incomingExportedAt)
+                Log.info("Settings restored from iCloud")
+            } else {
+                Log.warn("Failed to restore settings from iCloud")
+            }
+            return
+        }
+        // Pre-timestamp blob: keep legacy apply-always behavior.
         if importSettings(from: data) {
-            Log.info("Settings restored from iCloud")
+            Log.info("Settings restored from iCloud (legacy untimestamped blob)")
         } else {
             Log.warn("Failed to restore settings from iCloud")
         }

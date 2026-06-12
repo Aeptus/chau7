@@ -457,7 +457,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Settings profiles — save, load, export, import named configurations.
 - Per-folder config: `.chau7/config.toml` in any repo for project-specific settings.
 - Config file watcher — auto-reload on changes, no restart needed.
-- Optional iCloud sync across devices.
+- Optional iCloud sync across devices — freshness-guarded: only blobs strictly newer than this Mac's last synced state apply, newer-format exports are refused, and fields absent from a blob keep their local value instead of resetting to defaults.
 - Reset individual settings or all to defaults.
 
 ## Accessibility & Localization
