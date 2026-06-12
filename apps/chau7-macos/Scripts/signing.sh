@@ -178,9 +178,11 @@ chau7_codesign_with_identity() {
   local identity="$4"
   local args=(codesign --force --sign "$identity")
 
-  if [[ -d "$path" ]]; then
-    args+=(--deep)
-  fi
+  # No --deep here: chau7_codesign_nested_code signs every nested Mach-O
+  # inside-out before the bundle itself is signed, which is the
+  # Apple-recommended flow. --deep re-signed all nested code with the
+  # top-level flags, overwriting the careful per-binary identifiers (and
+  # Apple deprecates --deep for distribution signing).
   if [[ -n "$bundle_id" ]]; then
     args+=(-i "$bundle_id")
   fi

@@ -89,6 +89,18 @@ check_swift_line() {
   local lineno="$2"
   local content="$3"
 
+  # Tests gated behind `#if !SWIFT_PACKAGE` never compile under `swift test`
+  # (SwiftPM always defines SWIFT_PACKAGE) — they rot silently. ~990 test
+  # functions were dead this way; new gates are forbidden while the existing
+  # ones are paid down.
+  case "$file" in
+    */Tests/*|Tests/*)
+      if [[ "$content" =~ ^[[:space:]]*#if[[:space:]]+\!SWIFT_PACKAGE ]]; then
+        report "$file" "$lineno" "swift/dead-test-gate" "$content"
+      fi
+      ;;
+  esac
+
   is_comment_line "$content" && {
     # Even in comments, catch AI ghost phrases.
     if [[ "$content" =~ (Auto-generated|auto-generated|Generated[[:space:]]by|AI-generated|AI[[:space:]]generated) ]]; then

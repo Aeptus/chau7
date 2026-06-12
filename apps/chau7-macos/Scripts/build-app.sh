@@ -7,10 +7,16 @@ BUILD_DIR="${1:-$ROOT_DIR/.build/release}"
 OUT_DIR="${2:-$ROOT_DIR/build}"
 SHOW_DOCK_ICON="${SHOW_DOCK_ICON:-1}"
 BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-com.chau7.app.dev}"
-APP_VERSION="${CHAU7_VERSION:-1.0}"
+REPO_ROOT="$(cd "$ROOT_DIR/../.." && pwd)"
+# Derive the default version from the latest tag instead of a hardcoded
+# "1.0" — locally built apps used to ship CFBundleShortVersionString=1.0
+# unless the operator remembered CHAU7_VERSION, breaking update checks and
+# crash-report triage. The -dev suffix marks untagged/unspecified builds.
+CHAU7_DERIVED_VERSION="$(git -C "$REPO_ROOT" describe --tags --abbrev=0 2>/dev/null | sed -E 's/^v//' || true)"
+APP_VERSION="${CHAU7_VERSION:-${CHAU7_DERIVED_VERSION:+$CHAU7_DERIVED_VERSION-dev}}"
+APP_VERSION="${APP_VERSION:-0.0.0-dev}"
 APP_BUILD_NUMBER="${CHAU7_BUILD_NUMBER:-1}"
 APP_COPYRIGHT="${CHAU7_COPYRIGHT:-Local build}"
-REPO_ROOT="$(cd "$ROOT_DIR/../.." && pwd)"
 APP_BUILD_SHA="${CHAU7_BUILD_SHA:-$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)}"
 APP_BUILD_TIMESTAMP="${CHAU7_BUILD_TIMESTAMP:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
 if [[ -n "${CHAU7_BUILD_CHANNEL:-}" ]]; then
