@@ -483,3 +483,4 @@ display_scale_change_handling,macos,performance,backing-property changes reconfi
 occlusion_aware_rendering,macos,performance,fully covered windows demote to the 1Hz background drain and re-expose forces an immediate grid sync,shipped
 pty_hup_tail_drain,macos,terminal,the reader pool drains all kernel-buffered PTY output after HUP before signalling closed so fast-exiting commands never lose tail output,shipped
 pty_resize_lock_free,macos,terminal,PTY resize ioctls TIOCSWINSZ on a dup-d fd instead of taking the writer mutex so window drags never stall behind a backpressured write,shipped
+terminal_control_any_thread_contract,macos,mcp,every AcrossWindows method dispatches to main before touching tab models honoring the documented any-thread contract,shipped

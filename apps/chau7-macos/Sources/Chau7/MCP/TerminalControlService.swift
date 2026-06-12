@@ -141,59 +141,73 @@ final class TerminalControlService {
     }
 
     @discardableResult
+    // The AcrossWindows family honors the class contract ("safe to call from
+    // any thread — dispatches to main as needed") by wrapping in onMain:
+    // they read allModels/model.tabs and call OverlayTabsModel mutators,
+    // which are main-thread-owned state.
     func applyNotificationStyleAcrossWindows(to tabID: UUID, stylePreset: String, config: [String: String]) -> UUID? {
-        let models = allModels
-        var foundTab = false
-        for (_, model) in models {
-            guard model.tabs.contains(where: { $0.id == tabID }) else { continue }
-            foundTab = true
-            if model.applyNotificationStyle(to: tabID, stylePreset: stylePreset, config: config) {
+        onMain {
+            let models = self.allModels
+            var foundTab = false
+            for (_, model) in models {
+                guard model.tabs.contains(where: { $0.id == tabID }) else { continue }
+                foundTab = true
+                if model.applyNotificationStyle(to: tabID, stylePreset: stylePreset, config: config) {
+                    return tabID
+                }
+            }
+            if foundTab {
+                Log.debug("applyNotificationStyle: tabID \(tabID) already matched requested style")
                 return tabID
             }
+            Log.warn("applyNotificationStyle: tabID \(tabID) not found across \(models.count) windows (\(models.flatMap(\.model.tabs).count) total tabs)")
+            return nil
         }
-        if foundTab {
-            Log.debug("applyNotificationStyle: tabID \(tabID) already matched requested style")
-            return tabID
-        }
-        Log.warn("applyNotificationStyle: tabID \(tabID) not found across \(models.count) windows (\(models.flatMap(\.model.tabs).count) total tabs)")
-        return nil
     }
 
     func tabExistsAcrossWindows(tabID: UUID) -> Bool {
-        allTabs.contains { $0.id == tabID }
+        onMain {
+            self.allTabs.contains { $0.id == tabID }
+        }
     }
 
     @discardableResult
     func focusTabAcrossWindows(tabID: UUID) -> Bool {
-        for (_, model) in allModels {
-            if model.focusTab(id: tabID) {
-                return true
+        onMain {
+            for (_, model) in self.allModels {
+                if model.focusTab(id: tabID) {
+                    return true
+                }
             }
+            Log.warn("focusTab: Explicit tabID not found across windows for tab \(tabID)")
+            return false
         }
-        Log.warn("focusTab: Explicit tabID not found across windows for tab \(tabID)")
-        return false
     }
 
     @discardableResult
     func badgeTabAcrossWindows(tabID: UUID, text: String, color: String) -> Bool {
-        for (_, model) in allModels {
-            if model.setBadge(on: tabID, text: text, color: color) {
-                return true
+        onMain {
+            for (_, model) in self.allModels {
+                if model.setBadge(on: tabID, text: text, color: color) {
+                    return true
+                }
             }
+            Log.warn("setBadge: Explicit tabID not found across windows for tab \(tabID)")
+            return false
         }
-        Log.warn("setBadge: Explicit tabID not found across windows for tab \(tabID)")
-        return false
     }
 
     @discardableResult
     func insertSnippetAcrossWindows(id snippetID: String, tabID: UUID, autoExecute: Bool) -> Bool {
-        for (_, model) in allModels {
-            if model.insertSnippet(id: snippetID, on: tabID, autoExecute: autoExecute) {
-                return true
+        onMain {
+            for (_, model) in self.allModels {
+                if model.insertSnippet(id: snippetID, on: tabID, autoExecute: autoExecute) {
+                    return true
+                }
             }
+            Log.warn("insertSnippet: Explicit tabID not found across windows for tab \(tabID)")
+            return false
         }
-        Log.warn("insertSnippet: Explicit tabID not found across windows for tab \(tabID)")
-        return false
     }
 
     /// Updates a tab's session-tracked cwd across all windows.
@@ -312,20 +326,22 @@ final class TerminalControlService {
 
     @discardableResult
     func clearPersistentNotificationStyleAcrossWindows(tabID: UUID) -> Bool {
-        for (_, model) in allModels {
-            if model.clearPersistentNotificationStyle(on: tabID) {
-                return true
+        onMain {
+            for (_, model) in self.allModels {
+                if model.clearPersistentNotificationStyle(on: tabID) {
+                    return true
+                }
             }
+            // Tab exists in a model but style clear failed — likely a lazy-loaded tab
+            // whose view hasn't materialized yet (e.g., Window 2 background tabs).
+            let tabExistsInModel = self.allTabs.contains { $0.id == tabID }
+            if tabExistsInModel {
+                Log.debug("clearPersistentStyle: tabID \(tabID) exists but no persistent style to clear")
+            } else {
+                Log.warn("clearPersistentStyle: tabID \(tabID) not found across windows")
+            }
+            return false
         }
-        // Tab exists in a model but style clear failed — likely a lazy-loaded tab
-        // whose view hasn't materialized yet (e.g., Window 2 background tabs).
-        let tabExistsInModel = allTabs.contains { $0.id == tabID }
-        if tabExistsInModel {
-            Log.debug("clearPersistentStyle: tabID \(tabID) exists but no persistent style to clear")
-        } else {
-            Log.warn("clearPersistentStyle: tabID \(tabID) not found across windows")
-        }
-        return false
     }
 
     @discardableResult
@@ -1200,13 +1216,15 @@ final class TerminalControlService {
     }
 
     private func findSession(for tabID: UUID) -> TerminalSessionModel? {
-        for (_, model) in allModels {
-            if let tab = model.tabs.first(where: { $0.id == tabID }),
-               let session = tab.session {
-                return session
+        onMain {
+            for (_, model) in self.allModels {
+                if let tab = model.tabs.first(where: { $0.id == tabID }),
+                   let session = tab.session {
+                    return session
+                }
             }
+            return nil
         }
-        return nil
     }
 
     private func resolveTabIDLocked(for target: TabTarget, strictSession: Bool = false) -> UUID? {

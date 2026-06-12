@@ -165,6 +165,8 @@ On every launch, Chau7 automatically registers itself as an MCP server in:
 
 Registration only occurs if the AI tool's config directory exists — no files are created for tools you don't use.
 
+Every cross-window tab operation dispatches to the main thread before touching tab models, so MCP calls are safe from any dispatch queue.
+
 ### Safety Controls
 
 - **Enable/disable toggle** — `mcpEnabled` setting (default: on).
