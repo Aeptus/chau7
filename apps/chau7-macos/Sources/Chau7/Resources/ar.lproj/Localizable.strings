@@ -1688,6 +1688,10 @@
 
 // MARK: - Overlay & Tabs
 "overlay.shellInitializing" = "جارٍ تهيئة الصدفة…";
+"overlay.terminalFailedTitle" = "فشل بدء تشغيل الطرفية";
+"overlay.terminalFailedEngine" = "تعذّر تحميل محرك الطرفية. قد تؤدي إعادة تثبيت Chau7 إلى إصلاح ذلك.";
+"overlay.terminalFailedSpawn" = "تعذّر بدء تشغيل الصدفة. تحقق من مسار الصدفة في الإعدادات.";
+"overlay.terminalRetry" = "إعادة المحاولة";
 "overlay.renameTab" = "إعادة تسمية علامة التبويب...";
 "overlay.moveToIdle" = "نقل إلى علامات التبويب الخاملة";
 "overlay.closeTab" = "إغلاق علامة التبويب";

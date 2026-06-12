@@ -521,6 +521,17 @@ final class TerminalSessionModel {
     /// Cleared automatically on first output.
     var shellStartupSlow = false
 
+    /// Set when terminal creation failed outright (engine missing or PTY/shell
+    /// spawn failure). Drives the error card + retry button in the overlay;
+    /// cleared by `retryTerminalStart()`.
+    var terminalCreateFailure: RustTerminalView.TerminalCreateFailureKind?
+
+    /// Re-attempts terminal startup after an outright creation failure.
+    func retryTerminalStart() {
+        terminalCreateFailure = nil
+        rustTerminalView?.startTerminal()
+    }
+
     /// Last time output was observed for this terminal session.
     /// Used by tab restore logic to choose the best-matching AI session when
     /// multiple candidate sessions exist for the same directory.
@@ -2924,7 +2935,15 @@ final class TerminalSessionModel {
               result != nil else {
             return "/bin/zsh"
         }
-        return String(cString: pwd.pw_shell)
+        let shell = String(cString: pwd.pw_shell)
+        // The passwd entry can point at a deleted binary (e.g. an uninstalled
+        // Homebrew shell). Spawning that yields a permanently blank tab, so
+        // verify and fall back to the system zsh.
+        guard FileManager.default.isExecutableFile(atPath: shell) else {
+            Log.warn("systemDefaultShell: passwd shell \(shell) is missing or not executable; falling back to /bin/zsh")
+            return "/bin/zsh"
+        }
+        return shell
     }
 
     private static let defaultLsColors = "exfxcxdxbxegedabagacad"

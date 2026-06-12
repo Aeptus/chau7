@@ -1720,6 +1720,10 @@
 
 // MARK: - Overlay & Tabs
 "overlay.shellInitializing" = "Shell initializing…";
+"overlay.terminalFailedTitle" = "Terminal failed to start";
+"overlay.terminalFailedEngine" = "The terminal engine failed to load. Reinstalling Chau7 may fix this.";
+"overlay.terminalFailedSpawn" = "The shell could not be started. Check the shell path in Settings.";
+"overlay.terminalRetry" = "Retry";
 "overlay.renameTab" = "Rename Tab...";
 "overlay.moveToIdle" = "Move to Idle Tabs";
 "overlay.closeTab" = "Close Tab";

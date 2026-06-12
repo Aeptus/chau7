@@ -1913,8 +1913,46 @@ private struct ShellLoadingBar: View {
         return "  " + String(chars) + " "
     }
 
+    private var createFailureMessage: String {
+        switch session.terminalCreateFailure {
+        case .engineUnavailable:
+            L("overlay.terminalFailedEngine", "The terminal engine failed to load. Reinstalling Chau7 may fix this.")
+        case .spawnFailed:
+            L("overlay.terminalFailedSpawn", "The shell could not be started. Check the shell path in Settings.")
+        case nil:
+            ""
+        }
+    }
+
     var body: some View {
-        if session.shellStartupSlow {
+        if session.terminalCreateFailure != nil {
+            // Terminal never started — explicit error + retry, never the
+            // "initializing" indicator (which would imply progress).
+            VStack {
+                Spacer()
+                VStack(spacing: 10) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(L("overlay.terminalFailedTitle", "Terminal failed to start"))
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    }
+                    Text(createFailureMessage)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button(L("overlay.terminalRetry", "Retry")) {
+                        session.retryTerminalStart()
+                    }
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                Spacer()
+            }
+            .transition(.opacity)
+        } else if session.shellStartupSlow {
             // Shell possibly hung — centered warning
             VStack {
                 Spacer()

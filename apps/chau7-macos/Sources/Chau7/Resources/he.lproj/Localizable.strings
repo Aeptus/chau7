@@ -1688,6 +1688,10 @@
 
 // MARK: - Overlay & Tabs
 "overlay.shellInitializing" = "מאתחל מעטפת…";
+"overlay.terminalFailedTitle" = "הפעלת המסוף נכשלה";
+"overlay.terminalFailedEngine" = "טעינת מנוע המסוף נכשלה. התקנה מחדש של Chau7 עשויה לתקן זאת.";
+"overlay.terminalFailedSpawn" = "לא ניתן היה להפעיל את המעטפת. בדקו את נתיב המעטפת בהגדרות.";
+"overlay.terminalRetry" = "ניסיון חוזר";
 "overlay.renameTab" = "שינוי שם לשונית...";
 "overlay.moveToIdle" = "העברה ללשוניות רדומות";
 "overlay.closeTab" = "סגירת לשונית";

@@ -2268,6 +2268,20 @@ final class RustTerminalView: NSView {
     /// Callback when shell produces no PTY output within the startup timeout
     var onShellStartupSlow: (() -> Void)?
 
+    /// Why terminal creation failed — drives the user-visible error state.
+    enum TerminalCreateFailureKind {
+        /// libchau7_terminal.dylib failed to load or bind symbols.
+        case engineUnavailable
+        /// The dylib is loaded but chau7_terminal_create returned null
+        /// (PTY allocation or shell spawn failed).
+        case spawnFailed
+    }
+
+    /// Callback when terminal creation fails outright (no PTY, no shell).
+    /// Distinct from `onShellStartupSlow`: a failed create can never produce
+    /// output, so the "initializing" indicator would be a lie.
+    var onTerminalCreateFailed: ((TerminalCreateFailureKind) -> Void)?
+
     /// Current working directory
     var currentDirectory: String = RuntimeIsolation.homePath()
 
@@ -2769,19 +2783,27 @@ final class RustTerminalView: NSView {
         }
 
         if rustTerminal == nil {
-            Log.warn("RustTerminalView[\(viewId)]: startTerminal - Failed to create Rust terminal")
-        } else {
-            Log.info("RustTerminalView[\(viewId)]: startTerminal - Rust terminal created successfully")
-
-            // Phase 4: Configure image protocol interceptor based on user settings.
-            // iTerm2 is enabled by default (matches FeatureSettings.isInlineImagesEnabled).
-            // Sixel/Kitty are gated by SixelKittyBridge toggles.
-            let iterm2Enabled = FeatureSettings.shared.isInlineImagesEnabled
-            let sixelEnabled = SixelKittyBridge.shared.isSixelEnabled
-            let kittyEnabled = SixelKittyBridge.shared.isKittyGraphicsEnabled
-            rustTerminal?.setImageProtocols(sixel: sixelEnabled, kitty: kittyEnabled, iterm2: iterm2Enabled)
-            Log.info("RustTerminalView[\(viewId)]: Image protocols configured - iTerm2=\(iterm2Enabled), Sixel=\(sixelEnabled), Kitty=\(kittyEnabled)")
+            let kind: TerminalCreateFailureKind = RustTerminalFFI.isAvailable ? .spawnFailed : .engineUnavailable
+            Log.error("RustTerminalView[\(viewId)]: startTerminal - Failed to create Rust terminal (\(kind))")
+            // Reset so a user-triggered retry can run startTerminal again, and
+            // bail before arming the "shell initializing" timeout — a failed
+            // create can never produce output, so that indicator would lie.
+            isTerminalStarted = false
+            isAwaitingInitialPTYOutput = false
+            onTerminalCreateFailed?(kind)
+            return
         }
+
+        Log.info("RustTerminalView[\(viewId)]: startTerminal - Rust terminal created successfully")
+
+        // Phase 4: Configure image protocol interceptor based on user settings.
+        // iTerm2 is enabled by default (matches FeatureSettings.isInlineImagesEnabled).
+        // Sixel/Kitty are gated by SixelKittyBridge toggles.
+        let iterm2Enabled = FeatureSettings.shared.isInlineImagesEnabled
+        let sixelEnabled = SixelKittyBridge.shared.isSixelEnabled
+        let kittyEnabled = SixelKittyBridge.shared.isKittyGraphicsEnabled
+        rustTerminal?.setImageProtocols(sixel: sixelEnabled, kitty: kittyEnabled, iterm2: iterm2Enabled)
+        Log.info("RustTerminalView[\(viewId)]: Image protocols configured - iTerm2=\(iterm2Enabled), Sixel=\(sixelEnabled), Kitty=\(kittyEnabled)")
 
         if let initialOutput, !initialOutput.isEmpty {
             injectOutput(initialOutput)

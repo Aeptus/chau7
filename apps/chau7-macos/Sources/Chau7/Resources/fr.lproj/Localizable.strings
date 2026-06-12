@@ -1722,6 +1722,10 @@
 
 // MARK: - Overlay & Tabs
 "overlay.shellInitializing" = "Initialisation du shell…";
+"overlay.terminalFailedTitle" = "Échec du démarrage du terminal";
+"overlay.terminalFailedEngine" = "Le moteur du terminal n'a pas pu être chargé. Réinstaller Chau7 peut corriger ce problème.";
+"overlay.terminalFailedSpawn" = "Le shell n'a pas pu être démarré. Vérifiez le chemin du shell dans les Réglages.";
+"overlay.terminalRetry" = "Réessayer";
 "overlay.renameTab" = "Renommer l'onglet...";
 "overlay.moveToIdle" = "Déplacer vers les onglets inactifs";
 "overlay.closeTab" = "Fermer l'onglet";

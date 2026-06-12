@@ -241,6 +241,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.onShellStartupSlow = { [weak model] in
                 model?.shellStartupSlow = true
             }
+            existingView.onTerminalCreateFailed = { [weak model] kind in
+                model?.terminalCreateFailure = kind
+            }
             existingView.onBufferChanged = { [weak model, weak existingView] in
                 model?.noteRestorationScrollbackDirty()
                 model?.scheduleSearchRefresh()
@@ -323,6 +326,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         }
         view.onShellStartupSlow = { [weak model] in
             model?.shellStartupSlow = true
+        }
+        view.onTerminalCreateFailed = { [weak model] kind in
+            model?.terminalCreateFailure = kind
         }
         view.onBufferChanged = { [weak model, weak view] in
             model?.noteRestorationScrollbackDirty()
