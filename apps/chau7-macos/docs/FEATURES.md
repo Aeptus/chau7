@@ -247,6 +247,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 ## Terminal Core
 
 - **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
+- **Rust acceleration layer** — ANSI segment parsing, pattern matching, escape sanitizing, command-risk detection, and dim patching run in `chau7_parse` with Swift fallbacks; the dylib's symbol exports are verified at build time.
 - **Lock-free PTY resize** — window resizes ioctl the PTY winsize on a dup'd fd, so a child that stops reading stdin can never stall the UI thread mid-drag.
 - **Lossless PTY teardown** — kernel-buffered output is fully drained after the child hangs up (bounded runaway guard), so a fast-exiting command's final burst always reaches the screen.
 - **Hostile-input-hardened FFI** — selection coordinates clamp to live grid bounds and reader-pool spawn failure degrades to a clean creation error, so no FFI-reachable input or resource exhaustion can abort the process.

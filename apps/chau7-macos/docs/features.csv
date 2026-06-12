@@ -490,3 +490,4 @@ memory_reclamation_wiring,macos,performance,pinned per-tab snapshots buffer dupl
 window_level_gpu_volatility,macos,performance,GPU atlas and buffers of fully invisible windows go volatile under critical pressure with reclaim-safe rebuild on the next draw,shipped
 self_imposed_footprint_ceiling,macos,performance,the app polls its own footprint against a 4-12GB ceiling and synthesizes memory pressure before the OS signal arrives,shipped
 helper_parent_death_detection,macos,proxy,chau7-proxy and chau7-remote exit when the parent app dies and proxy auto-restart uses capped exponential backoff,shipped
+chau7_parse_acceleration_restored,macos,terminal,the accidentally-deleted Rust acceleration crate (ANSI parse pattern match escape sanitize command risk) is restored and exporting symbols again,shipped
