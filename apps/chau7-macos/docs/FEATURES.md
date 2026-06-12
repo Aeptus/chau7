@@ -116,7 +116,7 @@ Supported commands (46 parsers):
 
 ### History Storage
 
-- Persistent SQLite-backed AI session and command history with reliable clear-all semantics.
+- Persistent SQLite-backed AI session and command history with reliable clear-all semantics. All store mutators are serialized on one queue, and age-based clears keep the cached record count honest so the size trim can never delete valid records.
 
 ## API Analytics & Token Tracking
 

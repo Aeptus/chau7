@@ -473,3 +473,4 @@ change_aware_quit_snapshot,macos,restore,quit reuses the cached autosave snapsho
 freshest_wins_restore_arbitration,macos,restore,restore prefers whichever of the file bundle and UserDefaults index carries the latest save token so stale bundles cannot resurrect old sessions,shipped
 restore_bundle_atomic_swap,macos,restore,restore bundle directory swap uses safe-save replaceItemAt and logs manifest or sidecar corruption instead of silently degrading,shipped
 terminal_create_failure_error_card,macos,terminal,terminal creation failure shows a localized error card with retry instead of a blank tab and verifies the passwd shell exists before spawning,shipped
+history_store_queue_confined_counts,macos,history,history store mutators are queue-confined and clearOlderThan decrements the cached count so trim can never over-delete valid records,shipped
