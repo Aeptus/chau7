@@ -292,6 +292,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 - GPU in-flight gating: shared Metal buffers and the glyph atlas are never rewritten while a committed frame is still reading them, and GPU-failed frames force a full-refresh redraw instead of stranding the view on stale content.
+- Slot-clipped glyph rasterization: overhanging glyphs (combining marks, italic overhang, ligature swashes, emoji fallbacks) cannot paint into neighboring atlas slots and corrupt cached glyphs.
 
 | Layer | What It Does |
 | --- | --- |

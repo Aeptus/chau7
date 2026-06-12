@@ -478,3 +478,4 @@ icloud_settings_freshness_guard,macos,settings,iCloud settings sync applies only
 bash_rcfile_and_spawn_cwd,macos,terminal,interactive bash gets --rcfile shell integration and all shells spawn in their intended working directory via FFI launch arguments,shipped
 ffi_input_clamping_and_pool_resilience,macos,terminal,FFI selection coordinates clamp to grid bounds and PTY reader-pool spawn failure fails terminal creation cleanly instead of aborting,shipped
 metal_inflight_gate_and_gpu_error_recovery,macos,performance,Metal frames are gated one-in-flight so CPU buffer writes never race the GPU and command-buffer errors force a full-refresh redraw,shipped
+glyph_atlas_slot_clipping,macos,performance,glyph and ligature rasterization clip to their atlas slot so overhanging glyphs cannot corrupt neighboring cached glyphs,shipped

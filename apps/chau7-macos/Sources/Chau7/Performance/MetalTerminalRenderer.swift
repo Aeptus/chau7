@@ -531,6 +531,16 @@ final class MetalTerminalRenderer: NSObject {
         if colorGlyphCandidate {
             context.setShouldSmoothFonts(false)
         }
+        // Clip to this slot: overhanging glyphs (combining-mark stacks, italic
+        // overhang, oversized fallback glyphs) must not paint into neighboring
+        // slots' pixels — that corrupts cached glyphs until the next atlas reset.
+        let slotClipRect = CGRect(
+            x: packX,
+            y: CGFloat(atlasHeight) - packY - slotHeight,
+            width: slotWidth,
+            height: slotHeight
+        )
+        context.clip(to: slotClipRect)
         context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
         let baselineY = CGFloat(atlasHeight) - packY - slotHeight + fontDescent
         let textPosition = CGPoint(x: packX, y: baselineY)
@@ -857,8 +867,7 @@ final class MetalTerminalRenderer: NSObject {
             attributes: [.font: font]
         )
         let line = CTLineCreateWithAttributedString(attrString)
-        let runs = CTLineGetGlyphRuns(line) as! [CTRun]
-        guard let run = runs.first else {
+        guard let run = Self.runs(from: line).first else {
             cacheLigature(.miss, for: key)
             return nil
         }
@@ -900,6 +909,14 @@ final class MetalTerminalRenderer: NSObject {
         let origin = CGPoint(x: packX, y: baselineY)
 
         context.saveGState()
+        // Clip to this slot — ligature swashes must not paint into
+        // neighboring glyphs' cached pixels.
+        context.clip(to: CGRect(
+            x: packX,
+            y: CGFloat(atlasHeight) - packY - slotHeight,
+            width: slotWidth,
+            height: slotHeight
+        ))
         context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
 
         // Use CTLineDraw to render the shaped sequence with ligatures
