@@ -301,7 +301,9 @@ pub unsafe extern "C" fn chau7_terminal_resize(term: *mut Chau7Terminal, cols: u
             warn!("chau7_terminal_resize: term is null");
             return;
         }
-        let terminal = &mut *term;
+        // Shared reference: drain threads concurrently hold &Chau7Terminal for
+        // poll_events; resize is internally synchronized (mutexes + atomics).
+        let terminal = &*term;
         terminal.resize(cols, rows);
     }
 }

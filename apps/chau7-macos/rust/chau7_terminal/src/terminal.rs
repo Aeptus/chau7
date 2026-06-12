@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU16, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use alacritty_terminal::event::Event;
@@ -250,9 +250,10 @@ pub struct Chau7Terminal {
     pub(crate) event_rx: Receiver<Event>,
     /// Flag indicating if grid has changed since last poll
     pub(crate) grid_dirty: AtomicBool,
-    /// Terminal dimensions
-    pub(crate) cols: u16,
-    pub(crate) rows: u16,
+    /// Terminal dimensions (atomic: written by `resize` on the UI thread while
+    /// drain threads concurrently read via `debug_state`)
+    pub(crate) cols: AtomicU16,
+    pub(crate) rows: AtomicU16,
     /// Creation timestamp for debugging
     pub(crate) created_at: Instant,
     /// Total bytes received from PTY
@@ -386,8 +387,8 @@ impl Chau7Terminal {
             reader_pool_fd: None,
             event_rx,
             grid_dirty: AtomicBool::new(true),
-            cols,
-            rows,
+            cols: AtomicU16::new(cols),
+            rows: AtomicU16::new(rows),
             created_at,
             bytes_received: AtomicU64::new(0),
             bytes_sent: AtomicU64::new(0),
@@ -636,8 +637,8 @@ impl Chau7Terminal {
             },
             event_rx,
             grid_dirty: AtomicBool::new(true),
-            cols,
-            rows,
+            cols: AtomicU16::new(cols),
+            rows: AtomicU16::new(rows),
             created_at,
             bytes_received: AtomicU64::new(0),
             bytes_sent: AtomicU64::new(0),
@@ -836,11 +837,20 @@ impl Chau7Terminal {
         }
     }
 
-    /// Resize the terminal
-    pub fn resize(&mut self, cols: u16, rows: u16) {
+    /// Resize the terminal.
+    ///
+    /// Takes `&self`: the FFI layer calls this from the UI thread while drain
+    /// threads concurrently hold `&self` for `poll_events`/`debug_state`, so a
+    /// `&mut self` receiver would be aliasing UB. All touched state is behind
+    /// mutexes or atomics.
+    pub fn resize(&self, cols: u16, rows: u16) {
         info!(
             "[terminal-{}] Resizing terminal: {}x{} -> {}x{}",
-            self.id, self.cols, self.rows, cols, rows
+            self.id,
+            self.cols.load(Ordering::Relaxed),
+            self.rows.load(Ordering::Relaxed),
+            cols,
+            rows
         );
 
         if cols == 0 || rows == 0 {
@@ -851,8 +861,8 @@ impl Chau7Terminal {
             return;
         }
 
-        self.cols = cols;
-        self.rows = rows;
+        self.cols.store(cols, Ordering::Relaxed);
+        self.rows.store(rows, Ordering::Relaxed);
 
         // Resize PTY
         let pty_size = PtySize {
@@ -2018,8 +2028,8 @@ impl Chau7Terminal {
 
         DebugState {
             id: self.id,
-            cols: self.cols,
-            rows: self.rows,
+            cols: self.cols.load(Ordering::Relaxed),
+            rows: self.rows.load(Ordering::Relaxed),
             history_size,
             display_offset,
             cursor_col,
@@ -2731,6 +2741,30 @@ mod tests {
                 .is_ok(),
             "echo detection must not wait behind the PTY writer lock"
         );
+    }
+
+    #[test]
+    fn resize_is_safe_against_concurrent_shared_access() {
+        // resize takes &self so the UI thread can call it while drain threads
+        // hold &self for poll/debug_state; exercise that interleaving.
+        let term = Arc::new(Chau7Terminal::new_headless(80, 24).expect("headless terminal"));
+
+        let reader_term = Arc::clone(&term);
+        let reader = std::thread::spawn(move || {
+            for _ in 0..200 {
+                let state = reader_term.debug_state();
+                assert!(state.cols >= 10 && state.rows >= 5);
+            }
+        });
+
+        for i in 0..200u16 {
+            term.resize(10 + (i % 100), 5 + (i % 50));
+        }
+        reader.join().expect("reader thread");
+
+        term.resize(132, 43);
+        let state = term.debug_state();
+        assert_eq!((state.cols, state.rows), (132, 43));
     }
 
     #[test]
