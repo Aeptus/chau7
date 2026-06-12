@@ -136,6 +136,19 @@ final class RustMetalDisplayCoordinator: NSObject {
             scheduleDisplay()
         }
 
+        // Dragging the window between Retina and non-Retina displays changes
+        // the backing scale; without reconfiguring, glyphs render at the old
+        // scale (blurry or oversampled) until the next tab switch/font change.
+        metalView.onBackingPropertiesChanged = { [weak self] in
+            guard let self else { return }
+            if configureFont() {
+                Log.info("RustMetalDisplayCoordinator: backing scale changed; reconfigured font and forcing full refresh")
+                tripleBuffer.markFullRefresh()
+                requestSyncRender()
+                scheduleDisplay()
+            }
+        }
+
         metalView.isPaused = true
         // enableSetNeedsDisplay = true lets us mark the view dirty via
         // needsDisplay. Core Animation coalesces multiple marks within one

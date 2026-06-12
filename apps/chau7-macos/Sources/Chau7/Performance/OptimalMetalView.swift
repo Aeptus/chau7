@@ -53,6 +53,13 @@ final class OptimalMetalView: MTKView {
     /// Used so the terminal view underneath handles input while Metal handles display.
     var isEventPassthrough = false
 
+    /// Fires when the view's backing properties (Retina scale, color space)
+    /// change — e.g. the window moves between a Retina and a non-Retina
+    /// display. The owner must reconfigure font/atlas scale and redraw, or
+    /// glyphs render at the previous display's scale (blurry/oversampled)
+    /// until the next tab switch.
+    var onBackingPropertiesChanged: (() -> Void)?
+
     init(frame: CGRect, device: MTLDevice) {
         super.init(frame: frame, device: device)
         configureForLowLatency()
@@ -68,6 +75,20 @@ final class OptimalMetalView: MTKView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         if isEventPassthrough { return nil }
         return super.hitTest(point)
+    }
+
+    // MARK: - Display Changes
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        // Track the window's actual screen — the init-time seed uses
+        // NSScreen.main, which may not be where the window ends up.
+        if let scale = window?.backingScaleFactor,
+           let metalLayer = layer as? CAMetalLayer,
+           metalLayer.contentsScale != scale {
+            metalLayer.contentsScale = scale
+        }
+        onBackingPropertiesChanged?()
     }
 
     deinit {
