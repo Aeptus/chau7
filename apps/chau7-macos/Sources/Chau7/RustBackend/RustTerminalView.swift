@@ -742,6 +742,11 @@ final class RustTerminalFFI {
             if let handle = dlopen(path, RTLD_NOW) {
                 Log.trace("RustTerminalFFI: dlopen succeeded for: \(path)")
                 dylibHandle = handle
+                if !verifyABIContract(handle: handle, path: path) {
+                    dlclose(handle)
+                    dylibHandle = nil
+                    continue
+                }
                 if let f = loadFunctions(from: handle) {
                     functions = f
                     lastFailedLoadAt = nil
@@ -764,6 +769,64 @@ final class RustTerminalFFI {
         }
         lastFailedLoadAt = Date()
         Log.error("RustTerminalFFI: Failed to load library from any candidate path (will retry after \(loadRetryCooldown)s)")
+    }
+
+    /// ABI version this build of the Swift mirrors was written against.
+    /// Must match `CHAU7_TERMINAL_ABI_VERSION` in rust/chau7_terminal/src/ffi.rs.
+    private static let expectedABIVersion: UInt32 = 1
+
+    #if DEBUG
+    /// Clears the failed-load cooldown so tests can point CHAU7_RUST_LIB_PATH
+    /// at a freshly built dylib and retry immediately.
+    static func resetLoadStateForTesting() {
+        lock.lock()
+        defer { lock.unlock() }
+        lastFailedLoadAt = nil
+    }
+    #endif
+
+    /// Verifies the dylib's ABI version and `#[repr(C)]` struct layouts against
+    /// the hand-mirrored Swift types before binding any symbols. Struct drift
+    /// between the two languages is silent memory corruption on every frame —
+    /// refusing to bind (and surfacing the terminal-creation error card) is
+    /// strictly better. Pre-probe dylibs (no version symbol) load as before.
+    private static func verifyABIContract(handle: UnsafeMutableRawPointer, path: String) -> Bool {
+        typealias U32Fn = @convention(c) () -> UInt32
+        typealias SizeFn = @convention(c) () -> Int
+
+        guard let versionSym = dlsym(handle, "chau7_terminal_abi_version") else {
+            Log.info("RustTerminalFFI: dylib has no ABI version probe (pre-probe build); loading without verification")
+            return true
+        }
+        let version = unsafeBitCast(versionSym, to: U32Fn.self)()
+        guard version == expectedABIVersion else {
+            Log.error("RustTerminalFFI: ABI version mismatch at \(path): dylib=\(version), expected=\(expectedABIVersion) — refusing to bind")
+            return false
+        }
+
+        // Compare against Swift's stride, not size: C's sizeof includes tail
+        // padding (what array indexing and pointer math use), which is stride
+        // in Swift terms — e.g. CellData is size 18 / stride 20 vs C's 20.
+        let layoutProbes: [(symbol: String, expected: Int, type: String)] = [
+            ("chau7_terminal_sizeof_grid_snapshot", MemoryLayout<RustGridSnapshot>.stride, "GridSnapshot"),
+            ("chau7_terminal_sizeof_cell_data", MemoryLayout<RustCellData>.stride, "CellData"),
+            ("chau7_terminal_sizeof_debug_state", MemoryLayout<RustDebugState>.stride, "DebugState"),
+            ("chau7_terminal_sizeof_image_data", MemoryLayout<RustTerminalFFI.FFIImageData>.stride, "FFIImageData"),
+            ("chau7_terminal_sizeof_shell_event", MemoryLayout<RustShellEvent>.stride, "FFIShellEvent")
+        ]
+        for probe in layoutProbes {
+            guard let sym = dlsym(handle, probe.symbol) else {
+                Log.warn("RustTerminalFFI: layout probe \(probe.symbol) missing; skipping")
+                continue
+            }
+            let rustSize = unsafeBitCast(sym, to: SizeFn.self)()
+            guard rustSize == probe.expected else {
+                Log.error("RustTerminalFFI: layout mismatch for \(probe.type) at \(path): rust=\(rustSize) bytes, swift=\(probe.expected) bytes — refusing to bind")
+                return false
+            }
+        }
+        Log.info("RustTerminalFFI: ABI contract verified (version \(version), \(layoutProbes.count) layout probes)")
+        return true
     }
 
     private static func libraryCandidates() -> [String] {

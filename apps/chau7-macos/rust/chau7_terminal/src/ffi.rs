@@ -2035,3 +2035,45 @@ pub unsafe extern "C" fn chau7_terminal_has_pending_images(term: *mut Chau7Termi
         terminal.image_store.lock().has_pending()
     }
 }
+
+// ============================================================================
+// ABI contract probes
+// ============================================================================
+
+/// Bumped whenever any `#[repr(C)]` struct shared with Swift changes layout
+/// or any entry point changes semantics incompatibly. Swift checks this right
+/// after dlopen and refuses to bind on mismatch — struct drift between the
+/// hand-mirrored Swift types and these definitions is silent memory
+/// corruption at 60fps otherwise.
+pub const CHAU7_TERMINAL_ABI_VERSION: u32 = 1;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_abi_version() -> u32 {
+    CHAU7_TERMINAL_ABI_VERSION
+}
+
+/// Layout probes: Swift asserts its mirrored struct sizes match at load time.
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_sizeof_grid_snapshot() -> usize {
+    std::mem::size_of::<GridSnapshot>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_sizeof_cell_data() -> usize {
+    std::mem::size_of::<CellData>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_sizeof_debug_state() -> usize {
+    std::mem::size_of::<DebugState>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_sizeof_image_data() -> usize {
+    std::mem::size_of::<FFIImageData>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_sizeof_shell_event() -> usize {
+    std::mem::size_of::<FFIShellEvent>()
+}
