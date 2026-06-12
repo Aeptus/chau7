@@ -252,6 +252,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - **Stabilized tab restore path** — restored scrollback replays through the shell again, with restore-artifact filtering preserved, to avoid post-relaunch history corruption while keeping fast visible startup.
 - **Corruption-tolerant persisted lookups** — dictionary builds over persisted keys (pane states, tab IDs, repo roots, shortcut actions) use first-wins uniquing, so duplicate keys in stored data degrade gracefully instead of crashing restore or settings.
 - **Restore-time tab identity dedup** — every saved tab restores exactly once across all windows (first occurrence wins, within and across window snapshots), so duplicated-window snapshots from past incidents converge back to a single copy instead of cascading across restarts.
+- **Change-aware quit snapshot** — quitting reuses the cached autosave snapshot only when a structural fingerprint of the live windows still matches; any tab/pane/title/directory/AI-session change since the last autosave forces a fresh capture, so the last seconds of work always survive a quit.
 - Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
 - Emoji-aware glyph coloring renders real emoji, including achromatic FE0F symbols, with embedded color while keeping terminal UI symbols and box drawing tintable by ANSI foreground color in Metal.
 - International Option-key punctuation input preserved for programming characters like brackets and braces.

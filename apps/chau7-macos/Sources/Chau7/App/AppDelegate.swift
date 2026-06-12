@@ -67,6 +67,12 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var multiWindowAutoSaveTimer: DispatchSourceTimer?
     private var lastSavedWindowStates: [[SavedTabState]] = []
     private var lastSavedWindowStatesAt: Date?
+    /// Cheap structural fingerprint of the live windows at the time
+    /// `lastSavedWindowStates` was captured. Termination may only reuse the
+    /// cached snapshot when the current fingerprint still matches — otherwise
+    /// a tab created/renamed/recolored/cd'd (or an AI session started) in the
+    /// final seconds before quit would be silently lost to timer phase.
+    private var lastSavedWindowStatesSignature: [[String]] = []
 
     // MARK: - App Nap Prevention
 
@@ -1299,18 +1305,33 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     static let terminationStateReuseFreshness: TimeInterval = 35
 
+    /// The cached snapshot is reusable at quit only when it is recent AND the
+    /// live window structure still matches the fingerprint captured when the
+    /// snapshot was saved. The autosave interval (30s) exceeds nothing here:
+    /// any structural change since the last save forces a fresh collection,
+    /// so reuse can only ever skip re-capturing scrollback content.
     func shouldReuseCachedWindowStatesForTermination(now: Date = Date()) -> Bool {
         guard let lastSavedWindowStatesAt,
               !lastSavedWindowStates.isEmpty else {
             return false
         }
-        return now.timeIntervalSince(lastSavedWindowStatesAt) <= Self.terminationStateReuseFreshness
+        guard now.timeIntervalSince(lastSavedWindowStatesAt) <= Self.terminationStateReuseFreshness else {
+            return false
+        }
+        return currentWindowStateSignature() == lastSavedWindowStatesSignature
+    }
+
+    private func currentWindowStateSignature() -> [[String]] {
+        overlayHosts
+            .filter { !$0.model.tabs.isEmpty }
+            .map { $0.model.liveStateSignature() }
     }
 
     #if DEBUG
     func setCachedWindowStatesForTesting(_ states: [[SavedTabState]], at date: Date?) {
         lastSavedWindowStates = states
         lastSavedWindowStatesAt = date
+        lastSavedWindowStatesSignature = currentWindowStateSignature()
     }
     #endif
 
@@ -1326,6 +1347,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     private func persistWindowStates(_ allWindows: [[SavedTabState]], reason: TabStateSaveReason) {
         lastSavedWindowStates = allWindows
         lastSavedWindowStatesAt = Date()
+        lastSavedWindowStatesSignature = currentWindowStateSignature()
 
         var legacyPayloadBytes = 0
         var multiWindowPayloadBytes = 0

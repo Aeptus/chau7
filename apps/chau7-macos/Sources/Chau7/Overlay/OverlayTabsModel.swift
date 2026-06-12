@@ -1633,6 +1633,26 @@ final class OverlayTabsModel {
 
     /// Exports current tab states without persisting to disk.
     /// Used by AppDelegate to collect all windows' states for multi-window save.
+    /// Cheap structural fingerprint of the live tab state — every field the
+    /// termination save would silently lose by reusing a stale cached
+    /// snapshot (tab identity/order, titles, colors, selection, repo group,
+    /// pane layout, directories, AI session identity), EXCEPT scrollback
+    /// content, whose capture is the expensive part the cache exists to
+    /// avoid. Costs a few string concatenations per tab; no FFI calls.
+    func liveStateSignature() -> [String] {
+        var parts: [String] = [selectedTabID.uuidString]
+        for tab in tabs {
+            var piece = "\(tab.id.uuidString)|\(tab.customTitle ?? "")|\(tab.color.rawValue)|\(tab.repoGroupID ?? "")"
+            for (paneID, session) in tab.splitController.terminalSessions {
+                let provider = session.effectiveAIProvider ?? session.lastAIProvider ?? ""
+                let sessionId = session.effectiveAISessionId ?? ""
+                piece += "|\(paneID.uuidString)|\(session.currentDirectory)|\(provider)|\(sessionId)"
+            }
+            parts.append(piece)
+        }
+        return parts
+    }
+
     func exportTabStates() -> [SavedTabState] {
         let selectedID = selectedTabID
         let maxLines = FeatureSettings.shared.restoredScrollbackLines
