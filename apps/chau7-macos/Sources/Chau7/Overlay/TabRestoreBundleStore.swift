@@ -190,8 +190,15 @@ enum TabRestoreBundleStore {
             )
             try writeJSON(envelope, to: tempURL.appendingPathComponent(manifestFileName))
 
-            try? fileManager.removeItem(at: currentURL)
-            try fileManager.moveItem(at: tempURL, to: currentURL)
+            // Atomic swap: delete-then-move leaves a no-bundle window if the
+            // process dies between the two calls (restore then silently
+            // degrades to the scrollback-stripped index). replaceItemAt keeps
+            // the old bundle in place until the new one takes over.
+            if fileManager.fileExists(atPath: currentURL.path) {
+                _ = try fileManager.replaceItemAt(currentURL, withItemAt: tempURL)
+            } else {
+                try fileManager.moveItem(at: tempURL, to: currentURL)
+            }
             lastPersistedSourceFingerprint = sourceFingerprint
             return envelope
         } catch {
@@ -218,11 +225,15 @@ enum TabRestoreBundleStore {
         let url = rootURL
             .appendingPathComponent(currentDirectoryName, isDirectory: true)
             .appendingPathComponent(manifestFileName)
-        guard fileManager.fileExists(atPath: url.path),
-              let data = try? Data(contentsOf: url) else {
+        // A corrupt manifest must be distinguishable from "no bundle" in the
+        // logs — restore silently falling through to the stripped index was
+        // undiagnosable when this decode was a bare try?.
+        switch Persist.loadLogged(TabRestoreBundleEnvelope.self, from: url, context: "restoreBundle.manifest", decoder: decoder) {
+        case .loaded(let envelope):
+            return envelope
+        case .notFound, .failed:
             return nil
         }
-        return try? decoder.decode(TabRestoreBundleEnvelope.self, from: data)
     }
 
     static func clearCurrentBundle(
@@ -526,12 +537,15 @@ enum TabRestoreBundleStore {
     ) -> T? {
         let url = bundleRootURL.appendingPathComponent(ref.path)
         guard fileManager.fileExists(atPath: url.path),
-              let data = try? Data(contentsOf: url),
-              data.count == ref.byteCount,
-              sha256Hex(data) == ref.sha256 else {
+              let data = try? Data(contentsOf: url) else {
+            Log.error("restoreBundle.context missing/unreadable path=\(ref.path)")
             return nil
         }
-        return try? decoder.decode(type, from: data)
+        guard data.count == ref.byteCount, sha256Hex(data) == ref.sha256 else {
+            Log.error("restoreBundle.context integrity mismatch path=\(ref.path) bytes=\(data.count)/\(ref.byteCount)")
+            return nil
+        }
+        return Persist.decodeLogged(type, from: data, context: "restoreBundle.context(\(ref.path))", decoder: decoder)
     }
 
     private static func writeJSON(_ value: some Encodable, to url: URL) throws {

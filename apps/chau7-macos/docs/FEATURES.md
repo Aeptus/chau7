@@ -254,6 +254,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - **Restore-time tab identity dedup** — every saved tab restores exactly once across all windows (first occurrence wins, within and across window snapshots), so duplicated-window snapshots from past incidents converge back to a single copy instead of cascading across restarts.
 - **Change-aware quit snapshot** — quitting reuses the cached autosave snapshot only when a structural fingerprint of the live windows still matches; any tab/pane/title/directory/AI-session change since the last autosave forces a fresh capture, so the last seconds of work always survive a quit.
 - **Freshest-wins restore arbitration** — every save stamps a shared token on the restore bundle and the UserDefaults index; at launch the source whose token reflects the latest save wins, so a bundle whose writes silently failed can never resurrect a stale session over fresher index data.
+- **Crash-safe bundle swap** — the restore bundle directory is replaced with safe-save semantics (old bundle stays until the new one takes over), and manifest/sidecar corruption is logged instead of silently degrading restore to a weaker source.
 - Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
 - Emoji-aware glyph coloring renders real emoji, including achromatic FE0F symbols, with embedded color while keeping terminal UI symbols and box drawing tintable by ANSI foreground color in Metal.
 - International Option-key punctuation input preserved for programming characters like brackets and braces.

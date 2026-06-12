@@ -471,3 +471,4 @@ persisted_dictionary_first_wins_uniquing,macos,persistence,dictionary builds ove
 restore_tab_identity_dedup,macos,restore,saved tabs restore exactly once across all windows via first-occurrence-wins tab ID claims preventing duplicated-window cascades,shipped
 change_aware_quit_snapshot,macos,restore,quit reuses the cached autosave snapshot only when a structural fingerprint of live windows matches so recent changes always persist,shipped
 freshest_wins_restore_arbitration,macos,restore,restore prefers whichever of the file bundle and UserDefaults index carries the latest save token so stale bundles cannot resurrect old sessions,shipped
+restore_bundle_atomic_swap,macos,restore,restore bundle directory swap uses safe-save replaceItemAt and logs manifest or sidecar corruption instead of silently degrading,shipped
