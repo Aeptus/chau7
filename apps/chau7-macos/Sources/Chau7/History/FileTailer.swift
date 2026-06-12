@@ -71,21 +71,7 @@ final class FileTailer<T> {
         Log.trace("FileTailer start. path=\(fileURL.path) offset=\(offset)")
 
         // Primary: kqueue file system monitoring (fires immediately on write)
-        let fd = Darwin.open(fileURL.path, O_EVTONLY)
-        if fd >= 0 {
-            monitorFD = fd
-            let source = DispatchSource.makeFileSystemObjectSource(
-                fileDescriptor: fd,
-                eventMask: [.write, .extend, .rename],
-                queue: queue
-            )
-            source.setEventHandler { [weak self] in
-                self?.tick()
-            }
-            source.setCancelHandler { Darwin.close(fd) }
-            source.resume()
-            fsSource = source
-        }
+        armFileSystemSourceOnQueue()
 
         // Safety-net: slow poll at 5x the original interval catches edge cases
         // (NFS, file replacement, kqueue not available)
@@ -125,6 +111,46 @@ final class FileTailer<T> {
         }
     }
 
+    /// (Re)creates the kqueue source. O_EVTONLY watches the original inode —
+    /// after the tailed file is atomically replaced (rename), the old source
+    /// never fires again and the tailer silently degrades to the 5x-slower
+    /// safety poll, so a rename event re-arms against the new inode.
+    private func armFileSystemSourceOnQueue() {
+        fsSource?.cancel()
+        fsSource = nil
+        monitorFD = -1
+
+        let fd = Darwin.open(fileURL.path, O_EVTONLY)
+        guard fd >= 0 else {
+            // Path momentarily gone (mid-replace): the safety poll keeps
+            // tailing; retry the re-arm shortly.
+            queue.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self, timer != nil else { return }
+                armFileSystemSourceOnQueue()
+            }
+            return
+        }
+        monitorFD = fd
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .rename],
+            queue: queue
+        )
+        source.setEventHandler { [weak self, weak source] in
+            guard let self else { return }
+            tick()
+            if let source, source.data.contains(.rename) {
+                queue.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                    guard let self, timer != nil else { return }
+                    armFileSystemSourceOnQueue()
+                }
+            }
+        }
+        source.setCancelHandler { Darwin.close(fd) }
+        source.resume()
+        fsSource = source
+    }
+
     private func openReadHandle() {
         try? readHandle?.close()
         readHandle = try? FileHandle(forReadingFrom: fileURL)
@@ -148,8 +174,21 @@ final class FileTailer<T> {
 
         do {
             try handle.seek(toOffset: offset)
-            let data = try handle.readToEnd() ?? Data()
+            // Bounded gulp: readToEnd() loaded the entire unread region in one
+            // allocation, so a runaway writer (multi-GB JSONL) was read fully
+            // into memory. Read at most a few buffers per tick and reschedule
+            // to keep draining.
+            let perTickBudget = maxBufferSize * 4
+            var data = Data()
+            while data.count < perTickBudget,
+                  let chunk = try handle.read(upToCount: 256 * 1024),
+                  !chunk.isEmpty {
+                data.append(chunk)
+            }
             if data.isEmpty { return }
+            if data.count >= perTickBudget {
+                queue.async { [weak self] in self?.tick() }
+            }
 
             offset += UInt64(data.count)
             Log.trace("FileTailer read \(data.count) bytes. path=\(fileURL.path)")

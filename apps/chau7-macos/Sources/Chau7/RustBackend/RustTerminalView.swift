@@ -700,7 +700,12 @@ final class RustTerminalFFI {
     }
 
     private static let lock = NSLock()
-    private static var loadAttempted = false
+    /// When the last load attempt failed. Failed loads RETRY after a cooldown
+    /// instead of giving up for the app's lifetime — a transient dlopen
+    /// failure (e.g. mid-hot-swap binary copy) used to permanently disable
+    /// terminal creation until relaunch.
+    private static var lastFailedLoadAt: Date?
+    private static let loadRetryCooldown: TimeInterval = 5
     private static var dylibHandle: UnsafeMutableRawPointer?
     private static var functions: Functions?
 
@@ -708,6 +713,8 @@ final class RustTerminalFFI {
     static var isAvailable: Bool {
         Log.trace("RustTerminalFFI: Checking library availability")
         ensureLoaded()
+        lock.lock()
+        defer { lock.unlock() }
         let available = functions != nil
         Log.trace("RustTerminalFFI: isAvailable = \(available)")
         return available
@@ -721,11 +728,10 @@ final class RustTerminalFFI {
             Log.trace("RustTerminalFFI: ensureLoaded - Already loaded")
             return
         }
-        if loadAttempted {
-            Log.trace("RustTerminalFFI: ensureLoaded - Previous attempt failed")
+        if let lastFailedLoadAt, Date().timeIntervalSince(lastFailedLoadAt) < loadRetryCooldown {
+            Log.trace("RustTerminalFFI: ensureLoaded - Previous attempt failed recently; retry after cooldown")
             return
         }
-        loadAttempted = true
 
         Log.info("RustTerminalFFI: Starting library load")
         let candidates = libraryCandidates()
@@ -738,6 +744,7 @@ final class RustTerminalFFI {
                 dylibHandle = handle
                 if let f = loadFunctions(from: handle) {
                     functions = f
+                    lastFailedLoadAt = nil
                     Log.info("RustTerminalFFI: Successfully loaded library from \(path)")
                     return
                 } else {
@@ -755,7 +762,8 @@ final class RustTerminalFFI {
                 }
             }
         }
-        Log.error("RustTerminalFFI: Failed to load library from any candidate path")
+        lastFailedLoadAt = Date()
+        Log.error("RustTerminalFFI: Failed to load library from any candidate path (will retry after \(loadRetryCooldown)s)")
     }
 
     private static func libraryCandidates() -> [String] {

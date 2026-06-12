@@ -485,3 +485,4 @@ pty_hup_tail_drain,macos,terminal,the reader pool drains all kernel-buffered PTY
 pty_resize_lock_free,macos,terminal,PTY resize ioctls TIOCSWINSZ on a dup-d fd instead of taking the writer mutex so window drags never stall behind a backpressured write,shipped
 terminal_control_any_thread_contract,macos,mcp,every AcrossWindows method dispatches to main before touching tab models honoring the documented any-thread contract,shipped
 monitor_subsystem_queue_confinement,macos,monitoring,dev-server file-tailer shell-event process-tree and remote-IPC monitors confine their state to owning queues closing five cross-thread races,shipped
+watchdog_retry_discipline,macos,monitoring,file monitors re-arm after delete-replace with backoff the tailer re-arms on rename with bounded reads and the dylib loader retries after cooldown,shipped
