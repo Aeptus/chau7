@@ -301,6 +301,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Slot-clipped glyph rasterization: overhanging glyphs (combining marks, italic overhang, ligature swashes, emoji fallbacks) cannot paint into neighboring atlas slots and corrupt cached glyphs.
 - Display-scale awareness: moving a window between Retina and non-Retina displays reconfigures the glyph atlas at the new backing scale and redraws immediately.
 - Occlusion-aware rendering: fully covered windows stop live grid syncs and GPU presents (1Hz background drain), with an immediate refresh on re-expose.
+- Wired memory reclamation: tab snapshots, scrollback-line duplicates, and search buffers clear on tab close, on `.hidden` demotion, and under OS memory pressure; orphaned scrollback cache files are swept at startup.
 
 | Layer | What It Does |
 | --- | --- |

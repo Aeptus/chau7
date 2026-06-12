@@ -1891,6 +1891,12 @@ extension OverlayTabsModel: TabSnapshotReleaser {
             tabs[index].restorePreviewSnapshot = nil
         case .releaseAll:
             tabs[index].restorePreviewSnapshot = nil
+            tabs[index].cachedSnapshot = nil
+            // Session-side snapshot mirror: a full Retina window bitmap per
+            // pane that no reclamation path used to clear.
+            for (_, session) in tabs[index].splitController.terminalSessions {
+                session.lastRenderedSnapshot = nil
+            }
         }
     }
 }

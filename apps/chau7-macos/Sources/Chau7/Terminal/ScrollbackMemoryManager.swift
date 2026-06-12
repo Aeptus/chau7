@@ -144,6 +144,29 @@ final class ScrollbackMemoryManager {
         }
     }
 
+    /// Deletes cache files whose tab is not in the live/saved set — tabs
+    /// closed while hidden (or lost to a crash) used to leave their `.gz`
+    /// files behind forever. Call once at startup after restore resolves the
+    /// surviving tab IDs.
+    func sweepOrphanedCaches(keeping validTabIDs: Set<UUID>) {
+        ioQueue.async { [cacheDirectoryURL] in
+            guard let files = try? FileManager.default.contentsOfDirectory(
+                at: cacheDirectoryURL,
+                includingPropertiesForKeys: nil
+            ) else { return }
+            var removed = 0
+            for file in files where file.pathExtension == "gz" {
+                let stem = file.deletingPathExtension().lastPathComponent
+                guard let id = UUID(uuidString: stem), !validTabIDs.contains(id) else { continue }
+                try? FileManager.default.removeItem(at: file)
+                removed += 1
+            }
+            if removed > 0 {
+                Log.info("ScrollbackMemoryManager: swept \(removed) orphaned cache file(s)")
+            }
+        }
+    }
+
     /// Remove the on-disk cache for a tab (called when the tab is closed
     /// permanently so we don't leak cache files).
     func purgeCache(for tabID: UUID) {

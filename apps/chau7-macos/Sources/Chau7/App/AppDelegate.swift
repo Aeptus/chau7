@@ -124,6 +124,10 @@ private final class OverlayBlurView: NSVisualEffectView {
         purgeLargePTYLogs()
         UsageMonitor.shared.start()
         MemoryPressureResponder.shared.start()
+        // Without this, the pressure coordinator's only registrant was the
+        // 10MB/tab transcript ring — the heavy per-tab caches (snapshots,
+        // buffer-line duplicates, search buffers) never shrank before jetsam.
+        TerminalMemoryReclaimer.shared.arm()
         // Under memory pressure, re-evaluate the render lifecycle so non-selected
         // tabs demote to `.hidden` and flush their scrollback to disk.
         NotificationCenter.default.addObserver(
@@ -264,6 +268,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Restore additional windows from multi-window save state
         restoreAdditionalWindows()
         Self.logRSSSample("startup_restore_windows_prepared windows=\(overlayHosts.count)")
+
+        // All surviving tabs are known now — delete scrollback cache files for
+        // tabs that no longer exist (closed-while-hidden tabs leaked theirs).
+        let liveTabIDs = Set(overlayHosts.flatMap { $0.model.tabs.map(\.id) })
+        ScrollbackMemoryManager.shared.sweepOrphanedCaches(keeping: liveTabIDs)
 
         // Ensure theme is applied after windows exist
         applyAppTheme()

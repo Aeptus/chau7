@@ -3372,6 +3372,12 @@ final class RustTerminalView: NSView {
                 from: previousPhase,
                 to: phase
             )
+            // .hidden demotion flushes the Rust scrollback ring to disk —
+            // keeping the Swift-side [String] duplicate of that exact buffer
+            // resident would defeat the entire reclamation.
+            if phase == .hidden {
+                cachedBufferLines = nil
+            }
         }
     }
 

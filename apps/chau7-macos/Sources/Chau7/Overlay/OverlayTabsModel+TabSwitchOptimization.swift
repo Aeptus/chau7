@@ -312,6 +312,18 @@ extension OverlayTabsModel {
         return result == .alertFirstButtonReturn
     }
 
+    /// Releases per-tab resources that otherwise outlive the closed tab for
+    /// the app's lifetime: the on-disk scrollback cache + its per-tab IO
+    /// queue, accumulated command blocks, and the pinned restore-fallback
+    /// state (full scrollback text per pane).
+    private func purgeClosedTabResources(tabID: UUID) {
+        ScrollbackMemoryManager.shared.purgeCache(for: tabID)
+        MainActor.assumeIsolated {
+            CommandBlockManager.shared.clearBlocks(tabID: tabID.uuidString)
+        }
+        persistedRestoreFallbackStatesByTabID.removeValue(forKey: tabID)
+    }
+
     func closeTab(id: UUID, skipWarning: Bool = false) {
         dispatchPrecondition(condition: .onQueue(.main))
         dismissHoverCard()
@@ -350,6 +362,7 @@ extension OverlayTabsModel {
             let dir = inheritedStartDirectory()
             tabs[idx].restorePreviewSnapshot = nil
             tabs[idx].splitController.root.closeAllSessions()
+            purgeClosedTabResources(tabID: id)
             if closeWindow {
                 Log.info("closeTab: last tab - user chose to close window")
                 tabs[idx] = makeFreshTab(inheritedDirectory: dir)
@@ -438,6 +451,7 @@ extension OverlayTabsModel {
         // Close all sessions in the split pane tree (not just primary)
         tabs[index].restorePreviewSnapshot = nil
         tabs[index].splitController.root.closeAllSessions()
+        purgeClosedTabResources(tabID: id)
 
         if isLastTabNow {
             // Last tab was already handled above (early return with prompt)
@@ -881,6 +895,12 @@ extension OverlayTabsModel {
         for i in 0 ..< tabs.count {
             if abs(i - currentIndex) > 2 {
                 tabs[i].cachedSnapshot = nil
+                // The session-side mirror (one full Retina window bitmap per
+                // ever-selected tab) used to have zero clearing sites — across
+                // dozens of tabs that pinned 0.5GB+ of invisible NSImage data.
+                for (_, session) in tabs[i].splitController.terminalSessions {
+                    session.lastRenderedSnapshot = nil
+                }
             }
         }
     }
