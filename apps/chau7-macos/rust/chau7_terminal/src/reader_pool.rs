@@ -71,22 +71,40 @@ impl SharedPtyReaderPool {
 
         let shutdown = Arc::new(AtomicBool::new(false));
 
+        // Spawn failure (extreme resource exhaustion) must not panic — with
+        // panic=abort that would kill the whole app during terminal creation.
+        // A pool without a thread reports !is_running(), and terminal
+        // creation fails gracefully instead of silently never reading.
         let thread = {
             let state = state.clone();
             let shutdown = shutdown.clone();
-            thread::Builder::new()
+            match thread::Builder::new()
                 .name("pty-reader-pool".into())
                 .spawn(move || run_pool(state, shutdown))
-                .expect("Failed to spawn pty-reader-pool thread")
+            {
+                Ok(handle) => Some(handle),
+                Err(e) => {
+                    error!("SharedPtyReaderPool: failed to spawn pool thread: {}", e);
+                    None
+                }
+            }
         };
 
-        info!("SharedPtyReaderPool: started");
+        if thread.is_some() {
+            info!("SharedPtyReaderPool: started");
+        }
 
         Self {
             state,
             shutdown,
-            thread: Mutex::new(Some(thread)),
+            thread: Mutex::new(thread),
         }
+    }
+
+    /// Whether the pool thread is alive. False only if the thread failed to
+    /// spawn (extreme resource exhaustion) or after `shutdown()`.
+    pub fn is_running(&self) -> bool {
+        self.thread.lock().is_some()
     }
 
     /// Register a PTY fd for monitoring. The pool thread will read from this

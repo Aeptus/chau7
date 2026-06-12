@@ -242,6 +242,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 ## Terminal Core
 
 - **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
+- **Hostile-input-hardened FFI** — selection coordinates clamp to live grid bounds and reader-pool spawn failure degrades to a clean creation error, so no FFI-reachable input or resource exhaustion can abort the process.
 - **Thread-safe FFI resize** — `chau7_terminal_resize` binds a shared reference (dimensions stored atomically), so a main-thread resize can never alias the drain threads' concurrent poll access.
 - **Owned C-string env marshalling** — terminal creation duplicates environment keys/values into C-owned buffers freed after the FFI call, so the spawned shell's environment never depends on Swift buffer pointers outliving their guaranteed scope.
 - **Terminal runtime facts** — Rust exposes alternate-screen state through FFI/debug snapshots so Swift can reason about TUI surfaces generically instead of matching individual providers.

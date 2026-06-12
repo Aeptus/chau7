@@ -251,7 +251,10 @@ pub unsafe extern "C" fn chau7_terminal_create_with_launch(
             match CStr::from_ptr(shell).to_str() {
                 Ok(s) => s,
                 Err(e) => {
-                    error!("chau7_terminal_create_with_launch: Invalid shell string: {}", e);
+                    error!(
+                        "chau7_terminal_create_with_launch: Invalid shell string: {}",
+                        e
+                    );
                     return std::ptr::null_mut();
                 }
             }
@@ -263,7 +266,10 @@ pub unsafe extern "C" fn chau7_terminal_create_with_launch(
                 let key_ptr = *env_keys.add(i);
                 let value_ptr = *env_values.add(i);
                 if key_ptr.is_null() || value_ptr.is_null() {
-                    warn!("chau7_terminal_create_with_launch: Null env pointer at index {}", i);
+                    warn!(
+                        "chau7_terminal_create_with_launch: Null env pointer at index {}",
+                        i
+                    );
                     continue;
                 }
                 let key = match CStr::from_ptr(key_ptr).to_str() {
@@ -287,13 +293,19 @@ pub unsafe extern "C" fn chau7_terminal_create_with_launch(
             for i in 0..args_count {
                 let arg_ptr = *args.add(i);
                 if arg_ptr.is_null() {
-                    warn!("chau7_terminal_create_with_launch: Null arg pointer at index {}", i);
+                    warn!(
+                        "chau7_terminal_create_with_launch: Null arg pointer at index {}",
+                        i
+                    );
                     continue;
                 }
                 match CStr::from_ptr(arg_ptr).to_str() {
                     Ok(s) => shell_args.push(s.to_string()),
                     Err(e) => {
-                        warn!("chau7_terminal_create_with_launch: Invalid arg at index {}: {}", i, e);
+                        warn!(
+                            "chau7_terminal_create_with_launch: Invalid arg at index {}: {}",
+                            i, e
+                        );
                     }
                 }
             }
@@ -306,7 +318,10 @@ pub unsafe extern "C" fn chau7_terminal_create_with_launch(
                 Ok(s) if !s.is_empty() => Some(s.to_string()),
                 Ok(_) => None,
                 Err(e) => {
-                    warn!("chau7_terminal_create_with_launch: Invalid cwd string: {}", e);
+                    warn!(
+                        "chau7_terminal_create_with_launch: Invalid cwd string: {}",
+                        e
+                    );
                     None
                 }
             }
@@ -322,7 +337,10 @@ pub unsafe extern "C" fn chau7_terminal_create_with_launch(
         ) {
             Ok(terminal) => {
                 let ptr = Box::into_raw(Box::new(terminal));
-                info!("chau7_terminal_create_with_launch: Success, returning {:p}", ptr);
+                info!(
+                    "chau7_terminal_create_with_launch: Success, returning {:p}",
+                    ptr
+                );
                 ptr
             }
             Err(e) => {

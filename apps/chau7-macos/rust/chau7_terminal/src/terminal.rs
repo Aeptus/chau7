@@ -614,12 +614,21 @@ impl Chau7Terminal {
         // The pool's single thread uses poll() to monitor all PTY fds and dispatches
         // PtyMessage::Data to the appropriate channel.
         if reader_fd >= 0 {
-            crate::reader_pool::shared_reader_pool().register(
-                reader_fd,
-                id,
-                pty_tx,
-                running.clone(),
-            );
+            let pool = crate::reader_pool::shared_reader_pool();
+            if !pool.is_running() {
+                // No pool thread → registered fds would never be read and the
+                // terminal would look alive but stay blank forever. Fail the
+                // creation so the UI can show an explicit error instead.
+                error!(
+                    "[terminal-{}] Shared PTY reader pool is not running; aborting terminal creation",
+                    id
+                );
+                unsafe { libc::close(reader_fd) };
+                return Err(TerminalError::ReaderThread(std::io::Error::other(
+                    "shared PTY reader pool thread is not running",
+                )));
+            }
+            pool.register(reader_fd, id, pty_tx, running.clone());
             info!(
                 "[terminal-{}] Registered with shared PTY reader pool (fd={})",
                 id, reader_fd
@@ -1712,7 +1721,7 @@ impl Chau7Terminal {
             _ => SelectionType::Simple,
         };
 
-        let point = Point::new(Line(row), Column(col as usize));
+        let point = Self::clamped_selection_point(&term, col, row);
         let selection = Selection::new(ty, point, Side::Left);
         term.selection = Some(selection);
         self.grid_dirty.store(true, Ordering::Release);
@@ -1726,11 +1735,25 @@ impl Chau7Terminal {
         );
         let mut term = self.term.lock();
 
+        let point = Self::clamped_selection_point(&term, col, row);
         if let Some(ref mut selection) = term.selection {
-            let point = Point::new(Line(row), Column(col as usize));
             selection.update(point, Side::Right);
             self.grid_dirty.store(true, Ordering::Release);
         }
+    }
+
+    /// Clamp FFI-provided coordinates to the grid. A negative `col` cast to
+    /// usize would index alacritty's Selection with a ~1.8e19 column — treat
+    /// every FFI input as hostile and clamp to valid grid bounds.
+    fn clamped_selection_point(term: &Term<Chau7EventListener>, col: i32, row: i32) -> Point {
+        let grid = term.grid();
+        let max_col = (grid.columns() as i32 - 1).max(0);
+        let max_row = (grid.screen_lines() as i32 - 1).max(0);
+        let min_row = -(grid.history_size() as i32);
+        Point::new(
+            Line(row.clamp(min_row, max_row)),
+            Column(col.clamp(0, max_col) as usize),
+        )
     }
 
     /// Select all content (screen + scrollback)
@@ -2763,6 +2786,30 @@ mod tests {
             rx.recv_timeout(std::time::Duration::from_millis(200))
                 .is_ok(),
             "echo detection must not wait behind the PTY writer lock"
+        );
+    }
+
+    #[test]
+    fn selection_clamps_hostile_ffi_coordinates() {
+        // Negative col cast to usize used to become a ~1.8e19 Column index
+        // handed to alacritty's Selection. All coordinates must clamp.
+        let term = Chau7Terminal::new_headless(80, 24).expect("headless terminal");
+        term.inject_output(b"hello world\r\n");
+
+        term.selection_start(-5, -99_999, 0);
+        term.selection_update(i32::MAX, i32::MAX);
+        let _ = term.selection_text();
+
+        term.selection_start(i32::MAX, 0, 1);
+        term.selection_update(-1, -1);
+        let _ = term.selection_text();
+
+        // Sane coordinates still select.
+        term.selection_start(0, 0, 3);
+        term.selection_update(10, 0);
+        assert!(
+            term.selection_text().is_some(),
+            "line selection should produce text"
         );
     }
 
