@@ -283,6 +283,9 @@ impl GraphicsInterceptor {
                             SIXEL_MAX_BYTES / (1024 * 1024)
                         );
                         self.sixel_buf.clear();
+                        // Aborted near-max sequences must not pin tens of MB
+                        // of capacity (success paths mem::take and release).
+                        self.sixel_buf.shrink_to(4096);
                         self.dcs_params.clear();
                         self.state = State::Ground;
                     }
@@ -345,6 +348,9 @@ impl GraphicsInterceptor {
                         warn!("GraphicsInterceptor: Kitty payload exceeded limit, discarding");
                         self.kitty_control.clear();
                         self.kitty_payload.clear();
+                        // Aborted near-max sequences must not pin tens of MB
+                        // of capacity (success paths mem::take and release).
+                        self.kitty_payload.shrink_to(4096);
                         self.state = State::Ground;
                     }
                 }
@@ -481,6 +487,7 @@ impl GraphicsInterceptor {
                         warn!("GraphicsInterceptor: iTerm2 data exceeded limit, discarding");
                         self.iterm_args.clear();
                         self.iterm_data.clear();
+                        self.iterm_data.shrink_to(4096);
                         self.state = State::Ground;
                     }
                 }
@@ -1178,6 +1185,11 @@ impl Default for ImageStore {
 }
 
 impl ImageStore {
+    /// Defensive cap on undrained images. Swift drains on every poll, so this
+    /// only triggers when a consumer stalls — decoded RGBA images are up to
+    /// 64MB each and must not pile up unbounded. Oldest images drop first.
+    const MAX_PENDING: usize = 16;
+
     pub fn new() -> Self {
         Self {
             pending: Vec::new(),
@@ -1187,6 +1199,13 @@ impl ImageStore {
 
     /// Add a decoded image. Returns the assigned image ID.
     pub fn push(&mut self, mut image: DecodedImage) -> u64 {
+        if self.pending.len() >= Self::MAX_PENDING {
+            log::warn!(
+                "ImageStore: pending image cap reached ({}); dropping oldest",
+                Self::MAX_PENDING
+            );
+            self.pending.remove(0);
+        }
         let id = self.next_id;
         self.next_id += 1;
         image.id = id;

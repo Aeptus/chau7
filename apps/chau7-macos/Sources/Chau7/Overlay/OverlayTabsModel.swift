@@ -1189,11 +1189,6 @@ final class OverlayTabsModel {
     @ObservationIgnored var renderSuspensionDelay: TimeInterval = 5.0
     @ObservationIgnored var needsFreshTabOnShow = false
     @ObservationIgnored var isDiagnosticsLoggingEnabled = false
-    /// Auto-save timer moved to AppDelegate for coordinated multi-window saves.
-    /// Last archived snapshot fingerprint to avoid writing duplicate archive files.
-    @ObservationIgnored var lastArchivedTabStateFingerprint: Int?
-    /// Minimum time between archived snapshots unless we're terminating.
-    @ObservationIgnored var lastArchivedTabStateAt: Date = .distantPast
     /// CTO notification observer tokens (stored for cleanup in deinit)
     @ObservationIgnored var ctoModeObserver: NSObjectProtocol?
     @ObservationIgnored var renderSuspensionObserver: NSObjectProtocol?
@@ -1486,17 +1481,12 @@ final class OverlayTabsModel {
     }
 
     // MARK: - Tab State Serialization
-
-    /// Saves current tab state to disk backups. Does NOT write to UserDefaults —
-    /// that is handled centrally by AppDelegate.saveAllWindowStates() to avoid
-    /// multi-window race conditions.
-    func saveTabState(reason: TabStateSaveReason = .manual) {
-        let states = exportTabStates()
-        guard !states.isEmpty else { return }
-        guard let data = Persist.encodeLogged(states, context: "saveTabState[\(reason.rawValue)]") else { return }
-        persistTabStateBackups(data: data, reason: reason)
-        Log.trace("Saved \(states.count) tab state(s) to disk backup [\(reason.rawValue)]")
-    }
+    //
+    // The single-model save path (`saveTabState`/instance `persistTabStateBackups`)
+    // is gone: it had zero production callers and maintained instance-level
+    // archive fingerprints parallel to the static multi-window pair used by
+    // `persistWindowStateBackups` — two accounting systems for the same
+    // archive directory, waiting to desync the 300s/dedup throttles.
 
     /// Builds `[SavedTerminalPaneState]` from a tab's live sessions.
     ///

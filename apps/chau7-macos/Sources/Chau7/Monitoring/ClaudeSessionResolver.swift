@@ -15,6 +15,9 @@ enum ClaudeSessionResolver {
 
     private static let cacheLock = NSLock()
     private static var metadataCache: [String: Candidate] = [:]
+    /// Bounds the cache: keys are distinct session IDs seen for the process
+    /// lifetime, so without a cap the map only ever grows.
+    private static let metadataCacheMaxEntries = 256
 
     static func metadata(
         forSessionID sessionId: String,
@@ -71,6 +74,9 @@ enum ClaudeSessionResolver {
 
         if transcriptPath == nil {
             cacheLock.lock()
+            if metadataCache.count >= Self.metadataCacheMaxEntries {
+                metadataCache.removeAll(keepingCapacity: true)
+            }
             metadataCache[normalizedSessionId] = candidate
             cacheLock.unlock()
         }

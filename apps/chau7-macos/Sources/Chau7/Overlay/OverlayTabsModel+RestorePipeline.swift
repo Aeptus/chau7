@@ -511,28 +511,6 @@ extension OverlayTabsModel {
         }
     }
 
-    func persistTabStateBackups(data: Data, reason: TabStateSaveReason) {
-        do {
-            try Self.writeLatestTabStateBackup(data)
-            if shouldArchiveTabStateBackup(data: data, reason: reason) {
-                try Self.writeArchivedTabStateBackup(data, reason: reason)
-                lastArchivedTabStateFingerprint = data.hashValue
-                lastArchivedTabStateAt = Date()
-            }
-        } catch {
-            Log.warn("Failed to persist tab state backup [\(reason.rawValue)]: \(error)")
-        }
-    }
-
-    func shouldArchiveTabStateBackup(data: Data, reason: TabStateSaveReason) -> Bool {
-        if reason == .termination || reason == .restoreSource {
-            return true
-        }
-        let fingerprint = data.hashValue
-        guard lastArchivedTabStateFingerprint != fingerprint else { return false }
-        return Date().timeIntervalSince(lastArchivedTabStateAt) >= 300
-    }
-
     static func shouldArchiveMultiWindowBackup(data: Data, reason: TabStateSaveReason) -> Bool {
         if reason == .termination || reason == .restoreSource {
             return true

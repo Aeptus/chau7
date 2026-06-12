@@ -308,6 +308,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Wired memory reclamation: tab snapshots, scrollback-line duplicates, and search buffers clear on tab close, on `.hidden` demotion, and under OS memory pressure; orphaned scrollback cache files are swept at startup.
 - Window-level GPU volatility: under critical pressure the glyph atlas and Metal buffers of fully invisible windows become OS-reclaimable, with reclaim-safe rebuild (including the static vertex quad) on the window's next draw.
 - Self-imposed footprint ceiling: the app polls its own memory footprint against a quarter-of-RAM ceiling (clamped 4-12GB) and proactively flushes non-selected tabs' scrollback before the OS pressure signal would ever arrive.
+- Bounded auxiliary caches: clipboard history items cap at 100KB each, session-resolver caches cap at 256 entries, closed AI-monitor sessions evict after a grace period, and aborted graphics sequences release their buffer capacity.
 
 | Layer | What It Does |
 | --- | --- |

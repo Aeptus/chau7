@@ -282,6 +282,13 @@ final class ClaudeCodeMonitor {
         DispatchQueue.main.async {
             self.activeSessions[sessionId]?.state = .closed
             self.scheduleNextIdleCheck()
+            // Closed sessions linger briefly for late event routing, then
+            // evict — entries otherwise accumulate per AI session for the
+            // app's lifetime. Skip eviction if the session re-opened.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 300) { [weak self] in
+                guard let self, self.activeSessions[sessionId]?.state == .closed else { return }
+                self.activeSessions.removeValue(forKey: sessionId)
+            }
         }
     }
 
