@@ -538,6 +538,7 @@ final class RustTerminalFFI {
     // Function types matching chau7_terminal.h
     private typealias CreateFn = @convention(c) (UInt16, UInt16, UnsafePointer<CChar>?) -> OpaquePointer?
     private typealias CreateWithEnvFn = @convention(c) (UInt16, UInt16, UnsafePointer<CChar>?, UnsafePointer<UnsafePointer<CChar>?>?, UnsafePointer<UnsafePointer<CChar>?>?, Int) -> OpaquePointer?
+    private typealias CreateWithLaunchFn = @convention(c) (UInt16, UInt16, UnsafePointer<CChar>?, UnsafePointer<UnsafePointer<CChar>?>?, UnsafePointer<UnsafePointer<CChar>?>?, Int, UnsafePointer<UnsafePointer<CChar>?>?, Int, UnsafePointer<CChar>?) -> OpaquePointer?
     private typealias DestroyFn = @convention(c) (OpaquePointer?) -> Void
     private typealias SendBytesFn = @convention(c) (OpaquePointer?, UnsafePointer<UInt8>?, Int) -> Void
     private typealias SendTextFn = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Void
@@ -622,6 +623,7 @@ final class RustTerminalFFI {
     private struct Functions {
         let create: CreateFn
         let createWithEnv: CreateWithEnvFn? // Optional - older libraries may not have this
+        let createWithLaunch: CreateWithLaunchFn? // Optional - adds shell argv + cwd
         let destroy: DestroyFn
         let sendBytes: SendBytesFn
         let sendText: SendTextFn
@@ -834,6 +836,11 @@ final class RustTerminalFFI {
             Log.info("RustTerminalFFI: createWithEnv symbol not found (optional)")
         }
 
+        let createWithLaunchSym = loadSymbol("chau7_terminal_create_with_launch")
+        if createWithLaunchSym == nil {
+            Log.info("RustTerminalFFI: createWithLaunch symbol not found (optional, shell argv/cwd unavailable)")
+        }
+
         let setColorsSym = loadSymbol("chau7_terminal_set_colors")
         if setColorsSym == nil {
             Log.info("RustTerminalFFI: setColors symbol not found (optional)")
@@ -1039,6 +1046,7 @@ final class RustTerminalFFI {
         return Functions(
             create: unsafeBitCast(createSym, to: CreateFn.self),
             createWithEnv: createWithEnvSym.map { unsafeBitCast($0, to: CreateWithEnvFn.self) },
+            createWithLaunch: createWithLaunchSym.map { unsafeBitCast($0, to: CreateWithLaunchFn.self) },
             destroy: unsafeBitCast(destroySym, to: DestroyFn.self),
             sendBytes: unsafeBitCast(sendBytesSym, to: SendBytesFn.self),
             sendText: unsafeBitCast(sendTextSym, to: SendTextFn.self),
@@ -1144,12 +1152,21 @@ final class RustTerminalFFI {
         Log.info("RustTerminalFFI[\(instanceId)]: SUCCESS - Terminal created")
     }
 
-    /// Create a terminal with environment variables
-    init?(cols: UInt16, rows: UInt16, shell: String?, environment: [String: String]) {
+    /// Create a terminal with environment variables, optional shell argv
+    /// (e.g. bash's `--rcfile` for interactive shell integration), and an
+    /// optional explicit working directory.
+    init?(
+        cols: UInt16,
+        rows: UInt16,
+        shell: String?,
+        environment: [String: String],
+        args: [String] = [],
+        workingDirectory: String? = nil
+    ) {
         Self.instanceCounter += 1
         self.instanceId = Self.instanceCounter
 
-        Log.info("RustTerminalFFI[\(instanceId)]: Creating terminal with cols=\(cols), rows=\(rows), shell=\(shell ?? "<default>"), env=\(environment.count) vars")
+        Log.info("RustTerminalFFI[\(instanceId)]: Creating terminal with cols=\(cols), rows=\(rows), shell=\(shell ?? "<default>"), env=\(environment.count) vars, args=\(args.count), cwd=\(workingDirectory ?? "<inherit>")")
 
         Self.ensureLoaded()
         guard let fns = Self.functions else {
@@ -1159,12 +1176,9 @@ final class RustTerminalFFI {
 
         let termPtr: OpaquePointer?
 
-        // Use createWithEnv if available and we have environment variables
-        if let createWithEnv = fns.createWithEnv, !environment.isEmpty {
-            Log.trace("RustTerminalFFI[\(instanceId)]: Using createWithEnv with \(environment.count) environment variables")
-
-            // Duplicate each key/value into C-allocated NUL-terminated buffers
-            // whose lifetime explicitly spans the createWithEnv call. Pointers
+        if fns.createWithLaunch != nil || (fns.createWithEnv != nil && !environment.isEmpty) {
+            // Duplicate each string into C-allocated NUL-terminated buffers
+            // whose lifetime explicitly spans the create call. Pointers
             // obtained inside withUnsafeBufferPointer must not escape the
             // closure, so collecting baseAddresses that way would be UB.
             var keys: [UnsafePointer<CChar>?] = []
@@ -1175,26 +1189,49 @@ final class RustTerminalFFI {
                 keys.append(UnsafePointer(strdup(key)))
                 values.append(UnsafePointer(strdup(value)))
             }
+            let argv: [UnsafePointer<CChar>?] = args.map { UnsafePointer(strdup($0)) }
+            let cwdPtr: UnsafePointer<CChar>? = workingDirectory.map { UnsafePointer(strdup($0)) } ?? nil
+            let shellPtr: UnsafePointer<CChar>? = shell.map { UnsafePointer(strdup($0)) } ?? nil
             defer {
                 keys.forEach { free(UnsafeMutablePointer(mutating: $0)) }
                 values.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+                argv.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+                free(UnsafeMutablePointer(mutating: cwdPtr))
+                free(UnsafeMutablePointer(mutating: shellPtr))
             }
 
-            // Call with environment
-            termPtr = keys.withUnsafeBufferPointer { keysPtr in
-                values.withUnsafeBufferPointer { valuesPtr in
-                    if let shell = shell {
-                        return shell.withCString { shellPtr in
-                            createWithEnv(cols, rows, shellPtr, keysPtr.baseAddress, valuesPtr.baseAddress, environment.count)
+            if let createWithLaunch = fns.createWithLaunch {
+                Log.trace("RustTerminalFFI[\(instanceId)]: Using createWithLaunch (env=\(environment.count), args=\(args.count))")
+                termPtr = keys.withUnsafeBufferPointer { keysPtr in
+                    values.withUnsafeBufferPointer { valuesPtr in
+                        argv.withUnsafeBufferPointer { argvPtr in
+                            createWithLaunch(
+                                cols, rows, shellPtr,
+                                keysPtr.baseAddress, valuesPtr.baseAddress, environment.count,
+                                argvPtr.baseAddress, args.count,
+                                cwdPtr
+                            )
                         }
-                    } else {
-                        return createWithEnv(cols, rows, nil, keysPtr.baseAddress, valuesPtr.baseAddress, environment.count)
                     }
                 }
+            } else if let createWithEnv = fns.createWithEnv {
+                if !args.isEmpty || workingDirectory != nil {
+                    Log.warn("RustTerminalFFI[\(instanceId)]: createWithLaunch unavailable — dropping \(args.count) shell arg(s) and cwd")
+                }
+                termPtr = keys.withUnsafeBufferPointer { keysPtr in
+                    values.withUnsafeBufferPointer { valuesPtr in
+                        createWithEnv(cols, rows, shellPtr, keysPtr.baseAddress, valuesPtr.baseAddress, environment.count)
+                    }
+                }
+            } else {
+                termPtr = nil
             }
         } else {
             // Fall back to basic create
-            Log.trace("RustTerminalFFI[\(instanceId)]: Using basic create (createWithEnv not available or no env vars)")
+            Log.trace("RustTerminalFFI[\(instanceId)]: Using basic create (launch/env symbols not available or no env vars)")
+            if !args.isEmpty || workingDirectory != nil {
+                Log.warn("RustTerminalFFI[\(instanceId)]: basic create — dropping \(args.count) shell arg(s) and cwd")
+            }
             if let shell = shell {
                 termPtr = shell.withCString { fns.create(cols, rows, $0) }
             } else {
@@ -2671,6 +2708,15 @@ final class RustTerminalView: NSView {
     /// Environment variables to pass to the shell (set before first layout)
     var configuredEnvironment: [String: String]?
 
+    /// Shell argv passed to the spawn (e.g. bash's `--rcfile` so interactive
+    /// bash sources Chau7's shell integration). Set before first layout.
+    var configuredShellArguments: [String] = []
+
+    /// Explicit working directory for the spawned shell. Without it the child
+    /// inherits the app's cwd (often `/` when launched from Finder) and the
+    /// start directory depends entirely on rc-file `cd`. Set before first layout.
+    var configuredWorkingDirectory: String?
+
     /// Whether the Rust terminal has been started
     var isTerminalStarted = false
 
@@ -2715,6 +2761,30 @@ final class RustTerminalView: NSView {
         }
         configuredEnvironment = environment
         Log.info("RustTerminalView[\(viewId)]: Environment configured with \(environment.count) variables")
+    }
+
+    /// Configure shell argv before terminal starts. Must be called before first layout.
+    func configureShellArguments(_ args: [String]) {
+        guard !isTerminalStarted else {
+            Log.warn("RustTerminalView[\(viewId)]: configureShellArguments called after terminal started, ignoring")
+            return
+        }
+        configuredShellArguments = args
+        if !args.isEmpty {
+            Log.info("RustTerminalView[\(viewId)]: Shell arguments configured: \(args.joined(separator: " "))")
+        }
+    }
+
+    /// Configure the spawn working directory before terminal starts. Must be called before first layout.
+    func configureWorkingDirectory(_ directory: String?) {
+        guard !isTerminalStarted else {
+            Log.warn("RustTerminalView[\(viewId)]: configureWorkingDirectory called after terminal started, ignoring")
+            return
+        }
+        configuredWorkingDirectory = directory
+        if let directory {
+            Log.info("RustTerminalView[\(viewId)]: Working directory configured: \(directory)")
+        }
     }
 
     /// Set up rendering views (deferred terminal creation)
@@ -2775,9 +2845,17 @@ final class RustTerminalView: NSView {
 
         // Create Rust terminal (owns PTY and state)
         // Use environment-aware init if environment was configured, otherwise use basic init
-        if let env = configuredEnvironment {
-            Log.info("RustTerminalView[\(viewId)]: startTerminal - Creating with \(env.count) environment variables")
-            rustTerminal = RustTerminalFFI(cols: UInt16(cols), rows: UInt16(rows), shell: configuredShell, environment: env)
+        if configuredEnvironment != nil || !configuredShellArguments.isEmpty || configuredWorkingDirectory != nil {
+            let env = configuredEnvironment ?? [:]
+            Log.info("RustTerminalView[\(viewId)]: startTerminal - Creating with \(env.count) environment variables, \(configuredShellArguments.count) shell arg(s)")
+            rustTerminal = RustTerminalFFI(
+                cols: UInt16(cols),
+                rows: UInt16(rows),
+                shell: configuredShell,
+                environment: env,
+                args: configuredShellArguments,
+                workingDirectory: configuredWorkingDirectory
+            )
         } else {
             rustTerminal = RustTerminalFFI(cols: UInt16(cols), rows: UInt16(rows), shell: configuredShell)
         }

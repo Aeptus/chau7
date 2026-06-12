@@ -263,6 +263,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - Configurable cursor styles (block, underline, bar) with optional blinking.
 - Large configurable scrollback buffer with GPU-accelerated scrolling; active, passive-visible, and warm tabs preserve the configured capacity across render phase changes, while hidden tabs flush and verify the disk cache before RAM reclamation.
 - Shell selection: Zsh, Bash, Fish, or custom path — Apple Silicon and Intel native. The passwd default shell is verified to exist before spawning (missing binaries fall back to `/bin/zsh`), and an outright terminal-creation failure shows a localized error card with a Retry button instead of a blank tab.
+- Bash shell integration spawns interactive bash with `--rcfile` pointing at Chau7's integration bashrc, and every shell starts in its intended working directory via an explicit spawn cwd (no reliance on rc-file `cd`).
 - Dead key and IME support with proper `NSTextInputClient` marked text handling.
 - Shell integration via OSC 7 for working directory tracking.
 - OSC 133 (FinalTerm) shell integration: prompt start (A), command start (B), output start (C), command finished with exit code (D). Parsed in Rust interceptor, feeds ShellEventDetector. When present, heuristic fallbacks are suppressed.

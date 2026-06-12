@@ -427,6 +427,21 @@ impl Chau7Terminal {
         shell: &str,
         env_vars: &[(&str, &str)],
     ) -> Result<Self, TerminalError> {
+        Self::new_with_launch(cols, rows, shell, env_vars, &[], None)
+    }
+
+    /// Create a new terminal with full launch control: shell argv (e.g. bash's
+    /// `--rcfile` for interactive shell integration) and an explicit working
+    /// directory (otherwise the child inherits the app's cwd — often `/` when
+    /// launched from Finder).
+    pub fn new_with_launch(
+        cols: u16,
+        rows: u16,
+        shell: &str,
+        env_vars: &[(&str, &str)],
+        args: &[String],
+        cwd: Option<&str>,
+    ) -> Result<Self, TerminalError> {
         let id = TERMINAL_COUNTER.fetch_add(1, Ordering::Relaxed);
         let created_at = Instant::now();
 
@@ -490,6 +505,14 @@ impl Chau7Terminal {
 
         // Prepare shell command
         let mut cmd = CommandBuilder::new(&shell_path);
+        for arg in args {
+            debug!("[terminal-{}] Shell arg: {}", id, arg);
+            cmd.arg(arg);
+        }
+        if let Some(dir) = cwd.filter(|dir| !dir.is_empty()) {
+            debug!("[terminal-{}] Working directory: {}", id, dir);
+            cmd.cwd(dir);
+        }
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
 
@@ -2740,6 +2763,38 @@ mod tests {
             rx.recv_timeout(std::time::Duration::from_millis(200))
                 .is_ok(),
             "echo detection must not wait behind the PTY writer lock"
+        );
+    }
+
+    #[test]
+    fn launch_args_and_cwd_reach_the_child() {
+        let term = Chau7Terminal::new_with_launch(
+            80,
+            24,
+            "/bin/sh",
+            &[],
+            &["-c".to_string(), "pwd && echo CHAU7_ARGS_OK".to_string()],
+            Some("/private/tmp"),
+        )
+        .expect("terminal with launch args");
+
+        let mut combined = String::new();
+        for _ in 0..100 {
+            let _ = term.poll(50);
+            let chunk = std::mem::take(&mut *term.last_output.lock());
+            combined.push_str(&String::from_utf8_lossy(&chunk));
+            if combined.contains("CHAU7_ARGS_OK") {
+                break;
+            }
+        }
+
+        assert!(
+            combined.contains("CHAU7_ARGS_OK"),
+            "argv was not passed to the child: {combined:?}"
+        );
+        assert!(
+            combined.contains("/private/tmp") || combined.contains("/tmp"),
+            "cwd was not applied: {combined:?}"
         );
     }
 

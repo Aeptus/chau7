@@ -475,3 +475,4 @@ restore_bundle_atomic_swap,macos,restore,restore bundle directory swap uses safe
 terminal_create_failure_error_card,macos,terminal,terminal creation failure shows a localized error card with retry instead of a blank tab and verifies the passwd shell exists before spawning,shipped
 history_store_queue_confined_counts,macos,history,history store mutators are queue-confined and clearOlderThan decrements the cached count so trim can never over-delete valid records,shipped
 icloud_settings_freshness_guard,macos,settings,iCloud settings sync applies only strictly-newer timestamped blobs refuses newer format versions and preserves local values for absent fields,shipped
+bash_rcfile_and_spawn_cwd,macos,terminal,interactive bash gets --rcfile shell integration and all shells spawn in their intended working directory via FFI launch arguments,shipped

@@ -301,6 +301,13 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         }
         view.configureShell(shell)
         view.configureEnvironment(environmentDict)
+        // Shell argv (bash --rcfile for interactive integration; zsh/fish use
+        // env mechanisms) and the spawn cwd. Without an explicit cwd the
+        // child inherits the app's working directory — often "/" when
+        // launched from Finder — and start-dir would rely entirely on the
+        // rc-file's cd.
+        view.configureShellArguments(model.shellArguments())
+        view.configureWorkingDirectory(environmentDict["CHAU7_START_DIR"] ?? model.currentDirectory)
         Log.info("Configured Rust terminal with shell: \(shell), env vars: \(environmentDict.count)")
 
         view.font = terminalFont()
