@@ -42,4 +42,34 @@ public enum WindowStateRestorePlanner {
         let candidateIDs = Set(candidate.tabIDs)
         return currentPrimaryTabIDs.intersection(candidateIDs).count
     }
+
+    /// Per-tab claim decision for multi-window restore deduplication.
+    public enum TabClaim: Equatable {
+        /// Unique so far (or unparseable ID, which always restores fresh).
+        case restore
+        /// Its ID was already claimed by an earlier window or earlier tab.
+        case dropDuplicate
+    }
+
+    /// Hard per-tab deduplication across restored windows: the same saved tab
+    /// must restore exactly once no matter how many window snapshots claim it.
+    /// First occurrence wins — duplicated-window snapshots from past incidents
+    /// converge back to a single copy instead of re-persisting forever.
+    ///
+    /// `windows` carries one optional UUID per saved tab (nil = unparseable
+    /// tab ID, which hydration re-mints and therefore can never collide).
+    public static func claimTabs(
+        alreadyClaimed: Set<UUID>,
+        windows: [[UUID?]]
+    ) -> [[TabClaim]] {
+        var claimed = alreadyClaimed
+        return windows.map { window in
+            window.map { tabID in
+                guard let tabID else { return .restore }
+                if claimed.contains(tabID) { return .dropDuplicate }
+                claimed.insert(tabID)
+                return .restore
+            }
+        }
+    }
 }

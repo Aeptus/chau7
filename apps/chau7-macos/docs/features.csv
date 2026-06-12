@@ -468,3 +468,4 @@ ffi_env_marshalling_owned_cstrings,macos,terminal,terminal creation duplicates e
 agent_dashboard_queue_confined_state,macos,dashboard,agent dashboard tracker and cursor state is confined to a serial refresh queue so poll cycles and commit actions cannot race main-thread mutations,shipped
 proxy_session_event_fire_and_forget,macos,proxy,prompt-injection session events post to the proxy asynchronously instead of blocking the main thread on a semaphore,shipped
 persisted_dictionary_first_wins_uniquing,macos,persistence,dictionary builds over persisted or transformable keys use first-wins uniquing so duplicate keys in stored data degrade gracefully instead of crashing,shipped
+restore_tab_identity_dedup,macos,restore,saved tabs restore exactly once across all windows via first-occurrence-wins tab ID claims preventing duplicated-window cascades,shipped

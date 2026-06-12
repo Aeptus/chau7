@@ -1774,22 +1774,37 @@ private final class OverlayBlurView: NSVisualEffectView {
             return
         }
 
-        // Deduplicate: skip any additional window whose tab IDs overlap heavily
-        // with window 0 (prevents duplicated windows from cascading across restarts).
+        // Hard per-tab dedup across all windows: a saved tab restores exactly
+        // once, no matter how many window snapshots claim its ID (first
+        // occurrence wins). This replaces the old >50%-overlap window skip,
+        // which let partially-duplicated windows restore both copies and
+        // re-persist the duplication forever.
         let window0TabIDs = Set(overlayHosts.first?.model.tabs.map(\.id) ?? [])
+        let claims = WindowStateRestorePlanner.claimTabs(
+            alreadyClaimed: window0TabIDs,
+            windows: restoredWindows.map { windowStates in
+                windowStates.map { UUID(uuidString: $0.tabID ?? "") }
+            }
+        )
 
         for (windowIndex, windowStates) in restoredWindows.enumerated() {
             guard !windowStates.isEmpty else { continue }
-            let additionalTabIDs = Set(windowStates.compactMap { UUID(uuidString: $0.tabID ?? "") })
-            let overlap = window0TabIDs.intersection(additionalTabIDs)
-            if !additionalTabIDs.isEmpty, overlap.count > additionalTabIDs.count / 2 {
-                Log.warn("Skipping duplicate window \(windowIndex + 1): \(overlap.count)/\(additionalTabIDs.count) tab IDs overlap with window 0")
+            let windowClaims = claims[windowIndex]
+            let uniqueStates = zip(windowStates, windowClaims)
+                .filter { $0.1 == .restore }
+                .map(\.0)
+            let droppedCount = windowStates.count - uniqueStates.count
+            if droppedCount > 0 {
+                Log.warn("restoreAdditionalWindows: window \(windowIndex + 1) dropped \(droppedCount)/\(windowStates.count) tab(s) whose IDs were already restored by an earlier window")
+            }
+            guard !uniqueStates.isEmpty else {
+                Log.warn("Skipping duplicate window \(windowIndex + 1): every tab ID was already restored by an earlier window")
                 continue
             }
 
             // Pass pre-decoded states directly — no UserDefaults round-trip
             let windowRestoreStartedAt = CFAbsoluteTimeGetCurrent()
-            let tabsModel = OverlayTabsModel(appModel: model, restoringStates: windowStates)
+            let tabsModel = OverlayTabsModel(appModel: model, restoringStates: uniqueStates)
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
@@ -1798,10 +1813,10 @@ private final class OverlayBlurView: NSVisualEffectView {
                 operation: "AppDelegate.restoreAdditionalWindow",
                 startedAt: windowRestoreStartedAt,
                 thresholdMs: 150,
-                metadata: "index=\(windowIndex + 1) tabs=\(windowStates.count)"
+                metadata: "index=\(windowIndex + 1) tabs=\(uniqueStates.count)"
             )
 
-            Log.info("Restored additional window \(windowIndex + 1) with \(windowStates.count) tab(s) from \(restoreSource)")
+            Log.info("Restored additional window \(windowIndex + 1) with \(uniqueStates.count) tab(s) from \(restoreSource)")
         }
 
         // Wire callbacks for ALL windows now that additional hosts are registered.

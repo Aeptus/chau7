@@ -180,8 +180,18 @@ extension OverlayTabsModel {
         var selectedID: UUID?
         var fallbackSelectedIndex: Int?
         var persistedStates: [SavedTabState] = []
+        var seenTabIDs = Set<UUID>()
 
         for (i, state) in hydratedStates.enumerated() {
+            // Within-window dedup: a corrupt/merged snapshot can carry the same
+            // tab twice. Duplicate IDs poison tab routing and re-persist on the
+            // next autosave, so the first occurrence wins and later copies are
+            // dropped instead of hydrated.
+            if let stateTabID = Self.validatedUUID(from: state.tabID), !seenTabIDs.insert(stateTabID).inserted {
+                Log.warn("restoreSavedTabs: dropping duplicate tab ID \(stateTabID) at index \(i); first occurrence already restored")
+                continue
+            }
+
             if selectedID == nil, let selected = Self.validatedUUID(from: state.selectedTabID) {
                 selectedID = selected
             } else if state.selectedTabID != nil {
