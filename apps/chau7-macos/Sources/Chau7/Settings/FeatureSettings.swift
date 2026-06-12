@@ -2167,7 +2167,7 @@ final class FeatureSettings {
 
     var mcpProfiles: [MCPProfile] {
         didSet {
-            if let data = try? JSONEncoder().encode(mcpProfiles) {
+            if let data = Persist.encodeLogged(mcpProfiles, context: "settings.mcpProfiles") {
                 UserDefaults.standard.set(data, forKey: Keys.mcpProfiles)
             }
         }

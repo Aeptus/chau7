@@ -26,7 +26,7 @@ struct EditorConfig: Codable, Equatable {
 
     /// Persist configuration to UserDefaults.
     func save() {
-        if let data = try? JSONEncoder().encode(self) {
+        if let data = Persist.encodeLogged(self, context: "editor.config") {
             UserDefaults.standard.set(data, forKey: "editor.config")
         }
     }

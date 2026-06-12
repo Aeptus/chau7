@@ -546,7 +546,8 @@ final class RemoteControlManager {
                 contextNote: context.contextNote,
                 sessionID: context.sessionID
             )
-            guard let data = try? JSONEncoder().encode(payload) else { continue }
+            // Security-adjacent flow: a dropped approval frame must be visible.
+            guard let data = Persist.encodeLogged(payload, context: "remote.approvalRequest") else { continue }
             sendFrame(type: .approvalRequest, tabID: RemoteTabRegistry.unscopedTabID, payload: data)
         }
     }
@@ -1004,7 +1005,9 @@ final class RemoteControlManager {
     }
 
     private func registerApprovalContext(requestID: String, payload: Data) {
-        guard let approval = try? JSONDecoder().decode(ApprovalRequestPayload.self, from: payload) else {
+        guard let approval = Persist.decodeLogged(ApprovalRequestPayload.self, from: payload, context: "remote.approvalContext(\(requestID), \(payload.count)B)") else {
+            // A malformed approval request must not vanish silently — the
+            // approval card loses all its context downstream.
             return
         }
 

@@ -260,6 +260,9 @@ final class UsageMonitor {
 
         let url = URL(fileURLWithPath: settingsPath)
         guard let currentData = try? Data(contentsOf: url) else {
+            // The flag flips off but the helper hook stays wired into
+            // Claude's settings — say so instead of pretending success.
+            lastErrorMessage = "Failed to uninstall Claude statusLine: could not read \(settingsPath); the hook may still be installed"
             FeatureSettings.shared.isClaudeStatusLineQuotaCaptureEnabled = false
             refreshNow()
             return
@@ -275,6 +278,7 @@ final class UsageMonitor {
             in: currentData,
             backupStatusLineData: backupData
         ) else {
+            lastErrorMessage = "Failed to uninstall Claude statusLine: settings.json could not be rewritten; the hook may still be installed"
             FeatureSettings.shared.isClaudeStatusLineQuotaCaptureEnabled = false
             refreshNow()
             return

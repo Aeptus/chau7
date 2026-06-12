@@ -237,10 +237,14 @@ final class InjectionRuleStore {
             .appendingPathComponent("injection.json")
 
         queue.async { [weak self] in
-            guard FileManager.default.fileExists(atPath: url.path),
-                  let data = try? Data(contentsOf: url),
-                  let rule = try? JSONDecoder().decode(Rule.self, from: data)
-            else {
+            // Absence is expected; corruption is not — a typo in a
+            // hand-written repo rule must not be silently ignored.
+            guard FileManager.default.fileExists(atPath: url.path) else { return }
+            guard let data = try? Data(contentsOf: url) else {
+                Log.warn("InjectionRuleStore: failed to read repo rule at \(url.path)")
+                return
+            }
+            guard let rule = Persist.decodeLogged(Rule.self, from: data, context: "injection.repoRule(\(repoRoot))") else {
                 return
             }
 

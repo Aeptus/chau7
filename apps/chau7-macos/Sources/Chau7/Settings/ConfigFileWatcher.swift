@@ -110,8 +110,11 @@ final class ConfigFileWatcher {
 
         let content = ConfigFileParser.serialize(defaultConfig)
         let path = (configDir as NSString).appendingPathComponent("config.toml")
-        try? content.write(toFile: path, atomically: true, encoding: .utf8)
-        Log.info("ConfigFileWatcher: created repo config at \(path)")
+        // User-initiated action: a failed write (read-only repo, sandbox) must
+        // not log success.
+        if FileOperations.writeString(content, to: path) {
+            Log.info("ConfigFileWatcher: created repo config at \(path)")
+        }
     }
 
     // MARK: - Apply
@@ -167,8 +170,9 @@ final class ConfigFileWatcher {
         )
 
         let content = ConfigFileParser.serialize(defaultConfig)
-        try? content.write(toFile: globalConfigPath, atomically: true, encoding: .utf8)
-        Log.info("ConfigFileWatcher: created default config at \(globalConfigPath)")
+        if FileOperations.writeString(content, to: globalConfigPath) {
+            Log.info("ConfigFileWatcher: created default config at \(globalConfigPath)")
+        }
     }
 
     // MARK: - File Watching

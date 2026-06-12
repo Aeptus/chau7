@@ -217,8 +217,14 @@ final class ScrollbackMemoryManager {
         rustFFI.setScrollbackSize(UInt32(effectiveCap))
 
         let url = cacheURL(for: tabID)
-        guard let compressed = try? Data(contentsOf: url) else {
+        // Distinguish "no cache" (expected for never-flushed tabs) from a
+        // failed read (scrollback silently lost on I/O error).
+        guard FileManager.default.fileExists(atPath: url.path) else {
             Log.trace("ScrollbackMemoryManager[\(viewId)]: reload - no cache file")
+            return
+        }
+        guard let compressed = try? Data(contentsOf: url) else {
+            Log.warn("ScrollbackMemoryManager[\(viewId)]: reload - cache file exists but could not be read; scrollback lost for tab \(tabID)")
             return
         }
 

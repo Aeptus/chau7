@@ -225,15 +225,17 @@ final class SSHConnectionManager {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        return try? encoder.encode(connections)
+        return Persist.encodeLogged(connections, context: "ssh.export", encoder: encoder)
     }
 
-    /// Import connections from JSON data. Returns the number of connections imported.
+    /// Import connections from JSON data. Returns the number of connections
+    /// imported, or nil when the file is invalid — callers must distinguish
+    /// "corrupt file" from "all entries were duplicates".
     @discardableResult
-    func importFromJSON(_ data: Data) -> Int {
+    func importFromJSON(_ data: Data) -> Int? {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let imported = try? decoder.decode([SSHConnection].self, from: data) else { return 0 }
+        guard let imported = Persist.decodeLogged([SSHConnection].self, from: data, context: "ssh.import", decoder: decoder) else { return nil }
 
         var added = 0
         for conn in imported {

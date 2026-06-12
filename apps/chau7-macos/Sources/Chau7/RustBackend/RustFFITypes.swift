@@ -55,13 +55,19 @@ struct RustGridSnapshot {
 extension RustCellData {
     /// Read this cell's grapheme cluster as a Swift String. Returns "" for blank cells
     /// (cluster_len == 0) and for continuation cells. The buffer must outlive this call.
+    /// `bufferLength` bounds the read — an inconsistent Rust snapshot must not
+    /// turn into an out-of-bounds read (the other two cluster consumers
+    /// already bounds-check; this one didn't).
     @inlinable
-    func clusterString(buffer: UnsafePointer<UInt8>?) -> String {
+    func clusterString(buffer: UnsafePointer<UInt8>?, bufferLength: Int) -> String {
         guard cluster_len > 0 else { return "" }
         guard let base = buffer else { return "" }
+        let offset = Int(cluster_offset)
+        let length = Int(cluster_len)
+        guard length > 0, offset >= 0, offset + length <= bufferLength else { return "" }
         let bytes = UnsafeBufferPointer(
-            start: base.advanced(by: Int(cluster_offset)),
-            count: Int(cluster_len)
+            start: base.advanced(by: offset),
+            count: length
         )
         return String(decoding: bytes, as: UTF8.self)
     }

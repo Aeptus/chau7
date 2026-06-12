@@ -276,10 +276,11 @@ final class AgentDashboardModel: Identifiable {
             let directory = (preferredPath as NSString).deletingLastPathComponent
             try? fileManager.createDirectory(atPath: directory, withIntermediateDirectories: true)
             let repoName = URL(fileURLWithPath: repoGroupID).lastPathComponent
-            try? CompanionPlanLocator.defaultSkeleton(repoName: repoName).write(
-                toFile: preferredPath,
-                atomically: true,
-                encoding: .utf8
+            // User-visible action: a failed skeleton write must be loggable,
+            // not "create plan" silently producing nothing.
+            _ = FileOperations.writeString(
+                CompanionPlanLocator.defaultSkeleton(repoName: repoName),
+                to: preferredPath
             )
         }
         guard let content = try? String(contentsOfFile: preferredPath, encoding: .utf8) else {

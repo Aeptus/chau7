@@ -657,10 +657,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         TerminalControlService.shared.register(tabsModel)
         let windowNumber = allocateOverlayWindowNumber()
         let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
-        overlayHosts.append(OverlayHost(window: window, model: tabsModel))
+        let host = OverlayHost(window: window, model: tabsModel)
+        overlayHosts.append(host)
         activeOverlayModel = tabsModel
         wireTabMoveCallbacks()
-        showOverlayWindow(overlayHosts.last!, reason: "newWindow")
+        showOverlayWindow(host, reason: "newWindow")
     }
 
     func newTab() {
@@ -1583,13 +1584,14 @@ private final class OverlayBlurView: NSVisualEffectView {
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
-            overlayHosts.append(OverlayHost(window: window, model: tabsModel))
+            let host = OverlayHost(window: window, model: tabsModel)
+            overlayHosts.append(host)
             Self.logRSSSample("moveTab[\(dragID)] after createOverlayWindow")
             wireTabMoveCallbacks()
             Self.logRSSSample("moveTab[\(dragID)] after wireTabMoveCallbacks")
             hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveTab-hideEmptiedSource")
             Self.logRSSSample("moveTab[\(dragID)] after hideEmptiedWindowIfNeeded")
-            showOverlayWindow(overlayHosts.last!, reason: "moveToNewWindow")
+            showOverlayWindow(host, reason: "moveToNewWindow")
             Self.logRSSSample("moveTab[\(dragID)] after showOverlayWindow (newWindow)")
             Log.info("Moved tab \(tabID) to new window \(windowNumber)")
         } else {
@@ -1666,10 +1668,11 @@ private final class OverlayBlurView: NSVisualEffectView {
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
-            overlayHosts.append(OverlayHost(window: window, model: tabsModel))
+            let host = OverlayHost(window: window, model: tabsModel)
+            overlayHosts.append(host)
             wireTabMoveCallbacks()
             hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveGroup-hideEmptiedSource")
-            showOverlayWindow(overlayHosts.last!, reason: "moveGroupToNewWindow")
+            showOverlayWindow(host, reason: "moveGroupToNewWindow")
             Log.info("Moved group \(repoGroupID) (\(groupTabs.count) tabs) to new window \(windowNumber)")
         } else {
             guard toWindowIndex < overlayHosts.count else {

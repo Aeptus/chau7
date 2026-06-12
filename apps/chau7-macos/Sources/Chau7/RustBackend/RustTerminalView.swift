@@ -1514,7 +1514,7 @@ final class RustTerminalFFI {
                 lineText.append(" ")
                 continue
             }
-            lineText.append(cell.clusterString(buffer: snapshot.clusters_utf8))
+            lineText.append(cell.clusterString(buffer: snapshot.clusters_utf8, bufferLength: snapshot.clusters_len))
         }
         while lineText.last == " " {
             lineText.removeLast()

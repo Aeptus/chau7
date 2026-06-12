@@ -681,6 +681,7 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 ## Quality Gates
 
 - Distribution versions derive from git tags and fail loudly when underivable; the Rust toolchain is pinned; app signing is strictly inside-out (no `--deep`); and the pre-commit guard rejects new `#if !SWIFT_PACKAGE` test gates so dead tests cannot be reintroduced.
+- Persistence paths follow the `Persist` logged-failure convention end to end: settings, SSH profiles, remote approval frames, telemetry responses, repo injection rules, and scrollback reloads log corruption and write failures instead of silently degrading.
 
 - **Registry-driven hook policy** — `.husky/pre-commit` and `.husky/pre-push` only select `pnpm quality:staged` or `pnpm quality:prepush`; the gate contract lives in `scripts/quality/registry.mjs`.
 - **Affected-surface pre-push** — pre-push reads Git update lines, resolves changed files against the pushed remote SHA or a conservative fallback base, and automatically upgrades to `prepush-full` for high-impact infrastructure, dependency, config, generator, workflow, or shared-contract changes.
