@@ -51,43 +51,64 @@ final class DevServerMonitor {
     private var isStopped = false
 
     // MARK: - Public API
+    //
+    // Every public entry point hops onto the private serial queue: the burst,
+    // liveness, and one-shot timers run there and mutate the same state
+    // (currentServer, lastCommandHint, timers, caches). Calling these from
+    // main without the hop raced the timer handlers — torn DevServerInfo
+    // reads and unsynchronized array/timer mutation.
 
     /// Register the shell PID for this tab.
     /// Does NOT start any timer — monitoring is purely event-driven.
     func start(shellPID: pid_t) {
-        self.shellPID = shellPID
-        cachedChildPIDs.removeAll(keepingCapacity: true)
-        cachedChildParentPID = shellPID
-        childProcessCacheAt = Date.distantPast
-        isStopped = false
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.shellPID = shellPID
+            cachedChildPIDs.removeAll(keepingCapacity: true)
+            cachedChildParentPID = shellPID
+            childProcessCacheAt = Date.distantPast
+            isStopped = false
+        }
     }
 
     /// Stop monitoring and clear state.
     func stop() {
-        burstTimer?.cancel()
-        burstTimer = nil
-        burstChecksRemaining = 0
-        stopLivenessTimer()
-        shellPID = nil
-        lastCommandHint = nil
-        cachedChildPIDs.removeAll(keepingCapacity: true)
-        childProcessCacheAt = Date.distantPast
-        isStopped = true
-        updateCurrentServer(nil)
+        queue.async { [weak self] in
+            guard let self else { return }
+            burstTimer?.cancel()
+            burstTimer = nil
+            burstChecksRemaining = 0
+            stopLivenessTimer()
+            shellPID = nil
+            lastCommandHint = nil
+            cachedChildPIDs.removeAll(keepingCapacity: true)
+            childProcessCacheAt = Date.distantPast
+            isStopped = true
+            updateCurrentServer(nil)
+        }
     }
 
     /// Hint from command detection (e.g., "npm run dev" was executed).
     /// Starts a burst of port checks since the server needs time to bind.
     func setCommandHint(_ serverName: String?) {
-        lastCommandHint = serverName
-        if serverName != nil {
-            childProcessCacheAt = Date.distantPast
-            startBurstCheck()
+        queue.async { [weak self] in
+            guard let self else { return }
+            lastCommandHint = serverName
+            if serverName != nil {
+                childProcessCacheAt = Date.distantPast
+                startBurstCheck()
+            }
         }
     }
 
     /// Check terminal output for dev server patterns.
     func checkOutput(_ output: String) {
+        queue.async { [weak self] in
+            self?.checkOutputOnQueue(output)
+        }
+    }
+
+    private func checkOutputOnQueue(_ output: String) {
         let cleaned = EscapeSequenceSanitizer.sanitize(output)
         if let serverName = CommandDetection.detectDevServerFromOutput(cleaned) {
             let url = CommandDetection.extractDevServerURL(from: cleaned)

@@ -44,26 +44,32 @@ final class ProcessTreeSnapshotService {
         _ onSnapshot: @escaping (ProcessTreeProviderResolver.Snapshot) -> Void
     ) -> Subscription {
         let subscription = Subscription(id: UUID())
+        // Timer assignment happens under the same lock as the decision:
+        // deciding under the lock but starting/stopping after releasing it
+        // let a last-unsubscribe interleave with a first-subscribe and cancel
+        // the new subscriber's timer — live tab-name detection then silently
+        // stopped until the next subscribe.
         lock.lock()
         subscribers[subscription.id] = onSnapshot
-        let shouldStart = subscribers.count == 1 && timer == nil
-        lock.unlock()
-        if shouldStart {
-            startTimer()
+        if subscribers.count == 1, timer == nil {
+            timer = makeTimer()
         }
+        lock.unlock()
         // Fire an immediate snapshot so new subscribers don't wait a full interval.
         queue.async { [weak self] in self?.capture() }
         return subscription
     }
 
     func unsubscribe(_ subscription: Subscription) {
+        var cancelled: DispatchSourceTimer?
         lock.lock()
         subscribers.removeValue(forKey: subscription.id)
-        let shouldStop = subscribers.isEmpty
-        lock.unlock()
-        if shouldStop {
-            stopTimer()
+        if subscribers.isEmpty {
+            cancelled = timer
+            timer = nil
         }
+        lock.unlock()
+        cancelled?.cancel()
     }
 
     /// Fires a snapshot outside the regular tick — used by shell-integration events
@@ -101,7 +107,9 @@ final class ProcessTreeSnapshotService {
 
     // MARK: - Private
 
-    private func startTimer() {
+    /// Source creation is cheap, so it can happen while holding the lock —
+    /// which is what makes the subscribe/unsubscribe transitions atomic.
+    private func makeTimer() -> DispatchSourceTimer {
         let source = DispatchSource.makeTimerSource(queue: queue)
         source.schedule(
             deadline: .now() + Self.pollInterval,
@@ -109,17 +117,7 @@ final class ProcessTreeSnapshotService {
         )
         source.setEventHandler { [weak self] in self?.capture() }
         source.resume()
-        lock.lock()
-        timer = source
-        lock.unlock()
-    }
-
-    private func stopTimer() {
-        lock.lock()
-        let existing = timer
-        timer = nil
-        lock.unlock()
-        existing?.cancel()
+        return source
     }
 
     private func capture() {

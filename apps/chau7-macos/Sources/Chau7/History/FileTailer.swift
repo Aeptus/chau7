@@ -46,7 +46,18 @@ final class FileTailer<T> {
 
     /// Starts monitoring the file for new content.
     /// - Parameter prefillLines: Number of existing lines to read initially (0 = start fresh)
+    ///
+    /// All tailer state (offset/buffer/handles/sources) is confined to the
+    /// private serial queue — the kqueue/timer handlers run there, so start
+    /// and stop must hop instead of mutating from the caller's thread while
+    /// a tick is mid-flight.
     func start(prefillLines: Int = 0) {
+        queue.async { [self] in
+            startOnQueue(prefillLines: prefillLines)
+        }
+    }
+
+    private func startOnQueue(prefillLines: Int) {
         if createIfMissing, !FileManager.default.fileExists(atPath: fileURL.path) {
             Log.warn("File not found. Creating empty file at \(fileURL.path)")
             FileManager.default.createFile(atPath: fileURL.path, contents: Data(), attributes: nil)
@@ -94,16 +105,24 @@ final class FileTailer<T> {
     }
 
     /// Stops monitoring and cleans up resources.
+    ///
+    /// Strong self capture is deliberate: teardown must run even if the owner
+    /// releases the tailer right after calling stop (the queue briefly extends
+    /// the tailer's lifetime). DispatchSource.cancel() does not wait for an
+    /// in-flight handler, so closing the read handle from the caller's thread
+    /// raced a tick mid-read on the queue.
     func stop() {
-        fsSource?.cancel()
-        fsSource = nil
-        monitorFD = -1
-        timer?.cancel()
-        timer = nil
-        buffer = ""
-        try? readHandle?.close()
-        readHandle = nil
-        Log.trace("FileTailer stop. path=\(fileURL.path)")
+        queue.async { [self] in
+            fsSource?.cancel()
+            fsSource = nil
+            monitorFD = -1
+            timer?.cancel()
+            timer = nil
+            buffer = ""
+            try? readHandle?.close()
+            readHandle = nil
+            Log.trace("FileTailer stop. path=\(fileURL.path)")
+        }
     }
 
     private func openReadHandle() {

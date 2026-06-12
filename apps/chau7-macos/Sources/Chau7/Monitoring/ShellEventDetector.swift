@@ -11,10 +11,26 @@ final class ShellEventDetector {
 
     /// The owning tab's UUID, set by TerminalSessionModel so emitted events
     /// carry a deterministic tabID for the TabResolver fast-path.
-    var ownerTabID: UUID?
+    ///
+    /// Synchronized: written on main, read by `emitEvent` from the session's
+    /// output-processing queue (via `processOutput` pattern matches).
+    var ownerTabID: UUID? {
+        get { patternQueue.sync { _ownerTabID } }
+        set { patternQueue.sync { _ownerTabID = newValue } }
+    }
 
-    // Track state for change detection
-    private var lastDirectory: String?
+    private var _ownerTabID: UUID?
+
+    // Track state for change detection.
+    // lastDirectory is synchronized for the same reason as ownerTabID: the
+    // command-lifecycle methods mutate it on main while output-queue pattern
+    // matches read it through emitEvent.
+    private var lastDirectory: String? {
+        get { patternQueue.sync { _lastDirectory } }
+        set { patternQueue.sync { _lastDirectory = newValue } }
+    }
+
+    private var _lastDirectory: String?
     private var lastGitBranch: String?
     private var commandStartTime: Date?
     private var longRunningTimer: DispatchSourceTimer?

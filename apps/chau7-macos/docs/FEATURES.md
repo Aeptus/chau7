@@ -79,6 +79,7 @@ Detection methods:
 - **Notification delivery ledger** — lifecycle tracking for debugging: coalescing, retry scheduling, drop reasons, and real UI outcomes.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
 - **Codex session resolver** — maps Codex sessions to working directories with LRU caching.
+- **Queue-confined monitors** — dev-server detection, file tailers, shell-event detection, the shared process-tree snapshotter, and the remote IPC server each confine mutable state to one owning queue, so UI calls can never race their timers.
 - **Pane-owned AI restore** — split tabs restore resume commands from each saved terminal pane’s own metadata instead of inferring ownership from whichever pane is focused after layout rebuild.
 - **Restore ownership validation** — pane resume prefills now verify directory and restored AI identity before insertion, so stale retries fail closed instead of landing in the wrong pane.
 - **Restore delivery ledger** — pane resume restore now records scheduled, queued, delivered, rejected, and superseded outcomes per pane so stale retries are explicit in logs and tests instead of silent.
