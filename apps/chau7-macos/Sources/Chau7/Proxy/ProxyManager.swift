@@ -308,7 +308,7 @@ final class ProxyManager {
         do {
             try process.run()
             self.process = process
-            self.processStartedAt = Date()
+            processStartedAt = Date()
             isRunning = true
             lastError = nil
 

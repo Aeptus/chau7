@@ -7,7 +7,7 @@ import Foundation
 /// recent default name passed to Save As).
 final class FakeDialogs: Dialogs {
     var nextCloseDecision: CloseEditorDecision = .cancel
-    var nextSavePanelResult: String? = nil
+    var nextSavePanelResult: String?
 
     private(set) var confirmCloseCallCount = 0
     private(set) var runSaveAsCallCount = 0

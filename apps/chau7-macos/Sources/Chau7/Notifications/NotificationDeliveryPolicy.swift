@@ -50,7 +50,9 @@ final class NotificationDeliveryPolicy {
         self.routingRetryCountsCap = routingRetryCountsCap
     }
 
-    var maxRoutingRetryAttempts: Int { authoritativeRetryDelays.count }
+    var maxRoutingRetryAttempts: Int {
+        authoritativeRetryDelays.count
+    }
 
     // MARK: - Pruning
 

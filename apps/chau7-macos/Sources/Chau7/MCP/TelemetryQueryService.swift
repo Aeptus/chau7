@@ -231,9 +231,9 @@ final class TelemetryQueryService {
 
     // MARK: - Encoding
 
-    // Encode failures still degrade to valid-but-empty JSON for the MCP
-    // client, but they are logged — an empty response that's actually an
-    // encode bug was previously indistinguishable from "no data".
+    /// Encode failures still degrade to valid-but-empty JSON for the MCP
+    /// client, but they are logged — an empty response that's actually an
+    /// encode bug was previously indistinguishable from "no data".
     private func encode(_ value: some Encodable) -> String {
         guard let data = Persist.encodeLogged(value, context: "telemetry.encode(\(type(of: value)))", encoder: encoder) else { return "{}" }
         return String(data: data, encoding: .utf8) ?? "{}"

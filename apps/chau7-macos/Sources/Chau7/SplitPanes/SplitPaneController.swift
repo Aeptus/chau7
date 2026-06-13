@@ -87,26 +87,26 @@ final class SavedSplitNode: Codable, Equatable {
                 forKey: .version,
                 in: container,
                 debugDescription:
-                    "SavedSplitNode version \(version) is newer than supported version " +
+                "SavedSplitNode version \(version) is newer than supported version " +
                     "\(SavedSplitNode.currentVersion); falling back to a default layout."
             )
         }
 
-        self.init(
+        try self.init(
             version: version,
-            kind: try container.decode(SavedSplitNodeKind.self, forKey: .kind),
-            id: try container.decode(String.self, forKey: .id),
-            direction: try container.decodeIfPresent(SplitDirection.self, forKey: .direction),
-            ratio: try container.decodeIfPresent(Double.self, forKey: .ratio),
-            first: try container.decodeIfPresent(SavedSplitNode.self, forKey: .first),
-            second: try container.decodeIfPresent(SavedSplitNode.self, forKey: .second),
-            textEditorPath: try container.decodeIfPresent(String.self, forKey: .textEditorPath),
-            previewFilePath: try container.decodeIfPresent(String.self, forKey: .previewFilePath),
-            diffFilePath: try container.decodeIfPresent(String.self, forKey: .diffFilePath),
-            diffDirectory: try container.decodeIfPresent(String.self, forKey: .diffDirectory),
-            diffMode: try container.decodeIfPresent(String.self, forKey: .diffMode),
-            repoDirectory: try container.decodeIfPresent(String.self, forKey: .repoDirectory),
-            dashboardRepoGroupID: try container.decodeIfPresent(String.self, forKey: .dashboardRepoGroupID)
+            kind: container.decode(SavedSplitNodeKind.self, forKey: .kind),
+            id: container.decode(String.self, forKey: .id),
+            direction: container.decodeIfPresent(SplitDirection.self, forKey: .direction),
+            ratio: container.decodeIfPresent(Double.self, forKey: .ratio),
+            first: container.decodeIfPresent(SavedSplitNode.self, forKey: .first),
+            second: container.decodeIfPresent(SavedSplitNode.self, forKey: .second),
+            textEditorPath: container.decodeIfPresent(String.self, forKey: .textEditorPath),
+            previewFilePath: container.decodeIfPresent(String.self, forKey: .previewFilePath),
+            diffFilePath: container.decodeIfPresent(String.self, forKey: .diffFilePath),
+            diffDirectory: container.decodeIfPresent(String.self, forKey: .diffDirectory),
+            diffMode: container.decodeIfPresent(String.self, forKey: .diffMode),
+            repoDirectory: container.decodeIfPresent(String.self, forKey: .repoDirectory),
+            dashboardRepoGroupID: container.decodeIfPresent(String.self, forKey: .dashboardRepoGroupID)
         )
     }
 
@@ -213,7 +213,9 @@ indirect enum SplitNode: Identifiable {
     // MARK: - Accessors
 
     /// Gets all pane IDs in this subtree.
-    var allPaneIDs: [UUID] { collectLeaves { [$0.id] } }
+    var allPaneIDs: [UUID] {
+        collectLeaves { [$0.id] }
+    }
 
     /// Gets all terminal IDs in this subtree.
     var allTerminalIDs: [UUID] {
@@ -366,7 +368,9 @@ extension SplitNode {
     }
 
     /// Whether the tree contains a repository pane.
-    var hasRepositoryPane: Bool { findFirstRepositoryPane() != nil }
+    var hasRepositoryPane: Bool {
+        findFirstRepositoryPane() != nil
+    }
 
     /// Finds the first pane ID matching the given kind.
     func firstPaneID(ofType type: PaneType) -> UUID? {

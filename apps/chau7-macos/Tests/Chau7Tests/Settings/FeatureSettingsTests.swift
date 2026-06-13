@@ -530,4 +530,3 @@ final class FeatureSettingsTests: XCTestCase {
         XCTAssertTrue(settings.ctoTabOverrides.isEmpty)
     }
 }
-

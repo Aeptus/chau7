@@ -51,6 +51,7 @@ final class DevServerMonitor {
     private var isStopped = false
 
     // MARK: - Public API
+
     //
     // Every public entry point hops onto the private serial queue: the burst,
     // liveness, and one-shot timers run there and mutate the same state

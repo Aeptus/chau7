@@ -538,7 +538,17 @@ final class RustTerminalFFI {
     // Function types matching chau7_terminal.h
     private typealias CreateFn = @convention(c) (UInt16, UInt16, UnsafePointer<CChar>?) -> OpaquePointer?
     private typealias CreateWithEnvFn = @convention(c) (UInt16, UInt16, UnsafePointer<CChar>?, UnsafePointer<UnsafePointer<CChar>?>?, UnsafePointer<UnsafePointer<CChar>?>?, Int) -> OpaquePointer?
-    private typealias CreateWithLaunchFn = @convention(c) (UInt16, UInt16, UnsafePointer<CChar>?, UnsafePointer<UnsafePointer<CChar>?>?, UnsafePointer<UnsafePointer<CChar>?>?, Int, UnsafePointer<UnsafePointer<CChar>?>?, Int, UnsafePointer<CChar>?) -> OpaquePointer?
+    private typealias CreateWithLaunchFn = @convention(c) (
+        UInt16,
+        UInt16,
+        UnsafePointer<CChar>?,
+        UnsafePointer<UnsafePointer<CChar>?>?,
+        UnsafePointer<UnsafePointer<CChar>?>?,
+        Int,
+        UnsafePointer<UnsafePointer<CChar>?>?,
+        Int,
+        UnsafePointer<CChar>?
+    ) -> OpaquePointer?
     private typealias DestroyFn = @convention(c) (OpaquePointer?) -> Void
     private typealias SendBytesFn = @convention(c) (OpaquePointer?, UnsafePointer<UInt8>?, Int) -> Void
     private typealias SendTextFn = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Void
@@ -1237,7 +1247,10 @@ final class RustTerminalFFI {
         Self.instanceCounter += 1
         self.instanceId = Self.instanceCounter
 
-        Log.info("RustTerminalFFI[\(instanceId)]: Creating terminal with cols=\(cols), rows=\(rows), shell=\(shell ?? "<default>"), env=\(environment.count) vars, args=\(args.count), cwd=\(workingDirectory ?? "<inherit>")")
+        Log
+            .info(
+                "RustTerminalFFI[\(instanceId)]: Creating terminal with cols=\(cols), rows=\(rows), shell=\(shell ?? "<default>"), env=\(environment.count) vars, args=\(args.count), cwd=\(workingDirectory ?? "<inherit>")"
+            )
 
         Self.ensureLoaded()
         guard let fns = Self.functions else {
@@ -1261,8 +1274,8 @@ final class RustTerminalFFI {
                 values.append(UnsafePointer(strdup(value)))
             }
             let argv: [UnsafePointer<CChar>?] = args.map { UnsafePointer(strdup($0)) }
-            let cwdPtr: UnsafePointer<CChar>? = workingDirectory.map { UnsafePointer(strdup($0)) } ?? nil
-            let shellPtr: UnsafePointer<CChar>? = shell.map { UnsafePointer(strdup($0)) } ?? nil
+            let cwdPtr: UnsafePointer<CChar>? = workingDirectory.map { UnsafePointer(strdup($0)) }
+            let shellPtr: UnsafePointer<CChar>? = shell.map { UnsafePointer(strdup($0)) }
             defer {
                 keys.forEach { free(UnsafeMutablePointer(mutating: $0)) }
                 values.forEach { free(UnsafeMutablePointer(mutating: $0)) }

@@ -35,11 +35,12 @@ final class RepositoryPaneModel: Identifiable {
     var tabID: UUID?
 
     // MARK: - Session Mode
-    //
-    // Session-awareness state moves to a dedicated `RepoSessionState`
-    // @Observable accessed as `repo.session`. An EventJournal-driven
-    // session refresh no longer fans invalidations out to status / history
-    // / commit / branches through the outer model.
+
+    ///
+    /// Session-awareness state moves to a dedicated `RepoSessionState`
+    /// @Observable accessed as `repo.session`. An EventJournal-driven
+    /// session refresh no longer fans invalidations out to status / history
+    /// / commit / branches through the outer model.
     var session = RepoSessionState()
 
     /// Tracks files across turns by reading the EventJournal.
@@ -49,6 +50,7 @@ final class RepositoryPaneModel: Identifiable {
     private var cachedDiffStats: (directory: String, fetchedAt: Date, stats: [String: DiffStat])?
 
     // MARK: - Session File Partitioning
+
     //
     // The six near-identical `.filter { session.sessionTouchedFiles.contains(...) }`
     // expressions used to be hand-written six times. They now ride on a
@@ -101,48 +103,53 @@ final class RepositoryPaneModel: Identifiable {
     }
 
     // MARK: - Branch State
-    //
-    // currentBranch / branches / remoteBranches / branchDetails / aheadBehind
-    // moved to a dedicated `RepoBranchState` @Observable accessed as
-    // `repo.branchState`. A branch-list refresh no longer fans invalidations
-    // out to status / history / commit through the outer model. (Named
-    // `branchState` rather than `branch` because `branch` could read like a
-    // single-branch noun and the per-section pattern is to use the section
-    // word as the property name.)
+
+    ///
+    /// currentBranch / branches / remoteBranches / branchDetails / aheadBehind
+    /// moved to a dedicated `RepoBranchState` @Observable accessed as
+    /// `repo.branchState`. A branch-list refresh no longer fans invalidations
+    /// out to status / history / commit through the outer model. (Named
+    /// `branchState` rather than `branch` because `branch` could read like a
+    /// single-branch noun and the per-section pattern is to use the section
+    /// word as the property name.)
     var branchState = RepoBranchState()
 
     // MARK: - File Status
-    //
-    // Staged / unstaged / untracked / conflicted file lists + per-file
-    // diff stats moved to a dedicated `RepoStatusState` @Observable
-    // accessed as `repo.status`. A porcelain refresh that bumps the file
-    // lists no longer invalidates history / commit / branches through
-    // the outer model.
+
+    ///
+    /// Staged / unstaged / untracked / conflicted file lists + per-file
+    /// diff stats moved to a dedicated `RepoStatusState` @Observable
+    /// accessed as `repo.status`. A porcelain refresh that bumps the file
+    /// lists no longer invalidates history / commit / branches through
+    /// the outer model.
     var status = RepoStatusState()
 
     // MARK: - Commit
-    //
-    // In-flight commit message + amend flag move to a dedicated
-    // `RepoCommitDraft` @Observable accessed as `repo.commit`. SwiftUI
-    // observation is per-object so typing in the composer no longer
-    // invalidates status / history / branches through the outer model.
-    // Declared `var` (not `let`) so SwiftUI's `Bindable` can synthesize
-    // a writable ReferenceWritableKeyPath for the TextEditor's two-way
-    // binding; the value is never reassigned in practice.
+
+    ///
+    /// In-flight commit message + amend flag move to a dedicated
+    /// `RepoCommitDraft` @Observable accessed as `repo.commit`. SwiftUI
+    /// observation is per-object so typing in the composer no longer
+    /// invalidates status / history / branches through the outer model.
+    /// Declared `var` (not `let`) so SwiftUI's `Bindable` can synthesize
+    /// a writable ReferenceWritableKeyPath for the TextEditor's two-way
+    /// binding; the value is never reassigned in practice.
     var commit = RepoCommitDraft()
 
     // MARK: - History
-    //
-    // Commit log, stash list, and search text moved to a dedicated
-    // `RepoHistoryState` @Observable so a search-text bump no longer
-    // invalidates the status / commit-composer sections. Declared `var`
-    // (not `let`) so SwiftUI's `Bindable` can synthesize a writable
-    // ReferenceWritableKeyPath through `repo.history.historySearchText`
-    // for the search field's two-way binding; the value is never
-    // reassigned in practice.
+
+    ///
+    /// Commit log, stash list, and search text moved to a dedicated
+    /// `RepoHistoryState` @Observable so a search-text bump no longer
+    /// invalidates the status / commit-composer sections. Declared `var`
+    /// (not `let`) so SwiftUI's `Bindable` can synthesize a writable
+    /// ReferenceWritableKeyPath through `repo.history.historySearchText`
+    /// for the search field's two-way binding; the value is never
+    /// reassigned in practice.
     var history = RepoHistoryState()
 
     // MARK: - Conventional Commit Prefixes
+
     //
     // The persistence, prefix application, and prefix detection rules live
     // on RepoCommitDraftStore. The model keeps thin pass-through helpers so

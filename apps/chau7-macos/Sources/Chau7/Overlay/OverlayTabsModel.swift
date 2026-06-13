@@ -1481,6 +1481,7 @@ final class OverlayTabsModel {
     }
 
     // MARK: - Tab State Serialization
+
     //
     // The single-model save path (`saveTabState`/instance `persistTabStateBackups`)
     // is gone: it had zero production callers and maintained instance-level

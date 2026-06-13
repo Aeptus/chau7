@@ -76,4 +76,3 @@ final class NotificationServices {
 // MARK: - NotificationManager conformance
 
 extension NotificationManager: NotificationPublishing {}
-

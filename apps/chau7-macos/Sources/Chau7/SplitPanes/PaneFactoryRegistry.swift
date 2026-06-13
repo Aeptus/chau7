@@ -24,12 +24,12 @@ enum PaneFactoryRegistry {
     /// New pane kinds extend this dictionary literal — no edits required
     /// to `SplitNode.fromSavedNode` or any other persistence-side switch.
     static let factories: [PaneType: (SavedSplitNode, PaneFactoryContext) -> any PaneNode] = [
-        .terminal:       { TerminalPane.makeFromSaved($0, context: $1) },
-        .textEditor:     { TextEditorPane.makeFromSaved($0, context: $1) },
-        .filePreview:    { FilePreviewPane.makeFromSaved($0, context: $1) },
-        .diffViewer:     { DiffViewerPane.makeFromSaved($0, context: $1) },
+        .terminal: { TerminalPane.makeFromSaved($0, context: $1) },
+        .textEditor: { TextEditorPane.makeFromSaved($0, context: $1) },
+        .filePreview: { FilePreviewPane.makeFromSaved($0, context: $1) },
+        .diffViewer: { DiffViewerPane.makeFromSaved($0, context: $1) },
         .repositoryPane: { RepositoryPane.makeFromSaved($0, context: $1) },
-        .dashboard:      { DashboardPane.makeFromSaved($0, context: $1) }
+        .dashboard: { DashboardPane.makeFromSaved($0, context: $1) }
     ]
 }
 

@@ -157,7 +157,9 @@ private final class FakeDelegate: NotificationActionDelegate {
     private(set) var styleTabCallCount = 0
     private(set) var lastStyleTabPreset: String?
 
-    func focusTab(tabID: UUID) -> Bool { true }
+    func focusTab(tabID: UUID) -> Bool {
+        true
+    }
 
     func styleTab(tabID: UUID, preset: String, config: [String: String]) -> UUID? {
         styleTabCallCount += 1
@@ -165,13 +167,21 @@ private final class FakeDelegate: NotificationActionDelegate {
         return styleTabResult
     }
 
-    func tabExists(tabID: UUID) -> Bool { tabExistsResult }
+    func tabExists(tabID: UUID) -> Bool {
+        tabExistsResult
+    }
 
-    func badgeTab(tabID: UUID, text: String, color: String) -> Bool { true }
+    func badgeTab(tabID: UUID, text: String, color: String) -> Bool {
+        true
+    }
 
-    func insertSnippet(id: String, tabID: UUID, autoExecute: Bool) -> Bool { true }
+    func insertSnippet(id: String, tabID: UUID, autoExecute: Bool) -> Bool {
+        true
+    }
 
     func flashMenuBar(duration: Int, animate: Bool) {}
 
-    func resolveExactTab(target: TabTarget) -> UUID? { resolveExactTabResult }
+    func resolveExactTab(target: TabTarget) -> UUID? {
+        resolveExactTabResult
+    }
 }

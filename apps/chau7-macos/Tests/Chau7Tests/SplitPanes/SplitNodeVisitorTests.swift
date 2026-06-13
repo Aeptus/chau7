@@ -13,7 +13,9 @@ final class SplitNodeVisitorTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private func makeAppModel() -> AppModel { AppModel() }
+    private func makeAppModel() -> AppModel {
+        AppModel()
+    }
 
     private func makeTerminalLeaf(_ appModel: AppModel) -> (SplitNode, UUID) {
         let id = UUID()
@@ -133,13 +135,15 @@ final class SplitNodeVisitorTests: XCTestCase {
 // MARK: - Test helpers
 
 private final class DisposeCounter {
-    var count: Int = 0
+    var count = 0
 }
 
 private final class CountingPane: PaneNode {
     let id: UUID
     let counter: DisposeCounter
-    var kind: PaneType { .terminal }
+    var kind: PaneType {
+        .terminal
+    }
 
     init(id: UUID, counter: DisposeCounter) {
         self.id = id

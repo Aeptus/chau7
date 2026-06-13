@@ -61,5 +61,7 @@ final class TestMainScheduler: MainScheduler {
         }
     }
 
-    var pendingCount: Int { pending.count }
+    var pendingCount: Int {
+        pending.count
+    }
 }

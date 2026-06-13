@@ -83,9 +83,9 @@ final class AgentDashboardModel: Identifiable {
         guard refreshTimer == nil else { return }
         refreshQueue.async { [weak self] in
             guard let self else { return }
-            self.currentPollInterval = Self.initialPollInterval
-            self.refreshCompanionPlan(trackerValues: Array(self.fileTrackers.values), sessionIDs: [])
-            self.refresh()
+            currentPollInterval = Self.initialPollInterval
+            refreshCompanionPlan(trackerValues: Array(fileTrackers.values), sessionIDs: [])
+            refresh()
         }
         let timer = DispatchSource.makeTimerSource(queue: refreshQueue)
         timer.schedule(deadline: .now() + Self.initialPollInterval, repeating: Self.initialPollInterval)
@@ -419,7 +419,7 @@ final class AgentDashboardModel: Identifiable {
         refreshQueue.async { [weak self] in
             guard let self else { return }
             var allFiles: Set<String> = []
-            for tracker in self.fileTrackers.values {
+            for tracker in fileTrackers.values {
                 allFiles.formUnion(tracker.touchedFiles)
             }
             guard !allFiles.isEmpty else {
@@ -430,7 +430,7 @@ final class AgentDashboardModel: Identifiable {
                 return
             }
             let files = allFiles.sorted()
-            self.runCommitAll(files: files, message: msg, dir: dir)
+            runCommitAll(files: files, message: msg, dir: dir)
         }
     }
 
@@ -477,7 +477,7 @@ final class AgentDashboardModel: Identifiable {
         let dir = repoGroupID
         // Trackers are refreshQueue-confined; snapshot the file list there.
         refreshQueue.async { [weak self] in
-            guard let self, let tracker = self.fileTrackers[sessionID] else { return }
+            guard let self, let tracker = fileTrackers[sessionID] else { return }
             let files = tracker.touchedFiles.sorted()
             guard !files.isEmpty else { return }
 

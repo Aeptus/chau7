@@ -45,10 +45,10 @@ final class AppEventEmitter {
             queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            let nextConfig = self.config
-            guard nextConfig != self.lastObservedConfig else { return }
-            self.lastObservedConfig = nextConfig
-            self.setupTimers()
+            let nextConfig = config
+            guard nextConfig != lastObservedConfig else { return }
+            lastObservedConfig = nextConfig
+            setupTimers()
         }
     }
 

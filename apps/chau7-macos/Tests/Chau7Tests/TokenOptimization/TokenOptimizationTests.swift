@@ -796,7 +796,6 @@ final class TokenOptimizationCoreTests: XCTestCase {
 
 // MARK: - Integration Tests (app target only)
 
-
 /// Tests requiring the app target: PATH injection, optimizer paths, runtime monitor, notifications.
 final class TokenOptimizationIntegrationTests: XCTestCase {
 

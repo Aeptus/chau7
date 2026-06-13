@@ -2,6 +2,7 @@ import Chau7Core
 import Foundation
 
 // MARK: - Supporting Types
+
 //
 // These value types describe the *data shape* read out of git and surfaced to
 // the Repository pane view. They were originally declared at the end of
@@ -59,7 +60,9 @@ enum FileChangeType: String {
 }
 
 struct CommitEntry: Identifiable {
-    var id: String { hash }
+    var id: String {
+        hash
+    }
 
     let hash: String
     let shortHash: String
@@ -70,7 +73,9 @@ struct CommitEntry: Identifiable {
 }
 
 struct StashEntry: Identifiable {
-    var id: Int { index }
+    var id: Int {
+        index
+    }
 
     let index: Int
     let description: String

@@ -63,7 +63,9 @@ final class PollingTests: XCTestCase {
 
         // Initial check + 3 scheduled attempts = 4 evaluations total. Spin
         // the scheduler long enough to exhaust them.
-        for _ in 0..<5 { scheduler.advance(by: 0.1) }
+        for _ in 0 ..< 5 {
+            scheduler.advance(by: 0.1)
+        }
 
         XCTAssertFalse(settled)
         XCTAssertTrue(timedOut)
@@ -83,7 +85,9 @@ final class PollingTests: XCTestCase {
             onSettled: { XCTFail("Predicate never true") }
         )
 
-        for _ in 0..<20 { scheduler.advance(by: 0.1) }
+        for _ in 0 ..< 20 {
+            scheduler.advance(by: 0.1)
+        }
 
         XCTAssertEqual(scheduler.pendingCount, 0)
         XCTAssertLessThanOrEqual(

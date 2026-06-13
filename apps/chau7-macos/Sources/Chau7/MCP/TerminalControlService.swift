@@ -140,11 +140,11 @@ final class TerminalControlService {
         }
     }
 
+    /// The AcrossWindows family honors the class contract ("safe to call from
+    /// any thread — dispatches to main as needed") by wrapping in onMain:
+    /// they read allModels/model.tabs and call OverlayTabsModel mutators,
+    /// which are main-thread-owned state.
     @discardableResult
-    // The AcrossWindows family honors the class contract ("safe to call from
-    // any thread — dispatches to main as needed") by wrapping in onMain:
-    // they read allModels/model.tabs and call OverlayTabsModel mutators,
-    // which are main-thread-owned state.
     func applyNotificationStyleAcrossWindows(to tabID: UUID, stylePreset: String, config: [String: String]) -> UUID? {
         onMain {
             let models = self.allModels

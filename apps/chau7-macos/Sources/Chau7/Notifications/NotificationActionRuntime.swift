@@ -114,7 +114,7 @@ enum ProcessRunner {
 
         let pollIntervalMs = 50
         let pollCount = max(1, Int((gracePeriod * 1000.0) / Double(pollIntervalMs)))
-        for _ in 0..<pollCount {
+        for _ in 0 ..< pollCount {
             if !process.isRunning { return true }
             Thread.sleep(forTimeInterval: Double(pollIntervalMs) / 1000.0)
         }

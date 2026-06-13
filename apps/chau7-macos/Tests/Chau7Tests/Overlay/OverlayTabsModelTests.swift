@@ -886,7 +886,7 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.tabs[1].repoGroupID, groupID)
     }
 
-    func testNewTabAtDirectoryFromGroupedSelectionDoesNotInheritDifferentRepoGroup() {
+    func testNewTabAtDirectoryFromGroupedSelectionDoesNotInheritDifferentRepoGroup() throws {
         let groupID = makeTemporaryRepoRoot().standardized.path
         let unrelatedDir = makeTemporaryRepoRoot().standardized.path
         model.newTab()
@@ -898,7 +898,7 @@ final class OverlayTabsModelTests: XCTestCase {
 
         // A non-inheriting new tab is appended at the end (newTabPosition
         // default is "end"), so it's the selected/last tab, not tabs[1].
-        let newTab = try! XCTUnwrap(model.tabs.last)
+        let newTab = try XCTUnwrap(model.tabs.last)
         XCTAssertEqual(newTab.id, model.selectedTabID)
         XCTAssertNil(newTab.repoGroupID)
         XCTAssertFalse(newTab.hasInheritedRepoGroup)
@@ -955,7 +955,7 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.selectedTabID, targetTabID)
     }
 
-    func testInheritedRepoGroupDetachesWhenTabMovesToDifferentRepoInManualMode() {
+    func testInheritedRepoGroupDetachesWhenTabMovesToDifferentRepoInManualMode() throws {
         let originalMode = FeatureSettings.shared.repoGroupingMode
         FeatureSettings.shared.repoGroupingMode = .manual
         defer { FeatureSettings.shared.repoGroupingMode = originalMode }
@@ -969,14 +969,14 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.newTab()
 
-        let newTab = try! XCTUnwrap(model.tabs.first(where: { $0.id == model.selectedTabID }))
+        let newTab = try XCTUnwrap(model.tabs.first(where: { $0.id == model.selectedTabID }))
         XCTAssertEqual(newTab.repoGroupID, originalGroupID)
         XCTAssertTrue(newTab.hasInheritedRepoGroup)
 
         newTab.session?.gitRootPath = "/tmp/chau7-group-b"
         drainMainQueue()
 
-        let movedTab = try! XCTUnwrap(model.tabs.first(where: { $0.id == newTab.id }))
+        let movedTab = try XCTUnwrap(model.tabs.first(where: { $0.id == newTab.id }))
         XCTAssertNil(movedTab.repoGroupID)
         XCTAssertFalse(movedTab.hasInheritedRepoGroup)
     }
@@ -1027,7 +1027,7 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.tabs[0].repoGroupID, URL(fileURLWithPath: repoRoot).standardized.path)
     }
 
-    func testInheritedRepoGroupDetachesForNewTabAtDirectoryWhenTabMovesToDifferentRepoInManualMode() {
+    func testInheritedRepoGroupDetachesForNewTabAtDirectoryWhenTabMovesToDifferentRepoInManualMode() throws {
         let originalMode = FeatureSettings.shared.repoGroupingMode
         FeatureSettings.shared.repoGroupingMode = .manual
         defer { FeatureSettings.shared.repoGroupingMode = originalMode }
@@ -1044,14 +1044,14 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.newTab(at: childDir)
 
-        let newTab = try! XCTUnwrap(model.tabs.first(where: { $0.id == model.selectedTabID }))
+        let newTab = try XCTUnwrap(model.tabs.first(where: { $0.id == model.selectedTabID }))
         XCTAssertEqual(newTab.repoGroupID, originalGroupID)
         XCTAssertTrue(newTab.hasInheritedRepoGroup)
 
         newTab.session?.gitRootPath = "/tmp/chau7-group-b"
         drainMainQueue()
 
-        let movedTab = try! XCTUnwrap(model.tabs.first(where: { $0.id == newTab.id }))
+        let movedTab = try XCTUnwrap(model.tabs.first(where: { $0.id == newTab.id }))
         XCTAssertNil(movedTab.repoGroupID)
         XCTAssertFalse(movedTab.hasInheritedRepoGroup)
     }
@@ -3912,4 +3912,5 @@ final class OverlayTabsModelUtilityTests: XCTestCase {
         )
     }
 }
+
 // swiftlint:enable type_body_length

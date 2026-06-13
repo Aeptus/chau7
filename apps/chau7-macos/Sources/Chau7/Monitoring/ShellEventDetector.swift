@@ -21,10 +21,10 @@ final class ShellEventDetector {
 
     private var _ownerTabID: UUID?
 
-    // Track state for change detection.
-    // lastDirectory is synchronized for the same reason as ownerTabID: the
-    // command-lifecycle methods mutate it on main while output-queue pattern
-    // matches read it through emitEvent.
+    /// Track state for change detection.
+    /// lastDirectory is synchronized for the same reason as ownerTabID: the
+    /// command-lifecycle methods mutate it on main while output-queue pattern
+    /// matches read it through emitEvent.
     private var lastDirectory: String? {
         get { patternQueue.sync { _lastDirectory } }
         set { patternQueue.sync { _lastDirectory = newValue } }

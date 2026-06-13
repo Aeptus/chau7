@@ -1,6 +1,5 @@
 import XCTest
 import AppKit
-
 @testable import Chau7
 
 @MainActor

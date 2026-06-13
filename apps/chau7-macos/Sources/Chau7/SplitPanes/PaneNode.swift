@@ -2,6 +2,7 @@ import Foundation
 import Chau7Core
 
 // MARK: - PaneNode Protocol
+
 //
 // Contract every leaf pane in the side-panel tree honors. Replaces the ~17
 // hand-rolled 7-case switches on the previous `SplitNode` enum — adding a
@@ -42,7 +43,10 @@ protocol PaneNode: AnyObject {
 }
 
 extension PaneNode {
-    var hasUnsavedWork: Bool { false }
+    var hasUnsavedWork: Bool {
+        false
+    }
+
     func dispose() {}
 }
 
@@ -54,7 +58,9 @@ final class TerminalPane: PaneNode {
     let id: UUID
     let session: TerminalSessionModel
 
-    var kind: PaneType { .terminal }
+    var kind: PaneType {
+        .terminal
+    }
 
     init(id: UUID = UUID(), session: TerminalSessionModel) {
         self.id = id
@@ -110,8 +116,13 @@ final class TextEditorPane: PaneNode {
     let id: UUID
     let editor: TextEditorModel
 
-    var kind: PaneType { .textEditor }
-    var hasUnsavedWork: Bool { editor.isDirty }
+    var kind: PaneType {
+        .textEditor
+    }
+
+    var hasUnsavedWork: Bool {
+        editor.isDirty
+    }
 
     init(id: UUID = UUID(), editor: TextEditorModel) {
         self.id = id
@@ -148,7 +159,9 @@ final class FilePreviewPane: PaneNode {
     let id: UUID
     let preview: FilePreviewModel
 
-    var kind: PaneType { .filePreview }
+    var kind: PaneType {
+        .filePreview
+    }
 
     init(id: UUID = UUID(), preview: FilePreviewModel) {
         self.id = id
@@ -185,7 +198,9 @@ final class DiffViewerPane: PaneNode {
     let id: UUID
     let diff: DiffViewerModel
 
-    var kind: PaneType { .diffViewer }
+    var kind: PaneType {
+        .diffViewer
+    }
 
     init(id: UUID = UUID(), diff: DiffViewerModel) {
         self.id = id
@@ -227,7 +242,9 @@ final class RepositoryPane: PaneNode {
     let id: UUID
     let repo: RepositoryPaneModel
 
-    var kind: PaneType { .repositoryPane }
+    var kind: PaneType {
+        .repositoryPane
+    }
 
     init(id: UUID = UUID(), repo: RepositoryPaneModel) {
         self.id = id
@@ -264,7 +281,9 @@ final class DashboardPane: PaneNode {
     let id: UUID
     let dashboard: AgentDashboardModel
 
-    var kind: PaneType { .dashboard }
+    var kind: PaneType {
+        .dashboard
+    }
 
     init(id: UUID = UUID(), dashboard: AgentDashboardModel) {
         self.id = id

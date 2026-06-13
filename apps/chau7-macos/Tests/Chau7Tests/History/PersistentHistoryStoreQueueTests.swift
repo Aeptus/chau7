@@ -74,7 +74,9 @@ final class PersistentHistoryStoreQueueTests: XCTestCase {
         XCTAssertEqual(store.importJSON(data), 8)
         XCTAssertEqual(store.totalCount(), 5)
         // The oldest three were trimmed; the newest five survive.
-        XCTAssertEqual(store.recent(limit: 10).map(\.command).sorted(),
-                       ["import-3", "import-4", "import-5", "import-6", "import-7"])
+        XCTAssertEqual(
+            store.recent(limit: 10).map(\.command).sorted(),
+            ["import-3", "import-4", "import-5", "import-6", "import-7"]
+        )
     }
 }

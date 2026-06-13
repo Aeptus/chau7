@@ -19,7 +19,7 @@ final class CloseDialogWiringTests: XCTestCase {
         super.tearDown()
     }
 
-    func testCancelDecisionAbortsClose() throws {
+    func testCancelDecisionAbortsClose() {
         let appModel = AppModel()
         let dialogs = FakeDialogs()
         let controller = SplitPaneController(appModel: appModel, dialogs: dialogs)

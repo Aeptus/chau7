@@ -389,4 +389,3 @@ final class KeybindingsManagerTests: XCTestCase {
         return event
     }
 }
-

@@ -286,8 +286,8 @@ final class ClaudeCodeMonitor {
             // evict — entries otherwise accumulate per AI session for the
             // app's lifetime. Skip eviction if the session re-opened.
             DispatchQueue.main.asyncAfter(deadline: .now() + 300) { [weak self] in
-                guard let self, self.activeSessions[sessionId]?.state == .closed else { return }
-                self.activeSessions.removeValue(forKey: sessionId)
+                guard let self, activeSessions[sessionId]?.state == .closed else { return }
+                activeSessions.removeValue(forKey: sessionId)
             }
         }
     }
