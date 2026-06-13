@@ -1,7 +1,6 @@
 import XCTest
 import AppKit
 
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
@@ -30,4 +29,3 @@ final class TerminalSystemRestoreTests: XCTestCase {
         XCTAssertTrue(CommandBlockManager.shared.blocksForTab(tabID.uuidString).isEmpty)
     }
 }
-#endif

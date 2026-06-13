@@ -1,7 +1,6 @@
 import XCTest
 import AppKit
 
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
@@ -63,7 +62,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         )
     }
 
-    func testBackgroundRestoreBootstrapPhaseDoesNotRefreshSelectedTab() {
+    func testBackgroundRestoreBootstrapPhaseDoesNotRefreshSelectedTab() throws {
         model.newTab(selectNewTab: false)
 
         let selectedSession = try XCTUnwrap(model.tabs[0].session)
@@ -80,7 +79,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         )
     }
 
-    func testSelectedRestoreBootstrapPhaseDoesNotRefreshSelectedTabOutsideStartup() {
+    func testSelectedRestoreBootstrapPhaseDoesNotRefreshSelectedTabOutsideStartup() throws {
         model.newTab(selectNewTab: false)
         let targetID = model.tabs[1].id
 
@@ -99,7 +98,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertEqual(model.selectedSurfacePresentation.phase, .live)
     }
 
-    func testVisibleFrameReadyDiscardsRestorePreviewAndRecordsStartupLiveFrame() {
+    func testVisibleFrameReadyDiscardsRestorePreviewAndRecordsStartupLiveFrame() throws {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled],
@@ -270,4 +269,3 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         )
     }
 }
-#endif

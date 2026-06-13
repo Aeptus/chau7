@@ -1,6 +1,5 @@
 import XCTest
 import AppKit
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
@@ -391,4 +390,3 @@ final class KeybindingsManagerTests: XCTestCase {
     }
 }
 
-#endif

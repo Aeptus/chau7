@@ -1,6 +1,6 @@
-#if !SWIFT_PACKAGE
 import XCTest
 @testable import Chau7
+import Chau7Core
 
 final class RuntimeSessionBehaviorTests: XCTestCase {
     func testDuplicateCompleteTurnLeavesSessionReady() {
@@ -115,7 +115,7 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
             .events
             .filter { $0.type == RuntimeEventType.turnFailed.rawValue }
         XCTAssertEqual(failureEvents.count, 1)
-        XCTAssertEqual(failureEvents.first?.data?["reason"], "approval_timeout")
+        XCTAssertEqual(failureEvents.first?.data["reason"], "approval_timeout")
     }
 
     func testRepeatedApprovalTimeoutsMarkSessionFailed() {
@@ -140,8 +140,8 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
         let events = session.journal.events(after: 0, limit: 100).events
         let sessionErrors = events.filter { $0.type == RuntimeEventType.sessionError.rawValue }
         XCTAssertEqual(sessionErrors.count, 1)
-        XCTAssertEqual(sessionErrors.first?.data?["reason"], "approval_timeout_stuck")
-        XCTAssertEqual(sessionErrors.first?.data?["approval_timeout_count"], "3")
+        XCTAssertEqual(sessionErrors.first?.data["reason"], "approval_timeout_stuck")
+        XCTAssertEqual(sessionErrors.first?.data["approval_timeout_count"], "3")
     }
 
     func testCompleteTurnAccumulatesLiveUsageAndEstimatedCost() throws {
@@ -221,4 +221,3 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(snapshot.durationMs, 0)
     }
 }
-#endif

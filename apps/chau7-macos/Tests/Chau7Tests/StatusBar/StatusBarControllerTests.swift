@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
@@ -48,83 +47,53 @@ final class StatusBarControllerTests: XCTestCase {
 
     // MARK: - StatusBarPanelView State
 
-    /// Verify that the StreamSelection enum has all expected cases
-    func testStreamSelectionCases() {
-        let allCases = StreamSelection.allCases
+    /// Verify that the default StreamSelection picker entries cover the known tools
+    func testStreamSelectionDefaultSelections() {
+        let selections = StreamSelection.defaultSelections
         XCTAssertEqual(
-            allCases.count,
+            selections.count,
             5,
-            "StreamSelection should have 5 cases"
+            "StreamSelection should offer 5 default selections"
         )
-        XCTAssertTrue(allCases.contains(.codexHistory))
-        XCTAssertTrue(allCases.contains(.claudeHistory))
-        XCTAssertTrue(allCases.contains(.codexTerminal))
-        XCTAssertTrue(allCases.contains(.claudeTerminal))
-        XCTAssertTrue(allCases.contains(.verbose))
+        XCTAssertTrue(selections.contains(.history(providerKey: "codex")))
+        XCTAssertTrue(selections.contains(.history(providerKey: "claude")))
+        XCTAssertTrue(selections.contains(.terminal(providerKey: "codex")))
+        XCTAssertTrue(selections.contains(.terminal(providerKey: "claude")))
+        XCTAssertTrue(selections.contains(.verbose))
     }
 
     func testStreamSelectionTitles() {
-        XCTAssertEqual(StreamSelection.codexHistory.title, "Codex")
-        XCTAssertEqual(StreamSelection.claudeHistory.title, "Claude")
-        XCTAssertEqual(StreamSelection.codexTerminal.title, "Codex TTY")
-        XCTAssertEqual(StreamSelection.claudeTerminal.title, "Claude TTY")
+        XCTAssertEqual(StreamSelection.history(providerKey: "codex").title, "Codex")
+        XCTAssertEqual(StreamSelection.history(providerKey: "claude").title, "Claude")
+        XCTAssertEqual(StreamSelection.terminal(providerKey: "codex").title, "Codex TTY")
+        XCTAssertEqual(StreamSelection.terminal(providerKey: "claude").title, "Claude TTY")
         XCTAssertEqual(StreamSelection.verbose.title, "Verbose")
     }
 
     func testStreamSelectionIdentifiable() {
-        // Each case's id should equal its rawValue
-        for selection in StreamSelection.allCases {
-            XCTAssertEqual(
-                selection.id,
-                selection.rawValue,
-                "\(selection).id should match its rawValue"
-            )
-        }
-    }
-
-    func testStreamSelectionRawValues() {
-        XCTAssertEqual(StreamSelection.codexHistory.rawValue, "codexHistory")
-        XCTAssertEqual(StreamSelection.claudeHistory.rawValue, "claudeHistory")
-        XCTAssertEqual(StreamSelection.codexTerminal.rawValue, "codexTerminal")
-        XCTAssertEqual(StreamSelection.claudeTerminal.rawValue, "claudeTerminal")
-        XCTAssertEqual(StreamSelection.verbose.rawValue, "verbose")
+        XCTAssertEqual(StreamSelection.history(providerKey: "codex").id, "history-codex")
+        XCTAssertEqual(StreamSelection.history(providerKey: "claude").id, "history-claude")
+        XCTAssertEqual(StreamSelection.terminal(providerKey: "codex").id, "terminal-codex")
+        XCTAssertEqual(StreamSelection.terminal(providerKey: "claude").id, "terminal-claude")
+        XCTAssertEqual(StreamSelection.verbose.id, "verbose")
     }
 
     // MARK: - Notification Integration
 
     func testMonitoringStateChangedNotificationName() {
-        // The controller observes "MonitoringStateChanged" notification.
-        // Verify the string name is consistent with what the panel posts.
-        let name = NSNotification.Name("MonitoringStateChanged")
+        // The controller observes `.monitoringStateChanged`; the panel posts the same
+        // production constant. Verify the underlying string stays stable.
         XCTAssertEqual(
-            name.rawValue,
+            Notification.Name.monitoringStateChanged.rawValue,
             "MonitoringStateChanged",
             "Notification name should match the expected string"
-        )
-    }
-
-    // MARK: - Popover Content Size
-
-    func testPopoverContentSizeDimensions() {
-        // The popover is configured with specific dimensions in setup().
-        // While we cannot access the popover directly without a model,
-        // we can verify the expected constants match design specs.
-        let expectedWidth: CGFloat = 400
-        let expectedHeight: CGFloat = 520
-        XCTAssertGreaterThan(expectedWidth, 0, "Popover width should be positive")
-        XCTAssertGreaterThan(expectedHeight, 0, "Popover height should be positive")
-        // The popover should be taller than it is wide (panel layout)
-        XCTAssertGreaterThan(
-            expectedHeight,
-            expectedWidth,
-            "Status bar panel should be taller than wide"
         )
     }
 
     // MARK: - Stream Selection Unique IDs
 
     func testStreamSelectionIdsAreUnique() {
-        let ids = StreamSelection.allCases.map(\.id)
+        let ids = StreamSelection.defaultSelections.map(\.id)
         let uniqueIds = Set(ids)
         XCTAssertEqual(
             ids.count,
@@ -216,4 +185,3 @@ final class StatusBarControllerTests: XCTestCase {
         )
     }
 }
-#endif

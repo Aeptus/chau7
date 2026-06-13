@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 final class TerminalNormalizerTests: XCTestCase {
@@ -98,4 +97,3 @@ final class TerminalNormalizerTests: XCTestCase {
         XCTAssertFalse(result.contains("\u{1B}"))
     }
 }
-#endif

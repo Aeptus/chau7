@@ -840,6 +840,9 @@ extension TerminalSessionModel {
     }
 
     private func hasAuthoritativeNotifications(for provider: String?) -> Bool {
+        if let override = TerminalSessionModel.hasAuthoritativeNotificationsOverrideForTesting {
+            return override
+        }
         guard let normalizedProvider = AIResumeParser.normalizeProviderName(provider ?? "") else {
             return false
         }
@@ -1395,6 +1398,11 @@ extension TerminalSessionModel {
         }
 
         if isSystemRestoreInput {
+            // System restore input is excluded from command-block/history
+            // tracking, but it still occupies a buffer row that later
+            // user/agent input must not be misattributed to — record it as
+            // a `.system` source so the user-input tracker can distinguish it.
+            recordUserInputLineIfNeeded(isSystemRestoreInput: true)
             pendingCommandLine = nil
             clearPendingAITiming()
             clearWaitingInputFallbackTracking()
@@ -1644,19 +1652,34 @@ extension TerminalSessionModel {
             "restoreAIMetadata resolved session=\(tabIdentifier) provider=\(normalizedProvider ?? "nil") activeAppName=\(activeAppName ?? "nil") displayName=\(aiDisplayAppName ?? "nil")"
         )
 
-        agentStartedAt = startedAt
+        // Only overwrite lifecycle fields when the caller actually provides a
+        // value. Several call sites invoke this with just provider/sessionId
+        // (session-context resolvers that re-assert AI identity) and leave the
+        // lifecycle args nil; assigning unconditionally there would clobber
+        // freshly-restored agentLaunchCommand / agentStartedAt / lastExitCode
+        // / lastExitAt back to nil. This mirrors the existing conditional
+        // handling of lastInputAt / lastOutputAt / lastStatus.
+        if let startedAt {
+            agentStartedAt = startedAt
+        }
         if let lastInputAt {
             self.lastInputAt = lastInputAt
         }
         if let lastOutputAt {
             self.lastOutputAt = lastOutputAt
         }
-        lastAgentLaunchCommand = launchCommand
+        if let launchCommand {
+            lastAgentLaunchCommand = launchCommand
+        }
         if let lastStatus {
             status = lastStatus.restoredFromPersistence
         }
-        self.lastExitCode = lastExitCode
-        self.lastExitAt = lastExitAt
+        if let lastExitCode {
+            self.lastExitCode = lastExitCode
+        }
+        if let lastExitAt {
+            self.lastExitAt = lastExitAt
+        }
 
         if let sessionId {
             let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)

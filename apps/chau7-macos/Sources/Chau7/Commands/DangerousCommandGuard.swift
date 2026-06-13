@@ -415,10 +415,12 @@ final class DangerousCommandGuard {
     }
 
     private func saveAllowList() {
+        guard testPatternsOverride == nil else { return }
         UserDefaults.standard.set(Array(allowList), forKey: "dangerousGuard.allowList")
     }
 
     private func saveBlockList() {
+        guard testPatternsOverride == nil else { return }
         UserDefaults.standard.set(Array(blockList), forKey: "dangerousGuard.blockList")
     }
 
@@ -439,6 +441,7 @@ final class DangerousCommandGuard {
     }
 
     private func saveDirectoryAllowLists() {
+        guard testPatternsOverride == nil else { return }
         let serializable = directoryAllowLists.mapValues { Array($0) }
         if let data = Persist.encodeLogged(serializable, context: "dangerousGuard.directoryAllowLists") {
             UserDefaults.standard.set(data, forKey: "dangerousGuard.directoryAllowLists")

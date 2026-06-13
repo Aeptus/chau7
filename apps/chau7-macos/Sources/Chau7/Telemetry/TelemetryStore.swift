@@ -756,7 +756,7 @@ final class TelemetryStore {
                 total_input_tokens = ?, total_cache_creation_input_tokens = ?, total_cache_read_input_tokens = ?,
                 total_cached_input_tokens = ?, total_output_tokens = ?, total_reasoning_output_tokens = ?,
                 cost_usd = ?, token_usage_source = ?, token_usage_state = ?, cost_source = ?, cost_state = ?,
-                turn_count = ?, raw_transcript_ref = ?, error_message = ?
+                turn_count = ?, raw_transcript_ref = ?, error_message = ?, metadata = ?
             WHERE run_id = ?
             """
             var stmt: OpaquePointer?
@@ -780,7 +780,10 @@ final class TelemetryStore {
                 bindInt(stmt, 17, run.turnCount)
                 bindText(stmt, 18, run.rawTranscriptRef)
                 bindText(stmt, 19, run.errorMessage)
-                bindText(stmt, 20, run.id)
+                // Persist metadata mutated after run start (e.g. deferred
+                // content-extraction markers set by runEnded).
+                bindText(stmt, 20, Self.encodeJSON(run.metadata))
+                bindText(stmt, 21, run.id)
                 sqlite3_step(stmt)
                 sqlite3_finalize(stmt)
             }

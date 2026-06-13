@@ -224,6 +224,22 @@ final class ClipboardHistoryManager {
         persistToDisk()
     }
 
+    // MARK: - Test Support
+
+    #if DEBUG
+    /// Test seam: adds an item exactly as the clipboard poller would.
+    /// (`addItem` stays private; pasteboard polling is the only production entry point.)
+    func addItemForTesting(_ text: String) {
+        addItem(text)
+    }
+
+    /// Test seam: replaces the in-memory items without writing to UserDefaults,
+    /// so tests can snapshot and restore the singleton's state.
+    func replaceItemsForTesting(_ newItems: [ClipboardItem]) {
+        items = newItems
+    }
+    #endif
+
     // MARK: - Search
 
     func search(query: String) -> [ClipboardItem] {

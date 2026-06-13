@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 final class RepositoryCacheTests: XCTestCase {
@@ -434,4 +433,3 @@ private final class LockedCounter: @unchecked Sendable {
         return storage
     }
 }
-#endif

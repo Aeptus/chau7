@@ -1,7 +1,6 @@
 import XCTest
 import AppKit
 
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
@@ -29,6 +28,17 @@ final class OverlayRestorePreviewTests: XCTestCase {
 
     func testRestoreSavedTabsHydratesPersistedPreviewSnapshot() throws {
         let previewData = try XCTUnwrap(OverlayTabsModel.pngData(from: makePreviewImage()))
+        // A persisted restore preview only outlives the selected tab's init
+        // reveal while the session is still in its restore-bootstrap
+        // `.replaying` phase — `requestSelectedTabAuthoritativeReveal` runs
+        // synchronously during init and `discardSettledRestorePreviews`
+        // drops previews for any tab whose session is not replaying. The
+        // bootstrap phase is only entered for tabs that expect a resume
+        // prefill, so give this tab AI resume metadata to mirror the real
+        // resumable-tab scenario these snapshots accompany. Codex provider +
+        // session id survives restore sanitization without an on-disk
+        // transcript (unlike Claude UUIDs), keeping the test hermetic.
+        let codexSessionID = "preview-restore-codex"
         let state = SavedTabState(
             customTitle: "Preview Restore",
             color: TabColor.blue.rawValue,
@@ -36,7 +46,10 @@ final class OverlayRestorePreviewTests: XCTestCase {
             selectedIndex: 0,
             tokenOptOverride: nil,
             scrollbackContent: nil,
-            aiResumeCommand: nil,
+            aiResumeCommand: "codex resume \(codexSessionID)",
+            aiProvider: "codex",
+            aiSessionId: codexSessionID,
+            aiSessionIdSource: .explicit,
             splitLayout: nil,
             focusedPaneID: nil,
             paneStates: nil,
@@ -52,9 +65,13 @@ final class OverlayRestorePreviewTests: XCTestCase {
         let restoredTab = try XCTUnwrap(restoredModel.tabs.first)
         XCTAssertNotNil(restoredTab.restorePreviewSnapshot)
 
+        // Once the bootstrap settles, the next authoritative reveal discards
+        // the now-settled preview. The reveal trigger is environment-gated
+        // (startup-restore-active / key window), so drive the discard pass
+        // directly to assert the settled-preview cleanup deterministically.
         restoredTab.session?.markRestoreBootstrapReady(source: "test")
+        restoredModel.discardSettledRestorePreviews(reason: "test")
 
         XCTAssertNil(restoredModel.tabs[0].restorePreviewSnapshot)
     }
 }
-#endif

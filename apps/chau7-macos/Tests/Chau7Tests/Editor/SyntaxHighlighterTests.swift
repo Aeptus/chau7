@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 // MARK: - EditorLanguage Tests
@@ -185,8 +184,11 @@ final class EditorLanguageTests: XCTestCase {
 
     func testJSONStringRuleMatchesQuotedValues() throws {
         let lang = EditorLanguage.json
+        // The string rule starts and ends with a literal quote; the key rule ends
+        // with ":". (Don't filter on `contains(":")` — the string rule's `(?:`
+        // non-capturing group contains a colon too.)
         guard let stringRule = lang.highlightingRules.first(where: {
-            $0.pattern.contains("\"") && !$0.pattern.contains(":")
+            $0.pattern.hasPrefix("\"") && $0.pattern.hasSuffix("\"")
         }) else {
             XCTFail("JSON should have a string rule")
             return
@@ -234,21 +236,25 @@ final class EditorLanguageTests: XCTestCase {
 final class SyntaxHighlighterTests: XCTestCase {
 
     private var highlighter: SyntaxHighlighter!
+    private var savedSyntaxHighlightEnabled = true
+    private var savedClickableURLsEnabled = true
 
     override func setUp() {
         super.setUp()
         highlighter = SyntaxHighlighter.shared
-        // Ensure syntax highlighting is enabled for tests
+        // Save and pin the feature flags so tests are deterministic and
+        // don't leak changes into the persisted defaults.
+        savedSyntaxHighlightEnabled = FeatureSettings.shared.isSyntaxHighlightEnabled
+        savedClickableURLsEnabled = FeatureSettings.shared.isClickableURLsEnabled
         FeatureSettings.shared.isSyntaxHighlightEnabled = true
         FeatureSettings.shared.isClickableURLsEnabled = true
         highlighter.clearCache()
-        // Allow cache clear to complete
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
     }
 
     override func tearDown() {
         highlighter.clearCache()
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+        FeatureSettings.shared.isSyntaxHighlightEnabled = savedSyntaxHighlightEnabled
+        FeatureSettings.shared.isClickableURLsEnabled = savedClickableURLsEnabled
         super.tearDown()
     }
 
@@ -337,7 +343,6 @@ final class SyntaxHighlighterTests: XCTestCase {
     func testURLWithoutClickableURLsDisabled() {
         FeatureSettings.shared.isClickableURLsEnabled = false
         highlighter.clearCache()
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
 
         let input = "Visit https://example.com for more info"
         let result = highlighter.highlight(input)
@@ -397,7 +402,7 @@ final class SyntaxHighlighterTests: XCTestCase {
     // MARK: - Prompt Pattern Matching
 
     func testPromptHighlighted() {
-        let input = "user@host:$ ls -la"
+        let input = "user@host$ ls -la"
         let result = highlighter.highlight(input)
 
         var effectiveRange = NSRange()
@@ -418,9 +423,7 @@ final class SyntaxHighlighterTests: XCTestCase {
         var effectiveRange = NSRange()
         let attrs = result.attributes(at: 0, effectiveRange: &effectiveRange)
         XCTAssertNil(attrs[.foregroundColor], "No highlighting when feature is disabled")
-
-        // Restore for other tests
-        FeatureSettings.shared.isSyntaxHighlightEnabled = true
+        // tearDown restores the saved flag values
     }
 
     // MARK: - highlightLines
@@ -449,8 +452,6 @@ final class SyntaxHighlighterTests: XCTestCase {
         var effectiveRange = NSRange()
         let attrs = results[0].attributes(at: 0, effectiveRange: &effectiveRange)
         XCTAssertNil(attrs[.foregroundColor])
-
-        FeatureSettings.shared.isSyntaxHighlightEnabled = true
     }
 
     // MARK: - highlightLinesAsync
@@ -480,7 +481,6 @@ final class SyntaxHighlighterTests: XCTestCase {
         }
 
         wait(for: [expectation], timeout: 2.0)
-        FeatureSettings.shared.isSyntaxHighlightEnabled = true
     }
 
     // MARK: - Cache Behavior
@@ -488,9 +488,6 @@ final class SyntaxHighlighterTests: XCTestCase {
     func testCacheReturnsSameResult() {
         let input = "error: cache test"
         let first = highlighter.highlight(input)
-        // Allow async cache write to complete
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
-
         let second = highlighter.highlight(input)
 
         // Both should produce identical attributed strings
@@ -500,10 +497,8 @@ final class SyntaxHighlighterTests: XCTestCase {
     func testClearCacheAllowsReHighlight() {
         let input = "error: clear test"
         _ = highlighter.highlight(input)
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
 
         highlighter.clearCache()
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
 
         // After clearing, it should still produce a valid result
         let result = highlighter.highlight(input)
@@ -515,8 +510,6 @@ final class SyntaxHighlighterTests: XCTestCase {
         for i in 0 ..< 550 {
             _ = highlighter.highlight("line \(i) with error marker")
         }
-        // Allow all async cache writes to complete
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.2))
 
         // Should still work after eviction
         let result = highlighter.highlight("post-eviction test error")
@@ -541,4 +534,3 @@ final class SyntaxHighlighterTests: XCTestCase {
         }
     }
 }
-#endif

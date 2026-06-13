@@ -1,6 +1,6 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
+@testable import Chau7Core
 
 @MainActor
 final class ProtectedPathPolicyTests: XCTestCase {
@@ -16,7 +16,9 @@ final class ProtectedPathPolicyTests: XCTestCase {
         settings.allowProtectedFolderAccess = false
         ProtectedPathPolicy.resetAccessChecks()
 
-        let path = "/Users/me/Downloads/Repositories/Chau7"
+        // Protected roots are derived from the live home directory; a hard-coded
+        // "/Users/me/..." path would not be protected on a real machine.
+        let path = RuntimeIsolation.homePath() + "/Downloads/Repositories/Chau7"
 
         let initial = ProtectedPathPolicy.accessSnapshotForUserInitiatedAction(path: path)
         XCTAssertEqual(initial.state, .blockedFeatureDisabled)
@@ -43,7 +45,7 @@ final class ProtectedPathPolicyTests: XCTestCase {
         settings.allowProtectedFolderAccess = true
         ProtectedPathPolicy.resetAccessChecks()
 
-        let path = "/Users/me/Downloads/Repositories/Chau7"
+        let path = RuntimeIsolation.homePath() + "/Downloads/Repositories/Chau7"
         _ = ProtectedPathPolicy.recordUserInitiatedDenial(path: path, reason: "testCancel")
 
         XCTAssertEqual(
@@ -59,4 +61,3 @@ final class ProtectedPathPolicyTests: XCTestCase {
         )
     }
 }
-#endif

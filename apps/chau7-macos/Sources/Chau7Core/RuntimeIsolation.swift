@@ -111,6 +111,9 @@ public enum RuntimeIsolation {
         fileManager: FileManager = .default,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> String {
+        if path == "~" {
+            return homePath(fileManager: fileManager, environment: environment)
+        }
         guard path.hasPrefix("~/") else { return path }
         return homePath(fileManager: fileManager, environment: environment) + String(path.dropFirst())
     }

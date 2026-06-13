@@ -187,6 +187,13 @@ final class GitDiffTracker {
         var result: [String: Date] = [:]
         let ignoredDirectories: Set = [".git", ".build", "node_modules", "DerivedData"]
 
+        // The enumerator yields canonical paths (e.g. /private/var/…) even when the
+        // requested root goes through a symlink (e.g. /var/… or /tmp/…). Strip
+        // whichever root form actually prefixes the entry, otherwise a naive
+        // replacement mangles the relative path ("/private" + "example.txt").
+        let canonicalRootPath = (try? rootURL.resourceValues(forKeys: [.canonicalPathKey]).canonicalPath) ?? rootURL.path
+        let rootPrefixes = Set([rootURL.path, canonicalRootPath]).map { $0.hasSuffix("/") ? $0 : $0 + "/" }
+
         for case let url as URL in enumerator {
             if ignoredDirectories.contains(url.lastPathComponent) {
                 enumerator.skipDescendants()
@@ -195,7 +202,12 @@ final class GitDiffTracker {
 
             let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
             guard values?.isRegularFile == true else { continue }
-            let relative = url.path.replacingOccurrences(of: rootURL.path + "/", with: "")
+            let path = url.path
+            var relative = path
+            for prefix in rootPrefixes where path.hasPrefix(prefix) {
+                relative = String(path.dropFirst(prefix.count))
+                break
+            }
             result[relative] = values?.contentModificationDate ?? Date.distantPast
         }
         return result

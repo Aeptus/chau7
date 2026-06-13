@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
@@ -177,4 +176,3 @@ final class PasteEscaperTests: XCTestCase {
         )
     }
 }
-#endif

@@ -1,17 +1,18 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
 final class OverlayTabsModelRepoGroupingTests: XCTestCase {
     private var model: OverlayTabsModel!
     private var appModel: AppModel!
+    private var originalRepoGroupingMode: RepoGroupingMode = .off
 
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         OverlayTabsModel.sessionFinders = [:]
+        originalRepoGroupingMode = FeatureSettings.shared.repoGroupingMode
         appModel = AppModel()
         model = OverlayTabsModel(appModel: appModel, restoreState: false)
     }
@@ -20,6 +21,7 @@ final class OverlayTabsModelRepoGroupingTests: XCTestCase {
         model = nil
         appModel = nil
         OverlayTabsModel.sessionFinders = [:]
+        FeatureSettings.shared.repoGroupingMode = originalRepoGroupingMode
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         super.tearDown()
@@ -86,4 +88,3 @@ final class OverlayTabsModelRepoGroupingTests: XCTestCase {
         )
     }
 }
-#endif

@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 final class RemotePairingInfoTests: XCTestCase {
@@ -88,4 +87,3 @@ final class RemotePairingInfoTests: XCTestCase {
         )
     }
 }
-#endif

@@ -1166,6 +1166,12 @@ final class TerminalSessionModel {
     static let aiExitMarkerSuffix = Data([0x07])
     static let aiExitMarkerKeepBytes = max(0, aiExitMarkerPrefix.count - 1)
 
+    /// Test-only override for `hasAuthoritativeNotifications(for:)`. When set,
+    /// it forces the result regardless of the developer machine's real
+    /// ~/.codex/config.toml hook installation so waiting-input fallback tests
+    /// are hermetic. Production never sets this; reset to nil in tearDown.
+    static var hasAuthoritativeNotificationsOverrideForTesting: Bool?
+
     struct AILogContext {
         let toolName: String
         let commandLine: String?
@@ -3578,8 +3584,14 @@ final class TerminalSessionModel {
     /// and bumps the refreshGitStatus generation counter so any in-flight .blocked
     /// resolves don't overwrite the authoritative state.
     func handleShellRepoRootReport(_ root: String) {
-        let normalized = URL(fileURLWithPath: root).standardized.path
-        guard !normalized.isEmpty else { return }
+        // Empty/whitespace or relative reports are garbage (e.g. a precmd hook
+        // firing outside a repo) — resolving them against the cwd would mark
+        // the session as a git repo at a bogus path.
+        let trimmed = root.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.hasPrefix("/") else { return }
+        // standardizingPath collapses `//` and `/./` segments, which
+        // URL.standardized leaves in place for `//`.
+        let normalized = (trimmed as NSString).standardizingPath
 
         // Cancel pending refreshGitStatus completions that would clobber our state.
         gitStatusGeneration &+= 1

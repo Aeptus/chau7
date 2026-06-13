@@ -22,6 +22,12 @@ final class MemoryPressureResponder {
     private let selfTriggerCooldown: TimeInterval = 60
     private static let footprintCheckInterval: TimeInterval = 30
 
+    /// Test-only override forcing `isUnderMemoryPressure` to a fixed value.
+    /// Production never sets this; tests use it to exercise the
+    /// memory-pressure branch of the render-lifecycle policy deterministically
+    /// without a real OS pressure event. Reset to `nil` in tearDown.
+    var memoryPressureOverrideForTesting: Bool?
+
     private init() {}
 
     func start() {
@@ -129,6 +135,9 @@ final class MemoryPressureResponder {
     /// every few minutes, refreshing the window; when pressure ends, this clears and
     /// tabs are restored to `.warm` on the next lifecycle re-evaluation.
     func isUnderMemoryPressure(now: Date = Date()) -> Bool {
+        if let override = memoryPressureOverrideForTesting {
+            return override
+        }
         stateLock.lock()
         let lastPressureAt = lastPressureAt
         stateLock.unlock()

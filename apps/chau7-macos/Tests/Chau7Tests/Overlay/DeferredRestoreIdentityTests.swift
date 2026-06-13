@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 private func drainDeferredRestoreIdentityQueue() {
@@ -151,4 +150,3 @@ final class DeferredRestoreIdentityTests: XCTestCase {
         XCTAssertTrue(restoredModel.deferredRestoreTabOrder.contains(tabIDs[3]))
     }
 }
-#endif

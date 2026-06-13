@@ -616,7 +616,11 @@ extension OverlayTabsModel {
                 agentStartedAt: state.agentStartedAt,
                 lastExitCode: state.lastExitCode,
                 lastExitAt: state.lastExitAt,
-                commandBlocks: state.commandBlocks
+                commandBlocks: state.commandBlocks,
+                // Legacy-only field, but it must survive sanitization:
+                // restore previews from older on-disk backups hydrate
+                // `OverlayTab.restorePreviewSnapshot` from this payload.
+                previewSnapshotPNGData: state.previewSnapshotPNGData
             )
         }
     }

@@ -1,4 +1,3 @@
-#if !SWIFT_PACKAGE
 import Foundation
 import XCTest
 @testable import Chau7
@@ -207,7 +206,8 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
                     secondEntry.fulfill()
                 }
                 lock.unlock()
-            }
+            },
+            onIdle: { _, _ in }
         )
 
         monitor.start()
@@ -248,4 +248,3 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
         try? handle.write(contentsOf: data)
     }
 }
-#endif

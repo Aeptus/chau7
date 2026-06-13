@@ -1,76 +1,14 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 @testable import Chau7Core
 
+/// Tests for the analytics value types backing TerminalAnalytics.
+///
+/// NOTE: The old `DailyStat` and `ShellUsage` types no longer exist in production
+/// (TerminalAnalytics was rewritten around `FrequentCommand` + aggregate counters),
+/// so the original tests for them were removed. `TerminalAnalytics` itself is a
+/// singleton wired to `PersistentHistoryStore.shared` and is not unit-testable here.
 final class TerminalAnalyticsTests: XCTestCase {
-
-    // MARK: - DailyStat Error Rate
-
-    func testErrorRateZeroCommands() {
-        let stat = DailyStat(date: Date(), commandCount: 0, errorCount: 0)
-        XCTAssertEqual(stat.errorRate, 0)
-    }
-
-    func testErrorRateNoErrors() {
-        let stat = DailyStat(date: Date(), commandCount: 50, errorCount: 0)
-        XCTAssertEqual(stat.errorRate, 0)
-    }
-
-    func testErrorRateAllErrors() {
-        let stat = DailyStat(date: Date(), commandCount: 10, errorCount: 10)
-        XCTAssertEqual(stat.errorRate, 1.0, accuracy: 0.001)
-    }
-
-    func testErrorRatePartial() {
-        let stat = DailyStat(date: Date(), commandCount: 100, errorCount: 25)
-        XCTAssertEqual(stat.errorRate, 0.25, accuracy: 0.001)
-    }
-
-    func testErrorRateSingleCommand() {
-        let stat = DailyStat(date: Date(), commandCount: 1, errorCount: 1)
-        XCTAssertEqual(stat.errorRate, 1.0, accuracy: 0.001)
-    }
-
-    // MARK: - DailyStat Day Label
-
-    func testDayLabelFormat() {
-        // Create a known date (Monday)
-        var components = DateComponents()
-        components.year = 2025
-        components.month = 1
-        components.day = 6 // Monday
-        let calendar = Calendar(identifier: .gregorian)
-        let monday = calendar.date(from: components)!
-
-        let stat = DailyStat(date: monday, commandCount: 10, errorCount: 1)
-        let label = stat.dayLabel
-        // The label should be a short day name
-        XCTAssertFalse(label.isEmpty)
-        XCTAssertTrue(label.count <= 5, "Day label should be a short abbreviation")
-    }
-
-    // MARK: - DailyStat Identifiable
-
-    func testDailyStatIdentifiable() {
-        let date = Date()
-        let stat = DailyStat(date: date, commandCount: 5, errorCount: 1)
-        XCTAssertEqual(stat.id, date)
-    }
-
-    // MARK: - ShellUsage Properties
-
-    func testShellUsageIdentifiable() {
-        let usage = ShellUsage(shell: "zsh", count: 100, percentage: 60)
-        XCTAssertEqual(usage.id, "zsh")
-    }
-
-    func testShellUsageProperties() {
-        let usage = ShellUsage(shell: "bash", count: 50, percentage: 30)
-        XCTAssertEqual(usage.shell, "bash")
-        XCTAssertEqual(usage.count, 50)
-        XCTAssertEqual(usage.percentage, 30)
-    }
 
     // MARK: - FrequentCommand Frecency
 
@@ -154,4 +92,3 @@ final class TerminalAnalyticsTests: XCTestCase {
         XCTAssertEqual(decoded.count, original.count)
     }
 }
-#endif

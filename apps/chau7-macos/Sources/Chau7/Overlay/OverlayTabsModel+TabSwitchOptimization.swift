@@ -694,6 +694,10 @@ extension OverlayTabsModel {
             tab.tokenOptOverride = override
             tab.session?.tokenOptOverride = override
         }
+        // Restore repo group membership, mirroring the launch-time restore
+        // path (decodeRestorableTabs). Without this a reopened tab silently
+        // drops its repo group.
+        tab.repoGroupID = state.repoGroupID
 
         tabs.insert(tab, at: insertIndex)
         selectedTabID = tab.id

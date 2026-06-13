@@ -1,4 +1,5 @@
 import XCTest
+@testable import Chau7
 import Chau7Core
 
 // MARK: - Core Tests (run under SPM — no app target dependency)
@@ -795,11 +796,26 @@ final class TokenOptimizationCoreTests: XCTestCase {
 
 // MARK: - Integration Tests (app target only)
 
-#if !SWIFT_PACKAGE
-@testable import Chau7
 
 /// Tests requiring the app target: PATH injection, optimizer paths, runtime monitor, notifications.
 final class TokenOptimizationIntegrationTests: XCTestCase {
+
+    /// The live Chau7 app instance heartbeats the real ~/.chau7/cto_state.json
+    /// while the suite runs — point the state file at a private temp URL so
+    /// reads/writes/teardown-removes here never race it (or delete it).
+    override func setUp() {
+        super.setUp()
+        CTOStateFile.stateURLOverrideForTesting = FileManager.default.temporaryDirectory
+            .appendingPathComponent("chau7-tests-cto-state-\(UUID().uuidString).json")
+    }
+
+    override func tearDown() {
+        if let url = CTOStateFile.stateURLOverrideForTesting {
+            try? FileManager.default.removeItem(at: url)
+        }
+        CTOStateFile.stateURLOverrideForTesting = nil
+        super.tearDown()
+    }
 
     // MARK: - CTOManager PATH Injection
 
@@ -1007,6 +1023,11 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
 
     func testCTORuntimeAssessmentSignals() {
         CTORuntimeMonitor.shared.reset()
+        // reset() leaves the monitor's mode at .off; with tracked sessions
+        // that adds a modeOffWithTrackedSessions penalty (-20) on top of the
+        // lowChangeRate penalty (-30) and tips the state to .critical. This
+        // test targets the lowChangeRate signal alone, so record a real mode.
+        CTORuntimeMonitor.shared.recordModeChanged(from: .off, to: .manual)
 
         for index in 0 ..< 4 {
             CTORuntimeMonitor.shared.recordDecision(
@@ -1189,10 +1210,11 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
             "Change-driven write uses the same instant for both stamps"
         )
 
-        // Tight loop on `Date()` can occasionally return the same value
-        // at sub-millisecond resolution; sleep briefly so the heartbeat
-        // is observably newer than the change.
-        Thread.sleep(forTimeInterval: 0.01)
+        // The snapshot encodes dates as ISO8601 *without* fractional
+        // seconds, so timestamps round-trip at whole-second resolution.
+        // Sleep past the next second boundary so the heartbeat's
+        // `updatedAt` is observably newer than the change after decoding.
+        Thread.sleep(forTimeInterval: 1.1)
         CTORuntimeMonitor.shared.writeDiagnosticStateSnapshot(isHeartbeat: true)
 
         let afterHeartbeat = try decoder.decode(
@@ -1355,4 +1377,3 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         }
     }
 }
-#endif

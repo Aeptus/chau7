@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 @testable import Chau7Core
 
@@ -247,32 +246,53 @@ final class DangerousCommandGuardTests: XCTestCase {
         XCTAssertTrue(guard_.blockList.isEmpty)
     }
 
+    /// Pins the self-protection feature settings (which `check` reads from
+    /// `FeatureSettings.shared`) so these tests don't depend on persisted state.
+    private func withSelfProtection(
+        level: DangerousCommandProtectionLevel,
+        _ body: () -> Void
+    ) {
+        let settings = FeatureSettings.shared
+        let previousEnabled = settings.dangerousCommandProtectChau7Enabled
+        let previousLevel = settings.dangerousCommandProtectChau7Level
+        defer {
+            settings.dangerousCommandProtectChau7Enabled = previousEnabled
+            settings.dangerousCommandProtectChau7Level = previousLevel
+        }
+        settings.dangerousCommandProtectChau7Enabled = true
+        settings.dangerousCommandProtectChau7Level = level
+        body()
+    }
+
     func testSelfProtectionBlocksProtectedKillByPID() {
-        let guard_ = makeGuard(patterns: [])
-        XCTAssertEqual(
-            guard_.check(
-                commandLine: "kill 4242",
-                selfProtectionContext: SelfProtectiveCommandContext(
-                    protectedPIDs: [4242],
-                    protectedProcessNames: ["chau7"]
-                )
-            ),
-            .blocked(reason: "would terminate a protected Chau7-managed process")
-        )
+        withSelfProtection(level: .blocking) {
+            let guard_ = makeGuard(patterns: [])
+            XCTAssertEqual(
+                guard_.check(
+                    commandLine: "kill 4242",
+                    selfProtectionContext: SelfProtectiveCommandContext(
+                        protectedPIDs: [4242],
+                        protectedProcessNames: ["chau7"]
+                    )
+                ),
+                .blocked(reason: "would terminate a protected Chau7-managed process")
+            )
+        }
     }
 
     func testSelfProtectionAllowsUnrelatedKillByPID() {
-        let guard_ = makeGuard(patterns: [])
-        XCTAssertEqual(
-            guard_.check(
-                commandLine: "kill 4242",
-                selfProtectionContext: SelfProtectiveCommandContext(
-                    protectedPIDs: [9999],
-                    protectedProcessNames: ["chau7"]
-                )
-            ),
-            .safe
-        )
+        withSelfProtection(level: .blocking) {
+            let guard_ = makeGuard(patterns: [])
+            XCTAssertEqual(
+                guard_.check(
+                    commandLine: "kill 4242",
+                    selfProtectionContext: SelfProtectiveCommandContext(
+                        protectedPIDs: [9999],
+                        protectedProcessNames: ["chau7"]
+                    )
+                ),
+                .safe
+            )
+        }
     }
 }
-#endif

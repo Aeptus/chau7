@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 final class GitDiffTrackerTests: XCTestCase {
@@ -28,6 +27,9 @@ final class GitDiffTrackerTests: XCTestCase {
 
     func testChangedFilesResultFallsBackToFilesystemOutsideGit() throws {
         let tracker = GitDiffTracker()
+        // NSTemporaryDirectory() goes through the /var → /private/var symlink on
+        // macOS; this deliberately exercises the canonical-path handling in the
+        // filesystem fallback.
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("git-diff-fallback-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -40,7 +42,9 @@ final class GitDiffTrackerTests: XCTestCase {
         let result = tracker.changedFilesResult(directory: directory.path)
         XCTAssertTrue(result.usedFallback)
         XCTAssertEqual(result.files, ["example.txt"])
-        XCTAssertTrue(result.diffUnavailable)
+        // The fallback produced a usable file list, so the diff is not "unavailable"
+        // even though git itself was (unavailableReason explains the fallback).
+        XCTAssertFalse(result.diffUnavailable)
         XCTAssertNotNil(result.unavailableReason)
     }
 
@@ -60,4 +64,3 @@ final class GitDiffTrackerTests: XCTestCase {
         XCTAssertTrue(result.files.contains(".env"))
     }
 }
-#endif

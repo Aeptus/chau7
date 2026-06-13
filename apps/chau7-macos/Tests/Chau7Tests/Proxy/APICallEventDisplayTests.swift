@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 final class APICallEventDisplayTests: XCTestCase {
@@ -24,4 +23,3 @@ final class APICallEventDisplayTests: XCTestCase {
         XCTAssertEqual(event.formattedHour, formatter.string(from: event.timestamp))
     }
 }
-#endif

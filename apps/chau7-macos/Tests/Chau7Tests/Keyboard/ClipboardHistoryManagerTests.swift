@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
@@ -8,40 +7,69 @@ final class ClipboardHistoryManagerTests: XCTestCase {
     private var manager: ClipboardHistoryManager!
     private var savedItems: [ClipboardHistoryManager.ClipboardItem] = []
     private var savedMaxItems = 50
+    private var savedPersistedData: Data?
+    private var savedPasteboardString: String?
 
     override func setUp() {
         super.setUp()
         manager = ClipboardHistoryManager.shared
         // Stop polling so tests are deterministic
         manager.stopPolling()
-        // Save existing state
+        // Save existing state. `addItem`/`paste`/`togglePin`/... persist to
+        // UserDefaults ("clipboard.history"), so snapshot the raw blob too.
         savedItems = manager.items
         savedMaxItems = FeatureSettings.shared.clipboardHistoryMaxItems
+        savedPersistedData = UserDefaults.standard.data(forKey: "clipboard.history")
+        savedPasteboardString = NSPasteboard.general.string(forType: .string)
         // Clear items for a clean slate
-        manager.items = []
+        manager.replaceItemsForTesting([])
     }
 
     override func tearDown() {
-        // Restore previous state
-        manager.items = savedItems
+        // Restore previous state (in-memory, persisted blob, and pasteboard)
+        manager.replaceItemsForTesting(savedItems)
         FeatureSettings.shared.clipboardHistoryMaxItems = savedMaxItems
+        if let savedPersistedData {
+            UserDefaults.standard.set(savedPersistedData, forKey: "clipboard.history")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "clipboard.history")
+        }
+        if let savedPasteboardString {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(savedPasteboardString, forType: .string)
+        }
         super.tearDown()
     }
 
     // MARK: - addItem
 
     func testAddItem() {
-        manager.addItem("hello")
+        manager.addItemForTesting("hello")
         XCTAssertEqual(manager.items.count, 1)
         XCTAssertEqual(manager.items.first?.text, "hello")
+    }
+
+    func testOversizedItemIsTruncatedForStorage() {
+        // Items above the 100KB per-item cap are truncated (with an ellipsis)
+        // before being stored, so multi-MB copies don't bloat the prefs plist.
+        let oversized = String(repeating: "x", count: 150 * 1024)
+        manager.addItemForTesting(oversized)
+
+        let stored = manager.items.first?.text ?? ""
+        XCTAssertLessThanOrEqual(
+            stored.utf8.count,
+            100 * 1024 + "\u{2026}".utf8.count,
+            "Stored item should be capped at 100KB plus the ellipsis"
+        )
+        XCTAssertTrue(stored.hasSuffix("\u{2026}"), "Truncated item should end with an ellipsis")
     }
 
     // MARK: - Duplicate Handling
 
     func testAddDuplicateMovesToTop() {
-        manager.addItem("first")
-        manager.addItem("second")
-        manager.addItem("first")
+        manager.addItemForTesting("first")
+        manager.addItemForTesting("second")
+        manager.addItemForTesting("first")
 
         XCTAssertEqual(manager.items.count, 2, "Duplicate should be removed, not appended")
         XCTAssertEqual(manager.items[0].text, "first", "Duplicate should move to top")
@@ -54,7 +82,7 @@ final class ClipboardHistoryManagerTests: XCTestCase {
         FeatureSettings.shared.clipboardHistoryMaxItems = 3
 
         for i in 0 ..< 5 {
-            manager.addItem("item-\(i)")
+            manager.addItemForTesting("item-\(i)")
         }
 
         XCTAssertLessThanOrEqual(
@@ -74,12 +102,12 @@ final class ClipboardHistoryManagerTests: XCTestCase {
     func testPinnedItemsSurviveTrim() {
         FeatureSettings.shared.clipboardHistoryMaxItems = 3
 
-        manager.addItem("pinned-item")
+        manager.addItemForTesting("pinned-item")
         manager.togglePin(manager.items[0])
 
         // Fill beyond max with unpinned items
         for i in 0 ..< 5 {
-            manager.addItem("filler-\(i)")
+            manager.addItemForTesting("filler-\(i)")
         }
 
         let pinnedItems = manager.items.filter { $0.isPinned }
@@ -90,7 +118,7 @@ final class ClipboardHistoryManagerTests: XCTestCase {
     // MARK: - Toggle Pin
 
     func testTogglePin() {
-        manager.addItem("test")
+        manager.addItemForTesting("test")
         let item = manager.items[0]
 
         XCTAssertFalse(item.isPinned, "Item should start unpinned")
@@ -105,9 +133,9 @@ final class ClipboardHistoryManagerTests: XCTestCase {
     // MARK: - Paste
 
     func testPaste() {
-        manager.addItem("first")
-        manager.addItem("second")
-        manager.addItem("third")
+        manager.addItemForTesting("first")
+        manager.addItemForTesting("second")
+        manager.addItemForTesting("third")
 
         // Paste the last item (index 2 = "first")
         let itemToPaste = manager.items[2]
@@ -130,8 +158,8 @@ final class ClipboardHistoryManagerTests: XCTestCase {
     // MARK: - Remove
 
     func testRemove() {
-        manager.addItem("keep")
-        manager.addItem("remove-me")
+        manager.addItemForTesting("keep")
+        manager.addItemForTesting("remove-me")
 
         let toRemove = manager.items.first(where: { $0.text == "remove-me" })!
         manager.remove(toRemove)
@@ -150,11 +178,11 @@ final class ClipboardHistoryManagerTests: XCTestCase {
     // MARK: - Clear
 
     func testClear() {
-        manager.addItem("pinned")
+        manager.addItemForTesting("pinned")
         manager.togglePin(manager.items[0])
 
-        manager.addItem("unpinned-1")
-        manager.addItem("unpinned-2")
+        manager.addItemForTesting("unpinned-1")
+        manager.addItemForTesting("unpinned-2")
 
         manager.clear()
 
@@ -197,4 +225,3 @@ final class ClipboardHistoryManagerTests: XCTestCase {
         )
     }
 }
-#endif

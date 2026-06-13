@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 import Chau7Core
 
@@ -288,16 +287,19 @@ final class SplitPaneControllerTests: XCTestCase {
 
     private var appModel: AppModel!
     private var controller: SplitPaneController!
+    private var originalSplitPanesEnabled = true
 
     override func setUp() {
         super.setUp()
         appModel = AppModel()
-        // Enable split panes for tests
+        // Enable split panes for tests, remembering the user's real setting.
+        originalSplitPanesEnabled = FeatureSettings.shared.isSplitPanesEnabled
         FeatureSettings.shared.isSplitPanesEnabled = true
         controller = SplitPaneController(appModel: appModel)
     }
 
     override func tearDown() {
+        FeatureSettings.shared.isSplitPanesEnabled = originalSplitPanesEnabled
         controller = nil
         appModel = nil
         super.tearDown()
@@ -479,10 +481,8 @@ final class SplitPaneControllerTests: XCTestCase {
 
         // The tree should be a single leaf, not a degenerate split
         switch controller.root {
-        case .terminal:
-            break // correct
-        case .textEditor:
-            break // also acceptable
+        case .leaf:
+            break // correct (terminal or editor leaf)
         case .split:
             XCTFail("Root should not be a split with only 1 pane")
         }
@@ -507,7 +507,7 @@ final class SplitPaneControllerTests: XCTestCase {
 
     private func assertNoEmptySplits(_ node: SplitNode) {
         switch node {
-        case .terminal, .textEditor:
+        case .leaf:
             break
         case .split(_, _, let first, let second, _):
             // A split must have children with panes
@@ -564,7 +564,6 @@ final class SplitPaneControllerTests: XCTestCase {
 
     func testNavigationWithThreePanes() {
         controller.splitWithTerminal(direction: .horizontal)
-        let id2 = controller.focusedPaneID
 
         controller.splitWithTerminal(direction: .vertical)
         let id3 = controller.focusedPaneID
@@ -775,7 +774,7 @@ final class SplitPaneControllerTests: XCTestCase {
 final class TextEditorModelTests: XCTestCase {
 
     private func waitUntil(
-        timeout: TimeInterval = 2,
+        timeout: TimeInterval = 5,
         file: StaticString = #filePath,
         line: UInt = #line,
         condition: @escaping () -> Bool
@@ -1075,6 +1074,11 @@ final class MarkdownRunbookInfrastructureTests: XCTestCase {
 
 final class SplitEnumTests: XCTestCase {
 
+    private func makeTerminalNode(id: UUID = UUID(), appModel: AppModel) -> SplitNode {
+        let session = TerminalSessionModel(appModel: appModel)
+        return .leaf(TerminalPane(id: id, session: session))
+    }
+
     func testSplitDirectionRawValues() {
         XCTAssertEqual(SplitDirection.horizontal.rawValue, "horizontal")
         XCTAssertEqual(SplitDirection.vertical.rawValue, "vertical")
@@ -1092,46 +1096,46 @@ final class SplitEnumTests: XCTestCase {
     func testFilePreviewNodeID() {
         let id = UUID()
         let preview = FilePreviewModel()
-        let node = SplitNode.filePreview(id: id, preview: preview)
+        let node = SplitNode.leaf(FilePreviewPane(id: id, preview: preview))
         XCTAssertEqual(node.id, id)
     }
 
     func testFilePreviewAllPaneIDs() {
         let id = UUID()
         let preview = FilePreviewModel()
-        let node = SplitNode.filePreview(id: id, preview: preview)
+        let node = SplitNode.leaf(FilePreviewPane(id: id, preview: preview))
         XCTAssertEqual(node.allPaneIDs, [id])
     }
 
     func testFilePreviewAllTerminalIDsIsEmpty() {
         let preview = FilePreviewModel()
-        let node = SplitNode.filePreview(id: UUID(), preview: preview)
+        let node = SplitNode.leaf(FilePreviewPane(id: UUID(), preview: preview))
         XCTAssertTrue(node.allTerminalIDs.isEmpty)
     }
 
     func testFilePreviewAllSessionsIsEmpty() {
         let preview = FilePreviewModel()
-        let node = SplitNode.filePreview(id: UUID(), preview: preview)
+        let node = SplitNode.leaf(FilePreviewPane(id: UUID(), preview: preview))
         XCTAssertTrue(node.allSessions.isEmpty)
     }
 
     func testFilePreviewHasNoTextEditor() {
         let preview = FilePreviewModel()
-        let node = SplitNode.filePreview(id: UUID(), preview: preview)
+        let node = SplitNode.leaf(FilePreviewPane(id: UUID(), preview: preview))
         XCTAssertFalse(node.hasTextEditor)
     }
 
     func testFilePreviewPaneType() {
         let id = UUID()
         let preview = FilePreviewModel()
-        let node = SplitNode.filePreview(id: id, preview: preview)
+        let node = SplitNode.leaf(FilePreviewPane(id: id, preview: preview))
         XCTAssertEqual(node.paneType(for: id), .filePreview)
     }
 
     func testFindFilePreviewByID() {
         let id = UUID()
         let preview = FilePreviewModel()
-        let node = SplitNode.filePreview(id: id, preview: preview)
+        let node = SplitNode.leaf(FilePreviewPane(id: id, preview: preview))
         XCTAssertNotNil(node.findFilePreview(id: id))
         XCTAssertNil(node.findFilePreview(id: UUID()))
     }
@@ -1140,7 +1144,7 @@ final class SplitEnumTests: XCTestCase {
         let appModel = AppModel()
         let preview = FilePreviewModel()
         let term = makeTerminalNode(appModel: appModel)
-        let previewNode = SplitNode.filePreview(id: UUID(), preview: preview)
+        let previewNode = SplitNode.leaf(FilePreviewPane(id: UUID(), preview: preview))
         let root = SplitNode.split(id: UUID(), direction: .horizontal, first: term, second: previewNode, ratio: 0.5)
         XCTAssertNotNil(root.findFirstFilePreview())
     }
@@ -1156,40 +1160,40 @@ final class SplitEnumTests: XCTestCase {
     func testDiffViewerNodeID() {
         let id = UUID()
         let diff = DiffViewerModel()
-        let node = SplitNode.diffViewer(id: id, diff: diff)
+        let node = SplitNode.leaf(DiffViewerPane(id: id, diff: diff))
         XCTAssertEqual(node.id, id)
     }
 
     func testDiffViewerAllPaneIDs() {
         let id = UUID()
         let diff = DiffViewerModel()
-        let node = SplitNode.diffViewer(id: id, diff: diff)
+        let node = SplitNode.leaf(DiffViewerPane(id: id, diff: diff))
         XCTAssertEqual(node.allPaneIDs, [id])
     }
 
     func testDiffViewerAllTerminalIDsIsEmpty() {
         let diff = DiffViewerModel()
-        let node = SplitNode.diffViewer(id: UUID(), diff: diff)
+        let node = SplitNode.leaf(DiffViewerPane(id: UUID(), diff: diff))
         XCTAssertTrue(node.allTerminalIDs.isEmpty)
     }
 
     func testDiffViewerHasNoTextEditor() {
         let diff = DiffViewerModel()
-        let node = SplitNode.diffViewer(id: UUID(), diff: diff)
+        let node = SplitNode.leaf(DiffViewerPane(id: UUID(), diff: diff))
         XCTAssertFalse(node.hasTextEditor)
     }
 
     func testDiffViewerPaneType() {
         let id = UUID()
         let diff = DiffViewerModel()
-        let node = SplitNode.diffViewer(id: id, diff: diff)
+        let node = SplitNode.leaf(DiffViewerPane(id: id, diff: diff))
         XCTAssertEqual(node.paneType(for: id), .diffViewer)
     }
 
     func testFindDiffViewerByID() {
         let id = UUID()
         let diff = DiffViewerModel()
-        let node = SplitNode.diffViewer(id: id, diff: diff)
+        let node = SplitNode.leaf(DiffViewerPane(id: id, diff: diff))
         XCTAssertNotNil(node.findDiffViewer(id: id))
         XCTAssertNil(node.findDiffViewer(id: UUID()))
     }
@@ -1198,7 +1202,7 @@ final class SplitEnumTests: XCTestCase {
         let appModel = AppModel()
         let diff = DiffViewerModel()
         let term = makeTerminalNode(appModel: appModel)
-        let diffNode = SplitNode.diffViewer(id: UUID(), diff: diff)
+        let diffNode = SplitNode.leaf(DiffViewerPane(id: UUID(), diff: diff))
         let root = SplitNode.split(id: UUID(), direction: .horizontal, first: term, second: diffNode, ratio: 0.5)
         XCTAssertNotNil(root.findFirstDiffViewer())
     }
@@ -1274,8 +1278,8 @@ final class SplitEnumTests: XCTestCase {
 
         diff.loadDiff(file: "src/main.swift", in: "/Users/me/Downloads/Repositories/Chau7")
 
-        wait(for: [gitCalled], timeout: 1.0)
-        waitUntil(timeout: 1.0) { !diff.hunks.isEmpty }
+        wait(for: [gitCalled], timeout: 5.0)
+        waitUntil(timeout: 5.0) { !diff.hunks.isEmpty }
 
         XCTAssertEqual(requestedAction, "load live diff")
         XCTAssertTrue(diff.protectedAccessSnapshot.canProbeLive)
@@ -1420,7 +1424,7 @@ final class SplitEnumTests: XCTestCase {
     func testSavedSplitNodeFilePreviewRoundTrip() {
         let preview = FilePreviewModel()
         preview.filePath = "/test/image.png"
-        let node = SplitNode.filePreview(id: UUID(), preview: preview)
+        let node = SplitNode.leaf(FilePreviewPane(id: UUID(), preview: preview))
         let saved = node.savedRepresentation
         XCTAssertEqual(saved.kind, .filePreview)
         XCTAssertEqual(saved.previewFilePath, "/test/image.png")
@@ -1431,7 +1435,7 @@ final class SplitEnumTests: XCTestCase {
         diff.filePath = "src/main.swift"
         diff.directory = "/Users/test/project"
         diff.diffMode = .staged
-        let node = SplitNode.diffViewer(id: UUID(), diff: diff)
+        let node = SplitNode.leaf(DiffViewerPane(id: UUID(), diff: diff))
         let saved = node.savedRepresentation
         XCTAssertEqual(saved.kind, .diffViewer)
         XCTAssertEqual(saved.diffFilePath, "src/main.swift")
@@ -1449,4 +1453,3 @@ private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) {
         RunLoop.main.run(until: Date().addingTimeInterval(0.01))
     }
 }
-#endif

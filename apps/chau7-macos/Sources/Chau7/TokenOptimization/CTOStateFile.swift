@@ -18,8 +18,17 @@ import Foundation
 /// per-session flag files.
 enum CTOStateFile {
 
-    private static let stateURL: URL = RuntimeIsolation.chau7Directory()
+    private static let defaultStateURL: URL = RuntimeIsolation.chau7Directory()
         .appendingPathComponent("cto_state.json")
+
+    /// Test seam: when set, all reads/writes/removes target this URL instead
+    /// of the real `~/.chau7/cto_state.json`. The live app instance heartbeats
+    /// the real file, so tests must not share it (or delete it on teardown).
+    static var stateURLOverrideForTesting: URL?
+
+    private static var stateURL: URL {
+        stateURLOverrideForTesting ?? defaultStateURL
+    }
 
     /// Encode `snapshot` to pretty-printed JSON and write it atomically
     /// to `~/.chau7/cto_state.json`. Errors are logged at `.warn` — this

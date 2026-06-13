@@ -117,6 +117,14 @@ final class RemoteViewerMode {
     // MARK: - Incoming Connection
 
     func handleViewerConnection(viewerID: String, viewerName: String) {
+        // Ignore duplicate connection attempts: a viewer that is already pending
+        // or connected must not create a second entry (and a second approval prompt).
+        guard !pendingApprovals.contains(where: { $0.id == viewerID }),
+              !connectedViewers.contains(where: { $0.id == viewerID }) else {
+            Log.info("RemoteViewerMode: ignored duplicate connection from \(viewerID)")
+            return
+        }
+
         let viewer = RemoteViewer(id: viewerID, name: viewerName)
 
         // Auto-approve known viewers if under capacity

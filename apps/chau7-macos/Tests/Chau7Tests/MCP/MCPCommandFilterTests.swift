@@ -1,6 +1,6 @@
-#if !SWIFT_PACKAGE
 import XCTest
 @testable import Chau7
+import Chau7Core
 
 final class MCPCommandFilterTests: XCTestCase {
     func testExtractBaseCommandsSplitsBackgroundOperator() {
@@ -25,10 +25,14 @@ final class MCPCommandFilterTests: XCTestCase {
     }
 
     func testExtractBaseCommandsTreatsTabsAsWhitespace() {
+        // extractBaseCommands returns the raw first token (path intact); callers
+        // normalize via normalizeCommand. The point here is that tabs separate
+        // tokens and env/VAR=value prefixes are skipped.
         XCTAssertEqual(
             MCPCommandFilter.extractBaseCommands("env\tFOO=bar\t/bin/rm -f /tmp/test"),
-            ["rm"]
+            ["/bin/rm"]
         )
+        XCTAssertEqual(MCPCommandFilter.normalizeCommand("/bin/rm"), "rm")
     }
 
     func testBlocksProtectedKillByShellPID() {
@@ -68,4 +72,3 @@ final class MCPCommandFilterTests: XCTestCase {
         }
     }
 }
-#endif
