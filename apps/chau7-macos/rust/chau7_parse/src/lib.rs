@@ -992,7 +992,7 @@ mod tests {
         // ITU T.416 colon-delimited RGB
         let input = "\u{1b}[38:2:255:0:0mred text\u{1b}[0m";
         let segments = parse_ansi_segments(input);
-        assert!(segments.len() >= 1);
+        assert!(!segments.is_empty());
     }
 
     #[test]
