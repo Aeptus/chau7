@@ -553,6 +553,8 @@ final class RustTerminalFFI {
     private typealias SendBytesFn = @convention(c) (OpaquePointer?, UnsafePointer<UInt8>?, Int) -> Void
     private typealias SendTextFn = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Void
     private typealias ResizeFn = @convention(c) (OpaquePointer?, UInt16, UInt16) -> Void
+    /// Re-deliver SIGWINCH to the PTY foreground pgrp (defeats TUI startup width-latch race)
+    private typealias NudgeWinsizeFn = @convention(c) (OpaquePointer?) -> Void
     // Use UnsafeMutableRawPointer since Swift structs aren't directly C-representable
     private typealias GetGridFn = @convention(c) (OpaquePointer?) -> UnsafeMutableRawPointer?
     private typealias FreeGridFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
@@ -638,6 +640,7 @@ final class RustTerminalFFI {
         let sendBytes: SendBytesFn
         let sendText: SendTextFn
         let resize: ResizeFn
+        let nudgeWinsize: NudgeWinsizeFn? // Optional - older libraries may not have this
         let getGrid: GetGridFn
         let freeGrid: FreeGridFn
         let scrollPosition: ScrollPositionFn
@@ -932,6 +935,11 @@ final class RustTerminalFFI {
             Log.info("RustTerminalFFI: clearScrollback symbol not found (optional)")
         }
 
+        let nudgeWinsizeSym = loadSymbol("chau7_terminal_nudge_winsize")
+        if nudgeWinsizeSym == nil {
+            Log.info("RustTerminalFFI: nudgeWinsize symbol not found (optional, startup SIGWINCH nudge unavailable)")
+        }
+
         // Selection management symbols (start, update, select-all via Rust FFI)
         let selectionStartSym = loadSymbol("chau7_terminal_selection_start")
         if selectionStartSym == nil {
@@ -1132,6 +1140,7 @@ final class RustTerminalFFI {
             sendBytes: unsafeBitCast(sendBytesSym, to: SendBytesFn.self),
             sendText: unsafeBitCast(sendTextSym, to: SendTextFn.self),
             resize: unsafeBitCast(resizeSym, to: ResizeFn.self),
+            nudgeWinsize: nudgeWinsizeSym.map { unsafeBitCast($0, to: NudgeWinsizeFn.self) },
             getGrid: unsafeBitCast(getGridSym, to: GetGridFn.self),
             freeGrid: unsafeBitCast(freeGridSym, to: FreeGridFn.self),
             scrollPosition: unsafeBitCast(scrollPositionSym, to: ScrollPositionFn.self),
@@ -1443,6 +1452,15 @@ final class RustTerminalFFI {
     func resize(cols: UInt16, rows: UInt16) {
         Log.trace("RustTerminalFFI[\(instanceId)]: resize - Resizing to \(cols)x\(rows)")
         Self.functions?.resize(terminal, cols, rows)
+    }
+
+    /// Re-deliver SIGWINCH to the PTY foreground process group without changing
+    /// the winsize, forcing a full-screen TUI to re-read the terminal width.
+    /// No-op on older dylibs that lack the symbol.
+    func nudgeWinsize() {
+        guard let nudge = Self.functions?.nudgeWinsize else { return }
+        Log.trace("RustTerminalFFI[\(instanceId)]: nudgeWinsize - re-delivering SIGWINCH")
+        nudge(terminal)
     }
 
     func getGrid() -> (snapshot: UnsafeMutablePointer<RustGridSnapshot>, free: () -> Void)? {
@@ -2536,6 +2554,23 @@ final class RustTerminalView: NSView {
 
     /// One-shot timer that fires onShellStartupSlow if no PTY output arrives
     var shellStartupTimeoutWork: DispatchWorkItem?
+
+    /// Pending post-resize SIGWINCH re-delivery timers (coalesced).
+    ///
+    /// A full-screen relative-cursor TUI (e.g. Claude Code's Ink) caches the
+    /// terminal width when it boots and only re-reads it on a `resize` event.
+    /// If a `resize()` lands during that ~1-2s boot — before the TUI installs
+    /// its SIGWINCH handler — it misses the size change, keeps a stale width,
+    /// and (because it only diff-repaints) corrupts its output for the rest of
+    /// the session. After every real resize we re-deliver SIGWINCH once the boot
+    /// window has elapsed so a late-attached handler still re-reads the size.
+    /// Anchored to the last resize and coalesced so a window drag doesn't queue
+    /// a nudge per intermediate size.
+    var winsizeNudgeWork: [DispatchWorkItem] = []
+    /// Delays (seconds) after the last resize at which to re-deliver SIGWINCH.
+    /// Two ticks bracket fast and slow TUI boots without flicker (SIGWINCH to an
+    /// idle shell or an already-correct TUI is a harmless no-op repaint).
+    private static let winsizeNudgeDelays: [TimeInterval] = [0.7, 1.8]
     /// Explicit shell bootstrap state. This must not depend on whether a timeout
     /// work item is currently enqueued, because early polling pauses can cancel
     /// and recreate timers without meaning that the shell has produced output.
@@ -3023,11 +3058,30 @@ final class RustTerminalView: NSView {
         Log.info("RustTerminalView[\(viewId)]: startTerminal - Complete")
     }
 
+    /// Re-deliver SIGWINCH to the foreground TUI a short while after a resize, so
+    /// a renderer that booted during the resize (and missed the kernel's SIGWINCH
+    /// before attaching its handler) still re-reads the authoritative width.
+    /// Coalesced: each call cancels the prior pending nudges and re-anchors to now.
+    func scheduleWinsizeNudge() {
+        winsizeNudgeWork.forEach { $0.cancel() }
+        winsizeNudgeWork.removeAll(keepingCapacity: true)
+        guard rustTerminal != nil else { return }
+        for delay in Self.winsizeNudgeDelays {
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, !self.isBeingDeallocated else { return }
+                rustTerminal?.nudgeWinsize()
+            }
+            winsizeNudgeWork.append(work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
+    }
+
     deinit {
         Log.info("RustTerminalView[\(viewId)]: deinit - Starting cleanup")
         // Set flag to prevent event drain callbacks from accessing deallocated view
         isBeingDeallocated = true
         shellStartupTimeoutWork?.cancel()
+        winsizeNudgeWork.forEach { $0.cancel() }
         removeWindowNotificationObservers()
         stopPollingLoop()
         stopAutoScrollTimer()
@@ -3269,6 +3323,7 @@ final class RustTerminalView: NSView {
                 cols = newCols
                 rows = newRows
                 rustTerminal?.resize(cols: UInt16(cols), rows: UInt16(rows))
+                scheduleWinsizeNudge()
                 needsGridSync = true
                 logRenderSurfaceReport(reason: "terminal-resize", force: true)
             }

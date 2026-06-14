@@ -1,0 +1,62 @@
+place[22m,[54Gwe'd[59Gneed:
+
+[3G┌───────────────────────────────────────────────────────────────────────────┬────────────────────────────────────────────────────┐
+[3G│[39GWhat[79G│[104GCost[132G│
+[3G├───────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+[3G│[5GAdd[9G[38;2;177;185;249memdash-plugin.jsonc[29G[39mmanifest[38Gwith[43Gtop-level[53Gmetadata[62G+[64G[38;2;177;185;249mrelease[72G[39mblock[79G│[81GSmall[87G—[89Gone[93Gnew[97Gfile[132G│
+[3G├───────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+[3G│[5GDeclare[13G[38;2;177;185;249mrelease.requires.env:emdash[41G[39mconstraints[79G│[81GTrivial[89G—[91Gwe[94Galready[102Gknow[107Gwe[110Gwork[115Gwith[120G[38;2;177;185;249m>=0.7.0[132G[39m│
+[3G├───────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+[3G│[5GOptional:[15Gship[20Gicon,[26Gbanner,[34Gscreenshots[79G│[81GModest[88G—[90Gdesign[97Gwork,[103Gthen[108Gfile[113Grefs[132G│
+[3G├───────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+[3G│[5GOptional:[15Gship[20G[38;2;177;185;249msections[29G[39m(description,[43Ginstallation,[57Gfaq,[62Gchangelog,[79G│[81GModest[88G—[90Gmost[95Gexists[102Gas[105GCHANGELOG[115G+[117GINSTALL.md[132G│
+[3G│[5Gsecurity)[79G│[81Galready[132G│
+[3G├───────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+[3G│[5GSwitch[12Gpublish[20Gpath[25Gfrom[30G[38;2;177;185;249mnpm[34Gpublish[42G[39m→[44G[38;2;177;185;249memdash-plugin[58Gpublish[66G[39m(or[70Grun[79G│[81GSmall[87Gwrapper[132G│
+[3G│[5Gboth)[79G│[132G│
+[3G└───────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────┘
+
+[3GNone[8Gof[11Gthis[16Gis[19Gforced[26Gon[29Gus.
+
+[3G[1mSide[8Gnote:[14Gemdash[21Gcore[26G0.17[31G→[33G0.18[38G→[40G0.19[22m
+
+[3GAeptus[10Gruns[15G0.17.2[22Gin[25Gproduction[36G(per[41Gthe[45Gadmin-route[57Gbug[61Greport).[70G0.18[75Gand[79G0.19[84Gshipped[92Gon[95G2026-06-11/12.[110GNone[115Gof[118Gthose[124Greleases
+[3Gadded[9Gbreaking[18Gchanges[26Gto[29Gthe[33Gplugin[40Gauthor[47Gsurface[55Gwe[58Guse[62G([38;2;177;185;249mdefinePlugin[39m,[77Groute[83Ghandlers,[93Gadmin[99Gpages/widgets,[114Ghooks).[122GThe[126Gplugin[133Gwe
+[3Gjust[8Ghardened[17Gin[20G0.8.17[27Gstays[33Gcompatible.
+
+[3GThe[7Gbig[11Gthemes[18Gin[21G0.17-0.19[31Gare:
+[3G-[5G0.17:[11Gcustom[18Gbyline[25Gfields,[33Geditable[42GHTML[47Gblocks,[55Glocale-aware[68Gcontent[76Gupdates
+[3G-[5G0.18:[11Gperformance[23G(cold[29Gstarts,[37Gfewer[43GDB[46Ground[52Gtrips,[59Gfetchpriority)
+[3G-[5G0.19:[11Gadmin[17Gcontent[25Gfiltering,[36Gresponsive[47Gimage[53G[38;2;177;185;249msrcset[39ms,[62Greal[67Gheartbeat-based[83Gscheduled[93Gpublishing[104G(Cloudflare[116GWorkers[124GCron[129GTrigger
+[3Grequired[12Gfor[16GWorkers[24Gdeployments)
+
+[3GNone[8Gof[11Gthese[17Greach[23Gour[27Gbridge[34Gor[37Gplugin[44Gsurface.
+
+[3G[1mRecommendation[22m
+
+[3G[1mNo[6Gcode[11Gchange[18Gtoday.[25G[22mThe[29Gmarketplace[41Gstory[47Gis[50Ga[52Gforward-looking[68Gopportunity,[81Gnot[85Ga[87Gregression.[99GTwo[103Gthings[110Gworth[116Gdoing[122Gif[125Gyou[129Gwant
+[3Glow-effort[14Gwins:
+
+[3G1.[6G[1mSave[11Gthe[15Gmarketplace[27Gprimitives[38Gto[41Gmemory[48G[22mso[51Gthe[55Gnext[60Gtime[65Gwe[68Gtouch[74Gthe[78Gplugin[85Gmanifest[94Gwe[97Gremember[106Gto[109Gthink[115Gabout[121G[38;2;177;185;249mrequires[39m,
+[3G[38;2;177;185;249mrelease.artifacts[39m,[22Gand[26G[38;2;177;185;249msections[39m.
+[3G2.[6G[1mOptionally[17Gdeclare[25G[38;2;177;185;249mrequires.env:emdash[45G[22m[39min[48Gpackage.json[61Gnow[65Gas[68Ga[70Gdocumentation[84Ggesture[92G(even[98Gthough[105Git's[110Gonly[115Gread[120Gby[123Gthe[127GEmDash
+[3Gregistry,[13Gnot[17Gnpm)[22G—[24Git[27Gcaptures[36Gthe[40Gcompat[47Gstatement[57Gexplicitly.
+
+[3GWant[8Gme[11Gto[14Gsave[19Gthe[23Gmemory[30Gnote[35G+[37Gadd[41Gthe[45G[38;2;177;185;249mrequires[54G[39mdeclaration,[67Gor[70Gwait[75Guntil[81Gwe[84Ghave[89Gan[92Gactual[99Gmarketplace[111Gambition?
+
+[38;2;215;119;87m✻[3G[38;2;235;159;127mSpinning…[38;2;215;119;87m [38;2;153;153;153m(running[22Gstop[27Ghooks…[34G0/2[38G·[40G2m[43G5s[46G·[48G↓[50G4.5k[55Gtokens[62G·[64Gthought[72Gfor[76G24s)[39m
+
+[38;2;136;136;136m───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[38;2;153;153;153m❯ [39m
+[38;2;136;136;136m───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;175;135;255m⏵⏵[6Gaccept[13Gedits[19Gon[38;2;153;153;153m (shift+tab[33Gto[36Gcycle)[121G663748[128Gtokens[39m
+[117G[38;2;153;153;153m100%[122Gcontext[130Gused[39m
+[2C[4A[?25h[?25l[2D[4B[2C[7A[38;2;233;154;122mSpinning…[52G[38;2;153;153;153m6[39m
+
+
+
+
+
+
+[2C[4A[?25h]0;✳ Claude Code[?25l[2D[4B[7A[38;2;153;153;153m✻[3GChurned for 2m 5s[39m[K[3B❯ [41C[2B[38;2;153;153;153m · ← for agents[39m
+

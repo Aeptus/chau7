@@ -447,6 +447,26 @@ pub unsafe extern "C" fn chau7_terminal_resize(term: *mut Chau7Terminal, cols: u
     }
 }
 
+/// Re-deliver `SIGWINCH` to the PTY's foreground process group without changing
+/// the winsize, forcing a full-screen TUI to re-read the terminal width.
+///
+/// Used once shortly after the child produces its first output to defeat the
+/// startup race where the child caches a stale width (see `Chau7Terminal::nudge_winsize`).
+///
+/// # Safety
+/// - `term` must be a valid pointer
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_nudge_winsize(term: *mut Chau7Terminal) {
+    unsafe {
+        if term.is_null() {
+            warn!("chau7_terminal_nudge_winsize: term is null");
+            return;
+        }
+        let terminal = &*term;
+        terminal.nudge_winsize();
+    }
+}
+
 // ============================================================================
 // Grid snapshots
 // ============================================================================

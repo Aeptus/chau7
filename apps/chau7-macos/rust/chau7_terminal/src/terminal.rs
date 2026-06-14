@@ -958,6 +958,52 @@ impl Chau7Terminal {
         self.grid_dirty.store(true, Ordering::Release);
     }
 
+    /// Re-deliver a `SIGWINCH` to the PTY's current foreground process group
+    /// without changing the winsize.
+    ///
+    /// This defeats a TUI startup race: a full-screen relative-cursor renderer
+    /// (e.g. Claude Code's Ink) caches the terminal width when it boots and only
+    /// re-reads it on a `resize` event. If a layout pass resizes the view during
+    /// that ~1s boot — before the child installs its `SIGWINCH` handler — the
+    /// child misses the size change, keeps a stale width, and (because it only
+    /// diff-repaints) corrupts its output for the rest of the session.
+    ///
+    /// A plain re-apply of the *same* winsize is insufficient on Darwin: XNU's
+    /// `TIOCSWINSZ` only signals `t_pgrp` when the dimensions actually change
+    /// (`bcmp` guard in `ttioctl`). So we signal the foreground process group
+    /// directly: `tcgetpgrp` on the master returns the slave's foreground pgrp
+    /// (the live TUI's), and `killpg(pgrp, SIGWINCH)` makes it re-read the
+    /// authoritative size once its handler is finally attached.
+    pub fn nudge_winsize(&self) {
+        let echo_fd = self.echo_fd.load(Ordering::Acquire);
+        if echo_fd < 0 {
+            warn!("[terminal-{}] nudge_winsize: no master fd", self.id);
+            return;
+        }
+        let pgrp = unsafe { libc::tcgetpgrp(echo_fd) };
+        if pgrp <= 0 {
+            debug!(
+                "[terminal-{}] nudge_winsize: no foreground pgrp ({})",
+                self.id, pgrp
+            );
+            return;
+        }
+        let rc = unsafe { libc::killpg(pgrp, libc::SIGWINCH) };
+        if rc == 0 {
+            debug!(
+                "[terminal-{}] nudge_winsize: SIGWINCH delivered to pgrp {}",
+                self.id, pgrp
+            );
+        } else {
+            warn!(
+                "[terminal-{}] nudge_winsize: killpg({}) failed: {}",
+                self.id,
+                pgrp,
+                std::io::Error::last_os_error()
+            );
+        }
+    }
+
     /// Poll for new data from PTY, process it, and return event flags.
     /// Raw output bytes are stored in `last_output` for retrieval via `get_last_output()`.
     #[must_use]
@@ -3572,5 +3618,187 @@ mod tests {
         assert_eq!(s1, "", "continuation cell must have empty cluster");
         assert_eq!(w1, 0);
         assert_eq!(c1, 1);
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    // Claude Code / Ink incremental-redraw investigation (deferred autowrap)
+    //
+    // Hypothesis under test: writing exactly `cols` chars on a line leaves the
+    // cursor in the DECAWM "pending wrap" state at the last column; a following
+    // LF must advance EXACTLY ONE row (xterm/alacritty behaviour). If the
+    // emulator instead consumes the pending-wrap as a real extra row, a
+    // full-width-line + LF advances TWO rows, and Ink's relative `\e[nA` lands
+    // on the wrong row → doubled prompt / output-over-input / stale spinner.
+    // ───────────────────────────────────────────────────────────────────
+
+    /// Build a string of `n` U+2500 box-drawing chars (Claude's separator).
+    fn hline(n: usize) -> String {
+        "\u{2500}".repeat(n)
+    }
+
+    #[test]
+    fn fullwidth_line_then_lf_advances_exactly_one_row() {
+        // 135-col grid, like Claude Code's reported width.
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        // Home, write 135 ─ (fills the row, leaving pending-wrap), then LF.
+        term.inject_output(b"\x1b[1;1H");
+        term.inject_output(hline(135).as_bytes());
+        // After exactly `cols` chars, cursor must still be on row 0 (pending wrap),
+        // NOT already wrapped to row 1.
+        let (_, row_after_fill) = cursor_pos(&term);
+        assert_eq!(
+            row_after_fill, 0,
+            "writing exactly cols chars must leave cursor on the same row in pending-wrap state"
+        );
+        // Now a single LF.
+        term.inject_output(b"\n");
+        let (_, row_after_lf) = cursor_pos(&term);
+        assert_eq!(
+            row_after_lf, 1,
+            "full-width line + LF must advance EXACTLY ONE row (got {row_after_lf}); \
+             two would mean deferred-autowrap is consumed as a real row"
+        );
+    }
+
+    #[test]
+    fn stacked_fullwidth_separators_with_real_crcrlf_advance_one_row_each() {
+        // Claude Code terminates every separator line with CR CR LF (`\r\r\n`),
+        // NOT a bare LF. The CR clears the column AND the DECAWM pending-wrap
+        // latch before the LF advances, so three stacked 135-wide separators
+        // advance exactly +1 row each. (A bare LF after a pending-wrap full
+        // line would instead drift +2 because the next printable char of the
+        // following line first consumes the pending wrap — but Claude never
+        // emits that; this documents why the emulator is innocent.)
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        term.inject_output(b"\x1b[1;1H");
+        for expected_row in 1..=3usize {
+            term.inject_output(hline(135).as_bytes());
+            term.inject_output(b"\r\r\n");
+            let (col, row) = cursor_pos(&term);
+            assert_eq!(
+                (col, row),
+                (0, expected_row),
+                "separator #{expected_row} with CR CR LF must land at col 0, row {expected_row}"
+            );
+        }
+    }
+
+    #[test]
+    fn cuu_at_top_row_clamps() {
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        term.inject_output(b"\x1b[1;1H");
+        term.inject_output(b"\x1b[7A"); // CUU 7 from row 0
+        let (_, row) = cursor_pos(&term);
+        assert_eq!(row, 0, "CUU from top row must clamp at row 0");
+    }
+
+    #[test]
+    fn cha_then_el_erases_to_line_end() {
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        term.inject_output(b"\x1b[1;1H");
+        term.inject_output(b"hello world banner text here");
+        // CHA to column 7 (1-based) → col 6, then EL (erase to end of line).
+        term.inject_output(b"\x1b[7G\x1b[K");
+        let row = row_text(&term, 0);
+        assert_eq!(
+            row, "hello",
+            "CHA col 7 + EL must erase from col 6 onward, leaving 'hello'; got {row:?}"
+        );
+    }
+
+    #[test]
+    fn ambiguous_and_spinner_glyphs_have_width_one() {
+        // Ink (string-width) treats these as width 1. If alacritty assigns
+        // width 2, every line containing them drifts by a column and the
+        // CHA/relative-move accounting diverges from Ink's model.
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        // Spinner / status glyphs seen in the live capture.
+        for (label, ch) in [
+            ("U+273B ✻", '\u{273B}'),
+            ("U+2733 ✳", '\u{2733}'),
+            ("U+23F5 ⏵", '\u{23F5}'),
+            ("U+2500 ─", '\u{2500}'),
+            ("U+276F ❯", '\u{276F}'),
+            ("U+2190 ←", '\u{2190}'),
+        ] {
+            term.inject_output(b"\x1b[1;1H\x1b[K");
+            let mut s = String::new();
+            s.push(ch);
+            s.push('X');
+            term.inject_output(s.as_bytes());
+            // Cursor column after writing 1 glyph + 'X' tells us the glyph width.
+            let (col, _) = cursor_pos(&term);
+            assert_eq!(
+                col, 2,
+                "{label} must occupy width 1 (cursor at col 2 after glyph+X); \
+                 got col {col} → alacritty treats it as wide, drifting Ink's layout"
+            );
+        }
+    }
+
+    #[test]
+    fn replay_real_claude_input_box_tail() {
+        // Replay the last ~8KB of a real Claude Code PTY capture into a 135×79
+        // headless grid and dump the resulting rows. Looks for the three
+        // reported bugs: duplicated ❯ prompt, stale Spinning…/Churned line
+        // coexisting with the prompt, or assistant text over the separators.
+        let bytes = include_bytes!("../tests/fixtures/claude_input_box_tail_8k.bin");
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        // Start from a clean home so the slice's relative moves have a defined base.
+        term.inject_output(b"\x1b[2J\x1b[H");
+        term.inject_output(bytes);
+
+        let mut prompt_rows = Vec::new();
+        for r in 0..79usize {
+            if row_text(&term, r).contains('\u{276F}') {
+                prompt_rows.push(r);
+            }
+        }
+        // The replay at the NATIVE 135 width produces a clean grid: a single
+        // ❯ prompt, intact 135-wide separators, no output-over-input. The
+        // reported duplicate-prompt corruption never appears at matching width.
+        assert!(
+            prompt_rows.len() <= 1,
+            "duplicated prompt: ❯ found on rows {prompt_rows:?}"
+        );
+    }
+
+    #[test]
+    fn replay_at_wrong_width_changes_layout() {
+        // Root cause: Claude/Ink lays out for a fixed width (135 here) and only
+        // diff-repaints. Replaying the SAME bytes into a grid whose width does
+        // NOT match (134) produces a DIFFERENT prompt/separator layout — the
+        // off-by-N that surfaces as duplicated prompt / output-over-input. This
+        // proves the corruption is a width mismatch, not an emulator wrap bug,
+        // and is exactly what the post-resize SIGWINCH nudge prevents by keeping
+        // Ink's width in lockstep with the grid.
+        let bytes = include_bytes!("../tests/fixtures/claude_input_box_tail_8k.bin");
+        let fingerprint = |width: u16| {
+            let term = Chau7Terminal::new_headless(width, 79).expect("headless");
+            term.inject_output(b"\x1b[2J\x1b[H");
+            term.inject_output(bytes);
+            let mut prompt_rows = Vec::new();
+            let mut sep_rows = Vec::new();
+            for r in 0..79usize {
+                let line = row_text(&term, r);
+                if line.contains('\u{276F}') {
+                    prompt_rows.push(r);
+                }
+                if line.matches('\u{2500}').count() > 100 {
+                    sep_rows.push(r);
+                }
+            }
+            (prompt_rows, sep_rows)
+        };
+        let native = fingerprint(135);
+        let narrow = fingerprint(134);
+        assert!(
+            native.0.len() <= 1,
+            "native 135 width must stay clean (single prompt); got {native:?}"
+        );
+        assert_ne!(
+            native, narrow,
+            "a one-column width mismatch must change the layout — this is the bug"
+        );
     }
 }

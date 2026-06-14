@@ -471,6 +471,18 @@ void chau7_terminal_send_text(struct Chau7Terminal *term, const char *text);
 void chau7_terminal_resize(struct Chau7Terminal *term, uint16_t cols, uint16_t rows);
 
 /*
+ Re-deliver `SIGWINCH` to the PTY's foreground process group without changing
+ the winsize, forcing a full-screen TUI to re-read the terminal width.
+
+ Used once shortly after the child produces its first output to defeat the
+ startup race where the child caches a stale width (see `Chau7Terminal::nudge_winsize`).
+
+ # Safety
+ - `term` must be a valid pointer
+ */
+void chau7_terminal_nudge_winsize(struct Chau7Terminal *term);
+
+/*
  Get a snapshot of the current grid state
 
  # Safety
