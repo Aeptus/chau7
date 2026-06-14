@@ -1144,9 +1144,11 @@ extension TerminalSessionModel {
 
     private func applyOutputPatternScanResult(_ result: CompletedOutputPatternScan) {
         guard result.generation == aiDetectionGeneration else { return }
+        let corroborated = result.matched.map { outputMatchCorroboratedByProcessTree($0.appName) } ?? false
         guard applyAIDetectionOutputMatch(
             appName: result.matched?.appName,
-            authoritativeAppName: result.authoritativeAppName
+            authoritativeAppName: result.authoritativeAppName,
+            corroborated: corroborated
         ),
             let app = aiDetection.currentApp else { return }
 
@@ -2252,16 +2254,35 @@ extension TerminalSessionModel {
     @discardableResult
     func applyAIDetectionOutputMatch(
         appName: String?,
-        authoritativeAppName: String?
+        authoritativeAppName: String?,
+        corroborated: Bool
     ) -> Bool {
         let changed = aiDetection.handleOutputMatch(
             appName: appName,
-            authoritativeAppName: authoritativeAppName
+            authoritativeAppName: authoritativeAppName,
+            corroborated: corroborated
         )
         if changed {
             aiDetectionGeneration &+= 1
         }
         return changed
+    }
+
+    /// True when the live child-process tree contains a process matching the
+    /// given AI tool. Used to corroborate an output-pattern match before it is
+    /// allowed to *originate* a tool identity on a tab that has none — so
+    /// incidental output (an API URL, a doc string) can't flip a plain shell.
+    /// `processGroup` is populated by the live process-tree snapshot; when it is
+    /// unavailable, the match is treated as uncorroborated (origination denied).
+    private func outputMatchCorroboratedByProcessTree(_ appName: String) -> Bool {
+        guard let tool = AIToolRegistry.tool(named: appName) else { return false }
+        guard let children = processGroup?.children, !children.isEmpty else { return false }
+        let display = tool.displayName.lowercased()
+        let commandNames = Set(tool.commandNames)
+        return children.contains { child in
+            let name = child.name.lowercased()
+            return commandNames.contains(name) || name.contains(display)
+        }
     }
 
     private func logBestEffortOutputSheddingIfNeeded() {

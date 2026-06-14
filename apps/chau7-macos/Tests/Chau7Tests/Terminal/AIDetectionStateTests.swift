@@ -49,10 +49,21 @@ final class AIDetectionStateTests: XCTestCase {
 
     func testHandleOutputMatchFromScanning() {
         var state = AIDetectionState()
-        let changed = state.handleOutputMatch(appName: "Gemini")
+        // Originating a new identity from output requires a corroborating signal.
+        let changed = state.handleOutputMatch(appName: "Gemini", corroborated: true)
         XCTAssertTrue(changed)
         XCTAssertEqual(state.currentApp, "Gemini")
         XCTAssertEqual(state.phase, .detected)
+    }
+
+    func testHandleOutputMatchFromScanningWithoutCorroborationIsRejected() {
+        var state = AIDetectionState()
+        // No authoritative hint and no live corroboration: incidental output must
+        // not flip a plain shell to an AI tool (the "git push" → ChatGPT bug).
+        let changed = state.handleOutputMatch(appName: "ChatGPT")
+        XCTAssertFalse(changed)
+        XCTAssertNil(state.currentApp)
+        XCTAssertEqual(state.phase, .scanning)
     }
 
     func testHandleOutputMatchNilIsNoOp() {
@@ -71,20 +82,32 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertFalse(state.isRestored)
     }
 
-    func testRestoredOutputMatchAcceptsDifferentProviderWithoutAuthoritativeHint() {
+    func testRestoredOutputMatchAcceptsDifferentProviderWithCorroboration() {
         // Restoration no longer locks the state machine to the persisted provider.
-        // Without a live authoritativeAppName, output matching in `.restored` phase
-        // accepts a different tool — the live process-tree signal in the app layer
-        // owns identity and keeps display aligned with reality.
+        // A different tool can take over the restored tab, but only when a live
+        // signal corroborates it — the process-tree owns identity and keeps the
+        // display aligned with reality.
         var state = AIDetectionState()
         state.handleRestore(appName: "Codex")
 
-        let changed = state.handleOutputMatch(appName: "Claude")
+        let changed = state.handleOutputMatch(appName: "Claude", corroborated: true)
 
         XCTAssertTrue(changed)
         XCTAssertEqual(state.currentApp, "Claude")
         XCTAssertEqual(state.phase, .detected)
         XCTAssertFalse(state.isRestored)
+    }
+
+    func testRestoredCrossProviderFlipWithoutCorroborationIsRejected() {
+        // A restored Codex tab must not flip to Claude on incidental output alone.
+        var state = AIDetectionState()
+        state.handleRestore(appName: "Codex")
+
+        let changed = state.handleOutputMatch(appName: "Claude")
+
+        XCTAssertFalse(changed)
+        XCTAssertEqual(state.currentApp, "Codex")
+        XCTAssertTrue(state.isRestored)
     }
 
     func testHandleOutputMatchRejectsDifferentProviderWhenToolAlreadyKnown() {

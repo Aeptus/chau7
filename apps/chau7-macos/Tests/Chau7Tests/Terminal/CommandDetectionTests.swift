@@ -231,7 +231,9 @@ final class CommandDetectionTests: XCTestCase {
     func testDetectClaudeFromOutput() {
         XCTAssertEqual(CommandDetection.detectAppFromOutput("╭─ Claude Code"), "Claude")
         XCTAssertEqual(CommandDetection.detectAppFromOutput("Powered by Anthropic"), "Claude")
-        XCTAssertEqual(CommandDetection.detectAppFromOutput("Visit claude.ai for more"), "Claude")
+        // A bare website mention is no longer a detection signal — "claude.ai"
+        // appears in any project referencing Anthropic, not just the CLI banner.
+        XCTAssertNil(CommandDetection.detectAppFromOutput("Visit claude.ai for more"))
     }
 
     func testDetectClaudeFromOutputCaseInsensitive() {
@@ -248,8 +250,15 @@ final class CommandDetectionTests: XCTestCase {
 
     func testDetectChatGPTFromOutput() {
         XCTAssertEqual(CommandDetection.detectAppFromOutput("ChatGPT CLI v1.0"), "ChatGPT")
-        XCTAssertEqual(CommandDetection.detectAppFromOutput("Visit openai.com/v1 for more"), "ChatGPT")
         XCTAssertEqual(CommandDetection.detectAppFromOutput("chatgpt v1.2.3"), "ChatGPT")
+    }
+
+    func testApiEndpointUrlDoesNotDetectChatGPT() {
+        // Regression: the OpenAI REST endpoint appears in any project's code,
+        // logs, and diffs. It must NOT flag a plain shell tab as ChatGPT
+        // (the "git push in a repo using OpenAI" → ChatGPT misdetection).
+        XCTAssertNil(CommandDetection.detectAppFromOutput("POST https://api.openai.com/v1/chat/completions"))
+        XCTAssertNil(CommandDetection.detectAppFromOutput("const url = 'https://openai.com/v1'"))
     }
 
     func testDetectCopilotFromOutput() {
