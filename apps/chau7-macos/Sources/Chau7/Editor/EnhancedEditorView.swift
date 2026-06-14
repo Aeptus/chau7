@@ -54,14 +54,25 @@ struct EnhancedEditorView: NSViewRepresentable {
             scrollView.setupLineNumberGutter()
         }
 
-        // Word wrap
-        if !config.wordWrap {
+        // Word wrap. When wrapping is on (the default), the text container
+        // tracks the view width so lines never extend past the right edge —
+        // there is nothing to scroll horizontally, so the horizontal scroller
+        // is disabled to avoid a spurious bar (made worse by the line-number
+        // gutter narrowing the content area). When wrapping is off, the
+        // container grows unbounded and the horizontal scroller is needed to
+        // reach long lines.
+        if config.wordWrap {
+            textView.textContainer?.widthTracksTextView = true
+            textView.isHorizontallyResizable = false
+            scrollView.hasHorizontalScroller = false
+        } else {
             textView.textContainer?.widthTracksTextView = false
             textView.textContainer?.containerSize = NSSize(
                 width: CGFloat.greatestFiniteMagnitude,
                 height: CGFloat.greatestFiniteMagnitude
             )
             textView.isHorizontallyResizable = true
+            scrollView.hasHorizontalScroller = true
         }
 
         textView.delegate = context.coordinator

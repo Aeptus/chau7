@@ -93,13 +93,20 @@ class LineNumberGutterView: NSRulerView {
 
     /// Adapt gutter width to the digit count of the total line count.
     private func updateGutterWidth() {
-        guard let textView else {
-            ruleThickness = 40
-            return
+        let newThickness: CGFloat
+        if let textView {
+            let lineCount = max(1, textView.string.components(separatedBy: "\n").count)
+            let digits = max(3, String(lineCount).count)
+            newThickness = CGFloat(digits) * 8 + 16
+        } else {
+            newThickness = 40
         }
-        let lineCount = max(1, textView.string.components(separatedBy: "\n").count)
-        let digits = max(3, String(lineCount).count)
-        ruleThickness = CGFloat(digits) * 8 + 16
+        guard newThickness != ruleThickness else { return }
+        ruleThickness = newThickness
+        // Changing the ruler thickness must re-tile the scroll view, otherwise
+        // the document view keeps its previous width and spills under the wider
+        // gutter — producing a spurious horizontal scroll bar.
+        scrollView?.tile()
     }
 
     @objc private func boundsDidChange(_ notification: Notification) {

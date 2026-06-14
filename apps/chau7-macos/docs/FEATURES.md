@@ -380,6 +380,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - The decode side of split-pane persistence routes through a `PaneFactoryRegistry` keyed on `PaneType`, mirroring the per-pane `savedRepresentation()` on the encode side — adding a new pane kind requires zero edits to existing files (one new pane file + one registry entry).
 - The Repository pane model's five sections (Commit, Status, History, Branches, Session) each ride on their own `@Observable` sub-state (`repo.commit`, `repo.status`, `repo.history`, `repo.branchState`, `repo.session`), so a mutation in one section re-renders only the view subtree that reads it.
 - Built-in text editor in split panes (`Cmd+Opt+E`) — syntax highlighting, line numbers, bracket matching (`()`, `[]`, `{}`, `<>` — UTF-16 in-place scan, no per-keystroke array allocation), auto-indent, scroll-to-line, find/replace.
+- Word-wrap-aware scrolling: with word wrap on (the default) wrapped lines never show a horizontal scroll bar, and the line-number gutter re-tiles the scroll view when its width changes so it can't push content into a spurious lateral scroll; turning word wrap off restores the horizontal scroller for long-line editing.
 - Repo-scoped session notes for the split text editor: untitled panes can save directly to `.chau7/sessions/<tab-id>/note.md` inside the active repository, and reopen the matching note for whichever repo the tab is currently in.
 - Click-to-copy document name in the editor pane header.
 - Multi-language syntax: HTML, CSS, JavaScript, Python, and more.

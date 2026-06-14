@@ -209,6 +209,7 @@ Tab Management,Close Other Tabs,Cmd+Opt+W to close all tabs except the current o
 Tab Management,New Tab Position,Configure where new tabs appear (after current or at end),Shipped,No
 Tab Management,Background Tab Suspension,Inactive tabs suspend rendering after configurable delay to save resources,Shipped,No
 Split Panes,Horizontal Split,Cmd+Opt+H — split side-by-side with draggable dividers,Shipped,No
+Split Panes,Word-Wrap-Aware Editor Scrolling,"The side-panel text editor hides the horizontal scroll bar when word wrap is on (default) and re-tiles the line-number gutter when its width changes, so wrapped text never shows a spurious lateral scroll; no-wrap mode keeps the horizontal scroller for long lines",Shipped,Yes
 Split Panes,Vertical Split,Cmd+Opt+V — stack panes vertically,Shipped,No
 Split Panes,Nested Splits,Arbitrary nesting depth via binary tree layout controller,Shipped,No
 Split Panes,Versioned Restore Snapshots,"Persisted split-pane trees carry a schema version so future binaries can add pane kinds without older code silently mis-decoding snapshots; pre-versioned snapshots read as version 1 with no migration",Shipped,No
