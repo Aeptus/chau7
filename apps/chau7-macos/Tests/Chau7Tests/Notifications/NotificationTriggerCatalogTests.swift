@@ -91,7 +91,8 @@ final class NotificationTriggerCatalogTests: XCTestCase {
         XCTAssertEqual(toolFailed?.type, "tool_failed")
         XCTAssertEqual(responseFailed?.type, "response_failed")
         XCTAssertEqual(elicitation?.type, "elicitation")
-        XCTAssertTrue(toolFailed?.defaultEnabled ?? false)
+        // tool_failed is mid-run noise (not "finished" or "needs me") → off by default.
+        XCTAssertFalse(toolFailed?.defaultEnabled ?? true)
         XCTAssertTrue(responseFailed?.defaultEnabled ?? false)
         XCTAssertTrue(elicitation?.defaultEnabled ?? false)
     }
@@ -396,10 +397,11 @@ final class NotificationTriggerCatalogTests: XCTestCase {
         let state = NotificationTriggerState()
         // "finished" defaults to true
         XCTAssertTrue(state.isEnabled(for: finishedTrigger))
-        // "failed" defaults to true
+        // "failed" defaults to true (the agent finished, unsuccessfully)
         XCTAssertTrue(state.isEnabled(for: failedTrigger))
-        // "idle" defaults to true (changed from false — idle is a real signal)
-        XCTAssertTrue(state.isEnabled(for: idleTrigger))
+        // "idle" defaults to false — only explicit waiting_input/permission and
+        // finished states notify by default; idle is a noisy heuristic.
+        XCTAssertFalse(state.isEnabled(for: idleTrigger))
     }
 
     func testPerTriggerFalseOverridesGroupTrue() {
@@ -507,7 +509,8 @@ final class NotificationTriggerCatalogTests: XCTestCase {
             overrides: [:],
             groupOverrides: ["ai_coding.command_finished": false]
         )
-        // Should use catalog default (true for command_finished)
+        // Should use catalog default (shell triggers are not in the AI group, so
+        // the ai_coding group override never applies to them).
         XCTAssertEqual(state.isEnabled(for: shellTrigger), shellTrigger.defaultEnabled)
     }
 

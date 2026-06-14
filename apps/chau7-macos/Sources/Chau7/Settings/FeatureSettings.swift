@@ -176,6 +176,7 @@ struct NotificationSettings: Equatable {
     static let defaultGroupActionBindings: [String: [NotificationActionConfig]] = [
         "ai_coding.finished": [
             NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "custom",
                 "customColor": "green",
@@ -194,6 +195,7 @@ struct NotificationSettings: Equatable {
         ],
         "ai_coding.permission": [
             NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "true"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "custom",
                 "customColor": "red",
@@ -204,6 +206,7 @@ struct NotificationSettings: Equatable {
         ],
         "ai_coding.waiting_input": [
             NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "true"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "custom",
                 "customColor": "red",
@@ -214,12 +217,32 @@ struct NotificationSettings: Equatable {
         ],
         "ai_coding.attention_required": [
             NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "true"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "custom",
                 "customColor": "red",
                 "borderWidth": "2",
                 "borderStyle": "solid",
                 "persistent": "true"
+            ])
+        ],
+        "ai_coding.elicitation": [
+            NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "true"]),
+            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
+                "style": "custom",
+                "customColor": "red",
+                "borderWidth": "2",
+                "borderStyle": "solid",
+                "persistent": "true"
+            ])
+        ],
+        "ai_coding.response_failed": [
+            NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
+            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
+                "style": "error",
+                "autoClearSeconds": "60"
             ])
         ],
         "ai_coding.idle": []
@@ -1190,6 +1213,41 @@ final class FeatureSettings {
         if let data = JSONOperations.encode(ns.groupConditions, context: "groupConditions") {
             UserDefaults.standard.set(data, forKey: Keys.groupConditions)
         }
+    }
+
+    /// Backfill the agent finished / approval / feedback group bindings — and the
+    /// dock bounce within them — for installs whose bindings were persisted before
+    /// these became defaults. A key that is entirely absent is seeded from the
+    /// catalog default; a binding that exists but carries no `dockBounce` action at
+    /// all gains one. A *disabled* dock bounce is left untouched: the settings UI
+    /// keeps the action present-but-off, so its absence (not its disabled state)
+    /// marks the older default.
+    static func normalizedAgentGroupActionBindings(
+        _ loaded: [String: [NotificationActionConfig]]
+    ) -> [String: [NotificationActionConfig]] {
+        let agentKeys = [
+            "ai_coding.finished", "ai_coding.failed", "ai_coding.permission",
+            "ai_coding.waiting_input", "ai_coding.attention_required",
+            "ai_coding.elicitation", "ai_coding.response_failed"
+        ]
+        var result = loaded
+        if result["ai_coding.idle"] == nil {
+            result["ai_coding.idle"] = []
+        }
+        for key in agentKeys {
+            guard let defaultBinding = NotificationSettings.defaultGroupActionBindings[key] else { continue }
+            guard var existing = result[key], !existing.isEmpty else {
+                result[key] = defaultBinding
+                continue
+            }
+            guard !existing.contains(where: { $0.actionType == .dockBounce }),
+                  let defaultBounce = defaultBinding.first(where: { $0.actionType == .dockBounce })
+            else { continue }
+            let insertAt = existing.firstIndex(where: { $0.actionType == .showNotification }).map { $0 + 1 } ?? 0
+            existing.insert(defaultBounce, at: insertAt)
+            result[key] = existing
+        }
+        return result
     }
 
     /// Backward-compatible computed forwarders — existing code continues to work unchanged
@@ -2724,13 +2782,7 @@ final class FeatureSettings {
         } else {
             loadedGroupActionBindings = NotificationSettings.defaultGroupActionBindings
         }
-        var normalizedGroupActionBindings = loadedGroupActionBindings
-        if normalizedGroupActionBindings["ai_coding.failed"] == nil {
-            normalizedGroupActionBindings["ai_coding.failed"] = NotificationSettings.defaultGroupActionBindings["ai_coding.failed"]
-        }
-        if normalizedGroupActionBindings["ai_coding.idle"] == nil {
-            normalizedGroupActionBindings["ai_coding.idle"] = []
-        }
+        let normalizedGroupActionBindings = Self.normalizedAgentGroupActionBindings(loadedGroupActionBindings)
 
         let loadedGroupConditions: [String: TriggerCondition]
         if let data = defaults.data(forKey: Keys.groupConditions),

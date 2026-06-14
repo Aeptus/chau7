@@ -353,16 +353,22 @@ public enum NotificationTriggerCatalog {
     /// Trigger types shared across all AI coding tools.
     /// (type, camelKey for localization, label suffix, description suffix, defaultEnabled)
     private static let aiTriggerTypes: [(type: String, camelKey: String, labelSuffix: String, descSuffix: String, defaultEnabled: Bool)] = [
+        // Default-on set is intentionally limited to two situations: the agent
+        // has finished working (finished / failed / response_failed) and the
+        // agent is waiting on the user (permission / waiting_input /
+        // attention_required / elicitation). Mid-run noise (tool_failed) and the
+        // idle heuristic stay off by default — explicit waiting_input/permission
+        // hooks cover "needs me", so idle would only double up with noise.
         ("finished", "finished", "Response complete", "finished responding.", true),
         ("failed", "failed", "Task failed", "failed or exited with an error.", true),
         ("permission", "permission", "Permission request", "needs permission to continue.", true),
         ("waiting_input", "waitingInput", "Waiting for input", "is waiting for your input.", true),
         ("attention_required", "attentionRequired", "Needs attention", "needs your attention.", true),
-        ("tool_failed", "toolFailed", "Tool failed", "tool execution failed.", true),
+        ("tool_failed", "toolFailed", "Tool failed", "tool execution failed.", false),
         ("response_failed", "responseFailed", "Response failed", "response ended with an error.", true),
         ("elicitation", "elicitation", "MCP input request", "MCP server requesting user input.", true),
         ("authentication_succeeded", "authenticationSucceeded", "Authentication complete", "completed authentication.", false),
-        ("idle", "idle", "Session idle", "session appears idle.", true),
+        ("idle", "idle", "Session idle", "session appears idle.", false),
         ("token_threshold", "tokenThreshold", "Token threshold", "Token usage exceeded threshold.", false),
         ("cost_threshold", "costThreshold", "Cost threshold", "Session cost exceeded threshold.", false),
         ("tool_called", "toolCalled", "Tool called", "called a tool.", false),
@@ -593,7 +599,9 @@ public enum NotificationTriggerCatalog {
             labelFallback: "Command finished",
             descriptionKey: "notifications.trigger.shell.commandFinished.description",
             descriptionFallback: "A shell command completed execution.",
-            defaultEnabled: true,
+            // Off by default: plain shell command completion is not an agent
+            // event and would notify on every command. Opt in from settings.
+            defaultEnabled: false,
             displayContexts: [.settings, .activity]
         ),
         NotificationTrigger(
@@ -603,7 +611,9 @@ public enum NotificationTriggerCatalog {
             labelFallback: "Command failed",
             descriptionKey: "notifications.trigger.shell.commandFailed.description",
             descriptionFallback: "A shell command exited with non-zero status.",
-            defaultEnabled: true,
+            // Off by default: a non-zero shell exit is not an agent event and
+            // would notify on every failed command. Opt in from settings.
+            defaultEnabled: false,
             displayContexts: [.settings, .activity]
         ),
         NotificationTrigger(

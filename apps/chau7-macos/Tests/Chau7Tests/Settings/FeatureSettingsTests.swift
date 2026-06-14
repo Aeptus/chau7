@@ -71,6 +71,54 @@ final class FeatureSettingsTests: XCTestCase {
         }
     }
 
+    func testDefaultAgentGroupBindingsBounceTheDock() {
+        let bindings = NotificationSettings.defaultGroupActionBindings
+        for key in [
+            "ai_coding.finished", "ai_coding.permission", "ai_coding.waiting_input",
+            "ai_coding.attention_required", "ai_coding.elicitation", "ai_coding.response_failed"
+        ] {
+            let bounce = bindings[key]?.first(where: { $0.actionType == .dockBounce })
+            XCTAssertTrue(bounce?.enabled ?? false, "Expected an enabled dock bounce for \(key)")
+        }
+    }
+
+    func testAgentGroupBindingBackfillSeedsMissingKeysWithDockBounce() {
+        let result = FeatureSettings.normalizedAgentGroupActionBindings([:])
+        for key in ["ai_coding.finished", "ai_coding.permission", "ai_coding.waiting_input", "ai_coding.attention_required"] {
+            let actions = result[key] ?? []
+            XCTAssertTrue(
+                actions.contains { $0.actionType == .dockBounce && $0.enabled },
+                "Expected enabled dock bounce backfilled for \(key)"
+            )
+        }
+    }
+
+    func testAgentGroupBindingBackfillAddsDockBounceAfterShowNotification() {
+        let input: [String: [NotificationActionConfig]] = [
+            "ai_coding.finished": [
+                NotificationActionConfig(actionType: .showNotification, enabled: true),
+                NotificationActionConfig(actionType: .styleTab, enabled: true)
+            ]
+        ]
+        let actions = FeatureSettings.normalizedAgentGroupActionBindings(input)["ai_coding.finished"] ?? []
+        XCTAssertEqual(actions.map(\.actionType), [.showNotification, .dockBounce, .styleTab])
+        XCTAssertTrue(actions.first { $0.actionType == .dockBounce }?.enabled ?? false)
+    }
+
+    func testAgentGroupBindingBackfillPreservesUserDisabledDockBounce() {
+        let input: [String: [NotificationActionConfig]] = [
+            "ai_coding.permission": [
+                NotificationActionConfig(actionType: .showNotification, enabled: true),
+                NotificationActionConfig(actionType: .dockBounce, enabled: false),
+                NotificationActionConfig(actionType: .styleTab, enabled: true)
+            ]
+        ]
+        let bounces = (FeatureSettings.normalizedAgentGroupActionBindings(input)["ai_coding.permission"] ?? [])
+            .filter { $0.actionType == .dockBounce }
+        XCTAssertEqual(bounces.count, 1, "Must not duplicate an existing dock bounce")
+        XCTAssertFalse(bounces.first?.enabled ?? true, "A user-disabled dock bounce must stay disabled")
+    }
+
     // MARK: - Color Scheme Defaults
 
     func testDefaultColorSchemeName() {
