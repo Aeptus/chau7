@@ -64,7 +64,18 @@ extension TerminalSessionModel {
         guard !sanitizedText.isEmpty else { return }
         let echoDisabled = activeTerminalView?.isPtyEchoDisabled ?? false
 
-        if !sanitizedText.isEmpty {
+        // Input latency tracks per-keystroke echo responsiveness (local PTY/UI
+        // lag). A submission (Enter) is followed by the command's own output,
+        // whose arrival time is the command's *runtime*, not UI lag — measuring
+        // it inflated shell tabs to multi-second "input latency". So start the
+        // timer only for character/edit input, and drop any pending measurement
+        // on submission so the command's first output can't stop a stale
+        // keystroke timer. (The AI path already clears this; see
+        // detectAICommandIfNeeded.)
+        let isSubmission = sanitizedText.contains("\n") || sanitizedText.contains("\r")
+        if isSubmission {
+            clearPendingInputLatencyMeasurement()
+        } else {
             markInputLatencyStart()
         }
         inputBuffer.append(sanitizedText)
@@ -73,7 +84,7 @@ extension TerminalSessionModel {
                 self?.aiLogSession?.recordInput(sanitizedText)
             }
         }
-        if sanitizedText.contains("\n") || sanitizedText.contains("\r") {
+        if isSubmission {
             processInputBuffer()
             markRunning()
         }

@@ -1,4 +1,5 @@
 Category,Feature,Description,Status,Differentiator
+API Analytics,Echo-Only Input Latency,"Per-session input latency measures keystroke-to-echo responsiveness only; command submission (Enter) is excluded for every session so a slow command's runtime is never miscounted as UI lag",Shipped,Yes
 Developer Experience,Registry-Driven Quality Firewall,"Thin Husky hooks delegate to pnpm quality modes backed by a central registry, affected-surface pre-push scoping, conservative full-suite triggers, content-hash caching, reproducible failure commands, dirty-worktree handling, and runner/registry tests",Shipped,Yes
 AI Detection & Integration,Refined AI CLI Auto-Detection,"Recognizes AI tools via process-tree signals and terminal output scanning; uses strictly tuned patterns (e.g. CLI-style indicators) to prevent false positives from generic prose or analytics logs",Shipped,Yes
 AI Detection & Integration,Centralized Event Source Adaptation,"Generic AI, terminal-session, fallback-history, shell, app, API proxy, and unknown-source events share one tested mapped-source adaptation path with explicit routing and reliability policy",Shipped,Yes
