@@ -945,6 +945,14 @@ final class AppModel {
             Log.info("Created event log file at \(url.path)")
         }
 
+        // Bound the append-only event log before tailing starts (launch-time,
+        // writer quiescent) so it can't grow without bound across sessions.
+        LogFileCompactor.compactIfNeeded(
+            path: url.path,
+            maxBytes: LogFileCompactor.defaultMaxBytes,
+            keepBytes: LogFileCompactor.defaultKeepBytes
+        )
+
         tailer = FileTailer<AIEvent>.eventTailer(fileURL: url) { [weak self] event in
             Log.trace("Event received: type=\(event.type) tool=\(event.tool) message=\"\(event.message)\"")
             DispatchQueue.main.async {

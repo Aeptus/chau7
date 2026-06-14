@@ -129,6 +129,7 @@ Supported commands (46 parsers):
 - **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
 - **Echo-only input latency** — per-session input latency measures keystroke→echo responsiveness only; command submission (Enter) is excluded for every session, so a slow command's runtime is never miscounted as UI lag.
 - **Configurable telemetry retention** — AI run history and full transcripts in `runs.db` are pruned at launch to a user-set window (default 30 days; `0` = keep forever, set in Settings → Logs & History), cascading to child rows and reclaiming disk with a full `VACUUM`, so the database can't grow without bound.
+- **Bounded AI event queues** — the append-only hook event logs (`claude-events.jsonl`, `.ai-events.log`) are compacted to their most recent slice at monitor start (before tailing, while quiescent), so the transient event queues can't grow without bound; the durable record stays in the telemetry database.
 - **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
 - **Baseline estimator** — calculate token savings from context caching.
 - **Analytics dashboard** — command stats, error rates, API usage, and timing. Adaptive polling (2s active, 5s idle, 10s no agents), proxy health monitoring, timeline pagination, and per-agent cost display with cache/reasoning token breakdown. Poll-cycle tracker state is confined to a serial refresh queue so commit actions and live polling can never race each other's bookkeeping.

@@ -119,6 +119,15 @@ final class ClaudeCodeMonitor {
             fm.createFile(atPath: eventsFilePath, contents: nil)
         }
 
+        // Bound the append-only events file before the tailer attaches. Safe
+        // here: no tailer is reading yet and Chau7-spawned Claude sessions
+        // (the only writers, per the hook's CHAU7_TAB_ID guard) haven't started.
+        LogFileCompactor.compactIfNeeded(
+            path: eventsFilePath,
+            maxBytes: LogFileCompactor.defaultMaxBytes,
+            keepBytes: LogFileCompactor.defaultKeepBytes
+        )
+
         // Start tailing events file
         let url = URL(fileURLWithPath: eventsFilePath)
         eventTailer = FileTailer<ClaudeCodeEvent>(
