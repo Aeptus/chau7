@@ -8,6 +8,23 @@ struct ProviderLatencyBackfillReport: Sendable {
     var skippedRuns = 0
 }
 
+/// Retention policy for the telemetry database (runs + full transcripts).
+/// Single source of truth shared by `FeatureSettings` (the Settings UI) and
+/// `TelemetryStore` (the background prune), which reads the value straight from
+/// `UserDefaults` so it never touches the main-actor settings object off-main.
+enum TelemetryRetention {
+    static let defaultsKey = "telemetry.retentionDays"
+    /// Default window. AI runs store full turn content and tool-call I/O, so the
+    /// DB grows unbounded without this — keep a month by default.
+    static let defaultDays = 30
+    /// 0 means "keep forever" (no pruning). Upper clamp guards typos.
+    static let maxDays = 3650
+
+    static var currentDays: Int {
+        UserDefaults.standard.object(forKey: defaultsKey) as? Int ?? defaultDays
+    }
+}
+
 /// SQLite-backed store for telemetry run records, turns, and tool calls.
 /// Thread-safe: all database access is serialized on a dedicated queue.
 final class TelemetryStore {
@@ -69,6 +86,7 @@ final class TelemetryStore {
                         "(inspected=\(latencyBackfill.inspectedRuns), skipped=\(latencyBackfill.skippedRuns))"
                 )
             }
+            self.pruneOldRuns(retentionDays: TelemetryRetention.currentDays)
             self.runIncrementalVacuumIfNeeded()
             self.didRunDeferredMaintenance = true
             self.didScheduleDeferredMaintenance = false
@@ -481,6 +499,76 @@ final class TelemetryStore {
         if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
             Log.warn("TelemetryStore: failed to add column \(table).\(name)")
         }
+    }
+
+    /// Delete runs (and, via `ON DELETE CASCADE` + `foreign_keys=ON`, their
+    /// turns / tool_calls / latency samples) older than the retention window,
+    /// then reclaim the freed disk with a full `VACUUM`.
+    ///
+    /// A full VACUUM is used deliberately: this database was created without
+    /// `auto_vacuum`, so `PRAGMA incremental_vacuum` is a no-op on it — the only
+    /// way to shrink the file after deletes is a rewrite. It runs on the store's
+    /// serial queue during deferred (post-first-paint) maintenance, and only
+    /// when rows were actually removed, so the ~1 GB rewrite is never paid for a
+    /// no-op pass.
+    ///
+    /// `retentionDays <= 0` disables pruning entirely ("keep forever").
+    func pruneOldRuns(retentionDays: Int) {
+        guard let db else { return }
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        switch Self.deleteRunsOlderThan(retentionDays: retentionDays, in: db) {
+        case .disabled:
+            Log.info("TelemetryStore: retention disabled (keep forever)")
+        case .nothingToPrune:
+            break
+        case let .failed(message):
+            Log.warn("TelemetryStore: retention prune failed: \(message)")
+        case let .pruned(deleted, clampedDays):
+            let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0)
+            Log.info(
+                "TelemetryStore: retention prune removed \(deleted) run(s) older than \(clampedDays)d, vacuumed in \(elapsedMs)ms"
+            )
+        }
+    }
+
+    enum PruneOutcome: Equatable {
+        case disabled
+        case nothingToPrune
+        case pruned(deleted: Int, clampedDays: Int)
+        case failed(String)
+    }
+
+    /// Pure deletion core, parameterized on the connection so it can be exercised
+    /// against a throwaway database in tests without touching the shared store's
+    /// real file. Relies on `foreign_keys=ON` + `ON DELETE CASCADE` to remove the
+    /// pruned runs' turns / tool_calls / latency samples, then a full `VACUUM`
+    /// (this DB has no `auto_vacuum`, so `incremental_vacuum` can't shrink it).
+    @discardableResult
+    static func deleteRunsOlderThan(retentionDays: Int, in db: OpaquePointer) -> PruneOutcome {
+        guard retentionDays > 0 else { return .disabled }
+        let clampedDays = max(1, min(retentionDays, TelemetryRetention.maxDays))
+        // started_at is ISO 8601 ('YYYY-MM-DDTHH:MM:...Z'); date('now','-Nd')
+        // yields 'YYYY-MM-DD'. The date prefix compares lexicographically, so a
+        // run is pruned only once its whole calendar day is past the window.
+        let whereClause = "started_at < date('now', '-\(clampedDays) days')"
+
+        var countStmt: OpaquePointer?
+        var toDelete = 0
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM runs WHERE \(whereClause)", -1, &countStmt, nil) == SQLITE_OK,
+           sqlite3_step(countStmt) == SQLITE_ROW {
+            toDelete = Int(sqlite3_column_int(countStmt, 0))
+        }
+        sqlite3_finalize(countStmt)
+        guard toDelete > 0 else { return .nothingToPrune }
+
+        if sqlite3_exec(db, "DELETE FROM runs WHERE \(whereClause)", nil, nil, nil) != SQLITE_OK {
+            return .failed(String(cString: sqlite3_errmsg(db)))
+        }
+        let deleted = Int(sqlite3_changes(db))
+        if sqlite3_exec(db, "VACUUM", nil, nil, nil) != SQLITE_OK {
+            Log.warn("TelemetryStore: post-prune VACUUM failed: \(String(cString: sqlite3_errmsg(db)))")
+        }
+        return .pruned(deleted: deleted, clampedDays: clampedDays)
     }
 
     /// Run PRAGMA incremental_vacuum if more than 7 days have passed since the

@@ -1407,6 +1407,21 @@ final class FeatureSettings {
         didSet { UserDefaults.standard.set(idleTabThresholdMinutes, forKey: "tabs.idleTabThresholdMinutes") }
     }
 
+    /// How many days of AI telemetry (runs plus their full turn transcripts and
+    /// tool-call I/O) to keep in `runs.db`. `0` keeps everything forever.
+    /// Pruning runs at launch during deferred maintenance; see `TelemetryStore`.
+    var telemetryRetentionDays: Int =
+        UserDefaults.standard.object(forKey: TelemetryRetention.defaultsKey) as? Int ?? TelemetryRetention.defaultDays {
+        didSet {
+            let clamped = telemetryRetentionDays < 0 ? 0 : min(telemetryRetentionDays, TelemetryRetention.maxDays)
+            if telemetryRetentionDays != clamped {
+                telemetryRetentionDays = clamped
+                return
+            }
+            UserDefaults.standard.set(telemetryRetentionDays, forKey: TelemetryRetention.defaultsKey)
+        }
+    }
+
     /// Idle tab threshold in seconds (derived from minutes setting)
     var idleTabThresholdSeconds: TimeInterval {
         TimeInterval(max(1, idleTabThresholdMinutes) * 60)
