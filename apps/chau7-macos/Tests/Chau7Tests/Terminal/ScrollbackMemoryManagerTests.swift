@@ -109,11 +109,15 @@ private enum TestError: Error {
 
 private final class MockScrollbackRustFFI: ScrollbackMemoryRustFFI {
     private let capturedText: String?
+    private let capturedAnsiText: String?
     private(set) var scrollbackSizes: [UInt32] = []
     private(set) var replayedBuffers: [Data] = []
+    private(set) var plainCaptureCount = 0
+    private(set) var ansiCaptureCount = 0
 
-    init(capturedText: String?) {
+    init(capturedText: String?, capturedAnsiText: String? = nil) {
         self.capturedText = capturedText
+        self.capturedAnsiText = capturedAnsiText ?? capturedText
     }
 
     func setScrollbackSize(_ lines: UInt32) {
@@ -121,7 +125,13 @@ private final class MockScrollbackRustFFI: ScrollbackMemoryRustFFI {
     }
 
     func captureFullBufferText() -> String? {
-        capturedText
+        plainCaptureCount += 1
+        return capturedText
+    }
+
+    func captureFullBufferAnsiText() -> String? {
+        ansiCaptureCount += 1
+        return capturedAnsiText
     }
 
     func replayBuffer(_ data: Data) {

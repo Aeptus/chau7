@@ -403,11 +403,19 @@ private extension Data {
 protocol ScrollbackMemoryRustFFI: AnyObject {
     func setScrollbackSize(_ lines: UInt32)
     func captureFullBufferText() -> String?
+    /// ANSI-styled capture (SGR preserved). Used by the idle-flush path so a
+    /// flushed-then-reloaded tab keeps its scrollback colors, unlike the plain
+    /// `.hidden` flush which intentionally flattens to text.
+    func captureFullBufferAnsiText() -> String?
     func replayBuffer(_ data: Data)
 }
 
 extension RustTerminalFFI: ScrollbackMemoryRustFFI {
     func captureFullBufferText() -> String? {
         fullBufferText()
+    }
+
+    func captureFullBufferAnsiText() -> String? {
+        fullBufferAnsiText()
     }
 }
