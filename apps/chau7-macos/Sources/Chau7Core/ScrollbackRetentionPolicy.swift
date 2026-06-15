@@ -1,7 +1,11 @@
 public enum ScrollbackRetentionPolicy {
     public static let minimumConfiguredLines = 100
     public static let maximumConfiguredLines = 100_000
-    public static let defaultHiddenViewportFloor = 50
+    /// Scrollback lines kept resident for a `.hidden` tab after its ring is
+    /// flushed to disk — enough to show a couple of screens instantly on return
+    /// while the rest reloads lazily. ~200 lines ≈ <1 MB/tab vs. tens of MB for
+    /// the full configured ring.
+    public static let defaultHiddenViewportFloor = 200
 
     public static func normalizedConfiguredLines(_ lines: Int) -> Int {
         max(minimumConfiguredLines, min(lines, maximumConfiguredLines))

@@ -155,7 +155,9 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
         )
     }
 
-    func testNonSelectedTabIsWarmAndLiveButNotInteractive() {
+    func testSettledIdleNonSelectedTabIsHiddenAndNotInteractive() {
+        // A settled non-selected tab with no live background activity demotes to
+        // .hidden so its scrollback flushes; it is never interactive.
         let decision = TabRenderLifecyclePolicy.decide(
             TabRenderLifecycleInput(
                 isSelectedTab: false,
@@ -172,56 +174,59 @@ final class TabRenderLifecyclePolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(decision.phase, .warm)
+        XCTAssertEqual(decision.phase, .hidden)
         XCTAssertFalse(decision.isInteractive)
     }
 
-    func testNonSelectedTabsGetWarmPhase() {
-        let inputs: [TabRenderLifecycleInput] = [
-            TabRenderLifecycleInput(
-                isSelectedTab: false,
-                isInputPriorityWindow: true,
-                isWindowVisibleForRendering: true,
-                isPreviousLiveTab: true,
-                isPrewarming: false,
-                hasBackgroundActivity: false,
-                isRenderSuspensionEnabled: true,
-                isStartupRestoreActive: false,
-                hasPendingRestoreBootstrap: false,
-                isMCPControlled: false,
-                hasAttachedTerminalView: true
-            ),
-            TabRenderLifecycleInput(
-                isSelectedTab: false,
-                isInputPriorityWindow: true,
-                isWindowVisibleForRendering: true,
-                isPreviousLiveTab: false,
-                isPrewarming: false,
-                hasBackgroundActivity: true,
-                isRenderSuspensionEnabled: true,
-                isStartupRestoreActive: false,
-                hasPendingRestoreBootstrap: false,
-                isMCPControlled: false,
-                hasAttachedTerminalView: true
-            ),
-            TabRenderLifecycleInput(
-                isSelectedTab: false,
-                isInputPriorityWindow: false,
-                isWindowVisibleForRendering: false,
-                isPreviousLiveTab: false,
-                isPrewarming: false,
-                hasBackgroundActivity: false,
-                isRenderSuspensionEnabled: true,
-                isStartupRestoreActive: true,
-                hasPendingRestoreBootstrap: true,
-                isMCPControlled: false,
-                hasAttachedTerminalView: false
-            )
-        ]
-        for input in inputs {
-            let decision = TabRenderLifecyclePolicy.decide(input)
-            XCTAssertEqual(decision.phase, .warm, "Expected .warm for non-selected: \(input)")
-        }
+    func testNonSelectedTabPhaseDependsOnActivityAndSettleState() {
+        // Settled + idle → .hidden (scrollback flushes).
+        let settledIdle = TabRenderLifecycleInput(
+            isSelectedTab: false,
+            isInputPriorityWindow: true,
+            isWindowVisibleForRendering: true,
+            isPreviousLiveTab: true,
+            isPrewarming: false,
+            hasBackgroundActivity: false,
+            isRenderSuspensionEnabled: true,
+            isStartupRestoreActive: false,
+            hasPendingRestoreBootstrap: false,
+            isMCPControlled: false,
+            hasAttachedTerminalView: true
+        )
+        XCTAssertEqual(TabRenderLifecyclePolicy.decide(settledIdle).phase, .hidden)
+
+        // Live background activity → stays .warm at full fidelity.
+        let busy = TabRenderLifecycleInput(
+            isSelectedTab: false,
+            isInputPriorityWindow: true,
+            isWindowVisibleForRendering: true,
+            isPreviousLiveTab: false,
+            isPrewarming: false,
+            hasBackgroundActivity: true,
+            isRenderSuspensionEnabled: true,
+            isStartupRestoreActive: false,
+            hasPendingRestoreBootstrap: false,
+            isMCPControlled: false,
+            hasAttachedTerminalView: true
+        )
+        XCTAssertEqual(TabRenderLifecyclePolicy.decide(busy).phase, .warm)
+
+        // Still being set up (startup restore / bootstrap) → left .warm so it
+        // isn't flushed mid-restore.
+        let restoring = TabRenderLifecycleInput(
+            isSelectedTab: false,
+            isInputPriorityWindow: false,
+            isWindowVisibleForRendering: false,
+            isPreviousLiveTab: false,
+            isPrewarming: false,
+            hasBackgroundActivity: false,
+            isRenderSuspensionEnabled: true,
+            isStartupRestoreActive: true,
+            hasPendingRestoreBootstrap: true,
+            isMCPControlled: false,
+            hasAttachedTerminalView: false
+        )
+        XCTAssertEqual(TabRenderLifecyclePolicy.decide(restoring).phase, .warm)
     }
 
     func testSelectedHiddenWindowGetsWarm() {

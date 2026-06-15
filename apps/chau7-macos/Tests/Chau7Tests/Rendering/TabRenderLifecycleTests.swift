@@ -56,12 +56,34 @@ final class TabRenderLifecycleTests: XCTestCase {
         XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: input), .warm)
     }
 
-    func testUnselectedTabIsAlwaysWarm() {
+    func testIdleUnselectedTabIsHidden() {
+        // No live background activity → demote to .hidden so scrollback flushes,
+        // regardless of window visibility or memory pressure.
         let input = makeInput(isSelectedTab: false, isWindowVisibleForRendering: true)
-        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: input), .warm)
+        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: input), .hidden)
 
         let invisibleInput = makeInput(isSelectedTab: false, isWindowVisibleForRendering: false)
-        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: invisibleInput), .warm)
+        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: invisibleInput), .hidden)
+    }
+
+    func testUnselectedTabWithBackgroundActivityStaysWarm() {
+        // A running/waiting AI session keeps the tab .warm at full fidelity.
+        let input = makeInput(
+            isSelectedTab: false,
+            isWindowVisibleForRendering: true,
+            hasBackgroundActivity: true
+        )
+        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: input), .warm)
+    }
+
+    func testUnselectedTabWithBackgroundActivityDemotesUnderMemoryPressure() {
+        let input = makeInput(
+            isSelectedTab: false,
+            isWindowVisibleForRendering: true,
+            hasBackgroundActivity: true,
+            isUnderMemoryPressure: true
+        )
+        XCTAssertEqual(TabRenderLifecyclePolicy.phase(for: input), .hidden)
     }
 
     // MARK: - isInteractive(for:)
@@ -197,7 +219,8 @@ final class TabRenderLifecycleTests: XCTestCase {
         isStartupRestoreActive: Bool = false,
         hasPendingRestoreBootstrap: Bool = false,
         isMCPControlled: Bool = false,
-        hasAttachedTerminalView: Bool = true
+        hasAttachedTerminalView: Bool = true,
+        isUnderMemoryPressure: Bool = false
     ) -> TabRenderLifecycleInput {
         TabRenderLifecycleInput(
             isSelectedTab: isSelectedTab,
@@ -210,7 +233,8 @@ final class TabRenderLifecycleTests: XCTestCase {
             isStartupRestoreActive: isStartupRestoreActive,
             hasPendingRestoreBootstrap: hasPendingRestoreBootstrap,
             isMCPControlled: isMCPControlled,
-            hasAttachedTerminalView: hasAttachedTerminalView
+            hasAttachedTerminalView: hasAttachedTerminalView,
+            isUnderMemoryPressure: isUnderMemoryPressure
         )
     }
 }

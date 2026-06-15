@@ -113,17 +113,29 @@ public enum TabRenderLifecyclePolicy {
             // "render live"; key/main is the signal for "accept input."
             return .active
         }
-        // Non-selected tabs: warm (not hidden) so views stay unhidden in the
-        // hierarchy but don't drive active rendering. The shared background
-        // drain service handles PTY draining; no per-tab polling needed.
+        // Non-selected tabs: `.hidden` lets ScrollbackMemoryManager flush the
+        // scrollback ring to disk and shrink it to the viewport floor (reloaded
+        // on re-selection). In many-tab sessions non-selected tabs are the bulk
+        // of the footprint because they otherwise keep the full configured
+        // scrollback resident. The shared background drain keeps the PTY draining
+        // regardless of phase, so background work is unaffected.
         //
-        // Exception: under sustained memory pressure, demote to `.hidden`. In
-        // many-tab sessions non-selected tabs are the bulk of the footprint
-        // because they otherwise never reach `.hidden`, so their scrollback is
-        // never flushed. `.hidden` lets ScrollbackMemoryManager flush scrollback
-        // to disk and shrink the ring (reloaded on re-selection). The PTY keeps
-        // draining regardless of phase, so background activity is unaffected.
+        // Under memory pressure, always demote.
         if input.isUnderMemoryPressure {
+            return .hidden
+        }
+        // Otherwise demote proactively for idle tabs — but only once a tab has
+        // settled. A tab running/waiting on an AI session keeps
+        // `hasBackgroundActivity == true` and stays `.warm` (full fidelity), and
+        // a tab still being set up (startup restore / prewarm / restore
+        // bootstrap) is left `.warm` so it isn't flushed out from under itself.
+        // A short suspension delay upstream means a tab you only glanced away
+        // from isn't demoted immediately.
+        let isSettledIdleTab = !input.hasBackgroundActivity
+            && !input.isStartupRestoreActive
+            && !input.isPrewarming
+            && !input.hasPendingRestoreBootstrap
+        if isSettledIdleTab {
             return .hidden
         }
         return .warm

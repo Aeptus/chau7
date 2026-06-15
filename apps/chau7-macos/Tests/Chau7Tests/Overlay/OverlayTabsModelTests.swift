@@ -1142,79 +1142,64 @@ final class OverlayTabsModelTests: XCTestCase {
 
     // MARK: - Render Suspension
 
-    /// Render-lifecycle policy change (TabRenderLifecyclePolicy.phase): a
-    /// non-selected tab is held `.warm` (never `.hidden`/suspended) regardless
-    /// of whether it hosts an AI session — the old "keep background AI tabs
-    /// live, suspend the rest" gate was removed. Suspension of background tabs
-    /// is now driven solely by memory pressure, which demotes *every*
-    /// non-selected tab to `.hidden`.
-    func testRenderSuspensionSuspendsBackgroundTabsOnlyUnderMemoryPressure() {
+    /// Render-lifecycle policy: a settled non-selected tab with no live AI
+    /// activity is demoted to `.hidden`/suspended *proactively* (no memory
+    /// pressure required) so its scrollback flushes to disk. The selected tab is
+    /// never suspended. (The AI-activity exemption is unit-tested at the pure
+    /// policy layer in `TabRenderLifecyclePolicyTests`.)
+    func testIdleBackgroundTabsAreSuspendedProactively() {
         let selectedTab = model.tabs[0]
         model.newTab()
         model.newTab()
 
-        let aiTab = model.tabs[1]
-        let shellTab = model.tabs[2]
-        aiTab.session?.activeAppName = "Codex"
+        let bgTab1 = model.tabs[1]
+        let bgTab2 = model.tabs[2]
 
         model.selectTab(id: selectedTab.id)
 
-        // Without memory pressure, both background tabs stay live (.warm).
+        // No memory pressure — idle background tabs still suspend.
         MemoryPressureResponder.shared.memoryPressureOverrideForTesting = false
         model.configureRenderSuspension(enabled: true, delay: 0)
         drainMainQueue()
 
-        XCTAssertFalse(
-            model.suspendedTabIDs.contains(aiTab.id),
-            "Background AI tabs stay live without memory pressure"
-        )
-        XCTAssertFalse(
-            model.suspendedTabIDs.contains(shellTab.id),
-            "Background shell tabs stay live without memory pressure"
-        )
-
-        // Under memory pressure, all non-selected tabs demote to .hidden and
-        // suspend — AI status no longer exempts a tab.
-        MemoryPressureResponder.shared.memoryPressureOverrideForTesting = true
-        model.invalidateRenderLifecycle(reason: "test_memory_pressure")
-        drainMainQueue()
-
         XCTAssertTrue(
-            model.suspendedTabIDs.contains(aiTab.id),
-            "Background AI tabs suspend under memory pressure"
+            model.suspendedTabIDs.contains(bgTab1.id),
+            "Idle background tabs suspend proactively without memory pressure"
         )
         XCTAssertTrue(
-            model.suspendedTabIDs.contains(shellTab.id),
-            "Background shell tabs suspend under memory pressure"
+            model.suspendedTabIDs.contains(bgTab2.id),
+            "Idle background tabs suspend proactively without memory pressure"
+        )
+        XCTAssertFalse(
+            model.suspendedTabIDs.contains(selectedTab.id),
+            "The selected tab is never suspended"
         )
     }
 
-    /// Lifting memory pressure re-activates a previously suspended background
-    /// tab on the next lifecycle re-evaluation (the realistic unsuspend trigger
-    /// now that AI detection no longer drives suspension).
-    func testRenderSuspensionReactivatesBackgroundTabWhenMemoryPressureClears() {
+    /// Selecting a suspended background tab reactivates it (the realistic
+    /// unsuspend trigger now that idle tabs suspend proactively).
+    func testSelectingSuspendedBackgroundTabReactivatesIt() {
         let selectedTab = model.tabs[0]
         model.newTab()
 
         let backgroundTab = model.tabs[1]
         model.selectTab(id: selectedTab.id)
 
-        MemoryPressureResponder.shared.memoryPressureOverrideForTesting = true
+        MemoryPressureResponder.shared.memoryPressureOverrideForTesting = false
         model.configureRenderSuspension(enabled: true, delay: 0)
         drainMainQueue()
 
         XCTAssertTrue(
             model.suspendedTabIDs.contains(backgroundTab.id),
-            "Background tabs suspend while under memory pressure"
+            "Idle background tab suspends proactively"
         )
 
-        MemoryPressureResponder.shared.memoryPressureOverrideForTesting = false
-        model.invalidateRenderLifecycle(reason: "test_memory_pressure_cleared")
+        model.selectTab(id: backgroundTab.id)
         drainMainQueue()
 
         XCTAssertFalse(
             model.suspendedTabIDs.contains(backgroundTab.id),
-            "Clearing memory pressure should reactivate the background tab"
+            "Selecting a suspended tab reactivates it"
         )
     }
 
