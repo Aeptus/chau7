@@ -425,11 +425,7 @@ final class AppModel {
         } else {
             self.isTerminalAnsi = defaults.object(forKey: Keys.isTerminalAnsi) as? Bool ?? true
         }
-        // Default ON: idle background tabs demote to `.hidden`, flushing their
-        // scrollback ring to disk (reloaded on return). In many-tab sessions
-        // non-selected tabs are the bulk of the footprint because they otherwise
-        // keep the full configured scrollback resident. Reversible in Settings.
-        self.isSuspendBackgroundRendering = defaults.object(forKey: Keys.isSuspendBackgroundRendering) as? Bool ?? true
+        self.isSuspendBackgroundRendering = defaults.object(forKey: Keys.isSuspendBackgroundRendering) as? Bool ?? false
         self.suspendRenderDelayText = defaults.string(forKey: Keys.suspendRenderDelaySeconds) ?? "5"
         self.codexHistoryPath = envCodexHistoryPath
             ?? defaults.string(forKey: Keys.codexHistoryPath)
