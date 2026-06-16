@@ -250,8 +250,33 @@ extension OverlayTabsModel {
         // is not a mismatch). Empty-expected + non-empty-current is now
         // rejected.
         let directoryMatches = normalizedExpectedDirectory == normalizedCurrentDirectory
-        let providerMatches = normalizedExpectedProvider == nil || normalizedExpectedProvider == currentProvider
-        let sessionMatches = normalizedExpectedSessionID == nil || normalizedExpectedSessionID == normalizedCurrentSessionID
+
+        // Provider / session ownership check. Three-way:
+        //   - expected = nil  → wildcard, always matches (saved state lacked
+        //                       identity, trust the live session).
+        //   - current  = nil  → identity not yet corroborated. The launch
+        //                       arguments (`claude --resume <id>` /
+        //                       `codex resume <id>`) guarantee the session
+        //                       is the right one — identity detection just
+        //                       hasn't caught up to the prompt. Treat as
+        //                       match and let delivery proceed; rejecting
+        //                       here is the recurring class of regression
+        //                       that loses prefills every time identity
+        //                       detection is tightened. (See git history
+        //                       around b39a863a / d485275c.)
+        //   - both set        → must be equal.
+        let providerMatches: Bool
+        if let expected = normalizedExpectedProvider {
+            providerMatches = currentProvider == nil || currentProvider == expected
+        } else {
+            providerMatches = true
+        }
+        let sessionMatches: Bool
+        if let expected = normalizedExpectedSessionID {
+            sessionMatches = normalizedCurrentSessionID == nil || normalizedCurrentSessionID == expected
+        } else {
+            sessionMatches = true
+        }
 
         return ResumeRestoreIntentMatch(
             directoryMatches: directoryMatches,

@@ -505,3 +505,4 @@ persist_convention_sweep,macos,persistence,remaining silent try? failures across
 small_race_tail_closed,macos,concurrency,log sink event-drain generations deallocation flag poll diagnostics usage snapshot and reset-persist races are lock-guarded or generation-tokened,shipped
 cache_caps_and_dead_render_api,macos,performance,clipboard and resolver caches are bounded graphics abort buffers shrink and the unused frame-pacing API is removed,shipped
 test_suite_ungated_full,macos,build,the 46 remaining dead #if !SWIFT_PACKAGE test files are ungated and repaired bringing the package suite to 3120 tests with a guard against new gates,shipped
+resume_prefill_identity_tolerance,macos,restore,resume prefill validation treats unresolved current AI identity as match instead of rejecting so corroboration-lag does not lose the prefill,shipped
