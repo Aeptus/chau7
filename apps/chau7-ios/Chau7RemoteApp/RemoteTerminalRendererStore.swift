@@ -64,13 +64,13 @@ final class RemoteTerminalRendererStore {
         refreshActiveState()
     }
 
-    func setActiveTab(_ tabID: UInt32, fallbackText: String) {
+    func setActiveTab(_ tabID: UInt32) {
         activeTabID = tabID
         ensurePlayback(for: tabID, forceRebuild: false)
         refreshActiveState()
     }
 
-    func replaceSnapshot(_ data: Data, for tabID: UInt32) {
+    func replaceSnapshot(for tabID: UInt32) {
         guard tabID == activeTabID else { return }
         refreshActiveState()
     }

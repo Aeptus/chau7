@@ -3,7 +3,6 @@ import SwiftUI
 import CryptoKit
 import UIKit
 import Chau7Core
-import UserNotifications
 import os
 
 private let log = Logger(subsystem: "ch7", category: "RemoteClient")
@@ -44,7 +43,7 @@ final class RemoteClient {
     private(set) var strippedOutputText = ""
     private(set) var tabs: [RemoteTab] = []
     private(set) var isConnected = false
-    private(set) var status = "Disconnected"
+    private(set) var status: RemoteConnectionStatus = .disconnected
     var activeTabID: UInt32 = 0
     var lastError: String?
     var pendingApprovals: [ApprovalRequest] = []
@@ -55,7 +54,7 @@ final class RemoteClient {
     // MARK: - Pairing (persisted in Keychain)
 
     var pairingInfo: PairingInfo? {
-        didSet { persistPairing() }
+        didSet { RemotePairingStore.savePairing(pairingInfo) }
     }
 
     // MARK: - Private
@@ -79,13 +78,13 @@ final class RemoteClient {
     private var outputFlushTask: Task<Void, Never>?
     private var strippedOutputRefreshTask: Task<Void, Never>?
     private var remoteSessionID: String?
-    private var bufferedTelemetryEvents: [RemoteClientTelemetryEvent] = []
+    private var telemetryBuffer = RemoteTelemetryBuffer(maxEvents: Self.maxBufferedTelemetryEvents)
     private var pendingURLActions: [RemoteActivityURLAction] = []
     private var currentAppState: RemoteClientAppState = .foreground
     private var desiredStreamMode: RemoteClientStreamMode = .full
     private var pushToken: String?
     private var notificationsAuthorized = false
-    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    private let backgroundKeepalive = BackgroundKeepalive(name: "ch7.remote.approvals")
     private var suppressLocalNotificationsUntil: Date?
     private var pendingApprovalResponses: [String: Bool] = [:]
     private var approvalResponsesInFlight: Set<String> = []
@@ -101,7 +100,8 @@ final class RemoteClient {
     private static let repairFallbackAttempt = 3
     private static let pushNotificationSuppressionWindow: TimeInterval = 15
     private static let pendingStateFetchMinimumInterval: TimeInterval = 1
-    static let appVersion = "1.1.0"
+    static let appVersion =
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.1.0"
 
     var canSendInput: Bool {
         canSendInput(to: activeTabID)
@@ -110,8 +110,12 @@ final class RemoteClient {
     // MARK: - Init
 
     init() {
-        iosKey = Self.loadOrCreateKey()
-        pairingInfo = Self.loadPairing()
+        iosKey = RemotePairingStore.loadOrCreateIOSKey()
+        pairingInfo = RemotePairingStore.loadPairing()
+
+        backgroundKeepalive.onExpire = { [weak self] in
+            self?.handleBackgroundTaskExpiration()
+        }
 
         notificationTask = Task { [weak self] in
             for await note in NotificationCenter.default.notifications(named: .approvalNotificationResponse) {
@@ -164,7 +168,7 @@ final class RemoteClient {
         let task = URLSession.shared.webSocketTask(with: url)
         webSocket = task
         task.resume()
-        status = "Connecting"
+        status = .connecting
         emitTelemetry(
             type: .connectRequested,
             status: "connecting",
@@ -178,7 +182,7 @@ final class RemoteClient {
     func handleScenePhase(_ scenePhase: ScenePhase) {
         switch scenePhase {
         case .active:
-            endBackgroundKeepalive()
+            backgroundKeepalive.end()
             currentAppState = .foreground
             desiredStreamMode = .full
             if webSocket == nil, pairingInfo != nil {
@@ -189,7 +193,7 @@ final class RemoteClient {
             }
             schedulePendingStateFetch(reason: "scene_active")
         case .background:
-            beginBackgroundKeepalive()
+            backgroundKeepalive.begin()
             currentAppState = .background
             desiredStreamMode = .approvalsOnly
             outputFlushTask?.cancel()
@@ -217,7 +221,7 @@ final class RemoteClient {
 
     func handlePushWake(userInfo: [AnyHashable: Any]) {
         suppressLocalNotificationsUntil = Date().addingTimeInterval(Self.pushNotificationSuppressionWindow)
-        beginBackgroundKeepalive()
+        backgroundKeepalive.begin()
         currentAppState = .background
         desiredStreamMode = .approvalsOnly
         if webSocket == nil, pairingInfo != nil {
@@ -247,7 +251,7 @@ final class RemoteClient {
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         isConnected = false
-        status = "Disconnected"
+        status = .disconnected
         crypto = nil
         remoteSessionID = nil
         hasReceivedPairAccept = false
@@ -265,7 +269,7 @@ final class RemoteClient {
         outputFlushTask = nil
         strippedOutputRefreshTask?.cancel()
         strippedOutputRefreshTask = nil
-        bufferedTelemetryEvents.removeAll(keepingCapacity: true)
+        telemetryBuffer.removeAll()
         liveActivityState = nil
         outputText = ""
         strippedOutputText = ""
@@ -274,7 +278,7 @@ final class RemoteClient {
             pendingApprovalResponses.removeAll(keepingCapacity: true)
             approvalResponsesInFlight.removeAll(keepingCapacity: true)
         }
-        endBackgroundKeepalive()
+        backgroundKeepalive.end()
         if #available(iOS 16.1, *) {
             RemoteLiveActivityManager.shared.update(with: nil)
         }
@@ -298,7 +302,7 @@ final class RemoteClient {
         activeTabID = tabID
         flushPendingOutput(for: tabID)
         refreshVisibleOutput(prioritizeStrippedOutput: true)
-        terminalRenderer.setActiveTab(tabID, fallbackText: outputText)
+        terminalRenderer.setActiveTab(tabID)
         emitTelemetry(type: .tabSwitched, tabID: tabID, tabTitle: tabTitle(for: tabID))
         sendJSON(TabSwitchPayload(tabID: tabID), type: .tabSwitch)
     }
@@ -311,7 +315,7 @@ final class RemoteClient {
 
         pendingApprovals[idx].responseState = .queued(approved)
         pendingApprovalResponses[requestID] = approved
-        beginBackgroundKeepalive()
+        backgroundKeepalive.begin()
         flushPendingApprovalResponses()
     }
 
@@ -330,9 +334,7 @@ final class RemoteClient {
         }
 
         pendingInteractivePrompts.remove(at: promptIndex)
-        UNUserNotificationCenter.current().removeDeliveredNotifications(
-            withIdentifiers: [notificationIdentifierForInteractivePrompt(prompt.id)]
-        )
+        RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: [prompt.id])
         return true
     }
 
@@ -354,9 +356,7 @@ final class RemoteClient {
         }
 
         pendingInteractivePrompts.remove(at: promptIndex)
-        UNUserNotificationCenter.current().removeDeliveredNotifications(
-            withIdentifiers: [notificationIdentifierForInteractivePrompt(prompt.id)]
-        )
+        RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: [prompt.id])
         return true
     }
 
@@ -424,7 +424,7 @@ final class RemoteClient {
         let wasConnected = isConnected
         cancelHandshakeTasks()
         isConnected = false
-        status = "Disconnected"
+        status = .disconnected
         crypto = nil
 
         if wasConnected || reason != nil {
@@ -434,12 +434,12 @@ final class RemoteClient {
         guard shouldReconnect, reconnectBackoff.hasRemainingAttempts else {
             if !reconnectBackoff.hasRemainingAttempts {
                 lastError = "Reconnect limit reached (\(Self.maxReconnectAttempts) attempts)"
-                status = "Connection failed"
+                status = .connectionFailed
             }
             return
         }
         guard let delay = reconnectBackoff.nextDelay() else { return }
-        status = "Reconnecting (\(reconnectBackoff.attempt)/\(Self.maxReconnectAttempts))..."
+        status = .reconnecting(attempt: reconnectBackoff.attempt, max: Self.maxReconnectAttempts)
         emitTelemetry(
             type: .reconnectScheduled,
             status: "scheduled",
@@ -472,8 +472,8 @@ final class RemoteClient {
                       self.webSocket != nil,
                       !self.isConnected else { return }
 
-                if attempt > 0, self.status == "Connecting" {
-                    self.status = "Waiting for your Mac..."
+                if attempt > 0, self.status == .connecting {
+                    self.status = .waitingForMac
                 }
 
                 self.sendHello()
@@ -502,7 +502,7 @@ final class RemoteClient {
             self.isConnected = false
             self.crypto = nil
             socket?.cancel(with: .goingAway, reason: nil)
-            self.status = "Connection timed out"
+            self.status = .connectionTimedOut
             self.lastError = "No response from your Mac. Make sure Chau7 is open, Remote is enabled, and the pairing payload is still current."
             self.emitTelemetry(
                 type: .errorReceived,
@@ -576,7 +576,7 @@ final class RemoteClient {
         case .pairReject:      handlePairReject(payload)
         case .sessionReady:
             isConnected = true
-            status = "Session ready"
+            status = .sessionReady
             lastError = nil
             cancelHandshakeTasks()
             flushPendingURLActions()
@@ -625,7 +625,7 @@ final class RemoteClient {
             return
         }
         hasReceivedPairAccept = true
-        _ = KeychainStore.save(key: "mac_public_key", data: keyData)
+        RemotePairingStore.saveMacPublicKey(keyData)
         persistTrustedIdentity(for: msg)
         // If we fell back from trust-based reconnect to explicit pairing, any
         // provisional session state must be discarded before re-deriving keys.
@@ -645,7 +645,7 @@ final class RemoteClient {
         } else {
             lastError = "Pairing rejected"
         }
-        status = "Pairing rejected"
+        status = .pairingRejected
         shouldReconnect = false
     }
 
@@ -656,12 +656,12 @@ final class RemoteClient {
         } else if let text = String(data: data, encoding: .utf8), !text.isEmpty {
             (errorText, code) = (text, "error")
         } else {
-            status = "Error"
+            status = .error
             return
         }
         lastError = errorText
         emitTelemetry(type: .errorReceived, status: code, message: errorText)
-        status = "Error"
+        status = .error
     }
 
     private func handleTabList(_ data: Data) {
@@ -683,7 +683,7 @@ final class RemoteClient {
         terminalRenderer.retainVisibleTabs(visibleTabIDs)
         pendingInteractivePrompts.removeAll { !visibleTabIDs.contains($0.tabID) }
         refreshVisibleOutput(prioritizeStrippedOutput: true)
-        terminalRenderer.setActiveTab(activeTabID, fallbackText: outputText)
+        terminalRenderer.setActiveTab(activeTabID)
     }
 
     private func handleActivityState(_ data: Data) {
@@ -751,7 +751,7 @@ final class RemoteClient {
         guard currentAppState == .foreground, desiredStreamMode == .full else { return }
         let resolvedTabID = resolvedTabID(for: tabID)
         outputStore.replaceSnapshot(data, for: resolvedTabID)
-        terminalRenderer.replaceSnapshot(data, for: resolvedTabID)
+        terminalRenderer.replaceSnapshot(for: resolvedTabID)
         if resolvedTabID == activeTabID || activeTabID == 0 {
             refreshVisibleOutput(prioritizeStrippedOutput: true)
         }
@@ -781,7 +781,7 @@ final class RemoteClient {
 
     private func establishSessionIfPossible() {
         guard crypto == nil, let nonceIOS, let nonceMac else { return }
-        guard let macPub = macPublicKey ?? loadStoredMacKey() else {
+        guard let macPub = macPublicKey ?? RemotePairingStore.loadMacPublicKey() else {
             log.error("Session establishment failed: no Mac public key available")
             return
         }
@@ -808,7 +808,7 @@ final class RemoteClient {
         let sessionID = CryptoUtils.randomBytes(count: 8).base64EncodedString()
         remoteSessionID = sessionID
         sendJSON(SessionReadyPayload(sessionID: sessionID), type: .sessionReady, encrypt: true)
-        status = "Encrypted"
+        status = .encrypted
         emitTelemetry(type: .sessionEncrypted, status: "encrypted")
         flushBufferedTelemetryEvents()
         sendClientStateIfPossible()
@@ -966,7 +966,7 @@ final class RemoteClient {
         guard !pendingApprovalResponses.isEmpty else { return }
 
         guard crypto != nil, webSocket != nil else {
-            status = "Reconnecting to send approval..."
+            status = .reconnectingToSendApproval
             if let pairing = pairingInfo, webSocket == nil {
                 connect(
                     pairing: pairing,
@@ -997,12 +997,12 @@ final class RemoteClient {
                     self.pendingApprovalResponses.removeValue(forKey: requestID)
                     self.completeApprovalResponse(requestID: requestID, approved: approved)
                     if self.pendingApprovalResponses.isEmpty {
-                        self.endBackgroundKeepalive()
+                        self.backgroundKeepalive.end()
                     }
                 } else {
                     self.updateApprovalResponseState(requestID: requestID) { _ in .queued(approved) }
                     self.lastError = "Approval response was not delivered. Chau7 will retry when the connection is ready."
-                    self.status = "Approval queued"
+                    self.status = .approvalQueued
                     if let pairing = self.pairingInfo, self.webSocket == nil {
                         self.connect(
                             pairing: pairing,
@@ -1035,15 +1035,10 @@ final class RemoteClient {
             message: request.flaggedCommand,
             metadata: ["request_id": requestID]
         )
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [requestID])
+        RemoteNotificationScheduler.removeApprovalNotifications(requestIDs: [requestID])
     }
 
-    // MARK: - Key Management
-
-    private func loadStoredMacKey() -> Curve25519.KeyAgreement.PublicKey? {
-        guard let data = KeychainStore.load(key: "mac_public_key") else { return nil }
-        return try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: data)
-    }
+    // MARK: - Input gating
 
     private func canSendInput(to tabID: UInt32) -> Bool {
         canSendInput(to: tabID, allowUnlistedTab: false)
@@ -1101,8 +1096,8 @@ final class RemoteClient {
     }
 
     private func hasStoredTrust(for pairing: PairingInfo) -> Bool {
-        guard let storedKey = loadStoredMacKey(),
-              let trustedIdentity = Self.loadTrustedPairingIdentity() else {
+        guard let storedKey = RemotePairingStore.loadMacPublicKey(),
+              let trustedIdentity = RemotePairingStore.loadTrustedIdentity() else {
             return false
         }
         let currentIOSPub = iosKey.publicKey.rawRepresentation.base64EncodedString()
@@ -1112,50 +1107,17 @@ final class RemoteClient {
             trustedIdentity.iosPub == currentIOSPub
     }
 
-    private static func loadOrCreateKey() -> Curve25519.KeyAgreement.PrivateKey {
-        if let data = KeychainStore.load(key: "ios_private_key"),
-           let key = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: data) {
-            return key
-        }
-        let key = Curve25519.KeyAgreement.PrivateKey()
-        _ = KeychainStore.save(key: "ios_private_key", data: key.rawRepresentation)
-        return key
-    }
-
     // MARK: - Pairing Persistence
 
-    private func persistPairing() {
-        guard let info = pairingInfo,
-              let data = try? JSONEncoder().encode(info) else {
-            _ = KeychainStore.delete(key: "pairing_payload")
-            _ = KeychainStore.delete(key: "trusted_pairing_identity")
-            return
-        }
-        _ = KeychainStore.save(key: "pairing_payload", data: data)
-    }
-
-    private static func loadPairing() -> PairingInfo? {
-        guard let data = KeychainStore.load(key: "pairing_payload") else { return nil }
-        return try? JSONDecoder().decode(PairingInfo.self, from: data)
-    }
-
     private func persistTrustedIdentity(for accept: PairAcceptPayload) {
-        guard let pairing = pairingInfo,
-              let data = try? JSONEncoder().encode(
-                TrustedPairingIdentity(
-                    deviceID: pairing.deviceID,
-                    macPub: accept.macPub,
-                    iosPub: iosKey.publicKey.rawRepresentation.base64EncodedString()
-                )
-              ) else {
-            return
-        }
-        _ = KeychainStore.save(key: "trusted_pairing_identity", data: data)
-    }
-
-    private static func loadTrustedPairingIdentity() -> TrustedPairingIdentity? {
-        guard let data = KeychainStore.load(key: "trusted_pairing_identity") else { return nil }
-        return try? JSONDecoder().decode(TrustedPairingIdentity.self, from: data)
+        guard let pairing = pairingInfo else { return }
+        RemotePairingStore.saveTrustedIdentity(
+            TrustedPairingIdentity(
+                deviceID: pairing.deviceID,
+                macPub: accept.macPub,
+                iosPub: iosKey.publicKey.rawRepresentation.base64EncodedString()
+            )
+        )
     }
 
     func flaggedProtectedAction(for input: String) -> String? {
@@ -1207,98 +1169,6 @@ final class RemoteClient {
             tabID: activeTabID,
             tabTitle: tabTitle(for: activeTabID)
         )
-    }
-
-    private func approvalNotificationBody(for request: ApprovalRequestPayload) -> String {
-        let context = approvalContextSummary(
-            tabTitle: request.tabTitle,
-            toolName: request.toolName,
-            projectName: request.projectName,
-            branchName: request.branchName
-        )
-        let headline = request.flaggedCommand != request.command ? request.flaggedCommand : request.command
-        let directory = abbreviatedPath(request.currentDirectory)
-        let note = trimmedNotificationText(request.contextNote)
-        let recentCommand = trimmedNotificationText(request.recentCommand)
-        let detail = note ?? recentCommand
-        return notificationBodyLines([context, directory, detail, headline])
-    }
-
-    private func scheduleInteractivePromptNotification(for prompt: RemoteInteractivePrompt) {
-        let content = UNMutableNotificationContent()
-        content.title = "Interactive Prompt"
-        content.body = interactivePromptNotificationBody(for: prompt)
-        content.sound = .default
-        content.interruptionLevel = .timeSensitive
-        content.relevanceScore = 1
-        content.categoryIdentifier = RemoteNotificationID.interactivePromptCategory
-        content.userInfo = [
-            RemoteNotificationID.UserInfoKey.promptID: prompt.id,
-            RemoteNotificationID.UserInfoKey.tabID: prompt.tabID,
-            RemoteNotificationID.UserInfoKey.openApprovals: true
-        ]
-        let request = UNNotificationRequest(
-            identifier: notificationIdentifierForInteractivePrompt(prompt.id),
-            content: content,
-            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
-        )
-        UNUserNotificationCenter.current().add(request)
-    }
-
-    private func interactivePromptNotificationBody(for prompt: RemoteInteractivePrompt) -> String {
-        let context = approvalContextSummary(
-            tabTitle: prompt.tabTitle,
-            toolName: prompt.toolName,
-            projectName: prompt.projectName,
-            branchName: prompt.branchName
-        )
-        let directory = abbreviatedPath(prompt.currentDirectory)
-        let promptText = prompt.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let options = prompt.options.prefix(3).map(\.label).joined(separator: " / ")
-        let detail = options.isEmpty ? promptText : "\(promptText)\n\(options)"
-        return notificationBodyLines([context, directory, detail])
-    }
-
-    private func approvalContextSummary(
-        tabTitle: String?,
-        toolName: String?,
-        projectName: String?,
-        branchName: String?
-    ) -> String {
-        [toolName, tabTitle, projectName, branchName]
-            .compactMap { value in
-                let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                return trimmed.isEmpty ? nil : trimmed
-            }
-            .joined(separator: " · ")
-    }
-
-    private func notificationBodyLines(_ values: [String?]) -> String {
-        values
-            .compactMap(trimmedNotificationText)
-            .joined(separator: "\n")
-    }
-
-    private func trimmedNotificationText(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func abbreviatedPath(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !trimmed.isEmpty else { return nil }
-        let home = NSHomeDirectory()
-        if trimmed == home {
-            return "~"
-        }
-        if trimmed.hasPrefix(home + "/") {
-            return "~" + String(trimmed.dropFirst(home.count))
-        }
-        return trimmed
-    }
-
-    private func notificationIdentifierForInteractivePrompt(_ promptID: String) -> String {
-        "interactive-prompt-\(promptID)"
     }
 
     private var shouldSuppressLocalNotifications: Bool {
@@ -1403,12 +1273,10 @@ final class RemoteClient {
         pendingApprovals = nextApprovals
 
         let removedNotificationIDs = previousApprovalIDs.subtracting(nextApprovalIDs)
-        if !removedNotificationIDs.isEmpty {
-            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: Array(removedNotificationIDs))
-        }
+        RemoteNotificationScheduler.removeApprovalNotifications(requestIDs: Array(removedNotificationIDs))
 
         for payload in payloads where !previousApprovalIDs.contains(payload.requestID) {
-            scheduleApprovalNotification(for: payload)
+            scheduleApprovalNotificationIfAllowed(for: payload)
         }
     }
 
@@ -1425,29 +1293,12 @@ final class RemoteClient {
         }
 
         guard isNewApproval else { return }
-        scheduleApprovalNotification(for: payload)
+        scheduleApprovalNotificationIfAllowed(for: payload)
     }
 
-    private func scheduleApprovalNotification(for payload: ApprovalRequestPayload) {
+    private func scheduleApprovalNotificationIfAllowed(for payload: ApprovalRequestPayload) {
         guard shouldScheduleLocalApprovalNotification else { return }
-        let content = UNMutableNotificationContent()
-        let isProtectedRemoteAction = payload.flaggedCommand != payload.command
-        content.title = isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
-        content.body = approvalNotificationBody(for: payload)
-        content.sound = .default
-        content.interruptionLevel = .timeSensitive
-        content.relevanceScore = 1
-        content.categoryIdentifier = RemoteNotificationID.approvalCategory
-        content.userInfo = [
-            RemoteNotificationID.UserInfoKey.requestID: payload.requestID,
-            RemoteNotificationID.UserInfoKey.openApprovals: true
-        ]
-        let request = UNNotificationRequest(
-            identifier: payload.requestID,
-            content: content,
-            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
-        )
-        UNUserNotificationCenter.current().add(request)
+        RemoteNotificationScheduler.scheduleApproval(for: payload)
     }
 
     private func approvalRequest(from payload: ApprovalRequestPayload, responseState: ApprovalResponseState) -> ApprovalRequest {
@@ -1474,16 +1325,12 @@ final class RemoteClient {
 
         pendingInteractivePrompts = nextPrompts
 
-        let removedNotificationIDs = previousPromptIDs
-            .subtracting(nextPromptIDs)
-            .map { notificationIdentifierForInteractivePrompt($0) }
-        if !removedNotificationIDs.isEmpty {
-            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: removedNotificationIDs)
-        }
+        let removedPromptIDs = previousPromptIDs.subtracting(nextPromptIDs)
+        RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: Array(removedPromptIDs))
 
         for prompt in nextPrompts where !previousPromptIDs.contains(prompt.id) {
             if shouldScheduleLocalApprovalNotification {
-                scheduleInteractivePromptNotification(for: prompt)
+                RemoteNotificationScheduler.scheduleInteractivePrompt(for: prompt)
             }
         }
     }
@@ -1503,31 +1350,10 @@ final class RemoteClient {
         return Date()
     }
 
-    private func beginBackgroundKeepalive() {
-        guard backgroundTaskID == .invalid else { return }
-        var taskID: UIBackgroundTaskIdentifier = .invalid
-        taskID = UIApplication.shared.beginBackgroundTask(withName: "ch7.remote.approvals") { [weak self] in
-            UIApplication.shared.endBackgroundTask(taskID)
-            Task { @MainActor [weak self] in
-                self?.handleBackgroundTaskExpiration(expiredTaskID: taskID)
-            }
-        }
-        backgroundTaskID = taskID
-    }
-
-    private func endBackgroundKeepalive() {
-        guard backgroundTaskID != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(backgroundTaskID)
-        backgroundTaskID = .invalid
-    }
-
-    private func handleBackgroundTaskExpiration(expiredTaskID: UIBackgroundTaskIdentifier) {
-        if backgroundTaskID == expiredTaskID {
-            backgroundTaskID = .invalid
-        }
+    private func handleBackgroundTaskExpiration() {
         suppressLocalNotificationsUntil = Date().addingTimeInterval(Self.pushNotificationSuppressionWindow)
         disconnect(autoReconnect: false, preserveApprovalsAndPrompts: true)
-        status = "Background suspended"
+        status = .backgroundSuspended
     }
 
     private func sendClientStateIfPossible() {
@@ -1673,10 +1499,7 @@ final class RemoteClient {
 
     private func enqueueOrSendTelemetryEvent(_ event: inout RemoteClientTelemetryEvent) {
         guard crypto != nil else {
-            bufferedTelemetryEvents.append(event)
-            if bufferedTelemetryEvents.count > Self.maxBufferedTelemetryEvents {
-                bufferedTelemetryEvents.removeFirst(bufferedTelemetryEvents.count - Self.maxBufferedTelemetryEvents)
-            }
+            telemetryBuffer.append(event)
             return
         }
 
@@ -1689,9 +1512,8 @@ final class RemoteClient {
     }
 
     private func flushBufferedTelemetryEvents() {
-        guard crypto != nil, !bufferedTelemetryEvents.isEmpty else { return }
-        var pendingEvents = bufferedTelemetryEvents
-        bufferedTelemetryEvents.removeAll(keepingCapacity: true)
+        guard crypto != nil, !telemetryBuffer.isEmpty else { return }
+        var pendingEvents = telemetryBuffer.drain()
         for index in pendingEvents.indices {
             enqueueOrSendTelemetryEvent(&pendingEvents[index])
         }

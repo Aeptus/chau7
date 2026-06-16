@@ -63,7 +63,7 @@ struct SettingsView: View {
                                 Circle()
                                     .fill(client.isConnected ? .green : .red)
                                     .frame(width: 8, height: 8)
-                                Text(client.status)
+                                Text(client.status.displayText)
                             }
                         }
                     } else {

@@ -6,133 +6,101 @@ and are consumed by both platforms.
 
 Date: 2026-06-16
 
+> **Build status / handover note.** These changes were authored in an
+> environment **without a Swift/Xcode toolchain**, so they have **not been
+> compiled or run**. They are structured, mechanical refactors intended to be
+> verified (`swift`-less iOS target → build in Xcode) and finished by a
+> developer with the toolchain. New source files were added to the
+> `Chau7RemoteApp/` folder, which is a `PBXFileSystemSynchronizedRootGroup` in
+> the project, so they are picked up automatically — confirm target membership
+> if Xcode reports "cannot find type in scope".
+
 ## Summary
 
-The codebase is, on the whole, in good shape: value types are used well, the
-crypto/transport/buffering concerns are already split into focused types
-(`RemoteCryptoSession`, `RemoteTerminalOutputStore`, `RemoteTerminalRendererStore`,
-`RemoteReconnectBackoff`, `RemoteLiveActivityManager`), and the frame-decode
-pipeline (`RemoteFrameProcessor` → `applyProcessedFrame` → `handleProcessedFrame`)
-is a clean closed dispatch. Tests-friendly helpers (`RemoteReconnectBackoff`,
-`ANSIStripper`, `RemoteActivityURLAction`) are pure and isolated.
+The codebase was already in good shape: value types used well, crypto /
+transport / buffering split into focused types, and a clean closed frame
+dispatch. The dominant issue was `RemoteClient`, a ~1.7k-line `@MainActor` god
+object carrying ~12 responsibilities.
 
-The dominant structural issue is `RemoteClient` (a ~1.7k-line `@MainActor`
-god object) carrying ~12 responsibilities. Most other findings are localized
-DRY issues, some of which are fixed in this change set.
+This pass extracts the cleanly-separable concerns out of `RemoteClient` into
+single-responsibility collaborators, replaces the stringly-typed status with an
+enum, and clears the smaller DRY/OCP items. The tightly-coupled transport /
+session / approval **control flow** is intentionally left in `RemoteClient`
+(see "Remaining").
 
-## Changes applied in this review
+## Applied
 
-1. **DRY — duplicated approval-notification scheduling.** The
-   `UNMutableNotificationContent` construction + `UNNotificationRequest` add
-   block was copy-pasted in both `applyPendingApprovals(_:)` and
-   `upsertPendingApproval(_:)`. Extracted into a single
-   `scheduleApprovalNotification(for:)` helper (which now also owns the
-   `shouldScheduleLocalApprovalNotification` guard).
+### DRY
 
-2. **DRY — stringly-typed notification identifiers.** Category IDs
-   (`"MCP_APPROVAL"`, `"INTERACTIVE_PROMPT"`), action IDs (`"APPROVE"`,
-   `"DENY"`), and `userInfo` keys (`"request_id"`, `"prompt_id"`, `"tab_id"`,
-   `"open_approvals"`, `"approved"`) were duplicated across `RemoteClient`
-   (scheduler) and `AppDelegate` (handler). A typo on either side silently
-   breaks the action contract. Centralized into `RemoteNotificationID` in
-   `RemoteModels.swift` and referenced from both sites.
+1. **Approval-notification scheduling** was copy-pasted in two methods — unified
+   (originally into a helper, now owned by `RemoteNotificationScheduler`).
+2. **Stringly-typed notification identifiers** (category IDs, action IDs,
+   `userInfo` keys) duplicated across scheduler and handler → centralized in
+   `RemoteNotificationID` (`RemoteModels.swift`), referenced from both
+   `RemoteClient` and `AppDelegate`. Left distinct contracts (JSON `CodingKeys`,
+   telemetry metadata, URL query params) decoupled on purpose.
 
-   Deliberately left as literals because they belong to *different* contracts:
-   JSON `CodingKeys` (wire protocol), telemetry `metadata` keys, and
-   `RemoteActivityURLAction` URL query params. Coupling them to the
-   notification constants would be false sharing.
+### SRP — collaborators extracted from `RemoteClient`
 
-## Recommended follow-ups (not applied — larger / require compiler in loop)
+Each new type mirrors the existing `RemoteReconnectBackoff` /
+`RemoteTerminalOutputStore` pattern (small, focused, independently testable):
 
-### 1. SRP — decompose `RemoteClient` (highest impact)
+- **`RemoteNotificationScheduler`** (`RemoteNotificationScheduler.swift`) — all
+  `UserNotifications` content building, scheduling, and removal for approvals and
+  interactive prompts. Collapses the previously-duplicated content scaffolding
+  (`sound`/`interruptionLevel`/`relevanceScore`/trigger) into one `makeContent`
+  factory. `RemoteClient` keeps only the *whether-to-notify* gate
+  (`shouldScheduleLocalApprovalNotification`).
+- **`RemotePairingStore`** (`RemotePairingStore.swift`) — all Keychain access for
+  the device key, Mac public key, pairing payload, and trusted identity. Removes
+  the raw `"ios_private_key"` / `"mac_public_key"` / `"pairing_payload"` /
+  `"trusted_pairing_identity"` string literals and the mixed static/instance
+  persistence helpers from `RemoteClient`.
+- **`RemoteTelemetryBuffer`** (`RemoteTelemetryBuffer.swift`) — bounded FIFO for
+  pre-session telemetry events (capacity/eviction policy in one value type).
+- **`BackgroundKeepalive`** (`BackgroundKeepalive.swift`) — the single
+  `UIBackgroundTask` lifecycle + expiration race. `RemoteClient` supplies an
+  `onExpire` closure for its own teardown.
 
-`RemoteClient` currently owns all of: WebSocket transport + receive loop,
-connection-generation invalidation, crypto session establishment, pairing &
-trusted-identity Keychain persistence, private-key management, reconnect
-orchestration, frame encode/decode dispatch, terminal-output flush
-coordination, the approval state machine + history, interactive prompts,
-local-notification scheduling, telemetry buffering/emission, Live Activity
-forwarding, background-task keepalive, push-token/auth state, deep-link URL
-actions, and the pending-state HTTP fetch.
+### OCP / clarity
 
-Suggested collaborators (each independently testable, mirroring the existing
-`RemoteReconnectBackoff`/`RemoteTerminalOutputStore` pattern):
+- **`RemoteConnectionStatus`** (`RemoteConnectionStatus.swift`) — replaces the
+  free-form `status: String`. Display text lives in one `displayText`; views
+  switch over `isEncryptedSession` / the enum instead of matching magic strings
+  like `"Encrypted"` / `"Session ready"` / `"Connecting"`. Updated
+  `RemoteClient`, `TerminalView`, `SettingsView`.
+- **Widget status styling** — four parallel `switch`es over `RemoteActivityStatus`
+  (`backgroundTint` / `tint` / `iconName` / `shortStatusLabel`) collapsed into a
+  single `RemoteActivityStatus.widgetStyle` → `ActivityStatusStyle` mapping.
+- **`RemoteClient.appVersion`** now reads `CFBundleShortVersionString` (falling
+  back to `"1.1.0"`) instead of a hard-coded constant that could drift.
+- **`RemoteTerminalRendererStore`** — dropped the unused `fallbackText:` /
+  `data:` parameters from `setActiveTab(_:)` and `replaceSnapshot(for:)`
+  (ISP: callers no longer pass values the methods ignored). Updated call sites.
 
-- `RemoteTransport` — owns `URLSessionWebSocketTask`, `connectionGeneration`,
-  `listen()`, `send(_:)`, `nextSeq()`. Exposes an async stream of decoded
-  frames; hides generation bookkeeping.
-- `RemoteSession` — `nonceIOS/nonceMac/macPublicKey/crypto`, key agreement and
-  `establishSessionIfPossible()`.
-- `PairingStore` — wraps all `KeychainStore` access for pairing payload,
-  trusted identity, and the iOS/Mac keys (currently a mix of `static` and
-  instance methods plus raw `"mac_public_key"`/`"ios_private_key"` string keys
-  scattered through the class).
-- `ApprovalCoordinator` — `pendingApprovals`, `pendingApprovalResponses`,
-  `approvalResponsesInFlight`, response state machine, `approvalHistory`.
-- `RemoteNotificationScheduler` — building/scheduling/removing
-  `UNNotificationRequest`s (approval + interactive prompt). Today the content
-  scaffolding (`sound`/`interruptionLevel`/`relevanceScore`/trigger) is
-  repeated across the approval and interactive-prompt builders; a single
-  `makeContent(...)` factory removes that.
-- `TelemetryEmitter` — buffer + flush of `RemoteClientTelemetryEvent`.
-- `BackgroundKeepalive` — `beginBackgroundKeepalive`/`end`/expiration.
+## Remaining (next, needs the compiler in the loop)
 
-`RemoteClient` then becomes a thin coordinator wiring these together. This is
-the change that most improves testability — almost none of the current logic
-can be exercised without a live socket and `@MainActor` singleton.
-
-### 2. Stringly-typed connection status (DRY + fragility)
-
-`status` is a free `String`. Magic-string comparisons against it are spread
-across files and silently break on a typo:
-
-- `TerminalView.statusColor` compares against `"Encrypted"` / `"Session ready"`.
-- `RemoteClient.scheduleHandshake` compares against `"Connecting"` and assigns
-  `"Waiting for your Mac..."`.
-- Status strings are assigned in ~15 places in `RemoteClient`.
-
-Introduce a `RemoteConnectionStatus` enum with a `displayText` (and optionally
-`indicatorColor`) computed property. Views switch on the enum instead of
-string-matching, and the human-readable text lives in exactly one place.
-
-### 3. DIP / testability — singleton coupling
-
-`RemoteClient.shared` is referenced directly from `AppDelegate`,
-`Chau7RemoteApp`, and `TermKey`. Views take a concrete `RemoteClient`. For
-SwiftUI `@Observable` this is idiomatic, but there's no seam for previews or
-unit tests. If/when `RemoteClient` is decomposed (#1), inject the coordinator
-via the environment rather than reaching for `.shared`, and let the
-`AppDelegate` receive its dependency rather than hard-referencing the
-singleton.
-
-### 4. OCP/DRY — widget status styling
-
-`Chau7RemoteWidget` has four parallel `switch` statements over
-`RemoteActivityStatus` (`backgroundTint`, `tint`, `iconName`,
-`shortStatusLabel`). Adding a status means editing four sites. Collapse into a
-single `RemoteActivityStatus.style` mapping returning a small
-`ActivityStatusStyle { tint; backgroundOpacity; iconName; shortLabel }` value.
-
-### 5. Minor
-
-- `RemoteTerminalRendererStore.setActiveTab(_:fallbackText:)` and
-  `replaceSnapshot(_:for:)` ignore their `fallbackText` / `data` parameters
-  (they only trigger a refresh). Either consume them or drop the parameters to
-  avoid a misleading API (ISP — callers pass data the method doesn't use).
-- `applyPendingApprovals` and `upsertPendingApproval` still duplicate the
-  "upsert into `pendingApprovals` keyed by `requestID`" shape; once an
-  `ApprovalCoordinator` exists this collapses naturally.
-- `RemoteClient.appVersion` is a hard-coded `"1.1.0"` string constant; prefer
-  reading `CFBundleShortVersionString` so it can't drift from the build.
+1. **Transport / session / approval split.** `RemoteClient` still owns the
+   WebSocket receive loop, `connectionGeneration` invalidation, handshake/
+   reconnect tasks, crypto session establishment, and the approval response
+   state machine. These share mutable control flow (generation counters,
+   recursive `listen()`, in-flight response bookkeeping) that is risky to split
+   without iterative compilation. Suggested targets: `RemoteTransport`,
+   `RemoteSession`, `ApprovalCoordinator`. Doing this also requires deciding how
+   the observed UI state (`pendingApprovals`, `outputText`, `tabs`, `status`)
+   is exposed to views (facade forwarding vs. nested `@Observable`).
+2. **DIP / testability.** `RemoteClient.shared` is referenced directly from
+   `AppDelegate`, `Chau7RemoteApp`, and `TermKey`. Once #1 lands, inject the
+   coordinator through the SwiftUI environment instead of reaching for `.shared`
+   so previews/tests have a seam.
 
 ## What's already good (keep doing this)
 
-- Pure, isolated, testable units: `RemoteReconnectBackoff`, `ANSIStripper`,
-  `RemoteActivityURLAction.init?(url:)`, `RemoteTerminalRenderStateDecoder`.
-- Closed-set frame dispatch via `RemoteFrameType` — adding a frame type is a
-  single `switch` case, compiler-enforced.
-- Crypto concerns fully contained in `RemoteCryptoSession` with `nonisolated`
-  methods suitable for off-main work.
-- `AppSettings` already centralizes `@AppStorage` keys/defaults — the model to
-  follow for the status and notification constants above.
+- Pure, isolated units: `RemoteReconnectBackoff`, `ANSIStripper`,
+  `RemoteActivityURLAction.init?(url:)`, `RemoteTerminalRenderStateDecoder`, and
+  now `RemoteTelemetryBuffer` / `RemotePairingStore` / `RemoteConnectionStatus`.
+- Closed-set frame dispatch via `RemoteFrameType`.
+- Crypto contained in `RemoteCryptoSession` with `nonisolated` methods.
+- `AppSettings` / `RemoteNotificationID` / `RemoteConnectionStatus` centralize
+  the keys, identifiers, and status text that used to be scattered literals.
 </content>

@@ -46,66 +46,48 @@ struct Chau7RemoteWidget: Widget {
     }
 
     private func backgroundTint(for status: RemoteActivityStatus) -> Color {
-        switch status {
-        case .approvalRequired:
-            return .orange.opacity(0.22)
-        case .waitingInput:
-            return .orange.opacity(0.18)
-        case .failed:
-            return .red.opacity(0.18)
-        case .completed:
-            return .green.opacity(0.18)
-        case .running, .idle:
-            return .blue.opacity(0.16)
-        }
+        status.widgetStyle.backgroundTint
     }
 
     private func tint(for status: RemoteActivityStatus) -> Color {
-        switch status {
-        case .approvalRequired:
-            return .orange
-        case .waitingInput:
-            return .orange
-        case .failed:
-            return .red
-        case .completed:
-            return .green
-        case .running, .idle:
-            return .blue
-        }
+        status.widgetStyle.tint
     }
 
     private func iconName(for status: RemoteActivityStatus) -> String {
-        switch status {
-        case .approvalRequired:
-            return "lock.shield.fill"
-        case .waitingInput:
-            return "exclamationmark.bubble.fill"
-        case .failed:
-            return "xmark.octagon.fill"
-        case .completed:
-            return "checkmark.circle.fill"
-        case .running:
-            return "sparkles"
-        case .idle:
-            return "terminal"
-        }
+        status.widgetStyle.iconName
     }
 
     private func shortStatusLabel(for status: RemoteActivityStatus) -> String {
-        switch status {
+        status.widgetStyle.shortLabel
+    }
+}
+
+/// Presentation attributes for an activity status, mapped in one place so adding
+/// a status touches a single switch instead of four parallel ones.
+private struct ActivityStatusStyle {
+    let tint: Color
+    let backgroundOpacity: Double
+    let iconName: String
+    let shortLabel: String
+
+    var backgroundTint: Color { tint.opacity(backgroundOpacity) }
+}
+
+private extension RemoteActivityStatus {
+    var widgetStyle: ActivityStatusStyle {
+        switch self {
         case .approvalRequired:
-            return "Lock"
+            return ActivityStatusStyle(tint: .orange, backgroundOpacity: 0.22, iconName: "lock.shield.fill", shortLabel: "Lock")
         case .waitingInput:
-            return "Ask"
+            return ActivityStatusStyle(tint: .orange, backgroundOpacity: 0.18, iconName: "exclamationmark.bubble.fill", shortLabel: "Ask")
         case .failed:
-            return "Fail"
+            return ActivityStatusStyle(tint: .red, backgroundOpacity: 0.18, iconName: "xmark.octagon.fill", shortLabel: "Fail")
         case .completed:
-            return "Done"
+            return ActivityStatusStyle(tint: .green, backgroundOpacity: 0.18, iconName: "checkmark.circle.fill", shortLabel: "Done")
         case .running:
-            return "Run"
+            return ActivityStatusStyle(tint: .blue, backgroundOpacity: 0.16, iconName: "sparkles", shortLabel: "Run")
         case .idle:
-            return "Idle"
+            return ActivityStatusStyle(tint: .blue, backgroundOpacity: 0.16, iconName: "terminal", shortLabel: "Idle")
         }
     }
 }
