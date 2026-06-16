@@ -192,6 +192,7 @@ final class ResumeRestoreIntentMatchTests: XCTestCase {
     }
 
     // MARK: - Identity-not-yet-corroborated (regression class)
+
     //
     // The prefill validator gets called the moment the terminal can accept
     // input — which is often *before* output-derived identity has been
@@ -283,6 +284,7 @@ final class ResumeRestoreIntentMatchTests: XCTestCase {
     }
 
     // MARK: - Directory canonicalization (regression class)
+
     //
     // Raw string compare on directories rejects path forms that are
     // identical on disk: macOS /var ↔ /private/var, trailing slashes,
@@ -344,6 +346,7 @@ final class ResumeRestoreIntentMatchTests: XCTestCase {
     }
 
     // MARK: - canonicalizeRestoreDirectory (direct unit tests)
+
     //
     // Direct tests of the canonicalization helper. The bigger
     // evaluateResumeRestoreIntent tests cover the directory dimension
@@ -420,7 +423,7 @@ final class ResumeRestoreIntentMatchTests: XCTestCase {
             "/var/folders",
             "~/proj",
             "",
-            "rel/path",
+            "rel/path"
         ]
         for input in inputs {
             let once = OverlayTabsModel.canonicalizeRestoreDirectory(input)
@@ -434,6 +437,7 @@ final class ResumeRestoreIntentMatchTests: XCTestCase {
     }
 
     // MARK: - Truth table (exhaustive)
+
     //
     // The validator is "match if (dir match) AND (provider match) AND (sess
     // match)" where each dimension is one of {match, mismatch, unknown}.
@@ -457,79 +461,144 @@ final class ResumeRestoreIntentMatchTests: XCTestCase {
 
         let cases: [Case] = [
             // Everything aligned →
-            .init(label: "all-match",
-                  expectedDir: "/d", currentDir: "/d",
-                  expectedProvider: "codex", currentProvider: "codex",
-                  expectedSession: "s1", currentSession: "s1",
-                  shouldMatch: true),
+            .init(
+                label: "all-match",
+                expectedDir: "/d",
+                currentDir: "/d",
+                expectedProvider: "codex",
+                currentProvider: "codex",
+                expectedSession: "s1",
+                currentSession: "s1",
+                shouldMatch: true
+            ),
             // Each single dimension mismatched →
-            .init(label: "dir-mismatch",
-                  expectedDir: "/d", currentDir: "/e",
-                  expectedProvider: "codex", currentProvider: "codex",
-                  expectedSession: "s1", currentSession: "s1",
-                  shouldMatch: false),
-            .init(label: "provider-mismatch",
-                  expectedDir: "/d", currentDir: "/d",
-                  expectedProvider: "codex", currentProvider: "claude",
-                  expectedSession: "s1", currentSession: "s1",
-                  shouldMatch: false),
-            .init(label: "session-mismatch",
-                  expectedDir: "/d", currentDir: "/d",
-                  expectedProvider: "codex", currentProvider: "codex",
-                  expectedSession: "s1", currentSession: "s2",
-                  shouldMatch: false),
+            .init(
+                label: "dir-mismatch",
+                expectedDir: "/d",
+                currentDir: "/e",
+                expectedProvider: "codex",
+                currentProvider: "codex",
+                expectedSession: "s1",
+                currentSession: "s1",
+                shouldMatch: false
+            ),
+            .init(
+                label: "provider-mismatch",
+                expectedDir: "/d",
+                currentDir: "/d",
+                expectedProvider: "codex",
+                currentProvider: "claude",
+                expectedSession: "s1",
+                currentSession: "s1",
+                shouldMatch: false
+            ),
+            .init(
+                label: "session-mismatch",
+                expectedDir: "/d",
+                currentDir: "/d",
+                expectedProvider: "codex",
+                currentProvider: "codex",
+                expectedSession: "s1",
+                currentSession: "s2",
+                shouldMatch: false
+            ),
             // Each single dimension unknown (current=nil) → match
-            .init(label: "provider-unknown-current",
-                  expectedDir: "/d", currentDir: "/d",
-                  expectedProvider: "codex", currentProvider: nil,
-                  expectedSession: "s1", currentSession: "s1",
-                  shouldMatch: true),
-            .init(label: "session-unknown-current",
-                  expectedDir: "/d", currentDir: "/d",
-                  expectedProvider: "codex", currentProvider: "codex",
-                  expectedSession: "s1", currentSession: nil,
-                  shouldMatch: true),
+            .init(
+                label: "provider-unknown-current",
+                expectedDir: "/d",
+                currentDir: "/d",
+                expectedProvider: "codex",
+                currentProvider: nil,
+                expectedSession: "s1",
+                currentSession: "s1",
+                shouldMatch: true
+            ),
+            .init(
+                label: "session-unknown-current",
+                expectedDir: "/d",
+                currentDir: "/d",
+                expectedProvider: "codex",
+                currentProvider: "codex",
+                expectedSession: "s1",
+                currentSession: nil,
+                shouldMatch: true
+            ),
             // Both identity dimensions unknown current — still match if dir agrees
-            .init(label: "both-identity-unknown",
-                  expectedDir: "/d", currentDir: "/d",
-                  expectedProvider: "codex", currentProvider: nil,
-                  expectedSession: "s1", currentSession: nil,
-                  shouldMatch: true),
+            .init(
+                label: "both-identity-unknown",
+                expectedDir: "/d",
+                currentDir: "/d",
+                expectedProvider: "codex",
+                currentProvider: nil,
+                expectedSession: "s1",
+                currentSession: nil,
+                shouldMatch: true
+            ),
             // Unknown current cannot rescue a dir mismatch
-            .init(label: "unknown-identity-cannot-rescue-dir-mismatch",
-                  expectedDir: "/d", currentDir: "/e",
-                  expectedProvider: "codex", currentProvider: nil,
-                  expectedSession: "s1", currentSession: nil,
-                  shouldMatch: false),
+            .init(
+                label: "unknown-identity-cannot-rescue-dir-mismatch",
+                expectedDir: "/d",
+                currentDir: "/e",
+                expectedProvider: "codex",
+                currentProvider: nil,
+                expectedSession: "s1",
+                currentSession: nil,
+                shouldMatch: false
+            ),
             // Each single dimension expected=nil (wildcard) → match
-            .init(label: "provider-expected-nil",
-                  expectedDir: "/d", currentDir: "/d",
-                  expectedProvider: nil, currentProvider: "codex",
-                  expectedSession: "s1", currentSession: "s1",
-                  shouldMatch: true),
-            .init(label: "session-expected-nil",
-                  expectedDir: "/d", currentDir: "/d",
-                  expectedProvider: "codex", currentProvider: "codex",
-                  expectedSession: nil, currentSession: "anything",
-                  shouldMatch: true),
+            .init(
+                label: "provider-expected-nil",
+                expectedDir: "/d",
+                currentDir: "/d",
+                expectedProvider: nil,
+                currentProvider: "codex",
+                expectedSession: "s1",
+                currentSession: "s1",
+                shouldMatch: true
+            ),
+            .init(
+                label: "session-expected-nil",
+                expectedDir: "/d",
+                currentDir: "/d",
+                expectedProvider: "codex",
+                currentProvider: "codex",
+                expectedSession: nil,
+                currentSession: "anything",
+                shouldMatch: true
+            ),
             // Edge: expected dir empty + current dir non-empty → reject (tightened by d485275c)
-            .init(label: "empty-expected-dir-rejects",
-                  expectedDir: "", currentDir: "/d",
-                  expectedProvider: "codex", currentProvider: "codex",
-                  expectedSession: "s1", currentSession: "s1",
-                  shouldMatch: false),
+            .init(
+                label: "empty-expected-dir-rejects",
+                expectedDir: "",
+                currentDir: "/d",
+                expectedProvider: "codex",
+                currentProvider: "codex",
+                expectedSession: "s1",
+                currentSession: "s1",
+                shouldMatch: false
+            ),
             // Edge: both dirs empty → match (legitimate directory-less state)
-            .init(label: "both-dirs-empty",
-                  expectedDir: "", currentDir: "",
-                  expectedProvider: nil, currentProvider: nil,
-                  expectedSession: nil, currentSession: nil,
-                  shouldMatch: true),
+            .init(
+                label: "both-dirs-empty",
+                expectedDir: "",
+                currentDir: "",
+                expectedProvider: nil,
+                currentProvider: nil,
+                expectedSession: nil,
+                currentSession: nil,
+                shouldMatch: true
+            ),
             // Path canonicalization
-            .init(label: "trailing-slash-canonicalizes",
-                  expectedDir: "/d/", currentDir: "/d",
-                  expectedProvider: nil, currentProvider: nil,
-                  expectedSession: nil, currentSession: nil,
-                  shouldMatch: true),
+            .init(
+                label: "trailing-slash-canonicalizes",
+                expectedDir: "/d/",
+                currentDir: "/d",
+                expectedProvider: nil,
+                currentProvider: nil,
+                expectedSession: nil,
+                currentSession: nil,
+                shouldMatch: true
+            )
         ]
 
         for c in cases {
