@@ -116,8 +116,8 @@ final class RemoteClient {
         notificationTask = Task { [weak self] in
             for await note in NotificationCenter.default.notifications(named: .approvalNotificationResponse) {
                 guard let self,
-                      let id = note.userInfo?["request_id"] as? String,
-                      let approved = note.userInfo?["approved"] as? Bool else { continue }
+                      let id = note.userInfo?[RemoteNotificationID.UserInfoKey.requestID] as? String,
+                      let approved = note.userInfo?[RemoteNotificationID.UserInfoKey.approved] as? Bool else { continue }
                 self.respondToApproval(requestID: id, approved: approved)
             }
         }
@@ -1231,11 +1231,11 @@ final class RemoteClient {
         content.sound = .default
         content.interruptionLevel = .timeSensitive
         content.relevanceScore = 1
-        content.categoryIdentifier = "INTERACTIVE_PROMPT"
+        content.categoryIdentifier = RemoteNotificationID.interactivePromptCategory
         content.userInfo = [
-            "prompt_id": prompt.id,
-            "tab_id": prompt.tabID,
-            "open_approvals": true
+            RemoteNotificationID.UserInfoKey.promptID: prompt.id,
+            RemoteNotificationID.UserInfoKey.tabID: prompt.tabID,
+            RemoteNotificationID.UserInfoKey.openApprovals: true
         ]
         let request = UNNotificationRequest(
             identifier: notificationIdentifierForInteractivePrompt(prompt.id),
@@ -1408,25 +1408,7 @@ final class RemoteClient {
         }
 
         for payload in payloads where !previousApprovalIDs.contains(payload.requestID) {
-            guard shouldScheduleLocalApprovalNotification else { continue }
-            let content = UNMutableNotificationContent()
-            let isProtectedRemoteAction = payload.flaggedCommand != payload.command
-            content.title = isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
-            content.body = approvalNotificationBody(for: payload)
-            content.sound = .default
-            content.interruptionLevel = .timeSensitive
-            content.relevanceScore = 1
-            content.categoryIdentifier = "MCP_APPROVAL"
-            content.userInfo = [
-                "request_id": payload.requestID,
-                "open_approvals": true
-            ]
-            let request = UNNotificationRequest(
-                identifier: payload.requestID,
-                content: content,
-                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
-            )
-            UNUserNotificationCenter.current().add(request)
+            scheduleApprovalNotification(for: payload)
         }
     }
 
@@ -1442,7 +1424,12 @@ final class RemoteClient {
             pendingApprovals.append(approval)
         }
 
-        guard isNewApproval, shouldScheduleLocalApprovalNotification else { return }
+        guard isNewApproval else { return }
+        scheduleApprovalNotification(for: payload)
+    }
+
+    private func scheduleApprovalNotification(for payload: ApprovalRequestPayload) {
+        guard shouldScheduleLocalApprovalNotification else { return }
         let content = UNMutableNotificationContent()
         let isProtectedRemoteAction = payload.flaggedCommand != payload.command
         content.title = isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
@@ -1450,10 +1437,10 @@ final class RemoteClient {
         content.sound = .default
         content.interruptionLevel = .timeSensitive
         content.relevanceScore = 1
-        content.categoryIdentifier = "MCP_APPROVAL"
+        content.categoryIdentifier = RemoteNotificationID.approvalCategory
         content.userInfo = [
-            "request_id": payload.requestID,
-            "open_approvals": true
+            RemoteNotificationID.UserInfoKey.requestID: payload.requestID,
+            RemoteNotificationID.UserInfoKey.openApprovals: true
         ]
         let request = UNNotificationRequest(
             identifier: payload.requestID,
