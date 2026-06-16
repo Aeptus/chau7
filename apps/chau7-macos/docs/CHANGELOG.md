@@ -611,6 +611,7 @@ Initial development release
 | 0.5.22 | 2026-04-02 | Devin is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
 | 0.5.21 | 2026-04-02 | Amazon Q is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
 | 0.5.20 | 2026-04-02 | Cody is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
+| 0.5.21 | 2026-06-16 | Resume-prefill directory ownership check now canonicalizes both expected and live paths via symlink resolution, tilde expansion, and standardization so `/var` ↔ `/private/var`, trailing slashes, and historical `~/proj` saved states no longer trigger spurious rejection |
 | 0.5.20 | 2026-06-16 | Resume-prefill validation tolerates unresolved AI identity during the post-launch corroboration window so `claude --resume` / `codex resume` prefills are no longer silently lost when detection lags |
 | 0.5.19 | 2026-04-02 | ChatGPT is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
 | 0.5.18 | 2026-04-02 | Gemini is now a first-class normalized AI notification source with dedicated triggers, settings coverage, and source labeling |
