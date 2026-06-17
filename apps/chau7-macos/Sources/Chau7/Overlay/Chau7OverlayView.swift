@@ -756,13 +756,27 @@ private struct ToolbarTabBarView: View {
 
     /// Tabs idle for 10+ minutes (empty when feature is off or no tabs are idle).
     /// Reads the setting directly to avoid subscribing to all FeatureSettings changes.
+    ///
+    /// Two signals trigger inclusion:
+    ///   1. `suspendedTabIDs` membership — the explicit "Move to Idle Tabs"
+    ///      right-click path and the periodic `suspendIdleTabs()` syncer
+    ///      both maintain this set. Reading it here is what makes SwiftUI
+    ///      re-evaluate immediately on manual move (the session's
+    ///      lastInputAt/lastOutputAt are `@ObservationIgnored`, so the
+    ///      activity-time check below alone wouldn't notify the view).
+    ///   2. `lastActivityDate` past the configured idle threshold — the
+    ///      organic "this tab hasn't been touched in a while" path. Kept
+    ///      so the dropdown still populates when render suspension is off
+    ///      (in which case `suspendIdleTabs()` doesn't run).
     private var idleTabs: [OverlayTab] {
         guard FeatureSettings.shared.groupIdleTabs else { return [] }
         let threshold = FeatureSettings.shared.idleTabThresholdSeconds
         let now = Date()
+        let suspended = overlayModel.suspendedTabIDs
         return overlayModel.tabs.filter { tab in
-            guard let session = tab.displaySession ?? tab.session,
-                  tab.id != overlayModel.selectedTabID else { return false }
+            guard tab.id != overlayModel.selectedTabID else { return false }
+            if suspended.contains(tab.id) { return true }
+            guard let session = tab.displaySession ?? tab.session else { return false }
             return now.timeIntervalSince(session.lastActivityDate) > threshold
         }
     }

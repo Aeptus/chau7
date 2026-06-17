@@ -3727,6 +3727,98 @@ final class OverlayTabsModelTests: XCTestCase {
             )
         )
     }
+
+    // MARK: - forceTabIdle ("Move to Idle Tabs" right-click action)
+
+    /// Regression: previously the function silently returned when called on
+    /// the currently selected tab. Right-clicking the focused tab and
+    /// choosing "Move to Idle Tabs" looked broken — no log, no UX feedback,
+    /// no state change. The action must instead switch selection to a
+    /// neighbor and idle the original.
+    func testForceTabIdleOnSelectedTabSwitchesToNeighborAndIdlesOriginal() {
+        model.newTab()
+        model.newTab()
+        XCTAssertEqual(model.tabs.count, 3)
+
+        let originalSelected = model.selectedTabID
+        guard let targetIndex = model.tabs.firstIndex(where: { $0.id == originalSelected }) else {
+            XCTFail("selected tab should exist in tabs array")
+            return
+        }
+
+        model.forceTabIdle(id: originalSelected)
+
+        XCTAssertNotEqual(
+            model.selectedTabID,
+            originalSelected,
+            "Selection must move off the tab being idled"
+        )
+        XCTAssertTrue(
+            model.suspendedTabIDs.contains(originalSelected),
+            "Original tab must be in suspendedTabIDs (the observable signal that drives the idle dropdown)"
+        )
+        // Neighbor selection should land on the next index (or previous if at end).
+        let expectedNeighborIndex = targetIndex + 1 < model.tabs.count ? targetIndex + 1 : targetIndex - 1
+        XCTAssertEqual(
+            model.selectedTabID,
+            model.tabs[expectedNeighborIndex].id,
+            "Selection should jump to the immediate neighbor"
+        )
+    }
+
+    /// Non-selected tab: existing happy path. Confirms the inserts still work
+    /// for the un-broken case so the selected-tab branch above doesn't
+    /// accidentally rewrite the normal path.
+    func testForceTabIdleOnUnselectedTabKeepsSelectionAndIdlesTarget() {
+        model.newTab()
+        model.newTab()
+        let selected = model.selectedTabID
+        guard let target = model.tabs.first(where: { $0.id != selected }) else {
+            XCTFail("expected at least one non-selected tab")
+            return
+        }
+
+        model.forceTabIdle(id: target.id)
+
+        XCTAssertEqual(
+            model.selectedTabID,
+            selected,
+            "Selection must NOT change when idling an unselected tab"
+        )
+        XCTAssertTrue(
+            model.suspendedTabIDs.contains(target.id),
+            "Target tab must be in suspendedTabIDs"
+        )
+    }
+
+    /// Edge: when this is the only tab in the window, there's no neighbor to
+    /// fall back to. Refusing with a warning (instead of silently failing)
+    /// is intentional — never break the only-tab invariant.
+    func testForceTabIdleOnOnlyTabIsRejected() {
+        XCTAssertEqual(model.tabs.count, 1, "test assumes a single starter tab")
+        let onlyTab = model.tabs[0].id
+
+        model.forceTabIdle(id: onlyTab)
+
+        XCTAssertEqual(model.selectedTabID, onlyTab, "Selection must not move (no neighbor)")
+        XCTAssertFalse(
+            model.suspendedTabIDs.contains(onlyTab),
+            "Only tab must NOT be moved to idle — would leave the window with nothing visible"
+        )
+    }
+
+    /// Unknown tab ID: just warn and bail, no side effects on selection or
+    /// the idle set. Prevents a stale UI sending an action for a tab that's
+    /// already gone from racing other state.
+    func testForceTabIdleWithUnknownIDIsNoOp() {
+        let before = model.selectedTabID
+        let suspendedBefore = model.suspendedTabIDs
+
+        model.forceTabIdle(id: UUID())
+
+        XCTAssertEqual(model.selectedTabID, before)
+        XCTAssertEqual(model.suspendedTabIDs, suspendedBefore)
+    }
 }
 
 @MainActor
