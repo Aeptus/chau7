@@ -331,6 +331,14 @@ final class TerminalSessionModel {
            !active.isEmpty {
             return active
         }
+        // Persistent "we saw this tool here recently" memory. Set in lockstep
+        // with `lastAIProvider` by `updateLastDetectedApp`, but keep the fallback
+        // explicit so a future code path that clears one but not the other
+        // doesn't silently strip the logo.
+        if let detected = lastDetectedAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !detected.isEmpty {
+            return detected
+        }
         return Self.displayName(fromProvider: lastAIProvider)
     }
 
@@ -398,7 +406,21 @@ final class TerminalSessionModel {
     /// True when an AI tool is actively detected as running (colored icon).
     /// False when the tool has finished / shell prompt returned (grey icon),
     /// or when the session was restored from disk but not yet re-detected live.
+    ///
+    /// **Process tree is authoritative.** If `liveAgentName` is set the
+    /// `ProcessTreeSnapshotService` saw a known AI binary in the tab's
+    /// process tree right now — the tool IS running regardless of state-
+    /// machine bookkeeping. `activeAppName` gets cleared on prompt-return
+    /// (the AIDetectionState exits `.detected`), and post-b39a863a's
+    /// corroboration tightening + URL-fingerprint purge there are tabs
+    /// where output detection never re-fires after a restore even though
+    /// Codex/Claude is running, leaving the logo stuck at 0.35 opacity.
+    /// Trusting the live process-tree signal closes that hole.
     var isAIRunning: Bool {
+        if let live = liveAgentName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !live.isEmpty {
+            return true
+        }
         guard activeAppName != nil else { return false }
         return !aiDetection.isRestored
     }
