@@ -35,6 +35,10 @@ final class ScrollbackMemoryManager {
 
     private let stateLock = NSLock()
     private var perTabQueues: [UUID: DispatchQueue] = [:]
+    /// Tabs whose scrollback ring was flushed to disk + shrunk by the *idle*
+    /// path (not the `.hidden` phase path), so `idleReloadIfNeeded` knows to
+    /// restore them on reselection. Guarded by `stateLock`.
+    private var idleFlushedTabIDs: Set<UUID> = []
     private let cacheDirectoryURL: URL
     private let cacheWriter: CacheWriter
 
@@ -144,6 +148,67 @@ final class ScrollbackMemoryManager {
         }
     }
 
+    // MARK: - Idle flush (phase-independent, opt-in)
+
+    /// Flush a `.warm` (deselected) idle tab's scrollback ring to disk and shrink
+    /// it to the viewport floor — WITHOUT changing the tab's render phase. The
+    /// view stays `.warm` and keeps rendering normally; only the history ring is
+    /// freed. Reloaded on reselection by `idleReloadIfNeeded`.
+    ///
+    /// Unlike the `.hidden` flush this captures *ANSI* (SGR preserved), so the
+    /// reloaded scrollback keeps its colors. TUI tabs are skipped entirely — the
+    /// caller must pass `hostsTUIApp` for any alternate-screen / AI-TUI session;
+    /// flattening + repouring a live TUI surface would corrupt it.
+    func idleFlush(
+        viewId: String,
+        tabID: UUID,
+        rustFFI: any ScrollbackMemoryRustFFI,
+        hostsTUIApp: Bool
+    ) {
+        guard !hostsTUIApp else {
+            Log.trace("ScrollbackMemoryManager[\(viewId)]: idleFlush skipped (TUI tab)")
+            return
+        }
+        let queue = perTabQueue(for: tabID)
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard let text = rustFFI.captureFullBufferAnsiText() else {
+                Log.warn("ScrollbackMemoryManager[\(viewId)]: idleFlush - no buffer captured")
+                return
+            }
+            guard persist(text: text, tabID: tabID, viewId: viewId) else {
+                Log.warn("ScrollbackMemoryManager[\(viewId)]: idleFlush - persist failed; ring untouched")
+                return
+            }
+            rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
+            stateLock.lock()
+            idleFlushedTabIDs.insert(tabID)
+            stateLock.unlock()
+            Log.info("ScrollbackMemoryManager[\(viewId)]: idle-flushed tab \(tabID) (ring → floor \(Self.viewportFloor))")
+        }
+    }
+
+    /// Restore an idle-flushed tab's scrollback on reselection: replay the cached
+    /// ANSI buffer and grow the ring back to the configured capacity. No-op for
+    /// tabs that weren't idle-flushed. Serialized on the same per-tab queue as
+    /// `idleFlush` so a pending flush always completes first.
+    func idleReloadIfNeeded(
+        viewId: String,
+        tabID: UUID,
+        rustFFI: any ScrollbackMemoryRustFFI,
+        configuredLines: Int
+    ) {
+        let queue = perTabQueue(for: tabID)
+        queue.async { [weak self] in
+            guard let self else { return }
+            stateLock.lock()
+            let wasFlushed = idleFlushedTabIDs.remove(tabID) != nil
+            stateLock.unlock()
+            guard wasFlushed else { return }
+            reload(tabID: tabID, viewId: viewId, rustFFI: rustFFI, newCap: configuredLines)
+        }
+    }
+
     /// Deletes cache files whose tab is not in the live/saved set — tabs
     /// closed while hidden (or lost to a crash) used to leave their `.gz`
     /// files behind forever. Call once at startup after restore resolves the
@@ -186,7 +251,14 @@ final class ScrollbackMemoryManager {
             Log.warn("ScrollbackMemoryManager[\(viewId)]: flush - no buffer text captured")
             return false
         }
+        return persist(text: text, tabID: tabID, viewId: viewId)
+    }
 
+    /// Encode → durably write → read back → verify a captured buffer into the
+    /// tab's cache file. Shared by the `.hidden` flush and the idle flush.
+    /// Returns true only once the bytes are persisted and verified (or the
+    /// buffer was empty, in which case any stale cache is removed).
+    private func persist(text: String, tabID: UUID, viewId: String) -> Bool {
         let data = Data(text.utf8)
         let url = cacheURL(for: tabID)
         guard !data.isEmpty else {

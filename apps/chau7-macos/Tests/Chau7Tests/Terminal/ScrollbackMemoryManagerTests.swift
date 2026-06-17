@@ -101,6 +101,51 @@ final class ScrollbackMemoryManagerTests: XCTestCase {
             ]
         )
     }
+
+    // MARK: - Idle flush (phase-independent, opt-in)
+
+    func testIdleFlushCapturesAnsiShrinksRingAndReloadsLossless() {
+        let tabID = UUID()
+        let ansi = "\u{1B}[31mred\u{1B}[0m\nplain\n"
+        let rust = MockScrollbackRustFFI(capturedText: "red\nplain\n", capturedAnsiText: ansi)
+        let manager = ScrollbackMemoryManager(cacheDirectory: tempDirectory)
+
+        manager.idleFlush(viewId: "test", tabID: tabID, rustFFI: rust, hostsTUIApp: false)
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+
+        XCTAssertEqual(rust.ansiCaptureCount, 1, "idle flush must use the ANSI (lossless) capture")
+        XCTAssertEqual(rust.plainCaptureCount, 0, "idle flush must NOT use the plain capture")
+        XCTAssertEqual(rust.scrollbackSizes.last, UInt32(ScrollbackRetentionPolicy.defaultHiddenViewportFloor))
+
+        manager.idleReloadIfNeeded(viewId: "test", tabID: tabID, rustFFI: rust, configuredLines: 10000)
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+
+        XCTAssertEqual(rust.replayedBuffers, [Data(ansi.utf8)], "reload must replay the ANSI buffer (colors preserved)")
+        XCTAssertEqual(rust.scrollbackSizes.last, 10000, "ring restored to configured capacity on reload")
+    }
+
+    func testIdleFlushSkipsTUITabs() {
+        let tabID = UUID()
+        let rust = MockScrollbackRustFFI(capturedText: "x\n")
+        let manager = ScrollbackMemoryManager(cacheDirectory: tempDirectory)
+
+        manager.idleFlush(viewId: "test", tabID: tabID, rustFFI: rust, hostsTUIApp: true)
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+
+        XCTAssertEqual(rust.ansiCaptureCount, 0, "TUI tabs must never be flattened/flushed")
+        XCTAssertTrue(rust.scrollbackSizes.isEmpty, "TUI tab ring left untouched")
+    }
+
+    func testIdleReloadIsNoOpWhenNotFlushed() {
+        let tabID = UUID()
+        let rust = MockScrollbackRustFFI(capturedText: "x\n")
+        let manager = ScrollbackMemoryManager(cacheDirectory: tempDirectory)
+
+        manager.idleReloadIfNeeded(viewId: "test", tabID: tabID, rustFFI: rust, configuredLines: 10000)
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+
+        XCTAssertTrue(rust.replayedBuffers.isEmpty, "reload must be a no-op for tabs that weren't idle-flushed")
+    }
 }
 
 private enum TestError: Error {
