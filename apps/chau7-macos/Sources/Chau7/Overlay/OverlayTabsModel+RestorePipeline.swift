@@ -1068,23 +1068,57 @@ extension OverlayTabsModel {
         useResumeRetryScheduler: Bool
     ) {
         let resumeIntents = currentSessions.compactMap { paneID, _ -> ResumeRestoreIntent? in
-            guard let paneState = resolvedPaneStates[paneID],
-                  let command = Self.normalizedResumeCommand(paneState.aiResumeCommand) else {
-                return nil
+            guard let paneState = resolvedPaneStates[paneID] else { return nil }
+
+            // Primary path: pane state already carries a normalized resume
+            // command from autosave (real session identity was known).
+            if let command = Self.normalizedResumeCommand(paneState.aiResumeCommand) {
+                return ResumeRestoreIntent(
+                    paneID: paneID,
+                    command: command,
+                    // Use the same effective directory as the launch path
+                    // (`SplitPaneController.fromSavedNode` → `preferredRestoreDirectory`)
+                    // so the directoryMatches gate doesn't reject delivery when
+                    // codex's session cwd differs from the shell-cwd we saved.
+                    expectedDirectory: paneState.preferredRestoreDirectory,
+                    expectedProvider: paneState.aiProvider,
+                    expectedSessionID: paneState.aiSessionId,
+                    expectedSessionIDSource: paneState.aiSessionIdSource,
+                    isFocusedPane: paneID == focusedTerminalPaneID
+                )
             }
-            return ResumeRestoreIntent(
-                paneID: paneID,
-                command: command,
-                // Use the same effective directory as the launch path
-                // (`SplitPaneController.fromSavedNode` → `preferredRestoreDirectory`)
-                // so the directoryMatches gate doesn't reject delivery when
-                // codex's session cwd differs from the shell-cwd we saved.
-                expectedDirectory: paneState.preferredRestoreDirectory,
-                expectedProvider: paneState.aiProvider,
-                expectedSessionID: paneState.aiSessionId,
-                expectedSessionIDSource: paneState.aiSessionIdSource,
-                isFocusedPane: paneID == focusedTerminalPaneID
-            )
+
+            // Fallback path: pane state has provider but no usable command —
+            // autosave landed during the post-launch window where identity
+            // detection had a synthetic session ID, so `buildAIResumeCommand`
+            // returned nil and `aiResumeCommand` was persisted as nil. Re-
+            // resolve a real session ID from the provider's transcript
+            // files (Claude: `~/.claude/projects/.../*.jsonl`; Codex:
+            // `~/.codex/sessions/...`). Best match by saved directory +
+            // last-input recency.
+            if let resolved = Self.reResolveResumeCommand(paneState: paneState) {
+                Log.info(
+                    """
+                    restoreTabState: re-resolved resume command for tab=\(targetTabID) pane=\(paneID) \
+                    provider=\(paneState.aiProvider ?? "nil") \
+                    savedSession=\(paneState.aiSessionId?.prefix(8) ?? "nil") \
+                    savedSource=\(paneState.aiSessionIdSource?.rawValue ?? "nil") \
+                    resolvedSession=\(resolved.sessionId.prefix(8))
+                    """
+                )
+                return ResumeRestoreIntent(
+                    paneID: paneID,
+                    command: resolved.command,
+                    expectedDirectory: paneState.preferredRestoreDirectory,
+                    expectedProvider: paneState.aiProvider,
+                    expectedSessionID: resolved.sessionId,
+                    // The newly-resolved session ID came off disk → observed.
+                    expectedSessionIDSource: .observed,
+                    isFocusedPane: paneID == focusedTerminalPaneID
+                )
+            }
+
+            return nil
         }
         if resumeIntents.isEmpty {
             Log.info("restoreTabState: no resume command candidate found for tab=\(targetTabID)")
@@ -1133,6 +1167,71 @@ extension OverlayTabsModel {
                 )
             }
         }
+    }
+
+    /// When `paneState.aiResumeCommand` is nil but a provider is known,
+    /// scan the provider's session files for the best match against the
+    /// saved directory + last-input recency, then construct a fresh
+    /// `claude --resume <id>` / `codex resume <id>` from the result.
+    ///
+    /// The autosave path drops the command when identity is synthetic
+    /// (see `buildAIResumeCommand(provider:sessionId:sessionIdSource:)` —
+    /// returns nil for `sessionIdSource == .synthetic`). This recovers
+    /// from that loss at restore time using the same on-disk transcripts
+    /// the live identity resolver consults. Both branches return nil
+    /// gracefully when the provider isn't claude/codex, the directory is
+    /// empty, no transcripts exist, or the resolved session ID fails the
+    /// downstream safety gate.
+    static func reResolveResumeCommand(
+        paneState: SavedTerminalPaneState
+    ) -> (command: String, sessionId: String)? {
+        guard paneState.aiResumeCommand == nil else { return nil }
+        guard let provider = paneState.aiProvider,
+              let normalizedProvider = AIResumeParser.normalizeProviderName(provider) else {
+            return nil
+        }
+        let directory: String
+        if let aiDir = paneState.aiResumeDirectory, !aiDir.isEmpty {
+            directory = aiDir
+        } else {
+            directory = paneState.directory
+        }
+        guard !directory.isEmpty else { return nil }
+
+        let referenceDate = paneState.lastInputAt ?? paneState.lastOutputAt
+        let resolvedSessionId: String?
+        switch normalizedProvider {
+        case "claude":
+            let candidates = ClaudeSessionResolver.sessionCandidates(forDirectory: directory)
+                .map { (sessionId: $0.sessionId, touchedAt: $0.lastActivity) }
+            resolvedSessionId = AIResumeParser.bestSessionMatch(
+                candidates: candidates,
+                referenceDate: referenceDate
+            )
+        case "codex":
+            let candidates = CodexSessionResolver.sessionCandidates(forDirectory: directory)
+                .map { (sessionId: $0.sessionId, touchedAt: $0.lastActivity) }
+            resolvedSessionId = AIResumeParser.bestSessionMatch(
+                candidates: candidates,
+                referenceDate: referenceDate
+            )
+        default:
+            // Unknown provider — leave the prefill empty rather than
+            // guessing. Surface a one-shot trace so adding a new CLI
+            // without wiring its resolver is visible.
+            Log.trace(
+                "restoreTabState: re-resolution skipped for unsupported provider=\(normalizedProvider)"
+            )
+            resolvedSessionId = nil
+        }
+
+        guard let sessionId = resolvedSessionId else { return nil }
+        guard let command = Self.buildAIResumeCommand(
+            provider: provider,
+            sessionId: sessionId
+        ) else { return nil }
+        guard let normalized = Self.normalizedResumeCommand(command) else { return nil }
+        return (command: normalized, sessionId: sessionId)
     }
 
     /// Async-dispatched body of `restoreTabState`. Originally an inline

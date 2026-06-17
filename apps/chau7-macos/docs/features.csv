@@ -508,3 +508,4 @@ test_suite_ungated_full,macos,build,the 46 remaining dead #if !SWIFT_PACKAGE tes
 resume_prefill_identity_tolerance,macos,restore,resume prefill validation treats unresolved current AI identity as match instead of rejecting so corroboration-lag does not lose the prefill,shipped
 resume_prefill_directory_canonical,macos,restore,resume prefill directory ownership check canonicalizes both expected and live paths via symlink resolution tilde expansion and standardization before comparing,shipped
 scrollback_idle_flush,macos,performance,warm-idle tabs flush scrollback to disk losslessly via ANSI capture and shrink to viewport floor without changing render phase then restore with colors on reselection,shipped
+restore_resume_command_reresolution,macos,restore,restore pipeline re-resolves Claude/Codex session IDs from on-disk transcripts when autosave captured a synthetic identity so tabs no longer come back without the resume prefill,shipped
