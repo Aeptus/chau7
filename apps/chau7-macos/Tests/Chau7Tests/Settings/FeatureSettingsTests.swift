@@ -1,5 +1,6 @@
 import XCTest
 @testable import Chau7
+@testable import Chau7Core
 
 @MainActor
 final class FeatureSettingsTests: XCTestCase {
