@@ -35,13 +35,15 @@ struct MarkdownRunbookView: View {
                 ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
                     switch section.kind {
                     case .text(let text):
-                        Text(verbatim: text)
+                        Text(Self.renderInlineMarkdown(text))
                             .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
                     case .heading(let level, let text):
-                        Text(verbatim: text)
+                        Text(Self.renderInlineMarkdown(text))
                             .font(fontForHeading(level))
+                            .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.top, level == 1 ? 8 : 4)
 
@@ -75,6 +77,33 @@ struct MarkdownRunbookView: View {
         }
     }
 
+    /// Convert an inline-markdown string (the body of a paragraph, heading,
+    /// list item, or checkbox) into an `AttributedString` so SwiftUI's
+    /// `Text` renders `**bold**`, `*italic*`, `` `code` ``, and `[link](url)`
+    /// as actual styled glyphs instead of literal characters.
+    ///
+    /// `.inlineOnlyPreservingWhitespace` tells the parser to handle the
+    /// inline constructs only — block constructs (headings, lists, fences)
+    /// have already been peeled off by `parseMarkdown` in the infrastructure
+    /// layer, so we don't want the markdown engine reinterpreting them.
+    /// Preserving whitespace matters for content where the user has
+    /// intentional spacing (multi-space alignment inside a list item, etc.).
+    ///
+    /// On malformed input the markdown parser throws — fall back to a
+    /// plain-text `AttributedString` so we never render literal `**` or
+    /// drop the content silently.
+    static func renderInlineMarkdown(_ text: String) -> AttributedString {
+        let opts = AttributedString.MarkdownParsingOptions(
+            allowsExtendedAttributes: false,
+            interpretedSyntax: .inlineOnlyPreservingWhitespace,
+            failurePolicy: .returnPartiallyParsedIfPossible
+        )
+        if let attributed = try? AttributedString(markdown: text, options: opts) {
+            return attributed
+        }
+        return AttributedString(text)
+    }
+
     private func codeBlockView(language: String?, code: String, lineNumber: Int) -> some View {
         let state = host.codeBlockState(for: code, lineNumber: lineNumber)
         let borderColor: Color = switch state {
@@ -91,7 +120,7 @@ struct MarkdownRunbookView: View {
                         .foregroundStyle(.secondary)
                 }
                 if let state {
-                    Text(label(for: state))
+                    Text(verbatim: label(for: state))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(color(for: state))
                 }
@@ -109,7 +138,12 @@ struct MarkdownRunbookView: View {
             .padding(.vertical, 6)
             .background(Color(nsColor: .controlBackgroundColor))
 
-            Text(code)
+            // Explicit verbatim: a code block must never be re-interpreted
+            // as markdown. SwiftUI's `Text(_ content: some StringProtocol)`
+            // overload happens not to interpret markdown today, but pinning
+            // to `Text(verbatim:)` documents the intent and survives future
+            // overload changes.
+            Text(verbatim: code)
                 .font(.system(size: 12, design: .monospaced))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -134,10 +168,11 @@ struct MarkdownRunbookView: View {
             }
             .buttonStyle(.plain)
 
-            Text(verbatim: text)
+            Text(Self.renderInlineMarkdown(text))
                 .strikethrough(checked)
                 .foregroundStyle(checked ? .secondary : .primary)
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.leading, 4)
@@ -145,20 +180,22 @@ struct MarkdownRunbookView: View {
 
     private func bulletItemView(text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Text("•")
+            Text(verbatim: "•")
                 .foregroundStyle(.secondary)
-            Text(verbatim: text)
+            Text(Self.renderInlineMarkdown(text))
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private func numberedItemView(number: Int, text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Text("\(number).")
+            Text(verbatim: "\(number).")
                 .foregroundStyle(.secondary)
-            Text(verbatim: text)
+            Text(Self.renderInlineMarkdown(text))
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

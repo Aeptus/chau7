@@ -373,13 +373,13 @@ struct TextEditorPaneView: View {
         }
         .contentShape(Rectangle())
         .onAppear {
-            isMarkdownMode = isMarkdownFile
+            isMarkdownMode = false
         }
         .onTapGesture {
             onFocus()
         }
         .onChange(of: editor.filePath) {
-            isMarkdownMode = isMarkdownFile
+            isMarkdownMode = false
         }
         .fileImporter(
             isPresented: $showFilePicker,
