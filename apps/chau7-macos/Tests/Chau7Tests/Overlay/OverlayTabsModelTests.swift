@@ -1536,7 +1536,16 @@ final class OverlayTabsModelTests: XCTestCase {
     func testFocusSelectedRecreatesFreshTabAfterLastTabTransfer() {
         let onlyTab = model.tabs[0]
         _ = model.extractTabForWindowTransfer(id: onlyTab.id)
-        model.overlayWindow = NSWindow(contentRect: .init(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        // Bind the window to a local — `model.overlayWindow` is weak, so an
+        // inline `NSWindow(...)` deallocates before focusSelected() runs and
+        // the compiler treats the assignment as `weak ... = nil`.
+        let window = NSWindow(
+            contentRect: .init(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        model.overlayWindow = window
 
         model.focusSelected()
 
