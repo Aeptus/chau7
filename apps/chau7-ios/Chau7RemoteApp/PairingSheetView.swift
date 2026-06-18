@@ -55,7 +55,7 @@ struct PairingSheetView: View {
             }
             .onAppear {
                 if let info = client.pairingInfo,
-                   let data = try? JSONEncoder().encode(info),
+                   let data = try? RemoteJSON.encoder.encode(info),
                    let str = String(data: data, encoding: .utf8) {
                     draftPayload = str
                 }
@@ -66,7 +66,7 @@ struct PairingSheetView: View {
     private func save() {
         error = nil
         guard let data = draftPayload.data(using: .utf8),
-              let info = try? JSONDecoder().decode(PairingInfo.self, from: data) else {
+              let info = try? RemoteJSON.decoder.decode(PairingInfo.self, from: data) else {
             error = "Invalid pairing JSON"
             return
         }

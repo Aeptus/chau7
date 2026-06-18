@@ -352,6 +352,15 @@ enum RemoteNotificationID {
 
 // MARK: - Utilities
 
+/// Shared JSON coders. `JSONEncoder`/`JSONDecoder` are expensive to allocate and
+/// safe to reuse across calls; in this app they are only touched from the main
+/// actor, so a single shared instance avoids per-frame/per-event allocation on
+/// the hot paths (frame decode, telemetry, outbound payloads).
+enum RemoteJSON {
+    nonisolated(unsafe) static let encoder = JSONEncoder()
+    nonisolated(unsafe) static let decoder = JSONDecoder()
+}
+
 enum CryptoUtils {
     static func randomBytes(count: Int) -> Data {
         var data = Data(count: count)

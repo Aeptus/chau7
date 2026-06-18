@@ -43,13 +43,13 @@ enum RemotePairingStore {
 
     static func loadPairing() -> PairingInfo? {
         guard let data = KeychainStore.load(key: Key.pairingPayload) else { return nil }
-        return try? JSONDecoder().decode(PairingInfo.self, from: data)
+        return try? RemoteJSON.decoder.decode(PairingInfo.self, from: data)
     }
 
     /// Persists the pairing payload, or clears both the payload and trusted
     /// identity when `info` is `nil` (the two are only valid together).
     static func savePairing(_ info: PairingInfo?) {
-        guard let info, let data = try? JSONEncoder().encode(info) else {
+        guard let info, let data = try? RemoteJSON.encoder.encode(info) else {
             _ = KeychainStore.delete(key: Key.pairingPayload)
             _ = KeychainStore.delete(key: Key.trustedIdentity)
             return
@@ -61,11 +61,11 @@ enum RemotePairingStore {
 
     static func loadTrustedIdentity() -> TrustedPairingIdentity? {
         guard let data = KeychainStore.load(key: Key.trustedIdentity) else { return nil }
-        return try? JSONDecoder().decode(TrustedPairingIdentity.self, from: data)
+        return try? RemoteJSON.decoder.decode(TrustedPairingIdentity.self, from: data)
     }
 
     static func saveTrustedIdentity(_ identity: TrustedPairingIdentity) {
-        guard let data = try? JSONEncoder().encode(identity) else { return }
+        guard let data = try? RemoteJSON.encoder.encode(identity) else { return }
         _ = KeychainStore.save(key: Key.trustedIdentity, data: data)
     }
 }

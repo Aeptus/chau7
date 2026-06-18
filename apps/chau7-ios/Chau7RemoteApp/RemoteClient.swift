@@ -67,6 +67,7 @@ final class RemoteClient {
     private var nonceMac: Data?
     private var macPublicKey: Curve25519.KeyAgreement.PublicKey?
     private let iosKey: Curve25519.KeyAgreement.PrivateKey
+    private let deviceName = UIDevice.current.name
     private var notificationTask: Task<Void, Never>?
     private var reconnectBackoff = RemoteReconnectBackoff()
     private var reconnectTask: Task<Void, Never>?
@@ -656,7 +657,7 @@ final class RemoteClient {
     }
 
     private func handlePairReject(_ data: Data) {
-        if let msg = try? JSONDecoder().decode(PairRejectPayload.self, from: data) {
+        if let msg = try? RemoteJSON.decoder.decode(PairRejectPayload.self, from: data) {
             lastError = "Pairing rejected: \(msg.reason)"
         } else {
             lastError = "Pairing rejected"
@@ -667,7 +668,7 @@ final class RemoteClient {
 
     private func handleError(_ data: Data) {
         let (errorText, code): (String, String)
-        if let msg = try? JSONDecoder().decode(RemoteErrorPayload.self, from: data) {
+        if let msg = try? RemoteJSON.decoder.decode(RemoteErrorPayload.self, from: data) {
             (errorText, code) = ("\(msg.code): \(msg.message)", msg.code)
         } else if let text = String(data: data, encoding: .utf8), !text.isEmpty {
             (errorText, code) = (text, "error")
@@ -704,7 +705,7 @@ final class RemoteClient {
 
     private func handleActivityState(_ data: Data) {
         do {
-            let state = try JSONDecoder().decode(RemoteActivityState.self, from: data)
+            let state = try RemoteJSON.decoder.decode(RemoteActivityState.self, from: data)
             liveActivityState = state
             if #available(iOS 16.1, *) {
                 RemoteLiveActivityManager.shared.update(with: state)
@@ -850,7 +851,7 @@ final class RemoteClient {
         sendJSON(PairRequestPayload(
             deviceID: pairing.deviceID, pairingCode: pairing.pairingCode,
             iosPub: iosKey.publicKey.rawRepresentation.base64EncodedString(),
-            iosName: UIDevice.current.name
+            iosName: deviceName
         ), type: .pairRequest, encrypt: false)
         if recordTelemetry {
             emitTelemetry(type: .pairRequestSent, status: "pairing")
@@ -858,7 +859,7 @@ final class RemoteClient {
     }
 
     private func sendJSON<T: Encodable>(_ payload: T, type: RemoteFrameType, encrypt: Bool = true) {
-        guard let data = try? JSONEncoder().encode(payload) else {
+        guard let data = try? RemoteJSON.encoder.encode(payload) else {
             log.error("Failed to encode \(String(describing: T.self)) for frame type \(type.rawValue)")
             return
         }
@@ -875,7 +876,7 @@ final class RemoteClient {
         completion: @escaping @MainActor (Bool) -> Void
     ) {
         let payload = ApprovalResponsePayload(requestID: requestID, approved: approved)
-        guard let data = try? JSONEncoder().encode(payload) else {
+        guard let data = try? RemoteJSON.encoder.encode(payload) else {
             log.error("Failed to encode ApprovalResponsePayload for request \(requestID)")
             completion(false)
             return
@@ -1236,7 +1237,7 @@ final class RemoteClient {
                 log.warning("Pending state fetch failed: status \(httpResponse.statusCode)")
                 return
             }
-            let payload = try JSONDecoder().decode(RemotePendingStatePayload.self, from: data)
+            let payload = try RemoteJSON.decoder.decode(RemotePendingStatePayload.self, from: data)
             applyPendingApprovals(payload.approvals)
             applyPendingInteractivePrompts(payload.interactivePrompts)
             emitTelemetry(type: .remoteStateFetched, status: reason)
@@ -1359,11 +1360,10 @@ final class RemoteClient {
         #endif
     }
 
+    private static let iso8601Formatter = ISO8601DateFormatter()
+
     private static func parseRemoteTimestamp(_ value: String) -> Date {
-        if let date = ISO8601DateFormatter().date(from: value) {
-            return date
-        }
-        return Date()
+        iso8601Formatter.date(from: value) ?? Date()
     }
 
     private func handleBackgroundTaskExpiration() {
@@ -1483,7 +1483,7 @@ final class RemoteClient {
 
     private func decodePayload<T: Decodable>(_ data: Data, as type: T.Type, context: String) -> T? {
         do {
-            return try JSONDecoder().decode(type, from: data)
+            return try RemoteJSON.decoder.decode(type, from: data)
         } catch {
             log.error("\(context): decode failed: \(error.localizedDescription)")
             return nil
@@ -1500,7 +1500,7 @@ final class RemoteClient {
     ) {
         var event = RemoteClientTelemetryEvent(
             deviceID: pairingInfo?.deviceID,
-            deviceName: UIDevice.current.name,
+            deviceName: deviceName,
             appVersion: Self.appVersion,
             sessionID: remoteSessionID,
             eventType: type,
@@ -1523,7 +1523,7 @@ final class RemoteClient {
             event.sessionID = remoteSessionID
         }
 
-        guard let data = try? JSONEncoder().encode(event) else { return }
+        guard let data = try? RemoteJSON.encoder.encode(event) else { return }
         sendEncrypted(type: .remoteTelemetry, tabID: event.tabID ?? 0, payload: data)
     }
 
