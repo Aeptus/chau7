@@ -92,6 +92,8 @@ final class RemoteClient {
     private var approvalResponsesInFlight: Set<String> = []
     private var pendingStateFetchTask: Task<Void, Never>?
     private var lastPendingStateFetchAt: Date?
+    private var frameRateLimiter = RemoteFrameRateLimiter()
+    private var lastFrameThrottleLogAt: Date?
     let terminalRenderer = RemoteTerminalRendererStore()
 
     private static let maxHistory = 50
@@ -444,7 +446,18 @@ final class RemoteClient {
                         processed = RemoteFrameProcessor.process(data, crypto: crypto)
                     }
                     self.applyProcessedFrame(processed, signpostID: signpostID)
-                    self.listen()
+                    if self.frameRateLimiter.allow() {
+                        self.listen()
+                    } else {
+                        // Suspected flood: read more slowly instead of dropping
+                        // data, applying backpressure to a hostile relay.
+                        self.noteFrameRateThrottle()
+                        Task { @MainActor [weak self] in
+                            try? await Task.sleep(for: .milliseconds(50))
+                            guard let self, self.connectionGeneration == generation else { return }
+                            self.listen()
+                        }
+                    }
                 }
             }
         }
@@ -540,6 +553,13 @@ final class RemoteClient {
                 message: self.lastError
             )
         }
+    }
+
+    private func noteFrameRateThrottle() {
+        let now = Date()
+        if let last = lastFrameThrottleLogAt, now.timeIntervalSince(last) < 5 { return }
+        lastFrameThrottleLogAt = now
+        log.warning("Inbound frame rate throttled (possible relay flood)")
     }
 
     private func cancelHandshakeTasks() {
