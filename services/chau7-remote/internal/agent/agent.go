@@ -213,8 +213,13 @@ type PairingInfoPayload struct {
 }
 
 type cryptoSession struct {
-	aead        cipher.AEAD
-	noncePrefix [4]byte
+	aead cipher.AEAD
+	// sendNoncePrefix is used for frames this endpoint (the Mac) sends; recv is
+	// the peer's (iOS) send prefix. Direction-separated prefixes keep the two
+	// directions from reusing a (key, nonce) pair even though both sequence
+	// counters start at 1. See the iOS RemoteCryptoSession for the mirror.
+	sendNoncePrefix [4]byte
+	recvNoncePrefix [4]byte
 }
 
 func NewAgent(socketPath, relayBaseURL, macName, statePath string) (*Agent, error) {
@@ -902,20 +907,35 @@ func newCryptoSession(shared, nonceMac, nonceIOS []byte) (*cryptoSession, error)
 	if _, err := io.ReadFull(hkdf.New(sha256.New, shared, salt, nil), key); err != nil {
 		return nil, err
 	}
-	prefix := make([]byte, 4)
-	if _, err := io.ReadFull(hkdf.New(sha256.New, shared, nil, []byte("nonce")), prefix); err != nil {
+	// The Mac sends with the "nonce-mac" prefix and receives iOS frames encrypted
+	// under "nonce-ios" — the inverse of the iOS endpoint.
+	sendPrefix, err := deriveNoncePrefix(shared, "nonce-mac")
+	if err != nil {
+		return nil, err
+	}
+	recvPrefix, err := deriveNoncePrefix(shared, "nonce-ios")
+	if err != nil {
 		return nil, err
 	}
 	aead, err := chacha20poly1305.New(key)
 	if err != nil {
 		return nil, err
 	}
-	var noncePrefix [4]byte
-	copy(noncePrefix[:], prefix)
 	return &cryptoSession{
-		aead:        aead,
-		noncePrefix: noncePrefix,
+		aead:            aead,
+		sendNoncePrefix: sendPrefix,
+		recvNoncePrefix: recvPrefix,
 	}, nil
+}
+
+func deriveNoncePrefix(shared []byte, label string) ([4]byte, error) {
+	prefix := make([]byte, 4)
+	if _, err := io.ReadFull(hkdf.New(sha256.New, shared, nil, []byte(label)), prefix); err != nil {
+		return [4]byte{}, err
+	}
+	var out [4]byte
+	copy(out[:], prefix)
+	return out, nil
 }
 
 func (a *Agent) decryptPayload(frame *protocol.Frame) ([]byte, error) {
@@ -930,7 +950,7 @@ func (a *Agent) decryptPayload(frame *protocol.Frame) ([]byte, error) {
 	if frame.Seq <= a.maxReceivedSeq {
 		return nil, fmt.Errorf("replay detected: seq %d <= %d", frame.Seq, a.maxReceivedSeq)
 	}
-	nonce := makeNonce(a.crypto.noncePrefix, frame.Seq)
+	nonce := makeNonce(a.crypto.recvNoncePrefix, frame.Seq)
 	header := frame.HeaderBytes(uint32(len(frame.Payload)))
 	plaintext, err := a.crypto.aead.Open(nil, nonce, frame.Payload, header)
 	if err != nil {
@@ -949,7 +969,7 @@ func (a *Agent) sendEncryptedToRelay(frame *protocol.Frame) {
 		a.sessionMu.Unlock()
 		return
 	}
-	nonce := makeNonce(crypto.noncePrefix, frame.Seq)
+	nonce := makeNonce(crypto.sendNoncePrefix, frame.Seq)
 	payloadLen := uint32(len(frame.Payload) + crypto.aead.Overhead())
 	frame.Flags |= protocol.FlagEncrypted
 	header := frame.HeaderBytes(payloadLen)
