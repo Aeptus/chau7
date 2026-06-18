@@ -160,6 +160,11 @@ final class RemoteClient {
         }
 
         var components = URLComponents(string: pairing.relayURL.strippingTrailingSlash)
+        guard components?.scheme?.lowercased() == "wss" else {
+            lastError = "Relay URL must use wss:// (encrypted transport)."
+            status = .error
+            return
+        }
         components?.path += "/\(pairing.deviceID)"
         components?.queryItems = [URLQueryItem(name: "role", value: "ios")]
         guard let url = components?.url else {

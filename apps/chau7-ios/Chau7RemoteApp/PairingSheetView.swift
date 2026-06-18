@@ -70,6 +70,10 @@ struct PairingSheetView: View {
             error = "Invalid pairing JSON"
             return
         }
+        guard URLComponents(string: info.relayURL)?.scheme?.lowercased() == "wss" else {
+            error = "Relay URL must use wss:// (encrypted transport)."
+            return
+        }
         client.pairingInfo = info
         dismiss()
     }
