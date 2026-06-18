@@ -61,6 +61,7 @@ final class RemoteClient {
 
     private var webSocket: URLSessionWebSocketTask?
     private var seqCounter: UInt64 = 1
+    private var maxReceivedSeq: UInt64 = 0
     private var crypto: RemoteCryptoSession?
     private var nonceIOS: Data?
     private var nonceMac: Data?
@@ -258,6 +259,7 @@ final class RemoteClient {
         nonceIOS = nil
         nonceMac = nil
         seqCounter = 1
+        maxReceivedSeq = 0
         if !preserveReconnectAttempt {
             reconnectBackoff.reset()
         }
@@ -570,6 +572,19 @@ final class RemoteClient {
     }
 
     private func handleProcessedFrame(_ frame: RemoteFrame, payload: Data) {
+        // Replay protection for encrypted frames: the peer uses a single
+        // monotonic sequence counter, and the WebSocket delivers in order, so a
+        // non-increasing seq means a duplicate/replayed frame from a hostile
+        // relay. Unencrypted handshake frames (hello/pair*) are exempt, matching
+        // the macOS relay client (see agent.go maxReceivedSeq).
+        if frame.flags & RemoteFrame.flagEncrypted != 0 {
+            guard frame.seq > maxReceivedSeq else {
+                log.warning("Dropping replayed/stale frame type=\(frame.type) seq=\(frame.seq) max=\(self.maxReceivedSeq)")
+                return
+            }
+            maxReceivedSeq = frame.seq
+        }
+
         switch RemoteFrameType(rawValue: frame.type) {
         case .hello:           handleHello(payload)
         case .pairAccept:      handlePairAccept(payload)
@@ -635,6 +650,7 @@ final class RemoteClient {
         nonceMac = nil
         nonceIOS = CryptoUtils.randomBytes(count: 16)
         seqCounter = 1
+        maxReceivedSeq = 0
         sendHello()
         establishSessionIfPossible()
     }
