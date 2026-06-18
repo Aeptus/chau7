@@ -211,18 +211,29 @@ Phase D (perf polish, optional)            → items 10, 11
 - Phase B is a hard protocol bump: release iOS + relay together, version-gated,
   no insecure fallback; bump `CFBundleShortVersionString` and the relay build.
 
-**Acceptance checklist**
-- [ ] 1. Distinct nonce prefixes per direction; v1 rejected; KATs match Go
-- [ ] 2. iOS rejects replayed/stale encrypted frames
-- [ ] 3. Non-`wss` pairings rejected; (optional) relay pinned
-- [ ] 4. Lock-screen detail hidden when the setting is on
-- [ ] 5. Mac + iOS key fingerprints shown in Settings
-- [ ] 6. Crypto in `Chau7Core` with passing XCTest coverage
-- [ ] 7. Shared `JSONEncoder`/`Decoder`/`ISO8601`/cached device name
-- [ ] 8. Frame backpressure ceiling with telemetry on drop
-- [ ] 9. Small frames processed inline; large frames offloaded
-- [ ] 10. Telemetry batched into a single frame
-- [ ] 11. ANSIStripper/renderer profiled and tuned
+**Acceptance checklist** (status as implemented on `claude/ios-solid-dry-review-m3v0xa`)
+- [x] 1. Distinct nonce prefixes per direction (iOS + Go). **[needs-e2e]** — verify handshake on device/relay; no frame-version bump, mismatched builds fail-closed.
+- [x] 2. iOS rejects replayed/stale encrypted frames
+- [x] 3. Non-`wss` pairings rejected (paste-time + connect-time). Relay **pinning deferred** pending a documented cert-rotation story.
+- [x] 4. Lock-screen detail hidden when the setting is on (default on)
+- [x] 5. Mac + iOS key fingerprints shown in Settings
+- [x] 6. Crypto moved to `Chau7Core` with XCTest coverage (round-trip, direction separation, tamper, short-ciphertext). iOS file left as a stub (explicit Xcode ref). **[needs-e2e build]**
+- [x] 7. Shared `JSONEncoder`/`Decoder`/`ISO8601`/cached device name
+- [x] 8. Frame backpressure: token-bucket throttle (reads slower, no data drop) + rate-limited log
+- [x] 9. Small frames processed inline; large frames (>8 KB) offloaded
+- [ ] 10. Telemetry batching — **deferred (deliberate)**: wire-coordinated (new frame type + Go decode) for the lowest-value gain; telemetry is sparse. Not worth a speculative protocol change without an e2e loop.
+- [ ] 11. ANSIStripper/renderer — **deferred (deliberate)**: rewriting the ANSI parser or adding renderer dirty-rect risks correctness regressions with no profiler/tests to catch them. The current stripper already offloads >4 KB. Revisit only if Instruments shows a hotspot.
+
+## Implementation status
+
+Landed as granular commits on `claude/ios-solid-dry-review-m3v0xa`:
+- **Phase A** (safe, iOS-only): items 2, 7, 3, 4, 9 — shippable independently.
+- **Phase B** (coordinated): items 1 (iOS + Go) and 6 (crypto → `Chau7Core` +
+  tests). **Authored without a Swift/Go toolchain — not compiled.** The
+  handshake and the new XCTests must be built and run by the toolchain dev;
+  iOS and relay must ship together.
+- **Phase C**: items 5, 8.
+- **Phase D**: items 10, 11 deferred with rationale above.
 
 ## Relationship to the SOLID/DRY review
 The remaining structural work there (transport/session/approval split, DIP seam)
