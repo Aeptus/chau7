@@ -15,11 +15,13 @@ enum RemoteNotificationScheduler {
 
     // MARK: - Scheduling
 
-    static func scheduleApproval(for payload: ApprovalRequestPayload) {
+    static func scheduleApproval(for payload: ApprovalRequestPayload, redactDetails: Bool) {
         let isProtectedRemoteAction = payload.flaggedCommand != payload.command
         let content = makeContent(
             title: isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval",
-            body: approvalBody(for: payload),
+            body: redactDetails
+                ? "A command needs your approval. Open Chau7 to review."
+                : approvalBody(for: payload),
             categoryIdentifier: RemoteNotificationID.approvalCategory,
             userInfo: [
                 RemoteNotificationID.UserInfoKey.requestID: payload.requestID,
@@ -29,10 +31,12 @@ enum RemoteNotificationScheduler {
         add(content, identifier: payload.requestID)
     }
 
-    static func scheduleInteractivePrompt(for prompt: RemoteInteractivePrompt) {
+    static func scheduleInteractivePrompt(for prompt: RemoteInteractivePrompt, redactDetails: Bool) {
         let content = makeContent(
             title: "Interactive Prompt",
-            body: interactivePromptBody(for: prompt),
+            body: redactDetails
+                ? "An interactive prompt needs a response. Open Chau7 to reply."
+                : interactivePromptBody(for: prompt),
             categoryIdentifier: RemoteNotificationID.interactivePromptCategory,
             userInfo: [
                 RemoteNotificationID.UserInfoKey.promptID: prompt.id,

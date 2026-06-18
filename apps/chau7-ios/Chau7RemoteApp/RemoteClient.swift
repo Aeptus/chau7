@@ -1320,7 +1320,10 @@ final class RemoteClient {
 
     private func scheduleApprovalNotificationIfAllowed(for payload: ApprovalRequestPayload) {
         guard shouldScheduleLocalApprovalNotification else { return }
-        RemoteNotificationScheduler.scheduleApproval(for: payload)
+        RemoteNotificationScheduler.scheduleApproval(
+            for: payload,
+            redactDetails: AppSettings.hideSensitiveNotifications
+        )
     }
 
     private func approvalRequest(from payload: ApprovalRequestPayload, responseState: ApprovalResponseState) -> ApprovalRequest {
@@ -1352,7 +1355,10 @@ final class RemoteClient {
 
         for prompt in nextPrompts where !previousPromptIDs.contains(prompt.id) {
             if shouldScheduleLocalApprovalNotification {
-                RemoteNotificationScheduler.scheduleInteractivePrompt(for: prompt)
+                RemoteNotificationScheduler.scheduleInteractivePrompt(
+                    for: prompt,
+                    redactDetails: AppSettings.hideSensitiveNotifications
+                )
             }
         }
     }

@@ -10,6 +10,15 @@ enum AppSettings {
     static let renderANSIDefault = false
     static let experimentalTerminalRendererKey = "experimental_terminal_renderer"
     static let experimentalTerminalRendererDefault = false
+    static let hideSensitiveNotificationsKey = "hide_sensitive_notifications"
+    static let hideSensitiveNotificationsDefault = true
+
+    /// Reads the toggle honoring its `true` default (UserDefaults.bool returns
+    /// false for an unset key, which would silently disable redaction).
+    static var hideSensitiveNotifications: Bool {
+        UserDefaults.standard.object(forKey: hideSensitiveNotificationsKey) as? Bool
+            ?? hideSensitiveNotificationsDefault
+    }
 }
 
 struct SettingsView: View {
@@ -21,6 +30,8 @@ struct SettingsView: View {
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
     @AppStorage(AppSettings.experimentalTerminalRendererKey)
     private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
+    @AppStorage(AppSettings.hideSensitiveNotificationsKey)
+    private var hideSensitiveNotifications = AppSettings.hideSensitiveNotificationsDefault
 
     var body: some View {
         NavigationStack {
@@ -48,6 +59,14 @@ struct SettingsView: View {
                 Section("Display") {
                     Toggle("Render ANSI Colors", isOn: $renderANSI)
                     Toggle("Experimental Terminal Renderer", isOn: $experimentalTerminalRenderer)
+                }
+
+                Section {
+                    Toggle("Hide Details on Lock Screen", isOn: $hideSensitiveNotifications)
+                } header: {
+                    Text("Privacy")
+                } footer: {
+                    Text("When on, notifications omit the command and directory; open Chau7 to see the full request.")
                 }
 
                 Section("Connection") {
