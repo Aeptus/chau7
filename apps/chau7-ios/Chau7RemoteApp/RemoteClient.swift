@@ -102,6 +102,9 @@ final class RemoteClient {
     private static let repairFallbackAttempt = 3
     private static let pushNotificationSuppressionWindow: TimeInterval = 15
     private static let pendingStateFetchMinimumInterval: TimeInterval = 1
+    /// Frames larger than this get decode/decrypt offloaded to a detached task;
+    /// smaller control frames are processed inline (detach overhead > work).
+    private static let frameOffloadThreshold = 8192
     static let appVersion =
         (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.1.0"
 
@@ -417,10 +420,15 @@ final class RemoteClient {
                         "bytes=%{public}d",
                         data.count
                     )
-                    let processed = await Task.detached(priority: .userInitiated) {
-                        RemoteFrameProcessor.process(data, crypto: crypto)
-                    }.value
-                    guard self.connectionGeneration == generation else { return }
+                    let processed: RemoteProcessedFrameResult
+                    if data.count > Self.frameOffloadThreshold {
+                        processed = await Task.detached(priority: .userInitiated) {
+                            RemoteFrameProcessor.process(data, crypto: crypto)
+                        }.value
+                        guard self.connectionGeneration == generation else { return }
+                    } else {
+                        processed = RemoteFrameProcessor.process(data, crypto: crypto)
+                    }
                     self.applyProcessedFrame(processed, signpostID: signpostID)
                     self.listen()
                 }
