@@ -85,6 +85,20 @@ struct SettingsView: View {
                                 Text(client.status.displayText)
                             }
                         }
+                        if let macFingerprint = client.macKeyFingerprint {
+                            LabeledContent("Mac Key") {
+                                Text(macFingerprint)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        LabeledContent("This Device Key") {
+                            Text(client.iosKeyFingerprint)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
                     } else {
                         Text("Not paired")
                             .foregroundStyle(.secondary)

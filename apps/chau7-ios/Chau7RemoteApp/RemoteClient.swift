@@ -112,6 +112,20 @@ final class RemoteClient {
         canSendInput(to: activeTabID)
     }
 
+    /// SHA-256 fingerprint of this device's public key, for out-of-band
+    /// verification against the value shown by the Mac.
+    var iosKeyFingerprint: String {
+        CryptoUtils.fingerprint(data: iosKey.publicKey.rawRepresentation)
+    }
+
+    /// SHA-256 fingerprint of the paired Mac's public key (from the pairing
+    /// payload), or nil when not paired.
+    var macKeyFingerprint: String? {
+        guard let macPub = pairingInfo?.macPub,
+              let data = Data(base64Encoded: macPub) else { return nil }
+        return CryptoUtils.fingerprint(data: data)
+    }
+
     // MARK: - Init
 
     init() {
