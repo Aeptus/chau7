@@ -74,24 +74,82 @@ final class ReResolveResumeCommandTests: XCTestCase {
 
     // MARK: - The regression class
 
-    /// The user-reported case: autosave captured *nothing* (provider nil,
-    /// session nil, cmd nil) because identity wasn't yet corroborated when
-    /// it fired. The restore pipeline previously hit "no resume command
-    /// candidate found" and the tab came back blank. With the dual-scan
-    /// fallback this test must produce a Claude resume command from the
-    /// Claude transcript on disk for the same directory.
-    func testNilProviderWithClaudeTranscriptResolvesClaudeCommand() throws {
+    /// Tightened contract: when autosave captured nothing — no provider,
+    /// no session id, no command — the re-resolver must REFUSE to guess.
+    /// The original "scan both providers and pick newest in cwd" behavior
+    /// caused N tabs that shared a directory to all collapse onto the same
+    /// most-recent transcript, turning every nil-identity tab into a
+    /// duplicate of the one tab whose autosave correctly captured the
+    /// active session. The recovery is only safe when at least the
+    /// provider tag survived — that's evidence an AI process really did
+    /// run in the pane.
+    func testReturnsNilWhenAllIdentityFieldsAreNil() throws {
         let dir = "/Users/me/projects/work"
         let claudeSession = "abc12345-aaaa-bbbb-cccc-dddddddddddd"
         try writeClaudeTranscript(directory: dir, sessionId: claudeSession, modifiedAt: Date())
 
         let pane = makePane(directory: dir)
-        let resolved = OverlayTabsModel.reResolveResumeCommand(paneState: pane)
+        XCTAssertNil(
+            OverlayTabsModel.reResolveResumeCommand(paneState: pane),
+            "All-nil identity must NOT fabricate a command from cwd alone"
+        )
+    }
 
-        XCTAssertNotNil(resolved, "Dual scan must find the Claude transcript when provider is nil")
+    /// Provider tag survived but session id and command were dropped — the
+    /// synthetic-identity autosave window we built this helper for. Still
+    /// recoverable because the provider tag proves an AI process was
+    /// actually running.
+    func testNilSessionWithProviderTagResolvesProvidersTranscript() throws {
+        let dir = "/Users/me/projects/with-provider"
+        let claudeSession = "11111111-aaaa-bbbb-cccc-222222222222"
+        try writeClaudeTranscript(directory: dir, sessionId: claudeSession, modifiedAt: Date())
+
+        let pane = makePane(directory: dir, provider: "claude")
+        let resolved = OverlayTabsModel.reResolveResumeCommand(paneState: pane)
         XCTAssertEqual(resolved?.provider, "claude")
         XCTAssertEqual(resolved?.sessionId, claudeSession)
-        XCTAssertEqual(resolved?.command, "claude --resume \(claudeSession)")
+    }
+
+    /// Dedup: a tab whose only candidate session is claimed by another tab
+    /// in the restore set must NOT inherit it. Restores blank instead.
+    func testDoesNotPickSessionAlreadyClaimedByAnotherTab() throws {
+        let dir = "/Users/me/shared-cwd"
+        let onlySession = "33333333-aaaa-bbbb-cccc-444444444444"
+        try writeClaudeTranscript(directory: dir, sessionId: onlySession, modifiedAt: Date())
+
+        // Pane has provider tag so the helper is willing to recover, but
+        // the only candidate on disk is already owned by another tab.
+        let pane = makePane(directory: dir, provider: "claude")
+        let resolved = OverlayTabsModel.reResolveResumeCommand(
+            paneState: pane,
+            claimedSessionIds: [onlySession]
+        )
+        XCTAssertNil(
+            resolved,
+            "Must refuse to duplicate a session ID already claimed by another tab"
+        )
+    }
+
+    /// Dedup leaves later candidates alone. If the newest matches a claim
+    /// but an older same-cwd session exists and is not claimed, fall back
+    /// to the older one.
+    func testFallsBackToNextCandidateWhenNewestIsClaimed() throws {
+        let dir = "/Users/me/falls-back"
+        let claimedNewer = "55555555-aaaa-bbbb-cccc-666666666666"
+        let availableOlder = "77777777-aaaa-bbbb-cccc-888888888888"
+        try writeClaudeTranscript(directory: dir, sessionId: availableOlder, modifiedAt: Date().addingTimeInterval(-3600))
+        try writeClaudeTranscript(directory: dir, sessionId: claimedNewer, modifiedAt: Date())
+
+        let pane = makePane(directory: dir, provider: "claude")
+        let resolved = OverlayTabsModel.reResolveResumeCommand(
+            paneState: pane,
+            claimedSessionIds: [claimedNewer]
+        )
+        XCTAssertEqual(
+            resolved?.sessionId,
+            availableOlder,
+            "Dedup must skip the newest claimed candidate and pick the next eligible one"
+        )
     }
 
     /// Provider explicitly set: the function must NOT cross-scan into the
@@ -150,21 +208,17 @@ final class ReResolveResumeCommandTests: XCTestCase {
 
     // MARK: - Tie-breaking
 
-    /// When provider is nil and BOTH Claude has a transcript for the
-    /// directory, the most recently touched candidate must win — we
-    /// generally want the latest session the user worked on.
-    ///
-    /// Note we can only test Claude reliably here (Codex's resolver doesn't
-    /// accept an environment override; the dual-scan logic is verified
-    /// structurally — `CodexSessionResolverTests` covers Codex matching).
-    func testNilProviderPicksMostRecentClaudeTranscript() throws {
+    /// Within a provider, the most recently touched matching transcript
+    /// wins. Provider tag is required to reach this branch (see the
+    /// all-nil guard test) so the test plants it explicitly.
+    func testPicksMostRecentTranscriptForKnownProvider() throws {
         let dir = "/Users/me/proj-recency"
         let older = "11111111-1111-1111-1111-111111111111"
         let newer = "22222222-2222-2222-2222-222222222222"
         try writeClaudeTranscript(directory: dir, sessionId: older, modifiedAt: Date().addingTimeInterval(-3600))
         try writeClaudeTranscript(directory: dir, sessionId: newer, modifiedAt: Date())
 
-        let pane = makePane(directory: dir)
+        let pane = makePane(directory: dir, provider: "claude")
         let resolved = OverlayTabsModel.reResolveResumeCommand(paneState: pane)
         XCTAssertEqual(resolved?.sessionId, newer, "Newest transcript must win")
     }

@@ -1067,6 +1067,15 @@ extension OverlayTabsModel {
         targetTabID: UUID,
         useResumeRetryScheduler: Bool
     ) {
+        // Gather session IDs already claimed by OTHER tabs' saved state so
+        // the re-resolver never hands out the same `claude --resume <id>` to
+        // a sibling tab whose autosave dropped its identity. Excludes the
+        // current tab — its own paneStates are about to be resolved here.
+        let claimedSessionIds = Self.claimedSessionIdsForRestore(
+            in: persistedRestoreFallbackStatesByTabID,
+            excludingTabID: targetTabID
+        )
+
         let resumeIntents = currentSessions.compactMap { paneID, _ -> ResumeRestoreIntent? in
             guard let paneState = resolvedPaneStates[paneID] else { return nil }
 
@@ -1099,7 +1108,10 @@ extension OverlayTabsModel {
             //     providers' transcripts for the saved directory and pick
             //     whichever has a transcript closer to the saved activity
             //     timestamp.
-            if let resolved = Self.reResolveResumeCommand(paneState: paneState) {
+            if let resolved = Self.reResolveResumeCommand(
+                paneState: paneState,
+                claimedSessionIds: claimedSessionIds
+            ) {
                 Log.info(
                     """
                     restoreTabState: re-resolved resume command for tab=\(targetTabID) pane=\(paneID) \
@@ -1193,9 +1205,19 @@ extension OverlayTabsModel {
     /// empty, no transcripts exist, or the resolved session ID fails the
     /// downstream safety gate.
     static func reResolveResumeCommand(
-        paneState: SavedTerminalPaneState
+        paneState: SavedTerminalPaneState,
+        claimedSessionIds: Set<String> = []
     ) -> (command: String, sessionId: String, provider: String)? {
         guard paneState.aiResumeCommand == nil else { return nil }
+        // Refuse to fabricate identity from cwd alone. When the autosave
+        // captured no provider, no session id, AND no command, the only
+        // signal left is "this pane lived in directory X." That collapses
+        // every nil-identity tab in a shared cwd to the same "newest
+        // transcript wins" answer — N tabs all restored with the same
+        // `claude --resume <id>` command, including former codex tabs.
+        // The recovery is only safe when at least the provider tag survived,
+        // proving an AI process really did run here.
+        guard paneState.aiProvider != nil || paneState.aiSessionId != nil else { return nil }
         let directory: String
         if let aiDir = paneState.aiResumeDirectory, !aiDir.isEmpty {
             directory = aiDir
@@ -1243,8 +1265,15 @@ extension OverlayTabsModel {
                 )
                 continue
             }
-            let touchedAtBySession = Dictionary(uniqueKeysWithValues: candidates.map { ($0.sessionId, $0.lastActivity) })
-            let asTuples = candidates.map { (sessionId: $0.sessionId, touchedAt: $0.lastActivity) }
+            // Drop candidates already claimed by another tab's saved state.
+            // Without this, every nil-cmd tab in a shared cwd resolves to
+            // the same "newest transcript in this dir" and the user sees
+            // N tabs all restored with the same `claude --resume <id>`.
+            let filteredCandidates = candidates.filter { !claimedSessionIds.contains($0.sessionId) }
+            let touchedAtBySession = Dictionary(
+                uniqueKeysWithValues: filteredCandidates.map { ($0.sessionId, $0.lastActivity) }
+            )
+            let asTuples = filteredCandidates.map { (sessionId: $0.sessionId, touchedAt: $0.lastActivity) }
             // Primary: closest-in-time-to-referenceDate. `bestSessionMatch`
             // refuses to guess when there are multiple candidates and no
             // usable reference date — for the general API that's correct,
@@ -1257,7 +1286,7 @@ extension OverlayTabsModel {
             let sessionId = AIResumeParser.bestSessionMatch(
                 candidates: asTuples,
                 referenceDate: referenceDate
-            ) ?? candidates.first?.sessionId
+            ) ?? filteredCandidates.first?.sessionId
             guard let sessionId else { continue }
             let touchedAt = touchedAtBySession[sessionId] ?? Date.distantPast
 
@@ -1281,6 +1310,31 @@ extension OverlayTabsModel {
         ) else { return nil }
         guard let normalized = Self.normalizedResumeCommand(command) else { return nil }
         return (command: normalized, sessionId: match.sessionId, provider: match.provider)
+    }
+
+    /// Collects every `aiSessionId` already pinned to a tab's saved state,
+    /// excluding the tab currently being resolved. Used to dedup re-resolution
+    /// across the restore set: a session ID that another tab already owns is
+    /// not a valid candidate for a sibling tab whose autosave dropped its
+    /// own identity. The top-level `SavedTabState.aiSessionId` and each
+    /// pane's `aiSessionId` are both honored — autosave may store either
+    /// or both depending on the schema vintage.
+    static func claimedSessionIdsForRestore(
+        in fallbackStatesByTabID: [UUID: SavedTabState],
+        excludingTabID: UUID
+    ) -> Set<String> {
+        var claimed: Set<String> = []
+        for (tabID, state) in fallbackStatesByTabID where tabID != excludingTabID {
+            if let sessionId = state.aiSessionId, !sessionId.isEmpty {
+                claimed.insert(sessionId)
+            }
+            for pane in (state.paneStates ?? []) {
+                if let sessionId = pane.aiSessionId, !sessionId.isEmpty {
+                    claimed.insert(sessionId)
+                }
+            }
+        }
+        return claimed
     }
 
     /// Async-dispatched body of `restoreTabState`. Originally an inline

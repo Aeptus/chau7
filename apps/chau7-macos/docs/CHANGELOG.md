@@ -598,6 +598,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.35 | 2026-06-19 | Restore-time `reResolveResumeCommand` refuses to fabricate identity from cwd alone when the saved pane has no provider, session id, or command — and dedups its on-disk candidate against session ids already claimed by sibling tabs in the same restore set — so two tabs sharing a directory never come back with the same `claude --resume <id>` |
 | 0.5.34 | 2026-06-19 | The AI agent display chain collapsed to a single canonical field: `aiDisplayAppName` reads only `lastAIProvider`, and the process-tree subscription writes through to it on every live detection, so the tab logo stays correct across detection, exit, and restore without a four-rung fallback |
 | 0.5.33 | 2026-06-19 | The AI agent logo on a restored tab now stays legible against the dark tab background when the AI process has exited, instead of fading to a near-invisible 0.35 opacity |
 | 0.5.32 | 2026-04-04 | App termination now reuses a recent cached multi-window snapshot instead of re-exporting every visible tab during quit, reducing synchronous shutdown stalls and beachball risk |

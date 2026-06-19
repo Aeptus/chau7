@@ -518,3 +518,4 @@ codex_resolver_restore_day_window,macos,restore,CodexSessionResolver.sessionCand
 
 tab_logo_visible_when_dimmed,macos,ui,restored AI tab logo stays legible against dark backgrounds when the AI process has exited instead of fading to a near-invisible 0.35 opacity,shipped
 ai_display_appname_single_field,macos,ui,aiDisplayAppName now reads only lastAIProvider and the process-tree subscription writes through to it via updateLastDetectedApp so a single persisted field drives the AI tab logo across detection live exit and restore,shipped
+restore_reresolve_dedup_and_all_nil_guard,macos,restore,restore-time reResolveResumeCommand refuses to guess when the saved pane has nil provider AND nil session AND nil cmd and dedups its on-disk candidate against session ids already claimed by sibling tabs in the same restore set so two tabs sharing a directory never get the same claude --resume <id>,shipped
