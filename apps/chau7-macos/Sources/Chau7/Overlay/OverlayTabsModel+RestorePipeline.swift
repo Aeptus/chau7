@@ -1225,7 +1225,16 @@ extension OverlayTabsModel {
             case "claude":
                 candidates = ClaudeSessionResolver.sessionCandidates(forDirectory: directory)
             case "codex":
-                candidates = CodexSessionResolver.sessionCandidates(forDirectory: directory)
+                // Restore path: anchor the day-directory search at the
+                // pane's saved activity time, not at "today" — a tab last
+                // used a week ago lives in last week's day folder, not
+                // today's. Bump the day window to 14 so we actually reach
+                // it. Live-detection callers keep the narrow default.
+                candidates = CodexSessionResolver.sessionCandidates(
+                    forDirectory: directory,
+                    referenceDate: referenceDate,
+                    maxDays: 14
+                )
             default:
                 // Surface a one-shot trace so adding a new CLI without
                 // wiring its resolver is visible.

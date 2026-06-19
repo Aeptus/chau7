@@ -82,20 +82,34 @@ enum CodexSessionResolver {
 
     /// Returns Codex sessions whose cwd matches the given directory, sorted
     /// by most recently modified first.  Mirrors `ClaudeCodeMonitor.sessionCandidates(forDirectory:)`.
-    static func sessionCandidates(forDirectory directory: String) -> [(sessionId: String, lastActivity: Date)] {
+    ///
+    /// `referenceDate` anchors the day-directory search. The default of `nil`
+    /// uses "today" (the live-detection use case — find the running codex
+    /// session for the current tab). The restore pipeline passes the pane's
+    /// saved activity time so we look in the day folder where the user
+    /// actually used codex, not today's empty folder. `maxDays` controls
+    /// how many day directories around the reference get scanned — bumped
+    /// from the default 3 to 14 for the restore path because a user might
+    /// reopen a tab a week or two after last use, and the cost of scanning
+    /// a few extra empty day folders is negligible.
+    static func sessionCandidates(
+        forDirectory directory: String,
+        referenceDate: Date? = nil,
+        maxDays: Int = 3
+    ) -> [(sessionId: String, lastActivity: Date)] {
         let fm = FileManager.default
         let sessionsDir = RuntimeIsolation.urlInHome(".codex/sessions", fileManager: fm)
 
         let dayDirs = prioritizedDayDirectories(
             in: sessionsDir,
-            referenceDate: Date(),
+            referenceDate: referenceDate ?? Date(),
             fileManager: fm
         )
 
         var results: [(sessionId: String, lastActivity: Date, rank: Int)] = []
         var seenSessionIds = Set<String>()
 
-        for dayDir in dayDirs.prefix(3) {
+        for dayDir in dayDirs.prefix(maxDays) {
             guard let files = try? fm.contentsOfDirectory(atPath: dayDir.path) else { continue }
             for file in files.filter({ $0.hasSuffix(".jsonl") }).sorted().reversed() {
                 let fileURL = dayDir.appendingPathComponent(file)
