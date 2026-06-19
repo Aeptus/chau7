@@ -192,7 +192,7 @@ final class ReResolveResumeCommandTests: XCTestCase {
 
     /// Empty directory — there's nothing to scan against; return nil
     /// cleanly rather than scanning every transcript on disk.
-    func testReturnsNilWhenDirectoryIsEmpty() throws {
+    func testReturnsNilWhenDirectoryIsEmpty() {
         let pane = makePane(directory: "")
         XCTAssertNil(OverlayTabsModel.reResolveResumeCommand(paneState: pane))
     }
@@ -201,7 +201,7 @@ final class ReResolveResumeCommandTests: XCTestCase {
     /// Return nil so the caller logs "no resume command candidate found"
     /// and the tab comes back blank (the genuine "we have no signal" case,
     /// not the bug class this whole helper exists to address).
-    func testReturnsNilWhenNoTranscriptsForDirectory() throws {
+    func testReturnsNilWhenNoTranscriptsForDirectory() {
         let pane = makePane(directory: "/Users/me/no-such-dir")
         XCTAssertNil(OverlayTabsModel.reResolveResumeCommand(paneState: pane))
     }

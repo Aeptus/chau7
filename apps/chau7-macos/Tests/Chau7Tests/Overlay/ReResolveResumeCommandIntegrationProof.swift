@@ -38,8 +38,8 @@ final class ReResolveResumeCommandIntegrationProof: XCTestCase {
             aiSessionId: nil,
             aiSessionIdSource: nil,
             // Apple-epoch 803136107 = 2026-06-14T13:21:47Z
-            lastOutputAt: Date(timeIntervalSinceReferenceDate: 803136107),
-            lastInputAt: Date(timeIntervalSinceReferenceDate: 803136107)
+            lastOutputAt: Date(timeIntervalSinceReferenceDate: 803_136_107),
+            lastInputAt: Date(timeIntervalSinceReferenceDate: 803_136_107)
         )
 
         XCTAssertNil(
@@ -69,8 +69,8 @@ final class ReResolveResumeCommandIntegrationProof: XCTestCase {
             aiProvider: "codex",
             aiSessionId: nil,
             aiSessionIdSource: nil,
-            lastOutputAt: Date(timeIntervalSinceReferenceDate: 803136107),
-            lastInputAt: Date(timeIntervalSinceReferenceDate: 803136107)
+            lastOutputAt: Date(timeIntervalSinceReferenceDate: 803_136_107),
+            lastInputAt: Date(timeIntervalSinceReferenceDate: 803_136_107)
         )
 
         guard let resolved = OverlayTabsModel.reResolveResumeCommand(paneState: pane) else {

@@ -86,9 +86,11 @@ final class ClaudeSessionResolverCandidatesTests: XCTestCase {
         XCTAssertEqual(result.count, 3)
         XCTAssertEqual(
             result.map(\.sessionId),
-            ["fffeeeed-1111-2222-3333-444444444444",
-             "abc12345-aaaa-bbbb-cccc-dddddddddddd",
-             "11112222-3333-4444-5555-666666666666"],
+            [
+                "fffeeeed-1111-2222-3333-444444444444",
+                "abc12345-aaaa-bbbb-cccc-dddddddddddd",
+                "11112222-3333-4444-5555-666666666666",
+            ],
             "Candidates must be returned newest-first by transcript mtime"
         )
     }

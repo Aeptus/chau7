@@ -1328,7 +1328,7 @@ extension OverlayTabsModel {
             if let sessionId = state.aiSessionId, !sessionId.isEmpty {
                 claimed.insert(sessionId)
             }
-            for pane in (state.paneStates ?? []) {
+            for pane in state.paneStates ?? [] {
                 if let sessionId = pane.aiSessionId, !sessionId.isEmpty {
                     claimed.insert(sessionId)
                 }
