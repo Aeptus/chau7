@@ -515,3 +515,5 @@ side_panel_default_source,macos,editor,text side panel defaults to source view i
 runbook_inline_markdown_rendering,macos,editor,runbook view renders inline markdown bold italic code and links via AttributedString instead of showing literal characters,shipped
 restore_resume_command_dual_provider,macos,restore,restore-time re-resolution scans both Claude and Codex transcripts when autosave captured no provider so blank-state tabs are recovered from the on-disk session whose mtime is closest to the saved activity time or the newest available,shipped
 codex_resolver_restore_day_window,macos,restore,CodexSessionResolver.sessionCandidates accepts a saved activity timestamp as the day-directory search anchor and a wider maxDays so the restore pipeline finds transcripts from week-old day folders,shipped
+
+tab_logo_visible_when_dimmed,macos,ui,restored AI tab logo stays legible against dark backgrounds when the AI process has exited instead of fading to a near-invisible 0.35 opacity,shipped

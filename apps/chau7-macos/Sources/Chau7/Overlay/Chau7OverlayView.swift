@@ -2418,7 +2418,11 @@ struct TabSessionContent: View {
                     logo
                         .resizable()
                         .frame(width: 14, height: 14)
-                        .opacity(session.isAIRunning ? 1.0 : 0.35)
+                        // Restored / not-running state was previously 0.35 —
+                        // unreadable against the dark tab background, which
+                        // looked like the icon was missing entirely. 0.6
+                        // keeps the "dimmed" intent while staying visible.
+                        .opacity(session.isAIRunning ? 1.0 : 0.6)
                         .accessibilityHidden(true)
                 } else if let devIcon = devServerIconName {
                     Image(systemName: devIcon)
