@@ -18,7 +18,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       dmg_sha256: ${{ steps.checksums.outputs.dmg_sha256 }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Enable pnpm
         run: corepack enable
@@ -309,7 +309,7 @@ jobs:
 
       - name: Checkout tap repo
         if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: aeptus/homebrew-chau7
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
