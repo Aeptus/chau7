@@ -1088,21 +1088,25 @@ extension OverlayTabsModel {
                 )
             }
 
-            // Fallback path: pane state has provider but no usable command —
-            // autosave landed during the post-launch window where identity
-            // detection had a synthetic session ID, so `buildAIResumeCommand`
-            // returned nil and `aiResumeCommand` was persisted as nil. Re-
-            // resolve a real session ID from the provider's transcript
-            // files (Claude: `~/.claude/projects/.../*.jsonl`; Codex:
-            // `~/.codex/sessions/...`). Best match by saved directory +
-            // last-input recency.
+            // Fallback path: pane state has no usable command. Two cases:
+            //   * provider set, cmd nil — autosave landed during the
+            //     synthetic-identity window (buildAIResumeCommand correctly
+            //     refused). Re-resolve a real session ID from the named
+            //     provider's transcripts.
+            //   * provider nil, cmd nil — autosave fired before ANY identity
+            //     corroboration (this is the wider hole behind the "no
+            //     resume command candidate" log line at startup). Scan BOTH
+            //     providers' transcripts for the saved directory and pick
+            //     whichever has a transcript closer to the saved activity
+            //     timestamp.
             if let resolved = Self.reResolveResumeCommand(paneState: paneState) {
                 Log.info(
                     """
                     restoreTabState: re-resolved resume command for tab=\(targetTabID) pane=\(paneID) \
-                    provider=\(paneState.aiProvider ?? "nil") \
+                    savedProvider=\(paneState.aiProvider ?? "nil") \
                     savedSession=\(paneState.aiSessionId?.prefix(8) ?? "nil") \
                     savedSource=\(paneState.aiSessionIdSource?.rawValue ?? "nil") \
+                    resolvedProvider=\(resolved.provider) \
                     resolvedSession=\(resolved.sessionId.prefix(8))
                     """
                 )
@@ -1110,7 +1114,13 @@ extension OverlayTabsModel {
                     paneID: paneID,
                     command: resolved.command,
                     expectedDirectory: paneState.preferredRestoreDirectory,
-                    expectedProvider: paneState.aiProvider,
+                    // Use the resolved provider when autosave captured none —
+                    // otherwise the validator's identity check has only the
+                    // session ID to work with and the launched tab would
+                    // need to corroborate Codex/Claude in the live tree
+                    // before delivery (and we know it WILL because we
+                    // just found that provider's transcript on disk).
+                    expectedProvider: paneState.aiProvider ?? resolved.provider,
                     expectedSessionID: resolved.sessionId,
                     // The newly-resolved session ID came off disk → observed.
                     expectedSessionIDSource: .observed,
@@ -1184,12 +1194,8 @@ extension OverlayTabsModel {
     /// downstream safety gate.
     static func reResolveResumeCommand(
         paneState: SavedTerminalPaneState
-    ) -> (command: String, sessionId: String)? {
+    ) -> (command: String, sessionId: String, provider: String)? {
         guard paneState.aiResumeCommand == nil else { return nil }
-        guard let provider = paneState.aiProvider,
-              let normalizedProvider = AIResumeParser.normalizeProviderName(provider) else {
-            return nil
-        }
         let directory: String
         if let aiDir = paneState.aiResumeDirectory, !aiDir.isEmpty {
             directory = aiDir
@@ -1198,40 +1204,74 @@ extension OverlayTabsModel {
         }
         guard !directory.isEmpty else { return nil }
 
-        let referenceDate = paneState.lastInputAt ?? paneState.lastOutputAt
-        let resolvedSessionId: String?
-        switch normalizedProvider {
-        case "claude":
-            let candidates = ClaudeSessionResolver.sessionCandidates(forDirectory: directory)
-                .map { (sessionId: $0.sessionId, touchedAt: $0.lastActivity) }
-            resolvedSessionId = AIResumeParser.bestSessionMatch(
-                candidates: candidates,
-                referenceDate: referenceDate
-            )
-        case "codex":
-            let candidates = CodexSessionResolver.sessionCandidates(forDirectory: directory)
-                .map { (sessionId: $0.sessionId, touchedAt: $0.lastActivity) }
-            resolvedSessionId = AIResumeParser.bestSessionMatch(
-                candidates: candidates,
-                referenceDate: referenceDate
-            )
-        default:
-            // Unknown provider — leave the prefill empty rather than
-            // guessing. Surface a one-shot trace so adding a new CLI
-            // without wiring its resolver is visible.
-            Log.trace(
-                "restoreTabState: re-resolution skipped for unsupported provider=\(normalizedProvider)"
-            )
-            resolvedSessionId = nil
+        // Which providers to try. If autosave captured a provider, try only
+        // that one (the user's tab was definitively that tool). If autosave
+        // captured nothing (the entire identity trio was nil — fired during
+        // the window before any corroboration), try BOTH — pick whichever
+        // has a transcript closer to the saved activity time.
+        let candidateProviders: [String]
+        if let providerStr = paneState.aiProvider,
+           let normalized = AIResumeParser.normalizeProviderName(providerStr) {
+            candidateProviders = [normalized]
+        } else {
+            candidateProviders = ["claude", "codex"]
         }
 
-        guard let sessionId = resolvedSessionId else { return nil }
+        let referenceDate = paneState.lastInputAt ?? paneState.lastOutputAt
+        var bestMatch: (provider: String, sessionId: String, touchedAt: Date)?
+        for provider in candidateProviders {
+            let candidates: [(sessionId: String, lastActivity: Date)]
+            switch provider {
+            case "claude":
+                candidates = ClaudeSessionResolver.sessionCandidates(forDirectory: directory)
+            case "codex":
+                candidates = CodexSessionResolver.sessionCandidates(forDirectory: directory)
+            default:
+                // Surface a one-shot trace so adding a new CLI without
+                // wiring its resolver is visible.
+                Log.trace(
+                    "restoreTabState: re-resolution skipped for unsupported provider=\(provider)"
+                )
+                continue
+            }
+            let touchedAtBySession = Dictionary(uniqueKeysWithValues: candidates.map { ($0.sessionId, $0.lastActivity) })
+            let asTuples = candidates.map { (sessionId: $0.sessionId, touchedAt: $0.lastActivity) }
+            // Primary: closest-in-time-to-referenceDate. `bestSessionMatch`
+            // refuses to guess when there are multiple candidates and no
+            // usable reference date — for the general API that's correct,
+            // but on the restore path we'd rather give the user their most
+            // recent session in this directory than leave them blank. So
+            // we fall back to "newest transcript wins" when the primary
+            // matcher returns nil. The .sorted{ first.lastActivity > second.lastActivity }
+            // in the resolver guarantees `candidates.first` is already the
+            // newest, so this is just `candidates.first?.sessionId`.
+            let sessionId = AIResumeParser.bestSessionMatch(
+                candidates: asTuples,
+                referenceDate: referenceDate
+            ) ?? candidates.first?.sessionId
+            guard let sessionId else { continue }
+            let touchedAt = touchedAtBySession[sessionId] ?? Date.distantPast
+
+            if let current = bestMatch {
+                if touchedAt > current.touchedAt {
+                    bestMatch = (provider, sessionId, touchedAt)
+                }
+            } else {
+                bestMatch = (provider, sessionId, touchedAt)
+            }
+        }
+
+        guard let match = bestMatch else { return nil }
+
+        // `buildAIResumeCommand` accepts a display-name string and normalizes
+        // it internally. Use the canonical lowercase provider name — it
+        // round-trips through the parser the same as "Claude" / "Codex".
         guard let command = Self.buildAIResumeCommand(
-            provider: provider,
-            sessionId: sessionId
+            provider: match.provider,
+            sessionId: match.sessionId
         ) else { return nil }
         guard let normalized = Self.normalizedResumeCommand(command) else { return nil }
-        return (command: normalized, sessionId: sessionId)
+        return (command: normalized, sessionId: match.sessionId, provider: match.provider)
     }
 
     /// Async-dispatched body of `restoreTabState`. Originally an inline
