@@ -86,6 +86,10 @@ final class ReResolveResumeCommandIntegrationProof: XCTestCase {
             return
         }
         XCTAssertEqual(resolved.provider, "codex")
+        // Diagnostic-only print: the purpose of this gated test is to
+        // surface the resolved trio to the test console so the developer
+        // can eyeball it.
+        // swiftlint:disable:next no_print_statements
         print("PROOF tab=EAE7B456 → provider=\(resolved.provider) session=\(resolved.sessionId) cmd=\(resolved.command)")
     }
 }
