@@ -1764,7 +1764,7 @@ final class TerminalSessionModelTests: XCTestCase {
         // .queued with no follow-up scheduled at this point.
         XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 21), 5.0, accuracy: 0.0001)
         XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 100), 5.0, accuracy: 0.0001)
-        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 10_000), 5.0, accuracy: 0.0001)
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 10000), 5.0, accuracy: 0.0001)
     }
 
     func testPrefillInputTracksResumeMetadataImmediately() {

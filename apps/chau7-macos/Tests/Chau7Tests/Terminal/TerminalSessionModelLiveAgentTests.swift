@@ -6,6 +6,7 @@ import Chau7Core
 final class TerminalSessionModelLiveAgentTests: XCTestCase {
 
     // MARK: - aiDisplayAppName: single-field contract
+
     //
     // The display chain collapsed: `aiDisplayAppName` is now just a
     // canonical read of `lastAIProvider`. Every detection write path
@@ -71,7 +72,7 @@ final class TerminalSessionModelLiveAgentTests: XCTestCase {
 
     func testIsAIRunningTrueWhenLiveAgentPresentEvenIfDetectionStillRestored() {
         let session = TerminalSessionModel(appModel: AppModel())
-        session.activeAppName = "Claude"  // restored identity
+        session.activeAppName = "Claude" // restored identity
         // Restored sessions normally render at 0.35 opacity (isAIRunning false)
         // until live detection re-confirms. With the process-tree signal in,
         // the re-confirmation happens via liveAgentName.
