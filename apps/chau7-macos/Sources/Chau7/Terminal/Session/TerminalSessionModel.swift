@@ -2756,18 +2756,38 @@ final class TerminalSessionModel {
         // No view yet — wait for attachRustTerminal to call us again.
         guard existingRustTerminalView != nil else { return .queued }
 
-        // View exists but shell isn't ready — schedule a retry.
-        guard pendingPrefillRetries < 20 else {
-            Log.warn("Resume prefill: retries exhausted, waiting for next prompt (\(text.prefix(60)))")
-            pendingPrefillRetries = 0 // reset so handlePromptDetected can restart
-            return .queued
-        }
+        // View exists but shell isn't ready — schedule a retry. Within the
+        // first ~30s use the eager 0.3–3s backoff. After that, fall back to
+        // a slow heartbeat (5s) so the queued prefill is never silently
+        // abandoned: during a multi-tab cold boot, OSC 133 from the shell
+        // can take well over 30s to arrive, and without this the prefill
+        // would only ever appear if the user happened to switch away and
+        // back (recreating the view triggers `attachRustTerminal` →
+        // `flushPendingPrefillInputIfReady`).
         pendingPrefillRetries += 1
-        let delay = min(0.3 + Double(pendingPrefillRetries) * 0.3, 3.0)
+        if pendingPrefillRetries == Self.prefillEagerRetryLimit + 1 {
+            Log.warn("Resume prefill: eager retries exhausted, switching to 5s heartbeat (\(text.prefix(60)))")
+        }
+        let delay = Self.nextPrefillRetryDelay(retries: pendingPrefillRetries)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.flushPendingPrefillInputIfReady()
         }
         return .queued
+    }
+
+    /// Threshold between the eager 0.3–3s retry window and the 5s heartbeat.
+    /// Visible for tests.
+    static let prefillEagerRetryLimit = 20
+    static let prefillHeartbeatDelay: TimeInterval = 5.0
+
+    /// Pure decision for retry pacing. Extracted so the eager-vs-heartbeat
+    /// switchover is unit-testable without standing up a live session or
+    /// waiting on real timers.
+    static func nextPrefillRetryDelay(retries: Int) -> TimeInterval {
+        if retries <= prefillEagerRetryLimit {
+            return min(0.3 + Double(retries) * 0.3, 3.0)
+        }
+        return prefillHeartbeatDelay
     }
 
     func canPrefillInput() -> Bool {

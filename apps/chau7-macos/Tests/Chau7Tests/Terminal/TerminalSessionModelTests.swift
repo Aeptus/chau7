@@ -1746,6 +1746,27 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(capturedInputs, ["claude --resume xyz789"])
     }
 
+    /// The eager 0.3–3s backoff caps at retry 20; after that the retry
+    /// pacer must fall back to a 5s heartbeat rather than silently giving
+    /// up. Cold-boot regression: when OSC 133 takes longer than the eager
+    /// window to arrive (common with many shells racing during multi-tab
+    /// restore), the original code returned `.queued` with no scheduled
+    /// follow-up, leaving the prefill stuck until the user happened to
+    /// trigger an `attachRustTerminal` by switching tabs.
+    func testPrefillRetryDelayFallsBackToHeartbeatAfterEagerExhaustion() {
+        // Eager backoff: monotonically growing then clamped to 3.0.
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 1), 0.6, accuracy: 0.0001)
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 9), 3.0, accuracy: 0.0001)
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 20), 3.0, accuracy: 0.0001)
+
+        // Heartbeat: every retry past the eager limit returns the same 5s
+        // delay. Crucially NON-ZERO and bounded — the pre-fix code returned
+        // .queued with no follow-up scheduled at this point.
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 21), 5.0, accuracy: 0.0001)
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 100), 5.0, accuracy: 0.0001)
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 10_000), 5.0, accuracy: 0.0001)
+    }
+
     func testPrefillInputTracksResumeMetadataImmediately() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
