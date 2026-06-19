@@ -5,62 +5,50 @@ import Chau7Core
 @MainActor
 final class TerminalSessionModelLiveAgentTests: XCTestCase {
 
-    func testLiveAgentNameWinsOverActiveAppName() {
-        let session = TerminalSessionModel(appModel: AppModel())
-        session.activeAppName = "Codex"
-        session.lastAIProvider = "codex"
-        XCTAssertEqual(session.aiDisplayAppName, "Codex", "sanity: fallback chain returns active")
+    // MARK: - aiDisplayAppName: single-field contract
+    //
+    // The display chain collapsed: `aiDisplayAppName` is now just a
+    // canonical read of `lastAIProvider`. Every detection write path
+    // (live process tree, output match, history adoption, restore) is
+    // expected to call `updateLastDetectedApp` so the persisted field
+    // stays current. These tests pin the new shape.
 
-        session.overrideLiveAgentNameForTesting("Claude")
-        XCTAssertEqual(
-            session.aiDisplayAppName,
-            "Claude",
-            "live signal must override stale persisted identity"
-        )
-    }
-
-    func testLiveAgentNameWinsOverPersistedProvider() {
+    func testAiDisplayAppNameReadsLastAIProviderOnly() {
         let session = TerminalSessionModel(appModel: AppModel())
+        XCTAssertNil(session.aiDisplayAppName)
+
         session.lastAIProvider = "codex"
         XCTAssertEqual(session.aiDisplayAppName, "Codex")
 
-        session.overrideLiveAgentNameForTesting("Claude")
-        XCTAssertEqual(session.aiDisplayAppName, "Claude")
-    }
-
-    func testNilLiveAgentFallsBackThroughChain() {
-        let session = TerminalSessionModel(appModel: AppModel())
-        session.activeAppName = "Claude"
         session.lastAIProvider = "claude"
-
-        session.overrideLiveAgentNameForTesting(nil)
-        XCTAssertEqual(
-            session.aiDisplayAppName,
-            "Claude",
-            "nil live signal must fall through to activeAppName"
-        )
-
-        session.activeAppName = nil
-        XCTAssertEqual(
-            session.aiDisplayAppName,
-            "Claude",
-            "nil live and active must fall through to persisted provider"
-        )
+        XCTAssertEqual(session.aiDisplayAppName, "Claude")
 
         session.lastAIProvider = nil
         XCTAssertNil(session.aiDisplayAppName)
     }
 
-    func testBlankLiveAgentTreatedAsAbsent() {
+    /// Old fallback rungs no longer drive display directly. Setting any
+    /// of them without `lastAIProvider` must NOT produce a display name —
+    /// detection paths are responsible for writing through.
+    func testLegacyFallbackFieldsDoNotResurrectAiDisplayAppName() {
         let session = TerminalSessionModel(appModel: AppModel())
-        session.activeAppName = "Codex"
-
-        session.overrideLiveAgentNameForTesting("   ")
-        XCTAssertEqual(
+        session.activeAppName = "Claude"
+        session.lastDetectedAppName = "Codex"
+        session.overrideLiveAgentNameForTesting("Gemini")
+        XCTAssertNil(
             session.aiDisplayAppName,
-            "Codex",
-            "whitespace-only live signal must not shadow a valid fallback"
+            "Display must not fall back to liveAgentName / activeAppName / lastDetectedAppName"
         )
+    }
+
+    /// `updateLastDetectedApp` is the canonical write path: it sets
+    /// `lastDetectedAppName` AND `lastAIProvider` in lockstep, so the
+    /// display picks up the change without any fallback gymnastics.
+    func testUpdateLastDetectedAppPropagatesToDisplay() {
+        let session = TerminalSessionModel(appModel: AppModel())
+        session.updateLastDetectedApp("Codex")
+        XCTAssertEqual(session.lastAIProvider, "codex")
+        XCTAssertEqual(session.aiDisplayAppName, "Codex")
     }
 
     // MARK: - isAIRunning (logo opacity contract)
@@ -108,43 +96,6 @@ final class TerminalSessionModelLiveAgentTests: XCTestCase {
         XCTAssertFalse(
             session.isAIRunning,
             "whitespace-only live signal must not be treated as a running AI"
-        )
-    }
-
-    // MARK: - aiDisplayAppName: lastDetectedAppName fallback
-
-    /// `updateLastDetectedApp` writes both lastDetectedAppName + lastAIProvider
-    /// in lockstep, so the typical fallback works. But persisting against
-    /// future code paths that might clear one but not the other: when
-    /// lastDetectedAppName is set without lastAIProvider, the logo source
-    /// chain must still find a name.
-    func testAiDisplayAppNameFallsBackToLastDetectedAppNameWhenProviderCleared() {
-        let session = TerminalSessionModel(appModel: AppModel())
-        session.overrideLiveAgentNameForTesting(nil)
-        session.activeAppName = nil
-        session.lastAIProvider = nil
-        session.lastDetectedAppName = "Codex"
-        XCTAssertEqual(
-            session.aiDisplayAppName,
-            "Codex",
-            "lastDetectedAppName must back-stop the display chain even when lastAIProvider is nil"
-        )
-    }
-
-    func testAiDisplayAppNameRespectsExistingPriorityOverLastDetected() {
-        let session = TerminalSessionModel(appModel: AppModel())
-        session.activeAppName = "Claude"
-        session.lastDetectedAppName = "Codex"
-        XCTAssertEqual(
-            session.aiDisplayAppName,
-            "Claude",
-            "activeAppName must still win over the new lastDetectedAppName fallback"
-        )
-        session.overrideLiveAgentNameForTesting("Gemini")
-        XCTAssertEqual(
-            session.aiDisplayAppName,
-            "Gemini",
-            "liveAgentName is still the top of the chain"
         )
     }
 

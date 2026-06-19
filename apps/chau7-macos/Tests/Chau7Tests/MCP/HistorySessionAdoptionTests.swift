@@ -91,6 +91,11 @@ final class HistorySessionAdoptionTests: XCTestCase {
         let tabID = overlayModel.selectedTabID
         let session = try XCTUnwrap(overlayModel.tabs.first?.session)
         session.currentDirectory = "/tmp/Aethyme"
+        // Under the single-field display contract, a "live Claude" pane has
+        // `lastAIProvider == "claude"` (the production subscription writes
+        // through). Mirror that here so the test setup actually reflects a
+        // real live-Claude pane.
+        session.updateLastDetectedApp("Claude")
         session.overrideLiveAgentNameForTesting("Claude")
 
         let request = try XCTUnwrap(HistorySessionAdoptionRequest(
@@ -105,7 +110,9 @@ final class HistorySessionAdoptionTests: XCTestCase {
 
         XCTAssertFalse(TerminalControlService.shared.adoptHistorySession(request))
         XCTAssertEqual(session.aiDisplayAppName, "Claude")
-        XCTAssertNil(session.lastAIProvider)
+        // Refusal preserves the live Claude identity; Codex's session id is
+        // never planted on the pane.
+        XCTAssertEqual(session.lastAIProvider, "claude")
         XCTAssertNil(session.lastAISessionId)
     }
 

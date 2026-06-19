@@ -598,6 +598,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.34 | 2026-06-19 | The AI agent display chain collapsed to a single canonical field: `aiDisplayAppName` reads only `lastAIProvider`, and the process-tree subscription writes through to it on every live detection, so the tab logo stays correct across detection, exit, and restore without a four-rung fallback |
 | 0.5.33 | 2026-06-19 | The AI agent logo on a restored tab now stays legible against the dark tab background when the AI process has exited, instead of fading to a near-invisible 0.35 opacity |
 | 0.5.32 | 2026-04-04 | App termination now reuses a recent cached multi-window snapshot instead of re-exporting every visible tab during quit, reducing synchronous shutdown stalls and beachball risk |
 | 0.5.31 | 2026-04-04 | Ambiguous same-repo Codex save-time resolution now preserves a tab's explicit session metadata instead of clearing it, so restored tabs can keep their last-known resume command |

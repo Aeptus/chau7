@@ -319,27 +319,19 @@ final class TerminalSessionModel {
     @ObservationIgnored private var liveAgentSubscription: ProcessTreeSnapshotService.Subscription?
 
     /// Effective app name for UI branding and diagnostics.
-    /// Prefers the live process-tree signal. Falls back to `activeAppName` (set by
-    /// command/output detection) and finally to persisted provider metadata. Each
-    /// layer is a weaker guess — the live signal is always authoritative when present.
+    ///
+    /// Single source of truth: `lastAIProvider`. Every detection path
+    /// (live process tree, command match, output match, history adoption,
+    /// restore) writes through to this field, so a single read is always
+    /// the current answer. Live vs. not-running distinction is the
+    /// `isAIRunning` predicate, not which field gets read.
+    ///
+    /// The previous four-rung fallback chain (`liveAgentName → activeAppName
+    /// → lastDetectedAppName → lastAIProvider`) was the accumulated scar
+    /// of each detection write path forgetting to update one of the
+    /// others. Closing the writer holes makes the readers trivial.
     var aiDisplayAppName: String? {
-        if let live = liveAgentName?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !live.isEmpty {
-            return live
-        }
-        if let active = activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !active.isEmpty {
-            return active
-        }
-        // Persistent "we saw this tool here recently" memory. Set in lockstep
-        // with `lastAIProvider` by `updateLastDetectedApp`, but keep the fallback
-        // explicit so a future code path that clears one but not the other
-        // doesn't silently strip the logo.
-        if let detected = lastDetectedAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !detected.isEmpty {
-            return detected
-        }
-        return Self.displayName(fromProvider: lastAIProvider)
+        Self.displayName(fromProvider: lastAIProvider)
     }
 
     var effectiveAIProvider: String? {
@@ -1395,6 +1387,15 @@ final class TerminalSessionModel {
             )
             if resolved != liveAgentName {
                 liveAgentName = resolved
+            }
+            // Write through to the canonical persisted field so a single
+            // read of `lastAIProvider` (used by `aiDisplayAppName`) is
+            // always current with the process tree. Only on a non-nil
+            // resolve — the process exiting is signalled by liveAgentName
+            // going nil, but we WANT the persisted provider to survive
+            // process exit so the icon doesn't strip itself.
+            if let resolved {
+                updateLastDetectedApp(resolved)
             }
         }
     }
