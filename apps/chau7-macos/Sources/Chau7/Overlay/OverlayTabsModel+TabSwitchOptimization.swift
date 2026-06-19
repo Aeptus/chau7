@@ -832,6 +832,18 @@ extension OverlayTabsModel {
         )
         _ = refreshSelectedTabInPlaceIfPossible(reason: "select_tab")
         focusSelected()
+        // Cold-boot race: the first selected tab's restore queues a resume
+        // prefill before the Rust view attaches and before the shell emits
+        // OSC 133. If the shell takes longer than the eager-retry window to
+        // settle, the prefill sits queued silently until something kicks
+        // `flushPendingPrefillInputIfReady` again. Tab activation is a
+        // natural kick — the user just looked at the tab — so re-drain
+        // every pane's pending prefill here.
+        if let selectedTab = tabs.first(where: { $0.id == id }) {
+            for (_, session) in selectedTab.splitController.terminalSessions {
+                session.flushPendingPrefillInputIfReady()
+            }
+        }
         updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()

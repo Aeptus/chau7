@@ -598,6 +598,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.37 | 2026-06-19 | Selecting a tab now drains any queued resume prefill on that tab's terminal sessions, so a `claude --resume` / `codex resume` that was waiting on a cold-boot shell appears the moment the user looks at the tab |
 | 0.5.36 | 2026-06-19 | Resume prefill queued by restore now falls back from the eager 0.3-3s retry backoff to a 5s heartbeat after retry 20 instead of silently abandoning the pending text, so a cold-boot tab whose shell takes longer than ~30s to emit OSC 133 still gets its `claude --resume` / `codex resume` inserted once the prompt arrives |
 | 0.5.35 | 2026-06-19 | Restore-time `reResolveResumeCommand` refuses to fabricate identity from cwd alone when the saved pane has no provider, session id, or command — and dedups its on-disk candidate against session ids already claimed by sibling tabs in the same restore set — so two tabs sharing a directory never come back with the same `claude --resume <id>` |
 | 0.5.34 | 2026-06-19 | The AI agent display chain collapsed to a single canonical field: `aiDisplayAppName` reads only `lastAIProvider`, and the process-tree subscription writes through to it on every live detection, so the tab logo stays correct across detection, exit, and restore without a four-rung fallback |
