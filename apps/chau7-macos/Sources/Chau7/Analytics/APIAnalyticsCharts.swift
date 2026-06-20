@@ -268,9 +268,7 @@ struct ModelBreakdownTable: View {
     }
 
     private func formatTokens(_ count: Int) -> String {
-        if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
-        if count >= 1000 { return String(format: "%.1fK", Double(count) / 1000) }
-        return "\(count)"
+        CountFormat.abbreviated(count)
     }
 }
 
@@ -362,12 +360,7 @@ struct RecentCallsTable: View {
 // MARK: - Provider Helpers
 
 func providerColor(_ name: String) -> Color {
-    switch name.lowercased() {
-    case "anthropic": return .purple
-    case "openai": return .green
-    case "gemini", "google": return .blue
-    default: return .gray
-    }
+    ProviderColors.color(for: name)
 }
 
 func providerIcon(_ name: String) -> String {
