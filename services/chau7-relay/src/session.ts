@@ -93,6 +93,9 @@ export class SessionDO {
   private readonly env: Env;
   private macSocket?: WebSocket;
   private iosSocket?: WebSocket;
+  /// Cached APNs provider JWT — identical across all registrations in this DO,
+  /// valid up to 1h; refreshed at 50min to avoid TooManyProviderTokenUpdates.
+  private cachedAPNSToken?: { token: string; expiresAt: number };
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -308,7 +311,7 @@ export class SessionDO {
       registration.pushEnvironment === 'production'
         ? 'https://api.push.apple.com'
         : 'https://api.sandbox.push.apple.com';
-    const authToken = await this.createAPNSToken(APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY);
+    const authToken = await this.getAPNSToken(APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY);
     const body = {
       aps: {
         alert: {
@@ -349,6 +352,20 @@ export class SessionDO {
       );
     }
     return response.status;
+  }
+
+  /// Returns a cached APNs provider JWT, minting a fresh one only when the
+  /// cache is empty or near expiry. The signing inputs (team/key) are identical
+  /// for every registration in this DO, so this collapses the per-registration,
+  /// per-notify ECDSA signing into one signature per ~50 minutes.
+  private async getAPNSToken(teamID: string, keyID: string, privateKey: string): Promise<string> {
+    const now = Date.now();
+    if (this.cachedAPNSToken && this.cachedAPNSToken.expiresAt > now) {
+      return this.cachedAPNSToken.token;
+    }
+    const token = await this.createAPNSToken(teamID, keyID, privateKey);
+    this.cachedAPNSToken = { token, expiresAt: now + 50 * 60 * 1000 };
+    return token;
   }
 
   private async createAPNSToken(
