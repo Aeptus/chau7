@@ -357,8 +357,8 @@ enum RemoteNotificationID {
 /// actor, so a single shared instance avoids per-frame/per-event allocation on
 /// the hot paths (frame decode, telemetry, outbound payloads).
 enum RemoteJSON {
-    nonisolated(unsafe) static let encoder = JSONEncoder()
-    nonisolated(unsafe) static let decoder = JSONDecoder()
+    static let encoder = JSONEncoder()
+    static let decoder = JSONDecoder()
 }
 
 enum CryptoUtils {
