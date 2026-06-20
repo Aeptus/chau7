@@ -48,6 +48,10 @@ final class ProxyIPCServer {
             .appendingPathComponent("proxy.sock")
     }
 
+    /// Reused across api_call events — ISO8601DateFormatter init is expensive
+    /// and this runs on the IPC read path for every proxied LLM request.
+    private static let apiCallTimestampFormatter = ISO8601DateFormatter()
+
     // MARK: - Initialization
 
     private init() {}
@@ -302,7 +306,7 @@ final class ProxyIPCServer {
             statusCode: data.statusCode,
             costUSD: data.costUSD,
             pricingVersion: data.pricingVersion,
-            timestamp: ISO8601DateFormatter().date(from: data.timestamp) ?? Date(),
+            timestamp: Self.apiCallTimestampFormatter.date(from: data.timestamp) ?? Date(),
             errorMessage: data.errorMessage.isEmpty ? nil : data.errorMessage,
             projectPath: data.projectPath
         )
