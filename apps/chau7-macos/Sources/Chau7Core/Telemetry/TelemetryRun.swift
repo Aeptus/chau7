@@ -127,6 +127,41 @@ public struct TelemetryRun: Codable, Identifiable, Sendable {
     }
 }
 
+public extension TelemetryRun {
+    /// Copies sanitized content fields (model, token totals, cost, source/state,
+    /// transcript ref, turn count) onto the run. When the token state is invalid,
+    /// sets `errorMessage` to `invalidMessage`; when valid and `clearOnValid` is
+    /// true, clears `errorMessage` iff it currently equals `invalidMessage` (so a
+    /// re-validating repair removes its own stale marker). Shared by
+    /// TelemetryRecorder.extractCompletedRunContent and
+    /// TelemetryRepairService.rebuildRun.
+    mutating func applyContent(
+        _ content: ExtractedRunContent,
+        invalidMessage: String,
+        clearOnValid: Bool
+    ) {
+        model = content.model ?? model
+        totalInputTokens = content.totalInputTokens
+        totalCacheCreationInputTokens = content.totalCacheCreationInputTokens
+        totalCacheReadInputTokens = content.totalCacheReadInputTokens
+        totalCachedInputTokens = content.totalCachedInputTokens
+        totalOutputTokens = content.totalOutputTokens
+        totalReasoningOutputTokens = content.totalReasoningOutputTokens
+        costUSD = content.costUSD
+        tokenUsageSource = content.tokenUsageSource
+        tokenUsageState = content.tokenUsageState
+        costSource = content.costSource
+        costState = content.costState
+        rawTranscriptRef = content.rawTranscriptRef
+        turnCount = content.turns.count
+        if content.tokenUsageState == .invalid {
+            errorMessage = invalidMessage
+        } else if clearOnValid, errorMessage == invalidMessage {
+            errorMessage = nil
+        }
+    }
+}
+
 /// Filter criteria for querying runs.
 public struct TelemetryRunFilter: Sendable {
     public var sessionID: String?

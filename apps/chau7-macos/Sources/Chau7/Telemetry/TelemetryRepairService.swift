@@ -133,25 +133,11 @@ final class TelemetryRepairService {
         }
 
         let repaired = normalized.content
-        run.model = repaired.model ?? run.model
-        run.totalInputTokens = repaired.totalInputTokens
-        run.totalCacheCreationInputTokens = repaired.totalCacheCreationInputTokens
-        run.totalCacheReadInputTokens = repaired.totalCacheReadInputTokens
-        run.totalCachedInputTokens = repaired.totalCachedInputTokens
-        run.totalOutputTokens = repaired.totalOutputTokens
-        run.totalReasoningOutputTokens = repaired.totalReasoningOutputTokens
-        run.costUSD = repaired.costUSD
-        run.tokenUsageSource = repaired.tokenUsageSource
-        run.tokenUsageState = repaired.tokenUsageState
-        run.costSource = repaired.costSource
-        run.costState = repaired.costState
-        run.rawTranscriptRef = repaired.rawTranscriptRef
-        run.turnCount = repaired.turns.count
-        if repaired.tokenUsageState == .invalid {
-            run.errorMessage = "historical transcript repair invalidated implausible token metrics"
-        } else if run.errorMessage == "historical transcript repair invalidated implausible token metrics" {
-            run.errorMessage = nil
-        }
+        run.applyContent(
+            repaired,
+            invalidMessage: "historical transcript repair invalidated implausible token metrics",
+            clearOnValid: true
+        )
 
         store.rewriteCompletedRun(run, turns: repaired.turns, toolCalls: repaired.toolCalls)
         return repaired.tokenUsageState == .invalid ? .invalidated : .rebuilt
