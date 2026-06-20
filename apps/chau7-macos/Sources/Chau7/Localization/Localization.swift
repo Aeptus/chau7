@@ -238,112 +238,158 @@ extension View {
 /// Provides locale-aware formatters that respect the current language setting.
 enum LocalizedFormatters {
 
+    // MARK: - Caching
+
+    // DateFormatter/NumberFormatter creation is expensive and these are read on
+    // render paths (e.g. shortTime per terminal line). Cache one instance per
+    // type, rebuilding only when the language changes. Access is main-thread only.
+    private static var cachedLocaleID: String?
+    private static var formatterCache: [String: Any] = [:]
+
+    private static func cached<T>(_ key: String, _ build: () -> T) -> T {
+        let localeID = LocalizationManager.shared.currentLanguage.locale.identifier
+        if cachedLocaleID != localeID {
+            formatterCache.removeAll()
+            cachedLocaleID = localeID
+        }
+        if let existing = formatterCache[key] as? T {
+            return existing
+        }
+        let made = build()
+        formatterCache[key] = made
+        return made
+    }
+
     // MARK: - Date Formatters
 
     /// Short date format localized to current language (e.g., "1/12/24" or "12/1/24")
     static var shortDate: DateFormatter {
-        let f = DateFormatter()
-        f.locale = LocalizationManager.shared.currentLanguage.locale
-        f.dateStyle = .short
-        f.timeStyle = .none
-        return f
+        cached("shortDate") {
+            let f = DateFormatter()
+            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.dateStyle = .short
+            f.timeStyle = .none
+            return f
+        }
     }
 
     /// Medium date format localized (e.g., "Jan 12, 2024" or "12 janv. 2024")
     static var mediumDate: DateFormatter {
-        let f = DateFormatter()
-        f.locale = LocalizationManager.shared.currentLanguage.locale
-        f.dateStyle = .medium
-        f.timeStyle = .none
-        return f
+        cached("mediumDate") {
+            let f = DateFormatter()
+            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.dateStyle = .medium
+            f.timeStyle = .none
+            return f
+        }
     }
 
     /// Long date format localized (e.g., "January 12, 2024")
     static var longDate: DateFormatter {
-        let f = DateFormatter()
-        f.locale = LocalizationManager.shared.currentLanguage.locale
-        f.dateStyle = .long
-        f.timeStyle = .none
-        return f
+        cached("longDate") {
+            let f = DateFormatter()
+            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.dateStyle = .long
+            f.timeStyle = .none
+            return f
+        }
     }
 
     /// Short time format localized (e.g., "3:45 PM" or "15:45")
     static var shortTime: DateFormatter {
-        let f = DateFormatter()
-        f.locale = LocalizationManager.shared.currentLanguage.locale
-        f.dateStyle = .none
-        f.timeStyle = .short
-        return f
+        cached("shortTime") {
+            let f = DateFormatter()
+            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.dateStyle = .none
+            f.timeStyle = .short
+            return f
+        }
     }
 
     /// Medium time format localized (e.g., "3:45:30 PM")
     static var mediumTime: DateFormatter {
-        let f = DateFormatter()
-        f.locale = LocalizationManager.shared.currentLanguage.locale
-        f.dateStyle = .none
-        f.timeStyle = .medium
-        return f
+        cached("mediumTime") {
+            let f = DateFormatter()
+            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.dateStyle = .none
+            f.timeStyle = .medium
+            return f
+        }
     }
 
     /// Date and time format localized
     static var dateTime: DateFormatter {
-        let f = DateFormatter()
-        f.locale = LocalizationManager.shared.currentLanguage.locale
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
+        cached("dateTime") {
+            let f = DateFormatter()
+            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.dateStyle = .medium
+            f.timeStyle = .short
+            return f
+        }
     }
 
     /// Relative date formatter (e.g., "yesterday", "2 days ago")
     static var relative: RelativeDateTimeFormatter {
-        let f = RelativeDateTimeFormatter()
-        f.locale = LocalizationManager.shared.currentLanguage.locale
-        f.unitsStyle = .abbreviated
-        return f
+        cached("relative") {
+            let f = RelativeDateTimeFormatter()
+            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.unitsStyle = .abbreviated
+            return f
+        }
     }
 
     // MARK: - Number Formatters
 
     /// Decimal number formatter localized (respects decimal separator)
     static var decimal: NumberFormatter {
-        let f = NumberFormatter()
-        f.locale = LocalizationManager.shared.currentLanguage.locale
-        f.numberStyle = .decimal
-        return f
+        cached("decimal") {
+            let f = NumberFormatter()
+            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.numberStyle = .decimal
+            return f
+        }
     }
 
     /// Percentage formatter localized
     static var percent: NumberFormatter {
-        let f = NumberFormatter()
-        f.locale = LocalizationManager.shared.currentLanguage.locale
-        f.numberStyle = .percent
-        f.maximumFractionDigits = 1
-        return f
+        cached("percent") {
+            let f = NumberFormatter()
+            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.numberStyle = .percent
+            f.maximumFractionDigits = 1
+            return f
+        }
     }
 
     /// File size formatter (e.g., "1.5 MB", "2 Ko")
     static var fileSize: ByteCountFormatter {
-        let f = ByteCountFormatter()
-        f.countStyle = .file
-        return f
+        cached("fileSize") {
+            let f = ByteCountFormatter()
+            f.countStyle = .file
+            return f
+        }
     }
 
     /// Currency formatter for USD amounts, localized (e.g., "$1.23" or "1,23 $US")
     static var currency: NumberFormatter {
-        let f = NumberFormatter()
-        f.locale = LocalizationManager.shared.currentLanguage.locale
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
-        return f
+        cached("currency") {
+            let f = NumberFormatter()
+            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.numberStyle = .currency
+            f.currencyCode = "USD"
+            return f
+        }
     }
 
     /// Integer formatter with grouping (e.g., "1,234" or "1 234")
     static var integer: NumberFormatter {
-        let f = NumberFormatter()
-        f.locale = LocalizationManager.shared.currentLanguage.locale
-        f.numberStyle = .decimal
-        f.maximumFractionDigits = 0
-        return f
+        cached("integer") {
+            let f = NumberFormatter()
+            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.numberStyle = .decimal
+            f.maximumFractionDigits = 0
+            return f
+        }
     }
 
     // MARK: - Convenience Methods
