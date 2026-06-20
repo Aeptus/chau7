@@ -55,7 +55,6 @@ async function runPackageBin(context, packageDir, bin, args) {
 async function runShellScript(context, script, args = [], options = {}) {
   return context.exec(script, args, {
     cwd: ".",
-    stdin: options.stdin,
     env: options.env,
   });
 }
