@@ -22,4 +22,3 @@ MCP-managed AI agent sessions: create, monitor, steer.
 
 - Two-layer auto-approve: CLI flags (Layer 1) + runtime auto-respond (Layer 2)
 - `SessionConfig.autoApprove` flows to backend launch flags AND runtime permission handling
-- Events from Claude Code hooks are parsed by `ClaudeCodeBackend.trigger(from:)`
