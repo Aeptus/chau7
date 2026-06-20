@@ -716,8 +716,14 @@ final class RemoteClient {
         applyPendingInteractivePrompts(payload.prompts)
     }
 
+    /// Only ingest terminal frames when foregrounded and full-streaming is
+    /// selected. Single source for the ingest guards below.
+    private var isStreamingTerminalOutput: Bool {
+        currentAppState == .foreground && desiredStreamMode == .full
+    }
+
     private func appendOutput(_ data: Data, tabID: UInt32) {
-        guard currentAppState == .foreground, desiredStreamMode == .full else { return }
+        guard isStreamingTerminalOutput else { return }
         let signpostID = OSSignpostID(log: perfLog)
         os_signpost(
             .begin,
@@ -748,7 +754,7 @@ final class RemoteClient {
     }
 
     private func storeSnapshot(_ data: Data, tabID: UInt32) {
-        guard currentAppState == .foreground, desiredStreamMode == .full else { return }
+        guard isStreamingTerminalOutput else { return }
         let resolvedTabID = resolvedTabID(for: tabID)
         outputStore.replaceSnapshot(data, for: resolvedTabID)
         terminalRenderer.replaceSnapshot(data, for: resolvedTabID)
@@ -758,7 +764,7 @@ final class RemoteClient {
     }
 
     private func storeGridSnapshot(_ data: Data, tabID: UInt32) {
-        guard currentAppState == .foreground, desiredStreamMode == .full else { return }
+        guard isStreamingTerminalOutput else { return }
         let resolvedTabID = resolvedTabID(for: tabID)
         guard let renderState = RemoteTerminalRenderStateDecoder.decodeGridSnapshot(data) else {
             return
@@ -1409,24 +1415,7 @@ final class RemoteClient {
 
         for payload in payloads where !previousApprovalIDs.contains(payload.requestID) {
             guard shouldScheduleLocalApprovalNotification else { continue }
-            let content = UNMutableNotificationContent()
-            let isProtectedRemoteAction = payload.flaggedCommand != payload.command
-            content.title = isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
-            content.body = approvalNotificationBody(for: payload)
-            content.sound = .default
-            content.interruptionLevel = .timeSensitive
-            content.relevanceScore = 1
-            content.categoryIdentifier = "MCP_APPROVAL"
-            content.userInfo = [
-                "request_id": payload.requestID,
-                "open_approvals": true
-            ]
-            let request = UNNotificationRequest(
-                identifier: payload.requestID,
-                content: content,
-                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
-            )
-            UNUserNotificationCenter.current().add(request)
+            scheduleApprovalNotification(for: payload)
         }
     }
 
@@ -1443,6 +1432,13 @@ final class RemoteClient {
         }
 
         guard isNewApproval, shouldScheduleLocalApprovalNotification else { return }
+        scheduleApprovalNotification(for: payload)
+    }
+
+    /// Schedules the local "approval needed" notification for a payload. Shared
+    /// by applyPendingApprovals and upsertPendingApproval so the content (category,
+    /// interruption level, etc.) can't drift between the two paths.
+    private func scheduleApprovalNotification(for payload: ApprovalRequestPayload) {
         let content = UNMutableNotificationContent()
         let isProtectedRemoteAction = payload.flaggedCommand != payload.command
         content.title = isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
@@ -1566,7 +1562,7 @@ final class RemoteClient {
     }
 
     private func flushPendingOutput(for tabID: UInt32? = nil) {
-        guard currentAppState == .foreground, desiredStreamMode == .full else {
+        guard isStreamingTerminalOutput else {
             if tabID == nil {
                 outputFlushTask?.cancel()
                 outputFlushTask = nil
