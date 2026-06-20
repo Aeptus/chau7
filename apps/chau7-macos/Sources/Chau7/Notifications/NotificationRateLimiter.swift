@@ -28,6 +28,11 @@ final class NotificationRateLimiter {
     private var buckets: [String: Bucket] = [:]
     var config: Config
 
+    /// Bucket-count above which `checkAndConsume` opportunistically prunes stale
+    /// entries. Keys embed per-session/tab/CWD identity (and fall back to event
+    /// UUIDs), so without pruning the map would grow unbounded.
+    private static let pruneThreshold = 256
+
     init(config: Config = .default) {
         self.config = config
     }
@@ -36,6 +41,7 @@ final class NotificationRateLimiter {
     /// Returns `true` if the notification should proceed.
     func checkAndConsume(triggerId: String) -> Bool {
         let now = Date()
+        pruneStaleBuckets(now: now)
         var bucket = buckets[triggerId] ?? Bucket(
             tokens: Double(config.maxPerMinute + config.burstAllowance),
             lastRefill: now,
@@ -67,6 +73,21 @@ final class NotificationRateLimiter {
         bucket.lastFired = now
         buckets[triggerId] = bucket
         return true
+    }
+
+    /// Drops buckets that have fully refilled and are past cooldown — such a bucket
+    /// is indistinguishable from a fresh one, so removing it frees memory without
+    /// changing behavior. Only runs once the map exceeds `pruneThreshold`, bounding cost.
+    private func pruneStaleBuckets(now: Date) {
+        guard buckets.count > Self.pruneThreshold else { return }
+        let maxTokens = Double(config.maxPerMinute + config.burstAllowance)
+        let refillRate = Double(config.maxPerMinute) / 60.0
+        let fullRefillWindow = refillRate > 0 ? maxTokens / refillRate : 0
+        buckets = buckets.filter { _, bucket in
+            let stillRefilling = now.timeIntervalSince(bucket.lastRefill) < fullRefillWindow
+            let inCooldown = bucket.lastFired.map { now.timeIntervalSince($0) < config.cooldownSeconds } ?? false
+            return stillRefilling || inCooldown
+        }
     }
 
     /// Reset all buckets (e.g., on settings change).
