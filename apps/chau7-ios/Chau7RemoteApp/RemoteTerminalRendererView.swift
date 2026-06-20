@@ -29,7 +29,7 @@ struct RemoteTerminalRendererView: View {
             }
         }
         .onAppear {
-            client.terminalRenderer.setActiveTab(client.activeTabID, fallbackText: client.outputText)
+            client.terminalRenderer.setActiveTab(client.activeTabID)
         }
     }
 }

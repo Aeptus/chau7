@@ -298,7 +298,7 @@ final class RemoteClient {
         activeTabID = tabID
         flushPendingOutput(for: tabID)
         refreshVisibleOutput(prioritizeStrippedOutput: true)
-        terminalRenderer.setActiveTab(tabID, fallbackText: outputText)
+        terminalRenderer.setActiveTab(tabID)
         emitTelemetry(type: .tabSwitched, tabID: tabID, tabTitle: tabTitle(for: tabID))
         sendJSON(TabSwitchPayload(tabID: tabID), type: .tabSwitch)
     }
@@ -683,7 +683,7 @@ final class RemoteClient {
         terminalRenderer.retainVisibleTabs(visibleTabIDs)
         pendingInteractivePrompts.removeAll { !visibleTabIDs.contains($0.tabID) }
         refreshVisibleOutput(prioritizeStrippedOutput: true)
-        terminalRenderer.setActiveTab(activeTabID, fallbackText: outputText)
+        terminalRenderer.setActiveTab(activeTabID)
     }
 
     private func handleActivityState(_ data: Data) {
