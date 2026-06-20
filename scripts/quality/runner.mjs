@@ -21,7 +21,6 @@ import {
   sha256,
   spawnCapture,
   stableJson,
-  toolVersion,
 } from "./helpers.mjs";
 import {
   acceptedAttestation,
