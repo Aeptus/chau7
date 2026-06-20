@@ -440,6 +440,9 @@ struct SplitDivider: View {
 
     @State private var isDragging = false
     @State private var dragStartRatio: CGFloat = 0.5
+    /// Tracks whether we pushed a resize cursor, so push/pop stay balanced
+    /// even if the divider is torn down (closePane/promote) while hovered.
+    @State private var isHovered = false
 
     var body: some View {
         Rectangle()
@@ -448,13 +451,22 @@ struct SplitDivider: View {
             .contentShape(Rectangle())
             .onHover { hovering in
                 if hovering {
+                    guard !isHovered else { return }
                     if isVertical {
                         NSCursor.resizeLeftRight.push()
                     } else {
                         NSCursor.resizeUpDown.push()
                     }
-                } else {
+                    isHovered = true
+                } else if isHovered {
                     NSCursor.pop()
+                    isHovered = false
+                }
+            }
+            .onDisappear {
+                if isHovered {
+                    NSCursor.pop()
+                    isHovered = false
                 }
             }
             .gesture(
