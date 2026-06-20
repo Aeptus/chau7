@@ -68,6 +68,7 @@ enum EnvVars {
     static let clearOnLaunch = "CHAU7_CLEAR_ON_LAUNCH"
     static let inputDiagnostics = "CHAU7_INPUT_DIAGNOSTICS"
     static let renderRowDiagnostics = "CHAU7_RENDER_ROW_DIAGNOSTICS"
+    static let memoryDiagnostics = "CHAU7_MEMORY_DIAGNOSTICS"
 
     // Debug output capture
     static let ptyDumpMaxBytes = "CHAU7_PTY_DUMP_MAX_BYTES"

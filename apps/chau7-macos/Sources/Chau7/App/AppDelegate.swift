@@ -1620,13 +1620,14 @@ private final class OverlayBlurView: NSVisualEffectView {
             Log.info("Moved tab \(tabID) from window \(fromWindowIndex) to \(toWindowIndex)")
         }
 
-        // Schedule delayed samples across the window during which the
-        // 50GB spike was observed (~52s after drag end in historical logs).
-        // This tells us whether the leak happens inside moveTab's call chain
-        // or later during async lifecycle / render fanout.
-        for delay in [0.1, 1.0, 5.0, 15.0, 30.0, 50.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                Self.logRSSSample("moveTab[\(dragID)] +\(delay)s")
+        // Schedule delayed samples across the window during which the 50GB spike
+        // was observed (~52s after drag end in historical logs) — only when memory
+        // diagnostics are enabled, so normal drags don't keep work scheduled 50s out.
+        if EnvVars.isEnabled(EnvVars.memoryDiagnostics) {
+            for delay in [0.1, 1.0, 5.0, 15.0, 30.0, 50.0] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    Self.logRSSSample("moveTab[\(dragID)] +\(delay)s")
+                }
             }
         }
     }
@@ -2963,10 +2964,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         return Int(info.resident_size / 1024 / 1024)
     }
 
-    /// Log RSS as an INFO line tagged `rssSample: …`. Always logged (not gated
-    /// by a diagnostic env var) because this is used for an active leak
-    /// investigation — remove once the cross-window-drag leak is root-caused.
+    /// Log RSS as an INFO line tagged `rssSample: …`. Gated behind the
+    /// `CHAU7_MEMORY_DIAGNOSTICS` env flag (off by default) so it costs nothing
+    /// on the hot path; enable it when investigating the cross-window-drag leak.
     fileprivate static func logRSSSample(_ label: String) {
+        guard EnvVars.isEnabled(EnvVars.memoryDiagnostics) else { return }
         if let mb = currentResidentMB() {
             Log.info("rssSample: \(mb)MB — \(label)")
         }
