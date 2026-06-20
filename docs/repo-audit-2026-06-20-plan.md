@@ -97,9 +97,11 @@ All 9 done & committed (29, 85, 57, 56, 61, 2, 37, 69, 95). Each build/test-veri
 - **69** relay mints APNs JWT per notification — cache (~50 min TTL)
 - **95** Rust `ansi_sgr_sequence` allocates a `Vec<String>` per style transition — write into reusable buffer
 
-## Phase 5 — Cross-cutting consolidations (build the shared helper once)  ◑ IN PROGRESS (6/22, 2026-06-20)
-Done: 84 (Rust compact_path), 93 (feed private), 54 (tab_* dispatch), 62 (snippet-key predicate), 36 (ProcessMemory), 10 (SessionFilesTracker collapse).
-Remaining (16): 51 (Unix socket helper), 60+32 (provider color/classify — resolve orange/purple drift), 58 (count formatter), 25 (ExecutionReport), 31 (content→run), 55 (ProxyManager HTTP), 72 (relay forwardToSession), 47 (bug-report generators — partly done via #46), 40 (migration wizard), 41 (agent backend tails), 66+68 (iOS), 92 (OSC7 dedup — HIGH RISK hot path, defer/careful), 88 (DirtyRowTracker collapse — entangled with #89), 101 (PTY/CLI scripts), 77 (issues DO over-validation), 11 (Chau7OverlayView overlay extraction — also Phase 8 warm-up).
+## Phase 5 — Cross-cutting consolidations (build the shared helper once)  ◑ IN PROGRESS (11/~22, 2026-06-20)
+Done: 84 (Rust compact_path), 93 (feed private), 54 (tab_* dispatch), 62 (snippet-key predicate), 36 (ProcessMemory), 10 (SessionFilesTracker collapse), 72 (relay forwardToSession), 66+68 (iOS approval/stream guards), 60 (provider colors — resolved orange/purple drift), 58 (count abbreviation).
+**Skipped (won't-fix):** 77 — the audit itself flags it as fighting a reasonable defensive pattern; the DO's path/method validation is correct for an externally-addressable Durable Object (esp. after the #75 security hardening).
+Remaining (12): 51 (Unix socket helper — promote ScriptingAPI's makeUnixSockaddr, kill MCPServerManager's 104-byte strncpy variant), 32 (provider classification — ProviderFamily.classify; CAUTION subsets differ per call site), 25 (ExecutionReport boilerplate), 31 (content→run mapping), 55 (ProxyManager requestJSON/postJSON), 47 (bug-report generators — DebugContext correlation already gone via #46), 40 (migration wizard save-apply-restore), 41 (agent backend launchCommand/formatPromptInput tails), 92 (OSC7 dedup — HIGH RISK hot path), 88 (DirtyRowTracker collapse — entangled with shipped #89), 101 (PTY/CLI wrapper scripts), 11 (Chau7OverlayView overlay extraction — also Phase 8 warm-up).
+Note: macOS test gate now ~8min under system load; MonitorLifecycle timing tests (4s waits) flake under that load — pass in isolation (gate on "no NEW failures").
 
 This is the highest-leverage phase. Each helper subsumes multiple per-area duplicate findings; resolve the *drift* (orange/purple, count thresholds) as part of consolidating.
 - **36** `ProcessMemory.residentBytes()` — one mach reader (replaces 3 copies)
