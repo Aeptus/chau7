@@ -68,7 +68,8 @@ These now become real feature work, not deletions — each promises something th
 
 > **Scope note:** wiring (vs. removing) turns Phase 2 from ~hours into a meaningful feature block. 17 should probably be staged after the low-risk phases so a broken decoder can't block everything else.
 
-## Phase 3 — Correctness fixes (bugs)
+## Phase 3 — Correctness fixes (bugs)  ✅ COMPLETE (2026-06-20)
+All 12 fixed & committed (63, 70, 73, 52, 8, 38, 6, 24, 82, 99, 89, 75). Each build/test-verified per toolchain. #75 semantics decided by user: **count only successful creations**. #63's regression test deferred to #67 (iOS test target). #38 required confirming the adoption path doesn't hold the lock (it doesn't) before guarding — the audit's "guard all 4" was safe only after that check.
 Highest user-impact. Each gets a regression test where the surface allows.
 - **63 (HIGH)** iOS double output injection corrupting the grid — single source of truth + test
 - **75** chau7-issues rate-limit consumed before issue creation (lockout on transient GitHub 5xx) — record after success
