@@ -889,6 +889,11 @@ impl Chau7Terminal {
         self.cols.store(cols, Ordering::Relaxed);
         self.rows.store(rows, Ordering::Relaxed);
 
+        // Keep the dirty-row tracker's height in sync with the resize, otherwise
+        // its row count stays frozen at the creation height and dirty_count()
+        // (DebugState.dirty_row_count) reports the wrong value.
+        self.dirty_rows.set_rows(rows as usize);
+
         // Resize the PTY without taking the pty_handle mutex: send_bytes and
         // the PtyWrite path hold that mutex during a *blocking* write_all
         // when the child stops reading stdin — resize is called synchronously
