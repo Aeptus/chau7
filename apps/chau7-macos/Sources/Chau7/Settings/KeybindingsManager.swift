@@ -207,7 +207,7 @@ final class KeybindingsManager {
     static let shared = KeybindingsManager()
 
     private(set) var activeBindings: [KeyBinding] = []
-    private var shortcutsSignature = ""
+    private var lastShortcutsGeneration = -1
 
     // MARK: - Initialization
 
@@ -216,19 +216,14 @@ final class KeybindingsManager {
     }
 
     private func refreshBindings(force: Bool = false) {
-        let shortcuts = FeatureSettings.shared.customShortcuts
-        let signature = shortcutsSignature(for: shortcuts)
-        guard force || signature != shortcutsSignature else { return }
+        // Per-key-event hot path: a cheap Int generation compare avoids
+        // rebuilding/joining a signature string on every keystroke.
+        let generation = FeatureSettings.shared.customShortcutsGeneration
+        guard force || generation != lastShortcutsGeneration else { return }
+        lastShortcutsGeneration = generation
 
-        shortcutsSignature = signature
-        activeBindings = shortcuts.compactMap { binding(from: $0) }
+        activeBindings = FeatureSettings.shared.customShortcuts.compactMap { binding(from: $0) }
         Log.info("F11: Loaded \(activeBindings.count) keybindings from settings.")
-    }
-
-    private func shortcutsSignature(for shortcuts: [KeyboardShortcut]) -> String {
-        shortcuts.map {
-            "\($0.action)|\($0.key.lowercased())|\($0.modifiers.sorted().joined(separator: ","))"
-        }.joined(separator: ";")
     }
 
     private func binding(from shortcut: KeyboardShortcut) -> KeyBinding? {

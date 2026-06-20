@@ -1092,11 +1092,17 @@ final class FeatureSettings {
 
     var customShortcuts: [KeyboardShortcut] {
         didSet {
+            customShortcutsGeneration &+= 1
             if let data = JSONOperations.encode(customShortcuts, context: "customShortcuts") {
                 UserDefaults.standard.set(data, forKey: Keys.customShortcuts)
             }
         }
     }
+
+    /// Bumped whenever `customShortcuts` changes, so observers (KeybindingsManager)
+    /// can detect changes with a cheap Int compare per key event instead of
+    /// rebuilding and comparing a signature string.
+    private(set) var customShortcutsGeneration = 0
 
     var isShortcutHelperHintEnabled: Bool {
         didSet { UserDefaults.standard.set(isShortcutHelperHintEnabled, forKey: Keys.shortcutHelperHint) }
