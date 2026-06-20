@@ -41,8 +41,8 @@ Independent, zero-reference removals — biggest count, lowest risk. Batch by la
 
 Gate: each language's build + tests stay green; deleted symbols confirmed callerless by grep at deletion time.
 
-## Phase 1 status (updated 2026-06-20): 32 / 35 committed on `audit/remediation`
-Done: 4,7,9,12,13,14,15,16,22,23,26,30,34,35,42,43,48,50,53,59,64,65,74,78,79,83,86,90,91,96,97,98 — each build+test verified, granular commit, gates green.
+## Phase 1 status (updated 2026-06-20): ✅ 35 / 35 COMPLETE on `audit/remediation`
+All dead-code findings committed (granular, build+test verified, gates green). The final 3 coupled refactors (#45 Chau7Error, #46 DebugContext, #49 LogEnhanced) were done with the analysis below — each kept its live core and was verified by the test gate (which caught a missed `BugReporter.activeContexts` read in #46 and would have caught more). Next: Phase 3 (correctness bugs) is the recommended follow-on.
 Audit imprecisions caught & corrected during the work: #50 (whole `Formatters` enum dead, not "keep iso8601" — that was a `DateFormatters.iso8601` substring match); #83 (`.display`→`path.display()`, `.enabled`→`TeeConfig.enabled` false positives); #96 (`ci_section` is internally used, only 4 helpers were ci-local-fast-unique); #48 (a 4th orphaned `StreamSelection` test the grep missed — caught by the test gate).
 
 ### Remaining 3 — intricate coupled refactors (analysis pre-done, deferred for a focused pass)
