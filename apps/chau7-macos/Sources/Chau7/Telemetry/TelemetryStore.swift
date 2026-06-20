@@ -1999,7 +1999,7 @@ final class TelemetryStore {
                 sql += " AND observed_at >= ?"
             }
             if metricKind != nil {
-                sql += after != nil ? " AND metric_kind = ?" : " AND metric_kind = ?"
+                sql += " AND metric_kind = ?"
             }
             sql += " ORDER BY observed_at ASC"
 
