@@ -41,6 +41,24 @@ Independent, zero-reference removals — biggest count, lowest risk. Batch by la
 
 Gate: each language's build + tests stay green; deleted symbols confirmed callerless by grep at deletion time.
 
+## Phase 1 status (updated 2026-06-20): 32 / 35 committed on `audit/remediation`
+Done: 4,7,9,12,13,14,15,16,22,23,26,30,34,35,42,43,48,50,53,59,64,65,74,78,79,83,86,90,91,96,97,98 — each build+test verified, granular commit, gates green.
+Audit imprecisions caught & corrected during the work: #50 (whole `Formatters` enum dead, not "keep iso8601" — that was a `DateFormatters.iso8601` substring match); #83 (`.display`→`path.display()`, `.enabled`→`TeeConfig.enabled` false positives); #96 (`ci_section` is internally used, only 4 helpers were ci-local-fast-unique); #48 (a 4th orphaned `StreamSelection` test the grep missed — caught by the test gate).
+
+### Remaining 3 — intricate coupled refactors (analysis pre-done, deferred for a focused pass)
+These are NOT deletions; each is a refactor of a core subsystem file where live code interleaves with dead code and the audit summary is imprecise. Hot paths with weak test coverage → do with fresh context + build/test gate.
+
+- **#49 LogEnhanced** (`Sources/Chau7/Logging/LogEnhanced.swift`):
+  - LIVE, keep: `LogEnhanced.info/warn/error/trace/log` (20+ callers), the `tab/render/recovery` extension, `LogCategory`, `LogEntry`, and **`PerfTracker.currentMemoryMB()`** (4 external callers: OverlayTabsModel+RestorePipeline:1361/1385, +Refresh:36, DebugConsoleView:1519).
+  - DEAD, remove: `LogCorrelation` class (0 external; but coupled — `log()` line 352 `?? LogCorrelation.shared.current` and `PerfTracker.init` line 171 must be edited); `PerfTracker` instance API (init/add/end/measure + props — keep only `currentMemoryMB`); `captureStateSnapshot` (404-427, leaf, uses PerfTracker.measure); `setEnabledCategories`/`enableStructuredOutput` setters (0 callers — the vars they set, `enabledCategories`@235 and `isStructuredOutput`@236, ARE read by `log()`, so change to `let` defaults or simplify the now-constant branches).
+  - Order: captureStateSnapshot → setters → strip PerfTracker to currentMemoryMB → remove LogCorrelation + fix log():352.
+- **#46 DebugContext** (`Sources/Chau7/Logging/DebugContext.swift`):
+  - LIVE, keep: `StateSnapshot` (139-338) and `BugReporter` (339+) — both in the same file.
+  - DEAD: `DebugContext` correlation class (17-137, 0 external) + `DebugAssert`. **Coupled to Phase-5 #47** (the two bug-report generators consolidation) — audit says DebugContext correlation dies *with* that consolidation. Do #46 and #47 together. Verify StateSnapshot/BugReporter don't reference DebugContext internally before removing.
+- **#45 Chau7Error** (`Sources/Chau7/Utilities/Chau7Error.swift`, 507 lines):
+  - LIVE, keep: `FileOperations` (186-298) and `JSONOperations` (299-360) helpers — heavily used; plus the 2 externally-thrown cases (`fileWriteFailed`, `configurationEncodeFailed`) and `errorDescription` for kept cases.
+  - DEAD (per audit): most of the 28 error cases, `recoverySuggestion`, `func logged()`, `InputValidation` enum, `RateLimiter`. **CAUTION:** error cases have INTERNAL consumers — `FileOperations`/`JSONOperations` (live) throw/return several cases, and `InputValidation` (being removed) uses the ssh* cases. Must trace which cases each LIVE helper still throws before trimming the enum, or `FileOperations` breaks. This is the riskiest of the three.
+
 ## Phase 2 — Wire up the four advertised-but-dead features  ⬆ *(decision: implement, not remove)*
 These now become real feature work, not deletions — each promises something the UI exposes, so we make it deliver. This is the largest scope-expansion vs. the audit's "remove" default; **17 in particular is a large, design-bearing piece** and likely wants its own mini-design pass.
 - **17** Sixel/Kitty graphics: implement intercepted-image decode → RGBA → `InlineImageView`, replacing the two "Phase 4 future" TODO log stubs in `RustTerminalView+Rendering.swift:184-193`. Likely Rust-side decode (or a Swift decoder) + Kitty protocol state management. *Largest item in the whole plan; flag for a design sub-step (decoder choice, memory/anchor handling, placement in the Metal render path).*
