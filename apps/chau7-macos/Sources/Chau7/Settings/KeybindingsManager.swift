@@ -9,33 +9,6 @@ struct KeyBinding: Equatable {
     let modifiers: NSEvent.ModifierFlags
     let action: KeyAction
 
-    /// Creates a KeyBinding from a string like "cmd+c", "ctrl+shift+t", etc.
-    static func parse(_ str: String, action: KeyAction) -> KeyBinding? {
-        let parts = str.lowercased().split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard !parts.isEmpty else { return nil }
-
-        var modifiers: NSEvent.ModifierFlags = []
-        var keyString: String?
-
-        for part in parts {
-            switch part {
-            case "ctrl", "control":
-                modifiers.insert(.control)
-            case "cmd", "command":
-                modifiers.insert(.command)
-            case "opt", "option", "alt":
-                modifiers.insert(.option)
-            case "shift":
-                modifiers.insert(.shift)
-            default:
-                keyString = part
-            }
-        }
-
-        guard let key = keyString else { return nil }
-        return KeyBinding(key: key, modifiers: modifiers, action: action)
-    }
-
     static func modifiers(from parts: [String]) -> NSEvent.ModifierFlags {
         var modifiers: NSEvent.ModifierFlags = []
         for part in parts.map({ $0.lowercased() }) {
