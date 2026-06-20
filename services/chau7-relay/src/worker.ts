@@ -66,15 +66,29 @@ async function verifyToken(
     encoder.encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign']
+    ['verify']
   );
   const message = `${deviceId}:${role}:${timestamp}`;
-  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
-  const expected = btoa(String.fromCharCode(...new Uint8Array(mac)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-  return expected === signature;
+  let signatureBytes: Uint8Array;
+  try {
+    signatureBytes = base64urlToBytes(signature);
+  } catch {
+    return false;
+  }
+  // crypto.subtle.verify is constant-time, avoiding the timing side-channel of
+  // comparing the base64url HMAC strings with `===`.
+  return crypto.subtle.verify('HMAC', key, signatureBytes, encoder.encode(message));
+}
+
+/** Decodes a base64url string (unpadded) to bytes. */
+function base64urlToBytes(value: string): Uint8Array {
+  const base64 = value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4);
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function extractBearerToken(request: Request): string | null {
