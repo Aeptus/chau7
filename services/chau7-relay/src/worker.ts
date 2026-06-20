@@ -119,6 +119,12 @@ async function authenticateRequest(
   return null;
 }
 
+/** Forward a request to the SessionDO addressed by deviceId. */
+function forwardToSession(env: Env, deviceId: string, request: Request): Promise<Response> {
+  const id = env.SESSION.idFromName(deviceId);
+  return env.SESSION.get(id).fetch(request);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -153,9 +159,7 @@ export default {
       if (authFailure) {
         return authFailure;
       }
-      const id = env.SESSION.idFromName(deviceId);
-      const stub = env.SESSION.get(id);
-      return stub.fetch(request);
+      return forwardToSession(env, deviceId, request);
     }
 
     if (action === 'push' && parts.length === 3) {
@@ -164,9 +168,7 @@ export default {
       if (authFailure) {
         return authFailure;
       }
-      const id = env.SESSION.idFromName(targetDeviceID);
-      const stub = env.SESSION.get(id);
-      return stub.fetch(request);
+      return forwardToSession(env, targetDeviceID, request);
     }
 
     if (action === 'pending' && parts.length === 2) {
@@ -176,9 +178,7 @@ export default {
       if (authFailure) {
         return authFailure;
       }
-      const id = env.SESSION.idFromName(targetDeviceID);
-      const stub = env.SESSION.get(id);
-      return stub.fetch(request);
+      return forwardToSession(env, targetDeviceID, request);
     }
 
     return new Response('Not Found', { status: 404 });
