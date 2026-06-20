@@ -350,11 +350,18 @@ func (a *Agent) ipcLoop(ctx context.Context) {
 }
 
 func (a *Agent) readIPC(ctx context.Context, conn *net.UnixConn) {
-	// When context is cancelled, unblock the blocking io.ReadFull by
-	// setting a past deadline on the connection.
+	// When the context is cancelled, unblock the blocking io.ReadFull by
+	// setting a past deadline on the connection. Scoped to this connection via
+	// `done` so it exits on a normal disconnect instead of leaking one goroutine
+	// per reconnect for the process lifetime.
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
-		<-ctx.Done()
-		_ = conn.SetReadDeadline(time.Now())
+		select {
+		case <-ctx.Done():
+			_ = conn.SetReadDeadline(time.Now())
+		case <-done:
+		}
 	}()
 
 	reader := bufio.NewReader(conn)
