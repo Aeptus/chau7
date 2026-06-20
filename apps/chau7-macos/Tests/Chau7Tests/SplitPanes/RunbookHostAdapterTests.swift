@@ -41,35 +41,4 @@ final class RunbookHostAdapterTests: XCTestCase {
         XCTAssertEqual(editor.content, "new content\n")
         XCTAssertTrue(editor.isDirty)
     }
-
-    func testRunAllParsesCodeBlocksAndForwardsThemThroughEditorSequencer() {
-        let editor = TextEditorModel()
-        editor.updateContent("""
-        # Plan
-
-        ```bash
-        echo first
-        ```
-
-        ```sh
-        echo second
-        ```
-        """)
-
-        var sent: [(String, Int)] = []
-        let adapter = RunbookHostAdapter(editor: editor) { command, line in
-            sent.append((command, line))
-            // Mirror what markCodeBlockQueued does — flip the block to
-            // .running so the sequencer's predicate gates the next one.
-            let normalized = command.trimmingCharacters(in: .whitespacesAndNewlines)
-            let key = RunbookCodeBlockTracker.runbookCodeBlockKey(for: normalized, lineNumber: line)
-            editor.runbook.codeBlockRunStates[key] = .running
-        }
-
-        adapter.runAll()
-
-        // First block fires synchronously; second is gated on settle.
-        XCTAssertEqual(sent.count, 1, "Run All must gate on prior-block settle")
-        XCTAssertEqual(sent[0].0, "echo first\n")
-    }
 }

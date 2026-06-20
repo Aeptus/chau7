@@ -18,10 +18,6 @@ protocol RunbookHost {
     /// so the host can attribute completion back to a UI element.
     func runBlock(_ code: String, lineNumber: Int)
 
-    /// Run every fenced code block in sequence, gated on prior-block
-    /// settlement (the `Polling.untilTrue` runner on the editor model).
-    func runAll()
-
     /// Returns the current run state for a tracked block, or nil when the
     /// block has not been queued yet.
     func codeBlockState(for code: String, lineNumber: Int) -> RunbookCodeBlockState?
@@ -52,18 +48,6 @@ struct RunbookHostAdapter: RunbookHost {
 
     func runBlock(_ code: String, lineNumber: Int) {
         sendCommand("\(code)\n", lineNumber)
-    }
-
-    func runAll() {
-        let blocks = parseMarkdown(editor.content).compactMap { section -> (line: Int, code: String)? in
-            if case .codeBlock(_, let code, let lineNumber) = section.kind {
-                return (line: lineNumber, code: code)
-            }
-            return nil
-        }
-        editor.runMarkdownBlocksSequentially(blocks) { command, lineNumber in
-            sendCommand(command, lineNumber)
-        }
     }
 
     func codeBlockState(for code: String, lineNumber: Int) -> RunbookCodeBlockState? {
