@@ -197,7 +197,6 @@ type PushNotifyPayload struct {
 type PendingStatePayload struct {
 	Approvals          []ApprovalNotificationPayload `json:"approvals"`
 	InteractivePrompts []RemoteInteractivePrompt     `json:"interactive_prompts"`
-	UpdatedAt          string                        `json:"updated_at,omitempty"`
 }
 
 type TabSwitchPayload struct {
