@@ -89,18 +89,6 @@ final class NotificationHistory {
         store(entry)
     }
 
-    func markCanonicalized(eventID: UUID, semanticKind: String, rawType: String?, notificationType: String?) {
-        update(eventID) { entry in
-            entry.semanticKind = semanticKind
-            if let rawType {
-                entry.notes.append("rawType:\(rawType)")
-            }
-            if let notificationType {
-                entry.notes.append("notificationType:\(notificationType)")
-            }
-        }
-    }
-
     func markCoalesced(eventID: UUID, key: String) {
         update(eventID) { entry in
             entry.deliveryState = DeliveryState.coalesced.rawValue
