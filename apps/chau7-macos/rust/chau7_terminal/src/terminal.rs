@@ -314,10 +314,6 @@ pub struct Chau7Terminal {
     /// Dirty row tracker for partial updates
     pub(crate) dirty_rows: DirtyRowTracker,
 
-    /// Unicode ambiguous-width treatment: 1 = single-width (Western default),
-    /// 2 = double-width (East Asian). Stored for future grid layout integration.
-    pub(crate) ambiguous_width: AtomicU64,
-
     /// Counter incremented on every `processor.advance` call. Sampled every
     /// `INVARIANT_CHECK_PERIOD` calls to run a grid-state invariant check
     /// (cursor in bounds, no orphan wide-char spacers). Rate-limited to
@@ -412,7 +408,6 @@ impl Chau7Terminal {
             has_pending_shell_events: AtomicBool::new(false),
             adaptive_poller: AdaptivePoller::new(),
             dirty_rows: DirtyRowTracker::new(rows as usize),
-            ambiguous_width: AtomicU64::new(1),
             advance_counter: AtomicU64::new(0),
             graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
             image_store: Mutex::new(graphics::ImageStore::new()),
@@ -698,8 +693,6 @@ impl Chau7Terminal {
             // Performance optimizations
             adaptive_poller: AdaptivePoller::new(),
             dirty_rows: DirtyRowTracker::new(rows as usize),
-            // Unicode width config
-            ambiguous_width: AtomicU64::new(1),
             advance_counter: AtomicU64::new(0),
             // Graphics protocol support
             graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
@@ -1952,14 +1945,6 @@ impl Chau7Terminal {
         debug!("[terminal-{}] replay_buffer: Replay complete", self.id);
     }
 
-    /// Set Unicode ambiguous-width treatment.
-    /// - `width = 1`: single-width (Western default)
-    /// - `width = 2`: double-width (East Asian)
-    pub fn set_ambiguous_width(&self, width: u8) {
-        let w = if width == 2 { 2u64 } else { 1u64 };
-        self.ambiguous_width.store(w, Ordering::Release);
-        info!("[terminal-{}] set_ambiguous_width: {}", self.id, w);
-    }
 
     /// Get the current display offset
     pub fn display_offset(&self) -> usize {

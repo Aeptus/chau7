@@ -694,14 +694,6 @@ void chau7_terminal_set_colors(struct Chau7Terminal *term,
 void chau7_terminal_clear_scrollback(struct Chau7Terminal *term);
 
 /*
- Set Unicode ambiguous-width treatment (1 = single, 2 = double).
-
- # Safety
- - `term` must be a valid pointer
- */
-void chau7_terminal_set_ambiguous_width(struct Chau7Terminal *term, uint8_t width);
-
-/*
  Set the scrollback buffer size (number of lines)
 
  # Safety

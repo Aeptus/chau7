@@ -1088,22 +1088,6 @@ pub unsafe extern "C" fn chau7_terminal_clear_scrollback(term: *mut Chau7Termina
     }
 }
 
-/// Set Unicode ambiguous-width treatment (1 = single, 2 = double).
-///
-/// # Safety
-/// - `term` must be a valid pointer
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn chau7_terminal_set_ambiguous_width(term: *mut Chau7Terminal, width: u8) {
-    unsafe {
-        trace!("chau7_terminal_set_ambiguous_width({:p}, {})", term, width);
-        if term.is_null() {
-            warn!("chau7_terminal_set_ambiguous_width: term is null");
-            return;
-        }
-        let terminal = &*term;
-        terminal.set_ambiguous_width(width);
-    }
-}
 
 /// Set the scrollback buffer size (number of lines)
 ///
