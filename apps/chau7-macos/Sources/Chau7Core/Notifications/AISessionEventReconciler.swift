@@ -44,17 +44,6 @@ public final class AISessionEventReconciler {
         self.retentionSeconds = retentionSeconds
     }
 
-    public convenience init(
-        strongerReplacementWindow: TimeInterval = MonitoringSchedule.defaultCoalescingWindow,
-        retentionSeconds: TimeInterval
-    ) {
-        self.init(
-            strongerReplacementWindow: strongerReplacementWindow,
-            terminalRepeatWindow: 10,
-            retentionSeconds: retentionSeconds
-        )
-    }
-
     public func reset() {
         recordsByKey.removeAll()
         primaryKeyByAlias.removeAll()
