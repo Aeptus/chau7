@@ -500,8 +500,7 @@ final class TelemetryRecorder {
         contentMode: RunEndContentMode
     ) -> Bool {
         guard contentMode == .immediate else { return false }
-        let lower = provider.lowercased()
-        return lower.contains("codex") || lower.contains("openai")
+        return ProviderFamily.classify(provider) == .codex
     }
 
     // MARK: - PTY Log Reading

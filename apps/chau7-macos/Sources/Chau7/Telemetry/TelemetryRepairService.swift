@@ -40,12 +40,7 @@ final class TelemetryRepairService {
             return false
         }
 
-        let provider = run.provider.lowercased()
-        let supportsTranscriptRepair = provider.contains("claude")
-            || provider.contains("anthropic")
-            || provider.contains("codex")
-            || provider.contains("openai")
-        guard supportsTranscriptRepair else { return false }
+        guard ProviderFamily.classify(run.provider) != .other else { return false }
 
         let needsTranscriptSource = run.rawTranscriptRef == nil
             || run.rawTranscriptRef == "pty_log"
@@ -158,12 +153,12 @@ final class TelemetryRepairService {
             || run.rawTranscriptRef == "pty_log"
             || run.rawTranscriptRef == "terminal_buffer")
 
-        switch provider {
-        case let value where value.contains("claude") || value.contains("anthropic"):
+        switch ProviderFamily.classify(provider) {
+        case .claude:
             return hasAuthoritativeSource ? 1 : 0
-        case let value where value.contains("codex") || value.contains("openai"):
+        case .codex:
             return hasAuthoritativeSource ? 3 : 2
-        default:
+        case .other:
             return 4
         }
     }
