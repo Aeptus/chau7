@@ -29,21 +29,7 @@ struct ClaudeCodeBackend: AgentBackend {
 
         parts.append(contentsOf: config.args)
         let command = ShellEscaping.escapeArguments(parts)
-
-        // Prepend environment variables
-        let envPrefix = ShellEscaping.escapeEnvironmentAssignments(config.environment)
-        if !envPrefix.isEmpty {
-            return envPrefix + " " + command
-        }
-        return command
-    }
-
-    func formatPromptInput(_ prompt: String, context: String?) -> String {
-        // Claude Code reads prompts from stdin, terminated by newline
-        if let context, !context.isEmpty {
-            return "\(context)\n\n\(prompt)\n"
-        }
-        return prompt + "\n"
+        return prependingEnvironment(command, config.environment)
     }
 
     var resumeProviderKey: String? {
