@@ -2676,11 +2676,6 @@ impl Chau7Terminal {
         info!("[terminal-{}] Performance metrics reset", self.id);
     }
 
-    /// Get dirty rows for partial updates
-    pub fn get_dirty_rows(&self) -> Vec<usize> {
-        self.dirty_rows.get_dirty_rows()
-    }
-
     /// Clear dirty row tracking after sync
     pub fn clear_dirty_rows(&self) {
         self.dirty_rows.clear();

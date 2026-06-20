@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 
 // ============================================================================
 // Adaptive polling
@@ -103,13 +103,10 @@ impl Default for AdaptivePoller {
 // Dirty row tracking
 // ============================================================================
 
-/// Dirty row tracker for partial updates.
-/// Uses a heap-allocated bitmap to track which rows have been modified since last sync.
-/// Scales to any terminal height (no fixed 512-row cap).
+/// Tracks whether the grid needs a redraw. In production the tracker is only
+/// ever driven all-or-nothing (mark_all_dirty / clear), so this is a full-dirty
+/// flag plus the current row count; dirty_count() reports 0 or `rows`.
 pub struct DirtyRowTracker {
-    /// Bitmap of dirty rows (each bit represents one row).
-    /// RwLock allows concurrent reads (mark_dirty, is_dirty) with rare writes (set_rows).
-    dirty_bits: RwLock<Vec<AtomicU64>>,
     /// Number of rows being tracked
     rows: AtomicU64,
     /// Whether all rows should be considered dirty
@@ -118,69 +115,9 @@ pub struct DirtyRowTracker {
 
 impl DirtyRowTracker {
     pub fn new(rows: usize) -> Self {
-        let words = rows.div_ceil(64);
-        let mut dirty_bits = Vec::with_capacity(words);
-        for _ in 0..words {
-            dirty_bits.push(AtomicU64::new(0));
-        }
         Self {
-            dirty_bits: RwLock::new(dirty_bits),
             rows: AtomicU64::new(rows as u64),
             full_dirty: AtomicBool::new(true), // Start fully dirty
-        }
-    }
-
-    /// Mark a specific row as dirty
-    pub fn mark_dirty(&self, row: usize) {
-        let bits = self.dirty_bits.read();
-        let word = row / 64;
-        let bit = row % 64;
-        if word < bits.len() {
-            bits[word].fetch_or(1 << bit, Ordering::Relaxed);
-        } else {
-            self.full_dirty.store(true, Ordering::Relaxed);
-        }
-    }
-
-    /// Mark a range of rows as dirty using word-level bitmask batching.
-    pub fn mark_range_dirty(&self, start: usize, end: usize) {
-        if start > end {
-            return;
-        }
-        let bits = self.dirty_bits.read();
-        let max_row = bits.len() * 64 - 1;
-        let end = end.min(max_row);
-        if start > max_row {
-            self.full_dirty.store(true, Ordering::Relaxed);
-            return;
-        }
-        let start_word = start / 64;
-        let end_word = end / 64;
-
-        if start_word == end_word {
-            let start_bit = start % 64;
-            let end_bit = end % 64;
-            let mask = if end_bit == 63 {
-                !0u64 << start_bit
-            } else {
-                ((1u64 << (end_bit + 1)) - 1) & !((1u64 << start_bit) - 1)
-            };
-            bits[start_word].fetch_or(mask, Ordering::Relaxed);
-        } else {
-            let start_bit = start % 64;
-            bits[start_word].fetch_or(!0u64 << start_bit, Ordering::Relaxed);
-
-            for word in (start_word + 1)..end_word {
-                bits[word].store(u64::MAX, Ordering::Relaxed);
-            }
-
-            let end_bit = end % 64;
-            let mask = if end_bit == 63 {
-                !0u64
-            } else {
-                (1u64 << (end_bit + 1)) - 1
-            };
-            bits[end_word].fetch_or(mask, Ordering::Relaxed);
         }
     }
 
@@ -189,76 +126,24 @@ impl DirtyRowTracker {
         self.full_dirty.store(true, Ordering::Relaxed);
     }
 
-    /// Check if a row is dirty
-    pub fn is_dirty(&self, row: usize) -> bool {
-        if self.full_dirty.load(Ordering::Relaxed) {
-            return true;
-        }
-        let bits = self.dirty_bits.read();
-        let word = row / 64;
-        let bit = row % 64;
-        if word >= bits.len() {
-            return true;
-        }
-        (bits[word].load(Ordering::Relaxed) & (1 << bit)) != 0
-    }
-
-    /// Get list of dirty row indices (for partial updates)
-    pub fn get_dirty_rows(&self) -> Vec<usize> {
-        if self.full_dirty.load(Ordering::Relaxed) {
-            return (0..self.rows.load(Ordering::Relaxed) as usize).collect();
-        }
-
-        let bits = self.dirty_bits.read();
-        let rows = self.rows.load(Ordering::Relaxed) as usize;
-        let mut dirty = Vec::new();
-        for word_idx in 0..bits.len() {
-            let word = bits[word_idx].load(Ordering::Relaxed);
-            if word == 0 {
-                continue;
-            }
-            for bit in 0..64 {
-                let row = word_idx * 64 + bit;
-                if row >= rows {
-                    return dirty;
-                }
-                if word & (1 << bit) != 0 {
-                    dirty.push(row);
-                }
-            }
-        }
-        dirty
-    }
-
-    /// Clear all dirty flags
+    /// Clear the dirty flag
     pub fn clear(&self) {
         self.full_dirty.store(false, Ordering::Relaxed);
-        let bits = self.dirty_bits.read();
-        for b in bits.iter() {
-            b.store(0, Ordering::Relaxed);
-        }
     }
 
-    /// Get count of dirty rows
+    /// Count of dirty rows (0 when clear, `rows` when fully dirty)
     pub fn dirty_count(&self) -> usize {
         if self.full_dirty.load(Ordering::Relaxed) {
-            return self.rows.load(Ordering::Relaxed) as usize;
+            self.rows.load(Ordering::Relaxed) as usize
+        } else {
+            0
         }
-        let bits = self.dirty_bits.read();
-        bits.iter()
-            .map(|b| b.load(Ordering::Relaxed).count_ones() as usize)
-            .sum()
     }
 
-    /// Update row count (e.g., on resize)
+    /// Update the tracked row count (e.g. on resize); forces a full redraw.
     pub fn set_rows(&self, rows: usize) {
-        let words_needed = rows.div_ceil(64);
-        let mut bits = self.dirty_bits.write();
-        while bits.len() < words_needed {
-            bits.push(AtomicU64::new(0));
-        }
         self.rows.store(rows as u64, Ordering::Relaxed);
-        self.full_dirty.store(true, Ordering::Relaxed); // Resize requires full redraw
+        self.full_dirty.store(true, Ordering::Relaxed);
     }
 }
 
@@ -274,49 +159,5 @@ impl Default for DirtyRowTracker {
 
 // Output buffer with batching support.
 
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_dirty_range_single_word() {
-        let tracker = DirtyRowTracker::new(80);
-        tracker.clear();
-        tracker.mark_range_dirty(2, 5);
-        assert!(tracker.is_dirty(2));
-        assert!(tracker.is_dirty(3));
-        assert!(tracker.is_dirty(5));
-        assert!(!tracker.is_dirty(1));
-        assert!(!tracker.is_dirty(6));
-        assert_eq!(tracker.dirty_count(), 4);
-    }
-
-    #[test]
-    fn test_dirty_range_cross_word() {
-        let tracker = DirtyRowTracker::new(200);
-        tracker.clear();
-        tracker.mark_range_dirty(60, 130);
-        for row in 60..=130 {
-            assert!(tracker.is_dirty(row), "row {} should be dirty", row);
-        }
-        assert!(!tracker.is_dirty(59));
-        assert!(!tracker.is_dirty(131));
-        assert_eq!(tracker.dirty_count(), 71);
-    }
-
-    #[test]
-    fn test_dirty_range_full_word() {
-        let tracker = DirtyRowTracker::new(128);
-        tracker.clear();
-        tracker.mark_range_dirty(0, 63);
-        assert_eq!(tracker.dirty_count(), 64);
-        for row in 0..64 {
-            assert!(tracker.is_dirty(row));
-        }
-        assert!(!tracker.is_dirty(64));
-    }
-}
+// (DirtyRowTracker is now a simple full-dirty flag + row count; its former
+// per-row bitmap tests were removed with the bitmap.)
