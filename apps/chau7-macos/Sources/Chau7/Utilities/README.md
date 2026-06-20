@@ -6,7 +6,6 @@ Shared helpers: error types, accessibility, bounded collections, formatters, key
 
 | File | Purpose |
 |------|---------|
-| `AccessibilityUtilities.swift` | Dynamic Type scaled fonts, high contrast, and reduced motion helpers |
 | `BoundedArray.swift` | Fixed-capacity array and set that auto-evict oldest elements when full |
 | `Chau7Error.swift` | Typed error enum covering file, config, terminal, snippet, and network failures |
 | `Chau7Resources.swift` | Locates the correct resource bundle for localized strings and assets |
