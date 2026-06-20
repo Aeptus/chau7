@@ -80,7 +80,7 @@ final class RemoteClient {
     private var outputFlushTask: Task<Void, Never>?
     private var strippedOutputRefreshTask: Task<Void, Never>?
     private var remoteSessionID: String?
-    private var telemetryBuffer = RemoteTelemetryBuffer(maxEvents: Self.maxBufferedTelemetryEvents)
+    private var telemetryBuffer = RemoteTelemetryBuffer(maxEvents: RemoteClient.maxBufferedTelemetryEvents)
     private var pendingURLActions: [RemoteActivityURLAction] = []
     private var currentAppState: RemoteClientAppState = .foreground
     private var desiredStreamMode: RemoteClientStreamMode = .full
