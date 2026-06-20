@@ -2953,15 +2953,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     /// Current resident memory in MB (mach task_info). Returns nil on failure.
     private static func currentResidentMB() -> Int? {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-        let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
-            }
-        }
-        guard result == KERN_SUCCESS else { return nil }
-        return Int(info.resident_size / 1024 / 1024)
+        ProcessMemory.residentBytes().map { Int($0 / 1024 / 1024) }
     }
 
     /// Log RSS as an INFO line tagged `rssSample: …`. Gated behind the
