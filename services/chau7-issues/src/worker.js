@@ -44,7 +44,7 @@ export class IssueRateLimitDO {
     if (
       request.method !== "POST" ||
       parts[0] !== "ratelimit" ||
-      (action !== "check" && action !== "commit")
+      (action !== "reserve" && action !== "release")
     ) {
       return new Response("Not Found", { status: 404 });
     }
@@ -55,15 +55,22 @@ export class IssueRateLimitDO {
     const stored = (await this.state.storage.get(key)) ?? [];
     const recent = stored.filter((timestamp) => now - timestamp < windowMs);
 
-    // `check` is a read-only gate; `commit` records a successful creation.
-    // Counting only successful creations means malformed payloads and transient
-    // GitHub failures no longer burn the caller's hourly quota.
-    if (action === "check") {
-      return recent.length >= max
-        ? new Response("Rate limited", { status: 429 })
-        : new Response("OK", { status: 200 });
+    if (action === "release") {
+      // Hand a previously reserved slot back (e.g. the GitHub call failed).
+      // Slots are interchangeable timestamps, so dropping the most recent keeps
+      // the count accurate.
+      recent.pop();
+      await this.state.storage.put(key, recent);
+      return new Response("OK", { status: 200 });
     }
 
+    // action === "reserve": atomically check-and-take a slot in a single DO
+    // request so concurrent callers can't both pass the gate (TOCTOU-safe).
+    // Failed creations release their slot afterward, so the window effectively
+    // counts only successful creations while erring toward throttling.
+    if (recent.length >= max) {
+      return new Response("Rate limited", { status: 429 });
+    }
     recent.push(now);
     await this.state.storage.put(key, recent);
     return new Response("OK", { status: 200 });
@@ -106,38 +113,9 @@ async function handleIssueCreate(request, env) {
   }
 
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
-  const rateLimitId = env.ISSUE_RATE_LIMIT.idFromName("issue-ratelimit");
-  const rateLimitDO = env.ISSUE_RATE_LIMIT.get(rateLimitId);
-  let rateLimitResponse;
-  try {
-    rateLimitResponse = await rateLimitDO.fetch(
-      new Request("https://internal/ratelimit/check", {
-        method: "POST",
-        body: JSON.stringify({
-          ip,
-          max: ISSUE_RATE_MAX,
-          windowMs: ISSUE_RATE_WINDOW_MS,
-        }),
-      }),
-    );
-  } catch (error) {
-    console.error("Issue rate limit error:", error);
-    return corsResponse({ error: "Rate limit check failed. Try again." }, 503);
-  }
 
-  if (rateLimitResponse.status !== 200) {
-    const code = rateLimitResponse.status === 429 ? 429 : 503;
-    return corsResponse(
-      {
-        error:
-          code === 429
-            ? "Rate limited. Maximum 5 reports per hour."
-            : "Rate limit check failed.",
-      },
-      code,
-    );
-  }
-
+  // Validate before touching the rate limiter so malformed requests never
+  // consume a slot — the limit should count only successful creations.
   let payload;
   try {
     payload = await request.json();
@@ -175,6 +153,54 @@ async function handleIssueCreate(request, env) {
     githubPayload.labels = labels;
   }
 
+  // Atomically reserve a rate-limit slot in a single DO request (TOCTOU-safe),
+  // then release it on failure so only successful creations are counted.
+  const rateLimitId = env.ISSUE_RATE_LIMIT.idFromName("issue-ratelimit");
+  const rateLimitDO = env.ISSUE_RATE_LIMIT.get(rateLimitId);
+  const rateLimitBody = JSON.stringify({
+    ip,
+    max: ISSUE_RATE_MAX,
+    windowMs: ISSUE_RATE_WINDOW_MS,
+  });
+  const releaseSlot = async () => {
+    try {
+      await rateLimitDO.fetch(
+        new Request("https://internal/ratelimit/release", {
+          method: "POST",
+          body: rateLimitBody,
+        }),
+      );
+    } catch (error) {
+      console.error("Issue rate limit release error:", error);
+    }
+  };
+
+  let reserveResponse;
+  try {
+    reserveResponse = await rateLimitDO.fetch(
+      new Request("https://internal/ratelimit/reserve", {
+        method: "POST",
+        body: rateLimitBody,
+      }),
+    );
+  } catch (error) {
+    console.error("Issue rate limit error:", error);
+    return corsResponse({ error: "Rate limit check failed. Try again." }, 503);
+  }
+
+  if (reserveResponse.status !== 200) {
+    const code = reserveResponse.status === 429 ? 429 : 503;
+    return corsResponse(
+      {
+        error:
+          code === 429
+            ? "Rate limited. Maximum 5 reports per hour."
+            : "Rate limit check failed.",
+      },
+      code,
+    );
+  }
+
   const githubResponse = await fetch(
     `https://api.github.com/repos/${env.GITHUB_ISSUE_REPO}/issues`,
     {
@@ -190,6 +216,7 @@ async function handleIssueCreate(request, env) {
   );
 
   if (!githubResponse.ok) {
+    await releaseSlot();
     const errorText = await githubResponse.text();
     console.error(
       `GitHub API error: ${githubResponse.status} ${errorText.slice(0, 500)}`,
@@ -201,24 +228,6 @@ async function handleIssueCreate(request, env) {
   }
 
   const githubData = await githubResponse.json();
-
-  // Count only successful creations against the hourly limit (the check above is
-  // read-only). Recording the slot must not fail the issue that was just created.
-  try {
-    await rateLimitDO.fetch(
-      new Request("https://internal/ratelimit/commit", {
-        method: "POST",
-        body: JSON.stringify({
-          ip,
-          max: ISSUE_RATE_MAX,
-          windowMs: ISSUE_RATE_WINDOW_MS,
-        }),
-      }),
-    );
-  } catch (error) {
-    console.error("Issue rate limit commit error:", error);
-  }
-
   return corsResponse({ ok: true, issue_number: githubData.number ?? 0 });
 }
 
