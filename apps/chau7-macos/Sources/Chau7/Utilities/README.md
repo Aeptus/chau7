@@ -9,7 +9,6 @@ Shared helpers: error types, accessibility, bounded collections, formatters, key
 | `BoundedArray.swift` | Fixed-capacity array and set that auto-evict oldest elements when full |
 | `Chau7Error.swift` | Typed error enum covering file, config, terminal, snippet, and network failures |
 | `Chau7Resources.swift` | Locates the correct resource bundle for localized strings and assets |
-| `Formatters.swift` | Shared DateFormatter instances (short time, medium time, terminal login, relative) |
 | `KeychainHelper.swift` | Secure storage for API keys using the macOS Keychain (SecItem APIs) |
 | `ProtectedPathPolicy.swift` | Guards against auto-access to protected folders (Downloads, Desktop, Library) |
 | `RegexPatterns.swift` | Pre-compiled shared NSRegularExpression instances for URLs, file paths, and ANSI codes |
