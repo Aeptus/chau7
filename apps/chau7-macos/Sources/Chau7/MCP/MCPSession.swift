@@ -776,36 +776,11 @@ final class MCPSession {
         case "chau7_unsubscribe":
             return unsubscribeFromChau7State(arguments: arguments)
 
-        // Control plane
-        case "tab_list":
-            return classifyToolResponse(controlPlane.call(name: "tab_list", arguments: arguments))
-
-        case "tab_create":
-            return classifyToolResponse(controlPlane.call(name: "tab_create", arguments: arguments))
-
-        case "tab_exec":
-            return classifyToolResponse(controlPlane.call(name: "tab_exec", arguments: arguments))
-
-        case "tab_status":
-            return classifyToolResponse(controlPlane.call(name: "tab_status", arguments: arguments))
-
-        case "tab_wait_ready":
-            return classifyToolResponse(controlPlane.call(name: "tab_wait_ready", arguments: arguments))
-
-        case "tab_send_input":
-            return classifyToolResponse(controlPlane.call(name: "tab_send_input", arguments: arguments))
-
-        case "tab_press_key":
-            return classifyToolResponse(controlPlane.call(name: "tab_press_key", arguments: arguments))
-
-        case "tab_submit_prompt":
-            return classifyToolResponse(controlPlane.call(name: "tab_submit_prompt", arguments: arguments))
-
-        case "tab_close":
-            return classifyToolResponse(controlPlane.call(name: "tab_close", arguments: arguments))
-
-        case "tab_output":
-            return classifyToolResponse(controlPlane.call(name: "tab_output", arguments: arguments))
+        // Control plane — the case label always equals the tool name and
+        // controlPlane.call forwards it, so dispatch all tab_* tools uniformly.
+        case "tab_list", "tab_create", "tab_exec", "tab_status", "tab_wait_ready",
+             "tab_send_input", "tab_press_key", "tab_submit_prompt", "tab_close", "tab_output":
+            return classifyToolResponse(controlPlane.call(name: name, arguments: arguments))
 
         case "tab_set_cto":
             guard let tabID = arguments["tab_id"] as? String,
