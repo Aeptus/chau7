@@ -2667,7 +2667,6 @@ impl Chau7Terminal {
         self.metrics
             .grid_snapshot_time_us
             .store(0, Ordering::Relaxed);
-        self.metrics.vte_process_time_us.store(0, Ordering::Relaxed);
         self.metrics.max_poll_time_us.store(0, Ordering::Relaxed);
         self.metrics
             .max_grid_snapshot_time_us
