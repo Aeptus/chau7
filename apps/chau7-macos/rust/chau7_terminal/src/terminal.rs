@@ -2587,31 +2587,39 @@ impl Chau7Terminal {
     }
 
     fn ansi_sgr_sequence(style: AnsiCellStyle) -> String {
-        let mut codes = vec!["0".to_string()];
+        use std::fmt::Write;
+        // Format directly into one String rather than building a Vec<String> of
+        // short heap allocations and joining — this runs per style transition on
+        // the (full/tail) buffer export path.
+        let mut out = String::with_capacity(48);
+        out.push_str("\x1b[0");
         if style.flags & CELL_FLAG_BOLD != 0 {
-            codes.push("1".to_string());
+            out.push_str(";1");
         }
         if style.flags & CELL_FLAG_DIM != 0 {
-            codes.push("2".to_string());
+            out.push_str(";2");
         }
         if style.flags & CELL_FLAG_ITALIC != 0 {
-            codes.push("3".to_string());
+            out.push_str(";3");
         }
         if style.flags & CELL_FLAG_UNDERLINE != 0 {
-            codes.push("4".to_string());
+            out.push_str(";4");
         }
         if style.flags & CELL_FLAG_INVERSE != 0 {
-            codes.push("7".to_string());
+            out.push_str(";7");
         }
         if style.flags & CELL_FLAG_HIDDEN != 0 {
-            codes.push("8".to_string());
+            out.push_str(";8");
         }
         if style.flags & CELL_FLAG_STRIKETHROUGH != 0 {
-            codes.push("9".to_string());
+            out.push_str(";9");
         }
-        codes.push(format!("38;2;{};{};{}", style.fg.0, style.fg.1, style.fg.2));
-        codes.push(format!("48;2;{};{};{}", style.bg.0, style.bg.1, style.bg.2));
-        format!("\x1b[{}m", codes.join(";"))
+        let _ = write!(
+            out,
+            ";38;2;{};{};{};48;2;{};{};{}m",
+            style.fg.0, style.fg.1, style.fg.2, style.bg.0, style.bg.1, style.bg.2
+        );
+        out
     }
 
     fn grid_line_wraps(grid: &alacritty_terminal::grid::Grid<Cell>, line: Line) -> bool {
