@@ -40,9 +40,6 @@ const LANDING_HTML = `<!DOCTYPE html>
 interface Env {
   SESSION: DurableObjectNamespace;
   RELAY_SECRET?: string;
-  APNS_TEAM_ID?: string;
-  APNS_KEY_ID?: string;
-  APNS_PRIVATE_KEY?: string;
 }
 
 /**
