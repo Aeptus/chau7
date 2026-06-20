@@ -231,11 +231,6 @@ extension View {
     func localized() -> some View {
         modifier(LocalizedViewModifier())
     }
-
-    /// Flips the view horizontally for RTL languages
-    func flipForRTL() -> some View {
-        scaleEffect(x: LocalizationManager.shared.isRTL ? -1 : 1, y: 1)
-    }
 }
 
 // MARK: - Localized Formatters
