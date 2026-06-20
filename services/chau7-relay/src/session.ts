@@ -337,6 +337,17 @@ export class SessionDO {
       },
       body: JSON.stringify(body)
     });
+    if (response.status >= 400) {
+      let reason = '';
+      try {
+        reason = await response.text();
+      } catch {
+        // APNs body unavailable; status alone is still logged below.
+      }
+      console.warn(
+        `APNs push failed: status=${response.status} device=${registration.pairedDeviceId} reason=${reason}`
+      );
+    }
     return response.status;
   }
 
