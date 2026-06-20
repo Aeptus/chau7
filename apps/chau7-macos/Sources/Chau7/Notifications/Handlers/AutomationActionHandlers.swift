@@ -10,9 +10,7 @@ struct RunScriptActionHandler: NotificationActionHandler {
     func execute(payload: ActionPayload, environment _: ActionEnvironment) -> NotificationActionExecutor.ExecutionReport {
         guard let script = payload.configValue("script"), !script.isEmpty else {
             Log.warn("Action runScript: No script provided")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("runScript missing script")
-            return report
+            return .failure("runScript missing script")
         }
 
         let shell = payload.configValue("shell") ?? "/bin/zsh"
@@ -56,13 +54,9 @@ struct RunScriptActionHandler: NotificationActionHandler {
             }
         } catch {
             Log.error("Action runScript: Failed to execute: \(error.localizedDescription)")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("runScript failed to launch: \(error.localizedDescription)")
-            return report
+            return .failure("runScript failed to launch: \(error.localizedDescription)")
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.runScript)
-        return report
+        return .success(.runScript)
     }
 }
 
@@ -75,9 +69,7 @@ struct RunShortcutActionHandler: NotificationActionHandler {
     func execute(payload: ActionPayload, environment _: ActionEnvironment) -> NotificationActionExecutor.ExecutionReport {
         guard let shortcutName = payload.configValue("shortcutName"), !shortcutName.isEmpty else {
             Log.warn("Action runShortcut: No shortcut name provided")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("runShortcut missing shortcutName")
-            return report
+            return .failure("runShortcut missing shortcutName")
         }
 
         let passEventData = payload.configBool("passEventData", default: true)
@@ -112,13 +104,9 @@ struct RunShortcutActionHandler: NotificationActionHandler {
             }
         } catch {
             Log.error("Action runShortcut: Failed: \(error.localizedDescription)")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("runShortcut failed to launch: \(error.localizedDescription)")
-            return report
+            return .failure("runShortcut failed to launch: \(error.localizedDescription)")
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.runShortcut)
-        return report
+        return .success(.runShortcut)
     }
 }
 
@@ -131,9 +119,7 @@ struct ExecuteSnippetActionHandler: NotificationActionHandler {
     func execute(payload: ActionPayload, environment: ActionEnvironment) -> NotificationActionExecutor.ExecutionReport {
         guard let snippetId = payload.configValue("snippetId"), !snippetId.isEmpty else {
             Log.warn("Action executeSnippet: No snippet ID provided")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("executeSnippet missing snippetId")
-            return report
+            return .failure("executeSnippet missing snippetId")
         }
 
         let autoExecute = payload.configBool("autoExecute", default: false)

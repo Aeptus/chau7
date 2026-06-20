@@ -17,9 +17,7 @@ struct CopyToClipboardActionHandler: NotificationActionHandler {
             pasteboard.setString(content, forType: .string)
             Log.info("Action copyToClipboard: Copied \(content.count) characters")
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.copyToClipboard)
-        return report
+        return .success(.copyToClipboard)
     }
 }
 
@@ -32,9 +30,7 @@ struct WriteToFileActionHandler: NotificationActionHandler {
     func execute(payload: ActionPayload, environment _: ActionEnvironment) -> NotificationActionExecutor.ExecutionReport {
         guard let filePath = payload.configValue("filePath"), !filePath.isEmpty else {
             Log.warn("Action writeToFile: No file path specified")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("writeToFile missing filePath")
-            return report
+            return .failure("writeToFile missing filePath")
         }
 
         let format = payload.configValue("format") ?? "text"
@@ -69,22 +65,16 @@ struct WriteToFileActionHandler: NotificationActionHandler {
 
             // Atomic open-or-create+append via fopen "a" — no TOCTOU race
             guard let lineData = (line + "\n").data(using: .utf8) else {
-                var report = NotificationActionExecutor.ExecutionReport()
-                report.recordFailure("writeToFile failed to encode UTF-8 line")
-                return report
+                return .failure("writeToFile failed to encode UTF-8 line")
             }
             try appendToFile(atPath: expandedPath, data: lineData)
 
             Log.info("Action writeToFile: Appended to \(filePath)")
         } catch {
             Log.error("Action writeToFile: Failed: \(error.localizedDescription)")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("writeToFile failed: \(error.localizedDescription)")
-            return report
+            return .failure("writeToFile failed: \(error.localizedDescription)")
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.writeToFile)
-        return report
+        return .success(.writeToFile)
     }
 }
 
@@ -97,17 +87,13 @@ struct OpenURLActionHandler: NotificationActionHandler {
     func execute(payload: ActionPayload, environment _: ActionEnvironment) -> NotificationActionExecutor.ExecutionReport {
         guard let urlTemplate = payload.configValue("url"), !urlTemplate.isEmpty else {
             Log.warn("Action openURL: No URL specified")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("openURL missing url")
-            return report
+            return .failure("openURL missing url")
         }
 
         let urlString = payload.interpolate(urlTemplate)
         guard let url = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) else {
             Log.warn("Action openURL: Invalid URL: \(urlString)")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("openURL invalid URL: \(urlString)")
-            return report
+            return .failure("openURL invalid URL: \(urlString)")
         }
 
         let browser = payload.configValue("browser") ?? "default"
@@ -134,9 +120,7 @@ struct OpenURLActionHandler: NotificationActionHandler {
             }
             Log.info("Action openURL: Opened \(url)")
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.openURL)
-        return report
+        return .success(.openURL)
     }
 }
 
@@ -188,8 +172,6 @@ struct GitCommitActionHandler: NotificationActionHandler {
 
             Log.info("Action gitCommit: Completed successfully")
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.gitCommit)
-        return report
+        return .success(.gitCommit)
     }
 }

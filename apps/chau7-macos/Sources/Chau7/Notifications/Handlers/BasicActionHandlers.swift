@@ -53,9 +53,7 @@ struct PlaySoundActionHandler: NotificationActionHandler {
                 }
             }
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.playSound)
-        return report
+        return .success(.playSound)
     }
 }
 
@@ -102,9 +100,7 @@ struct DockBounceActionHandler: NotificationActionHandler {
             NSApp.requestUserAttention(attentionType)
             Log.info("Action dockBounce: Requested user attention (critical=\(critical))")
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.dockBounce)
-        return report
+        return .success(.dockBounce)
     }
 }
 

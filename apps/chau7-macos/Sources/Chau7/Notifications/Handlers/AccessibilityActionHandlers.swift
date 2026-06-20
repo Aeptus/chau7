@@ -36,9 +36,7 @@ final class VoiceAnnounceActionHandler: NotificationActionHandler {
 
             Log.info("Action voiceAnnounce: Speaking '\(text.prefix(50))...'")
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.voiceAnnounce)
-        return report
+        return .success(.voiceAnnounce)
     }
 }
 
@@ -99,9 +97,7 @@ final class FlashScreenActionHandler: NotificationActionHandler {
             self?.flashWindow?.orderOut(nil)
             self?.flashWindow = nil
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.flashScreen)
-        return report
+        return .success(.flashScreen)
     }
 }
 
@@ -120,8 +116,6 @@ struct MenuBarAlertActionHandler: NotificationActionHandler {
             delegate?.flashMenuBar(duration: duration, animate: animate)
             Log.info("Action menuBarAlert: Alert for \(duration) seconds")
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.menuBarAlert)
-        return report
+        return .success(.menuBarAlert)
     }
 }
