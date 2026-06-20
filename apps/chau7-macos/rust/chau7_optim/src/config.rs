@@ -7,17 +7,11 @@ pub struct Config {
     #[serde(default)]
     pub tracking: TrackingConfig,
     #[serde(default)]
-    pub display: DisplayConfig,
-    #[serde(default)]
-    pub filters: FilterConfig,
-    #[serde(default)]
     pub tee: crate::tee::TeeConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TrackingConfig {
-    pub enabled: bool,
-    pub history_days: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub database_path: Option<PathBuf>,
 }
@@ -25,48 +19,7 @@ pub struct TrackingConfig {
 impl Default for TrackingConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
-            history_days: 90,
             database_path: None,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DisplayConfig {
-    pub colors: bool,
-    pub emoji: bool,
-    pub max_width: usize,
-}
-
-impl Default for DisplayConfig {
-    fn default() -> Self {
-        Self {
-            colors: true,
-            emoji: true,
-            max_width: 120,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FilterConfig {
-    pub ignore_dirs: Vec<String>,
-    pub ignore_files: Vec<String>,
-}
-
-impl Default for FilterConfig {
-    fn default() -> Self {
-        Self {
-            ignore_dirs: vec![
-                ".git".into(),
-                "node_modules".into(),
-                "target".into(),
-                "__pycache__".into(),
-                ".venv".into(),
-                "vendor".into(),
-            ],
-            ignore_files: vec!["*.lock".into(), "*.min.js".into(), "*.min.css".into()],
         }
     }
 }
