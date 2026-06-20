@@ -84,7 +84,9 @@ Highest user-impact. Each gets a regression test where the surface allows.
 - **82** Go per-connection deadline-reset goroutine leaks per reconnect — bound to connection lifetime
 - **99** tooling `exec()` silently drops `stdin`/`quiet` — honor caller options
 
-## Phase 4 — Performance fixes
+## Phase 4 — Performance fixes  ✅ COMPLETE (2026-06-20)
+All 9 done & committed (29, 85, 57, 56, 61, 2, 37, 69, 95). Each build/test-verified. #37 gated behind `CHAU7_MEMORY_DIAGNOSTICS` rather than deleted (OOM investigation may be ongoing). Also fixed a TOCTOU security regression in #75 (Phase 3) flagged by the commit security review — reserve/release made atomic.
+
 - **29** O(columns²) per-row column-map rebuild in telemetry parse — reuse the map-taking variant (`parseRun` precedent)
 - **85** Rust tracker reopens SQLite + runs CREATE/ALTER/DELETE every command (×38 sites) — guard schema with `PRAGMA user_version`, gate cleanup to once/day
 - **57** LocalizedFormatters rebuilt per access (per terminal line) — memoize
