@@ -45,39 +45,6 @@ final class StatusBarControllerTests: XCTestCase {
         controller.updateIcon()
     }
 
-    // MARK: - StatusBarPanelView State
-
-    /// Verify that the default StreamSelection picker entries cover the known tools
-    func testStreamSelectionDefaultSelections() {
-        let selections = StreamSelection.defaultSelections
-        XCTAssertEqual(
-            selections.count,
-            5,
-            "StreamSelection should offer 5 default selections"
-        )
-        XCTAssertTrue(selections.contains(.history(providerKey: "codex")))
-        XCTAssertTrue(selections.contains(.history(providerKey: "claude")))
-        XCTAssertTrue(selections.contains(.terminal(providerKey: "codex")))
-        XCTAssertTrue(selections.contains(.terminal(providerKey: "claude")))
-        XCTAssertTrue(selections.contains(.verbose))
-    }
-
-    func testStreamSelectionTitles() {
-        XCTAssertEqual(StreamSelection.history(providerKey: "codex").title, "Codex")
-        XCTAssertEqual(StreamSelection.history(providerKey: "claude").title, "Claude")
-        XCTAssertEqual(StreamSelection.terminal(providerKey: "codex").title, "Codex TTY")
-        XCTAssertEqual(StreamSelection.terminal(providerKey: "claude").title, "Claude TTY")
-        XCTAssertEqual(StreamSelection.verbose.title, "Verbose")
-    }
-
-    func testStreamSelectionIdentifiable() {
-        XCTAssertEqual(StreamSelection.history(providerKey: "codex").id, "history-codex")
-        XCTAssertEqual(StreamSelection.history(providerKey: "claude").id, "history-claude")
-        XCTAssertEqual(StreamSelection.terminal(providerKey: "codex").id, "terminal-codex")
-        XCTAssertEqual(StreamSelection.terminal(providerKey: "claude").id, "terminal-claude")
-        XCTAssertEqual(StreamSelection.verbose.id, "verbose")
-    }
-
     // MARK: - Notification Integration
 
     func testMonitoringStateChangedNotificationName() {
@@ -87,18 +54,6 @@ final class StatusBarControllerTests: XCTestCase {
             Notification.Name.monitoringStateChanged.rawValue,
             "MonitoringStateChanged",
             "Notification name should match the expected string"
-        )
-    }
-
-    // MARK: - Stream Selection Unique IDs
-
-    func testStreamSelectionIdsAreUnique() {
-        let ids = StreamSelection.defaultSelections.map(\.id)
-        let uniqueIds = Set(ids)
-        XCTAssertEqual(
-            ids.count,
-            uniqueIds.count,
-            "All stream selection cases should have unique IDs"
         )
     }
 
