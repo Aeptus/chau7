@@ -2206,54 +2206,57 @@ final class TelemetryStore {
     }
 
     private func parseTurn(_ stmt: OpaquePointer?) -> TelemetryTurn? {
+        let map = columnIndexMap(stmt)
         guard let stmt,
-              let turnID = colByName(stmt, "turn_id"),
-              let runID = colByName(stmt, "run_id"),
-              let roleStr = colByName(stmt, "role"),
+              let turnID = colByName(stmt, "turn_id", map),
+              let runID = colByName(stmt, "run_id", map),
+              let roleStr = colByName(stmt, "role", map),
               let role = TurnRole(rawValue: roleStr)
         else { return nil }
 
-        let toolCalls: [TelemetryToolCall] = Self.decodeJSON(colByName(stmt, "tool_calls")) ?? []
+        let toolCalls: [TelemetryToolCall] = Self.decodeJSON(colByName(stmt, "tool_calls", map)) ?? []
         return TelemetryTurn(
             id: turnID, runID: runID,
-            turnIndex: intByName(stmt, "turn_index") ?? 0,
+            turnIndex: intByName(stmt, "turn_index", map) ?? 0,
             role: role,
-            content: colByName(stmt, "content"),
-            inputTokens: intByName(stmt, "input_tokens"),
-            cacheCreationInputTokens: intByName(stmt, "cache_creation_input_tokens"),
-            cacheReadInputTokens: intByName(stmt, "cache_read_input_tokens"),
-            cachedInputTokens: intByName(stmt, "cached_input_tokens"),
-            outputTokens: intByName(stmt, "output_tokens"),
-            reasoningOutputTokens: intByName(stmt, "reasoning_output_tokens"),
+            content: colByName(stmt, "content", map),
+            inputTokens: intByName(stmt, "input_tokens", map),
+            cacheCreationInputTokens: intByName(stmt, "cache_creation_input_tokens", map),
+            cacheReadInputTokens: intByName(stmt, "cache_read_input_tokens", map),
+            cachedInputTokens: intByName(stmt, "cached_input_tokens", map),
+            outputTokens: intByName(stmt, "output_tokens", map),
+            reasoningOutputTokens: intByName(stmt, "reasoning_output_tokens", map),
             toolCalls: toolCalls,
-            timestamp: colByName(stmt, "timestamp").flatMap { Self.isoDate(from: $0) },
-            durationMs: intByName(stmt, "duration_ms")
+            timestamp: colByName(stmt, "timestamp", map).flatMap { Self.isoDate(from: $0) },
+            durationMs: intByName(stmt, "duration_ms", map)
         )
     }
 
     private func parseToolCall(_ stmt: OpaquePointer?) -> TelemetryToolCall {
-        TelemetryToolCall(
-            id: colByName(stmt, "call_id") ?? UUID().uuidString,
-            runID: colByName(stmt, "run_id") ?? "",
-            turnID: colByName(stmt, "turn_id") ?? "",
-            toolName: colByName(stmt, "tool_name") ?? "",
-            arguments: colByName(stmt, "arguments"),
-            result: colByName(stmt, "result"),
-            status: ToolCallStatus(rawValue: colByName(stmt, "status") ?? "") ?? .success,
-            durationMs: intByName(stmt, "duration_ms"),
-            callIndex: intByName(stmt, "call_index") ?? 0
+        let map = columnIndexMap(stmt)
+        return TelemetryToolCall(
+            id: colByName(stmt, "call_id", map) ?? UUID().uuidString,
+            runID: colByName(stmt, "run_id", map) ?? "",
+            turnID: colByName(stmt, "turn_id", map) ?? "",
+            toolName: colByName(stmt, "tool_name", map) ?? "",
+            arguments: colByName(stmt, "arguments", map),
+            result: colByName(stmt, "result", map),
+            status: ToolCallStatus(rawValue: colByName(stmt, "status", map) ?? "") ?? .success,
+            durationMs: intByName(stmt, "duration_ms", map),
+            callIndex: intByName(stmt, "call_index", map) ?? 0
         )
     }
 
     private func parseUsageEvidence(_ stmt: OpaquePointer?) -> UsageEvidence? {
+        let map = columnIndexMap(stmt)
         guard let stmt,
-              let id = colByName(stmt, "evidence_id"),
-              let uniqueEventKey = colByName(stmt, "unique_event_key"),
-              let reconciliationKey = colByName(stmt, "reconciliation_key"),
-              let rawSourceKind = colByName(stmt, "source_kind"),
+              let id = colByName(stmt, "evidence_id", map),
+              let uniqueEventKey = colByName(stmt, "unique_event_key", map),
+              let reconciliationKey = colByName(stmt, "reconciliation_key", map),
+              let rawSourceKind = colByName(stmt, "source_kind", map),
               let sourceKind = UsageEvidenceSourceKind(rawValue: rawSourceKind),
-              let provider = colByName(stmt, "provider"),
-              let observedAtString = colByName(stmt, "observed_at"),
+              let provider = colByName(stmt, "provider", map),
+              let observedAtString = colByName(stmt, "observed_at", map),
               let observedAt = Self.isoDate(from: observedAtString)
         else { return nil }
 
@@ -2263,53 +2266,54 @@ final class TelemetryStore {
             reconciliationKey: reconciliationKey,
             sourceKind: sourceKind,
             provider: provider,
-            model: colByName(stmt, "model"),
-            sessionID: colByName(stmt, "session_id"),
-            runID: colByName(stmt, "run_id"),
-            endpoint: colByName(stmt, "endpoint"),
-            projectPath: colByName(stmt, "project_path"),
-            inputTokens: intByName(stmt, "input_tokens"),
-            cacheCreationInputTokens: intByName(stmt, "cache_creation_input_tokens"),
-            cacheReadInputTokens: intByName(stmt, "cache_read_input_tokens"),
-            outputTokens: intByName(stmt, "output_tokens"),
-            reasoningOutputTokens: intByName(stmt, "reasoning_output_tokens"),
-            costUSD: doubleByName(stmt, "cost_usd"),
-            tokenUsageSource: colByName(stmt, "token_usage_source").flatMap(TokenUsageSource.init(rawValue:)),
-            tokenUsageState: colByName(stmt, "token_usage_state").flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
-            costSource: colByName(stmt, "cost_source").flatMap(CostSource.init(rawValue:)),
-            costState: colByName(stmt, "cost_state").flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
-            pricingVersion: colByName(stmt, "pricing_version"),
-            sourceRef: colByName(stmt, "source_ref"),
+            model: colByName(stmt, "model", map),
+            sessionID: colByName(stmt, "session_id", map),
+            runID: colByName(stmt, "run_id", map),
+            endpoint: colByName(stmt, "endpoint", map),
+            projectPath: colByName(stmt, "project_path", map),
+            inputTokens: intByName(stmt, "input_tokens", map),
+            cacheCreationInputTokens: intByName(stmt, "cache_creation_input_tokens", map),
+            cacheReadInputTokens: intByName(stmt, "cache_read_input_tokens", map),
+            outputTokens: intByName(stmt, "output_tokens", map),
+            reasoningOutputTokens: intByName(stmt, "reasoning_output_tokens", map),
+            costUSD: doubleByName(stmt, "cost_usd", map),
+            tokenUsageSource: colByName(stmt, "token_usage_source", map).flatMap(TokenUsageSource.init(rawValue:)),
+            tokenUsageState: colByName(stmt, "token_usage_state", map).flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
+            costSource: colByName(stmt, "cost_source", map).flatMap(CostSource.init(rawValue:)),
+            costState: colByName(stmt, "cost_state", map).flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
+            pricingVersion: colByName(stmt, "pricing_version", map),
+            sourceRef: colByName(stmt, "source_ref", map),
             observedAt: observedAt,
-            metadata: Self.decodeJSON(colByName(stmt, "metadata")) ?? [:]
+            metadata: Self.decodeJSON(colByName(stmt, "metadata", map)) ?? [:]
         )
     }
 
     private func parseRemoteClientEvent(_ stmt: OpaquePointer?) -> RemoteClientTelemetryEvent? {
+        let map = columnIndexMap(stmt)
         guard let stmt,
-              let id = colByName(stmt, "event_id"),
-              let source = colByName(stmt, "source"),
-              let appVersion = colByName(stmt, "app_version"),
-              let rawEventType = colByName(stmt, "event_type"),
+              let id = colByName(stmt, "event_id", map),
+              let source = colByName(stmt, "source", map),
+              let appVersion = colByName(stmt, "app_version", map),
+              let rawEventType = colByName(stmt, "event_type", map),
               let eventType = RemoteClientTelemetryEventType(rawValue: rawEventType),
-              let timestampString = colByName(stmt, "timestamp"),
+              let timestampString = colByName(stmt, "timestamp", map),
               let timestamp = Self.isoDate(from: timestampString)
         else { return nil }
 
-        let tabID = intByName(stmt, "tab_id").map(UInt32.init)
+        let tabID = intByName(stmt, "tab_id", map).map(UInt32.init)
         return RemoteClientTelemetryEvent(
             id: id,
             source: source,
-            deviceID: colByName(stmt, "device_id"),
-            deviceName: colByName(stmt, "device_name"),
+            deviceID: colByName(stmt, "device_id", map),
+            deviceName: colByName(stmt, "device_name", map),
             appVersion: appVersion,
-            sessionID: colByName(stmt, "session_id"),
+            sessionID: colByName(stmt, "session_id", map),
             eventType: eventType,
-            status: colByName(stmt, "status"),
+            status: colByName(stmt, "status", map),
             tabID: tabID,
-            tabTitle: colByName(stmt, "tab_title"),
-            message: colByName(stmt, "message"),
-            metadata: Self.decodeJSON(colByName(stmt, "metadata")) ?? [:],
+            tabTitle: colByName(stmt, "tab_title", map),
+            message: colByName(stmt, "message", map),
+            metadata: Self.decodeJSON(colByName(stmt, "metadata", map)) ?? [:],
             timestamp: timestamp
         )
     }
@@ -2376,20 +2380,6 @@ final class TelemetryStore {
         guard let stmt, let i = map[name] else { return nil }
         if sqlite3_column_type(stmt, i) == SQLITE_NULL { return nil }
         return sqlite3_column_double(stmt, i)
-    }
-
-    /// Legacy name-scan variants for callers that don't have a column map.
-    /// These should be migrated over time.
-    private func colByName(_ stmt: OpaquePointer?, _ name: String) -> String? {
-        colByName(stmt, name, columnIndexMap(stmt))
-    }
-
-    private func intByName(_ stmt: OpaquePointer?, _ name: String) -> Int? {
-        intByName(stmt, name, columnIndexMap(stmt))
-    }
-
-    private func doubleByName(_ stmt: OpaquePointer?, _ name: String) -> Double? {
-        doubleByName(stmt, name, columnIndexMap(stmt))
     }
 
     static let isoFormatter: ISO8601DateFormatter = {
