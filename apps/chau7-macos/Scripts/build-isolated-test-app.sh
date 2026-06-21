@@ -37,6 +37,14 @@ SHOW_DOCK_ICON=1 \
 
 mv "$BASE_APP_PATH" "$TEST_APP_PATH"
 
+# Label the bundle so the Dock / menu bar clearly distinguish the isolated
+# test app from the stable one (segregation has to be visible, not just on disk).
+PLIST="$TEST_APP_PATH/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $TEST_APP_NAME" "$PLIST" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Add :CFBundleName string $TEST_APP_NAME" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $TEST_APP_NAME" "$PLIST" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $TEST_APP_NAME" "$PLIST"
+
 ISOLATED_HOME="$TEST_APP_PATH/Contents/isolation-home"
 
 mkdir -p \
