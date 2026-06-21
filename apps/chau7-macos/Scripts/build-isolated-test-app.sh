@@ -25,6 +25,12 @@ echo "  home root:  $ISOLATED_HOME"
 
 swift build -c "$BUILD_MODE" --package-path "$ROOT_DIR"
 
+# Kill any running instance of this test app first. Its terminal shell CWDs into
+# the isolation home under $OUT_DIR, so a live instance makes `rm -rf "$OUT_DIR"`
+# fail with "Directory not empty" (files reappear mid-delete). Stable app untouched.
+pkill -f "$TEST_APP_PATH/Contents/MacOS/Chau7" 2>/dev/null || true
+sleep 1
+
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
@@ -43,7 +49,15 @@ PLIST="$TEST_APP_PATH/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $TEST_APP_NAME" "$PLIST" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $TEST_APP_NAME" "$PLIST"
 
-ISOLATED_HOME="$TEST_APP_PATH/Contents/isolation-home"
+# The isolation home lives OUTSIDE the .app bundle (sibling of it). It must NOT
+# be inside Contents/: at startup the app installs helper executables
+# (chau7-mcp-bridge etc.) into ~/.chau7/bin via FileManager.copyItem, and cloning
+# an executable INTO the running, code-signed app bundle deadlocks in the kernel's
+# clonefileat/code-signing validation — the main thread hangs in
+# MCPServerManager.installExecutableIfNeeded and the terminal never opens. Writing
+# to an external dir (like the stable app's real ~/.chau7) avoids that entirely and
+# also keeps the signed bundle's contents clean.
+ISOLATED_HOME="$OUT_DIR/home"
 
 mkdir -p \
   "$ISOLATED_HOME/Library/Application Support" \
@@ -94,6 +108,12 @@ while IFS= read -r -d '' macho; do
   fi
 done < <(find "$TEST_APP_PATH/Contents" -type f -print0)
 codesign --force --sign - "$TEST_APP_PATH"
+
+# Force LaunchServices to re-read the bundle's LSEnvironment. It caches env per
+# bundle path, so a rebuild at the same path can otherwise launch with a stale
+# isolation home.
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -f "$TEST_APP_PATH" 2>/dev/null || true
 
 echo "Isolated test app ready:"
 echo "  $TEST_APP_PATH"
