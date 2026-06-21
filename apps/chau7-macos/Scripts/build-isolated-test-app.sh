@@ -79,7 +79,21 @@ This keeps the test app away from the main app's UserDefaults domain,
 Application Support, logs, ~/.chau7 state, and Keychain service names.
 EOF
 
-codesign --force --sign - --deep "$TEST_APP_PATH"
+# Re-sign every nested Mach-O ad-hoc WITHOUT hardened runtime, then seal the
+# bundle. build-app.sh signs everything Developer-ID + hardened runtime; once we
+# swap the main executable for the shell launcher and re-seal, the bundle is
+# inconsistent and AMFI SIGKILLs it on launch (exit 137) — library validation
+# under the runtime flag rejects the tampered/ad-hoc bundle. Dropping the runtime
+# flag (plain ad-hoc) removes library validation so the LOCAL test app runs. The
+# shell launcher itself is not Mach-O, so it is skipped and stays executable.
+echo "Re-signing nested Mach-O ad-hoc (no hardened runtime) for local launch"
+while IFS= read -r -d '' macho; do
+  if file "$macho" | grep -q "Mach-O"; then
+    codesign --remove-signature "$macho" 2>/dev/null || true
+    codesign --force --sign - "$macho"
+  fi
+done < <(find "$TEST_APP_PATH/Contents" -type f -print0)
+codesign --force --sign - "$TEST_APP_PATH"
 
 echo "Isolated test app ready:"
 echo "  $TEST_APP_PATH"
