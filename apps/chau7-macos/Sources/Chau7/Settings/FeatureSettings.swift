@@ -1963,6 +1963,23 @@ final class FeatureSettings {
         }
     }
 
+    /// Total command-history lines retained across closed ("orphan") tabs. Per-tab
+    /// shell history accrues one file per tab ever opened; this caps the combined
+    /// closed-tab corpus. When over the cap, the oldest commands are dropped first,
+    /// but each tab keeps at least a few of its most recent ones (see
+    /// `TerminalSessionModel.pruneOrphanShellHistory`). 0 keeps only that per-tab
+    /// minimum. Active/restorable tabs are never pruned.
+    var shellHistoryMaxLines: Int {
+        didSet {
+            let clamped = max(0, min(shellHistoryMaxLines, 1_000_000))
+            if shellHistoryMaxLines != clamped {
+                shellHistoryMaxLines = clamped
+                return
+            }
+            UserDefaults.standard.set(shellHistoryMaxLines, forKey: Keys.shellHistoryMaxLines)
+        }
+    }
+
     /// Maximum number of scrollback lines restored when tabs are recovered.
     /// Set to 0 to disable scrollback restoration.
     var restoredScrollbackLines: Int {
@@ -2509,6 +2526,7 @@ final class FeatureSettings {
         static let cursorStyle = "terminal.cursorStyle"
         static let cursorBlink = "terminal.cursorBlink"
         static let scrollbackLines = "terminal.scrollbackLines"
+        static let shellHistoryMaxLines = "terminal.shellHistoryMaxLines"
         static let restoredScrollbackLines = "terminal.restoredScrollbackLines"
         static let runtimeEventJournalCapacity = "runtime.eventJournalCapacity"
         static let runtimeOutputChunkLimit = "runtime.outputChunkLimit"
@@ -2973,6 +2991,7 @@ final class FeatureSettings {
         self.cursorColor = defaults.string(forKey: "terminal.cursorColor") ?? ""
         self.unicodeAmbiguousWidth = defaults.object(forKey: "terminal.unicodeAmbiguousWidth") as? Int ?? 1
         self.scrollbackLines = defaults.object(forKey: Keys.scrollbackLines) as? Int ?? 10000
+        self.shellHistoryMaxLines = defaults.object(forKey: Keys.shellHistoryMaxLines) as? Int ?? 1000
         self.restoredScrollbackLines = defaults.object(forKey: Keys.restoredScrollbackLines) as? Int ?? 500
         self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
         self.bellSound = defaults.string(forKey: Keys.bellSound) ?? "default"
@@ -3291,6 +3310,7 @@ final class FeatureSettings {
         var cursorStyle: String
         var cursorBlink: Bool
         var scrollbackLines: Int
+        var shellHistoryMaxLines: Int?
         var restoredScrollbackLines: Int
         var bellEnabled: Bool
         var bellSound: String
@@ -3415,6 +3435,7 @@ final class FeatureSettings {
             cursorStyle: cursorStyle,
             cursorBlink: cursorBlink,
             scrollbackLines: scrollbackLines,
+            shellHistoryMaxLines: shellHistoryMaxLines,
             restoredScrollbackLines: restoredScrollbackLines,
             bellEnabled: bellEnabled,
             bellSound: bellSound,
@@ -3565,6 +3586,9 @@ final class FeatureSettings {
         cursorStyle = imported.cursorStyle
         cursorBlink = imported.cursorBlink
         scrollbackLines = imported.scrollbackLines
+        if let shellHistoryMaxLines = imported.shellHistoryMaxLines {
+            self.shellHistoryMaxLines = shellHistoryMaxLines
+        }
         restoredScrollbackLines = imported.restoredScrollbackLines
         bellEnabled = imported.bellEnabled
         bellSound = imported.bellSound

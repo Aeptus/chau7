@@ -3221,3 +3221,7 @@
 "settings.productivity.permissions.protected.detail.grantAccess" = "Concede acceso a la carpeta para permitir la actualización en vivo en esta ubicación.";
 "settings.productivity.permissions.protected.detail.cooldown" = "Chau7 está esperando antes de reintentar el acceso tras una denegación reciente.";
 "settings.productivity.permissions.protected.detail.regrant" = "El permiso guardado está obsoleto. Concede acceso otra vez para restaurar la actualización en vivo.";
+
+"settings.terminal.shellHistory" = "Historial del shell";
+"settings.terminal.shellHistoryMaxLines" = "Historial guardado (pestañas cerradas)";
+"settings.terminal.shellHistoryMaxLines.help" = "Cada pestaña mantiene su propio historial de comandos. Esto limita el total guardado de las pestañas cerradas: los comandos más antiguos se eliminan primero al superar el límite, y cada pestaña conserva al menos los últimos. Las pestañas abiertas nunca se recortan. (0–1 000 000)";

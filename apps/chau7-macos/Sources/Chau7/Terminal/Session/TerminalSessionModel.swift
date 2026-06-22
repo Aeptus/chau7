@@ -1935,19 +1935,23 @@ final class TerminalSessionModel {
         }
     }
 
-    /// Total input lines retained across history files for tabs no longer present
-    /// in the restore state (closed tabs). Bounds the per-tab history dir by content
-    /// volume rather than age. Active and restorable tabs are never pruned.
-    static let maxOrphanShellHistoryLines = 50_000
+    /// Minimum command-history lines each closed tab retains while still on disk,
+    /// so a tab's most recent commands are never fully discarded by trimming.
+    static let minShellHistoryLinesPerTab = 5
 
-    /// Per-tab shell history lives in `~/.chau7/history/<tab-id>.<shell>_history`;
-    /// one file accrues for every tab ever opened, so closed tabs leave orphans.
-    /// Keep history for every tab still in the restore state and evict the rest
-    /// oldest-first until the orphaned corpus is under `maxLines` total input lines.
+    /// Default total budget when the `shellHistoryMaxLines` setting is unset.
+    static let defaultShellHistoryMaxLines = 1000
+
+    /// Prune accumulated per-tab shell history. Per-tab history lives in
+    /// `~/.chau7/history/<tab-id>.<shell>_history`; one file accrues for every tab
+    /// ever opened, so closed tabs leave orphans. The budget (total input lines kept
+    /// across closed tabs) comes from the `shellHistoryMaxLines` setting.
     ///
     /// This is shell command history ONLY (what you type at the zsh/bash prompt).
     /// AI agent transcripts live in `~/.claude` and `~/.codex` and are never touched.
-    static func pruneOrphanShellHistory(maxLines: Int = maxOrphanShellHistoryLines) {
+    static func pruneOrphanShellHistory() {
+        let maxLines = UserDefaults.standard
+            .object(forKey: "terminal.shellHistoryMaxLines") as? Int ?? defaultShellHistoryMaxLines
         pruneOrphanShellHistory(
             in: RuntimeIsolation.urlInHome(".chau7/history"),
             protectedTabIDs: restorableTabIDs(),
@@ -1955,10 +1959,17 @@ final class TerminalSessionModel {
         )
     }
 
-    /// Testable core: evict orphan history files in `dir` (those whose tab id is
-    /// not in `protectedTabIDs`) oldest-first until the orphaned corpus is under
-    /// `maxLines` total input lines. Protected files are never counted or removed.
-    static func pruneOrphanShellHistory(in dir: URL, protectedTabIDs: Set<String>, maxLines: Int) {
+    /// Testable core. Keep every tab still in `protectedTabIDs` untouched; bound the
+    /// remaining (closed-tab) history to `maxLines` total input lines by dropping the
+    /// OLDEST commands first. Closed tabs are trimmed oldest-first to their most
+    /// recent `minLinesPerTab` commands before any whole file is removed, so a closed
+    /// tab keeps a little history until the budget genuinely can't fit it.
+    static func pruneOrphanShellHistory(
+        in dir: URL,
+        protectedTabIDs: Set<String>,
+        maxLines: Int,
+        minLinesPerTab: Int = minShellHistoryLinesPerTab
+    ) {
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: dir,
@@ -1976,35 +1987,76 @@ final class TerminalSessionModel {
             let name = url.lastPathComponent
             return name.firstIndex(of: ".").map { String(name[..<$0]) } ?? name
         }
-        func inputLineCount(_ url: URL) -> Int {
-            guard let data = try? Data(contentsOf: url) else { return 0 }
-            return data.reduce(into: 0) { count, byte in if byte == 0x0A { count += 1 } }
-        }
 
+        // Orphans (closed tabs) oldest (least-recently-used) first.
         var orphans = historyFiles
             .filter { !protectedTabIDs.contains(tabID(of: $0)) }
             .map { url -> (url: URL, lines: Int, mtime: Date) in
                 let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
                     .contentModificationDate) ?? .distantPast
-                return (url, inputLineCount(url), mtime)
+                return (url, inputLineCount(of: url), mtime)
             }
+            .sorted { $0.mtime < $1.mtime }
 
         var total = orphans.reduce(0) { $0 + $1.lines }
         guard total > maxLines else { return }
 
-        orphans.sort { $0.mtime < $1.mtime } // oldest (least-recently-used) first
-        var prunedCount = 0
-        for orphan in orphans {
+        let floor = max(0, minLinesPerTab)
+        var trimmed = 0
+        var removed = 0
+
+        // Pass 1: trim the oldest tabs down to the per-tab floor (drop their oldest
+        // commands, keep the most recent `floor`).
+        for index in orphans.indices {
             if total <= maxLines { break }
-            try? fm.removeItem(at: orphan.url)
-            total -= orphan.lines
-            prunedCount += 1
+            let orphan = orphans[index]
+            guard orphan.lines > floor else { continue }
+            if keepLastLines(of: orphan.url, count: floor) {
+                total -= (orphan.lines - floor)
+                orphans[index].lines = floor
+                trimmed += 1
+            }
         }
-        if prunedCount > 0 {
+
+        // Pass 2: if still over budget (too many closed tabs even at the floor),
+        // remove whole oldest tabs until under.
+        if total > maxLines {
+            for orphan in orphans {
+                if total <= maxLines { break }
+                try? fm.removeItem(at: orphan.url)
+                total -= orphan.lines
+                removed += 1
+            }
+        }
+
+        if trimmed > 0 || removed > 0 {
             Log.info(
-                "ShellHistory: pruned \(prunedCount) orphan tab history file(s); "
-                    + "orphan corpus now ~\(total) lines (cap \(maxLines))"
+                "ShellHistory: pruned closed-tab history (trimmed \(trimmed), removed \(removed)); "
+                    + "corpus now ~\(total) lines (cap \(maxLines), floor \(floor)/tab)"
             )
+        }
+    }
+
+    private static func inputLineCount(of url: URL) -> Int {
+        guard let data = try? Data(contentsOf: url) else { return 0 }
+        return data.reduce(into: 0) { count, byte in if byte == 0x0A { count += 1 } }
+    }
+
+    /// Rewrite `url` keeping only its last `count` newline-delimited lines (the most
+    /// recent commands), dropping the oldest. Returns false on read/write failure.
+    @discardableResult
+    private static func keepLastLines(of url: URL, count: Int) -> Bool {
+        guard count >= 0, let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
+        var lines = content.components(separatedBy: "\n")
+        if lines.last == "" { lines.removeLast() } // ignore the trailing newline
+        guard lines.count > count else { return true } // already within the floor
+        let kept = lines.suffix(count)
+        let text = count == 0 ? "" : kept.joined(separator: "\n") + "\n"
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            return true
+        } catch {
+            return false
         }
     }
 

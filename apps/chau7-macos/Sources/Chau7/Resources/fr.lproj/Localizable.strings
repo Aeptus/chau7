@@ -3173,3 +3173,7 @@
 "settings.productivity.permissions.protected.detail.grantAccess" = "Accordez l’accès au dossier pour permettre l’actualisation en direct ici.";
 "settings.productivity.permissions.protected.detail.cooldown" = "Chau7 attend avant de réessayer après un refus récent.";
 "settings.productivity.permissions.protected.detail.regrant" = "L’autorisation enregistrée n’est plus valide. Accordez de nouveau l’accès pour rétablir l’actualisation.";
+
+"settings.terminal.shellHistory" = "Historique du shell";
+"settings.terminal.shellHistoryMaxLines" = "Historique conservé (onglets fermés)";
+"settings.terminal.shellHistoryMaxLines.help" = "Chaque onglet conserve son propre historique de commandes. Ceci limite le total conservé pour les onglets fermés — les commandes les plus anciennes sont supprimées en premier au-delà de la limite, et chaque onglet garde au moins ses dernières. Les onglets ouverts ne sont jamais réduits. (0–1 000 000)";

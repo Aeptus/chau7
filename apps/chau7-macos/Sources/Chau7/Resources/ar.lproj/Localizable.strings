@@ -3139,3 +3139,7 @@
 "settings.productivity.permissions.protected.detail.grantAccess" = "امنح الوصول إلى المجلد للسماح بالتحديث المباشر في هذا الموقع.";
 "settings.productivity.permissions.protected.detail.cooldown" = "ينتظر Chau7 قبل إعادة محاولة الوصول بعد رفض حديث.";
 "settings.productivity.permissions.protected.detail.regrant" = "الإذن المحفوظ قديم. امنح الوصول مرة أخرى لاستعادة التحديث المباشر.";
+
+"settings.terminal.shellHistory" = "سجل الصدفة";
+"settings.terminal.shellHistoryMaxLines" = "السجل المحفوظ (علامات التبويب المغلقة)";
+"settings.terminal.shellHistoryMaxLines.help" = "تحتفظ كل علامة تبويب بسجل الأوامر الخاص بها. يحد هذا من إجمالي ما يُحفظ عبر علامات التبويب المغلقة — تُحذف أقدم الأوامر أولاً عند تجاوز الحد، وتحتفظ كل علامة تبويب بآخر أوامرها على الأقل. لا تُقتطع علامات التبويب المفتوحة أبداً. (0–1,000,000)";

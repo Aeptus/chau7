@@ -50,6 +50,22 @@ struct ShellSettingsView: View {
             Divider()
                 .padding(.vertical, 8)
 
+            // Shell History
+            SettingsSectionHeader(L("settings.terminal.shellHistory", "Shell History"), icon: "clock.arrow.circlepath")
+
+            SettingsNumberField(
+                label: L("settings.terminal.shellHistoryMaxLines", "Saved History (closed tabs)"),
+                help: L(
+                    "settings.terminal.shellHistoryMaxLines.help",
+                    "Each tab keeps its own command history. This caps the total kept across closed tabs — oldest commands drop first when over the limit, and each tab keeps at least its last few. Open tabs are never trimmed. (0–1,000,000)"
+                ),
+                value: $settings.shellHistoryMaxLines,
+                width: 100
+            )
+
+            Divider()
+                .padding(.vertical, 8)
+
             // Cursor
             SettingsSectionHeader(L("settings.terminal.cursor", "Cursor"), icon: "cursorarrow")
 
