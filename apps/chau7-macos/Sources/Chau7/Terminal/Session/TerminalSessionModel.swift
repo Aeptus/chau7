@@ -1926,6 +1926,110 @@ final class TerminalSessionModel {
         } catch {
             Log.error("Failed to create shell integration files: \(error)")
         }
+
+        // Bound the accumulation of per-tab shell history files (one accrues per
+        // tab ever opened; closed tabs leave orphans). Off the main thread so it
+        // never delays launch; reads only static files (restore state + history).
+        DispatchQueue.global(qos: .utility).async {
+            pruneOrphanShellHistory()
+        }
+    }
+
+    /// Total input lines retained across history files for tabs no longer present
+    /// in the restore state (closed tabs). Bounds the per-tab history dir by content
+    /// volume rather than age. Active and restorable tabs are never pruned.
+    static let maxOrphanShellHistoryLines = 50_000
+
+    /// Per-tab shell history lives in `~/.chau7/history/<tab-id>.<shell>_history`;
+    /// one file accrues for every tab ever opened, so closed tabs leave orphans.
+    /// Keep history for every tab still in the restore state and evict the rest
+    /// oldest-first until the orphaned corpus is under `maxLines` total input lines.
+    ///
+    /// This is shell command history ONLY (what you type at the zsh/bash prompt).
+    /// AI agent transcripts live in `~/.claude` and `~/.codex` and are never touched.
+    static func pruneOrphanShellHistory(maxLines: Int = maxOrphanShellHistoryLines) {
+        pruneOrphanShellHistory(
+            in: RuntimeIsolation.urlInHome(".chau7/history"),
+            protectedTabIDs: restorableTabIDs(),
+            maxLines: maxLines
+        )
+    }
+
+    /// Testable core: evict orphan history files in `dir` (those whose tab id is
+    /// not in `protectedTabIDs`) oldest-first until the orphaned corpus is under
+    /// `maxLines` total input lines. Protected files are never counted or removed.
+    static func pruneOrphanShellHistory(in dir: URL, protectedTabIDs: Set<String>, maxLines: Int) {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let historyFiles = entries.filter {
+            let name = $0.lastPathComponent
+            return name.hasSuffix(".zsh_history") || name.hasSuffix(".bash_history")
+        }
+        guard !historyFiles.isEmpty else { return }
+
+        func tabID(of url: URL) -> String {
+            let name = url.lastPathComponent
+            return name.firstIndex(of: ".").map { String(name[..<$0]) } ?? name
+        }
+        func inputLineCount(_ url: URL) -> Int {
+            guard let data = try? Data(contentsOf: url) else { return 0 }
+            return data.reduce(into: 0) { count, byte in if byte == 0x0A { count += 1 } }
+        }
+
+        var orphans = historyFiles
+            .filter { !protectedTabIDs.contains(tabID(of: $0)) }
+            .map { url -> (url: URL, lines: Int, mtime: Date) in
+                let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                    .contentModificationDate) ?? .distantPast
+                return (url, inputLineCount(url), mtime)
+            }
+
+        var total = orphans.reduce(0) { $0 + $1.lines }
+        guard total > maxLines else { return }
+
+        orphans.sort { $0.mtime < $1.mtime } // oldest (least-recently-used) first
+        var prunedCount = 0
+        for orphan in orphans {
+            if total <= maxLines { break }
+            try? fm.removeItem(at: orphan.url)
+            total -= orphan.lines
+            prunedCount += 1
+        }
+        if prunedCount > 0 {
+            Log.info(
+                "ShellHistory: pruned \(prunedCount) orphan tab history file(s); "
+                    + "orphan corpus now ~\(total) lines (cap \(maxLines))"
+            )
+        }
+    }
+
+    /// Tab IDs that may still be restored, gathered from every restore source, so
+    /// pruning never deletes the history of a tab the user is about to get back.
+    private static func restorableTabIDs() -> Set<String> {
+        var ids = Set<String>()
+        func add(_ windows: [[SavedTabState]]?) {
+            windows?.forEach { window in
+                window.forEach { if let id = $0.tabID { ids.insert(id) } }
+            }
+        }
+        // Primary: the file-based restore bundle (authoritative — UserDefaults is
+        // often nearly empty when the bundle holds the real window state).
+        add(TabRestoreBundleStore.loadCurrentWindowStates())
+        // UserDefaults multi-window + legacy single-window keys.
+        if let data = UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
+           let multi = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data) {
+            add(multi.windows)
+        }
+        if let data = UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey),
+           let single = try? JSONDecoder().decode([SavedTabState].self, from: data) {
+            add([single])
+        }
+        return ids
     }
 
     private func syncRustTerminalObservabilityScope() {
