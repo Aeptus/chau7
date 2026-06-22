@@ -82,6 +82,35 @@ final class MarkdownLiveStylerTests: XCTestCase {
         XCTAssertTrue(runs("just some plain prose").isEmpty)
     }
 
+    func testUncheckedTaskCheckbox() {
+        assertContains("- [ ] do thing", (.listMarker, "-"))
+        assertContains("- [ ] do thing", (.taskCheckbox(checked: false), "[ ]"))
+        let found = runs("- [ ] do thing")
+        XCTAssertFalse(found.contains(where: { $0.0 == .completedTask }), "unchecked tasks are not struck through")
+    }
+
+    func testCheckedTaskStrikesThroughText() {
+        assertContains("- [x] done", (.taskCheckbox(checked: true), "[x]"))
+        assertContains("- [x] done", (.completedTask, "done"))
+        assertContains("- [X] done", (.taskCheckbox(checked: true), "[X]"))
+    }
+
+    func testInlineStillStyledInsideTaskText() {
+        assertContains("- [ ] a **b**", (.bold, "**b**"))
+    }
+
+    func testHangingIndentForListsAndQuotesOnly() {
+        let font = NSFont.systemFont(ofSize: 13)
+        XCTAssertNotNil(MarkdownLiveStyler.hangingIndent(forLine: "- item", font: font))
+        XCTAssertNotNil(MarkdownLiveStyler.hangingIndent(forLine: "1. item", font: font))
+        XCTAssertNotNil(MarkdownLiveStyler.hangingIndent(forLine: "- [x] task", font: font))
+        XCTAssertNotNil(MarkdownLiveStyler.hangingIndent(forLine: "> quote", font: font))
+        XCTAssertNil(MarkdownLiveStyler.hangingIndent(forLine: "plain text", font: font))
+        XCTAssertNil(MarkdownLiveStyler.hangingIndent(forLine: "# heading", font: font))
+        // A list indent must leave room for the marker prefix.
+        XCTAssertGreaterThan(MarkdownLiveStyler.hangingIndent(forLine: "- item", font: font) ?? 0, 0)
+    }
+
     func testRangesAreWithinBounds() {
         let md = "# H\n- x **y**\n> q\n```\nc\n```\n[t](u)"
         let ns = md as NSString

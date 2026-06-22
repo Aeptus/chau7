@@ -3177,3 +3177,5 @@
 "settings.terminal.shellHistory" = "Historique du shell";
 "settings.terminal.shellHistoryMaxLines" = "Historique conservé (onglets fermés)";
 "settings.terminal.shellHistoryMaxLines.help" = "Chaque onglet conserve son propre historique de commandes. Ceci limite le total conservé pour les onglets fermés — les commandes les plus anciennes sont supprimées en premier au-delà de la limite, et chaque onglet garde au moins ses dernières. Les onglets ouverts ne sont jamais réduits. (0–1 000 000)";
+
+"pane.showPreview" = "Afficher l’aperçu (⌘⇧P)";

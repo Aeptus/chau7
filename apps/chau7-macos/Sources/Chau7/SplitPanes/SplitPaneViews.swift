@@ -314,7 +314,8 @@ struct TextEditorPaneView: View {
                     .disabled(!editor.isDirty && editor.filePath != nil)
                     .help(L("Save", "Save"))
 
-                    // Markdown toggle (only for .md files)
+                    // Markdown Source ⇄ Preview toggle (only for .md files), with a
+                    // ⌘⇧P shortcut scoped to the editor pane while it's on screen.
                     if isMarkdownFile {
                         Button {
                             isMarkdownMode.toggle()
@@ -323,7 +324,10 @@ struct TextEditorPaneView: View {
                                 .font(.system(size: 11))
                         }
                         .buttonStyle(.plain)
-                        .help(isMarkdownMode ? L("pane.showSource", "Show Source") : L("pane.showRunbook", "Show Runbook"))
+                        .keyboardShortcut("p", modifiers: [.command, .shift])
+                        .help(isMarkdownMode
+                            ? L("pane.showSource", "Show Source (⌘⇧P)")
+                            : L("pane.showPreview", "Show Preview (⌘⇧P)"))
 
                         if isMarkdownMode, onRunCommand != nil {
                             Button {

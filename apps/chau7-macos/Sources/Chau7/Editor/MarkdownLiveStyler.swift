@@ -23,6 +23,8 @@ enum MarkdownLiveStyler {
         case blockquote       // text after `>`
         case listMarker       // -, *, +, or 1. at the start of a list item
         case horizontalRule
+        case taskCheckbox(checked: Bool)  // the `[ ]` / `[x]` of a task list item
+        case completedTask    // the text of a checked task (struck through + dimmed)
     }
 
     struct StyleRun: Equatable {
@@ -58,12 +60,52 @@ enum MarkdownLiveStyler {
     static func apply(to storage: NSTextStorage, theme: Theme) {
         let text = storage.string as NSString
         let full = NSRange(location: 0, length: text.length)
-        storage.setAttributes([.font: theme.bodyFont, .foregroundColor: theme.textColor], range: full)
+        storage.setAttributes([
+            .font: theme.bodyFont,
+            .foregroundColor: theme.textColor,
+            .paragraphStyle: NSParagraphStyle.default
+        ], range: full)
         for run in styleRuns(in: text) {
             for (key, value) in attributes(for: run.kind, theme: theme) {
                 storage.addAttribute(key, value: value, range: run.range)
             }
         }
+        applyHangingIndents(to: storage, theme: theme)
+    }
+
+    /// Wrapped list-item / blockquote lines hang under their text instead of the
+    /// marker, via a per-paragraph head indent measured in the body font.
+    private static func applyHangingIndents(to storage: NSTextStorage, theme: Theme) {
+        let text = storage.string as NSString
+        text.enumerateSubstrings(in: NSRange(location: 0, length: text.length), options: [.byLines]) { _, lineRange, _, _ in
+            let line = text.substring(with: lineRange)
+            guard let indent = hangingIndent(forLine: line, font: theme.bodyFont) else { return }
+            let style = NSMutableParagraphStyle()
+            style.headIndent = indent       // continuation lines hang at the content
+            style.firstLineHeadIndent = 0   // marker sits at the left margin
+            storage.addAttribute(.paragraphStyle, value: style, range: lineRange)
+        }
+    }
+
+    /// Head indent (points) for a list/blockquote line — the rendered width of its
+    /// marker prefix in `font` — or nil for non-indented lines. Internal for tests.
+    static func hangingIndent(forLine line: String, font: NSFont) -> CGFloat? {
+        let ns = line as NSString
+        let whole = NSRange(location: 0, length: ns.length)
+        func prefixWidth(upTo location: Int) -> CGFloat {
+            guard location > 0, location <= ns.length else { return 0 }
+            return (ns.substring(to: location) as NSString).size(withAttributes: [.font: font]).width
+        }
+        if let regex = taskRegex, let m = regex.firstMatch(in: line, range: whole), m.numberOfRanges >= 4 {
+            return prefixWidth(upTo: m.range(at: 3).location)
+        }
+        if let regex = listRegex, let m = regex.firstMatch(in: line, range: whole), m.numberOfRanges >= 3 {
+            return prefixWidth(upTo: m.range(at: 2).location)
+        }
+        if let regex = blockquoteRegex, let m = regex.firstMatch(in: line, range: whole), m.numberOfRanges >= 3 {
+            return prefixWidth(upTo: m.range(at: 2).location)
+        }
+        return nil
     }
 
     // MARK: - Parsing (pure / testable)
@@ -132,6 +174,19 @@ enum MarkdownLiveStyler {
             let abs = offset(content, by: lineRange.location)
             if content.length > 0 { runs.append(StyleRun(kind: .blockquote, range: abs)) }
             return abs
+        }
+        // Task list item: `- [ ] text` / `- [x] text` (a special list item).
+        if let regex = Self.taskRegex,
+           let m = regex.firstMatch(in: line as String, range: whole), m.numberOfRanges >= 4 {
+            runs.append(StyleRun(kind: .listMarker, range: offset(m.range(at: 1), by: lineRange.location)))
+            let box = m.range(at: 2)
+            let checked = line.substring(with: box).lowercased().contains("x")
+            runs.append(StyleRun(kind: .taskCheckbox(checked: checked), range: offset(box, by: lineRange.location)))
+            let textRange = offset(m.range(at: 3), by: lineRange.location)
+            if checked, m.range(at: 3).length > 0 {
+                runs.append(StyleRun(kind: .completedTask, range: textRange))
+            }
+            return textRange
         }
         if let regex = Self.listRegex,
            let m = regex.firstMatch(in: line as String, range: whole), m.numberOfRanges >= 3 {
@@ -210,6 +265,16 @@ enum MarkdownLiveStyler {
             return [.foregroundColor: theme.linkColor]
         case .horizontalRule:
             return [.foregroundColor: theme.markerColor]
+        case .taskCheckbox(let checked):
+            return [
+                .font: NSFont.monospacedSystemFont(ofSize: theme.baseFontSize, weight: .bold),
+                .foregroundColor: checked ? NSColor.systemGreen : NSColor.secondaryLabelColor
+            ]
+        case .completedTask:
+            return [
+                .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+                .foregroundColor: theme.markerColor
+            ]
         }
     }
 
@@ -237,6 +302,7 @@ enum MarkdownLiveStyler {
     private static let headingRegex = re("^(\\s*)(#{1,6})\\s+(.*)$")
     private static let blockquoteRegex = re("^\\s*(>+)\\s?(.*)$")
     private static let listRegex = re("^\\s*([-*+]|\\d+[.)])\\s+(.*)$")
+    static let taskRegex = re("^\\s*([-*+])\\s+(\\[[ xX]\\])\\s+(.*)$")
     private static let codeSpanRegex = re("`[^`\\n]+`")
     private static let boldRegex = re("(\\*\\*|__)(?=\\S)(.+?)(?<=\\S)\\1")
     // Single `*`/`_` only: the marker must not be adjacent to another marker (so it

@@ -3175,3 +3175,5 @@
 "settings.terminal.shellHistory" = "Shell History";
 "settings.terminal.shellHistoryMaxLines" = "Saved History (closed tabs)";
 "settings.terminal.shellHistoryMaxLines.help" = "Each tab keeps its own command history. This caps the total kept across closed tabs — oldest commands drop first when over the limit, and each tab keeps at least its last few. Open tabs are never trimmed. (0–1,000,000)";
+
+"pane.showPreview" = "Show Preview (⌘⇧P)";
