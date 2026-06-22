@@ -1689,6 +1689,22 @@ final class TerminalSessionModel {
           [ -f "$CHAU7_USER_ZDOTDIR/.zprofile" ] && source "$CHAU7_USER_ZDOTDIR/.zprofile"
           [ -f "$CHAU7_USER_ZDOTDIR/.zlogin" ] && source "$CHAU7_USER_ZDOTDIR/.zlogin"
         fi
+        # Per-tab isolated command history. macOS /etc/zshrc derives HISTFILE from
+        # ZDOTDIR (HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history); because Chau7 points
+        # ZDOTDIR at a shared temp integration dir, every tab inadvertently collapsed
+        # onto one throwaway history file (and SHELL_SESSIONS_DISABLE=1 turns off the
+        # per-session isolation Terminal.app would otherwise provide). Re-anchor
+        # HISTFILE on the stable per-tab CHAU7_TAB_ID — which survives tab restore —
+        # so each tab keeps its own history and a reloaded tab reloads exactly its
+        # own, not the merged history of every tab. Set after the user's config so it
+        # wins. zsh reads HISTFILE once after the rc files, so this value is the one
+        # loaded.
+        if [ -n "$CHAU7_TAB_ID" ]; then
+          mkdir -p "$CHAU7_USER_HOME/.chau7/history" 2>/dev/null
+          export HISTFILE="$CHAU7_USER_HOME/.chau7/history/${CHAU7_TAB_ID}.zsh_history"
+          HISTSIZE=100000
+          SAVEHIST=100000
+        fi
         # Ensure Codex's npm-managed Volta image bin stays ahead of the legacy ~/.volta/bin shim.
         path=("${(s/:/)PATH}")
         for _codex_image_bin in "$CHAU7_USER_HOME/.volta/tools/image/node/"*"/bin"(N); do
@@ -1767,6 +1783,14 @@ final class TerminalSessionModel {
         export CHAU7_USER_HOME="${CHAU7_USER_HOME:-${HOME:-\(fallbackHome)}}"
         [ -f "$CHAU7_USER_HOME/.bashrc" ] && source "$CHAU7_USER_HOME/.bashrc"
         [ -f "$CHAU7_USER_HOME/.bash_profile" ] && source "$CHAU7_USER_HOME/.bash_profile"
+        # Per-tab isolated command history (mirrors the zsh integration). Keyed off
+        # the stable CHAU7_TAB_ID so each tab keeps its own history across restore.
+        if [ -n "$CHAU7_TAB_ID" ]; then
+          mkdir -p "$CHAU7_USER_HOME/.chau7/history" 2>/dev/null
+          export HISTFILE="$CHAU7_USER_HOME/.chau7/history/${CHAU7_TAB_ID}.bash_history"
+          HISTSIZE=100000
+          HISTFILESIZE=100000
+        fi
         # Chau7 default start directory
         if [ -n "$CHAU7_START_DIR" ] && [ -d "$CHAU7_START_DIR" ]; then
           cd "$CHAU7_START_DIR"
@@ -1828,6 +1852,12 @@ final class TerminalSessionModel {
         end
         if test -f "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
           source "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
+        end
+        # Per-tab isolated command history (mirrors zsh/bash). fish keys history by
+        # session name; derive a stable per-tab name from CHAU7_TAB_ID (hyphens are
+        # not valid in a fish history session name, so swap them for underscores).
+        if test -n "$CHAU7_TAB_ID"
+          set -gx fish_history (string replace -a -- - _ "chau7_$CHAU7_TAB_ID")
         end
         # Chau7 default start directory
         if test -n "$CHAU7_START_DIR"; and test -d "$CHAU7_START_DIR"
