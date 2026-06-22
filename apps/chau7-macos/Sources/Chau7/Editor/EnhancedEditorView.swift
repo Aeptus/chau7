@@ -195,6 +195,18 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
         let fullRange = NSRange(location: 0, length: (text as NSString).length)
         storage.beginEditing()
 
+        // Markdown gets live "light" rendering (heading sizes, bold/italic/code,
+        // dimmed markers, …) instead of flat token coloring, so the edit pane reads
+        // like a document while staying fully editable.
+        if parent.language.id == "markdown" {
+            MarkdownLiveStyler.apply(
+                to: storage,
+                theme: MarkdownLiveStyler.defaultTheme(fontSize: CGFloat(parent.config.fontSize))
+            )
+            storage.endEditing()
+            return
+        }
+
         // Reset to default style
         let defaultAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: CGFloat(parent.config.fontSize), weight: .regular),
