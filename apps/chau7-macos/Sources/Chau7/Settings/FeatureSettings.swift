@@ -437,6 +437,48 @@ enum RepoGroupingMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+// MARK: - Tab Switch Shortcut Mode
+
+/// Which keys jump directly to a tab by position. `commandNumber` covers ⌘1–9;
+/// `functionKey` covers F1–F12 (up to 12 tabs, at the cost of overriding the
+/// function keys inside the terminal); `both` enables them simultaneously.
+enum TabSwitchShortcutMode: String, CaseIterable, Identifiable, Codable {
+    case commandNumber
+    case functionKey
+    case both
+
+    var id: String {
+        rawValue
+    }
+
+    var displayName: String {
+        switch self {
+        case .commandNumber: return L("tabs.switchShortcut.commandNumber", "⌘1–9")
+        case .functionKey: return L("tabs.switchShortcut.functionKey", "F1–F12")
+        case .both: return L("tabs.switchShortcut.both", "⌘1–9 + F1–F12")
+        }
+    }
+
+    /// Whether ⌘1–9 jumps to a tab in this mode.
+    var allowsCommandNumber: Bool {
+        self == .commandNumber || self == .both
+    }
+
+    /// Whether F1–F12 jumps to a tab in this mode.
+    var allowsFunctionKeys: Bool {
+        self == .functionKey || self == .both
+    }
+
+    /// Compact shortcut hint shown in the keyboard reference row.
+    var shortcutHint: String {
+        switch self {
+        case .commandNumber: return "⌘1-9"
+        case .functionKey: return "F1-F12"
+        case .both: return "⌘1-9 or F1-F12"
+        }
+    }
+}
+
 // MARK: - URL Handler
 
 enum URLHandler: String, CaseIterable, Identifiable, Codable {
@@ -1502,6 +1544,18 @@ final class FeatureSettings {
         }
     }
 
+    /// Which keys jump to a tab by position (⌘1–9 vs F1–F12). Read live by
+    /// AppDelegate's key monitor, so changes take effect on the next keystroke.
+    var tabSwitchShortcutMode: TabSwitchShortcutMode = {
+        guard let raw = UserDefaults.standard.string(forKey: "tabs.tabSwitchShortcutMode"),
+              let mode = TabSwitchShortcutMode(rawValue: raw) else { return .commandNumber }
+        return mode
+    }() {
+        didSet {
+            UserDefaults.standard.set(tabSwitchShortcutMode.rawValue, forKey: "tabs.tabSwitchShortcutMode")
+        }
+    }
+
     // MARK: - Menu Bar Only Mode
 
     var menuBarOnlyMode: Bool {
@@ -1761,6 +1815,16 @@ final class FeatureSettings {
             UserDefaults.standard.set(activePollingRateCap.rawValue, forKey: Keys.activePollingRateCap)
             NotificationCenter.default.post(name: .activePollingRateCapChanged, object: nil)
         }
+    }
+
+    /// Max grid-sync/draw rate (fps) for visible-but-not-focused terminal views
+    /// (e.g. the selected tab of a non-key window on a second screen). The
+    /// focused view follows `activePollingRateCap`; non-focused visible views
+    /// stay event-driven (responsive) but only present at this rate, cutting
+    /// GPU + grid-sync cost for content the user isn't interacting with.
+    /// Read live on the render hot path. Default 42.
+    var inactiveViewMaxFPS: Int = UserDefaults.standard.object(forKey: "rendering.inactiveViewMaxFPS") as? Int ?? 42 {
+        didSet { UserDefaults.standard.set(inactiveViewMaxFPS, forKey: "rendering.inactiveViewMaxFPS") }
     }
 
     // MARK: - Custom AI Detection (NEW)
@@ -3895,6 +3959,7 @@ final class FeatureSettings {
         startupCommand = ""
         isLsColorsEnabled = true
         activePollingRateCap = .displayNative
+        inactiveViewMaxFPS = 42
     }
 
     func resetInputToDefaults() {
@@ -3922,6 +3987,7 @@ final class FeatureSettings {
         groupIdleTabs = true
         idleTabThresholdMinutes = 10
         repoGroupingMode = .off
+        tabSwitchShortcutMode = .commandNumber
         customTitleOnly = false
         showTabIcons = true
         showTabPath = true

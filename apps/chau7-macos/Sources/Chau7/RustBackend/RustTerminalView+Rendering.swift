@@ -349,9 +349,17 @@ extension RustTerminalView {
             return
         }
 
-        // Rate limiting: Skip if we synced very recently (allows up to 120fps for responsiveness)
+        // Rate limiting: skip if we synced very recently. The focused view runs
+        // at its configured cap; visible non-focused views throttle to the
+        // user's inactive-view fps so a second-screen tab doesn't sync the full
+        // grid 120×/s for content nobody is interacting with.
         let now = CFAbsoluteTimeGetCurrent()
-        if !force, now - lastSyncTime < Self.minSyncInterval {
+        let minInterval = Self.minSyncInterval(
+            isInteractive: isInteractive,
+            activeCapHz: FeatureSettings.shared.activePollingRateCap.capHz,
+            inactiveMaxFPS: FeatureSettings.shared.inactiveViewMaxFPS
+        )
+        if !force, now - lastSyncTime < minInterval {
             skippedSyncCount += 1
             return
         }

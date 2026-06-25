@@ -1027,6 +1027,57 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.tabs[0].repoGroupID, URL(fileURLWithPath: repoRoot).standardized.path)
     }
 
+    func testReconcileStaleRepoGroupsMigratesVanishedPathToLiveRoot() {
+        // Repro of the "two Mockup groups" report: both tabs were tagged with
+        // the OLD path before the folder move; their live session root already
+        // resolves to the NEW path. The vanished old tag must migrate onto it.
+        let oldRoot = "/Users/me/Downloads/Repositories/Mockup"
+        let newRoot = "/Users/me/Repositories/Mockup"
+        model.newTab()
+        model.tabs[0].repoGroupID = oldRoot
+        model.tabs[1].repoGroupID = oldRoot
+        model.tabs[0].session?.gitRootPath = newRoot
+        model.tabs[1].session?.gitRootPath = newRoot
+
+        // Only the new root exists on disk after the move.
+        model.reconcileStaleRepoGroups(directoryExists: { $0 == newRoot })
+
+        XCTAssertEqual(model.tabs[0].repoGroupID, newRoot)
+        XCTAssertEqual(model.tabs[1].repoGroupID, newRoot)
+        XCTAssertEqual(Set(model.tabs.compactMap(\.repoGroupID)), [newRoot], "Both tabs should collapse into one group")
+    }
+
+    func testReconcileStaleRepoGroupsLeavesDistinctSameNamedReposUnmerged() {
+        // Two different repos that merely share a basename ("Mockup") and both
+        // still exist on disk must never be merged.
+        let rootA = "/Users/me/work/alpha/Mockup"
+        let rootB = "/Users/me/work/beta/Mockup"
+        model.newTab()
+        model.tabs[0].repoGroupID = rootA
+        model.tabs[1].repoGroupID = rootB
+        model.tabs[0].session?.gitRootPath = rootA
+        model.tabs[1].session?.gitRootPath = rootB
+
+        // Both paths exist — nothing is stale.
+        model.reconcileStaleRepoGroups(directoryExists: { _ in true })
+
+        XCTAssertEqual(model.tabs[0].repoGroupID, rootA)
+        XCTAssertEqual(model.tabs[1].repoGroupID, rootB)
+    }
+
+    func testReconcileStaleRepoGroupsLeavesTagWhenLiveRootAlsoMissing() {
+        // If the live git root is unavailable (or also gone), there is no safe
+        // target — keep the existing tag rather than dropping the grouping.
+        let oldRoot = "/Users/me/Downloads/Repositories/Mockup"
+        model.newTab()
+        model.tabs[0].repoGroupID = oldRoot
+        model.tabs[0].session?.gitRootPath = nil
+
+        model.reconcileStaleRepoGroups(directoryExists: { _ in false })
+
+        XCTAssertEqual(model.tabs[0].repoGroupID, oldRoot)
+    }
+
     func testInheritedRepoGroupDetachesForNewTabAtDirectoryWhenTabMovesToDifferentRepoInManualMode() throws {
         let originalMode = FeatureSettings.shared.repoGroupingMode
         FeatureSettings.shared.repoGroupingMode = .manual

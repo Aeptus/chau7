@@ -989,7 +989,12 @@
 "settings.tabs.closeTab" = "Fermer l'onglet";
 "settings.tabs.nextTab" = "Onglet suivant";
 "settings.tabs.previousTab" = "Onglet précédent";
-"settings.tabs.switchToTab" = "Aller à l'onglet 1-9";
+"settings.tabs.switchToTab" = "Aller à l'onglet";
+"settings.tabs.switchShortcutMode" = "Touches de changement d'onglet";
+"settings.tabs.switchShortcutMode.help" = "Touches pour aller à un onglet par position. F1–F12 atteint jusqu'à 12 onglets mais remplace les touches de fonction dans le terminal (ex. vim, htop).";
+"tabs.switchShortcut.commandNumber" = "⌘1–9";
+"tabs.switchShortcut.functionKey" = "F1–F12";
+"tabs.switchShortcut.both" = "⌘1–9 + F1–F12";
 "settings.tabs.renameTab" = "Renommer l'onglet";
 "settings.tabs.keyboardNavigation.cmdNumber" = "Cmd+Numéro pour changer d'onglet";
 "settings.tabs.keyboardNavigation.cmdNumber.help" = "Utiliser Cmd+1-9 pour naviguer entre les onglets";
@@ -2869,7 +2874,9 @@
 "settings.terminal.metalRenderer" = "Rendu Metal";
 "settings.terminal.metalRenderer.info" = "Les nouveaux onglets utiliseront le rendu GPU Metal pour l'affichage.";
 "settings.terminal.activePollingRateCap" = "Limite de rafraîchissement de l'onglet actif";
-"settings.terminal.activePollingRateCap.help" = "Taux de rafraîchissement maximal pour l'onglet en focus. L'option « Natif de l'écran » suit votre moniteur (jusqu'à 120 Hz sur ProMotion). Les limites plus basses réduisent légèrement la fluidité du défilement en faveur de l'autonomie. Les onglets inactifs se ralentissent automatiquement.";
+"settings.terminal.activePollingRateCap.help" = "Taux de rafraîchissement maximal pour l'onglet en focus. L'option « Natif de l'écran » suit votre moniteur (jusqu'à 120 Hz sur ProMotion). Les limites plus basses réduisent légèrement la fluidité du défilement en faveur de l'autonomie.";
+"settings.terminal.inactiveViewMaxFPS" = "Limite de rafraîchissement des onglets en arrière-plan";
+"settings.terminal.inactiveViewMaxFPS.help" = "Taux de rafraîchissement maximal d'un onglet visible mais non focalisé — par ex. un onglet sur un second écran affichant une sortie en continu. Il reste actif et réactif mais se redessine à ce rythme plus lent pour réduire la charge GPU. L'onglet en focus utilise « Limite de rafraîchissement de l'onglet actif ». Par défaut 42 fps.";
 "settings.terminal.rendering" = "Rendu";
 "settings.terminal.resetToDefaults" = "Réinitialiser les réglages du terminal";
 "settings.terminal.restoredScrollback" = "Historique restauré";

@@ -970,7 +970,12 @@
 "settings.tabs.closeTab" = "סגירת לשונית";
 "settings.tabs.nextTab" = "הלשונית הבאה";
 "settings.tabs.previousTab" = "הלשונית הקודמת";
-"settings.tabs.switchToTab" = "מעבר ללשונית 1-9";
+"settings.tabs.switchToTab" = "מעבר ללשונית";
+"settings.tabs.switchShortcutMode" = "מקשי מעבר ללשונית";
+"settings.tabs.switchShortcutMode.help" = "מקשים למעבר ללשונית לפי מיקום. ‏F1–F12 מגיע עד 12 לשוניות אך דורס את מקשי הפונקציה בטרמינל (למשל vim,‏ htop).";
+"tabs.switchShortcut.commandNumber" = "⌘1–9";
+"tabs.switchShortcut.functionKey" = "F1–F12";
+"tabs.switchShortcut.both" = "⌘1–9 + F1–F12";
 "settings.tabs.renameTab" = "שינוי שם לשונית";
 "settings.tabs.keyboardNavigation.cmdNumber" = "Cmd+מספר להחלפת כרטיסיות";
 "settings.tabs.keyboardNavigation.cmdNumber.help" = "השתמש ב-Cmd+1-9 למעבר בין כרטיסיות";
@@ -2835,7 +2840,9 @@
 "settings.terminal.metalRenderer" = "מעבד Metal";
 "settings.terminal.metalRenderer.info" = "כרטיסיות חדשות ישתמשו בעיבוד GPU של Metal לתצוגה.";
 "settings.terminal.activePollingRateCap" = "מגבלת רענון של הכרטיסייה הפעילה";
-"settings.terminal.activePollingRateCap.help" = "קצב הרענון המרבי של הכרטיסייה הממוקדת. האפשרות «מקורי לצג» עוקבת אחרי הצג שלך (עד 120 הרץ ב-ProMotion). מגבלות נמוכות מחליפות מעט חלקות גלילה בתמורה לחיי סוללה. כרטיסיות סרק מצמצמות את הקצב אוטומטית.";
+"settings.terminal.activePollingRateCap.help" = "קצב הרענון המרבי של הכרטיסייה הממוקדת. האפשרות «מקורי לצג» עוקבת אחרי הצג שלך (עד 120 הרץ ב-ProMotion). מגבלות נמוכות מחליפות מעט חלקות גלילה בתמורה לחיי סוללה.";
+"settings.terminal.inactiveViewMaxFPS" = "מגבלת רענון של כרטיסיות רקע";
+"settings.terminal.inactiveViewMaxFPS.help" = "קצב הרענון המרבי של כרטיסייה גלויה שאינה ממוקדת — למשל כרטיסייה במסך שני שמציגה פלט מתעדכן. היא נשארת פעילה ומגיבה אך מצוירת מחדש בקצב איטי יותר כדי לחסוך במשאבי GPU. הכרטיסייה הממוקדת משתמשת ב«מגבלת רענון של הכרטיסייה הפעילה». ברירת מחדל 42 fps.";
 "settings.terminal.rendering" = "עיבוד";
 "settings.terminal.resetToDefaults" = "אפס טרמינל לברירות מחדל";
 "settings.terminal.restoredScrollback" = "גלילה לאחור משוחזרת";

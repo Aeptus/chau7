@@ -709,6 +709,118 @@ final class TerminalControlService {
         ])
     }
 
+    /// High-level orchestration: launch `count` agents in fresh tabs, each
+    /// optionally checking out a PR and receiving a task prompt. Composes
+    /// createTab + waitForTabReady + execInTab (+ best-effort prompt injection)
+    /// so MCP callers get a one-call "spawn agents" entrypoint instead of
+    /// wiring the primitives themselves. Runs off the main thread (like
+    /// waitForTabReady), so its per-agent waits don't block the UI.
+    func launchAgents(
+        directory: String?,
+        windowID: Int?,
+        agentCommand: String,
+        prompt: String?,
+        count: Int,
+        prNumber: Int?,
+        readyTimeoutMs: Int
+    ) -> String {
+        let clampedCount = max(1, min(count, Self.absoluteMaxTabs))
+        let boundedTimeout = max(1000, min(readyTimeoutMs, 120_000))
+        let launchCommand = Self.agentLaunchCommand(agentCommand: agentCommand, prNumber: prNumber)
+
+        var agents: [[String: Any]] = []
+        for index in 0 ..< clampedCount {
+            // 1. Open the tab.
+            guard let tabID = decodeJSONObject(
+                createTab(directory: directory, windowID: windowID, context: "agent_launch")
+            )?["tab_id"] as? String else {
+                agents.append([
+                    "index": index, "status": "failed", "stage": "create",
+                    "error": "tab creation failed (MCP tab limit or no window?)"
+                ])
+                // A creation failure recurs (e.g. tab limit), so stop early.
+                break
+            }
+
+            // 2. Wait for the shell to accept a launch command.
+            guard decodeJSONObject(
+                waitForTabReady(tabID: tabID, timeoutMs: boundedTimeout)
+            )?["can_accept_exec"] as? Bool == true else {
+                agents.append([
+                    "index": index, "tab_id": tabID, "status": "failed",
+                    "stage": "wait_ready", "error": "tab did not become ready before timeout"
+                ])
+                continue
+            }
+
+            // 3. Start the agent (optionally after checking out the PR).
+            if let execError = decodeJSONObject(execInTab(tabID: tabID, command: launchCommand))?["error"] as? String {
+                agents.append([
+                    "index": index, "tab_id": tabID, "status": "failed",
+                    "stage": "exec", "launch_command": launchCommand, "error": execError
+                ])
+                continue
+            }
+
+            // 4. Best-effort: once the agent attaches, hand it the prompt.
+            var promptStatus = "skipped"
+            if let prompt, !prompt.isEmpty {
+                promptStatus = injectPromptWhenAgentAttaches(
+                    tabID: tabID, prompt: prompt, timeoutMs: boundedTimeout
+                ) ? "sent" : "agent_not_detected"
+            }
+
+            agents.append([
+                "index": index, "tab_id": tabID, "status": "launched",
+                "launch_command": launchCommand, "prompt": promptStatus
+            ])
+        }
+
+        var result: [String: Any] = [
+            "requested": count,
+            "launched": agents.filter { ($0["status"] as? String) == "launched" }.count,
+            "agent_command": agentCommand,
+            "agents": agents,
+            "next": "Collect each agent's output with tab_output(source='pty_log')."
+        ]
+        if let prNumber { result["pr_number"] = prNumber }
+        return encodeAny(result)
+    }
+
+    /// Builds the shell command that starts an agent, prefixing a PR checkout
+    /// when a PR number is supplied so the agent opens on the PR's branch.
+    static func agentLaunchCommand(agentCommand: String, prNumber: Int?) -> String {
+        guard let prNumber else { return agentCommand }
+        return "gh pr checkout \(prNumber) && \(agentCommand)"
+    }
+
+    /// Polls until the tab reports an attached AI provider, then types the
+    /// prompt and submits it. Best-effort: returns false if no agent attaches
+    /// before the timeout (the tab is still launched; the caller can drive it
+    /// via tab_send_input / tab_submit_prompt).
+    private func injectPromptWhenAgentAttaches(tabID: String, prompt: String, timeoutMs: Int) -> Bool {
+        let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.25)
+            let attached = onMain { () -> Bool in
+                guard let (_, session) = self.resolveTab(tabID) else { return false }
+                return session.lastAIProvider != nil
+            }
+            guard attached else { continue }
+            // Give the agent's input box a beat to accept typed text, then submit.
+            _ = sendInput(tabID: tabID, input: prompt)
+            Thread.sleep(forTimeInterval: 0.3)
+            _ = submitPrompt(tabID: tabID)
+            return true
+        }
+        return false
+    }
+
+    private func decodeJSONObject(_ json: String) -> [String: Any]? {
+        guard let data = json.data(using: .utf8) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
     func sendInput(tabID: String, input: String) -> String {
         let context = onMain { self.gatherTabContext(tabID) }
         let (verdict, permissions) = MCPCommandFilter.checkRawInput(input, context: context)

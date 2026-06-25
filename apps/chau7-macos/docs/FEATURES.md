@@ -214,6 +214,31 @@ Every cross-window tab operation dispatches to the main thread before touching t
 | `tab_set_cto` | Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files |
 | `tab_rename` | Set a custom title for a tab — pass empty string to clear |
 
+### Agent Orchestration (1 tool)
+
+| Tool | Description |
+| --- | --- |
+| `agent_launch` | Launch one or more AI coding agents (Claude Code, Codex, …) in fresh tabs in a single call — composes `tab_create` + `tab_wait_ready` + `tab_exec` (+ best-effort prompt injection). Params: `directory`, `agent_command` (default `claude`), `prompt`, `count`, `pr_number`, `window_id`, `ready_timeout_ms`. Returns the created tab IDs; collect each agent's output with `tab_output(source='pty_log')` |
+
+Fan a review across N parallel agents — e.g. three agents reviewing PR #323:
+
+```json
+{
+  "name": "agent_launch",
+  "arguments": {
+    "directory": "/path/to/repo",
+    "count": 3,
+    "pr_number": 323,
+    "agent_command": "claude",
+    "prompt": "Review this PR for correctness, security, and test coverage."
+  }
+}
+```
+
+- When `pr_number` is set, each tab runs `gh pr checkout <pr> && <agent_command>` before the agent starts.
+- Prompt delivery is **best-effort**: the prompt is typed in once the agent attaches (reported per agent as `sent` / `agent_not_detected` / `skipped`). For full reliability, embed the task in `agent_command` if the CLI supports it.
+- `count` is capped by the MCP tab limit; a creation failure (e.g. limit reached) stops the batch early.
+
 ### Repository (4 tools)
 
 | Tool | Description |

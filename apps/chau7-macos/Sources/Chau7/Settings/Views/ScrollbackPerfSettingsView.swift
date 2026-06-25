@@ -82,10 +82,21 @@ struct ScrollbackPerfSettingsView: View {
                 label: L("settings.terminal.activePollingRateCap", "Active Tab Refresh Cap"),
                 help: L(
                     "settings.terminal.activePollingRateCap.help",
-                    "Maximum refresh rate for the focused tab. Display Native follows your screen (up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life. Idle tabs throttle automatically regardless."
+                    "Maximum refresh rate for the focused tab. Display Native follows your screen (up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life."
                 ),
                 selection: $settings.activePollingRateCap,
                 options: ActivePollingRateCap.allCases.map { (value: $0, label: $0.displayName) }
+            )
+
+            SettingsStepper(
+                label: L("settings.terminal.inactiveViewMaxFPS", "Background View Refresh Cap"),
+                help: L(
+                    "settings.terminal.inactiveViewMaxFPS.help",
+                    "Max refresh rate for a visible tab that isn't focused — e.g. a tab on a second screen showing streaming output. It stays live and responsive but redraws at this slower rate to cut GPU and sync cost. The focused tab uses Active Tab Refresh Cap. Default 42 fps."
+                ),
+                value: $settings.inactiveViewMaxFPS,
+                range: 1 ... 120,
+                suffix: " fps"
             )
 
             Divider()

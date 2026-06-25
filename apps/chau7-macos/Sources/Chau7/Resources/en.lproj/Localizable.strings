@@ -991,7 +991,12 @@
 "settings.tabs.closeTab" = "Close Tab";
 "settings.tabs.nextTab" = "Next Tab";
 "settings.tabs.previousTab" = "Previous Tab";
-"settings.tabs.switchToTab" = "Switch to Tab 1-9";
+"settings.tabs.switchToTab" = "Switch to Tab";
+"settings.tabs.switchShortcutMode" = "Switch-to-Tab Keys";
+"settings.tabs.switchShortcutMode.help" = "Keys that jump to a tab by position. F1–F12 reaches up to 12 tabs but overrides the function keys inside the terminal (e.g. vim, htop).";
+"tabs.switchShortcut.commandNumber" = "⌘1–9";
+"tabs.switchShortcut.functionKey" = "F1–F12";
+"tabs.switchShortcut.both" = "⌘1–9 + F1–F12";
 "settings.tabs.renameTab" = "Rename Tab";
 "settings.tabs.keyboardNavigation.cmdNumber" = "Cmd+Number to Switch Tabs";
 "settings.tabs.keyboardNavigation.cmdNumber.help" = "Use Cmd+1-9 to switch between tabs";
@@ -2867,7 +2872,9 @@
 "settings.terminal.metalRenderer" = "Metal Renderer";
 "settings.terminal.metalRenderer.info" = "New tabs will use Metal GPU rendering for display.";
 "settings.terminal.activePollingRateCap" = "Active Tab Refresh Cap";
-"settings.terminal.activePollingRateCap.help" = "Maximum refresh rate for the focused tab. Display Native follows your screen (up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life. Idle tabs throttle automatically regardless.";
+"settings.terminal.activePollingRateCap.help" = "Maximum refresh rate for the focused tab. Display Native follows your screen (up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life.";
+"settings.terminal.inactiveViewMaxFPS" = "Background View Refresh Cap";
+"settings.terminal.inactiveViewMaxFPS.help" = "Max refresh rate for a visible tab that isn't focused — e.g. a tab on a second screen showing streaming output. It stays live and responsive but redraws at this slower rate to cut GPU and sync cost. The focused tab uses Active Tab Refresh Cap. Default 42 fps.";
 "settings.terminal.rendering" = "Rendering";
 "settings.terminal.resetToDefaults" = "Reset Terminal to Defaults";
 "settings.terminal.restoredScrollback" = "Restored Scrollback";

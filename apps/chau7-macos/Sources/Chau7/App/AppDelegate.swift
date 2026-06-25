@@ -27,6 +27,8 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     private var overlayHosts: [OverlayHost] = []
+    /// Debounce for bursty `didChangeScreenParametersNotification` re-clamps.
+    private var screenParamsDebounce: DispatchWorkItem?
     private(set) weak var activeOverlayModel: OverlayTabsModel?
     private var lastOverlayDiagLogAt: CFAbsoluteTime = 0
     private var lastOverlayDiagReason = ""
@@ -683,6 +685,9 @@ private final class OverlayBlurView: NSVisualEffectView {
                 self?.telemetryRepairWorkItem?.cancel()
                 self?.telemetryRepairWorkItem = nil
                 self?.enableLowLatency()
+                // Returning to the app is the moment a repo may have been moved
+                // in Finder; heal any group tags now orphaned by the move.
+                self?.reconcileStaleRepoGroupsAcrossWindows()
             }
         }
         let resignObs = NotificationCenter.default.addObserver(
@@ -702,6 +707,15 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     private func enableLowLatency() {
         refreshLowLatencyActivity()
+    }
+
+    /// Re-tags tabs whose repo group points at a directory that no longer
+    /// exists (e.g. after the repo was moved or renamed on disk) across every
+    /// open window. Cheap and idempotent — a no-op when nothing has moved.
+    private func reconcileStaleRepoGroupsAcrossWindows() {
+        for host in overlayHosts {
+            host.model.reconcileStaleRepoGroups()
+        }
     }
 
     private func refreshLowLatencyActivity() {
@@ -2309,10 +2323,19 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// a window that was on-screen on a 4K display can end up with its
     /// bottom under the dock after switching to a 1080p screen.
     @objc private func didChangeScreenParameters(_: Notification) {
-        Log.info("didChangeScreenParameters: re-clamping \(overlayHosts.count) overlay window(s)")
-        for host in overlayHosts {
-            clampOverlayWindowToVisibleFrame(host.window)
+        // macOS fires this in bursts during a display reconfiguration (resolution
+        // change, monitor (un)plug, ProMotion switch). Re-clamping every overlay
+        // window per event is wasteful churn; coalesce into one pass.
+        screenParamsDebounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            Log.info("didChangeScreenParameters: re-clamping \(self.overlayHosts.count) overlay window(s)")
+            for host in self.overlayHosts {
+                self.clampOverlayWindowToVisibleFrame(host.window)
+            }
         }
+        screenParamsDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
     private func clampOverlayWindowToVisibleFrame(_ window: NSWindow) {
@@ -2853,11 +2876,22 @@ private final class OverlayBlurView: NSVisualEffectView {
             )
         }
 
-        if isOverlayWindow,
-           flags == [.command],
-           let tabNumber = tabNumberForKeyCode(event.keyCode) {
-            selectTab(number: tabNumber)
-            return nil
+        if isOverlayWindow {
+            let tabSwitchMode = FeatureSettings.shared.tabSwitchShortcutMode
+            if tabSwitchMode.allowsCommandNumber,
+               flags == [.command],
+               let tabNumber = tabNumberForKeyCode(event.keyCode) {
+                selectTab(number: tabNumber)
+                return nil
+            }
+            // F-keys carry no device-independent modifier once `.function` is
+            // normalized away, so require an otherwise-bare keystroke.
+            if tabSwitchMode.allowsFunctionKeys,
+               flags.isEmpty,
+               let tabNumber = functionKeyTabNumberForKeyCode(event.keyCode) {
+                selectTab(number: tabNumber)
+                return nil
+            }
         }
 
         // ⌘; (Snippets) is now handled by OverlayWindow.performKeyEquivalent
@@ -2943,6 +2977,24 @@ private final class OverlayBlurView: NSVisualEffectView {
             return 9
         default:
             return nil
+        }
+    }
+
+    private func functionKeyTabNumberForKeyCode(_ keyCode: UInt16) -> Int? {
+        switch keyCode {
+        case UInt16(kVK_F1): return 1
+        case UInt16(kVK_F2): return 2
+        case UInt16(kVK_F3): return 3
+        case UInt16(kVK_F4): return 4
+        case UInt16(kVK_F5): return 5
+        case UInt16(kVK_F6): return 6
+        case UInt16(kVK_F7): return 7
+        case UInt16(kVK_F8): return 8
+        case UInt16(kVK_F9): return 9
+        case UInt16(kVK_F10): return 10
+        case UInt16(kVK_F11): return 11
+        case UInt16(kVK_F12): return 12
+        default: return nil
         }
     }
 

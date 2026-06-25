@@ -148,11 +148,24 @@ struct TabsSettingsView: View {
             // Keyboard
             SettingsSectionHeader(L("settings.tabs.keyboardNavigation", "Keyboard Navigation"), icon: "keyboard")
 
+            SettingsPicker(
+                label: L("settings.tabs.switchShortcutMode", "Switch-to-Tab Keys"),
+                help: L(
+                    "settings.tabs.switchShortcutMode.help",
+                    "Keys that jump to a tab by position. F1–F12 reaches up to 12 tabs but overrides the function keys inside the terminal (e.g. vim, htop)."
+                ),
+                selection: $settings.tabSwitchShortcutMode,
+                options: TabSwitchShortcutMode.allCases.map { (value: $0, label: $0.displayName) }
+            )
+
             SettingsShortcutRow(label: L("settings.tabs.newTab", "New Tab"), shortcut: "⌘T")
             SettingsShortcutRow(label: L("settings.tabs.closeTab", "Close Tab"), shortcut: "⌘W")
             SettingsShortcutRow(label: L("settings.tabs.nextTab", "Next Tab"), shortcut: "⇧⌘] or ⌃Tab or ⌥⌘→")
             SettingsShortcutRow(label: L("settings.tabs.previousTab", "Previous Tab"), shortcut: "⇧⌘[ or ⌃⇧Tab or ⌥⌘←")
-            SettingsShortcutRow(label: L("settings.tabs.switchToTab", "Switch to Tab 1-9"), shortcut: "⌘1-9")
+            SettingsShortcutRow(
+                label: L("settings.tabs.switchToTab", "Switch to Tab"),
+                shortcut: settings.tabSwitchShortcutMode.shortcutHint
+            )
             SettingsShortcutRow(label: L("settings.tabs.renameTab", "Rename Tab"), shortcut: "⌘⌥R")
 
             Divider()

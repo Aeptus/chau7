@@ -158,6 +158,74 @@ final class AISessionEventReconcilerTests: XCTestCase {
         }
     }
 
+    func testAuthoritativePermissionReopensFinishedSessionWithoutLifecycleEvent() {
+        // Codex emits no raw lifecycle (tool_start/session_start) events, so a
+        // finished session was never reopened and every later permission prompt
+        // was dropped as "Stale post-terminal". An authoritative attention
+        // signal must reopen the session on its own.
+        let reconciler = AISessionEventReconciler()
+        let finished = acceptedEvent(
+            type: "finished",
+            kind: .taskFinished,
+            sessionID: "SESSION-1",
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+        let nextTurnPermission = acceptedEvent(
+            type: "permission",
+            kind: .permissionRequired,
+            sessionID: "session-1",
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+
+        XCTAssertEqual(reconciler.reconcile(finished), .emit(finished))
+        switch reconciler.reconcile(nextTurnPermission, now: Date().addingTimeInterval(1)) {
+        case .emit(let event):
+            XCTAssertEqual(event, nextTurnPermission)
+        case .drop(let reason):
+            XCTFail("Authoritative permission after finished should reopen the session, got drop: \(reason)")
+        }
+    }
+
+    func testReopenedSessionStillDedupesRepeatedPermission() {
+        // Reopening must not re-arm duplicate suppression: a second identical
+        // pending permission for the same unanswered prompt stays deduped.
+        let reconciler = AISessionEventReconciler()
+        let finished = acceptedEvent(
+            type: "finished",
+            kind: .taskFinished,
+            sessionID: "SESSION-1",
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+        let permission = acceptedEvent(
+            type: "permission",
+            kind: .permissionRequired,
+            sessionID: "session-1",
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+        let duplicate = acceptedEvent(
+            type: "permission",
+            kind: .permissionRequired,
+            sessionID: "session-1",
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+
+        XCTAssertEqual(reconciler.reconcile(finished), .emit(finished))
+        guard case .emit = reconciler.reconcile(permission, now: Date().addingTimeInterval(1)) else {
+            return XCTFail("First post-terminal permission should reopen and emit")
+        }
+        switch reconciler.reconcile(duplicate, now: Date().addingTimeInterval(2)) {
+        case .drop(let reason):
+            XCTAssertTrue(reason.contains("Duplicate session state"))
+        case .emit:
+            XCTFail("Repeated identical permission should remain deduped after reopen")
+        }
+    }
+
     func testRawRunningObservationReopensFinishedSession() {
         let reconciler = AISessionEventReconciler()
         let finished = acceptedEvent(
