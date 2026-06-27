@@ -311,6 +311,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - **Crash-safe bundle swap** — the restore bundle directory is replaced with safe-save semantics (old bundle stays until the new one takes over), and manifest/sidecar corruption is logged instead of silently degrading restore to a weaker source.
 - Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
 - Emoji-aware glyph coloring renders real emoji, including achromatic FE0F symbols, with embedded color while keeping terminal UI symbols and box drawing tintable by ANSI foreground color in Metal.
+- ASCII glyph fast path: single-byte printable cells (the vast majority of a text screen) resolve their Metal glyph through a flat style-indexed array, avoiding the per-cell `Data` allocation and dictionary hash the per-frame instance-buffer build previously incurred; multi-byte clusters (emoji, box-drawing, wide CJK, ligatures) keep the full cache path.
 - International Option-key punctuation input preserved for programming characters like brackets and braces.
 - Kitty keyboard protocol (full progressive enhancement).
 - Inline images: iTerm2 (ESC ] 1337), Sixel, and Kitty image protocols.

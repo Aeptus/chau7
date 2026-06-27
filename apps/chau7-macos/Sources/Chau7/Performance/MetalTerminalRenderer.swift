@@ -136,6 +136,13 @@ final class MetalTerminalRenderer: NSObject {
     private var atlasWidth = 2048
     private var atlasHeight = 2048
     private var glyphCache: [GlyphKey: GlyphInfo] = [:]
+    /// Flat cache for single-byte printable ASCII glyphs — the vast majority of
+    /// cells. The instance-buffer build hits this once per cell per frame;
+    /// going through `glyphCache` there allocated a `Data` and hashed it every
+    /// time. Indexed by `(byte << 2) | styleBits`; resolved lazily via the slow
+    /// path and cleared on atlas reset (GlyphInfo holds atlas UV coords).
+    private var asciiGlyphCache = [GlyphInfo?](repeating: nil, count: 128 << 2)
+    private var asciiGlyphResolved = [Bool](repeating: false, count: 128 << 2)
     /// Real ligatures the font forms — a small, stable set (the font's GSUB
     /// table × 4 styles), each referencing a persistent atlas slot. Kept in its
     /// own map so the unbounded miss keyspace below can never evict it.
@@ -415,6 +422,7 @@ final class MetalTerminalRenderer: NSObject {
     private func resetAtlas() {
         atlasGeneration &+= 1
         glyphCache.removeAll()
+        for i in asciiGlyphResolved.indices { asciiGlyphResolved[i] = false }
         ligatureHitCache.removeAll()
         ligatureMissCache.removeAll()
         ligatureMissOrder.removeAll(keepingCapacity: false)
@@ -670,6 +678,23 @@ final class MetalTerminalRenderer: NSObject {
 
         // Ultimate fallback: space
         return glyphCache[GlyphKey(cluster: Data([0x20]), bold: false, italic: false)]
+    }
+
+    /// Fast path for single-byte printable ASCII (`byte < 0x80`): a flat-array
+    /// lookup that avoids the per-cell `Data` allocation and dictionary hash of
+    /// `lookupGlyph`. Resolves once via the slow path, then serves from the
+    /// flat cache. Caller guarantees `byte < 0x80`.
+    private func lookupASCIIGlyph(byte: UInt8, bold: Bool, italic: Bool) -> GlyphInfo? {
+        let idx = (Int(byte) << 2) | (bold ? 1 : 0) | (italic ? 2 : 0)
+        if asciiGlyphResolved[idx] {
+            glyphLookupCount += 1
+            return asciiGlyphCache[idx]
+        }
+        // Miss: resolve via the slow path (which counts the lookup itself).
+        let info = lookupGlyph(cluster: Data([byte]), isWideHint: false, bold: bold, italic: italic)
+        asciiGlyphCache[idx] = info
+        asciiGlyphResolved[idx] = true
+        return info
     }
 
     // MARK: - Ligature Rendering
@@ -1263,25 +1288,34 @@ final class MetalTerminalRenderer: NSObject {
                         ligatureSlice += 1
                         ligatureSkip -= 1
                     } else if texCoord == SIMD4(0, 0, 0, 0) {
-                        let cluster = Data(clusters[Int(cell.clusterStart) ..< Int(cell.clusterStart) + Int(cell.clusterLen)])
+                        let clusterStart = Int(cell.clusterStart)
+                        let info: GlyphInfo?
+                        if cell.clusterLen == 1, clusters[clusterStart] < 0x80 {
+                            // ASCII fast path: no per-cell Data allocation / dict hash.
+                            info = lookupASCIIGlyph(byte: clusters[clusterStart], bold: isBold, italic: isItalic)
+                        } else {
+                            let cluster = Data(clusters[clusterStart ..< clusterStart + Int(cell.clusterLen)])
 
-                        // Diagnostic: log box-drawing glyph resolution
-                        if cell.clusterLen == 3 {
-                            let b0 = cluster[0], b1 = cluster[1]
-                            if b0 == 0xE2, b1 == 0x94 || b1 == 0x95 { // U+2500..U+257F is encoded 0xE2 94/95 ..
-                                boxDrawCount += 1
-                                if traceBoxDraw, boxDrawCount <= 3 {
-                                    let fg = cell.foregroundColor
-                                    let bg = cell.backgroundColor
-                                    let s = String(decoding: cluster, as: UTF8.self)
-                                    Log.trace(
-                                        "[DIAG-SWIFT] box-draw: '\(s)' at (\(row),\(col)) fg=(\(String(format: "%.2f", fg.x)),\(String(format: "%.2f", fg.y)),\(String(format: "%.2f", fg.z))) bg=(\(String(format: "%.2f", bg.x)),\(String(format: "%.2f", bg.y)),\(String(format: "%.2f", bg.z)))"
-                                    )
+                            // Diagnostic: log box-drawing glyph resolution
+                            if cell.clusterLen == 3 {
+                                let b0 = cluster[0], b1 = cluster[1]
+                                if b0 == 0xE2, b1 == 0x94 || b1 == 0x95 { // U+2500..U+257F is encoded 0xE2 94/95 ..
+                                    boxDrawCount += 1
+                                    if traceBoxDraw, boxDrawCount <= 3 {
+                                        let fg = cell.foregroundColor
+                                        let bg = cell.backgroundColor
+                                        let s = String(decoding: cluster, as: UTF8.self)
+                                        Log.trace(
+                                            "[DIAG-SWIFT] box-draw: '\(s)' at (\(row),\(col)) fg=(\(String(format: "%.2f", fg.x)),\(String(format: "%.2f", fg.y)),\(String(format: "%.2f", fg.z))) bg=(\(String(format: "%.2f", bg.x)),\(String(format: "%.2f", bg.y)),\(String(format: "%.2f", bg.z)))"
+                                        )
+                                    }
                                 }
                             }
+
+                            info = lookupGlyph(cluster: cluster, isWideHint: cell.width == 2, bold: isBold, italic: isItalic)
                         }
 
-                        if let info = lookupGlyph(cluster: cluster, isWideHint: cell.width == 2, bold: isBold, italic: isItalic) {
+                        if let info {
                             // Wide glyphs are tiled as left+right halves across
                             // this cell + the continuation cell to its right.
                             // Emit only the LEFT half here.
