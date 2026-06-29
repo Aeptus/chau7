@@ -14,8 +14,13 @@ enum AppSettings {
     // Diagnostics
     static let verboseLoggingKey = "diagnostics_verbose"
     static let verboseLoggingDefault = true
+    // Keystroke capture is privacy-sensitive (it can record secrets typed into
+    // the terminal), so it ships OFF and is only enabled after the user accepts
+    // the first-run consent prompt — never silently on a fresh install.
     static let logKeystrokesKey = "diagnostics_log_keystrokes"
-    static let logKeystrokesDefault = true
+    static let logKeystrokesDefault = false
+    static let keystrokeConsentPromptedKey = "diagnostics_keystroke_consent_prompted"
+    static let keystrokeConsentPromptedDefault = false
 }
 
 struct SettingsView: View {
