@@ -235,6 +235,31 @@ Landed as granular commits on `claude/ios-solid-dry-review-m3v0xa`:
 - **Phase C**: items 5, 8.
 - **Phase D**: items 10, 11 deferred with rationale above.
 
+## Post-review security fixes (2026-06-29)
+Applied to this branch after a code review, as granular commits:
+
+- **Encryption enforcement (fix #1).** `handleProcessedFrame` dispatched purely on
+  `frame.type`, so a hostile relay could inject a *plaintext* `.sessionReady` /
+  `.approvalRequest` / `.output` (`flagEncrypted=0`) that skipped both AEAD
+  decryption and the monotonic-seq replay counter — fabricating approvals and
+  undercutting the replay-protection claim. Now any known non-handshake frame
+  type must arrive encrypted with a live crypto session or it is dropped; only
+  `.hello` / `.pairAccept` / `.pairReject` remain cleartext, matching the Go relay.
+- **REST path wss enforcement (fix #2).** The `wss://`-only rule guarded the
+  WebSocket but not `relayAPIURLComponents`, which mapped `ws→http`. A legacy
+  `ws://` pairing would still fetch pending approvals/prompts (commands +
+  directories) over cleartext `http`. The REST path now rejects any non-`wss`
+  scheme (case-insensitive).
+
+### Deferred: key-fingerprint length (review item "fix #3")
+The 8-byte (64-bit) key fingerprint is short for an out-of-band MITM check
+(128-bit is the norm), but it is **not** a display-only value: macOS persists it
+as the paired-device `id` (`RemoteControlModels.fingerprint(for:)`) and the relay
+matches connecting devices by it (`agent.go FindPairedDeviceByFingerprint(hello.PubKeyFP)`).
+Lengthening it is therefore a breaking change across iOS + macOS + Go that
+invalidates every persisted pairing and requires a migration — disproportionate
+to the gain. Deferred to a deliberate, migrated change rather than bundled here.
+
 ## Relationship to the SOLID/DRY review
 The remaining structural work there (transport/session/approval split, DIP seam)
 is complementary: doing item 6 (crypto → `Chau7Core`) and the transport split
