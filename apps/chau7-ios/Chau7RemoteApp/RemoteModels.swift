@@ -17,6 +17,10 @@ struct PairingInfo: Codable, Equatable {
     let macPub: String
     let pairingCode: String
     let expiresAt: String
+    // Shared HMAC secret delivered in the pairing payload. Used to mint relay
+    // auth tokens. Optional so older pairing payloads (no secret) still decode
+    // and the client falls back to unauthenticated connects.
+    let relaySecret: String?
 
     enum CodingKeys: String, CodingKey {
         case relayURL = "relay_url"
@@ -24,6 +28,7 @@ struct PairingInfo: Codable, Equatable {
         case macPub = "mac_pub"
         case pairingCode = "pairing_code"
         case expiresAt = "expires_at"
+        case relaySecret = "relay_secret"
     }
 }
 

@@ -37,6 +37,8 @@ Pairing payload:
 - `mac_pub` (base64)
 - `pairing_code`
 - `expires_at` (ISO8601)
+- `relay_secret` (optional) — shared HMAC secret the iOS device uses to
+  authenticate to the relay. Present only when relay auth is configured.
 
 Flow:
 
@@ -52,7 +54,24 @@ Both sides connect to relay:
 
 `wss://relay.chau7.sh/connect/{device_id}?role=mac|ios`
 
-Each side sends `HELLO` (cleartext). They compute:
+### Relay authentication
+
+When a `relay_secret` is configured, every relay request carries a scoped,
+single-use HMAC-SHA256 token in the `Authorization: Bearer` header (never the
+query string):
+
+```
+wire:    v2.{ts}.{nonce}.{scope}.{base64url_sig}
+signed:  v2:{device_id}:{role}:{scope}:{ts}:{nonce}
+```
+
+- `role` is `mac` or `ios`; `scope` is `connect`, `push`, or `pending`.
+- `ts` is unix seconds; tokens are valid for 120s (+30s future skew).
+- `nonce` is 16 random bytes (base64url) and is single-use — the relay rejects
+  reuse, defeating replay/connection-takeover.
+- The signature uses HMAC-SHA256 over the signed message with `relay_secret`.
+
+Each side then sends `HELLO` (cleartext). They compute:
 
 - `shared_secret = X25519(own_priv, peer_pub)`
 - `session_key = HKDF(shared_secret, salt=nonce_mac || nonce_ios)`
@@ -253,7 +272,8 @@ Local IPC payload:
   "device_id": "uuid",
   "mac_pub": "base64",
   "pairing_code": "123456",
-  "expires_at": "ISO8601"
+  "expires_at": "ISO8601",
+  "relay_secret": "optional-shared-hmac-secret"
 }
 ```
 
