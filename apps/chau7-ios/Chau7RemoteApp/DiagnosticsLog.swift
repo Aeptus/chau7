@@ -71,6 +71,10 @@ final class DiagnosticsLog {
 
     private var nextID: UInt64 = 1
     private var saveTask: Task<Void, Never>?
+    /// All persistence runs on this serial queue so writes can never reorder:
+    /// a debounced autosave and a synchronous background flush are strictly
+    /// ordered, and an older snapshot can never overwrite a newer one.
+    private let saveQueue = DispatchQueue(label: "ch7.diagnostics.save", qos: .utility)
 
     private let osLog = Logger(subsystem: "ch7", category: "Diagnostics")
 
@@ -278,23 +282,27 @@ final class DiagnosticsLog {
         saveTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled, let self, let fileURL = self.fileURL else { return }
-            // Debounced autosave: encode/write off the main actor so the
+            // Debounced autosave: hand the snapshot to the serial queue so the
             // 2-second tick never hitches the UI. The snapshot is a value type.
             let snapshot = self.entries
-            Task.detached(priority: .utility) {
+            self.saveQueue.async {
                 Self.writeEntries(snapshot, to: fileURL)
             }
         }
     }
 
     /// Flush immediately and *synchronously* (e.g. on backgrounding) so nothing
-    /// is lost if iOS suspends or kills the app right after this returns — a
-    /// detached task is not guaranteed to run before suspension.
+    /// is lost if iOS suspends or kills the app right after this returns.
+    /// Running on the serial queue with `sync` both drains any in-flight
+    /// debounced write and guarantees this newer snapshot lands last.
     func flush() {
         saveTask?.cancel()
         saveTask = nil
         guard let fileURL else { return }
-        Self.writeEntries(entries, to: fileURL)
+        let snapshot = entries
+        saveQueue.sync {
+            Self.writeEntries(snapshot, to: fileURL)
+        }
     }
 
     /// Serialize entries to newline-delimited JSON and write atomically. Pure
