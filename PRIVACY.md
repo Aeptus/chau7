@@ -57,6 +57,60 @@ Source: [`services/chau7-relay/`](services/chau7-relay/) and [`services/chau7-re
 
 Protocol: [`services/chau7-remote/docs/PROTOCOL.md`](services/chau7-remote/docs/PROTOCOL.md)
 
+## Chau7 Remote (iOS app)
+
+The Chau7 Remote companion app on iOS pairs with your Mac and views/controls its
+terminal over the encrypted relay described above. Here is exactly what the iOS
+app handles and where it goes.
+
+### Stays on your iPhone
+
+| Data | Location | Leaves the device? |
+|------|----------|--------------------|
+| Pairing keys (your device's private key, the Mac's public key) | iOS Keychain | Never |
+| Pairing payload (relay URL, device ID, pairing code) | iOS Keychain | Never |
+| App settings (hold-to-send, append-newline, ANSI rendering, renderer) | `UserDefaults` | Never |
+| Terminal output and scrollback shown on screen | Memory | Only as encrypted frames to your own Mac |
+
+### Sent end-to-end encrypted to your Mac (not readable by us)
+
+All session traffic — terminal output, your typed input, approval responses, and
+operational telemetry (event types, app version, session/tab identifiers, your
+device name) — is encrypted with ChaCha20-Poly1305 using a key derived from a
+Curve25519 exchange between your iPhone and your Mac. The relay forwards opaque
+encrypted bytes; it cannot read this content, and neither can we. This telemetry
+goes only to your own paired Mac, not to any analytics service.
+
+### Stored on the relay (developer-operated Cloudflare)
+
+To deliver remote-approval push notifications when the app is backgrounded, the
+relay stores a small amount of routing metadata per pairing until you unpair or
+unregister:
+
+| Data | Why | Retention |
+|------|-----|-----------|
+| APNs push token | Route approval notifications to your device | Until you unpair/unregister |
+| Paired device ID, push environment, notifications-authorized flag | Match notifications to the correct session | Until you unpair/unregister |
+| Connection IP address | Transient rate limiting / abuse prevention | Not persisted beyond rate-limit windows |
+
+The relay never stores terminal content or session keys, and the push token is
+used solely to deliver notifications you opted into — never for advertising or
+cross-app tracking.
+
+### Permissions
+
+- **Notifications** — optional; only used for remote-approval alerts. The app
+  works without them.
+- The app uses **no** advertising identifier (IDFA), **no** App Tracking
+  Transparency prompt, **no** third-party analytics SDKs, and requires **no**
+  account or login.
+
+### Export compliance
+
+The app uses only standard encryption (Apple CryptoKit: ChaCha20-Poly1305 and
+Curve25519) solely to secure its own communication, which qualifies for the
+export exemption — declared via `ITSAppUsesNonExemptEncryption = false`.
+
 ## MCP server
 
 The MCP server exposes tools over a Unix socket at `~/.chau7/mcp.sock` with permissions `0600` (owner-only). Any process running as your user can connect. The tools can read terminal output, send input, manage tabs, and query history. All communication is local — nothing crosses the network.
