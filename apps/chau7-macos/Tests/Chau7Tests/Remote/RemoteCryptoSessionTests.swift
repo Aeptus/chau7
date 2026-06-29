@@ -81,7 +81,10 @@ final class RemoteCryptoSessionTests: XCTestCase {
         let (ios, mac) = try makeSessionPair()
         var encrypted = try ios.encrypt(frame: frame(seq: 1, payload: Data("secret".utf8)))
         var bytes = encrypted.payload
-        bytes[0] ^= 0xFF
+        // `encrypted.payload` originates from CryptoKit's SealedBox.ciphertext,
+        // which can be a slice with a non-zero startIndex — `bytes[0]` would be
+        // out of bounds and trap. Index relative to startIndex.
+        bytes[bytes.startIndex] ^= 0xFF
         encrypted = RemoteFrame(
             version: encrypted.version,
             type: encrypted.type,
