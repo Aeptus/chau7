@@ -59,6 +59,7 @@ struct TerminalView: View {
                 )
                 if client.sendInput(pendingProtectedSend.text, appendNewline: appendNewline) {
                     sendCount += 1
+                    inputText = ""
                     self.pendingProtectedSend = nil
                 } else {
                     inputText = pendingProtectedSend.text
