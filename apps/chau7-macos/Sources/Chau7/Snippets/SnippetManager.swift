@@ -142,7 +142,9 @@ private extension Character {
     /// A single lowercase Latin letter a–z — the snippet hotkey alphabet.
     /// (Shared predicate only; `validatedKey` and `normalizeKey` keep their
     /// distinct length semantics.)
-    var isSnippetKeyLetter: Bool { self >= "a" && self <= "z" }
+    var isSnippetKeyLetter: Bool {
+        self >= "a" && self <= "z"
+    }
 }
 
 struct SnippetFile: Codable {

@@ -159,7 +159,7 @@ class EditorCoordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelega
 
         let savedSelection = textView.selectedRange()
         textView.string = updated
-        parent.text = updated          // propagate to the editor model / Binding
+        parent.text = updated // propagate to the editor model / Binding
         applySyntaxHighlighting()
         if savedSelection.location + savedSelection.length <= (updated as NSString).length {
             textView.setSelectedRange(savedSelection)

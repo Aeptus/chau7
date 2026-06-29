@@ -41,7 +41,7 @@ final class TerminalSyncRateTests: XCTestCase {
             1.0 / 1.0, accuracy: epsilon
         )
         XCTAssertEqual(
-            RustTerminalView.minSyncInterval(isInteractive: false, activeCapHz: nil, inactiveMaxFPS: 10_000),
+            RustTerminalView.minSyncInterval(isInteractive: false, activeCapHz: nil, inactiveMaxFPS: 10000),
             1.0 / 120.0, accuracy: epsilon
         )
     }

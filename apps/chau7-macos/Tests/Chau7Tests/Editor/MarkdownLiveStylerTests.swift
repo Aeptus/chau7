@@ -116,8 +116,11 @@ final class MarkdownLiveStylerTests: XCTestCase {
         let ns = md as NSString
         for run in MarkdownLiveStyler.styleRuns(in: ns) {
             XCTAssertGreaterThanOrEqual(run.range.location, 0)
-            XCTAssertLessThanOrEqual(run.range.location + run.range.length, ns.length,
-                                     "run \(run) out of bounds for length \(ns.length)")
+            XCTAssertLessThanOrEqual(
+                run.range.location + run.range.length,
+                ns.length,
+                "run \(run) out of bounds for length \(ns.length)"
+            )
         }
     }
 }

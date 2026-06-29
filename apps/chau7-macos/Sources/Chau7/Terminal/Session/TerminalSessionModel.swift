@@ -73,6 +73,7 @@ enum RestoreBootstrapPhase: String {
 /// - Note: Thread Safety - Properties must be modified on main thread.
 ///   Callbacks may arrive on background threads and dispatch to main via DispatchQueue.main.async.
 @Observable
+// swiftlint:disable:next type_body_length
 final class TerminalSessionModel {
     private enum PendingTerminalAction {
         case text(String)
@@ -2048,7 +2049,7 @@ final class TerminalSessionModel {
     private static func keepLastLines(of url: URL, count: Int) -> Bool {
         guard count >= 0, let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
         var lines = content.components(separatedBy: "\n")
-        if lines.last == "" { lines.removeLast() } // ignore the trailing newline
+        if lines.last?.isEmpty == true { lines.removeLast() } // ignore the trailing newline
         guard lines.count > count else { return true } // already within the floor
         let kept = lines.suffix(count)
         let text = count == 0 ? "" : kept.joined(separator: "\n") + "\n"

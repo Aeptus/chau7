@@ -35,7 +35,7 @@ final class ShellHistoryPruneTests: XCTestCase {
     }
 
     private func write(_ tabID: String, suffix: String = "zsh_history", count: Int, mtimeOffset: TimeInterval) {
-        write(tabID, suffix: suffix, lines: (1...max(1, count)).map { "echo \(tabID)-\($0)" }, mtimeOffset: mtimeOffset)
+        write(tabID, suffix: suffix, lines: (1 ... max(1, count)).map { "echo \(tabID)-\($0)" }, mtimeOffset: mtimeOffset)
     }
 
     private func exists(_ tabID: String, _ suffix: String = "zsh_history") -> Bool {
@@ -53,10 +53,10 @@ final class ShellHistoryPruneTests: XCTestCase {
     }
 
     func testTrimsOldestTabsToFloorUntilUnderCap() {
-        write("P", count: 500, mtimeOffset: 0)    // protected
-        write("A", count: 30, mtimeOffset: 10)    // oldest orphan
+        write("P", count: 500, mtimeOffset: 0) // protected
+        write("A", count: 30, mtimeOffset: 10) // oldest orphan
         write("B", count: 30, mtimeOffset: 20)
-        write("C", count: 30, mtimeOffset: 30)    // newest orphan
+        write("C", count: 30, mtimeOffset: 30) // newest orphan
 
         // Orphans = 90, cap 50, floor 5 → trim A (→5, total 65) then B (→5, total 40 ≤ 50).
         TerminalSessionModel.pruneOrphanShellHistory(in: dir, protectedTabIDs: ["P"], maxLines: 50)
@@ -68,26 +68,31 @@ final class ShellHistoryPruneTests: XCTestCase {
     }
 
     func testTrimKeepsMostRecentCommands() {
-        write("A", count: 30, mtimeOffset: 10)    // lines echo A-1 ... echo A-30
+        write("A", count: 30, mtimeOffset: 10) // lines echo A-1 ... echo A-30
 
         TerminalSessionModel.pruneOrphanShellHistory(in: dir, protectedTabIDs: [], maxLines: 5, minLinesPerTab: 5)
 
-        XCTAssertEqual(contentLines("A"), (26...30).map { "echo A-\($0)" },
-                       "trimming drops the OLDEST commands and keeps the most recent floor")
+        XCTAssertEqual(
+            contentLines("A"),
+            (26 ... 30).map { "echo A-\($0)" },
+            "trimming drops the OLDEST commands and keeps the most recent floor"
+        )
     }
 
     func testProtectedTabNeverTrimmedOrCounted() {
-        write("P", count: 10_000, mtimeOffset: 0) // protected, far over any cap
+        write("P", count: 10000, mtimeOffset: 0) // protected, far over any cap
         write("A", count: 200, mtimeOffset: 10)
 
         TerminalSessionModel.pruneOrphanShellHistory(in: dir, protectedTabIDs: ["P"], maxLines: 50)
 
-        XCTAssertEqual(lineCount("P"), 10_000, "protected lines don't count and are never trimmed")
+        XCTAssertEqual(lineCount("P"), 10000, "protected lines don't count and are never trimmed")
         XCTAssertEqual(lineCount("A"), 5, "only the orphan is trimmed to fit the budget")
     }
 
     func testDeletesWholeOldestTabsWhenFloorsStillExceedCap() {
-        for i in 0..<5 { write("T\(i)", count: 10, mtimeOffset: Double((i + 1) * 10)) } // T0 oldest
+        for i in 0 ..< 5 {
+            write("T\(i)", count: 10, mtimeOffset: Double((i + 1) * 10))
+        } // T0 oldest
 
         // total 50; floor-trim all to 5 → 25 still > 12; delete oldest whole tabs
         // until ≤ 12: remove T0,T1,T2 (→10), keep T3,T4.
@@ -127,7 +132,9 @@ final class ShellHistoryPruneTests: XCTestCase {
         TerminalSessionModel.pruneOrphanShellHistory(in: dir, protectedTabIDs: [], maxLines: 50, minLinesPerTab: 5)
 
         XCTAssertEqual(lineCount("A"), 5, "the over-cap history file is trimmed")
-        XCTAssertTrue(fm.fileExists(atPath: dir.appendingPathComponent("notes.txt").path),
-                      "non-history files are left alone")
+        XCTAssertTrue(
+            fm.fileExists(atPath: dir.appendingPathComponent("notes.txt").path),
+            "non-history files are left alone"
+        )
     }
 }

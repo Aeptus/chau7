@@ -94,7 +94,6 @@ final class MetalTerminalRenderer: NSObject {
         let color: SIMD4<Float>
     }
 
-
     // MARK: - Shared Caches (compiled once, reused across all renderer instances)
 
     private static var cachedLibrary: MTLLibrary?
@@ -422,7 +421,9 @@ final class MetalTerminalRenderer: NSObject {
     private func resetAtlas() {
         atlasGeneration &+= 1
         glyphCache.removeAll()
-        for i in asciiGlyphResolved.indices { asciiGlyphResolved[i] = false }
+        for i in asciiGlyphResolved.indices {
+            asciiGlyphResolved[i] = false
+        }
         ligatureHitCache.removeAll()
         ligatureMissCache.removeAll()
         ligatureMissOrder.removeAll(keepingCapacity: false)

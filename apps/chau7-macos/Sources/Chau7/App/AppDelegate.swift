@@ -2329,9 +2329,9 @@ private final class OverlayBlurView: NSVisualEffectView {
         screenParamsDebounce?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            Log.info("didChangeScreenParameters: re-clamping \(self.overlayHosts.count) overlay window(s)")
-            for host in self.overlayHosts {
-                self.clampOverlayWindowToVisibleFrame(host.window)
+            Log.info("didChangeScreenParameters: re-clamping \(overlayHosts.count) overlay window(s)")
+            for host in overlayHosts {
+                clampOverlayWindowToVisibleFrame(host.window)
             }
         }
         screenParamsDebounce = work

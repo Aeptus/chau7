@@ -12,19 +12,19 @@ import AppKit
 enum MarkdownLiveStyler {
     /// A semantic span discovered in the markdown source.
     enum Kind: Equatable {
-        case heading(Int)     // # .. ###### → 1...6
-        case marker           // the punctuation itself (#, **, `, >, -, [, ](url)) — dimmed
+        case heading(Int) // # .. ###### → 1...6
+        case marker // the punctuation itself (#, **, `, >, -, [, ](url)) — dimmed
         case bold
         case italic
-        case codeSpan         // `inline code`
-        case codeFence        // a line inside a ``` fenced block
+        case codeSpan // `inline code`
+        case codeFence // a line inside a ``` fenced block
         case strikethrough
-        case linkText         // the visible [text] of a link
-        case blockquote       // text after `>`
-        case listMarker       // -, *, +, or 1. at the start of a list item
+        case linkText // the visible [text] of a link
+        case blockquote // text after `>`
+        case listMarker // -, *, +, or 1. at the start of a list item
         case horizontalRule
-        case taskCheckbox(checked: Bool)  // the `[ ]` / `[x]` of a task list item
-        case completedTask    // the text of a checked task (struck through + dimmed)
+        case taskCheckbox(checked: Bool) // the `[ ]` / `[x]` of a task list item
+        case completedTask // the text of a checked task (struck through + dimmed)
     }
 
     struct StyleRun: Equatable {
@@ -40,7 +40,7 @@ enum MarkdownLiveStyler {
         var headingColor: NSColor = .labelColor
         var markerColor: NSColor = .tertiaryLabelColor
         var codeColor: NSColor = .systemPink
-        var codeBackground: NSColor = NSColor.systemGray.withAlphaComponent(0.15)
+        var codeBackground = NSColor.systemGray.withAlphaComponent(0.15)
         var linkColor: NSColor = .linkColor
         var quoteColor: NSColor = .secondaryLabelColor
     }
@@ -81,8 +81,8 @@ enum MarkdownLiveStyler {
             let line = text.substring(with: lineRange)
             guard let indent = hangingIndent(forLine: line, font: theme.bodyFont) else { return }
             let style = NSMutableParagraphStyle()
-            style.headIndent = indent       // continuation lines hang at the content
-            style.firstLineHeadIndent = 0   // marker sits at the left margin
+            style.headIndent = indent // continuation lines hang at the content
+            style.firstLineHeadIndent = 0 // marker sits at the left margin
             storage.addAttribute(.paragraphStyle, value: style, range: lineRange)
         }
     }
@@ -143,7 +143,7 @@ enum MarkdownLiveStyler {
 
     /// `# .. ###### heading`. Returns true if the line was a heading.
     private static func styleHeading(_ line: NSString, _ lineRange: NSRange, _ runs: inout [StyleRun]) -> Bool {
-        guard let regex = Self.headingRegex,
+        guard let regex = headingRegex,
               let m = regex.firstMatch(in: line as String, range: NSRange(location: 0, length: line.length)),
               m.numberOfRanges >= 4 else { return false }
         let hashes = m.range(at: 2)
@@ -200,10 +200,10 @@ enum MarkdownLiveStyler {
 
     private static func styleInline(_ text: NSString, in range: NSRange, _ runs: inout [StyleRun]) {
         guard range.length > 0 else { return }
-        apply(Self.codeSpanRegex, in: text, range: range, runs: &runs) { m in
+        apply(codeSpanRegex, in: text, range: range, runs: &runs) { m in
             [StyleRun(kind: .codeSpan, range: m.range)]
         }
-        apply(Self.linkRegex, in: text, range: range, runs: &runs) { m in
+        apply(linkRegex, in: text, range: range, runs: &runs) { m in
             // [text](url): style the visible text, dim the surrounding punctuation+url
             guard m.numberOfRanges >= 2 else { return [StyleRun(kind: .linkText, range: m.range)] }
             return [
@@ -211,13 +211,13 @@ enum MarkdownLiveStyler {
                 StyleRun(kind: .linkText, range: m.range(at: 1))
             ]
         }
-        apply(Self.boldRegex, in: text, range: range, runs: &runs) { m in
+        apply(boldRegex, in: text, range: range, runs: &runs) { m in
             [StyleRun(kind: .bold, range: m.range)]
         }
-        apply(Self.italicRegex, in: text, range: range, runs: &runs) { m in
+        apply(italicRegex, in: text, range: range, runs: &runs) { m in
             [StyleRun(kind: .italic, range: m.range)]
         }
-        apply(Self.strikeRegex, in: text, range: range, runs: &runs) { m in
+        apply(strikeRegex, in: text, range: range, runs: &runs) { m in
             [StyleRun(kind: .strikethrough, range: m.range)]
         }
     }

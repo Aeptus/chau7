@@ -472,9 +472,9 @@ final class ProxyManager {
     }
 
     /// POST `body` as JSON to <path> and decode the 200 response.
-    private func postJSON<Req: Encodable, T>(
+    private func postJSON<T>(
         path: String,
-        body: Req,
+        body: some Encodable,
         errorLabel: String,
         decode: (Data) throws -> T?
     ) async -> T? {
@@ -565,67 +565,67 @@ final class ProxyManager {
     /// Gets the current active task for a tab
     func getCurrentTask(tabId: String) async -> TrackedTask? {
         struct CurrentTaskResponse: Decodable {
-                let hasTask: Bool
-                let taskId: String?
-                let taskName: String?
-                let state: String?
-                let totalCalls: Int?
-                let totalTokens: Int?
-                let totalCostUSD: Double?
-                let durationSec: Int64?
-                let startMethod: String?
-                let trigger: String?
-                let projectPath: String?
-                // v1.2: Baseline metrics
-                let baselineTotalTokens: Int?
-                let tokensSaved: Int?
+            let hasTask: Bool
+            let taskId: String?
+            let taskName: String?
+            let state: String?
+            let totalCalls: Int?
+            let totalTokens: Int?
+            let totalCostUSD: Double?
+            let durationSec: Int64?
+            let startMethod: String?
+            let trigger: String?
+            let projectPath: String?
+            // v1.2: Baseline metrics
+            let baselineTotalTokens: Int?
+            let tokensSaved: Int?
 
-                enum CodingKeys: String, CodingKey {
-                    case hasTask = "has_task"
-                    case taskId = "task_id"
-                    case taskName = "task_name"
-                    case state
-                    case totalCalls = "total_calls"
-                    case totalTokens = "total_tokens"
-                    case totalCostUSD = "total_cost_usd"
-                    case durationSec = "duration_sec"
-                    case startMethod = "start_method"
-                    case trigger
-                    case projectPath = "project_path"
-                    case baselineTotalTokens = "baseline_total_tokens"
-                    case tokensSaved = "tokens_saved"
-                }
+            enum CodingKeys: String, CodingKey {
+                case hasTask = "has_task"
+                case taskId = "task_id"
+                case taskName = "task_name"
+                case state
+                case totalCalls = "total_calls"
+                case totalTokens = "total_tokens"
+                case totalCostUSD = "total_cost_usd"
+                case durationSec = "duration_sec"
+                case startMethod = "start_method"
+                case trigger
+                case projectPath = "project_path"
+                case baselineTotalTokens = "baseline_total_tokens"
+                case tokensSaved = "tokens_saved"
             }
-            return await requestJSON(
-                path: "/task/current",
-                queryItems: [URLQueryItem(name: "tab_id", value: tabId)],
-                errorLabel: "current task"
-            ) { data in
-                let resp = try JSONDecoder().decode(CurrentTaskResponse.self, from: data)
-                guard resp.hasTask,
-                      let taskId = resp.taskId,
-                      let taskName = resp.taskName else {
-                    return nil
-                }
-                return TrackedTask(
-                    id: taskId,
-                    candidateId: nil,
-                    tabId: tabId,
-                    sessionId: "",
-                    projectPath: resp.projectPath ?? "",
-                    name: taskName,
-                    state: TaskState(rawValue: resp.state ?? "active") ?? .active,
-                    startMethod: TaskStartMethod(rawValue: resp.startMethod ?? "manual") ?? .manual,
-                    trigger: TaskTrigger(rawValue: resp.trigger ?? "manual") ?? .manual,
-                    startedAt: Date().addingTimeInterval(-Double(resp.durationSec ?? 0)),
-                    completedAt: nil,
-                    totalAPICalls: resp.totalCalls ?? 0,
-                    totalTokens: resp.totalTokens ?? 0,
-                    totalCostUSD: resp.totalCostUSD ?? 0,
-                    baselineTotalTokens: resp.baselineTotalTokens ?? 0,
-                    tokensSaved: resp.tokensSaved ?? 0
-                )
+        }
+        return await requestJSON(
+            path: "/task/current",
+            queryItems: [URLQueryItem(name: "tab_id", value: tabId)],
+            errorLabel: "current task"
+        ) { data in
+            let resp = try JSONDecoder().decode(CurrentTaskResponse.self, from: data)
+            guard resp.hasTask,
+                  let taskId = resp.taskId,
+                  let taskName = resp.taskName else {
+                return nil
             }
+            return TrackedTask(
+                id: taskId,
+                candidateId: nil,
+                tabId: tabId,
+                sessionId: "",
+                projectPath: resp.projectPath ?? "",
+                name: taskName,
+                state: TaskState(rawValue: resp.state ?? "active") ?? .active,
+                startMethod: TaskStartMethod(rawValue: resp.startMethod ?? "manual") ?? .manual,
+                trigger: TaskTrigger(rawValue: resp.trigger ?? "manual") ?? .manual,
+                startedAt: Date().addingTimeInterval(-Double(resp.durationSec ?? 0)),
+                completedAt: nil,
+                totalAPICalls: resp.totalCalls ?? 0,
+                totalTokens: resp.totalTokens ?? 0,
+                totalCostUSD: resp.totalCostUSD ?? 0,
+                baselineTotalTokens: resp.baselineTotalTokens ?? 0,
+                tokensSaved: resp.tokensSaved ?? 0
+            )
+        }
     }
 
     /// Starts a new task manually

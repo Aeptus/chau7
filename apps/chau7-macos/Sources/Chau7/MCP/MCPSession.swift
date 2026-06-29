@@ -477,7 +477,11 @@ final class MCPSession {
             ],
             [
                 "name": "tab_create",
-                "description": "Open a new terminal tab in Chau7 — the first step to launch an AI coding agent (Claude Code, Codex, etc.). Returns the tab ID for subsequent operations; follow with tab_exec to start the agent and tab_submit_prompt to send it a task. To spawn one or more agents in a single call, prefer agent_launch.",
+                "description": [
+                    "Open a new terminal tab in Chau7 — the first step to launch an AI coding agent (Claude Code, Codex, etc.).",
+                    "Returns the tab ID for subsequent operations; follow with tab_exec to start the agent and tab_submit_prompt to send it a task.",
+                    "To spawn one or more agents in a single call, prefer agent_launch."
+                ].joined(separator: " "),
                 "inputSchema": [
                     "type": "object",
                     "properties": [
@@ -613,7 +617,10 @@ final class MCPSession {
                     "properties": [
                         "directory": ["type": "string", "description": "Repo / working directory each agent tab opens in (inherited if omitted)"],
                         "agent_command": ["type": "string", "description": "Command that starts the agent, e.g. 'claude' or 'codex'. Defaults to 'claude'."],
-                        "prompt": ["type": "string", "description": "Optional task prompt handed to each agent once it attaches (best-effort: typed in and submitted). For full reliability, embed the prompt in agent_command if the CLI supports it."],
+                        "prompt": [
+                            "type": "string",
+                            "description": "Optional task prompt handed to each agent once it attaches (best-effort: typed in and submitted). For full reliability, embed the prompt in agent_command if the CLI supports it."
+                        ],
                         "count": ["type": "integer", "description": "Number of agents to launch (default 1). Capped by the MCP tab limit."],
                         "pr_number": ["type": "integer", "description": "Optional GitHub PR number; if set, each tab runs 'gh pr checkout <pr>' before starting the agent."],
                         "window_id": ["type": "integer", "description": "Target window (from tab_list). Defaults to the preferred window."],

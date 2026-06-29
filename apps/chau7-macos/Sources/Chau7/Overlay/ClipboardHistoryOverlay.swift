@@ -118,4 +118,3 @@ struct ClipboardItemRow: View {
         }
     }
 }
-

@@ -2751,4 +2751,3 @@ struct RenameOverlayView: View {
 }
 
 // StatusBadge was removed - it was unused in the UI
-
