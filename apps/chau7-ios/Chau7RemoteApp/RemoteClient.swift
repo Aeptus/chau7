@@ -123,6 +123,10 @@ final class RemoteClient {
         }
     }
 
+    deinit {
+        notificationTask?.cancel()
+    }
+
     // MARK: - Connection
 
     func connect() {
@@ -494,7 +498,6 @@ final class RemoteClient {
                   self.webSocket != nil,
                   !self.isConnected else { return }
 
-            self.shouldReconnect = false
             self.cancelHandshakeTasks()
             let socket = self.webSocket
             self.webSocket = nil
@@ -502,13 +505,17 @@ final class RemoteClient {
             self.isConnected = false
             self.crypto = nil
             socket?.cancel(with: .goingAway, reason: nil)
-            self.status = "Connection timed out"
             self.lastError = "No response from your Mac. Make sure Chau7 is open, Remote is enabled, and the pairing payload is still current."
             self.emitTelemetry(
                 type: .errorReceived,
                 status: "timeout",
                 message: self.lastError
             )
+            // A handshake timeout is usually a transient relay/Mac delay rather
+            // than a permanent failure. Route through the normal disconnect path
+            // so the reconnect backoff retries instead of stranding the
+            // connection until the user manually reconnects.
+            self.handleDisconnect(reason: "handshake_timeout")
         }
     }
 
@@ -1332,6 +1339,10 @@ final class RemoteClient {
             }
         }
 
+        // Cancel any in-flight fetch before starting a new one so forced
+        // refreshes (push wake, scene-active, pair-accept) don't stack
+        // concurrent network requests.
+        pendingStateFetchTask?.cancel()
         pendingStateFetchTask = Task { @MainActor [weak self] in
             defer {
                 self?.pendingStateFetchTask = nil

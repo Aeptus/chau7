@@ -31,6 +31,9 @@ struct RemoteTerminalRendererView: View {
         .onAppear {
             client.terminalRenderer.setActiveTab(client.activeTabID)
         }
+        .onChange(of: client.activeTabID) { _, newTabID in
+            client.terminalRenderer.setActiveTab(newTabID)
+        }
     }
 }
 
