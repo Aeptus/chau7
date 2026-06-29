@@ -277,33 +277,38 @@ final class DiagnosticsLog {
         saveTask?.cancel()
         saveTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled else { return }
-            self?.save()
+            guard !Task.isCancelled, let self, let fileURL = self.fileURL else { return }
+            // Debounced autosave: encode/write off the main actor so the
+            // 2-second tick never hitches the UI. The snapshot is a value type.
+            let snapshot = self.entries
+            Task.detached(priority: .utility) {
+                Self.writeEntries(snapshot, to: fileURL)
+            }
         }
     }
 
-    /// Flush immediately (e.g. on backgrounding) so nothing is lost.
+    /// Flush immediately and *synchronously* (e.g. on backgrounding) so nothing
+    /// is lost if iOS suspends or kills the app right after this returns — a
+    /// detached task is not guaranteed to run before suspension.
     func flush() {
         saveTask?.cancel()
         saveTask = nil
-        save()
+        guard let fileURL else { return }
+        Self.writeEntries(entries, to: fileURL)
     }
 
-    private func save() {
-        guard let fileURL else { return }
-        let snapshot = entries
-        // Encoding happens off the main actor to avoid hitching the UI on the
-        // 2-second debounce. The snapshot is a value type, so this is safe.
-        Task.detached(priority: .utility) {
-            let encoder = JSONEncoder()
-            var data = Data()
-            for entry in snapshot {
-                guard let line = try? encoder.encode(entry) else { continue }
-                data.append(line)
-                data.append(0x0A)
-            }
-            try? data.write(to: fileURL, options: .atomic)
+    /// Serialize entries to newline-delimited JSON and write atomically. Pure
+    /// and non-isolated so both the debounced (off-main) and synchronous flush
+    /// paths can share it.
+    private static func writeEntries(_ entries: [Entry], to fileURL: URL) {
+        let encoder = JSONEncoder()
+        var data = Data()
+        for entry in entries {
+            guard let line = try? encoder.encode(entry) else { continue }
+            data.append(line)
+            data.append(0x0A)
         }
+        try? data.write(to: fileURL, options: .atomic)
     }
 
     private func load() {
