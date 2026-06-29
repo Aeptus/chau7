@@ -3,7 +3,7 @@ import XCTest
 @testable import Chau7Core
 
 final class RemoteCryptoSessionTests: XCTestCase {
-    // Deterministic shared secret + nonces so the derivations are reproducible.
+    /// Deterministic shared secret + nonces so the derivations are reproducible.
     private func makeSharedSecret() throws -> SharedSecret {
         let priv = Curve25519.KeyAgreement.PrivateKey()
         let peer = Curve25519.KeyAgreement.PrivateKey()

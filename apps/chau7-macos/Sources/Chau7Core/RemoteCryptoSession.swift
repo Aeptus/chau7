@@ -1,18 +1,18 @@
-/// Encrypted session state for the relay connection (shared by iOS and macOS).
-///
-/// Uses ChaChaPoly (ChaCha20-Poly1305 AEAD) with keys derived from a Curve25519
-/// shared secret via HKDF-SHA256. Nonces are a 4-byte prefix plus an 8-byte
-/// little-endian sequence number.
-///
-/// The nonce prefix is **direction-separated**: frames sent by iOS use a prefix
-/// derived with the `"nonce-ios"` label and frames sent by the Mac use
-/// `"nonce-mac"`. Both endpoints share one key and both start their sequence
-/// counter at 1, so a single shared prefix would reuse a (key, nonce) pair
-/// across the two directions — catastrophic for ChaCha20-Poly1305. Separate
-/// prefixes give each direction its own nonce space.
-///
-/// `create` returns the **iOS perspective** (send = ios, recv = mac); the Go
-/// relay client mirrors it (send = mac, recv = ios).
+// Encrypted session state for the relay connection (shared by iOS and macOS).
+//
+// Uses ChaChaPoly (ChaCha20-Poly1305 AEAD) with keys derived from a Curve25519
+// shared secret via HKDF-SHA256. Nonces are a 4-byte prefix plus an 8-byte
+// little-endian sequence number.
+//
+// The nonce prefix is **direction-separated**: frames sent by iOS use a prefix
+// derived with the `"nonce-ios"` label and frames sent by the Mac use
+// `"nonce-mac"`. Both endpoints share one key and both start their sequence
+// counter at 1, so a single shared prefix would reuse a (key, nonce) pair
+// across the two directions — catastrophic for ChaCha20-Poly1305. Separate
+// prefixes give each direction its own nonce space.
+//
+// `create` returns the **iOS perspective** (send = ios, recv = mac); the Go
+// relay client mirrors it (send = mac, recv = ios).
 import CryptoKit
 import Foundation
 
