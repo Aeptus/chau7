@@ -620,12 +620,28 @@ final class RemoteClient {
     }
 
     private func handleProcessedFrame(_ frame: RemoteFrame, payload: Data) {
+        let frameType = RemoteFrameType(rawValue: frame.type)
+        let isEncrypted = frame.flags & RemoteFrame.flagEncrypted != 0
+
+        // Encryption enforcement: only the cleartext handshake frames may arrive
+        // unencrypted. Every other known type carries session data and MUST be
+        // encrypted once a crypto session exists — otherwise a hostile relay
+        // could inject a plaintext .sessionReady / .approvalRequest / .output to
+        // bypass both AEAD decryption and the replay counter below. Drop them.
+        let cleartextHandshakeTypes: Set<RemoteFrameType> = [.hello, .pairAccept, .pairReject]
+        if let frameType, !cleartextHandshakeTypes.contains(frameType) {
+            guard isEncrypted, crypto != nil else {
+                log.warning("Dropping unencrypted non-handshake frame type=\(frame.type)")
+                return
+            }
+        }
+
         // Replay protection for encrypted frames: the peer uses a single
         // monotonic sequence counter, and the WebSocket delivers in order, so a
         // non-increasing seq means a duplicate/replayed frame from a hostile
         // relay. Unencrypted handshake frames (hello/pair*) are exempt, matching
         // the macOS relay client (see agent.go maxReceivedSeq).
-        if frame.flags & RemoteFrame.flagEncrypted != 0 {
+        if isEncrypted {
             guard frame.seq > maxReceivedSeq else {
                 log.warning("Dropping replayed/stale frame type=\(frame.type) seq=\(frame.seq) max=\(self.maxReceivedSeq)")
                 return
@@ -633,7 +649,7 @@ final class RemoteClient {
             maxReceivedSeq = frame.seq
         }
 
-        switch RemoteFrameType(rawValue: frame.type) {
+        switch frameType {
         case .hello:           handleHello(payload)
         case .pairAccept:      handlePairAccept(payload)
         case .pairReject:      handlePairReject(payload)
