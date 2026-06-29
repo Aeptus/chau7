@@ -9,6 +9,7 @@ import UIKit
 struct RemoteTerminalRendererView: View {
     let client: RemoteClient
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
+    @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
 
     var body: some View {
         Group {
@@ -24,7 +25,8 @@ struct RemoteTerminalRendererView: View {
                 }
             } else {
                 RemoteTerminalTextView(
-                    text: renderANSI ? client.outputText : client.strippedOutputText
+                    text: renderANSI ? client.outputText : client.strippedOutputText,
+                    fontSize: CGFloat(terminalFontSize)
                 )
             }
         }
@@ -52,10 +54,30 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
 
 struct RemoteTerminalTextView: View {
     let text: String
+    var fontSize: CGFloat
+    @Binding var isAwayFromBottom: Bool
+    var scrollToBottomToken: Int
+
+    init(
+        text: String,
+        fontSize: CGFloat = CGFloat(AppSettings.terminalFontSizeDefault),
+        isAwayFromBottom: Binding<Bool> = .constant(false),
+        scrollToBottomToken: Int = 0
+    ) {
+        self.text = text
+        self.fontSize = fontSize
+        self._isAwayFromBottom = isAwayFromBottom
+        self.scrollToBottomToken = scrollToBottomToken
+    }
 
     var body: some View {
-        RemoteTerminalTextViewRepresentable(text: boundedTranscript(text))
-            .background(Color.black)
+        RemoteTerminalTextViewRepresentable(
+            text: boundedTranscript(text),
+            fontSize: fontSize,
+            isAwayFromBottom: $isAwayFromBottom,
+            scrollToBottomToken: scrollToBottomToken
+        )
+        .background(Color.black)
     }
 
     private func boundedTranscript(_ text: String) -> String {
@@ -72,12 +94,17 @@ struct RemoteTerminalTextView: View {
 
 private struct RemoteTerminalTextViewRepresentable: UIViewRepresentable {
     let text: String
+    let fontSize: CGFloat
+    @Binding var isAwayFromBottom: Bool
+    let scrollToBottomToken: Int
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
         textView.backgroundColor = .black
         textView.textColor = .systemGreen
-        textView.font = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         textView.isEditable = false
         textView.isSelectable = true
         textView.alwaysBounceVertical = true
@@ -87,16 +114,52 @@ private struct RemoteTerminalTextViewRepresentable: UIViewRepresentable {
         textView.smartDashesType = .no
         textView.smartQuotesType = .no
         textView.autocorrectionType = .no
+        textView.delegate = context.coordinator
+        textView.accessibilityLabel = "Terminal output"
         return textView
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
+        context.coordinator.parent = self
+
+        if abs((textView.font?.pointSize ?? fontSize) - fontSize) > 0.5 {
+            textView.font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        }
+
         let wasNearBottom = textView.isNearBottom
         if textView.text != text {
             textView.text = text
         }
-        if wasNearBottom {
+
+        let forceScroll = context.coordinator.lastScrollToken != scrollToBottomToken
+        context.coordinator.lastScrollToken = scrollToBottomToken
+
+        if wasNearBottom || forceScroll {
             textView.scrollRangeToVisible(NSRange(location: max(text.utf16.count - 1, 0), length: 1))
+        }
+        context.coordinator.updateAwayState(textView)
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: RemoteTerminalTextViewRepresentable
+        var lastScrollToken: Int
+
+        init(_ parent: RemoteTerminalTextViewRepresentable) {
+            self.parent = parent
+            self.lastScrollToken = parent.scrollToBottomToken
+        }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            guard let textView = scrollView as? UITextView else { return }
+            updateAwayState(textView)
+        }
+
+        func updateAwayState(_ textView: UITextView) {
+            let away = !textView.isNearBottom && textView.contentSize.height > textView.bounds.height
+            guard parent.isAwayFromBottom != away else { return }
+            DispatchQueue.main.async { [parent] in
+                parent.isAwayFromBottom = away
+            }
         }
     }
 }

@@ -91,6 +91,24 @@ emulator and renders cell-by-cell with color, formatting, and cursor.
 instances. The Dynamic Island shows the active tool, project name, and
 approve/deny buttons. Activities auto-dismiss after completion (8s) or failure (20s).
 
+### Onboarding & Pairing
+
+- `OnboardingView` runs once on first launch (gated by the `has_completed_onboarding`
+  AppStorage flag) and routes the user into pairing.
+- `PairingSheetView` accepts the pairing payload three ways: scanning the Mac's QR
+  code via `QRScannerView` (AVFoundation), a one-tap "Paste & Pair" from the
+  clipboard, or manual entry. `PairingPayloadValidator` reports specific errors
+  (missing field, expired code, unreadable text).
+- When unpaired, the Terminal tab shows a `ContentUnavailableView` with a pairing
+  call-to-action instead of an empty black surface.
+
+### Status Display
+
+`RemoteClientDisplay.swift` maps the client's internal status strings
+(`Encrypted`, `Session ready`, …) to user-facing labels and a coarse
+`ConnectionPhase` used for status dot colors, so implementation states never reach
+the UI.
+
 ### Deep Links
 
 URL scheme `chau7remote://` with actions: `open`, `switch`, `approve`, `deny`.
@@ -112,4 +130,4 @@ Parsed by `RemoteActivityURLAction` and routed through `RemoteClient.handle(url:
 | Store | Data |
 |-------|------|
 | Keychain (`com.chau7.remote`) | iOS private key, Mac public key, pairing payload, trusted identity |
-| `@AppStorage` | hold_to_send, append_newline, render_ansi, experimental_terminal_renderer |
+| `@AppStorage` | hold_to_send, append_newline, render_ansi, experimental_terminal_renderer, show_keyboard_bar, terminal_font_size, has_completed_onboarding |

@@ -2,11 +2,34 @@
 
 Recommendations to improve the user experience and interface of the **Chau7 Remote**
 iOS companion app (`apps/chau7-ios`). Every item is grounded in the current code and
-ordered by impact. Nothing here is implemented yet — this is a review and a roadmap.
+ordered by impact.
 
 Scope reviewed: `Chau7RemoteApp.swift`, `TerminalView.swift`, `ApprovalsView.swift`,
 `SettingsView.swift`, `PairingSheetView.swift`, `RemoteTerminalRendererView.swift`,
 `Chau7RemoteWidget.swift`, plus `docs/REMOTE-UX.md` and `docs/ARCHITECTURE.md`.
+
+## Implementation status
+
+Items **1–10 and 12–15 are implemented.** Item **11 (multiple Macs)** remains a
+roadmap item — it is a larger feature (named Mac switching, multi-pairing storage)
+and was intentionally left out of this pass.
+
+Notable refinements made during implementation:
+
+- **#13 (ANSI/renderer):** rather than enabling raw ANSI in the basic text view
+  (which would show unprocessed escape codes), the **Rich Terminal Renderer** — the
+  only path that draws real color — is now the default, with a text fallback. The
+  Display toggles gained explanatory footer text.
+- **#9 (accessibility):** added VoiceOver labels to icon-only controls, a Settings
+  text-size slider applied to the text renderer, and combined accessibility elements.
+  The Rust grid canvas still has no per-cell VoiceOver representation (it falls back
+  to the accessible text view when unavailable).
+- **#12 (notifications while locked):** the Keychain accessibility class
+  (`AfterFirstUnlockThisDeviceOnly`) and `remote-notification` background mode were
+  already correct. The fix was adding the missing
+  `com.apple.developer.usernotifications.time-sensitive` entitlement, without which
+  iOS silently downgrades the `.timeSensitive` approval alerts so they don't break
+  through Focus / the Lock Screen.
 
 ---
 
