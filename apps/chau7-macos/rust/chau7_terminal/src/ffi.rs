@@ -1088,7 +1088,6 @@ pub unsafe extern "C" fn chau7_terminal_clear_scrollback(term: *mut Chau7Termina
     }
 }
 
-
 /// Set the scrollback buffer size (number of lines)
 ///
 /// # Safety

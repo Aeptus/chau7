@@ -1950,7 +1950,6 @@ impl Chau7Terminal {
         debug!("[terminal-{}] replay_buffer: Replay complete", self.id);
     }
 
-
     /// Get the current display offset
     pub fn display_offset(&self) -> usize {
         let term = self.term.lock();

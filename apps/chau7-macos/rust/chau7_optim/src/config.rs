@@ -10,18 +10,10 @@ pub struct Config {
     pub tee: crate::tee::TeeConfig,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct TrackingConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub database_path: Option<PathBuf>,
-}
-
-impl Default for TrackingConfig {
-    fn default() -> Self {
-        Self {
-            database_path: None,
-        }
-    }
 }
 
 impl Config {
